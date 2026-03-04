@@ -1,4 +1,7 @@
 # 🧠 Rorschach
+> Rorschach isn’t thinking about us; it’s a mirror reflecting us—an intelligence without consciousness.
+> "You think we're nothing but a Chinese Room," Rorschach sneered.
+> Blindsight, Peter Watts
 
 > A modern agentic framework built on an async event bus. Agents communicate through typed events, enabling decoupled, scalable multi-agent architectures with LLM cognition, persistent memory, and real-time interfaces.
 
