@@ -1,6 +1,8 @@
 > Rorschach isn’t thinking about us; it’s a mirror reflecting us—an intelligence without consciousness.
 
-> "You think we're nothing but a Chinese Room," Rorschach sneered. -- Blindsight, Peter Watts
+> "You think we're nothing but a Chinese Room," Rorschach sneered. 
+
+From the book "Blindsight" by Peter Watts
 
 # 🧠 Rorschach
 
