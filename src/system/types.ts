@@ -18,12 +18,19 @@ export type ActorRef<M> = {
 // ─── Minimal reference (used where we only need identity, not send) ───
 export type ActorIdentity = { readonly name: string }
 
+// ─── Supervision Strategy ───
+export type SupervisionStrategy =
+  | { type: 'stop' }
+  | { type: 'restart'; maxRetries?: number; withinMs?: number }
+  | { type: 'escalate' }
+
 // ─── Lifecycle Events ───
 export type LifecycleEvent =
   | { type: 'started' }
   | { type: 'stopped' }
   | { type: 'child-started'; child: ActorIdentity }
   | { type: 'child-stopped'; child: ActorIdentity }
+  | { type: 'child-failed'; child: ActorIdentity; error: unknown }
 
 // ─── Actor Result (returned from handlers) ───
 export type ActorResult<S> = { state: S }
@@ -41,7 +48,7 @@ export type ActorContext<M> = {
 
 // ─── Actor Definition (behavior specification) ───
 export type ActorDef<M, S> = {
-  /** Runs once on start. Receives initial state + context. Returns the enriched initial state. */
+  /** Runs once on start (or restart). Receives initial state + context. Returns the enriched initial state. */
   setup?: (state: S, context: ActorContext<M>) => Promise<S> | S
 
   /** Handles incoming messages. Returns the next state. */
@@ -51,12 +58,20 @@ export type ActorDef<M, S> = {
     context: ActorContext<M>,
   ) => Promise<ActorResult<S>> | ActorResult<S>
 
-  /** Reacts to lifecycle events (stopped, child-started, child-stopped). */
+  /** Reacts to lifecycle events (stopped, child-started, child-stopped, child-failed). */
   lifecycle?: (
     state: S,
     event: LifecycleEvent,
     context: ActorContext<M>,
   ) => Promise<ActorResult<S>> | ActorResult<S>
+
+  /**
+   * Supervision strategy applied when this actor's message handler throws.
+   * - 'stop'     — stop the actor (default if omitted)
+   * - 'restart'  — re-run setup with initial state, optionally bounded by maxRetries/withinMs
+   * - 'escalate' — notify parent of failure and stop the actor
+   */
+  supervision?: SupervisionStrategy
 }
 
 // ─── Internal Actor Handle (used by parent/system to manage the actor) ───

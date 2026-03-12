@@ -26,12 +26,6 @@ export const createActorSystem = (
   const children = new Map<string, InternalActorHandle>()
   let shuttingDown = false
 
-  const rootNotify: ParentNotify = (event) => {
-    if (onLifecycle) {
-      onLifecycle(event)
-    }
-  }
-
   const spawn = <M, S>(
     name: string,
     def: ActorDef<M, S>,
@@ -45,7 +39,39 @@ export const createActorSystem = (
       throw new Error(`Actor "${name}" already exists at the system level`)
     }
 
-    const childHandle = createActor(name, def, initialState, rootNotify)
+    // Per-actor notify so the system can identify which actor's events these are
+    const actorNotify: ParentNotify = (event) => {
+      if (event.type === 'child-failed') {
+        // A top-level actor failed — forward to system lifecycle handler
+        if (onLifecycle) {
+          onLifecycle(event)
+        }
+        return
+      }
+
+      if (event.type === 'started') {
+        if (onLifecycle) {
+          onLifecycle({ type: 'child-started', child: { name } })
+        }
+        return
+      }
+
+      if (event.type === 'stopped') {
+        // Actor has fully stopped — remove from registry
+        children.delete(name)
+        if (onLifecycle) {
+          onLifecycle({ type: 'child-stopped', child: { name } })
+        }
+        return
+      }
+
+      // Forward any other events as-is
+      if (onLifecycle) {
+        onLifecycle(event)
+      }
+    }
+
+    const childHandle = createActor(name, def, initialState, actorNotify)
     children.set(name, childHandle as InternalActorHandle)
 
     return childHandle.ref

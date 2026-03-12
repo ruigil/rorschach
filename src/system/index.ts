@@ -1,6 +1,5 @@
 // ─── Public API ───
-export { createActorSystem } from './system.ts'
-export type { SystemLifecycleHandler } from './system.ts'
+export { createActorSystem, type SystemLifecycleHandler} from './system.ts'
 
 export type {
   ActorRef,
@@ -10,4 +9,5 @@ export type {
   ActorResult,
   ActorSystem,
   LifecycleEvent,
+  SupervisionStrategy,
 } from './types.ts'
