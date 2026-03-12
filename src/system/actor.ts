@@ -1,4 +1,5 @@
 import { createMailbox } from './mailbox.ts'
+import { createTimers } from './timers.ts'
 import {
   STOP,
   type ActorContext,
@@ -57,9 +58,17 @@ export const createActor = <M, S>(
     }
   }
 
+  // ─── Build timers (scoped to this actor's lifecycle) ───
+  const timers = createTimers<M>((message) => {
+    if (!stopped) {
+      mailbox.enqueue({ tag: 'message', payload: message })
+    }
+  })
+
   // ─── Build the context ───
   const context: ActorContext<M> = {
     self: ref,
+    timers,
 
     spawn: <CM, CS>(
       childName: string,
@@ -187,7 +196,8 @@ export const createActor = <M, S>(
         switch (strategy.type) {
           case 'restart': {
             if (canRestart()) {
-              // Restart: stop children, reset state, re-run setup
+              // Restart: cancel timers, stop children, reset state, re-run setup
+              timers.cancelAll()
               await stopAllChildren()
               state = initialState
               if (def.setup) {
@@ -222,16 +232,19 @@ export const createActor = <M, S>(
 
     // ─── Stopping phase ───
 
-    // 1. Stop all children (top-down) and wait for them
+    // 1. Cancel all timers to prevent stale deliveries
+    timers.cancelAll()
+
+    // 2. Stop all children (top-down) and wait for them
     await stopAllChildren()
 
-    // 2. Fire the 'stopped' lifecycle event
+    // 3. Fire the 'stopped' lifecycle event
     if (def.lifecycle) {
       const result = await def.lifecycle(state, { type: 'stopped' }, context)
       state = result.state
     }
 
-    // 3. Notify parent that this actor has stopped
+    // 4. Notify parent that this actor has stopped
     notifyParent({ type: 'stopped' })
   })()
 

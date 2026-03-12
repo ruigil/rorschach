@@ -2,6 +2,23 @@
 export const STOP = Symbol('STOP')
 export type Stop = typeof STOP
 
+// ─── Timer Key ───
+export type TimerKey = string | symbol
+
+// ─── Timers (scoped to an actor's lifecycle) ───
+export type Timers<M> = {
+  /** Send `message` to self after `delayMs`. Fires once. Replaces any existing timer with the same key. */
+  readonly startSingleTimer: (key: TimerKey, message: M, delayMs: number) => void
+  /** Send `message` to self every `intervalMs`. Replaces any existing timer with the same key. */
+  readonly startPeriodicTimer: (key: TimerKey, message: M, intervalMs: number) => void
+  /** Cancel a specific timer by key. No-op if not set. */
+  readonly cancel: (key: TimerKey) => void
+  /** Cancel all active timers. */
+  readonly cancelAll: () => void
+  /** Check if a timer with this key is active. */
+  readonly isActive: (key: TimerKey) => boolean
+}
+
 // ─── Mailbox ───
 export type Mailbox<T> = {
   enqueue: (item: T) => void
@@ -38,6 +55,7 @@ export type ActorResult<S> = { state: S }
 // ─── Actor Context (available to handlers) ───
 export type ActorContext<M> = {
   readonly self: ActorRef<M>
+  readonly timers: Timers<M>
   readonly spawn: <CM, CS>(
     name: string,
     def: ActorDef<CM, CS>,

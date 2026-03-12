@@ -11,4 +11,6 @@ export type {
   ActorSystem,
   LifecycleEvent,
   SupervisionStrategy,
+  Timers,
+  TimerKey,
 } from './types.ts'
