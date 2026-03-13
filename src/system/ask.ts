@@ -18,19 +18,21 @@ export const ask = <Request, Response>(
 ): Promise<Response> => {
   return new Promise<Response>((resolve, reject) => {
     let settled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
 
     const replyTo: ActorRef<Response> = {
       name: `ask:${target.name}:${Date.now()}`,
       send: (response: Response) => {
         if (!settled) {
           settled = true
+          if (timer !== undefined) clearTimeout(timer)
           resolve(response)
         }
       },
     }
 
     if (options?.timeoutMs !== undefined) {
-      setTimeout(() => {
+      timer = setTimeout(() => {
         if (!settled) {
           settled = true
           reject(new Error(`Ask to "${target.name}" timed out after ${options.timeoutMs}ms`))

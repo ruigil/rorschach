@@ -17,6 +17,7 @@ import {
   type LifecycleEvent,
   type LogEvent,
   type LogLevel,
+  type StopResult,
 } from './types.ts'
 
 // ─── Internal envelope: unifies user messages and lifecycle events ───
@@ -34,6 +35,7 @@ const createInternalLog = (source: string, eventStream: EventStream) => {
     eventStream.publish(LogTopic, logEvent)
   }
   return {
+    debug: (msg: string, data?: unknown) => emit('debug', msg, data),
     info:  (msg: string, data?: unknown) => emit('info', msg, data),
     warn:  (msg: string, data?: unknown) => emit('warn', msg, data),
     error: (msg: string, data?: unknown) => emit('error', msg, data),
@@ -49,16 +51,13 @@ const createInternalLog = (source: string, eventStream: EventStream) => {
  * The actor's state is entirely enclosed in the async processing loop closure.
  * No external code can read or mutate it.
  *
- * @param childPrefix - Hierarchical prefix for child names. Defaults to `name`.
  */
 export const createActor = <M, S>(
   name: string,
   def: ActorDef<M, S>,
   initialState: S,
   services: ActorServices,
-  childPrefix?: string,
 ): InternalActorHandle<M> => {
-  const prefix = childPrefix ?? name
   // Single unified mailbox for both messages and lifecycle events
   const mailbox = createMailbox<Envelope<M>>()
   const children = new Map<string, InternalActorHandle>()
@@ -82,16 +81,7 @@ export const createActor = <M, S>(
   }
 
   // ─── Internal: enqueue a lifecycle event into the unified mailbox ───
-  // During the stopping phase, events are collected into a separate buffer
-  // so that terminated events from children are still delivered to the
-  // lifecycle handler — even though the mailbox is closed.
-  const stoppingPhase: { events: LifecycleEvent[] | null } = { events: null }
-
   const enqueueLifecycle = (event: LifecycleEvent): void => {
-    if (stoppingPhase.events !== null) {
-      stoppingPhase.events.push(event)
-      return
-    }
     if (!stopped) {
       mailbox.enqueue({ tag: 'lifecycle', event })
     }
@@ -121,7 +111,7 @@ export const createActor = <M, S>(
       childDef: ActorDef<CM, CS>,
       childInitialState: CS,
     ): ActorRef<CM> => {
-      const fullName = prefix ? `${prefix}/${childName}` : childName
+      const fullName = `${name}/${childName}`
 
       if (children.has(fullName)) {
         throw new Error(`Actor "${fullName}" already exists as a child of "${name}"`)
@@ -180,21 +170,7 @@ export const createActor = <M, S>(
 
     // ─── Logging (exposed to actor handlers) ───
 
-    log: (() => {
-      const makeLogger = (level: LogLevel) => (message: string, data?: unknown): void => {
-        const logEvent: LogEvent = {
-          level, source: name, message, timestamp: Date.now(),
-          ...(data !== undefined ? { data } : {}),
-        }
-        services.eventStream.publish(LogTopic, logEvent)
-      }
-      return {
-        debug: makeLogger('debug'),
-        info: makeLogger('info'),
-        warn: makeLogger('warn'),
-        error: makeLogger('error'),
-      }
-    })(),
+    log,
   }
 
   // ─── Supervision policy ───
@@ -274,22 +250,27 @@ export const createActor = <M, S>(
     // 1. Cancel all timers
     timers.cancelAll()
 
-    // 2. Stop all children (top-down), collecting their terminated events
-    stoppingPhase.events = []
-    await stopAllChildren()
-    const collectedEvents = stoppingPhase.events
-    stoppingPhase.events = null
+    // 2. Unsubscribe from child watch topics — terminated events will be
+    //    delivered directly below via the StopResult returned by child.stop().
+    for (const [childName] of children) {
+      services.eventStream.unsubscribe(name, watchTopic(childName))
+    }
 
-    // 3. Deliver collected terminated events from children
-    for (const event of collectedEvents) {
-      if (event.type === 'terminated') {
-        children.delete(event.ref.name)
-      }
+    // 3. Stop each child and deliver its terminated event directly
+    for (const [childName, child] of children) {
+      const { reason, error } = await child.stop()
       if (def.lifecycle) {
+        const event: LifecycleEvent = {
+          type: 'terminated',
+          ref: { name: childName },
+          reason,
+          ...(error !== undefined ? { error } : {}),
+        }
         const result = await def.lifecycle(state, event, context)
         state = result.state
       }
     }
+    children.clear()
 
     // 4. Fire the 'stopped' lifecycle event (self teardown)
     if (def.lifecycle) {
@@ -315,11 +296,12 @@ export const createActor = <M, S>(
 
   return {
     ref,
-    stop: async () => {
-      if (stopped) return
+    stop: async (): Promise<StopResult> => {
+      if (stopped) return { reason: stopReason, ...(stopError !== undefined ? { error: stopError } : {}) }
       stopped = true
       mailbox.close()
       await runningPromise
+      return { reason: stopReason, ...(stopError !== undefined ? { error: stopError } : {}) }
     },
   }
 }

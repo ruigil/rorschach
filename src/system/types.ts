@@ -158,10 +158,13 @@ export type ActorDef<M, S> = {
   supervision?: SupervisionStrategy
 }
 
+// ─── Stop Result (returned from InternalActorHandle.stop()) ───
+export type StopResult = { reason: 'stopped' | 'failed'; error?: unknown }
+
 // ─── Internal Actor Handle (used by parent/system to manage the actor) ───
 export type InternalActorHandle<M = unknown> = {
   readonly ref: ActorRef<M>
-  readonly stop: () => Promise<void>
+  readonly stop: () => Promise<StopResult>
 }
 
 // ─── Registry (flat map of actor name → ActorRef) ───
