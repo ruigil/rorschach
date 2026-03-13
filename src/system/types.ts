@@ -162,23 +162,29 @@ export type InternalActorHandle<M = unknown> = {
   readonly stop: () => Promise<void>
 }
 
+// ─── Registry (flat map of actor name → ActorRef) ───
+export type Registry = {
+  readonly register: (name: string, ref: ActorRef<unknown>) => void
+  readonly unregister: (name: string) => void
+  readonly lookup: <T = unknown>(name: string) => ActorRef<T> | undefined
+}
+
+// ─── Watch Service (manages watcher subscriptions and notifications) ───
+export type WatchService = {
+  /** Register watcher interest in target. notify is called when target terminates. */
+  readonly watch: (watcherName: string, targetName: string, notify: (event: LifecycleEvent) => void) => void
+  /** Remove a specific watch. */
+  readonly unwatch: (watcherName: string, targetName: string) => void
+  /** Remove all watches held BY this actor (called when actor stops). */
+  readonly cleanup: (actorName: string) => void
+  /** Notify all watchers that this actor has terminated. */
+  readonly notifyWatchers: (actorName: string, reason: 'stopped' | 'failed', error?: unknown) => void
+}
+
 // ─── Actor Services (shared system-level infrastructure passed to every actor) ───
 export type ActorServices = {
-  readonly registry: {
-    readonly register: (name: string, ref: ActorRef<unknown>) => void
-    readonly unregister: (name: string) => void
-    readonly lookup: <T = unknown>(name: string) => ActorRef<T> | undefined
-  }
-  readonly watchService: {
-    /** Register watcher interest in target. notify is called when target terminates. */
-    readonly watch: (watcherName: string, targetName: string, notify: (event: LifecycleEvent) => void) => void
-    /** Remove a specific watch. */
-    readonly unwatch: (watcherName: string, targetName: string) => void
-    /** Remove all watches held BY this actor (called when actor stops). */
-    readonly cleanup: (actorName: string) => void
-    /** Notify all watchers that this actor has terminated. */
-    readonly notifyWatchers: (actorName: string, reason: 'stopped' | 'failed', error?: unknown) => void
-  }
+  readonly registry: Registry
+  readonly watchService: WatchService
   readonly eventStream: EventStream
 }
 

@@ -20,7 +20,9 @@ export type {
   LifecycleEvent,
   LogEvent,
   LogLevel,
+  Registry,
   SupervisionStrategy,
   Timers,
   TimerKey,
+  WatchService,
 } from './types.ts'

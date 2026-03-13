@@ -1,5 +1,6 @@
 import { createMailbox } from './mailbox.ts'
 import { createTimers } from './timers.ts'
+import { createSupervisionPolicy } from './supervision.ts'
 import {
   STOP,
   DeadLetterTopic,
@@ -9,18 +10,34 @@ import {
   type ActorIdentity,
   type ActorRef,
   type ActorServices,
+  type EventStream,
   type EventTopic,
   type InternalActorHandle,
   type LifecycleEvent,
   type LogEvent,
   type LogLevel,
-  type SupervisionStrategy,
 } from './types.ts'
 
 // ─── Internal envelope: unifies user messages and lifecycle events ───
 type Envelope<M> =
   | { tag: 'message'; payload: M }
   | { tag: 'lifecycle'; event: LifecycleEvent }
+
+// ─── Internal logger: reduces repetition in the processing loop ───
+const createInternalLog = (source: string, eventStream: EventStream) => {
+  const emit = (level: LogLevel, message: string, data?: unknown): void => {
+    const logEvent: LogEvent = {
+      level, source, message, timestamp: Date.now(),
+      ...(data !== undefined ? { data } : {}),
+    }
+    eventStream.publish(LogTopic, logEvent)
+  }
+  return {
+    info:  (msg: string, data?: unknown) => emit('info', msg, data),
+    warn:  (msg: string, data?: unknown) => emit('warn', msg, data),
+    error: (msg: string, data?: unknown) => emit('error', msg, data),
+  }
+}
 
 /**
  * Creates an actor instance.
@@ -42,6 +59,9 @@ export const createActor = <M, S>(
   const children = new Map<string, InternalActorHandle>()
   let stopped = false
 
+  // Internal logger for lifecycle events
+  const log = createInternalLog(name, services.eventStream)
+
   // ─── Build the public ActorRef ───
   const ref: ActorRef<M> = {
     name,
@@ -49,18 +69,24 @@ export const createActor = <M, S>(
       if (!stopped) {
         mailbox.enqueue({ tag: 'message', payload: message })
       } else {
-        // Dead letter: message sent to a stopped actor
         services.eventStream.publish(DeadLetterTopic, {
-          recipient: name,
-          message,
-          timestamp: Date.now(),
+          recipient: name, message, timestamp: Date.now(),
         })
       }
     },
   }
 
   // ─── Internal: enqueue a lifecycle event into the unified mailbox ───
+  // During the stopping phase, events are collected into a separate buffer
+  // so that terminated events from children are still delivered to the
+  // lifecycle handler — even though the mailbox is closed.
+  const stoppingPhase: { events: LifecycleEvent[] | null } = { events: null }
+
   const enqueueLifecycle = (event: LifecycleEvent): void => {
+    if (stoppingPhase.events !== null) {
+      stoppingPhase.events.push(event)
+      return
+    }
     if (!stopped) {
       mailbox.enqueue({ tag: 'lifecycle', event })
     }
@@ -73,6 +99,13 @@ export const createActor = <M, S>(
     }
   })
 
+  // ─── Stop all children and clear the map ───
+  const stopAllChildren = async (): Promise<void> => {
+    const stopPromises = Array.from(children.values()).map((child) => child.stop())
+    await Promise.all(stopPromises)
+    children.clear()
+  }
+
   // ─── Build the context ───
   const context: ActorContext<M> = {
     self: ref,
@@ -83,7 +116,7 @@ export const createActor = <M, S>(
       childDef: ActorDef<CM, CS>,
       childInitialState: CS,
     ): ActorRef<CM> => {
-      const fullName = `${name}/${childName}`
+      const fullName = name ? `${name}/${childName}` : childName
 
       if (children.has(fullName)) {
         throw new Error(`Actor "${fullName}" already exists as a child of "${name}"`)
@@ -102,14 +135,11 @@ export const createActor = <M, S>(
       const childHandle = children.get(child.name)
       if (childHandle) {
         children.delete(child.name)
-        // Stop is async but we fire-and-forget here.
-        // The terminated notification will arrive through the watch service.
         childHandle.stop()
       }
     },
 
     watch: (target: ActorIdentity) => {
-      // If target is already dead (not in registry), deliver terminated immediately
       if (!services.registry.lookup(target.name)) {
         enqueueLifecycle({ type: 'terminated', ref: target, reason: 'stopped' })
         return
@@ -143,15 +173,12 @@ export const createActor = <M, S>(
       services.eventStream.unsubscribe(name, topic)
     },
 
-    // ─── Logging ───
+    // ─── Logging (exposed to actor handlers) ───
 
     log: (() => {
       const makeLogger = (level: LogLevel) => (message: string, data?: unknown): void => {
         const logEvent: LogEvent = {
-          level,
-          source: name,
-          message,
-          timestamp: Date.now(),
+          level, source: name, message, timestamp: Date.now(),
           ...(data !== undefined ? { data } : {}),
         }
         services.eventStream.publish(LogTopic, logEvent)
@@ -165,47 +192,8 @@ export const createActor = <M, S>(
     })(),
   }
 
-  // ─── Supervision helpers ───
-  const strategy: SupervisionStrategy = def.supervision ?? { type: 'stop' }
-
-  // Tracks failure timestamps for windowed retry limiting
-  const failureTimestamps: number[] = []
-
-  /**
-   * Determines whether a restart is still allowed under the configured limits.
-   * Returns true if the actor should restart, false if retries are exhausted.
-   */
-  const canRestart = (): boolean => {
-    if (strategy.type !== 'restart') return false
-
-    const maxRetries = strategy.maxRetries
-    if (maxRetries === undefined) return true // unlimited retries
-
-    const now = Date.now()
-    const windowMs = strategy.withinMs
-
-    if (windowMs !== undefined) {
-      // Sliding window: only count failures within the time window
-      const cutoff = now - windowMs
-      // Remove expired timestamps
-      while (failureTimestamps.length > 0 && failureTimestamps[0]! < cutoff) {
-        failureTimestamps.shift()
-      }
-    }
-
-    failureTimestamps.push(now)
-    return failureTimestamps.length <= maxRetries
-  }
-
-  /**
-   * Stops all children and clears the children map.
-   * Used during restart to give the actor a clean slate.
-   */
-  const stopAllChildren = async (): Promise<void> => {
-    const stopPromises = Array.from(children.values()).map((child) => child.stop())
-    await Promise.all(stopPromises)
-    children.clear()
-  }
+  // ─── Supervision policy ───
+  const policy = createSupervisionPolicy(def.supervision ?? { type: 'stop' })
 
   // Track termination reason for watchers
   let stopReason: 'stopped' | 'failed' = 'stopped'
@@ -222,11 +210,7 @@ export const createActor = <M, S>(
 
     // Register in the global registry now that setup is complete
     services.registry.register(name, ref as ActorRef<unknown>)
-
-    // Log: actor started
-    services.eventStream.publish(LogTopic, {
-      level: 'info', source: name, message: 'started', timestamp: Date.now(),
-    } satisfies LogEvent)
+    log.info('started')
 
     // Message processing loop
     while (true) {
@@ -240,100 +224,81 @@ export const createActor = <M, S>(
           const result = await def.handler(state, envelope.payload, context)
           state = result.state
 
-          // Auto-publish events returned from handler
           if (result.events) {
             for (const event of result.events) {
               services.eventStream.publish(name, event)
             }
           }
         } else if (envelope.tag === 'lifecycle') {
+          // Auto-remove terminated children from the children map
+          if (envelope.event.type === 'terminated') {
+            children.delete(envelope.event.ref.name)
+          }
+
           if (def.lifecycle) {
             const result = await def.lifecycle(state, envelope.event, context)
             state = result.state
           }
         }
       } catch (error: unknown) {
-        // ─── Supervision: apply strategy on failure ───
-        switch (strategy.type) {
-          case 'restart': {
-            if (canRestart()) {
-              // Log: restarting
-              services.eventStream.publish(LogTopic, {
-                level: 'warn', source: name, message: 'restarting',
-                data: { error }, timestamp: Date.now(),
-              } satisfies LogEvent)
+        const decision = policy.onFailure()
 
-              // Restart: cancel timers, stop children, reset state, re-run setup
-              timers.cancelAll()
-              await stopAllChildren()
-              state = initialState
-              if (def.setup) {
-                state = await def.setup(state, context)
-              }
-              // Continue processing — the failed message is dropped
-              continue
-            }
-            // Log: retries exhausted
-            services.eventStream.publish(LogTopic, {
-              level: 'error', source: name, message: 'failed (retries exhausted)',
-              data: { error }, timestamp: Date.now(),
-            } satisfies LogEvent)
+        if (decision === 'restart') {
+          log.warn('restarting', { error })
 
-            // Retries exhausted — stop with failure reason
-            stopReason = 'failed'
-            stopError = error
-            break
+          // Restart: cancel timers, stop children, reset state, re-run setup
+          timers.cancelAll()
+          await stopAllChildren()
+          state = initialState
+          if (def.setup) {
+            state = await def.setup(state, context)
           }
-
-          case 'stop':
-          default: {
-            // Log: failed
-            services.eventStream.publish(LogTopic, {
-              level: 'error', source: name, message: 'failed',
-              data: { error }, timestamp: Date.now(),
-            } satisfies LogEvent)
-
-            // Stop the actor — watchers will be notified with reason 'failed'
-            stopReason = 'failed'
-            stopError = error
-            break
-          }
+          continue
         }
 
-        // Strategy resolved to stop — exit the processing loop
+        // Decision is 'stop' — either strategy is stop, or retries exhausted
+        log.error('failed', { error })
+        stopReason = 'failed'
+        stopError = error
         break
       }
     }
 
     // ─── Stopping phase ───
 
-    // 1. Cancel all timers to prevent stale deliveries
+    // 1. Cancel all timers
     timers.cancelAll()
 
-    // 2. Stop all children (top-down) and wait for them
+    // 2. Stop all children (top-down), collecting their terminated events
+    stoppingPhase.events = []
     await stopAllChildren()
+    const collectedEvents = stoppingPhase.events
+    stoppingPhase.events = null
 
-    // 3. Fire the 'stopped' lifecycle event (self teardown)
+    // 3. Deliver collected terminated events from children
+    for (const event of collectedEvents) {
+      if (event.type === 'terminated') {
+        children.delete(event.ref.name)
+      }
+      if (def.lifecycle) {
+        const result = await def.lifecycle(state, event, context)
+        state = result.state
+      }
+    }
+
+    // 4. Fire the 'stopped' lifecycle event (self teardown)
     if (def.lifecycle) {
       const result = await def.lifecycle(state, { type: 'stopped' }, context)
       state = result.state
     }
 
-    // 4. Notify all watchers of this actor that it has terminated
+    // 5. Notify watchers
     services.watchService.notifyWatchers(name, stopReason, stopError)
 
-    // 5. Clean up all watches this actor holds (and remove forward map entry)
+    // 6. Clean up watches, subscriptions, registry
     services.watchService.cleanup(name)
-
-    // 6. Clean up all event stream subscriptions
     services.eventStream.cleanup(name)
-
-    // Log: stopped
-    services.eventStream.publish(LogTopic, {
-      level: 'info', source: name, message: 'stopped', timestamp: Date.now(),
-    } satisfies LogEvent)
-
-    // 7. Unregister from the global registry
+    log.info('stopped')
     services.registry.unregister(name)
   })()
 
