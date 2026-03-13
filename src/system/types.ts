@@ -84,6 +84,8 @@ export type EventStream = {
   readonly unsubscribe: (subscriberName: string, topic: EventTopic) => void
   /** Remove all subscriptions held BY this actor (called on stop). */
   readonly cleanup: (subscriberName: string) => void
+  /** Remove the forward-map entry for a topic entirely (used when a watched actor dies). */
+  readonly deleteTopic: (topic: EventTopic) => void
 }
 
 // ─── Actor Result (returned from handlers) ───
@@ -169,22 +171,9 @@ export type Registry = {
   readonly lookup: <T = unknown>(name: string) => ActorRef<T> | undefined
 }
 
-// ─── Watch Service (manages watcher subscriptions and notifications) ───
-export type WatchService = {
-  /** Register watcher interest in target. notify is called when target terminates. */
-  readonly watch: (watcherName: string, targetName: string, notify: (event: LifecycleEvent) => void) => void
-  /** Remove a specific watch. */
-  readonly unwatch: (watcherName: string, targetName: string) => void
-  /** Remove all watches held BY this actor (called when actor stops). */
-  readonly cleanup: (actorName: string) => void
-  /** Notify all watchers that this actor has terminated. */
-  readonly notifyWatchers: (actorName: string, reason: 'stopped' | 'failed', error?: unknown) => void
-}
-
 // ─── Actor Services (shared system-level infrastructure passed to every actor) ───
 export type ActorServices = {
   readonly registry: Registry
-  readonly watchService: WatchService
   readonly eventStream: EventStream
 }
 

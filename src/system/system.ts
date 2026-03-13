@@ -1,7 +1,6 @@
 import { createActor } from './actor.ts'
 import { createEventStream } from './eventstream.ts'
 import { createRegistry } from './registry.ts'
-import { createWatchService } from './watchservice.ts'
 import type {
   ActorContext,
   ActorDef,
@@ -22,10 +21,10 @@ export type SystemLifecycleHandler = (event: LifecycleEvent) => void
 /**
  * Creates the root actor system.
  *
- * The system IS the root actor — a regular actor created via `createActor`
- * with an empty name so that children receive unprefixed names.
- * This restores symmetry: every actor in the hierarchy, including
- * the root, is managed by the same code path.
+ * The system IS the root actor — a regular actor named 'system' created via
+ * `createActor`. Every actor in the hierarchy, including the root, is managed
+ * by the same code path. Children of the root receive 'system/'-prefixed
+ * names, exactly like children of any other actor — full naming symmetry.
  *
  * The `ActorSystem` facade delegates structural operations (`spawn`, `stop`)
  * to the root actor's context, captured synchronously during setup.
@@ -43,7 +42,6 @@ export const createActorSystem = (
   // Shared infrastructure
   const services: ActorServices = {
     registry: createRegistry(),
-    watchService: createWatchService(),
     eventStream: createEventStream(),
   }
 
@@ -68,8 +66,7 @@ export const createActorSystem = (
     },
   }
 
-  // Root actor uses empty name so children get unprefixed names
-  const rootHandle = createActor('', rootDef, null, services)
+  const rootHandle = createActor('system', rootDef, null, services)
 
   // rootContext is guaranteed to be set: createActor calls def.setup()
   // synchronously within the async IIFE before the first await yields.

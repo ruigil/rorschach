@@ -76,7 +76,7 @@ describe('Actor: basic message handling', () => {
     const system = createActorSystem()
     const ref = system.spawn('named-actor', def, null)
 
-    expect(ref.name).toBe('named-actor')
+    expect(ref.name).toBe('system/named-actor')
     await system.shutdown()
   })
 
@@ -97,7 +97,7 @@ describe('Actor: basic message handling', () => {
     ref.send('before')
     await tick()
 
-    system.stop({ name: 'drop-test' })
+    system.stop({ name: 'system/drop-test' })
     await tick()
 
     ref.send('after-stop')
@@ -178,7 +178,7 @@ describe('Actor: setup phase', () => {
     system.spawn('self-check', def, null)
     await tick()
 
-    expect(selfName!).toBe('self-check')
+    expect(selfName!).toBe('system/self-check')
     await system.shutdown()
   })
 })
@@ -260,7 +260,7 @@ describe('Actor: lifecycle state evolution', () => {
           return { state }
         }
         if (msg === 'stop-child') {
-          ctx.stop({ name: 'tracker/child' })
+          ctx.stop({ name: 'system/tracker/child' })
           return { state }
         }
         if (msg === 'snapshot') {

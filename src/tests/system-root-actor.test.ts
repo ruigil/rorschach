@@ -36,8 +36,8 @@ describe('System-as-root-actor: structural symmetry', () => {
     await tick()
 
     // Both top-level and nested use the same naming convention
-    expect(parent.name).toBe('parent')
-    expect(childNames[0]).toBe('parent/nested')
+    expect(parent.name).toBe('system/parent')
+    expect(childNames[0]).toBe('system/parent/nested')
 
     await system.shutdown()
   })
@@ -95,7 +95,7 @@ describe('System-as-root-actor: structural symmetry', () => {
     const names = terminated
       .map((e) => (e.type === 'terminated' ? e.ref.name : ''))
       .sort()
-    expect(names).toEqual(['a', 'b'])
+    expect(names).toEqual(['system/a', 'system/b'])
   })
 
   test('root lifecycle handler receives terminated events when children fail', async () => {
@@ -117,7 +117,7 @@ describe('System-as-root-actor: structural symmetry', () => {
     const terminated = events.filter((e) => e.type === 'terminated')
     expect(terminated.length).toBe(1)
     if (terminated[0]!.type === 'terminated') {
-      expect(terminated[0]!.ref.name).toBe('doomed')
+      expect(terminated[0]!.ref.name).toBe('system/doomed')
       expect(terminated[0]!.reason).toBe('failed')
     }
 
@@ -153,7 +153,7 @@ describe('System-as-root-actor: structural symmetry', () => {
     ref2.send('hello')
     await tick()
 
-    expect(ref2.name).toBe('worker')
+    expect(ref2.name).toBe('system/worker')
     expect(received).toEqual(['hello'])
 
     await system.shutdown()

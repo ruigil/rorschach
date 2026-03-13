@@ -162,7 +162,7 @@ describe('EventStream: pub-sub', () => {
     system.publish('topic', { value: 'alive' })
     await tick()
 
-    system.stop({ name: 'sub' })
+    system.stop({ name: 'system/sub' })
     await tick()
 
     system.publish('topic', { value: 'dead' })
@@ -202,7 +202,7 @@ describe('EventStream: handler-returned events', () => {
     const published: unknown[] = []
 
     // Subscribe to the producer actor's name as topic
-    system.subscribe('test-listener', 'producer', (event) => {
+    system.subscribe('test-listener', 'system/producer', (event) => {
       published.push(event)
     })
 
@@ -238,7 +238,7 @@ describe('EventStream: handler-returned events', () => {
     const system = createActorSystem()
     const published: unknown[] = []
 
-    system.subscribe('listener', 'actor', (event) => {
+    system.subscribe('listener', 'system/actor', (event) => {
       published.push(event)
     })
 
@@ -275,14 +275,14 @@ describe('Dead letters', () => {
     }, null)
     await tick()
 
-    system.stop({ name: 'target' })
+    system.stop({ name: 'system/target' })
     await tick()
 
     ref.send('lost-message')
     await tick()
 
     expect(deadLetters.length).toBe(1)
-    expect(deadLetters[0]!.recipient).toBe('target')
+    expect(deadLetters[0]!.recipient).toBe('system/target')
     expect(deadLetters[0]!.message).toBe('lost-message')
     expect(typeof deadLetters[0]!.timestamp).toBe('number')
     await system.shutdown()
@@ -327,11 +327,11 @@ describe('Logging', () => {
     }, null)
     await tick()
 
-    system.stop({ name: 'logger-test' })
+    system.stop({ name: 'system/logger-test' })
     await tick()
 
-    const startLog = logs.find((l) => l.source === 'logger-test' && l.message === 'started')
-    const stopLog = logs.find((l) => l.source === 'logger-test' && l.message === 'stopped')
+    const startLog = logs.find((l) => l.source === 'system/logger-test' && l.message === 'started')
+    const stopLog = logs.find((l) => l.source === 'system/logger-test' && l.message === 'stopped')
 
     expect(startLog).toBeDefined()
     expect(startLog!.level).toBe('info')
@@ -360,7 +360,7 @@ describe('Logging', () => {
     ref.send('trigger')
     await tick(100)
 
-    const failLog = logs.find((l) => l.source === 'failer' && l.level === 'error')
+    const failLog = logs.find((l) => l.source === 'system/failer' && l.level === 'error')
     expect(failLog).toBeDefined()
     expect(failLog!.message).toBe('failed')
     await system.shutdown()
@@ -390,7 +390,7 @@ describe('Logging', () => {
     ref.send('trigger')
     await tick(100)
 
-    const restartLog = logs.find((l) => l.source === 'restarter' && l.message === 'restarting')
+    const restartLog = logs.find((l) => l.source === 'system/restarter' && l.message === 'restarting')
     expect(restartLog).toBeDefined()
     expect(restartLog!.level).toBe('warn')
     await system.shutdown()
@@ -421,7 +421,7 @@ describe('Logging', () => {
     await tick()
 
     const customLog = logs.find(
-      (l) => l.source === 'custom-logger' && l.message === 'custom message',
+      (l) => l.source === 'system/custom-logger' && l.message === 'custom message',
     )
     expect(customLog).toBeDefined()
     expect(customLog!.level).toBe('info')
@@ -454,7 +454,7 @@ describe('Logging', () => {
     ref.send('log-all')
     await tick()
 
-    const actorLogs = logs.filter((l) => l.source === 'multi-log')
+    const actorLogs = logs.filter((l) => l.source === 'system/multi-log')
     const levels = actorLogs.map((l) => l.level)
 
     expect(levels).toContain('debug')

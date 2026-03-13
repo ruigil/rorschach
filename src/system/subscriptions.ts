@@ -4,9 +4,9 @@
  * Models the pattern: "subscriber S is interested in topic T, and should
  * be notified via callback C."
  *
- * Both EventStream and WatchService are instances of this pattern:
- *   - EventStream: topic → subscribers who want events
- *   - WatchService: watched actor → watchers who want termination notices
+ * The EventStream uses this for all pub-sub, including:
+ *   - Domain events: arbitrary string topics
+ *   - Actor lifecycle watches: `$watch:<actorName>` topics
  *
  * Forward map:  topic → Set<{ name, callback }>
  * Reverse map:  name  → Set<topics>

@@ -382,7 +382,7 @@ describe('Timers: lifecycle integration', () => {
     await tick()
 
     // Stop the actor before timers fire
-    system.stop({ name: 'stop-cancels' })
+    system.stop({ name: 'system/stop-cancels' })
     await tick(400)
 
     expect(received).toEqual([])

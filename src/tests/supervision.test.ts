@@ -62,7 +62,7 @@ describe('Supervision: stop strategy (default)', () => {
     const terminated = events.filter((e) => e.type === 'terminated')
     expect(terminated.length).toBe(1)
     if (terminated[0]!.type === 'terminated') {
-      expect(terminated[0]!.ref.name).toBe('stopper')
+      expect(terminated[0]!.ref.name).toBe('system/stopper')
       expect(terminated[0]!.reason).toBe('failed')
       expect(terminated[0]!.error).toBeInstanceOf(Error)
     }
@@ -324,7 +324,7 @@ describe('Supervision: child actor failure propagation via watch', () => {
     const terminated = parentEvents.filter((e) => e.type === 'terminated')
     expect(terminated.length).toBe(1)
     if (terminated[0]!.type === 'terminated') {
-      expect(terminated[0]!.ref.name).toBe('parent/fragile')
+      expect(terminated[0]!.ref.name).toBe('system/parent/fragile')
       expect(terminated[0]!.reason).toBe('failed')
       expect(terminated[0]!.error).toBeInstanceOf(Error)
       expect((terminated[0]!.error as Error).message).toBe('child boom')
@@ -345,7 +345,7 @@ describe('Supervision: child actor failure propagation via watch', () => {
         if (msg === 'spawn') {
           ctx.spawn('kid', childDef, null)
         } else if (msg === 'stop-child') {
-          ctx.stop({ name: 'parent/kid' })
+          ctx.stop({ name: 'system/parent/kid' })
         }
         return { state }
       },
@@ -368,7 +368,7 @@ describe('Supervision: child actor failure propagation via watch', () => {
     const terminated = parentEvents.filter((e) => e.type === 'terminated')
     expect(terminated.length).toBe(1)
     if (terminated[0]!.type === 'terminated') {
-      expect(terminated[0]!.ref.name).toBe('parent/kid')
+      expect(terminated[0]!.ref.name).toBe('system/parent/kid')
       expect(terminated[0]!.reason).toBe('stopped')
     }
 

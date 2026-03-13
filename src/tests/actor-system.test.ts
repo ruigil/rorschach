@@ -25,13 +25,13 @@ describe('Actor: lifecycle events', () => {
 
     await tick()
 
-    system.stop({ name: 'stopper' })
+    system.stop({ name: 'system/stopper' })
     await tick()
 
     const terminated = events.filter((e) => e.type === 'terminated')
     expect(terminated.length).toBe(1)
     if (terminated[0]!.type === 'terminated') {
-      expect(terminated[0]!.ref.name).toBe('stopper')
+      expect(terminated[0]!.ref.name).toBe('system/stopper')
       expect(terminated[0]!.reason).toBe('stopped')
     }
 
@@ -87,7 +87,7 @@ describe('Actor system', () => {
     }, null)
 
     expect(ref).toBeDefined()
-    expect(ref.name).toBe('test')
+    expect(ref.name).toBe('system/test')
     expect(typeof ref.send).toBe('function')
     await system.shutdown()
   })
@@ -174,7 +174,7 @@ describe('Actor system', () => {
     refB.send('b1')
     await tick()
 
-    system.stop({ name: 'a' })
+    system.stop({ name: 'system/a' })
     await tick()
 
     refA.send('a2') // should be dropped

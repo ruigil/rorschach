@@ -1,6 +1,7 @@
 import { createMailbox } from './mailbox.ts'
 import { createTimers } from './timers.ts'
 import { createSupervisionPolicy } from './supervision.ts'
+import { watchTopic } from './eventstream.ts'
 import {
   STOP,
   DeadLetterTopic,
@@ -47,13 +48,17 @@ const createInternalLog = (source: string, eventStream: EventStream) => {
  *
  * The actor's state is entirely enclosed in the async processing loop closure.
  * No external code can read or mutate it.
+ *
+ * @param childPrefix - Hierarchical prefix for child names. Defaults to `name`.
  */
 export const createActor = <M, S>(
   name: string,
   def: ActorDef<M, S>,
   initialState: S,
   services: ActorServices,
+  childPrefix?: string,
 ): InternalActorHandle<M> => {
+  const prefix = childPrefix ?? name
   // Single unified mailbox for both messages and lifecycle events
   const mailbox = createMailbox<Envelope<M>>()
   const children = new Map<string, InternalActorHandle>()
@@ -116,7 +121,7 @@ export const createActor = <M, S>(
       childDef: ActorDef<CM, CS>,
       childInitialState: CS,
     ): ActorRef<CM> => {
-      const fullName = name ? `${name}/${childName}` : childName
+      const fullName = prefix ? `${prefix}/${childName}` : childName
 
       if (children.has(fullName)) {
         throw new Error(`Actor "${fullName}" already exists as a child of "${name}"`)
@@ -126,7 +131,7 @@ export const createActor = <M, S>(
       children.set(fullName, childHandle as InternalActorHandle)
 
       // Parent implicitly watches its children
-      services.watchService.watch(name, fullName, enqueueLifecycle)
+      services.eventStream.subscribe(name, watchTopic(fullName), enqueueLifecycle as (event: unknown) => void)
 
       return childHandle.ref
     },
@@ -144,11 +149,11 @@ export const createActor = <M, S>(
         enqueueLifecycle({ type: 'terminated', ref: target, reason: 'stopped' })
         return
       }
-      services.watchService.watch(name, target.name, enqueueLifecycle)
+      services.eventStream.subscribe(name, watchTopic(target.name), enqueueLifecycle as (event: unknown) => void)
     },
 
     unwatch: (target: ActorIdentity) => {
-      services.watchService.unwatch(name, target.name)
+      services.eventStream.unsubscribe(name, watchTopic(target.name))
     },
 
     lookup: <T = unknown>(targetName: string) => {
@@ -293,11 +298,17 @@ export const createActor = <M, S>(
     }
 
     // 5. Notify watchers
-    services.watchService.notifyWatchers(name, stopReason, stopError)
+    const terminatedEvent: LifecycleEvent = {
+      type: 'terminated',
+      ref: { name },
+      reason: stopReason,
+      ...(stopError !== undefined ? { error: stopError } : {}),
+    }
+    services.eventStream.publish(watchTopic(name), terminatedEvent)
 
-    // 6. Clean up watches, subscriptions, registry
-    services.watchService.cleanup(name)
+    // 6. Clean up subscriptions (both domain and watch) + watch topic forward entry, registry
     services.eventStream.cleanup(name)
+    services.eventStream.deleteTopic(watchTopic(name))
     log.info('stopped')
     services.registry.unregister(name)
   })()

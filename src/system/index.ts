@@ -1,6 +1,7 @@
 // ─── Public API ───
 export { createActorSystem, type SystemLifecycleHandler } from './system.ts'
 export { ask } from './ask.ts'
+export { watchTopic } from './eventstream.ts'
 
 export {
   DeadLetterTopic,
@@ -24,5 +25,4 @@ export type {
   SupervisionStrategy,
   Timers,
   TimerKey,
-  WatchService,
 } from './types.ts'

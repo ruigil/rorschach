@@ -52,7 +52,7 @@ describe('Actor: parent-child hierarchy', () => {
     await tick()
 
     expect(childRef).not.toBeNull()
-    expect(childRef!.name).toBe('parent/worker')
+    expect(childRef!.name).toBe('system/parent/worker')
 
     parent.send({ type: 'send-to-child', text: 'hi child' })
     await tick()
@@ -84,7 +84,7 @@ describe('Actor: parent-child hierarchy', () => {
     await tick()
 
     expect(spawnedName).not.toBeNull()
-    expect(spawnedName!).toBe('root/nested')
+    expect(spawnedName!).toBe('system/root/nested')
     await system.shutdown()
   })
 
@@ -100,7 +100,7 @@ describe('Actor: parent-child hierarchy', () => {
         if (msg === 'spawn') {
           ctx.spawn('kid', childDef, null)
         } else if (msg === 'stop-child') {
-          ctx.stop({ name: 'parent/kid' })
+          ctx.stop({ name: 'system/parent/kid' })
         }
         return { state }
       },
@@ -123,7 +123,7 @@ describe('Actor: parent-child hierarchy', () => {
     const terminated = parentEvents.filter((e) => e.type === 'terminated')
     expect(terminated.length).toBe(1)
     if (terminated[0]!.type === 'terminated') {
-      expect(terminated[0]!.ref.name).toBe('parent/kid')
+      expect(terminated[0]!.ref.name).toBe('system/parent/kid')
       expect(terminated[0]!.reason).toBe('stopped')
     }
 
@@ -227,7 +227,7 @@ describe('Registry: actor lookup', () => {
 
     const senderDef: ActorDef<'go', null> = {
       handler: (state, _msg, ctx) => {
-        const target = ctx.lookup<string>('receiver')
+        const target = ctx.lookup<string>('system/receiver')
         if (target) {
           target.send('found you!')
         }
@@ -281,9 +281,9 @@ describe('Registry: actor lookup', () => {
     const checkerDef: ActorDef<'check-before' | 'check-after', null> = {
       handler: (state, msg, ctx) => {
         if (msg === 'check-before') {
-          foundBeforeStop = ctx.lookup('target') !== undefined
+          foundBeforeStop = ctx.lookup('system/target') !== undefined
         } else if (msg === 'check-after') {
-          foundAfterStop = ctx.lookup('target') !== undefined
+          foundAfterStop = ctx.lookup('system/target') !== undefined
         }
         return { state }
       },
@@ -297,7 +297,7 @@ describe('Registry: actor lookup', () => {
     checker.send('check-before')
     await tick()
 
-    system.stop({ name: 'target' })
+    system.stop({ name: 'system/target' })
     await tick(100)
 
     checker.send('check-after')
@@ -325,7 +325,7 @@ describe('Registry: actor lookup', () => {
 
     const observerDef: ActorDef<'check', null> = {
       handler: (state, _msg, ctx) => {
-        foundChild = ctx.lookup('parent/worker') !== undefined
+        foundChild = ctx.lookup('system/parent/worker') !== undefined
         return { state }
       },
     }
@@ -359,7 +359,7 @@ describe('Watch: cross-hierarchy observation', () => {
 
     const watcherDef: ActorDef<'start-watching', null> = {
       handler: (state, _msg, ctx) => {
-        ctx.watch({ name: 'target' })
+        ctx.watch({ name: 'system/target' })
         return { state }
       },
       lifecycle: (state, event) => {
@@ -377,13 +377,13 @@ describe('Watch: cross-hierarchy observation', () => {
     await tick()
 
     // Stop the target — watcher should receive terminated
-    system.stop({ name: 'target' })
+    system.stop({ name: 'system/target' })
     await tick(100)
 
     const terminated = watcherEvents.filter((e) => e.type === 'terminated')
     expect(terminated.length).toBe(1)
     if (terminated[0]!.type === 'terminated') {
-      expect(terminated[0]!.ref.name).toBe('target')
+      expect(terminated[0]!.ref.name).toBe('system/target')
       expect(terminated[0]!.reason).toBe('stopped')
     }
 
@@ -400,7 +400,7 @@ describe('Watch: cross-hierarchy observation', () => {
     const watcherDef: ActorDef<'watch-dead', null> = {
       handler: (state, _msg, ctx) => {
         // Target is already stopped — should get immediate terminated
-        ctx.watch({ name: 'target' })
+        ctx.watch({ name: 'system/target' })
         return { state }
       },
       lifecycle: (state, event) => {
@@ -414,7 +414,7 @@ describe('Watch: cross-hierarchy observation', () => {
     await tick()
 
     // Stop target first
-    system.stop({ name: 'target' })
+    system.stop({ name: 'system/target' })
     await tick(100)
 
     // Now spawn watcher and try to watch the dead target
@@ -427,7 +427,7 @@ describe('Watch: cross-hierarchy observation', () => {
     const terminated = watcherEvents.filter((e) => e.type === 'terminated')
     expect(terminated.length).toBe(1)
     if (terminated[0]!.type === 'terminated') {
-      expect(terminated[0]!.ref.name).toBe('target')
+      expect(terminated[0]!.ref.name).toBe('system/target')
       expect(terminated[0]!.reason).toBe('stopped')
     }
 
@@ -444,9 +444,9 @@ describe('Watch: cross-hierarchy observation', () => {
     const watcherDef: ActorDef<'watch' | 'unwatch', null> = {
       handler: (state, msg, ctx) => {
         if (msg === 'watch') {
-          ctx.watch({ name: 'target' })
+          ctx.watch({ name: 'system/target' })
         } else if (msg === 'unwatch') {
-          ctx.unwatch({ name: 'target' })
+          ctx.unwatch({ name: 'system/target' })
         }
         return { state }
       },
@@ -468,7 +468,7 @@ describe('Watch: cross-hierarchy observation', () => {
     await tick()
 
     // Stop target — watcher should NOT receive terminated (unwatched)
-    system.stop({ name: 'target' })
+    system.stop({ name: 'system/target' })
     await tick(100)
 
     const terminated = watcherEvents.filter((e) => e.type === 'terminated')
@@ -486,7 +486,7 @@ describe('Watch: cross-hierarchy observation', () => {
 
     const watcherDef: ActorDef<'watch', null> = {
       handler: (state, _msg, ctx) => {
-        ctx.watch({ name: 'target' })
+        ctx.watch({ name: 'system/target' })
         return { state }
       },
       lifecycle: (state, event) => {
@@ -505,7 +505,7 @@ describe('Watch: cross-hierarchy observation', () => {
     watcher.send('watch')
     await tick()
 
-    system.stop({ name: 'target' })
+    system.stop({ name: 'system/target' })
     await tick(100)
 
     const terminated = watcherEvents.filter((e) => e.type === 'terminated')
@@ -524,7 +524,7 @@ describe('Watch: cross-hierarchy observation', () => {
 
     const watcherDef: ActorDef<'watch', null> = {
       handler: (state, _msg, ctx) => {
-        ctx.watch({ name: 'target' })
+        ctx.watch({ name: 'system/target' })
         return { state }
       },
     }
@@ -537,11 +537,11 @@ describe('Watch: cross-hierarchy observation', () => {
     await tick()
 
     // Stop watcher first — its watches should be cleaned up
-    system.stop({ name: 'watcher' })
+    system.stop({ name: 'system/watcher' })
     await tick(100)
 
     // Stop target — should not cause any errors
-    system.stop({ name: 'target' })
+    system.stop({ name: 'system/target' })
     await tick(100)
 
     await system.shutdown()
@@ -557,7 +557,7 @@ describe('Watch: cross-hierarchy observation', () => {
 
     const makeWatcher = (events: LifecycleEvent[]): ActorDef<'watch', null> => ({
       handler: (state, _msg, ctx) => {
-        ctx.watch({ name: 'target' })
+        ctx.watch({ name: 'system/target' })
         return { state }
       },
       lifecycle: (state, event) => {
@@ -576,7 +576,7 @@ describe('Watch: cross-hierarchy observation', () => {
     watcherB.send('watch')
     await tick()
 
-    system.stop({ name: 'target' })
+    system.stop({ name: 'system/target' })
     await tick(100)
 
     const terminatedA = eventsA.filter((e) => e.type === 'terminated')
