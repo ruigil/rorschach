@@ -1,4 +1,3 @@
-import { createSubscriptionMap } from './subscriptions.ts'
 import type { EventStream, EventTopic } from './types.ts'
 
 /**
@@ -13,8 +12,11 @@ export const watchTopic = (actorName: string): EventTopic => `$watch:${actorName
 /**
  * Creates the system-level EventStream (pub-sub bus).
  *
- * Built on `createSubscriptionMap` — a forward/reverse map that enables
- * O(1) cleanup when a subscriber dies.
+ * Uses a forward/reverse map internally:
+ *   Forward:  topic → Set<{ name, callback }>
+ *   Reverse:  name  → Set<topics>
+ *
+ * The reverse map enables O(1) cleanup when a subscriber dies.
  *
  * This single bus handles both domain events (arbitrary string topics)
  * and actor lifecycle watches (`$watch:<actorName>` topics). The
@@ -26,10 +28,18 @@ export const watchTopic = (actorName: string): EventTopic => `$watch:${actorName
  * single-message-at-a-time processing guarantee.
  */
 export const createEventStream = (): EventStream => {
-  const subs = createSubscriptionMap<unknown>()
+  // topic → Set of { name, callback }
+  const forward = new Map<string, Set<{ name: string; callback: (value: unknown) => void }>>()
+  // name → Set of topics
+  const reverse = new Map<string, Set<string>>()
 
   const publish = (topic: EventTopic, event: unknown): void => {
-    subs.notify(topic, event)
+    const entries = forward.get(topic)
+    if (entries) {
+      for (const { callback } of entries) {
+        callback(event)
+      }
+    }
   }
 
   const subscribe = (
@@ -37,19 +47,67 @@ export const createEventStream = (): EventStream => {
     topic: EventTopic,
     deliver: (event: unknown) => void,
   ): void => {
-    subs.add(subscriberName, topic, deliver)
+    let entries = forward.get(topic)
+    if (!entries) {
+      entries = new Set()
+      forward.set(topic, entries)
+    }
+
+    // Idempotent: check if already subscribed
+    for (const entry of entries) {
+      if (entry.name === subscriberName) return
+    }
+    entries.add({ name: subscriberName, callback: deliver })
+
+    // Reverse map
+    let topics = reverse.get(subscriberName)
+    if (!topics) {
+      topics = new Set()
+      reverse.set(subscriberName, topics)
+    }
+    topics.add(topic)
   }
 
   const unsubscribe = (subscriberName: string, topic: EventTopic): void => {
-    subs.remove(subscriberName, topic)
+    const entries = forward.get(topic)
+    if (entries) {
+      for (const entry of entries) {
+        if (entry.name === subscriberName) {
+          entries.delete(entry)
+          break
+        }
+      }
+      if (entries.size === 0) forward.delete(topic)
+    }
+
+    const topics = reverse.get(subscriberName)
+    if (topics) {
+      topics.delete(topic)
+      if (topics.size === 0) reverse.delete(subscriberName)
+    }
   }
 
   const cleanup = (subscriberName: string): void => {
-    subs.cleanup(subscriberName)
+    const topics = reverse.get(subscriberName)
+    if (topics) {
+      for (const topic of topics) {
+        const entries = forward.get(topic)
+        if (entries) {
+          for (const entry of entries) {
+            if (entry.name === subscriberName) {
+              entries.delete(entry)
+              break
+            }
+          }
+          if (entries.size === 0) forward.delete(topic)
+        }
+      }
+      reverse.delete(subscriberName)
+    }
   }
 
   const deleteTopic = (topic: EventTopic): void => {
-    subs.deleteTopic(topic)
+    forward.delete(topic)
   }
 
   return { publish, subscribe, unsubscribe, cleanup, deleteTopic }

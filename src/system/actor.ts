@@ -180,6 +180,55 @@ export const createActor = <M, S>(
   let stopReason: 'stopped' | 'failed' = 'stopped'
   let stopError: unknown = undefined
 
+  // ─── Stopping phase ───
+  const runShutdownSequence = async (state: S) => {
+    // 1. Cancel all timers
+    timers.cancelAll()
+
+    // 2. Unsubscribe from child watch topics — terminated events will be
+    //    delivered directly below via the StopResult returned by child.stop().
+    for (const [childName] of children) {
+      services.eventStream.unsubscribe(name, watchTopic(childName))
+    }
+
+    // 3. Stop each child and deliver its terminated event directly
+    for (const [childName, child] of children) {
+      const { reason, error } = await child.stop()
+      if (def.lifecycle) {
+        const event: LifecycleEvent = {
+          type: 'terminated',
+          ref: { name: childName },
+          reason,
+          ...(error !== undefined ? { error } : {}),
+        }
+        const result = await def.lifecycle(state, event, context)
+        state = result.state
+      }
+    }
+    children.clear()
+
+    // 4. Fire the 'stopped' lifecycle event (self teardown)
+    if (def.lifecycle) {
+      const result = await def.lifecycle(state, { type: 'stopped' }, context)
+      state = result.state
+    }
+
+    // 5. Notify watchers
+    const terminatedEvent: LifecycleEvent = {
+      type: 'terminated',
+      ref: { name },
+      reason: stopReason,
+      ...(stopError !== undefined ? { error: stopError } : {}),
+    }
+    services.eventStream.publish(watchTopic(name), terminatedEvent)
+
+    // 6. Clean up subscriptions (both domain and watch) + watch topic forward entry, registry
+    services.eventStream.cleanup(name)
+    services.eventStream.deleteTopic(watchTopic(name))
+    log.info('stopped')
+    services.registry.unregister(name)
+  }
+
   // ─── The async processing loop ───
   const runningPromise = (async () => {
     let state = initialState
@@ -246,52 +295,7 @@ export const createActor = <M, S>(
     }
 
     // ─── Stopping phase ───
-
-    // 1. Cancel all timers
-    timers.cancelAll()
-
-    // 2. Unsubscribe from child watch topics — terminated events will be
-    //    delivered directly below via the StopResult returned by child.stop().
-    for (const [childName] of children) {
-      services.eventStream.unsubscribe(name, watchTopic(childName))
-    }
-
-    // 3. Stop each child and deliver its terminated event directly
-    for (const [childName, child] of children) {
-      const { reason, error } = await child.stop()
-      if (def.lifecycle) {
-        const event: LifecycleEvent = {
-          type: 'terminated',
-          ref: { name: childName },
-          reason,
-          ...(error !== undefined ? { error } : {}),
-        }
-        const result = await def.lifecycle(state, event, context)
-        state = result.state
-      }
-    }
-    children.clear()
-
-    // 4. Fire the 'stopped' lifecycle event (self teardown)
-    if (def.lifecycle) {
-      const result = await def.lifecycle(state, { type: 'stopped' }, context)
-      state = result.state
-    }
-
-    // 5. Notify watchers
-    const terminatedEvent: LifecycleEvent = {
-      type: 'terminated',
-      ref: { name },
-      reason: stopReason,
-      ...(stopError !== undefined ? { error: stopError } : {}),
-    }
-    services.eventStream.publish(watchTopic(name), terminatedEvent)
-
-    // 6. Clean up subscriptions (both domain and watch) + watch topic forward entry, registry
-    services.eventStream.cleanup(name)
-    services.eventStream.deleteTopic(watchTopic(name))
-    log.info('stopped')
-    services.registry.unregister(name)
+    await runShutdownSequence(state)
   })()
 
   return {
