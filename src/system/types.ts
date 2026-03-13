@@ -39,15 +39,11 @@ export type ActorIdentity = { readonly name: string }
 export type SupervisionStrategy =
   | { type: 'stop' }
   | { type: 'restart'; maxRetries?: number; withinMs?: number }
-  | { type: 'escalate' }
 
 // ─── Lifecycle Events ───
 export type LifecycleEvent =
-  | { type: 'started' }
   | { type: 'stopped' }
-  | { type: 'child-started'; child: ActorIdentity }
-  | { type: 'child-stopped'; child: ActorIdentity }
-  | { type: 'child-failed'; child: ActorIdentity; error: unknown }
+  | { type: 'terminated'; ref: ActorIdentity; reason: 'stopped' | 'failed'; error?: unknown }
 
 // ─── Actor Result (returned from handlers) ───
 export type ActorResult<S> = { state: S }
@@ -62,6 +58,12 @@ export type ActorContext<M> = {
     initialState: CS,
   ) => ActorRef<CM>
   readonly stop: (child: ActorIdentity) => void
+  /** Register interest in another actor's termination. Delivers a `terminated` lifecycle event when the target dies. */
+  readonly watch: (target: ActorIdentity) => void
+  /** Remove a previously registered watch. */
+  readonly unwatch: (target: ActorIdentity) => void
+  /** Look up an actor ref by its full hierarchical name. Returns undefined if not registered. */
+  readonly lookup: <T = unknown>(name: string) => ActorRef<T> | undefined
 }
 
 // ─── Actor Definition (behavior specification) ───
@@ -76,7 +78,7 @@ export type ActorDef<M, S> = {
     context: ActorContext<M>,
   ) => Promise<ActorResult<S>> | ActorResult<S>
 
-  /** Reacts to lifecycle events (stopped, child-started, child-stopped, child-failed). */
+  /** Reacts to lifecycle events (stopped, terminated). */
   lifecycle?: (
     state: S,
     event: LifecycleEvent,
@@ -87,7 +89,6 @@ export type ActorDef<M, S> = {
    * Supervision strategy applied when this actor's message handler throws.
    * - 'stop'     — stop the actor (default if omitted)
    * - 'restart'  — re-run setup with initial state, optionally bounded by maxRetries/withinMs
-   * - 'escalate' — notify parent of failure and stop the actor
    */
   supervision?: SupervisionStrategy
 }
@@ -96,6 +97,25 @@ export type ActorDef<M, S> = {
 export type InternalActorHandle<M = unknown> = {
   readonly ref: ActorRef<M>
   readonly stop: () => Promise<void>
+}
+
+// ─── Actor Services (shared system-level infrastructure passed to every actor) ───
+export type ActorServices = {
+  readonly registry: {
+    readonly register: (name: string, ref: ActorRef<unknown>) => void
+    readonly unregister: (name: string) => void
+    readonly lookup: <T = unknown>(name: string) => ActorRef<T> | undefined
+  }
+  readonly watchService: {
+    /** Register watcher interest in target. notify is called when target terminates. */
+    readonly watch: (watcherName: string, targetName: string, notify: (event: LifecycleEvent) => void) => void
+    /** Remove a specific watch. */
+    readonly unwatch: (watcherName: string, targetName: string) => void
+    /** Remove all watches held BY this actor (called when actor stops). */
+    readonly cleanup: (actorName: string) => void
+    /** Notify all watchers that this actor has terminated. */
+    readonly notifyWatchers: (actorName: string, reason: 'stopped' | 'failed', error?: unknown) => void
+  }
 }
 
 // ─── Actor System ───

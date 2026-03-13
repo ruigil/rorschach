@@ -273,26 +273,7 @@ describe('Actor: setup phase', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('Actor: lifecycle events', () => {
-  test('system receives child-started when actor is spawned', async () => {
-    const events: LifecycleEvent[] = []
-    const system = createActorSystem((e) => events.push(e))
-
-    system.spawn('starter', {
-      handler: (state: null) => ({ state }),
-    }, null)
-
-    await tick()
-
-    const started = events.filter((e) => e.type === 'child-started')
-    expect(started.length).toBe(1)
-    if (started[0]!.type === 'child-started') {
-      expect(started[0]!.child.name).toBe('starter')
-    }
-
-    await system.shutdown()
-  })
-
-  test('system receives child-stopped when actor is stopped', async () => {
+  test('system receives terminated event when actor stops', async () => {
     const events: LifecycleEvent[] = []
     const system = createActorSystem((e) => events.push(e))
 
@@ -305,10 +286,11 @@ describe('Actor: lifecycle events', () => {
     system.stop({ name: 'stopper' })
     await tick()
 
-    const stopped = events.filter((e) => e.type === 'child-stopped')
-    expect(stopped.length).toBe(1)
-    if (stopped[0]!.type === 'child-stopped') {
-      expect(stopped[0]!.child.name).toBe('stopper')
+    const terminated = events.filter((e) => e.type === 'terminated')
+    expect(terminated.length).toBe(1)
+    if (terminated[0]!.type === 'terminated') {
+      expect(terminated[0]!.ref.name).toBe('stopper')
+      expect(terminated[0]!.reason).toBe('stopped')
     }
 
     await system.shutdown()
@@ -335,7 +317,7 @@ describe('Actor: lifecycle events', () => {
     expect(stoppedReceived).toBe(true)
   })
 
-  test('lifecycle events arrive in order: started then stopped', async () => {
+  test('system receives terminated event on shutdown', async () => {
     const eventTypes: string[] = []
     const system = createActorSystem((e) => eventTypes.push(e.type))
 
@@ -346,7 +328,7 @@ describe('Actor: lifecycle events', () => {
     await tick()
     await system.shutdown()
 
-    expect(eventTypes).toEqual(['child-started', 'child-stopped'])
+    expect(eventTypes).toEqual(['terminated'])
   })
 })
 
@@ -427,41 +409,7 @@ describe('Actor: parent-child hierarchy', () => {
     await system.shutdown()
   })
 
-  test('parent receives child-started lifecycle event when spawning a child', async () => {
-    const parentEvents: LifecycleEvent[] = []
-
-    const childDef: ActorDef<string, null> = {
-      handler: (state) => ({ state }),
-    }
-
-    const parentDef: ActorDef<'spawn', null> = {
-      handler: (state, _msg, ctx) => {
-        ctx.spawn('kid', childDef, null)
-        return { state }
-      },
-      lifecycle: (state, event) => {
-        parentEvents.push(event)
-        return { state }
-      },
-    }
-
-    const system = createActorSystem()
-    const ref = system.spawn('parent', parentDef, null)
-    await tick()
-
-    ref.send('spawn')
-    await tick(100)
-
-    const childStarted = parentEvents.filter((e) => e.type === 'child-started')
-    expect(childStarted.length).toBe(1)
-    if (childStarted[0]!.type === 'child-started') {
-      expect(childStarted[0]!.child.name).toBe('parent/kid')
-    }
-
-    await system.shutdown()
-  })
-
-  test('parent receives child-stopped lifecycle event when child is stopped', async () => {
+  test('parent receives terminated event via implicit watch when child stops', async () => {
     const parentEvents: LifecycleEvent[] = []
 
     const childDef: ActorDef<string, null> = {
@@ -493,10 +441,11 @@ describe('Actor: parent-child hierarchy', () => {
     ref.send('stop-child')
     await tick(100)
 
-    const childStopped = parentEvents.filter((e) => e.type === 'child-stopped')
-    expect(childStopped.length).toBe(1)
-    if (childStopped[0]!.type === 'child-stopped') {
-      expect(childStopped[0]!.child.name).toBe('parent/kid')
+    const terminated = parentEvents.filter((e) => e.type === 'terminated')
+    expect(terminated.length).toBe(1)
+    if (terminated[0]!.type === 'terminated') {
+      expect(terminated[0]!.ref.name).toBe('parent/kid')
+      expect(terminated[0]!.reason).toBe('stopped')
     }
 
     await system.shutdown()
@@ -788,19 +737,23 @@ describe('Actor: async handler support', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('Actor: lifecycle state evolution', () => {
-  test('lifecycle handler can evolve state', async () => {
+  test('lifecycle handler can evolve state from terminated events', async () => {
     const snapshots: string[][] = []
 
     const childDef: ActorDef<string, null> = {
       handler: (state) => ({ state }),
     }
 
-    type Msg = 'spawn' | 'snapshot'
+    type Msg = 'spawn' | 'stop-child' | 'snapshot'
 
     const parentDef: ActorDef<Msg, { events: string[] }> = {
       handler: (state, msg, ctx) => {
         if (msg === 'spawn') {
           ctx.spawn('child', childDef, null)
+          return { state }
+        }
+        if (msg === 'stop-child') {
+          ctx.stop({ name: 'tracker/child' })
           return { state }
         }
         if (msg === 'snapshot') {
@@ -821,11 +774,392 @@ describe('Actor: lifecycle state evolution', () => {
     ref.send('spawn')
     await tick(100)
 
+    ref.send('stop-child')
+    await tick(100)
+
     ref.send('snapshot')
     await tick(100)
 
     expect(snapshots.length).toBe(1)
-    expect(snapshots[0]).toContain('child-started')
+    expect(snapshots[0]).toContain('terminated')
+
+    await system.shutdown()
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════
+// Registry: Actor Lookup
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Registry: actor lookup', () => {
+  test('actor can look up another actor by name', async () => {
+    const received: string[] = []
+
+    const receiverDef: ActorDef<string, null> = {
+      handler: (state, msg) => {
+        received.push(msg)
+        return { state }
+      },
+    }
+
+    const senderDef: ActorDef<'go', null> = {
+      handler: (state, _msg, ctx) => {
+        const target = ctx.lookup<string>('receiver')
+        if (target) {
+          target.send('found you!')
+        }
+        return { state }
+      },
+    }
+
+    const system = createActorSystem()
+    system.spawn('receiver', receiverDef, null)
+    await tick()
+
+    const sender = system.spawn('sender', senderDef, null)
+    await tick()
+
+    sender.send('go')
+    await tick()
+
+    expect(received).toEqual(['found you!'])
+    await system.shutdown()
+  })
+
+  test('lookup returns undefined for non-existent actors', async () => {
+    let found = false
+
+    const def: ActorDef<'check', null> = {
+      handler: (state, _msg, ctx) => {
+        found = ctx.lookup('nobody') !== undefined
+        return { state }
+      },
+    }
+
+    const system = createActorSystem()
+    const ref = system.spawn('checker', def, null)
+    await tick()
+
+    ref.send('check')
+    await tick()
+
+    expect(found).toBe(false)
+    await system.shutdown()
+  })
+
+  test('actor is unregistered after stopping', async () => {
+    let foundBeforeStop = false
+    let foundAfterStop = true // start true, expect it to become false
+
+    const targetDef: ActorDef<string, null> = {
+      handler: (state) => ({ state }),
+    }
+
+    const checkerDef: ActorDef<'check-before' | 'check-after', null> = {
+      handler: (state, msg, ctx) => {
+        if (msg === 'check-before') {
+          foundBeforeStop = ctx.lookup('target') !== undefined
+        } else if (msg === 'check-after') {
+          foundAfterStop = ctx.lookup('target') !== undefined
+        }
+        return { state }
+      },
+    }
+
+    const system = createActorSystem()
+    system.spawn('target', targetDef, null)
+    const checker = system.spawn('checker', checkerDef, null)
+    await tick()
+
+    checker.send('check-before')
+    await tick()
+
+    system.stop({ name: 'target' })
+    await tick(100)
+
+    checker.send('check-after')
+    await tick()
+
+    expect(foundBeforeStop).toBe(true)
+    expect(foundAfterStop).toBe(false)
+    await system.shutdown()
+  })
+
+  test('child actors are discoverable via lookup with hierarchical name', async () => {
+    let foundChild = false
+
+    const childDef: ActorDef<string, null> = {
+      handler: (state) => ({ state }),
+    }
+
+    const parentDef: ActorDef<'spawn', null> = {
+      setup: (state, ctx) => {
+        ctx.spawn('worker', childDef, null)
+        return state
+      },
+      handler: (state) => ({ state }),
+    }
+
+    const observerDef: ActorDef<'check', null> = {
+      handler: (state, _msg, ctx) => {
+        foundChild = ctx.lookup('parent/worker') !== undefined
+        return { state }
+      },
+    }
+
+    const system = createActorSystem()
+    system.spawn('parent', parentDef, null)
+    await tick(100)
+
+    const observer = system.spawn('observer', observerDef, null)
+    await tick()
+
+    observer.send('check')
+    await tick()
+
+    expect(foundChild).toBe(true)
+    await system.shutdown()
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════
+// Watch: Cross-Hierarchy Observation
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Watch: cross-hierarchy observation', () => {
+  test('actor can watch an unrelated actor and receive terminated event', async () => {
+    const watcherEvents: LifecycleEvent[] = []
+
+    const targetDef: ActorDef<string, null> = {
+      handler: (state) => ({ state }),
+    }
+
+    const watcherDef: ActorDef<'start-watching', null> = {
+      handler: (state, _msg, ctx) => {
+        ctx.watch({ name: 'target' })
+        return { state }
+      },
+      lifecycle: (state, event) => {
+        watcherEvents.push(event)
+        return { state }
+      },
+    }
+
+    const system = createActorSystem()
+    system.spawn('target', targetDef, null)
+    const watcher = system.spawn('watcher', watcherDef, null)
+    await tick()
+
+    watcher.send('start-watching')
+    await tick()
+
+    // Stop the target — watcher should receive terminated
+    system.stop({ name: 'target' })
+    await tick(100)
+
+    const terminated = watcherEvents.filter((e) => e.type === 'terminated')
+    expect(terminated.length).toBe(1)
+    if (terminated[0]!.type === 'terminated') {
+      expect(terminated[0]!.ref.name).toBe('target')
+      expect(terminated[0]!.reason).toBe('stopped')
+    }
+
+    await system.shutdown()
+  })
+
+  test('watching an already-dead actor delivers terminated immediately', async () => {
+    const watcherEvents: LifecycleEvent[] = []
+
+    const targetDef: ActorDef<string, null> = {
+      handler: (state) => ({ state }),
+    }
+
+    const watcherDef: ActorDef<'watch-dead', null> = {
+      handler: (state, _msg, ctx) => {
+        // Target is already stopped — should get immediate terminated
+        ctx.watch({ name: 'target' })
+        return { state }
+      },
+      lifecycle: (state, event) => {
+        watcherEvents.push(event)
+        return { state }
+      },
+    }
+
+    const system = createActorSystem()
+    system.spawn('target', targetDef, null)
+    await tick()
+
+    // Stop target first
+    system.stop({ name: 'target' })
+    await tick(100)
+
+    // Now spawn watcher and try to watch the dead target
+    const watcher = system.spawn('watcher', watcherDef, null)
+    await tick()
+
+    watcher.send('watch-dead')
+    await tick()
+
+    const terminated = watcherEvents.filter((e) => e.type === 'terminated')
+    expect(terminated.length).toBe(1)
+    if (terminated[0]!.type === 'terminated') {
+      expect(terminated[0]!.ref.name).toBe('target')
+      expect(terminated[0]!.reason).toBe('stopped')
+    }
+
+    await system.shutdown()
+  })
+
+  test('unwatch prevents further terminated notifications', async () => {
+    const watcherEvents: LifecycleEvent[] = []
+
+    const targetDef: ActorDef<string, null> = {
+      handler: (state) => ({ state }),
+    }
+
+    const watcherDef: ActorDef<'watch' | 'unwatch', null> = {
+      handler: (state, msg, ctx) => {
+        if (msg === 'watch') {
+          ctx.watch({ name: 'target' })
+        } else if (msg === 'unwatch') {
+          ctx.unwatch({ name: 'target' })
+        }
+        return { state }
+      },
+      lifecycle: (state, event) => {
+        watcherEvents.push(event)
+        return { state }
+      },
+    }
+
+    const system = createActorSystem()
+    system.spawn('target', targetDef, null)
+    const watcher = system.spawn('watcher', watcherDef, null)
+    await tick()
+
+    watcher.send('watch')
+    await tick()
+
+    watcher.send('unwatch')
+    await tick()
+
+    // Stop target — watcher should NOT receive terminated (unwatched)
+    system.stop({ name: 'target' })
+    await tick(100)
+
+    const terminated = watcherEvents.filter((e) => e.type === 'terminated')
+    expect(terminated.length).toBe(0)
+
+    await system.shutdown()
+  })
+
+  test('watch is idempotent — duplicate watch does not cause double notification', async () => {
+    const watcherEvents: LifecycleEvent[] = []
+
+    const targetDef: ActorDef<string, null> = {
+      handler: (state) => ({ state }),
+    }
+
+    const watcherDef: ActorDef<'watch', null> = {
+      handler: (state, _msg, ctx) => {
+        ctx.watch({ name: 'target' })
+        return { state }
+      },
+      lifecycle: (state, event) => {
+        watcherEvents.push(event)
+        return { state }
+      },
+    }
+
+    const system = createActorSystem()
+    system.spawn('target', targetDef, null)
+    const watcher = system.spawn('watcher', watcherDef, null)
+    await tick()
+
+    // Watch twice
+    watcher.send('watch')
+    watcher.send('watch')
+    await tick()
+
+    system.stop({ name: 'target' })
+    await tick(100)
+
+    const terminated = watcherEvents.filter((e) => e.type === 'terminated')
+    expect(terminated.length).toBe(1)
+
+    await system.shutdown()
+  })
+
+  test('watches are cleaned up when the watcher itself stops', async () => {
+    // This test verifies no errors/dangling refs when watcher dies before target
+    const system = createActorSystem()
+
+    const targetDef: ActorDef<string, null> = {
+      handler: (state) => ({ state }),
+    }
+
+    const watcherDef: ActorDef<'watch', null> = {
+      handler: (state, _msg, ctx) => {
+        ctx.watch({ name: 'target' })
+        return { state }
+      },
+    }
+
+    system.spawn('target', targetDef, null)
+    const watcher = system.spawn('watcher', watcherDef, null)
+    await tick()
+
+    watcher.send('watch')
+    await tick()
+
+    // Stop watcher first — its watches should be cleaned up
+    system.stop({ name: 'watcher' })
+    await tick(100)
+
+    // Stop target — should not cause any errors
+    system.stop({ name: 'target' })
+    await tick(100)
+
+    await system.shutdown()
+  })
+
+  test('multiple actors can watch the same target', async () => {
+    const eventsA: LifecycleEvent[] = []
+    const eventsB: LifecycleEvent[] = []
+
+    const targetDef: ActorDef<string, null> = {
+      handler: (state) => ({ state }),
+    }
+
+    const makeWatcher = (events: LifecycleEvent[]): ActorDef<'watch', null> => ({
+      handler: (state, _msg, ctx) => {
+        ctx.watch({ name: 'target' })
+        return { state }
+      },
+      lifecycle: (state, event) => {
+        events.push(event)
+        return { state }
+      },
+    })
+
+    const system = createActorSystem()
+    system.spawn('target', targetDef, null)
+    const watcherA = system.spawn('watcher-a', makeWatcher(eventsA), null)
+    const watcherB = system.spawn('watcher-b', makeWatcher(eventsB), null)
+    await tick()
+
+    watcherA.send('watch')
+    watcherB.send('watch')
+    await tick()
+
+    system.stop({ name: 'target' })
+    await tick(100)
+
+    const terminatedA = eventsA.filter((e) => e.type === 'terminated')
+    const terminatedB = eventsB.filter((e) => e.type === 'terminated')
+    expect(terminatedA.length).toBe(1)
+    expect(terminatedB.length).toBe(1)
 
     await system.shutdown()
   })

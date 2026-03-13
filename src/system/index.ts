@@ -1,5 +1,5 @@
 // ─── Public API ───
-export { createActorSystem, type SystemLifecycleHandler} from './system.ts'
+export { createActorSystem, type SystemLifecycleHandler } from './system.ts'
 export { ask } from './ask.ts'
 
 export type {

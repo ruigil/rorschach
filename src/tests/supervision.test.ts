@@ -58,10 +58,14 @@ describe('Supervision: stop strategy (default)', () => {
 
     await tick(200)
 
-    // The actor should have stopped — we expect child-started then child-stopped
-    const types = events.map((e) => e.type)
-    expect(types).toContain('child-started')
-    expect(types).toContain('child-stopped')
+    // The actor should have terminated — we expect a terminated event with reason 'failed'
+    const terminated = events.filter((e) => e.type === 'terminated')
+    expect(terminated.length).toBe(1)
+    if (terminated[0]!.type === 'terminated') {
+      expect(terminated[0]!.ref.name).toBe('stopper')
+      expect(terminated[0]!.reason).toBe('failed')
+      expect(terminated[0]!.error).toBeInstanceOf(Error)
+    }
 
     await system.shutdown()
   })
@@ -227,8 +231,10 @@ describe('Supervision: restart with maxRetries', () => {
     expect(setupCount).toBe(3)
     expect(stoppedCalled).toBe(true)
 
-    // Should have child-failed event
-    const failedEvents = events.filter((e) => e.type === 'child-failed')
+    // Should have terminated event with reason 'failed'
+    const failedEvents = events.filter(
+      (e) => e.type === 'terminated' && e.reason === 'failed',
+    )
     expect(failedEvents.length).toBe(1)
 
     await system.shutdown()
@@ -270,77 +276,12 @@ describe('Supervision: restart with maxRetries', () => {
   })
 })
 
-describe('Supervision: escalate strategy', () => {
-  test('parent receives child-failed event on escalation', async () => {
-    const events: LifecycleEvent[] = []
-
-    const system = createActorSystem((e) => events.push(e))
-
-    const ref = system.spawn(
-      'escalator',
-      failingActorDef({
-        supervision: { type: 'escalate' },
-      }),
-      { count: 0 },
-    )
-
-    await tick()
-
-    ref.send('POISON')
-
-    await tick(200)
-
-    const failedEvents = events.filter((e) => e.type === 'child-failed')
-    expect(failedEvents.length).toBe(1)
-
-    const failedEvent = failedEvents[0]!
-    expect(failedEvent.type).toBe('child-failed')
-    if (failedEvent.type === 'child-failed') {
-      expect(failedEvent.child.name).toBe('escalator')
-      expect(failedEvent.error).toBeInstanceOf(Error)
-      expect((failedEvent.error as Error).message).toBe('Poisoned!')
-    }
-
-    await system.shutdown()
-  })
-
-  test('actor stops after escalating', async () => {
-    let stoppedCalled = false
-    const received: string[] = []
-
-    const system = createActorSystem()
-
-    const ref = system.spawn(
-      'escalate-then-stop',
-      failingActorDef({
-        supervision: { type: 'escalate' },
-        onStopped: () => { stoppedCalled = true },
-        onMessage: (m) => received.push(m),
-      }),
-      { count: 0 },
-    )
-
-    await tick()
-
-    ref.send('before')
-    ref.send('POISON')
-    ref.send('after')
-
-    await tick(200)
-
-    expect(received).toEqual(['before'])
-    expect(stoppedCalled).toBe(true)
-
-    await system.shutdown()
-  })
-})
-
-describe('Supervision: child actor failure propagation', () => {
-  test('parent actor receives child-failed lifecycle event from escalating child', async () => {
+describe('Supervision: child actor failure propagation via watch', () => {
+  test('parent receives terminated event when child fails (stop strategy)', async () => {
     const parentEvents: LifecycleEvent[] = []
 
     const childDef: ActorDef<string, {}> = {
-      supervision: { type: 'escalate' },
+      // Default stop strategy — child stops on failure
       handler: (_state, message) => {
         if (message === 'POISON') throw new Error('child boom')
         return { state: {} }
@@ -380,8 +321,56 @@ describe('Supervision: child actor failure propagation', () => {
     parent.send({ type: 'fail-child' })
     await tick(200)
 
-    const childFailed = parentEvents.filter((e) => e.type === 'child-failed')
-    expect(childFailed.length).toBe(1)
+    const terminated = parentEvents.filter((e) => e.type === 'terminated')
+    expect(terminated.length).toBe(1)
+    if (terminated[0]!.type === 'terminated') {
+      expect(terminated[0]!.ref.name).toBe('parent/fragile')
+      expect(terminated[0]!.reason).toBe('failed')
+      expect(terminated[0]!.error).toBeInstanceOf(Error)
+      expect((terminated[0]!.error as Error).message).toBe('child boom')
+    }
+
+    await system.shutdown()
+  })
+
+  test('parent receives terminated event when child is gracefully stopped', async () => {
+    const parentEvents: LifecycleEvent[] = []
+
+    const childDef: ActorDef<string, null> = {
+      handler: (state) => ({ state }),
+    }
+
+    const parentDef: ActorDef<'spawn' | 'stop-child', null> = {
+      handler: (state, msg, ctx) => {
+        if (msg === 'spawn') {
+          ctx.spawn('kid', childDef, null)
+        } else if (msg === 'stop-child') {
+          ctx.stop({ name: 'parent/kid' })
+        }
+        return { state }
+      },
+      lifecycle: (state, event) => {
+        parentEvents.push(event)
+        return { state }
+      },
+    }
+
+    const system = createActorSystem()
+    const ref = system.spawn('parent', parentDef, null)
+    await tick()
+
+    ref.send('spawn')
+    await tick(100)
+
+    ref.send('stop-child')
+    await tick(100)
+
+    const terminated = parentEvents.filter((e) => e.type === 'terminated')
+    expect(terminated.length).toBe(1)
+    if (terminated[0]!.type === 'terminated') {
+      expect(terminated[0]!.ref.name).toBe('parent/kid')
+      expect(terminated[0]!.reason).toBe('stopped')
+    }
 
     await system.shutdown()
   })
@@ -429,7 +418,10 @@ describe('Supervision: normal operation unaffected', () => {
 
     await system.shutdown()
 
-    const stopped = events.filter((e) => e.type === 'child-stopped')
-    expect(stopped.length).toBe(1)
+    const terminated = events.filter((e) => e.type === 'terminated')
+    expect(terminated.length).toBe(1)
+    if (terminated[0]!.type === 'terminated') {
+      expect(terminated[0]!.reason).toBe('stopped')
+    }
   })
 })

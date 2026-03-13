@@ -6,15 +6,11 @@ import {
   type ActorDef,
   type ActorIdentity,
   type ActorRef,
+  type ActorServices,
   type InternalActorHandle,
   type LifecycleEvent,
   type SupervisionStrategy,
 } from './types.ts'
-
-/**
- * Notification callback type — how a child notifies its parent of lifecycle events.
- */
-export type ParentNotify = (event: LifecycleEvent) => void
 
 // ─── Internal envelope: unifies user messages and lifecycle events ───
 type Envelope<M> =
@@ -34,7 +30,7 @@ export const createActor = <M, S>(
   name: string,
   def: ActorDef<M, S>,
   initialState: S,
-  notifyParent: ParentNotify,
+  services: ActorServices,
 ): InternalActorHandle<M> => {
   // Single unified mailbox for both messages and lifecycle events
   const mailbox = createMailbox<Envelope<M>>()
@@ -81,28 +77,11 @@ export const createActor = <M, S>(
         throw new Error(`Actor "${fullName}" already exists as a child of "${name}"`)
       }
 
-      // Child notifies this actor — transform child's own events into parent-perspective events
-      const childIdentity: ActorIdentity = { name: fullName }
-      const childNotify: ParentNotify = (event) => {
-        switch (event.type) {
-          case 'started':
-            enqueueLifecycle({ type: 'child-started', child: childIdentity })
-            break
-          case 'stopped':
-            enqueueLifecycle({ type: 'child-stopped', child: childIdentity })
-            break
-          case 'child-failed':
-            // Propagate child failure to this actor's lifecycle handler
-            enqueueLifecycle(event)
-            break
-          // Forward child-started/child-stopped from grandchildren as-is (bubbling)
-          default:
-            break
-        }
-      }
-
-      const childHandle = createActor(fullName, childDef, childInitialState, childNotify)
+      const childHandle = createActor(fullName, childDef, childInitialState, services)
       children.set(fullName, childHandle as InternalActorHandle)
+
+      // Parent implicitly watches its children
+      services.watchService.watch(name, fullName, enqueueLifecycle)
 
       return childHandle.ref
     },
@@ -112,9 +91,26 @@ export const createActor = <M, S>(
       if (childHandle) {
         children.delete(child.name)
         // Stop is async but we fire-and-forget here.
-        // The child-stopped notification will arrive through childNotify.
+        // The terminated notification will arrive through the watch service.
         childHandle.stop()
       }
+    },
+
+    watch: (target: ActorIdentity) => {
+      // If target is already dead (not in registry), deliver terminated immediately
+      if (!services.registry.lookup(target.name)) {
+        enqueueLifecycle({ type: 'terminated', ref: target, reason: 'stopped' })
+        return
+      }
+      services.watchService.watch(name, target.name, enqueueLifecycle)
+    },
+
+    unwatch: (target: ActorIdentity) => {
+      services.watchService.unwatch(name, target.name)
+    },
+
+    lookup: <T = unknown>(targetName: string) => {
+      return services.registry.lookup<T>(targetName)
     },
   }
 
@@ -160,6 +156,10 @@ export const createActor = <M, S>(
     children.clear()
   }
 
+  // Track termination reason for watchers
+  let stopReason: 'stopped' | 'failed' = 'stopped'
+  let stopError: unknown = undefined
+
   // ─── The async processing loop ───
   const runningPromise = (async () => {
     let state = initialState
@@ -169,8 +169,8 @@ export const createActor = <M, S>(
       state = await def.setup(state, context)
     }
 
-    // Notify parent that this actor has started
-    notifyParent({ type: 'started' })
+    // Register in the global registry now that setup is complete
+    services.registry.register(name, ref as ActorRef<unknown>)
 
     // Message processing loop
     while (true) {
@@ -191,8 +191,6 @@ export const createActor = <M, S>(
         }
       } catch (error: unknown) {
         // ─── Supervision: apply strategy on failure ───
-        const selfIdentity: ActorIdentity = { name }
-
         switch (strategy.type) {
           case 'restart': {
             if (canRestart()) {
@@ -206,21 +204,17 @@ export const createActor = <M, S>(
               // Continue processing — the failed message is dropped
               continue
             }
-            // Retries exhausted — fall through to escalate/stop
-            notifyParent({ type: 'child-failed', child: selfIdentity, error })
-            break
-          }
-
-          case 'escalate': {
-            // Notify parent of the failure
-            notifyParent({ type: 'child-failed', child: selfIdentity, error })
+            // Retries exhausted — stop with failure reason
+            stopReason = 'failed'
+            stopError = error
             break
           }
 
           case 'stop':
           default: {
-            // Default: silently stop the actor
-            // Parent receives 'child-stopped' through the normal stop path
+            // Stop the actor — watchers will be notified with reason 'failed'
+            stopReason = 'failed'
+            stopError = error
             break
           }
         }
@@ -238,14 +232,20 @@ export const createActor = <M, S>(
     // 2. Stop all children (top-down) and wait for them
     await stopAllChildren()
 
-    // 3. Fire the 'stopped' lifecycle event
+    // 3. Fire the 'stopped' lifecycle event (self teardown)
     if (def.lifecycle) {
       const result = await def.lifecycle(state, { type: 'stopped' }, context)
       state = result.state
     }
 
-    // 4. Notify parent that this actor has stopped
-    notifyParent({ type: 'stopped' })
+    // 4. Notify all watchers of this actor that it has terminated
+    services.watchService.notifyWatchers(name, stopReason, stopError)
+
+    // 5. Clean up all watches this actor holds (and remove forward map entry)
+    services.watchService.cleanup(name)
+
+    // 6. Unregister from the global registry
+    services.registry.unregister(name)
   })()
 
   return {
