@@ -1,10 +1,12 @@
 import { createActor } from './actor.ts'
+import { createEventStream } from './eventstream.ts'
 import type {
   ActorDef,
   ActorIdentity,
   ActorRef,
   ActorServices,
   ActorSystem,
+  EventTopic,
   InternalActorHandle,
   LifecycleEvent,
 } from './types.ts'
@@ -164,10 +166,12 @@ export const createActorSystem = (
   // Shared infrastructure
   const registry = createRegistry()
   const watchService = createWatchService()
+  const eventStream = createEventStream()
 
   const services: ActorServices = {
     registry,
     watchService,
+    eventStream,
   }
 
   // Synthetic watcher name for system-level watches
@@ -226,5 +230,20 @@ export const createActorSystem = (
     children.clear()
   }
 
-  return { spawn, stop, shutdown }
+  // ─── Event Stream (external access) ───
+
+  const publish = (topic: EventTopic, event: unknown): void => {
+    eventStream.publish(topic, event)
+  }
+
+  const subscribe = (
+    subscriberName: string,
+    topic: EventTopic,
+    callback: (event: unknown) => void,
+  ): (() => void) => {
+    eventStream.subscribe(subscriberName, topic, callback)
+    return () => eventStream.unsubscribe(subscriberName, topic)
+  }
+
+  return { spawn, stop, shutdown, publish, subscribe }
 }

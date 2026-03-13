@@ -2,13 +2,18 @@ import { createMailbox } from './mailbox.ts'
 import { createTimers } from './timers.ts'
 import {
   STOP,
+  DeadLetterTopic,
+  LogTopic,
   type ActorContext,
   type ActorDef,
   type ActorIdentity,
   type ActorRef,
   type ActorServices,
+  type EventTopic,
   type InternalActorHandle,
   type LifecycleEvent,
+  type LogEvent,
+  type LogLevel,
   type SupervisionStrategy,
 } from './types.ts'
 
@@ -43,6 +48,13 @@ export const createActor = <M, S>(
     send: (message: M) => {
       if (!stopped) {
         mailbox.enqueue({ tag: 'message', payload: message })
+      } else {
+        // Dead letter: message sent to a stopped actor
+        services.eventStream.publish(DeadLetterTopic, {
+          recipient: name,
+          message,
+          timestamp: Date.now(),
+        })
       }
     },
   }
@@ -112,6 +124,45 @@ export const createActor = <M, S>(
     lookup: <T = unknown>(targetName: string) => {
       return services.registry.lookup<T>(targetName)
     },
+
+    // ─── Event Stream (pub-sub) ───
+
+    publish: (topic: EventTopic, event: unknown) => {
+      services.eventStream.publish(topic, event)
+    },
+
+    subscribe: (topic: EventTopic, adapter: (event: unknown) => M) => {
+      services.eventStream.subscribe(name, topic, (event) => {
+        if (!stopped) {
+          mailbox.enqueue({ tag: 'message', payload: adapter(event) })
+        }
+      })
+    },
+
+    unsubscribe: (topic: EventTopic) => {
+      services.eventStream.unsubscribe(name, topic)
+    },
+
+    // ─── Logging ───
+
+    log: (() => {
+      const makeLogger = (level: LogLevel) => (message: string, data?: unknown): void => {
+        const logEvent: LogEvent = {
+          level,
+          source: name,
+          message,
+          timestamp: Date.now(),
+          ...(data !== undefined ? { data } : {}),
+        }
+        services.eventStream.publish(LogTopic, logEvent)
+      }
+      return {
+        debug: makeLogger('debug'),
+        info: makeLogger('info'),
+        warn: makeLogger('warn'),
+        error: makeLogger('error'),
+      }
+    })(),
   }
 
   // ─── Supervision helpers ───
@@ -172,6 +223,11 @@ export const createActor = <M, S>(
     // Register in the global registry now that setup is complete
     services.registry.register(name, ref as ActorRef<unknown>)
 
+    // Log: actor started
+    services.eventStream.publish(LogTopic, {
+      level: 'info', source: name, message: 'started', timestamp: Date.now(),
+    } satisfies LogEvent)
+
     // Message processing loop
     while (true) {
       const envelope = await mailbox.take()
@@ -183,6 +239,13 @@ export const createActor = <M, S>(
         if (envelope.tag === 'message') {
           const result = await def.handler(state, envelope.payload, context)
           state = result.state
+
+          // Auto-publish events returned from handler
+          if (result.events) {
+            for (const event of result.events) {
+              services.eventStream.publish(name, event)
+            }
+          }
         } else if (envelope.tag === 'lifecycle') {
           if (def.lifecycle) {
             const result = await def.lifecycle(state, envelope.event, context)
@@ -194,6 +257,12 @@ export const createActor = <M, S>(
         switch (strategy.type) {
           case 'restart': {
             if (canRestart()) {
+              // Log: restarting
+              services.eventStream.publish(LogTopic, {
+                level: 'warn', source: name, message: 'restarting',
+                data: { error }, timestamp: Date.now(),
+              } satisfies LogEvent)
+
               // Restart: cancel timers, stop children, reset state, re-run setup
               timers.cancelAll()
               await stopAllChildren()
@@ -204,6 +273,12 @@ export const createActor = <M, S>(
               // Continue processing — the failed message is dropped
               continue
             }
+            // Log: retries exhausted
+            services.eventStream.publish(LogTopic, {
+              level: 'error', source: name, message: 'failed (retries exhausted)',
+              data: { error }, timestamp: Date.now(),
+            } satisfies LogEvent)
+
             // Retries exhausted — stop with failure reason
             stopReason = 'failed'
             stopError = error
@@ -212,6 +287,12 @@ export const createActor = <M, S>(
 
           case 'stop':
           default: {
+            // Log: failed
+            services.eventStream.publish(LogTopic, {
+              level: 'error', source: name, message: 'failed',
+              data: { error }, timestamp: Date.now(),
+            } satisfies LogEvent)
+
             // Stop the actor — watchers will be notified with reason 'failed'
             stopReason = 'failed'
             stopError = error
@@ -244,7 +325,15 @@ export const createActor = <M, S>(
     // 5. Clean up all watches this actor holds (and remove forward map entry)
     services.watchService.cleanup(name)
 
-    // 6. Unregister from the global registry
+    // 6. Clean up all event stream subscriptions
+    services.eventStream.cleanup(name)
+
+    // Log: stopped
+    services.eventStream.publish(LogTopic, {
+      level: 'info', source: name, message: 'stopped', timestamp: Date.now(),
+    } satisfies LogEvent)
+
+    // 7. Unregister from the global registry
     services.registry.unregister(name)
   })()
 

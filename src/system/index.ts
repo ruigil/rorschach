@@ -2,6 +2,11 @@
 export { createActorSystem, type SystemLifecycleHandler } from './system.ts'
 export { ask } from './ask.ts'
 
+export {
+  DeadLetterTopic,
+  LogTopic,
+} from './types.ts'
+
 export type {
   ActorRef,
   ActorDef,
@@ -9,7 +14,12 @@ export type {
   ActorIdentity,
   ActorResult,
   ActorSystem,
+  DeadLetter,
+  EventStream,
+  EventTopic,
   LifecycleEvent,
+  LogEvent,
+  LogLevel,
   SupervisionStrategy,
   Timers,
   TimerKey,

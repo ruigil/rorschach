@@ -45,8 +45,53 @@ export type LifecycleEvent =
   | { type: 'stopped' }
   | { type: 'terminated'; ref: ActorIdentity; reason: 'stopped' | 'failed'; error?: unknown }
 
+// ─── Event Stream Topics ───
+export type EventTopic = string
+
+// ─── Well-known system topics ───
+export const DeadLetterTopic = 'system.deadLetters' as const
+export const LogTopic = 'system.log' as const
+
+// ─── Dead Letter ───
+export type DeadLetter = {
+  readonly recipient: string
+  readonly message: unknown
+  readonly timestamp: number
+}
+
+// ─── Log Event ───
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
+
+export type LogEvent = {
+  readonly level: LogLevel
+  readonly source: string
+  readonly message: string
+  readonly data?: unknown
+  readonly timestamp: number
+}
+
+// ─── Event Stream (System Pub-Sub Bus) ───
+export type EventStream = {
+  /** Publish an event to all subscribers of the given topic. */
+  readonly publish: (topic: EventTopic, event: unknown) => void
+  /** Subscribe to a topic. Matching events are delivered via the callback. */
+  readonly subscribe: (
+    subscriberName: string,
+    topic: EventTopic,
+    deliver: (event: unknown) => void,
+  ) => void
+  /** Unsubscribe from a specific topic. */
+  readonly unsubscribe: (subscriberName: string, topic: EventTopic) => void
+  /** Remove all subscriptions held BY this actor (called on stop). */
+  readonly cleanup: (subscriberName: string) => void
+}
+
 // ─── Actor Result (returned from handlers) ───
-export type ActorResult<S> = { state: S }
+export type ActorResult<S> = {
+  state: S
+  /** Domain events produced by this handler invocation. Auto-published to the actor's name topic on the EventStream. */
+  events?: unknown[]
+}
 
 // ─── Actor Context (available to handlers) ───
 export type ActorContext<M> = {
@@ -64,6 +109,24 @@ export type ActorContext<M> = {
   readonly unwatch: (target: ActorIdentity) => void
   /** Look up an actor ref by its full hierarchical name. Returns undefined if not registered. */
   readonly lookup: <T = unknown>(name: string) => ActorRef<T> | undefined
+
+  // ─── Event Stream (pub-sub) ───
+
+  /** Publish an event to the system event bus under the given topic. */
+  readonly publish: (topic: EventTopic, event: unknown) => void
+  /** Subscribe to a topic. The adapter maps raw bus events into this actor's message type M. */
+  readonly subscribe: (topic: EventTopic, adapter: (event: unknown) => M) => void
+  /** Unsubscribe from a topic. */
+  readonly unsubscribe: (topic: EventTopic) => void
+
+  // ─── Logging ───
+
+  readonly log: {
+    readonly debug: (message: string, data?: unknown) => void
+    readonly info: (message: string, data?: unknown) => void
+    readonly warn: (message: string, data?: unknown) => void
+    readonly error: (message: string, data?: unknown) => void
+  }
 }
 
 // ─── Actor Definition (behavior specification) ───
@@ -116,6 +179,7 @@ export type ActorServices = {
     /** Notify all watchers that this actor has terminated. */
     readonly notifyWatchers: (actorName: string, reason: 'stopped' | 'failed', error?: unknown) => void
   }
+  readonly eventStream: EventStream
 }
 
 // ─── Actor System ───
@@ -127,4 +191,15 @@ export type ActorSystem = {
   ) => ActorRef<M>
   readonly stop: (child: ActorIdentity) => void
   readonly shutdown: () => Promise<void>
+
+  // ─── Event Stream (external access) ───
+
+  /** Publish an event to the system event bus from outside the actor world. */
+  readonly publish: (topic: EventTopic, event: unknown) => void
+  /** Subscribe to events from outside the actor world. Returns an unsubscribe function. */
+  readonly subscribe: (
+    subscriberName: string,
+    topic: EventTopic,
+    callback: (event: unknown) => void,
+  ) => () => void
 }
