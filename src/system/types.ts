@@ -74,6 +74,7 @@ export type EventTopic = string
 // ─── Well-known system topics ───
 export const DeadLetterTopic = 'system.deadLetters' as const
 export const LogTopic = 'system.log' as const
+export const SystemLifecycleTopic = 'system.lifecycle' as const
 
 // ─── Dead Letter ───
 export type DeadLetter = {

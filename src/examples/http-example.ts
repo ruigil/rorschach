@@ -1,11 +1,15 @@
-import { createActorSystem, LogTopic } from '../system/index.ts'
+import { createActorSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
 import { createHttpActor, type HttpState } from '../actors/http.ts'
-import type { LogEvent } from '../system/types.ts'
+import type { LifecycleEvent, LogEvent } from '../system/types.ts'
 
 // ─── Create the actor system ───
-const system = createActorSystem((event) => {
-  if (event.type === 'terminated') {
-    console.log(`[system] actor ${event.ref.name} terminated (${event.reason})`)
+const system = createActorSystem()
+
+// ─── Observe top-level actor lifecycle events ───
+system.subscribe('lifecycle-observer', SystemLifecycleTopic, (event) => {
+  const e = event as LifecycleEvent
+  if (e.type === 'terminated') {
+    console.log(`[system] actor ${e.ref.name} terminated (${e.reason})`)
   }
 })
 

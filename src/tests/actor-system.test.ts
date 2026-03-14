@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createActorSystem } from '../system/index.ts'
+import { createActorSystem, SystemLifecycleTopic } from '../system/index.ts'
 import type {
   ActorDef,
   LifecycleEvent,
@@ -17,7 +17,8 @@ const tick = (ms = 50) => Bun.sleep(ms)
 describe('Actor: lifecycle events', () => {
   test('system receives terminated event when actor stops', async () => {
     const events: LifecycleEvent[] = []
-    const system = createActorSystem((e) => events.push(e))
+    const system = createActorSystem()
+    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     system.spawn('stopper', {
       handler: (state: null) => ({ state }),
@@ -61,7 +62,8 @@ describe('Actor: lifecycle events', () => {
 
   test('system receives terminated event on shutdown', async () => {
     const eventTypes: string[] = []
-    const system = createActorSystem((e) => eventTypes.push(e.type))
+    const system = createActorSystem()
+    system.subscribe('test', SystemLifecycleTopic, (e) => eventTypes.push((e as LifecycleEvent).type))
 
     system.spawn('ordered', {
       handler: (state: null) => ({ state }),
@@ -141,7 +143,8 @@ describe('Actor system', () => {
 
   test('double shutdown is idempotent', async () => {
     const events: LifecycleEvent[] = []
-    const system = createActorSystem((e) => events.push(e))
+    const system = createActorSystem()
+    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     system.spawn('once', {
       handler: (state: null) => ({ state }),

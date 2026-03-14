@@ -1,11 +1,12 @@
 // ─── Public API ───
-export { createActorSystem, type SystemLifecycleHandler, type ActorSystemOptions } from './system.ts'
+export { createActorSystem, type ActorSystemOptions } from './system.ts'
 export { ask } from './ask.ts'
 export { watchTopic } from './services.ts'
 
 export {
   DeadLetterTopic,
   LogTopic,
+  SystemLifecycleTopic,
 } from './types.ts'
 
 export type {

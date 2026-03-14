@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createActorSystem } from '../system/index.ts'
+import { createActorSystem, SystemLifecycleTopic } from '../system/index.ts'
 import type { ActorDef, LifecycleEvent } from '../system/index.ts'
 
 // ─── Helpers ───
@@ -46,7 +46,8 @@ const failingActorDef = (
 describe('Supervision: stop strategy (default)', () => {
   test('actor stops on failure when no strategy is configured', async () => {
     const events: LifecycleEvent[] = []
-    const system = createActorSystem((e) => events.push(e))
+    const system = createActorSystem()
+    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     const ref = system.spawn('stopper', failingActorDef(), { count: 0 })
 
@@ -201,7 +202,8 @@ describe('Supervision: restart with maxRetries', () => {
     let stoppedCalled = false
     const events: LifecycleEvent[] = []
 
-    const system = createActorSystem((e) => events.push(e))
+    const system = createActorSystem()
+    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     const ref = system.spawn(
       'limited-restart',
@@ -406,7 +408,8 @@ describe('Supervision: normal operation unaffected', () => {
 
   test('system shutdown still works cleanly with supervision configured', async () => {
     const events: LifecycleEvent[] = []
-    const system = createActorSystem((e) => events.push(e))
+    const system = createActorSystem()
+    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     system.spawn(
       'clean-shutdown',

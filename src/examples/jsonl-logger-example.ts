@@ -1,18 +1,22 @@
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createActorSystem, LogTopic } from '../system/index.ts'
+import { createActorSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
 import { createJsonlLoggerActor, type JsonlLoggerState } from '../actors/jsonl-logger.ts'
 import { createHttpActor, type HttpState } from '../actors/http.ts'
-import type { LogEvent } from '../system/types.ts'
+import type { LifecycleEvent, LogEvent } from '../system/types.ts'
 
 // ─── Resolve log file path relative to project root ───
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const LOG_FILE = join(__dirname, '../../logs/app.jsonl')
 
 // ─── Create the actor system ───
-const system = createActorSystem((event) => {
-  if (event.type === 'terminated') {
-    console.log(`[system] actor ${event.ref.name} terminated (${event.reason})`)
+const system = createActorSystem()
+
+// ─── Observe top-level actor lifecycle events ───
+system.subscribe('lifecycle-observer', SystemLifecycleTopic, (event) => {
+  const e = event as LifecycleEvent
+  if (e.type === 'terminated') {
+    console.log(`[system] actor ${e.ref.name} terminated (${e.reason})`)
   }
 })
 

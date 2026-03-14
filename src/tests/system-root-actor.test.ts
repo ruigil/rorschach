@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createActorSystem } from '../system/index.ts'
+import { createActorSystem, SystemLifecycleTopic } from '../system/index.ts'
 import type {
   ActorDef,
   LifecycleEvent,
@@ -81,7 +81,8 @@ describe('System-as-root-actor: structural symmetry', () => {
   test('implicit child watch works for root — terminated events delivered on shutdown', async () => {
     const events: LifecycleEvent[] = []
 
-    const system = createActorSystem((e) => events.push(e))
+    const system = createActorSystem()
+    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     system.spawn('a', { handler: (state: null) => ({ state }) }, null)
     system.spawn('b', { handler: (state: null) => ({ state }) }, null)
@@ -107,7 +108,8 @@ describe('System-as-root-actor: structural symmetry', () => {
       },
     }
 
-    const system = createActorSystem((e) => events.push(e))
+    const system = createActorSystem()
+    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
     const ref = system.spawn('doomed', failingDef, null)
     await tick()
 

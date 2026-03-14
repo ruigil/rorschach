@@ -1,28 +1,20 @@
 import { createActor } from './actor.ts'
 import { createEventStream, createRegistry } from './services.ts'
-import type {
-  ActorContext,
-  ActorDef,
-  ActorIdentity,
-  ActorRef,
-  ActorServices,
-  ActorSystem,
-  EventTopic,
-  LifecycleEvent,
+import {
+  SystemLifecycleTopic,
+  type ActorContext,
+  type ActorDef,
+  type ActorIdentity,
+  type ActorRef,
+  type ActorServices,
+  type ActorSystem,
+  type EventTopic,
 } from './types.ts'
-
-/**
- * Optional handler for system-level lifecycle events.
- * Receives `terminated` events from top-level actors (children of the root).
- */
-export type SystemLifecycleHandler = (event: LifecycleEvent) => void
 
 /**
  * Options for creating an actor system.
  */
 export type ActorSystemOptions = {
-  /** Optional handler for lifecycle events from top-level actors. */
-  onLifecycle?: SystemLifecycleHandler
   /**
    * Maximum time (in ms) to wait for the root actor's drain to complete
    * during `shutdown()`. If the drain hasn't finished by this deadline,
@@ -45,19 +37,17 @@ export type ActorSystemOptions = {
  * Lifecycle events from children flow through the root actor's mailbox
  * like any other actor.
  *
+ * Top-level actor terminations are published to `SystemLifecycleTopic`
+ * ('system.lifecycle'). External code can observe them via
+ * `system.subscribe(name, SystemLifecycleTopic, callback)`.
+ *
  * `publish` and `subscribe` are convenience pass-throughs to the shared
  * event stream infrastructure — they are not root actor capabilities.
  */
 export const createActorSystem = (
-  optionsOrLifecycle?: ActorSystemOptions | SystemLifecycleHandler,
+  options?: ActorSystemOptions,
 ): ActorSystem => {
-  // Support both the legacy signature (bare callback) and the new options object
-  const options: ActorSystemOptions =
-    typeof optionsOrLifecycle === 'function'
-      ? { onLifecycle: optionsOrLifecycle }
-      : optionsOrLifecycle ?? {}
-
-  const { onLifecycle, shutdownTimeoutMs } = options
+  const { shutdownTimeoutMs } = options ?? {}
   let shuttingDown = false
 
   // Shared infrastructure
@@ -78,10 +68,10 @@ export const createActorSystem = (
     handler: (state) => ({ state }),
 
     lifecycle: (state, event) => {
-      // Only forward child terminated events to the external callback,
-      // not the root actor's own 'stopped' or 'stopping' events.
+      // Publish child terminated events to the well-known lifecycle topic.
+      // External observers subscribe via system.subscribe(name, SystemLifecycleTopic, cb).
       if (event.type === 'terminated') {
-        onLifecycle?.(event)
+        services.eventStream.publish(SystemLifecycleTopic, event)
       }
       return { state }
     },

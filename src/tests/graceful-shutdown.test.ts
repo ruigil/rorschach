@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createActorSystem, DeadLetterTopic } from '../system/index.ts'
+import { createActorSystem, DeadLetterTopic, SystemLifecycleTopic } from '../system/index.ts'
 import { createMailbox } from '../system/mailbox.ts'
 import { STOP } from '../system/types.ts'
 import type {
@@ -337,46 +337,23 @@ describe('Graceful shutdown: parent-child interaction', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('Graceful shutdown: system-level options', () => {
-  test('createActorSystem with legacy callback signature still works', async () => {
+  test('SystemLifecycleTopic receives terminated events on shutdown', async () => {
     const events: LifecycleEvent[] = []
 
-    const system = createActorSystem((event) => {
-      events.push(event)
-    })
+    const system = createActorSystem()
+    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     const def: ActorDef<string, null> = {
       handler: (state) => ({ state }),
     }
 
-    system.spawn('legacy', def, null)
+    system.spawn('observed', def, null)
     await tick()
 
     await system.shutdown()
     await tick()
 
     // Should have received terminated event for the child
-    expect(events.some((e) => e.type === 'terminated')).toBe(true)
-  })
-
-  test('createActorSystem with options object works', async () => {
-    const events: LifecycleEvent[] = []
-
-    const system = createActorSystem({
-      onLifecycle: (event) => {
-        events.push(event)
-      },
-    })
-
-    const def: ActorDef<string, null> = {
-      handler: (state) => ({ state }),
-    }
-
-    system.spawn('options', def, null)
-    await tick()
-
-    await system.shutdown()
-    await tick()
-
     expect(events.some((e) => e.type === 'terminated')).toBe(true)
   })
 
