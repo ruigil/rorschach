@@ -35,7 +35,7 @@ export type MailboxConfig = {
 export type Mailbox<T> = {
   enqueue: (item: T) => void
   /** Enqueue an item bypassing capacity limits. Used for lifecycle/control events. */
-  forceEnqueue: (item: T) => void
+  enqueueSystem: (item: T) => void
   take: () => Promise<T | Stop>
   close: () => void
   /** Current number of items in the mailbox queue. */
@@ -112,21 +112,44 @@ export type MessageHandler<M, S> = (
 ) => Promise<ActorResult<S>> | ActorResult<S>
 
 // ─── Actor Result (returned from handlers) ───
-export type ActorResult<S> = {
-  state: S
-  /** Domain events produced by this handler invocation. Auto-published to the actor's name topic on the EventStream. */
-  events?: unknown[]
+//
+// Discriminated union using `?: never` exclusion — makes illegal
+// combinations (e.g. stash + become) a compile-time error while
+// keeping the common case `{ state }` zero-boilerplate.
+//
+export type ActorResult<S> =
+  // ─── Process: handle the message normally, optionally emit domain events ───
+  | {
+      state: S
+      /** Domain events produced by this handler invocation. Auto-published to the actor's name topic on the EventStream. */
+      events?: unknown[]
+      become?: never
+      stash?: never
+      unstashAll?: never
+    }
+  // ─── Become: switch to a new message handler, optionally replay stashed messages ───
+  | {
+      state: S
+      /** Replace the current message handler with a new one. */
+      become: MessageHandler<any, S>
+      /** Re-enqueue all stashed messages into the mailbox. Typically used alongside `become`. */
+      unstashAll?: boolean
+      /** Domain events produced by this handler invocation. */
+      events?: unknown[]
+      stash?: never
+    }
+  // ─── Stash: defer the current message for later reprocessing ───
+  | {
+      state: S
+      /** Defer the current message for later reprocessing. */
+      stash: true
+      become?: never
+      unstashAll?: never
+      events?: never
+    }
 
-  // ─── Behavior switching ───
-  /** Replace the current message handler with a new one. */
-  become?: MessageHandler<any, S>
-
-  // ─── Stashing ───
-  /** Defer the current message for later reprocessing. */
-  stash?: boolean
-  /** Re-enqueue all stashed messages into the mailbox. Typically used alongside `become`. */
-  unstashAll?: boolean
-}
+// ─── Lifecycle Result (returned from lifecycle handlers) ───
+export type LifecycleResult<S> = { state: S }
 
 // ─── Actor Context (available to handlers) ───
 export type ActorContext<M> = {
@@ -161,7 +184,7 @@ export type ActorContext<M> = {
    * When the promise settles, the adapted message is enqueued into
    * this actor's mailbox and processed sequentially like any other message.
    *
-   * Uses `forceEnqueue` internally — piped results bypass backpressure,
+   * Uses `enqueueSystem` internally — piped results bypass backpressure,
    * matching the semantics of timer-scheduled messages.
    */
   readonly pipeToSelf: <T>(
@@ -193,7 +216,7 @@ export type ActorDef<M, S> = {
     state: S,
     event: LifecycleEvent,
     context: ActorContext<M>,
-  ) => Promise<ActorResult<S>> | ActorResult<S>
+  ) => Promise<LifecycleResult<S>> | LifecycleResult<S>
 
   /**
    * Supervision strategy applied when this actor's message handler throws.

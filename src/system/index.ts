@@ -1,7 +1,7 @@
 // ─── Public API ───
 export { createActorSystem, type SystemLifecycleHandler } from './system.ts'
 export { ask } from './ask.ts'
-export { watchTopic } from './eventstream.ts'
+export { watchTopic } from './services.ts'
 
 export {
   DeadLetterTopic,
@@ -15,6 +15,7 @@ export type {
   ActorIdentity,
   ActorResult,
   ActorSystem,
+  LifecycleResult,
   DeadLetter,
   EventStream,
   EventTopic,

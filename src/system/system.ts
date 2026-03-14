@@ -1,6 +1,5 @@
 import { createActor } from './actor.ts'
-import { createEventStream } from './eventstream.ts'
-import { createRegistry } from './registry.ts'
+import { createEventStream, createRegistry } from './services.ts'
 import type {
   ActorContext,
   ActorDef,

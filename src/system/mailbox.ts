@@ -6,7 +6,7 @@ import { STOP, type Mailbox, type MailboxConfig, type Stop } from './types.ts'
  * - `enqueue(item)` adds a message. If the consumer is suspended on `take()`,
  *   it is immediately woken up with the message. Respects capacity limits
  *   when a `MailboxConfig` with `capacity` is provided.
- * - `forceEnqueue(item)` adds a message bypassing capacity limits. Used for
+ * - `enqueueSystem(item)` adds a message bypassing capacity limits. Used for
  *   lifecycle/control events that must never be dropped.
  * - `take()` returns the next message, or suspends until one arrives.
  *   Returns `STOP` when the mailbox is closed.
@@ -69,7 +69,7 @@ export const createMailbox = <T>(config?: MailboxConfig): Mailbox<T> => {
     queue.push(item)
   }
 
-  const forceEnqueue = (item: T): void => {
+  const enqueueSystem = (item: T): void => {
     if (closed) return
     deliverOrBuffer(item)
   }
@@ -108,7 +108,7 @@ export const createMailbox = <T>(config?: MailboxConfig): Mailbox<T> => {
 
   return {
     enqueue,
-    forceEnqueue,
+    enqueueSystem,
     take,
     close,
     size: () => queue.length,

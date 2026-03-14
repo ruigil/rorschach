@@ -160,11 +160,11 @@ describe('Mailbox: bounded — drop-oldest', () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════
-// Mailbox: forceEnqueue
+// Mailbox: enqueueSystem
 // ═══════════════════════════════════════════════════════════════════
 
-describe('Mailbox: forceEnqueue', () => {
-  test('forceEnqueue bypasses capacity limits', async () => {
+describe('Mailbox: enqueueSystem', () => {
+  test('enqueueSystem bypasses capacity limits', async () => {
     const dropped: unknown[] = []
 
     const mb = createMailbox<string>({
@@ -174,8 +174,8 @@ describe('Mailbox: forceEnqueue', () => {
 
     mb.enqueue('a')
     mb.enqueue('b')
-    // Queue full — but forceEnqueue should still add
-    mb.forceEnqueue('forced')
+    // Queue full — but enqueueSystem should still add
+    mb.enqueueSystem('forced')
 
     expect(mb.size()).toBe(3) // exceeds capacity
     expect(dropped).toEqual([]) // nothing dropped
@@ -185,22 +185,22 @@ describe('Mailbox: forceEnqueue', () => {
     expect(await mb.take()).toBe('forced')
   })
 
-  test('forceEnqueue delivers directly when consumer is suspended', async () => {
+  test('enqueueSystem delivers directly when consumer is suspended', async () => {
     const mb = createMailbox<string>({ capacity: 1 })
 
     const promise = mb.take()
-    mb.forceEnqueue('direct')
+    mb.enqueueSystem('direct')
 
     expect(await promise).toBe('direct')
     expect(mb.size()).toBe(0)
   })
 
-  test('forceEnqueue is silently dropped after close', async () => {
+  test('enqueueSystem is silently dropped after close', async () => {
     const mb = createMailbox<string>({ capacity: 2 })
 
-    mb.forceEnqueue('before')
+    mb.enqueueSystem('before')
     mb.close()
-    mb.forceEnqueue('after')
+    mb.enqueueSystem('after')
 
     expect(await mb.take()).toBe('before')
   })
@@ -403,7 +403,7 @@ describe('Actor: bounded mailbox integration', () => {
     ref.send('stop-child')
     await tick(200)
 
-    // The terminated event should have been received via forceEnqueue
+    // The terminated event should have been received via enqueueSystem
     const terminated = lifecycleEvents.filter((e) => e.type === 'terminated')
     expect(terminated.length).toBe(1)
 
@@ -441,7 +441,7 @@ describe('Actor: bounded mailbox integration', () => {
     await tick(5)
     ref.send('fill-1') // fills the 1-slot mailbox
 
-    // The timer will fire at ~80ms and should bypass capacity via forceEnqueue
+    // The timer will fire at ~80ms and should bypass capacity via enqueueSystem
     await tick(200)
 
     expect(received).toContain('timer-msg')
