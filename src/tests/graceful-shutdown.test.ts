@@ -74,8 +74,7 @@ describe('Graceful shutdown: drain mode', () => {
     const deadLetters: unknown[] = []
 
     const def: ActorDef<string, null> = {
-      handler: async (state, message) => {
-        await Bun.sleep(20)
+      handler: (state, message) => {
         processed.push(message)
         return { state }
       },
@@ -211,15 +210,21 @@ describe('Graceful shutdown: stopping lifecycle event', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('Graceful shutdown: timeout', () => {
-  test('drain timeout force-closes the mailbox when actor is stuck', async () => {
-    const processed: string[] = []
+  test('drain timeout force-closes the mailbox when pipeToSelf creates unbounded work', async () => {
+    let spinCount = 0
 
-    const def: ActorDef<string, null> = {
-      handler: async (state, message) => {
-        processed.push(message)
-        // Simulate a very slow handler
-        if (message === 'slow') {
-          await Bun.sleep(5000) // 5 seconds — way longer than timeout
+    type Msg = 'start' | 'spin'
+
+    const def: ActorDef<Msg, null> = {
+      handler: (state, msg, ctx) => {
+        if (msg === 'start' || msg === 'spin') {
+          spinCount++
+          // Keep feeding messages via pipeToSelf — drain will never complete naturally
+          ctx.pipeToSelf(
+            Bun.sleep(10),
+            () => 'spin' as const,
+            () => 'spin' as const,
+          )
         }
         return { state }
       },
@@ -230,24 +235,17 @@ describe('Graceful shutdown: timeout', () => {
     const ref = system.spawn('timeout-test', def, null)
     await tick()
 
-    ref.send('fast')
-    ref.send('slow')
-    ref.send('never')
+    ref.send('start')
+    await tick(20) // let spinning begin
 
-    // Wait for 'fast' to be processed, then stop
-    await tick(20)
-    const stopPromise = (async () => {
-      system.stop({ name: 'system/timeout-test' })
-      await tick(500)
-    })()
+    // Stop — drain will never complete naturally due to pipeToSelf loop
+    system.stop({ name: 'system/timeout-test' })
+    await tick(500)
 
-    await stopPromise
-
-    // 'fast' should have been processed.
-    // 'slow' may have started but was interrupted by timeout.
-    // 'never' should not have been processed.
-    expect(processed).toContain('fast')
-    expect(processed).not.toContain('never')
+    // The actor should have been force-stopped by the timeout.
+    // Some spins happened, but the actor didn't spin forever.
+    expect(spinCount).toBeGreaterThan(0)
+    expect(spinCount).toBeLessThan(100)
 
     await system.shutdown()
   })

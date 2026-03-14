@@ -434,7 +434,7 @@ export const createActor = <M, S>(
       try {
         if (envelope.tag === 'message') {
           const startTime = performance.now()
-          const result = await currentHandler(state, envelope.payload, context)
+          const result = currentHandler(state, envelope.payload, context)
           metrics.recordMessageProcessed(performance.now() - startTime)
           state = result.state
 

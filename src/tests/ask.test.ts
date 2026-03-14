@@ -66,23 +66,36 @@ describe('Ask pattern', () => {
   test('late reply after timeout is silently dropped (no double-resolve)', async () => {
     let capturedReplyTo: ActorRef<string> | null = null
 
-    const def: ActorDef<{ replyTo: ActorRef<string> }, null> = {
-      handler: async (state, msg) => {
-        // Hold onto the replyTo and reply after a delay
-        capturedReplyTo = msg.replyTo
-        await Bun.sleep(200)
-        msg.replyTo.send('late response')
-        return { state }
+    type Msg =
+      | { type: 'request'; replyTo: ActorRef<string> }
+      | { type: 'do-reply' }
+
+    const def: ActorDef<Msg, { replyTo: ActorRef<string> | null }> = {
+      handler: (state, msg, ctx) => {
+        switch (msg.type) {
+          case 'request':
+            capturedReplyTo = msg.replyTo
+            // Delay the reply via pipeToSelf
+            ctx.pipeToSelf(
+              Bun.sleep(200),
+              () => ({ type: 'do-reply' as const }),
+              () => ({ type: 'do-reply' as const }),
+            )
+            return { state: { replyTo: msg.replyTo } }
+          case 'do-reply':
+            state.replyTo?.send('late response')
+            return { state }
+        }
       },
     }
 
     const system = createActorSystem()
-    const ref = system.spawn('slow-replier', def, null)
+    const ref = system.spawn('slow-replier', def, { replyTo: null })
     await tick()
 
     // Ask with a short timeout — will reject before the actor replies
     await expect(
-      ask(ref, (replyTo) => ({ replyTo }), { timeoutMs: 50 }),
+      ask<Msg, string>(ref, (replyTo) => ({ type: 'request', replyTo }), { timeoutMs: 50 }),
     ).rejects.toThrow('timed out')
 
     // Wait for the actor to eventually send the late reply
@@ -124,14 +137,25 @@ describe('Ask pattern', () => {
     await system.shutdown()
   })
 
-  test('ask works with async handler', async () => {
-    type Msg = { type: 'compute'; x: number; y: number; replyTo: ActorRef<number> }
+  test('ask works with pipeToSelf for delayed computation', async () => {
+    type Msg =
+      | { type: 'compute'; x: number; y: number; replyTo: ActorRef<number> }
+      | { type: 'computed'; result: number; replyTo: ActorRef<number> }
 
     const def: ActorDef<Msg, null> = {
-      handler: async (state, msg) => {
-        await Bun.sleep(30)
-        msg.replyTo.send(msg.x + msg.y)
-        return { state }
+      handler: (state, msg, ctx) => {
+        switch (msg.type) {
+          case 'compute':
+            ctx.pipeToSelf(
+              Bun.sleep(30).then(() => msg.x + msg.y),
+              (result) => ({ type: 'computed', result, replyTo: msg.replyTo }),
+              () => ({ type: 'computed', result: -1, replyTo: msg.replyTo }),
+            )
+            return { state }
+          case 'computed':
+            msg.replyTo.send(msg.result)
+            return { state }
+        }
       },
     }
 
@@ -150,13 +174,24 @@ describe('Ask pattern', () => {
   })
 
   test('ask without timeout waits indefinitely for a reply', async () => {
-    type Msg = { type: 'delayed-reply'; replyTo: ActorRef<string> }
+    type Msg =
+      | { type: 'delayed-reply'; replyTo: ActorRef<string> }
+      | { type: 'do-reply'; replyTo: ActorRef<string> }
 
     const def: ActorDef<Msg, null> = {
-      handler: async (state, msg) => {
-        await Bun.sleep(200)
-        msg.replyTo.send('finally')
-        return { state }
+      handler: (state, msg, ctx) => {
+        switch (msg.type) {
+          case 'delayed-reply':
+            ctx.pipeToSelf(
+              Bun.sleep(200),
+              () => ({ type: 'do-reply' as const, replyTo: msg.replyTo }),
+              () => ({ type: 'do-reply' as const, replyTo: msg.replyTo }),
+            )
+            return { state }
+          case 'do-reply':
+            msg.replyTo.send('finally')
+            return { state }
+        }
       },
     }
 

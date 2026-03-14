@@ -250,9 +250,7 @@ describe('Actor: bounded mailbox integration', () => {
     const def: ActorDef<string, null> = {
       mailbox: { capacity: 2 },
 
-      handler: async (state, message) => {
-        // Slow handler — messages will pile up in the mailbox
-        await Bun.sleep(30)
+      handler: (state, message) => {
         received.push(message)
         return { state }
       },
@@ -267,16 +265,15 @@ describe('Actor: bounded mailbox integration', () => {
     const ref = system.spawn('bounded', def, null)
     await tick()
 
-    // Send a burst — the actor is processing msg1 (slow), so msg2+msg3 fill the mailbox,
-    // msg4 and msg5 should overflow
+    // Synchronous burst: msg1 resolves the suspended waiter (delivered directly),
+    // msg2+msg3 fill the capacity=2 queue, msg4+msg5 overflow.
     ref.send('msg1')
-    await tick(5) // let msg1 start processing
     ref.send('msg2')
     ref.send('msg3')
     ref.send('msg4') // should overflow (drop-newest)
     ref.send('msg5') // should overflow (drop-newest)
 
-    await tick(300) // wait for all processing
+    await tick(100) // wait for all processing
 
     // msg1 was delivered directly (consumer was waiting), msg2+msg3 fit in capacity=2
     expect(received).toEqual(['msg1', 'msg2', 'msg3'])
@@ -296,8 +293,7 @@ describe('Actor: bounded mailbox integration', () => {
     const def: ActorDef<string, null> = {
       mailbox: { capacity: 2, overflowStrategy: 'drop-oldest' },
 
-      handler: async (state, message) => {
-        await Bun.sleep(30)
+      handler: (state, message) => {
         received.push(message)
         return { state }
       },
@@ -308,15 +304,15 @@ describe('Actor: bounded mailbox integration', () => {
     const ref = system.spawn('drop-oldest', def, null)
     await tick()
 
-    // msg1 is being processed (consumer was waiting), msg2+msg3 fill mailbox
+    // Synchronous burst: msg1 delivered directly, msg2+msg3 fill capacity=2 queue,
+    // msg4 drops msg2 (oldest), msg5 drops msg3 (oldest)
     ref.send('msg1')
-    await tick(5)
     ref.send('msg2')
     ref.send('msg3')
     ref.send('msg4') // drops msg2 (oldest)
     ref.send('msg5') // drops msg3 (oldest)
 
-    await tick(300)
+    await tick(100)
 
     // msg1 delivered directly, then msg4+msg5 (msg2+msg3 were dropped)
     expect(received).toEqual(['msg1', 'msg4', 'msg5'])
@@ -328,8 +324,7 @@ describe('Actor: bounded mailbox integration', () => {
     const received: string[] = []
 
     const def: ActorDef<string, null> = {
-      handler: async (state, message) => {
-        await Bun.sleep(10)
+      handler: (state, message) => {
         received.push(message)
         return { state }
       },
@@ -345,7 +340,7 @@ describe('Actor: bounded mailbox integration', () => {
       ref.send(`msg${i}`)
     }
 
-    await tick(500)
+    await tick(100)
 
     expect(received.length).toBe(20)
 
@@ -359,23 +354,18 @@ describe('Actor: bounded mailbox integration', () => {
       handler: (state) => ({ state }),
     }
 
-    type ParentMsg = 'spawn' | 'stop-child' | 'fill' | 'snapshot'
+    type ParentMsg = 'spawn' | 'stop-child' | 'snapshot'
 
     const parentDef: ActorDef<ParentMsg, { events: string[] }> = {
       mailbox: { capacity: 1 },
 
-      handler: async (state, msg, ctx) => {
+      handler: (state, msg, ctx) => {
         if (msg === 'spawn') {
           ctx.spawn('child', childDef, null)
           return { state }
         }
         if (msg === 'stop-child') {
           ctx.stop({ name: ctx.self.name + '/child' })
-          return { state }
-        }
-        if (msg === 'fill') {
-          // Just slow processing to fill the mailbox
-          await Bun.sleep(30)
           return { state }
         }
         if (msg === 'snapshot') {
@@ -399,7 +389,7 @@ describe('Actor: bounded mailbox integration', () => {
     await tick(100)
 
     // Stop the child — the terminated lifecycle event should arrive
-    // even if the mailbox is "full"
+    // even if the mailbox is "full" (lifecycles use enqueueSystem)
     ref.send('stop-child')
     await tick(200)
 
@@ -412,39 +402,44 @@ describe('Actor: bounded mailbox integration', () => {
 
   test('timer messages bypass capacity limits', async () => {
     const received: string[] = []
+    const deadLetters: string[] = []
 
     const def: ActorDef<string, null> = {
       mailbox: { capacity: 1 },
 
       setup: (state, ctx) => {
         // Schedule a timer message
-        ctx.timers.startSingleTimer('tick', 'timer-msg', 80)
+        ctx.timers.startSingleTimer('tick', 'timer-msg', 30)
         return state
       },
 
-      handler: async (state, message) => {
-        if (message === 'blocker') {
-          // Slow processing to fill the mailbox
-          await Bun.sleep(50)
-        }
+      handler: (state, message) => {
         received.push(message)
         return { state }
       },
     }
 
     const system = createActorSystem()
+
+    system.subscribe('test-dl', DeadLetterTopic, (event) => {
+      deadLetters.push((event as DeadLetter).message as string)
+    })
+
     const ref = system.spawn('timer-test', def, null)
     await tick()
 
-    // Fill the mailbox while a message is being processed
-    ref.send('blocker')
-    await tick(5)
-    ref.send('fill-1') // fills the 1-slot mailbox
+    // Synchronous burst to fill the mailbox
+    ref.send('a')       // resolves the suspended waiter
+    ref.send('b')       // fills the 1-slot mailbox
+    ref.send('c')       // overflow → dead-lettered
 
-    // The timer will fire at ~80ms and should bypass capacity via enqueueSystem
+    // The timer fires at ~30ms via enqueueSystem (bypasses capacity)
     await tick(200)
 
+    // Timer message should have been delivered (via enqueueSystem)
     expect(received).toContain('timer-msg')
+    // Regular overflow still applies
+    expect(deadLetters).toContain('c')
 
     await system.shutdown()
   })

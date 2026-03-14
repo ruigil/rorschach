@@ -114,11 +114,16 @@ export type EventStream = {
 }
 
 // ─── Message Handler (reusable handler function type) ───
+//
+// Handlers are synchronous — they return the next state immediately.
+// For async work, use `context.pipeToSelf()` to run a Promise and
+// route the result back as a regular message.
+//
 export type MessageHandler<M, S> = (
   state: S,
   message: M,
   context: ActorContext<M>,
-) => Promise<ActorResult<S>> | ActorResult<S>
+) => ActorResult<S>
 
 // ─── Actor Result (returned from handlers) ───
 //

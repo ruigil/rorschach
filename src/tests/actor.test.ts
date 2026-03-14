@@ -184,57 +184,87 @@ describe('Actor: setup phase', () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════
-// Actor: Async Handler Support
+// Actor: Async via pipeToSelf
 // ═══════════════════════════════════════════════════════════════════
 
-describe('Actor: async handler support', () => {
-  test('actor handler can be async', async () => {
+describe('Actor: async via pipeToSelf', () => {
+  test('async results are delivered back as messages via pipeToSelf', async () => {
     const results: number[] = []
 
-    const def: ActorDef<number, { total: number }> = {
-      handler: async (state, message) => {
-        await Bun.sleep(10)
-        const newTotal = state.total + message
-        results.push(newTotal)
-        return { state: { total: newTotal } }
+    type Msg =
+      | { type: 'compute'; value: number }
+      | { type: 'result'; total: number }
+
+    const def: ActorDef<Msg, { total: number }> = {
+      handler: (state, message, ctx) => {
+        switch (message.type) {
+          case 'compute': {
+            const newTotal = state.total + message.value
+            ctx.pipeToSelf(
+              Promise.resolve(newTotal),
+              (total) => ({ type: 'result', total }),
+              () => ({ type: 'result', total: -1 }),
+            )
+            return { state: { total: newTotal } }
+          }
+          case 'result':
+            results.push(message.total)
+            return { state }
+        }
       },
     }
 
     const system = createActorSystem()
-    const ref = system.spawn('async-handler', def, { total: 0 })
+    const ref = system.spawn('pipe-handler', def, { total: 0 })
     await tick()
 
-    ref.send(10)
-    ref.send(20)
-    ref.send(30)
+    ref.send({ type: 'compute', value: 10 })
+    ref.send({ type: 'compute', value: 20 })
+    ref.send({ type: 'compute', value: 30 })
     await tick(200)
 
     expect(results).toEqual([10, 30, 60])
     await system.shutdown()
   })
 
-  test('async messages are processed sequentially, not concurrently', async () => {
+  test('pipeToSelf does not block the message loop — handler returns immediately', async () => {
     const log: string[] = []
 
-    const def: ActorDef<string, null> = {
-      handler: async (state, msg) => {
-        log.push(`start:${msg}`)
-        await Bun.sleep(30)
-        log.push(`end:${msg}`)
-        return { state }
+    type Msg =
+      | { type: 'start'; label: string }
+      | { type: 'done'; label: string }
+
+    const def: ActorDef<Msg, null> = {
+      handler: (state, msg, ctx) => {
+        switch (msg.type) {
+          case 'start':
+            log.push(`start:${msg.label}`)
+            ctx.pipeToSelf(
+              Bun.sleep(30).then(() => msg.label),
+              (label) => ({ type: 'done', label }),
+              () => ({ type: 'done', label: msg.label }),
+            )
+            return { state }
+          case 'done':
+            log.push(`done:${msg.label}`)
+            return { state }
+        }
       },
     }
 
     const system = createActorSystem()
-    const ref = system.spawn('sequential', def, null)
+    const ref = system.spawn('non-blocking', def, null)
     await tick()
 
-    ref.send('a')
-    ref.send('b')
+    ref.send({ type: 'start', label: 'a' })
+    ref.send({ type: 'start', label: 'b' })
     await tick(200)
 
-    // Messages must be processed one at a time
-    expect(log).toEqual(['start:a', 'end:a', 'start:b', 'end:b'])
+    // Both starts happen immediately, then both dones arrive later
+    expect(log[0]).toBe('start:a')
+    expect(log[1]).toBe('start:b')
+    expect(log).toContain('done:a')
+    expect(log).toContain('done:b')
     await system.shutdown()
   })
 })
