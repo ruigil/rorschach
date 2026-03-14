@@ -38,6 +38,12 @@ export type Mailbox<T> = {
   enqueueSystem: (item: T) => void
   take: () => Promise<T | Stop>
   close: () => void
+  /**
+   * Switch to drain mode: stop accepting new messages via `enqueue()`,
+   * but continue delivering buffered messages. `enqueueSystem()` still works.
+   * Once the queue is empty, `take()` returns STOP instead of suspending.
+   */
+  drain: () => void
   /** Current number of items in the mailbox queue. */
   readonly size: () => number
 }
@@ -58,6 +64,7 @@ export type SupervisionStrategy =
 
 // ─── Lifecycle Events ───
 export type LifecycleEvent =
+  | { type: 'stopping' }
   | { type: 'stopped' }
   | { type: 'terminated'; ref: ActorIdentity; reason: 'stopped' | 'failed'; error?: unknown }
 
@@ -203,6 +210,23 @@ export type ActorContext<M> = {
   }
 }
 
+// ─── Shutdown Configuration ───
+export type ShutdownConfig = {
+  /**
+   * Drain remaining mailbox messages before stopping.
+   * When true, the actor processes all queued messages and receives a
+   * `stopping` lifecycle event before the final `stopped` phase.
+   * Default: false (immediate stop — existing behavior).
+   */
+  drain?: boolean
+  /**
+   * Maximum time (in ms) to wait for drain to complete.
+   * If the drain hasn't finished by this deadline, the mailbox is force-closed.
+   * Only meaningful when `drain` is true.
+   */
+  timeoutMs?: number
+}
+
 // ─── Actor Definition (behavior specification) ───
 export type ActorDef<M, S> = {
   /** Runs once on start (or restart). Receives initial state + context. Returns the enriched initial state. */
@@ -211,7 +235,7 @@ export type ActorDef<M, S> = {
   /** Handles incoming messages. Returns the next state. */
   handler: MessageHandler<M,S>
 
-  /** Reacts to lifecycle events (stopped, terminated). */
+  /** Reacts to lifecycle events (stopping, stopped, terminated). */
   lifecycle?: (
     state: S,
     event: LifecycleEvent,
@@ -237,6 +261,13 @@ export type ActorDef<M, S> = {
    * Default: 1000.
    */
   stashCapacity?: number
+
+  /**
+   * Shutdown behavior configuration.
+   * Enables graceful shutdown with mailbox drain and optional timeout.
+   * Omit for immediate stop (default — existing behavior).
+   */
+  shutdown?: ShutdownConfig
 }
 
 // ─── Stop Result (returned from InternalActorHandle.stop()) ───

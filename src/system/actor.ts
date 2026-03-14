@@ -495,8 +495,42 @@ export const createActor = <M, S>(
     stop: async (): Promise<StopResult> => {
       if (stopped) return { reason: stopReason, ...(stopError !== undefined ? { error: stopError } : {}) }
       stopped = true
-      mailbox.close()
-      await runningPromise
+
+      const shutdownConfig = def.shutdown
+
+      if (shutdownConfig?.drain) {
+        // ─── Graceful shutdown: drain remaining messages before stopping ───
+
+        // 1. Deliver 'stopping' lifecycle event into the mailbox
+        //    (uses enqueueSystem — bypasses capacity limits, works because
+        //     mailbox is not yet closed/drained)
+        mailbox.enqueueSystem({ tag: 'lifecycle', event: { type: 'stopping' } })
+
+        // 2. Switch to drain mode — no new messages via enqueue(),
+        //    but existing queue + system messages are still processed.
+        mailbox.drain()
+
+        // 3. Safety timeout: force-close the mailbox if drain takes too long
+        let drainTimer: ReturnType<typeof setTimeout> | undefined
+        if (shutdownConfig.timeoutMs !== undefined) {
+          drainTimer = setTimeout(() => {
+            log.warn('shutdown drain timed out — force closing', {
+              timeoutMs: shutdownConfig.timeoutMs,
+            })
+            mailbox.close()
+          }, shutdownConfig.timeoutMs)
+        }
+
+        await runningPromise
+
+        // Clear the safety timer if drain completed before timeout
+        if (drainTimer !== undefined) clearTimeout(drainTimer)
+      } else {
+        // ─── Immediate shutdown (existing behavior) ───
+        mailbox.close()
+        await runningPromise
+      }
+
       return { reason: stopReason, ...(stopError !== undefined ? { error: stopError } : {}) }
     },
   }

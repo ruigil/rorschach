@@ -24,6 +24,7 @@ export const createMailbox = <T>(config?: MailboxConfig): Mailbox<T> => {
   const queue: (T | Stop)[] = []
   let waiter: ((item: T | Stop) => void) | null = null
   let closed = false
+  let draining = false
 
   const capacity = config?.capacity
   const strategy = config?.overflowStrategy ?? 'drop-newest'
@@ -42,7 +43,7 @@ export const createMailbox = <T>(config?: MailboxConfig): Mailbox<T> => {
   }
 
   const enqueue = (item: T): void => {
-    if (closed) return
+    if (closed || draining) return
 
     if (waiter !== null) {
       // Consumer is suspended — deliver immediately (no queue growth)
@@ -85,10 +86,30 @@ export const createMailbox = <T>(config?: MailboxConfig): Mailbox<T> => {
       return Promise.resolve(STOP)
     }
 
+    // Draining and queue empty — all buffered messages processed, signal stop
+    if (draining) {
+      return Promise.resolve(STOP)
+    }
+
     // Nothing in queue — suspend until enqueue() or close() is called
     return new Promise<T | Stop>((resolve) => {
       waiter = resolve
     })
+  }
+
+  const drain = (): void => {
+    if (closed || draining) return
+    draining = true
+
+    // If consumer is suspended and queue is empty, all messages are already
+    // processed — wake immediately with STOP.
+    if (waiter !== null && queue.length === 0) {
+      const resolve = waiter
+      waiter = null
+      resolve(STOP)
+    }
+    // Otherwise the consumer is busy processing. When it next calls take()
+    // and finds an empty queue + draining=true, it will receive STOP.
   }
 
   const close = (): void => {
@@ -111,6 +132,7 @@ export const createMailbox = <T>(config?: MailboxConfig): Mailbox<T> => {
     enqueueSystem,
     take,
     close,
+    drain,
     size: () => queue.length,
   }
 }

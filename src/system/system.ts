@@ -18,6 +18,21 @@ import type {
 export type SystemLifecycleHandler = (event: LifecycleEvent) => void
 
 /**
+ * Options for creating an actor system.
+ */
+export type ActorSystemOptions = {
+  /** Optional handler for lifecycle events from top-level actors. */
+  onLifecycle?: SystemLifecycleHandler
+  /**
+   * Maximum time (in ms) to wait for the root actor's drain to complete
+   * during `shutdown()`. If the drain hasn't finished by this deadline,
+   * the root actor's mailbox is force-closed.
+   * Only meaningful when the root actor uses drain-based shutdown (default).
+   */
+  shutdownTimeoutMs?: number
+}
+
+/**
  * Creates the root actor system.
  *
  * The system IS the root actor — a regular actor named 'system' created via
@@ -34,8 +49,15 @@ export type SystemLifecycleHandler = (event: LifecycleEvent) => void
  * event stream infrastructure — they are not root actor capabilities.
  */
 export const createActorSystem = (
-  onLifecycle?: SystemLifecycleHandler,
+  optionsOrLifecycle?: ActorSystemOptions | SystemLifecycleHandler,
 ): ActorSystem => {
+  // Support both the legacy signature (bare callback) and the new options object
+  const options: ActorSystemOptions =
+    typeof optionsOrLifecycle === 'function'
+      ? { onLifecycle: optionsOrLifecycle }
+      : optionsOrLifecycle ?? {}
+
+  const { onLifecycle, shutdownTimeoutMs } = options
   let shuttingDown = false
 
   // Shared infrastructure
@@ -57,12 +79,17 @@ export const createActorSystem = (
 
     lifecycle: (state, event) => {
       // Only forward child terminated events to the external callback,
-      // not the root actor's own 'stopped' event.
+      // not the root actor's own 'stopped' or 'stopping' events.
       if (event.type === 'terminated') {
         onLifecycle?.(event)
       }
       return { state }
     },
+
+    // Enable drain-based shutdown for the root actor when a timeout is configured
+    ...(shutdownTimeoutMs !== undefined
+      ? { shutdown: { drain: true, timeoutMs: shutdownTimeoutMs } }
+      : {}),
   }
 
   const rootHandle = createActor('system', rootDef, null, services)

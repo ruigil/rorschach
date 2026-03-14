@@ -1,5 +1,5 @@
 // ─── Public API ───
-export { createActorSystem, type SystemLifecycleHandler } from './system.ts'
+export { createActorSystem, type SystemLifecycleHandler, type ActorSystemOptions } from './system.ts'
 export { ask } from './ask.ts'
 export { watchTopic } from './services.ts'
 
@@ -26,6 +26,7 @@ export type {
   MailboxOverflowStrategy,
   MessageHandler,
   Registry,
+  ShutdownConfig,
   SupervisionStrategy,
   Timers,
   TimerKey,
