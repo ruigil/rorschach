@@ -21,6 +21,8 @@ export type {
   LifecycleEvent,
   LogEvent,
   LogLevel,
+  MailboxConfig,
+  MailboxOverflowStrategy,
   Registry,
   SupervisionStrategy,
   Timers,

@@ -19,11 +19,27 @@ export type Timers<M> = {
   readonly isActive: (key: TimerKey) => boolean
 }
 
+// ─── Mailbox Backpressure ───
+export type MailboxOverflowStrategy = 'drop-newest' | 'drop-oldest'
+
+export type MailboxConfig = {
+  /** Maximum number of messages the mailbox can hold. Omit for unbounded. */
+  capacity?: number
+  /** What to do when the mailbox is full. Default: 'drop-newest' */
+  overflowStrategy?: MailboxOverflowStrategy
+  /** Called when a message is dropped due to overflow. */
+  onOverflow?: (dropped: unknown) => void
+}
+
 // ─── Mailbox ───
 export type Mailbox<T> = {
   enqueue: (item: T) => void
+  /** Enqueue an item bypassing capacity limits. Used for lifecycle/control events. */
+  forceEnqueue: (item: T) => void
   take: () => Promise<T | Stop>
   close: () => void
+  /** Current number of items in the mailbox queue. */
+  readonly size: () => number
 }
 
 // ─── Actor Reference (opaque handle) ───
@@ -156,6 +172,12 @@ export type ActorDef<M, S> = {
    * - 'restart'  — re-run setup with initial state, optionally bounded by maxRetries/withinMs
    */
   supervision?: SupervisionStrategy
+
+  /**
+   * Mailbox configuration for backpressure.
+   * Omit for unbounded (default — current behavior).
+   */
+  mailbox?: MailboxConfig
 }
 
 // ─── Stop Result (returned from InternalActorHandle.stop()) ───

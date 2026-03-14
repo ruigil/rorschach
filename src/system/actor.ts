@@ -58,13 +58,35 @@ export const createActor = <M, S>(
   initialState: S,
   services: ActorServices,
 ): InternalActorHandle<M> => {
+  // Internal logger for lifecycle events (created early so onOverflow can use it)
+  const log = createInternalLog(name, services.eventStream)
+
   // Single unified mailbox for both messages and lifecycle events
-  const mailbox = createMailbox<Envelope<M>>()
+  const mailbox = createMailbox<Envelope<M>>(
+    def.mailbox?.capacity !== undefined
+      ? {
+          capacity: def.mailbox.capacity,
+          overflowStrategy: def.mailbox.overflowStrategy,
+          onOverflow: (dropped) => {
+            // Route dropped messages to the dead-letter topic
+            const envelope = dropped as Envelope<M> | undefined
+            if (envelope && typeof envelope === 'object' && 'tag' in envelope && envelope.tag === 'message') {
+              services.eventStream.publish(DeadLetterTopic, {
+                recipient: name,
+                message: envelope.payload,
+                timestamp: Date.now(),
+              })
+            }
+            log.warn('mailbox overflow — message dropped', {
+              strategy: def.mailbox?.overflowStrategy ?? 'drop-newest',
+              mailboxSize: mailbox.size(),
+            })
+          },
+        }
+      : undefined,
+  )
   const children = new Map<string, InternalActorHandle>()
   let stopped = false
-
-  // Internal logger for lifecycle events
-  const log = createInternalLog(name, services.eventStream)
 
   // ─── Build the public ActorRef ───
   const ref: ActorRef<M> = {
@@ -81,16 +103,18 @@ export const createActor = <M, S>(
   }
 
   // ─── Internal: enqueue a lifecycle event into the unified mailbox ───
+  // Lifecycle events bypass capacity limits — they must never be dropped.
   const enqueueLifecycle = (event: LifecycleEvent): void => {
     if (!stopped) {
-      mailbox.enqueue({ tag: 'lifecycle', event })
+      mailbox.forceEnqueue({ tag: 'lifecycle', event })
     }
   }
 
   // ─── Build timers (scoped to this actor's lifecycle) ───
+  // Timer messages bypass capacity limits — the actor explicitly scheduled them.
   const timers = createTimers<M>((message) => {
     if (!stopped) {
-      mailbox.enqueue({ tag: 'message', payload: message })
+      mailbox.forceEnqueue({ tag: 'message', payload: message })
     }
   })
 
