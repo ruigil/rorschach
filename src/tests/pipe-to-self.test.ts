@@ -257,7 +257,7 @@ describe('pipeToSelf', () => {
     let snapshot: State | null = null
     ref.send({ type: 'snapshot', reply: (s) => { snapshot = s } })
     await tick()
-    expect(snapshot).toEqual({ loading: false, data: null, error: null })
+    expect(snapshot!).toEqual({ loading: false, data: null, error: null })
 
     // Start loading
     ref.send({ type: 'load' })
