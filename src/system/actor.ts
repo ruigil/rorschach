@@ -193,6 +193,27 @@ export const createActor = <M, S>(
       services.eventStream.unsubscribe(name, topic)
     },
 
+    // ─── Async Effects ───
+
+    pipeToSelf: <T>(
+      future: Promise<T>,
+      onSuccess: (value: T) => M,
+      onFailure: (error: unknown) => M,
+    ): void => {
+      future.then(
+        (value) => {
+          if (!stopped) {
+            mailbox.forceEnqueue({ tag: 'message', payload: onSuccess(value) })
+          }
+        },
+        (error) => {
+          if (!stopped) {
+            mailbox.forceEnqueue({ tag: 'message', payload: onFailure(error) })
+          }
+        },
+      )
+    },
+
     // ─── Logging (exposed to actor handlers) ───
 
     log,

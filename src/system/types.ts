@@ -154,6 +154,22 @@ export type ActorContext<M> = {
   /** Unsubscribe from a topic. */
   readonly unsubscribe: (topic: EventTopic) => void
 
+  // ─── Async Effects ───
+
+  /**
+   * Run an async effect without blocking the actor's message loop.
+   * When the promise settles, the adapted message is enqueued into
+   * this actor's mailbox and processed sequentially like any other message.
+   *
+   * Uses `forceEnqueue` internally — piped results bypass backpressure,
+   * matching the semantics of timer-scheduled messages.
+   */
+  readonly pipeToSelf: <T>(
+    future: Promise<T>,
+    onSuccess: (value: T) => M,
+    onFailure: (error: unknown) => M,
+  ) => void
+
   // ─── Logging ───
 
   readonly log: {
@@ -170,11 +186,7 @@ export type ActorDef<M, S> = {
   setup?: (state: S, context: ActorContext<M>) => Promise<S> | S
 
   /** Handles incoming messages. Returns the next state. */
-  handler: (
-    state: S,
-    message: M,
-    context: ActorContext<M>,
-  ) => Promise<ActorResult<S>> | ActorResult<S>
+  handler: MessageHandler<M,S>
 
   /** Reacts to lifecycle events (stopped, terminated). */
   lifecycle?: (
