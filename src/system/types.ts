@@ -75,6 +75,7 @@ export type EventTopic = string
 export const DeadLetterTopic = 'system.deadLetters' as const
 export const LogTopic = 'system.log' as const
 export const SystemLifecycleTopic = 'system.lifecycle' as const
+export const MetricsTopic = 'system.metrics' as const
 
 // ─── Dead Letter ───
 export type DeadLetter = {
@@ -287,10 +288,72 @@ export type Registry = {
   readonly lookup: <T = unknown>(name: string) => ActorRef<T> | undefined
 }
 
+// ─── Actor Metrics Types ───
+
+export type ActorStatus = 'running' | 'stopping' | 'stopped' | 'failed'
+
+export type ProcessingTime = {
+  readonly count: number
+  readonly sum: number
+  readonly min: number
+  readonly max: number
+  readonly avg: number
+}
+
+/** Point-in-time snapshot of a single actor's metrics. */
+export type ActorSnapshot = {
+  readonly name: string
+  readonly status: ActorStatus
+  readonly uptime: number
+  readonly messagesReceived: number
+  readonly messagesProcessed: number
+  readonly messagesFailed: number
+  readonly restartCount: number
+  readonly mailboxSize: number
+  readonly stashSize: number
+  readonly childCount: number
+  readonly lastMessageTimestamp: number | null
+  readonly processingTime: ProcessingTime
+  readonly children: string[]
+}
+
+/** Hierarchical tree node for actor tree introspection. */
+export type ActorTreeNode = {
+  readonly name: string
+  readonly status: ActorStatus
+  readonly children: readonly ActorTreeNode[]
+}
+
+/** Per-actor metrics collector (internal — created by createActor). */
+export type ActorMetrics = {
+  readonly recordMessageReceived: () => void
+  readonly recordMessageProcessed: (durationMs: number) => void
+  readonly recordMessageFailed: () => void
+  readonly recordRestart: () => void
+  readonly setStatus: (status: ActorStatus) => void
+  readonly snapshot: () => ActorSnapshot
+}
+
+/** System-level metrics registry. */
+export type MetricsRegistry = {
+  readonly register: (name: string, metrics: ActorMetrics) => void
+  readonly unregister: (name: string) => void
+  readonly snapshot: (name: string) => ActorSnapshot | undefined
+  readonly snapshotAll: () => ActorSnapshot[]
+  readonly actorTree: () => ActorTreeNode[]
+}
+
+/** Event published to MetricsTopic by the internal metrics actor. */
+export type MetricsEvent = {
+  readonly timestamp: number
+  readonly actors: ActorSnapshot[]
+}
+
 // ─── Actor Services (shared system-level infrastructure passed to every actor) ───
 export type ActorServices = {
   readonly registry: Registry
   readonly eventStream: EventStream
+  readonly metricsRegistry: MetricsRegistry
 }
 
 // ─── Actor System ───
@@ -313,4 +376,13 @@ export type ActorSystem = {
     topic: EventTopic,
     callback: (event: unknown) => void,
   ) => () => void
+
+  // ─── Introspection ───
+
+  /** Get a point-in-time snapshot of a single actor's metrics by name. */
+  readonly getActorMetrics: (name: string) => ActorSnapshot | undefined
+  /** Get snapshots of all live actors. */
+  readonly getAllActorMetrics: () => ActorSnapshot[]
+  /** Get the hierarchical tree of live actors with status. */
+  readonly getActorTree: () => ActorTreeNode[]
 }

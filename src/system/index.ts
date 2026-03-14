@@ -6,6 +6,7 @@ export { watchTopic } from './services.ts'
 export {
   DeadLetterTopic,
   LogTopic,
+  MetricsTopic,
   SystemLifecycleTopic,
 } from './types.ts'
 
@@ -31,4 +32,12 @@ export type {
   SupervisionStrategy,
   Timers,
   TimerKey,
+  // ─── Metrics / Introspection ───
+  ActorMetrics,
+  ActorSnapshot,
+  ActorStatus,
+  ActorTreeNode,
+  MetricsEvent,
+  MetricsRegistry,
+  ProcessingTime,
 } from './types.ts'

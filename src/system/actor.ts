@@ -1,5 +1,6 @@
 import { createMailbox } from './mailbox.ts'
 import { createTimers } from './timers.ts'
+import { createActorMetrics } from './metrics.ts'
 import { watchTopic } from './services.ts'
 import {
   STOP,
@@ -273,6 +274,7 @@ export const createActor = <M, S>(
     name,
     send: (message: M) => {
       if (!stopped) {
+        metrics.recordMessageReceived()
         mailbox.enqueue({ tag: 'message', payload: message })
       } else {
         services.eventStream.publish(DeadLetterTopic, {
@@ -320,6 +322,11 @@ export const createActor = <M, S>(
 
   // ─── Stopping phase ───
   const runShutdownSequence = async (state: S) => {
+    // Update metrics status (preserve 'failed' if already set)
+    if (stopReason !== 'failed') {
+      metrics.setStatus('stopping')
+    }
+
     // 1. Cancel all timers
     timers.cancelAll()
 
@@ -364,8 +371,25 @@ export const createActor = <M, S>(
     services.eventStream.cleanup(name)
     services.eventStream.deleteTopic(watchTopic(name))
     log.info('stopped')
+
+    // 7. Finalize metrics status and unregister
+    if (stopReason !== 'failed') {
+      metrics.setStatus('stopped')
+    }
+    services.metricsRegistry.unregister(name)
     services.registry.unregister(name)
   }
+
+  // ─── Stash size — shared between the processing loop and metrics gauge ───
+  let currentStashSize = 0
+
+  // ─── Actor Metrics ───
+  const metrics = createActorMetrics(name, {
+    mailboxSize: () => mailbox.size(),
+    stashSize: () => currentStashSize,
+    childCount: () => children.size,
+    children: () => Array.from(children.keys()),
+  })
 
   // ─── Stash capacity ───
   const stashCapacity = def.stashCapacity ?? 1000
@@ -395,8 +419,9 @@ export const createActor = <M, S>(
       state = await def.setup(state, context)
     }
 
-    // Register in the global registry now that setup is complete
+    // Register in the global registry and metrics registry now that setup is complete
     services.registry.register(name, ref as ActorRef<unknown>)
+    services.metricsRegistry.register(name, metrics)
     log.info('started')
 
     // Message processing loop
@@ -408,7 +433,9 @@ export const createActor = <M, S>(
 
       try {
         if (envelope.tag === 'message') {
+          const startTime = performance.now()
           const result = await currentHandler(state, envelope.payload, context)
+          metrics.recordMessageProcessed(performance.now() - startTime)
           state = result.state
 
           // ─── Behavior switching ───
@@ -438,6 +465,9 @@ export const createActor = <M, S>(
             }
           }
 
+          // ─── Update stash size gauge ───
+          currentStashSize = stashedMessages.length
+
           if (result.events) {
             for (const event of result.events) {
               services.eventStream.publish(name, event)
@@ -455,9 +485,11 @@ export const createActor = <M, S>(
           }
         }
       } catch (error: unknown) {
+        metrics.recordMessageFailed()
         const decision = policy.onFailure()
 
         if (decision === 'restart') {
+          metrics.recordRestart()
           log.warn('restarting', { error })
 
           // Restart: cancel timers, stop children, reset state, re-run setup
@@ -467,6 +499,7 @@ export const createActor = <M, S>(
           // Reset behavior and dead-letter stashed messages
           currentHandler = def.handler
           drainStashToDeadLetters(stashedMessages)
+          currentStashSize = 0
 
           state = initialState
           if (def.setup) {
@@ -477,6 +510,7 @@ export const createActor = <M, S>(
 
         // Decision is 'stop' — either strategy is stop, or retries exhausted
         log.error('failed', { error })
+        metrics.setStatus('failed')
         stopReason = 'failed'
         stopError = error
         break

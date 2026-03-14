@@ -1,14 +1,19 @@
 import { createActor } from './actor.ts'
 import { createEventStream, createRegistry } from './services.ts'
+import { createMetricsRegistry } from './metrics.ts'
 import {
+  MetricsTopic,
   SystemLifecycleTopic,
   type ActorContext,
   type ActorDef,
   type ActorIdentity,
   type ActorRef,
   type ActorServices,
+  type ActorSnapshot,
   type ActorSystem,
+  type ActorTreeNode,
   type EventTopic,
+  type MetricsEvent,
 } from './types.ts'
 
 /**
@@ -22,6 +27,17 @@ export type ActorSystemOptions = {
    * Only meaningful when the root actor uses drain-based shutdown (default).
    */
   shutdownTimeoutMs?: number
+
+  /**
+   * Enable push-based metrics publishing to `MetricsTopic`.
+   * When configured, an internal `system/$metrics` actor periodically
+   * snapshots all actor metrics and publishes a `MetricsEvent` to the
+   * event stream. Omit to disable (zero overhead when not used).
+   */
+  metrics?: {
+    /** Interval (in ms) between metric snapshot publications. */
+    intervalMs: number
+  }
 }
 
 /**
@@ -47,13 +63,15 @@ export type ActorSystemOptions = {
 export const createActorSystem = (
   options?: ActorSystemOptions,
 ): ActorSystem => {
-  const { shutdownTimeoutMs } = options ?? {}
+  const { shutdownTimeoutMs, metrics: metricsConfig } = options ?? {}
   let shuttingDown = false
 
   // Shared infrastructure
+  const metricsRegistry = createMetricsRegistry()
   const services: ActorServices = {
     registry: createRegistry(),
     eventStream: createEventStream(),
+    metricsRegistry,
   }
 
   // ─── Root actor context, captured synchronously during setup ───
@@ -62,6 +80,29 @@ export const createActorSystem = (
   const rootDef: ActorDef<never, null> = {
     setup: (state, context) => {
       rootContext = context
+
+      // ─── Spawn the internal metrics actor if configured ───
+      if (metricsConfig) {
+        type MetricsMsg = { type: 'tick' }
+
+        const metricsActorDef: ActorDef<MetricsMsg, null> = {
+          setup: (s, ctx) => {
+            ctx.timers.startPeriodicTimer('metrics-tick', { type: 'tick' }, metricsConfig.intervalMs)
+            return s
+          },
+          handler: (s, _msg, ctx) => {
+            const event: MetricsEvent = {
+              timestamp: Date.now(),
+              actors: metricsRegistry.snapshotAll(),
+            }
+            ctx.publish(MetricsTopic, event)
+            return { state: s }
+          },
+        }
+
+        context.spawn('$metrics', metricsActorDef, null)
+      }
+
       return state
     },
 
@@ -126,5 +167,22 @@ export const createActorSystem = (
     return () => services.eventStream.unsubscribe(subscriberName, topic)
   }
 
-  return { spawn, stop, shutdown, publish, subscribe }
+  // ─── Introspection (pass-throughs to MetricsRegistry) ───
+
+  const getActorMetrics = (name: string): ActorSnapshot | undefined => {
+    return metricsRegistry.snapshot(name)
+  }
+
+  const getAllActorMetrics = (): ActorSnapshot[] => {
+    return metricsRegistry.snapshotAll()
+  }
+
+  const getActorTree = (): ActorTreeNode[] => {
+    return metricsRegistry.actorTree()
+  }
+
+  return {
+    spawn, stop, shutdown, publish, subscribe,
+    getActorMetrics, getAllActorMetrics, getActorTree,
+  }
 }
