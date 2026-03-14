@@ -17,6 +17,7 @@ import {
   type LifecycleEvent,
   type LogEvent,
   type LogLevel,
+  type MessageHandler,
   type StopResult,
 } from './types.ts'
 
@@ -253,9 +254,28 @@ export const createActor = <M, S>(
     services.registry.unregister(name)
   }
 
+  // ─── Stash capacity ───
+  const stashCapacity = def.stashCapacity ?? 1000
+
+  // ─── Helper: dead-letter all stashed messages and clear the buffer ───
+  const drainStashToDeadLetters = (stashedMessages: M[]): void => {
+    for (const msg of stashedMessages) {
+      services.eventStream.publish(DeadLetterTopic, {
+        recipient: name, message: msg, timestamp: Date.now(),
+      })
+    }
+    stashedMessages.length = 0
+  }
+
   // ─── The async processing loop ───
   const runningPromise = (async () => {
     let state = initialState
+
+    // ─── Behavior switching: current handler (starts as def.handler) ───
+    let currentHandler: MessageHandler<M, S> = def.handler
+
+    // ─── Stash buffer: messages deferred by the current behavior ───
+    const stashedMessages: M[] = []
 
     // Setup phase
     if (def.setup) {
@@ -275,8 +295,35 @@ export const createActor = <M, S>(
 
       try {
         if (envelope.tag === 'message') {
-          const result = await def.handler(state, envelope.payload, context)
+          const result = await currentHandler(state, envelope.payload, context)
           state = result.state
+
+          // ─── Behavior switching ───
+          if (result.become) {
+            currentHandler = result.become as MessageHandler<M, S>
+          }
+
+          // ─── Stashing ───
+          if (result.stash) {
+            if (stashedMessages.length >= stashCapacity) {
+              // Drop oldest stashed message to dead letters to make room
+              const dropped = stashedMessages.shift()
+              services.eventStream.publish(DeadLetterTopic, {
+                recipient: name, message: dropped, timestamp: Date.now(),
+              })
+              log.warn('stash overflow — oldest message dropped', {
+                stashSize: stashedMessages.length,
+                stashCapacity,
+              })
+            }
+            stashedMessages.push(envelope.payload)
+          }
+
+          if (result.unstashAll && stashedMessages.length > 0) {
+            for (const msg of stashedMessages.splice(0)) {
+              mailbox.forceEnqueue({ tag: 'message', payload: msg })
+            }
+          }
 
           if (result.events) {
             for (const event of result.events) {
@@ -303,6 +350,11 @@ export const createActor = <M, S>(
           // Restart: cancel timers, stop children, reset state, re-run setup
           timers.cancelAll()
           await stopAllChildren()
+
+          // Reset behavior and dead-letter stashed messages
+          currentHandler = def.handler
+          drainStashToDeadLetters(stashedMessages)
+
           state = initialState
           if (def.setup) {
             state = await def.setup(state, context)
@@ -319,6 +371,9 @@ export const createActor = <M, S>(
     }
 
     // ─── Stopping phase ───
+    // Dead-letter any remaining stashed messages
+    drainStashToDeadLetters(stashedMessages)
+
     await runShutdownSequence(state)
   })()
 

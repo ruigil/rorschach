@@ -23,6 +23,7 @@ export type {
   LogLevel,
   MailboxConfig,
   MailboxOverflowStrategy,
+  MessageHandler,
   Registry,
   SupervisionStrategy,
   Timers,

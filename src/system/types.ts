@@ -104,11 +104,28 @@ export type EventStream = {
   readonly deleteTopic: (topic: EventTopic) => void
 }
 
+// ─── Message Handler (reusable handler function type) ───
+export type MessageHandler<M, S> = (
+  state: S,
+  message: M,
+  context: ActorContext<M>,
+) => Promise<ActorResult<S>> | ActorResult<S>
+
 // ─── Actor Result (returned from handlers) ───
 export type ActorResult<S> = {
   state: S
   /** Domain events produced by this handler invocation. Auto-published to the actor's name topic on the EventStream. */
   events?: unknown[]
+
+  // ─── Behavior switching ───
+  /** Replace the current message handler with a new one. */
+  become?: MessageHandler<any, S>
+
+  // ─── Stashing ───
+  /** Defer the current message for later reprocessing. */
+  stash?: boolean
+  /** Re-enqueue all stashed messages into the mailbox. Typically used alongside `become`. */
+  unstashAll?: boolean
 }
 
 // ─── Actor Context (available to handlers) ───
@@ -178,6 +195,13 @@ export type ActorDef<M, S> = {
    * Omit for unbounded (default — current behavior).
    */
   mailbox?: MailboxConfig
+
+  /**
+   * Maximum number of messages that can be stashed.
+   * When exceeded, the oldest stashed message is dropped to dead letters.
+   * Default: 1000.
+   */
+  stashCapacity?: number
 }
 
 // ─── Stop Result (returned from InternalActorHandle.stop()) ───
