@@ -111,6 +111,26 @@ const ref = context.lookup<SomeMsg>('system/other-actor')
 ref?.send({ type: 'hello' })
 ```
 
+### `context.pipeToSelf`
+Run async side-effects (fetch, DB queries, file I/O) without blocking the actor's message loop. The promise runs in the background; when it settles, the adapted result is enqueued into the actor's mailbox and processed sequentially like any other message.
+
+```ts
+// Kick off non-blocking async work
+context.pipeToSelf(
+  fetch('/api/data').then(r => r.json()),
+  (data) => ({ type: 'dataLoaded', data }),       // onSuccess → M
+  (err)  => ({ type: 'dataFailed', error: err }), // onFailure → M
+)
+// Return immediately — the actor keeps processing other messages
+return { state: { ...state, loading: true } }
+```
+
+**Design notes:**
+- Uses `enqueueSystem` internally — piped results bypass backpressure, matching the semantics of timer-scheduled messages. The actor explicitly requested this work; dropping the result would silently leave it in an inconsistent state.
+- If the actor has stopped by the time the promise resolves, the result is silently discarded.
+- Cancellation is the caller's responsibility (e.g., use `AbortController` inside the promise).
+- If the `onSuccess`/`onFailure` adapter produces a message that causes handler to throw, it flows through the normal supervision policy.
+
 ### `context.publish` / `context.subscribe` / `context.unsubscribe`
 Pub-sub on the system event stream. `subscribe` takes an adapter function that maps the raw event into the actor's message type, so events are processed through the normal message handler.
 ```ts
