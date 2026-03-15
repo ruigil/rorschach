@@ -236,6 +236,8 @@ export type ActorContext<M> = {
   readonly subscribe: <T>(topic: EventTopic<T>, adapter: (event: T) => M) => void
   /** Unsubscribe from a topic. */
   readonly unsubscribe: (topic: EventTopic) => void
+  /** Remove a topic's subscriber map entry. Call after publishing a terminal event on a short-lived topic to prevent accumulation. */
+  readonly deleteTopic: (topic: EventTopic) => void
 
   // ─── Async Effects ───
 

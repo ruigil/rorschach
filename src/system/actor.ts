@@ -197,6 +197,10 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       services.eventStream.unsubscribe(name, topic)
     },
 
+    deleteTopic: (topic: EventTopic) => {
+      services.eventStream.deleteTopic(topic)
+    },
+
     // ─── Async Effects ───
 
     pipeToSelf: <T>(

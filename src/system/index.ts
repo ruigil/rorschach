@@ -1,5 +1,7 @@
 // ─── Public API ───
 export { createActorSystem, type ActorSystemOptions } from './system.ts'
+export { createWorkerBridge, taskTopic } from '../actors/worker-bridge.ts'
+export type { TaskEvent, WorkerBridge, WorkerBridgeMsg, WorkerBridgeOptions, WorkerBridgeState } from '../actors/worker-bridge.ts'
 export { ask } from './ask.ts'
 export { watchTopic } from './services.ts'
 
