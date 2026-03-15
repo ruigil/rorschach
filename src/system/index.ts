@@ -32,6 +32,7 @@ export type {
   MailboxConfig,
   MailboxOverflowStrategy,
   MessageHandler,
+  PersistenceAdapter,
   Registry,
   ShutdownConfig,
   SupervisionStrategy,

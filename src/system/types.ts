@@ -60,7 +60,22 @@ export type ActorIdentity = { readonly name: string }
 // ─── Supervision Strategy ───
 export type SupervisionStrategy =
   | { type: 'stop' }
-  | { type: 'restart'; maxRetries?: number; withinMs?: number }
+  | {
+      type: 'restart'
+      maxRetries?: number
+      withinMs?: number
+      /**
+       * Initial backoff delay (in ms) before the first restart.
+       * Each subsequent consecutive failure doubles the delay.
+       * Omit for immediate restart (existing behavior).
+       */
+      backoffMs?: number
+      /**
+       * Maximum backoff delay (in ms). Caps the exponential growth.
+       * Only meaningful when `backoffMs` is set.
+       */
+      maxBackoffMs?: number
+    }
 
 // ─── Lifecycle Events ───
 export type LifecycleEvent =
@@ -282,6 +297,23 @@ export type ShutdownConfig = {
   timeoutMs?: number
 }
 
+// ─── Persistence Adapter ───
+export type PersistenceAdapter<S> = {
+  /**
+   * Called during actor startup (before `setup`).
+   * Return the last saved snapshot, or undefined to start from initialState.
+   * Errors propagate as startup failures — same semantics as a throwing `setup()`.
+   */
+  load: () => Promise<S | undefined>
+  /**
+   * Called after each successfully processed message with the new state.
+   * Awaited before the next message is dequeued — guarantees at-least-once
+   * durability at the cost of throughput. Errors are caught, logged as warnings,
+   * and do not crash the actor.
+   */
+  save: (state: S) => Promise<void>
+}
+
 // ─── Actor Definition (behavior specification) ───
 export type ActorDef<M, S> = {
   /** Runs once on start (or restart). Receives initial state + context. Returns the enriched initial state. */
@@ -336,6 +368,22 @@ export type ActorDef<M, S> = {
    * Omit for direct handler invocation (default — zero overhead).
    */
   interceptors?: Interceptor<M, S>[]
+
+  /**
+   * Persistence adapter for state snapshots.
+   *
+   * When provided, `load()` is called before `setup()` on every start and
+   * restart — so `setup()` always receives the last durable state and can
+   * re-initialize non-serializable resources (connections, subscriptions,
+   * timers) on top of it.
+   *
+   * `save(state)` is called after every successfully processed message.
+   * Save errors are logged as warnings and do not crash or restart the actor.
+   *
+   * Note: stash contents and the active `become` variant are not persisted.
+   * Behavioral state that must survive restarts should be encoded in S.
+   */
+  persistence?: PersistenceAdapter<S>
 }
 
 // ─── Stop Result (returned from InternalActorHandle.stop()) ───

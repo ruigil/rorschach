@@ -39,33 +39,54 @@ type InternalLog = {
 
 
 /**
- * A supervision policy encapsulates the retry-window logic for an actor.
+ * A supervision policy encapsulates the retry-window and backoff logic for an actor.
  *
- * On each failure, call `onFailure()` to determine whether to restart or stop.
- * The policy tracks failure timestamps internally for windowed retry limiting.
+ * On each failure, call `onFailure()` to determine whether to restart or stop,
+ * and how long to wait before restarting. Call `onSuccess()` after each
+ * successfully processed message to reset the consecutive-failure counter
+ * (so backoff starts fresh after a period of healthy operation).
  */
 export type SupervisionPolicy = {
-  /** Returns 'restart' if the actor should restart, 'stop' if retries are exhausted or strategy is stop. */
-  readonly onFailure: () => 'restart' | 'stop'
+  /** Returns the action and backoff delay to apply before restarting. */
+  readonly onFailure: () => { action: 'restart' | 'stop'; delayMs: number }
+  /** Resets the consecutive-failure counter used for backoff calculation. */
+  readonly onSuccess: () => void
+}
+
+// Computes exponential backoff: backoffMs * 2^attempt, capped at maxBackoffMs.
+const computeBackoff = (backoffMs: number | undefined, maxBackoffMs: number | undefined, attempt: number): number => {
+  if (backoffMs === undefined) return 0
+  const delay = backoffMs * Math.pow(2, attempt)
+  return maxBackoffMs !== undefined ? Math.min(delay, maxBackoffMs) : delay
 }
 
 /**
  * Creates a supervision policy from a strategy definition.
  *
  * - `{ type: 'stop' }` — always returns 'stop'
- * - `{ type: 'restart' }` — returns 'restart', optionally bounded by maxRetries/withinMs
+ * - `{ type: 'restart' }` — returns 'restart', optionally bounded by maxRetries/withinMs,
+ *   with optional exponential backoff via backoffMs/maxBackoffMs
  */
 const createSupervisionPolicy = (strategy: SupervisionStrategy): SupervisionPolicy => {
   if (strategy.type === 'stop') {
-    return { onFailure: () => 'stop' }
+    return {
+      onFailure: () => ({ action: 'stop', delayMs: 0 }),
+      onSuccess: () => {},
+    }
   }
 
   // Restart strategy — track failure timestamps for windowed retry limiting
   const failureTimestamps: number[] = []
-  const { maxRetries, withinMs } = strategy
+  const { maxRetries, withinMs, backoffMs, maxBackoffMs } = strategy
 
-  const onFailure = (): 'restart' | 'stop' => {
-    if (maxRetries === undefined) return 'restart' // unlimited retries
+  // Tracks consecutive failures for backoff calculation — reset on success
+  let consecutiveFailures = 0
+
+  const onFailure = (): { action: 'restart' | 'stop'; delayMs: number } => {
+    const delayMs = computeBackoff(backoffMs, maxBackoffMs, consecutiveFailures)
+    consecutiveFailures++
+
+    if (maxRetries === undefined) return { action: 'restart', delayMs } // unlimited retries
 
     const now = Date.now()
 
@@ -78,10 +99,16 @@ const createSupervisionPolicy = (strategy: SupervisionStrategy): SupervisionPoli
     }
 
     failureTimestamps.push(now)
-    return failureTimestamps.length <= maxRetries ? 'restart' : 'stop'
+    return failureTimestamps.length <= maxRetries
+      ? { action: 'restart', delayMs }
+      : { action: 'stop', delayMs: 0 }
   }
 
-  return { onFailure }
+  const onSuccess = (): void => {
+    consecutiveFailures = 0
+  }
+
+  return { onFailure, onSuccess }
 }
 
 
@@ -447,7 +474,12 @@ export const createActor = <M, S>(
     // ─── Stash buffer: messages deferred by the current behavior ───
     const stashedMessages: M[] = []
 
-    // Setup phase
+    // Setup phase — load persisted snapshot first (if adapter provided),
+    // then run setup so it can layer non-serializable resources on top.
+    if (def.persistence) {
+      const loaded = await def.persistence.load()
+      if (loaded !== undefined) state = loaded
+    }
     if (def.setup) {
       state = await def.setup(state, context)
     }
@@ -469,6 +501,7 @@ export const createActor = <M, S>(
           const startTime = performance.now()
           const result = currentHandler(state, envelope.payload, context)
           metrics.recordMessageProcessed(performance.now() - startTime)
+          policy.onSuccess()
           state = result.state
 
           // ─── Behavior switching (re-wrap with interceptors) ───
@@ -506,6 +539,15 @@ export const createActor = <M, S>(
               services.eventStream.publish(topic, payload)
             }
           }
+
+          // ─── Persistence: snapshot state after successful message ───
+          if (def.persistence) {
+            try {
+              await def.persistence.save(state)
+            } catch (saveError: unknown) {
+              log.warn('persistence save failed — continuing', { error: saveError })
+            }
+          }
         } else if (envelope.tag === 'lifecycle') {
           // Auto-remove terminated children from the children map
           if (envelope.event.type === 'terminated') {
@@ -519,11 +561,11 @@ export const createActor = <M, S>(
         }
       } catch (error: unknown) {
         metrics.recordMessageFailed()
-        const decision = policy.onFailure()
+        const { action, delayMs } = policy.onFailure()
 
-        if (decision === 'restart') {
+        if (action === 'restart') {
           metrics.recordRestart()
-          log.warn('restarting', { error })
+          log.warn('restarting', { error, ...(delayMs > 0 ? { backoffMs: delayMs } : {}) })
 
           // Restart: cancel timers, stop children, reset state, re-run setup
           timers.cancelAll()
@@ -534,7 +576,15 @@ export const createActor = <M, S>(
           drainStashToDeadLetters(stashedMessages)
           currentStashSize = 0
 
+          if (delayMs > 0) {
+            await new Promise<void>(resolve => setTimeout(resolve, delayMs))
+          }
+
           state = initialState
+          if (def.persistence) {
+            const loaded = await def.persistence.load()
+            if (loaded !== undefined) state = loaded
+          }
           if (def.setup) {
             state = await def.setup(state, context)
           }
