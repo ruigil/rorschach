@@ -16,6 +16,7 @@ export {
 
 export type {
   ActorRef,
+  MessageHeaders,
   ActorDef,
   ActorContext,
   ActorIdentity,

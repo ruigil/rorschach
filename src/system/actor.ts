@@ -19,6 +19,7 @@ import {
   type LogEvent,
   type LogLevel,
   type Mailbox,
+  type MessageHeaders,
   type MessageHandler,
   type StopResult,
   type SupervisionStrategy
@@ -26,8 +27,11 @@ import {
 
 // ─── Internal envelope: unifies user messages and lifecycle events ───
 type Envelope<M> =
-  | { tag: 'message'; payload: M }
+  | { tag: 'message'; payload: M; headers: MessageHeaders }
   | { tag: 'lifecycle'; event: LifecycleEvent }
+
+// ─── Stashed envelope: preserves headers alongside the deferred message ───
+type StashedEnvelope<M> = { payload: M; headers: MessageHeaders }
 
 // ─── Internal logger type ───
 type InternalLog = {
@@ -146,6 +150,7 @@ type ActorInternals<M> = {
   readonly enqueueLifecycle: (event: LifecycleEvent) => void
   readonly log: InternalLog
   readonly isStopped: () => boolean
+  readonly getHeaders: () => MessageHeaders
 }
 
 /**
@@ -156,11 +161,12 @@ type ActorInternals<M> = {
  */
 const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> => {
   const { name, ref, timers, children, mailbox, services,
-          enqueueLifecycle, log, isStopped } = internals
+          enqueueLifecycle, log, isStopped, getHeaders } = internals
 
   return {
     self: ref,
     timers,
+    messageHeaders: () => getHeaders(),
 
     spawn: <CM, CS>(
       childName: string,
@@ -215,7 +221,7 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
     subscribe: <T>(topic: EventTopic<T>, adapter: (event: T) => M) => {
       services.eventStream.subscribe(name, topic, (event: T) => {
         if (!isStopped()) {
-          mailbox.enqueue({ tag: 'message', payload: adapter(event) })
+          mailbox.enqueue({ tag: 'message', payload: adapter(event), headers: {} })
         }
       })
     },
@@ -235,15 +241,16 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       onSuccess: (value: T) => M,
       onFailure: (error: unknown) => M,
     ): void => {
+      const capturedHeaders = getHeaders()
       future.then(
         (value) => {
           if (!isStopped()) {
-            mailbox.enqueueSystem({ tag: 'message', payload: onSuccess(value) })
+            mailbox.enqueueSystem({ tag: 'message', payload: onSuccess(value), headers: capturedHeaders })
           }
         },
         (error) => {
           if (!isStopped()) {
-            mailbox.enqueueSystem({ tag: 'message', payload: onFailure(error) })
+            mailbox.enqueueSystem({ tag: 'message', payload: onFailure(error), headers: capturedHeaders })
           }
         },
       )
@@ -328,14 +335,15 @@ export const createActor = <M, S>(
   )
   const children = new Map<string, InternalActorHandle>()
   let stopped = false
+  let currentHeaders: MessageHeaders = {}
 
   // ─── Build the public ActorRef ───
   const ref: ActorRef<M> = {
     name,
-    send: (message: M) => {
+    send: (message: M, headers: MessageHeaders = {}) => {
       if (!stopped) {
         metrics.recordMessageReceived()
-        mailbox.enqueue({ tag: 'message', payload: message })
+        mailbox.enqueue({ tag: 'message', payload: message, headers })
       } else {
         services.eventStream.publish(DeadLetterTopic, {
           recipient: name, message, timestamp: Date.now(),
@@ -356,7 +364,7 @@ export const createActor = <M, S>(
   // Timer messages bypass capacity limits — the actor explicitly scheduled them.
   const timers = createTimers<M>((message) => {
     if (!stopped) {
-      mailbox.enqueueSystem({ tag: 'message', payload: message })
+      mailbox.enqueueSystem({ tag: 'message', payload: message, headers: {} })
     }
   })
 
@@ -370,7 +378,7 @@ export const createActor = <M, S>(
   // ─── Build the context (extracted — pure wiring) ───
   const context = createActorContext<M>({
     name, ref, timers, children, mailbox, services,
-    enqueueLifecycle, log, isStopped: () => stopped,
+    enqueueLifecycle, log, isStopped: () => stopped, getHeaders: () => currentHeaders,
   })
 
   // ─── Supervision policy ───
@@ -455,10 +463,10 @@ export const createActor = <M, S>(
   const stashCapacity = def.stashCapacity ?? 1000
 
   // ─── Helper: dead-letter all stashed messages and clear the buffer ───
-  const drainStashToDeadLetters = (stashedMessages: M[]): void => {
-    for (const msg of stashedMessages) {
+  const drainStashToDeadLetters = (stashedMessages: StashedEnvelope<M>[]): void => {
+    for (const { payload } of stashedMessages) {
       services.eventStream.publish(DeadLetterTopic, {
-        recipient: name, message: msg, timestamp: Date.now(),
+        recipient: name, message: payload, timestamp: Date.now(),
       })
     }
     stashedMessages.length = 0
@@ -472,7 +480,7 @@ export const createActor = <M, S>(
     let currentHandler: MessageHandler<M, S> = buildPipeline(def.handler, def.interceptors)
 
     // ─── Stash buffer: messages deferred by the current behavior ───
-    const stashedMessages: M[] = []
+    const stashedMessages: StashedEnvelope<M>[] = []
 
     // Setup phase — load persisted snapshot first (if adapter provided),
     // then run setup so it can layer non-serializable resources on top.
@@ -498,6 +506,7 @@ export const createActor = <M, S>(
 
       try {
         if (envelope.tag === 'message') {
+          currentHeaders = envelope.headers
           const startTime = performance.now()
           const result = currentHandler(state, envelope.payload, context)
           metrics.recordMessageProcessed(performance.now() - startTime)
@@ -513,21 +522,21 @@ export const createActor = <M, S>(
           if (result.stash) {
             if (stashedMessages.length >= stashCapacity) {
               // Drop oldest stashed message to dead letters to make room
-              const dropped = stashedMessages.shift()
+              const dropped = stashedMessages.shift()!
               services.eventStream.publish(DeadLetterTopic, {
-                recipient: name, message: dropped, timestamp: Date.now(),
+                recipient: name, message: dropped.payload, timestamp: Date.now(),
               })
               log.warn('stash overflow — oldest message dropped', {
                 stashSize: stashedMessages.length,
                 stashCapacity,
               })
             }
-            stashedMessages.push(envelope.payload)
+            stashedMessages.push({ payload: envelope.payload, headers: envelope.headers })
           }
 
           if (result.unstashAll && stashedMessages.length > 0) {
-            for (const msg of stashedMessages.splice(0)) {
-              mailbox.enqueueSystem({ tag: 'message', payload: msg })
+            for (const { payload, headers } of stashedMessages.splice(0)) {
+              mailbox.enqueueSystem({ tag: 'message', payload, headers })
             }
           }
 

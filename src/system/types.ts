@@ -2,6 +2,14 @@
 export const STOP = Symbol('STOP')
 export type Stop = typeof STOP
 
+// ─── Message Headers (envelope metadata for cross-actor propagation) ───
+//
+// Plain string map — compatible with W3C traceparent/tracestate/baggage and
+// any other propagation format. The library threads headers through envelopes,
+// pipeToSelf, and stash/unstash without interpreting their contents.
+//
+export type MessageHeaders = Record<string, string>
+
 // ─── Timer Key ───
 export type TimerKey = string | symbol
 
@@ -51,7 +59,7 @@ export type Mailbox<T> = {
 // ─── Actor Reference (opaque handle) ───
 export type ActorRef<M> = {
   readonly name: string
-  readonly send: (message: M) => void
+  readonly send: (message: M, headers?: MessageHeaders) => void
 }
 
 // ─── Minimal reference (used where we only need identity, not send) ───
@@ -230,6 +238,8 @@ export type LifecycleResult<S> = { state: S }
 export type ActorContext<M> = {
   readonly self: ActorRef<M>
   readonly timers: Timers<M>
+  /** Returns the headers attached to the message currently being processed. Empty object when not set. */
+  readonly messageHeaders: () => MessageHeaders
   readonly spawn: <CM, CS>(
     name: string,
     def: ActorDef<CM, CS>,
