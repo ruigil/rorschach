@@ -154,14 +154,14 @@ export const createActorSystem = (
 
   // ─── Event Stream (infrastructure pass-throughs) ───
 
-  const publish = (topic: EventTopic, event: unknown): void => {
+  const publish = <T>(topic: EventTopic<T>, event: T): void => {
     services.eventStream.publish(topic, event)
   }
 
-  const subscribe = (
+  const subscribe = <T>(
     subscriberName: string,
-    topic: EventTopic,
-    callback: (event: unknown) => void,
+    topic: EventTopic<T>,
+    callback: (event: T) => void,
   ): (() => void) => {
     services.eventStream.subscribe(subscriberName, topic, callback)
     return () => services.eventStream.unsubscribe(subscriberName, topic)

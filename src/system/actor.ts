@@ -149,7 +149,7 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       children.set(fullName, childHandle as InternalActorHandle)
 
       // Parent implicitly watches its children
-      services.eventStream.subscribe(name, watchTopic(fullName), enqueueLifecycle as (event: unknown) => void)
+      services.eventStream.subscribe(name, watchTopic(fullName), enqueueLifecycle)
 
       return childHandle.ref
     },
@@ -167,7 +167,7 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
         enqueueLifecycle({ type: 'terminated', ref: target, reason: 'stopped' })
         return
       }
-      services.eventStream.subscribe(name, watchTopic(target.name), enqueueLifecycle as (event: unknown) => void)
+      services.eventStream.subscribe(name, watchTopic(target.name), enqueueLifecycle)
     },
 
     unwatch: (target: ActorIdentity) => {
@@ -180,12 +180,12 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
 
     // ─── Event Stream (pub-sub) ───
 
-    publish: (topic: EventTopic, event: unknown) => {
+    publish: <T>(topic: EventTopic<T>, event: T) => {
       services.eventStream.publish(topic, event)
     },
 
-    subscribe: (topic: EventTopic, adapter: (event: unknown) => M) => {
-      services.eventStream.subscribe(name, topic, (event) => {
+    subscribe: <T>(topic: EventTopic<T>, adapter: (event: T) => M) => {
+      services.eventStream.subscribe(name, topic, (event: T) => {
         if (!isStopped()) {
           mailbox.enqueue({ tag: 'message', payload: adapter(event) })
         }
@@ -469,8 +469,8 @@ export const createActor = <M, S>(
           currentStashSize = stashedMessages.length
 
           if (result.events) {
-            for (const event of result.events) {
-              services.eventStream.publish(name, event)
+            for (const { topic, payload } of result.events) {
+              services.eventStream.publish(topic, payload)
             }
           }
         } else if (envelope.tag === 'lifecycle') {

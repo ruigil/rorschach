@@ -1,6 +1,7 @@
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Server, ServerWebSocket } from 'bun'
+import { createTopic, emit } from '../system/types.ts'
 import type { ActorDef, ActorRef } from '../system/types.ts'
 
 // ─── Public directory (resolved relative to this module) ───
@@ -25,6 +26,13 @@ export type HttpState = {
 // ─── WebSocket attachment data ───
 
 type WsData = { clientId: string }
+
+// ─── Domain event: published when a WebSocket message is received ───
+
+export type WsMessageEvent = { clientId: string; text: string }
+
+/** Topic for WebSocket message domain events. Subscribe to receive browser input. */
+export const WsMessageTopic = createTopic<WsMessageEvent>('http.ws.message')
 
 // ─── Options ───
 
@@ -144,10 +152,10 @@ export const createHttpActor = (
           // Echo back to all connected clients via Bun pub/sub
           state.server?.publish(CHANNEL, message.text)
 
-          // Emit as a domain event so other actors can subscribe
+          // Emit as a typed domain event so other actors can subscribe
           return {
             state,
-            events: [{ clientId: message.clientId, text: message.text }],
+            events: [emit(WsMessageTopic, { clientId: message.clientId, text: message.text })],
           }
         }
 

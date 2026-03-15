@@ -1,6 +1,8 @@
 import { describe, test, expect } from 'bun:test'
 import {
   createActorSystem,
+  createTopic,
+  emit,
   DeadLetterTopic,
   LogTopic,
 } from '../system/index.ts'
@@ -197,23 +199,25 @@ describe('EventStream: pub-sub', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('EventStream: handler-returned events', () => {
-  test('events returned from handler are auto-published to actor name topic', async () => {
+  test('events returned from handler are published to their declared topic', async () => {
     const system = createActorSystem()
     const published: unknown[] = []
 
-    // Subscribe to the producer actor's name as topic
-    system.subscribe('test-listener', 'system/producer', (event) => {
+    type Msg = { type: 'produce'; value: string }
+    type Evt = { type: 'produced'; value: string }
+    const ProducedTopic = createTopic<Evt>('producer.events')
+
+    // Subscribe to the typed topic
+    system.subscribe('test-listener', ProducedTopic, (event) => {
       published.push(event)
     })
 
-    type Msg = { type: 'produce'; value: string }
-    type Evt = { type: 'produced'; value: string }
     const producerDef: ActorDef<Msg, null> = {
       handler: (state, msg) => {
         if (msg.type === 'produce') {
           return {
             state,
-            events: [{ type: 'produced', value: msg.value } satisfies Evt],
+            events: [emit(ProducedTopic, { type: 'produced', value: msg.value })],
           }
         }
         return { state }
@@ -238,7 +242,8 @@ describe('EventStream: handler-returned events', () => {
     const system = createActorSystem()
     const published: unknown[] = []
 
-    system.subscribe('listener', 'system/actor', (event) => {
+    const SomeTopic = createTopic<unknown>('some.topic')
+    system.subscribe('listener', SomeTopic, (event) => {
       published.push(event)
     })
 
@@ -267,7 +272,7 @@ describe('Dead letters', () => {
     const deadLetters: DeadLetter[] = []
 
     system.subscribe('dl-listener', DeadLetterTopic, (event) => {
-      deadLetters.push(event as DeadLetter)
+      deadLetters.push(event)
     })
 
     const ref = system.spawn('target', {
@@ -293,7 +298,7 @@ describe('Dead letters', () => {
     const deadLetters: DeadLetter[] = []
 
     system.subscribe('dl-listener', DeadLetterTopic, (event) => {
-      deadLetters.push(event as DeadLetter)
+      deadLetters.push(event)
     })
 
     const ref = system.spawn('alive', {
@@ -319,7 +324,7 @@ describe('Logging', () => {
     const logs: LogEvent[] = []
 
     system.subscribe('log-listener', LogTopic, (event) => {
-      logs.push(event as LogEvent)
+      logs.push(event)
     })
 
     system.spawn('logger-test', {
@@ -345,7 +350,7 @@ describe('Logging', () => {
     const logs: LogEvent[] = []
 
     system.subscribe('log-listener', LogTopic, (event) => {
-      logs.push(event as LogEvent)
+      logs.push(event)
     })
 
     const def: ActorDef<string, null> = {
@@ -371,7 +376,7 @@ describe('Logging', () => {
     const logs: LogEvent[] = []
 
     system.subscribe('log-listener', LogTopic, (event) => {
-      logs.push(event as LogEvent)
+      logs.push(event)
     })
 
     let callCount = 0
@@ -401,7 +406,7 @@ describe('Logging', () => {
     const logs: LogEvent[] = []
 
     system.subscribe('log-listener', LogTopic, (event) => {
-      logs.push(event as LogEvent)
+      logs.push(event)
     })
 
     type Msg = { type: 'do-log' }
@@ -434,7 +439,7 @@ describe('Logging', () => {
     const logs: LogEvent[] = []
 
     system.subscribe('log-listener', LogTopic, (event) => {
-      logs.push(event as LogEvent)
+      logs.push(event)
     })
 
     type Msg = 'log-all'

@@ -69,13 +69,23 @@ export type LifecycleEvent =
   | { type: 'terminated'; ref: ActorIdentity; reason: 'stopped' | 'failed'; error?: unknown }
 
 // ─── Event Stream Topics ───
-export type EventTopic = string
+//
+// EventTopic<T> carries a phantom type parameter that encodes the payload type.
+// The phantom field is optional and never set at runtime — it exists only for the
+// type checker to enforce publish/subscribe type safety. Plain strings are still
+// assignable (they default to EventTopic<unknown>), so existing code compiles
+// unchanged and can be migrated incrementally to createTopic<T>().
+//
+export type EventTopic<T = unknown> = string & { readonly __eventType?: T }
 
-// ─── Well-known system topics ───
-export const DeadLetterTopic = 'system.deadLetters' as const
-export const LogTopic = 'system.log' as const
-export const SystemLifecycleTopic = 'system.lifecycle' as const
-export const MetricsTopic = 'system.metrics' as const
+/** Creates a typed event topic. The phantom type T encodes the payload type at compile time — zero runtime cost. */
+export const createTopic = <T>(name: string): EventTopic<T> => name as EventTopic<T>
+
+// ─── Well-known system topics (typed) ───
+export const DeadLetterTopic: EventTopic<DeadLetter> = 'system.deadLetters' as EventTopic<DeadLetter>
+export const LogTopic: EventTopic<LogEvent> = 'system.log' as EventTopic<LogEvent>
+export const SystemLifecycleTopic: EventTopic<LifecycleEvent> = 'system.lifecycle' as EventTopic<LifecycleEvent>
+export const MetricsTopic: EventTopic<MetricsEvent> = 'system.metrics' as EventTopic<MetricsEvent>
 
 // ─── Dead Letter ───
 export type DeadLetter = {
@@ -95,15 +105,38 @@ export type LogEvent = {
   readonly timestamp: number
 }
 
+// ─── Typed Event (topic + payload pair for handler-returned events) ───
+//
+// Each TypedEvent carries an explicit topic, so the processing loop publishes
+// to the correct topic with compile-time type safety. The `emit` helper
+// enforces that the payload matches the topic's phantom type.
+//
+
+/** A topic + payload pair. Used in `ActorResult.events` for type-safe domain event publishing. */
+export type TypedEvent<T = any> = {
+  readonly topic: EventTopic<T>
+  readonly payload: T
+}
+
+/** Creates a TypedEvent — enforces that the payload matches the topic's phantom type T. */
+export const emit = <T>(topic: EventTopic<T>, payload: T): TypedEvent<T> =>
+  ({ topic, payload })
+
 // ─── Event Stream (System Pub-Sub Bus) ───
+//
+// The generic overloads on publish/subscribe enforce payload type safety
+// when a typed EventTopic<T> is used. The runtime implementation is unchanged —
+// the internal maps still store `unknown` callbacks. Type safety is purely
+// compile-time via the phantom type on EventTopic<T>.
+//
 export type EventStream = {
   /** Publish an event to all subscribers of the given topic. */
-  readonly publish: (topic: EventTopic, event: unknown) => void
+  readonly publish: <T>(topic: EventTopic<T>, event: T) => void
   /** Subscribe to a topic. Matching events are delivered via the callback. */
-  readonly subscribe: (
+  readonly subscribe: <T>(
     subscriberName: string,
-    topic: EventTopic,
-    deliver: (event: unknown) => void,
+    topic: EventTopic<T>,
+    deliver: (event: T) => void,
   ) => void
   /** Unsubscribe from a specific topic. */
   readonly unsubscribe: (subscriberName: string, topic: EventTopic) => void
@@ -124,19 +157,14 @@ export type MessageHandler<M, S> = (
   message: M,
   context: ActorContext<M>,
 ) => ActorResult<S>
-
-// ─── Actor Result (returned from handlers) ───
-//
-// Discriminated union using `?: never` exclusion — makes illegal
-// combinations (e.g. stash + become) a compile-time error while
 // keeping the common case `{ state }` zero-boilerplate.
 //
 export type ActorResult<S> =
   // ─── Process: handle the message normally, optionally emit domain events ───
   | {
       state: S
-      /** Domain events produced by this handler invocation. Auto-published to the actor's name topic on the EventStream. */
-      events?: unknown[]
+      /** Typed domain events produced by this handler invocation. Each event is published to its declared topic on the EventStream. Use `emit(topic, payload)` to construct. */
+      events?: TypedEvent[]
       become?: never
       stash?: never
       unstashAll?: never
@@ -148,8 +176,8 @@ export type ActorResult<S> =
       become: MessageHandler<any, S>
       /** Re-enqueue all stashed messages into the mailbox. Typically used alongside `become`. */
       unstashAll?: boolean
-      /** Domain events produced by this handler invocation. */
-      events?: unknown[]
+      /** Typed domain events produced by this handler invocation. */
+      events?: TypedEvent[]
       stash?: never
     }
   // ─── Stash: defer the current message for later reprocessing ───
@@ -184,10 +212,10 @@ export type ActorContext<M> = {
 
   // ─── Event Stream (pub-sub) ───
 
-  /** Publish an event to the system event bus under the given topic. */
-  readonly publish: (topic: EventTopic, event: unknown) => void
-  /** Subscribe to a topic. The adapter maps raw bus events into this actor's message type M. */
-  readonly subscribe: (topic: EventTopic, adapter: (event: unknown) => M) => void
+  /** Publish a typed event to the system event bus under the given topic. */
+  readonly publish: <T>(topic: EventTopic<T>, event: T) => void
+  /** Subscribe to a typed topic. The adapter maps bus events (typed T) into this actor's message type M. */
+  readonly subscribe: <T>(topic: EventTopic<T>, adapter: (event: T) => M) => void
   /** Unsubscribe from a topic. */
   readonly unsubscribe: (topic: EventTopic) => void
 
@@ -373,13 +401,13 @@ export type ActorSystem = {
 
   // ─── Event Stream (external access) ───
 
-  /** Publish an event to the system event bus from outside the actor world. */
-  readonly publish: (topic: EventTopic, event: unknown) => void
-  /** Subscribe to events from outside the actor world. Returns an unsubscribe function. */
-  readonly subscribe: (
+  /** Publish a typed event to the system event bus from outside the actor world. */
+  readonly publish: <T>(topic: EventTopic<T>, event: T) => void
+  /** Subscribe to typed events from outside the actor world. Returns an unsubscribe function. */
+  readonly subscribe: <T>(
     subscriberName: string,
-    topic: EventTopic,
-    callback: (event: unknown) => void,
+    topic: EventTopic<T>,
+    callback: (event: T) => void,
   ) => () => void
 
   // ─── Introspection ───

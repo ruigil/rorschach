@@ -1,4 +1,4 @@
-import type { EventStream, EventTopic, ActorRef, Registry } from './types.ts'
+import type { EventStream, EventTopic, LifecycleEvent, ActorRef, Registry } from './types.ts'
 
 /**
  * Topic convention for watch/lifecycle subscriptions.
@@ -7,7 +7,8 @@ import type { EventStream, EventTopic, ActorRef, Registry } from './types.ts'
  * EventStream. The `$watch:` prefix separates lifecycle subscriptions
  * from domain-event subscriptions (which use the actor name directly).
  */
-export const watchTopic = (actorName: string): EventTopic => `$watch:${actorName}`
+export const watchTopic = (actorName: string): EventTopic<LifecycleEvent> =>
+  `$watch:${actorName}` as EventTopic<LifecycleEvent>
 
 /**
  * Creates the system-level EventStream (pub-sub bus).
@@ -110,7 +111,10 @@ export const createEventStream = (): EventStream => {
     forward.delete(topic)
   }
 
-  return { publish, subscribe, unsubscribe, cleanup, deleteTopic }
+  // The internal implementation stores `unknown` callbacks — the phantom type
+  // on EventTopic<T> provides compile-time safety at call sites. The cast here
+  // bridges the runtime (untyped) implementation to the typed public interface.
+  return { publish, subscribe, unsubscribe, cleanup, deleteTopic } as EventStream
 }
 
 /**

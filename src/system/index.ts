@@ -8,6 +8,8 @@ export {
   LogTopic,
   MetricsTopic,
   SystemLifecycleTopic,
+  createTopic,
+  emit,
 } from './types.ts'
 
 export type {
@@ -32,6 +34,7 @@ export type {
   SupervisionStrategy,
   Timers,
   TimerKey,
+  TypedEvent,
   // ─── Metrics / Introspection ───
   ActorMetrics,
   ActorSnapshot,

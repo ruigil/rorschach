@@ -73,9 +73,9 @@ export const createJsonlLoggerActor = (
         writeFileSync(filePath, '')
       }
 
-      // Subscribe to system log topic — adapt each event into our message type
+      // Subscribe to system log topic — adapter receives LogEvent directly (type-safe)
       context.subscribe(LogTopic, (event) => {
-        return { type: 'log', event: event as LogEvent }
+        return { type: 'log', event }
       })
 
       // Start a periodic flush timer if buffered mode is configured
