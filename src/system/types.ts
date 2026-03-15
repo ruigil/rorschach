@@ -157,6 +157,24 @@ export type MessageHandler<M, S> = (
   message: M,
   context: ActorContext<M>,
 ) => ActorResult<S>
+
+// ─── Interceptor (wraps message processing) ───
+//
+// An interceptor receives the same (state, message, context) tuple as a handler,
+// plus a `next` function to continue the pipeline. It can:
+//   - inspect/transform the message before the handler sees it
+//   - delegate to `next(state, message)` to continue processing
+//   - inspect/transform the result after the handler returns
+//   - short-circuit by returning an ActorResult without calling `next`
+//
+// Interceptors are structural — they survive `become` switches and reset on restart.
+//
+export type Interceptor<M, S> = (
+  state: S,
+  message: M,
+  context: ActorContext<M>,
+  next: (state: S, message: M) => ActorResult<S>,
+) => ActorResult<S>
 // keeping the common case `{ state }` zero-boilerplate.
 //
 export type ActorResult<S> =
@@ -303,6 +321,19 @@ export type ActorDef<M, S> = {
    * Omit for immediate stop (default — existing behavior).
    */
   shutdown?: ShutdownConfig
+
+  /**
+   * Interceptors applied in order around the message handler.
+   * Each interceptor wraps the next, forming a pipeline. The first
+   * interceptor in the array is the outermost wrapper; the last is
+   * closest to the handler.
+   *
+   * Interceptors are structural — they survive `become` switches
+   * (the new handler is re-wrapped) and reset on supervision restart.
+   *
+   * Omit for direct handler invocation (default — zero overhead).
+   */
+  interceptors?: Interceptor<M, S>[]
 }
 
 // ─── Stop Result (returned from InternalActorHandle.stop()) ───

@@ -19,6 +19,7 @@ export type {
   ActorIdentity,
   ActorResult,
   ActorSystem,
+  Interceptor,
   LifecycleResult,
   DeadLetter,
   EventStream,

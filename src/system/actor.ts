@@ -13,6 +13,7 @@ import {
   type ActorServices,
   type EventStream,
   type EventTopic,
+  type Interceptor,
   type InternalActorHandle,
   type LifecycleEvent,
   type LogEvent,
@@ -224,6 +225,34 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
 }
 
 /**
+ * Composes interceptors around a message handler into a single pipeline.
+ *
+ * Interceptors are applied right-to-left: the first interceptor in the array
+ * is the outermost wrapper, the last is closest to the handler.
+ *
+ * When no interceptors are provided, returns the handler unchanged (zero overhead).
+ */
+const buildPipeline = <M, S>(
+  handler: MessageHandler<M, S>,
+  interceptors: Interceptor<M, S>[] | undefined,
+): MessageHandler<M, S> => {
+  if (!interceptors || interceptors.length === 0) return handler
+
+  // Start with the real handler as the innermost "next"
+  let pipeline: (state: S, message: M, context: ActorContext<M>) => ReturnType<MessageHandler<M, S>> = handler
+
+  // Wrap from right to left
+  for (let i = interceptors.length - 1; i >= 0; i--) {
+    const interceptor = interceptors[i]!
+    const next = pipeline
+    pipeline = (state, message, context) =>
+      interceptor(state, message, context, (s, m) => next(s, m, context))
+  }
+
+  return pipeline
+}
+
+/**
  * Creates an actor instance.
  *
  * Returns an InternalActorHandle with the public ActorRef and a stop() function
@@ -408,8 +437,8 @@ export const createActor = <M, S>(
   const runningPromise = (async () => {
     let state = initialState
 
-    // ─── Behavior switching: current handler (starts as def.handler) ───
-    let currentHandler: MessageHandler<M, S> = def.handler
+    // ─── Behavior switching: current handler (starts as def.handler, wrapped with interceptors) ───
+    let currentHandler: MessageHandler<M, S> = buildPipeline(def.handler, def.interceptors)
 
     // ─── Stash buffer: messages deferred by the current behavior ───
     const stashedMessages: M[] = []
@@ -438,9 +467,9 @@ export const createActor = <M, S>(
           metrics.recordMessageProcessed(performance.now() - startTime)
           state = result.state
 
-          // ─── Behavior switching ───
+          // ─── Behavior switching (re-wrap with interceptors) ───
           if (result.become) {
-            currentHandler = result.become as MessageHandler<M, S>
+            currentHandler = buildPipeline(result.become as MessageHandler<M, S>, def.interceptors)
           }
 
           // ─── Stashing ───
@@ -496,8 +525,8 @@ export const createActor = <M, S>(
           timers.cancelAll()
           await stopAllChildren()
 
-          // Reset behavior and dead-letter stashed messages
-          currentHandler = def.handler
+          // Reset behavior (re-wrap with interceptors) and dead-letter stashed messages
+          currentHandler = buildPipeline(def.handler, def.interceptors)
           drainStashToDeadLetters(stashedMessages)
           currentStashSize = 0
 
