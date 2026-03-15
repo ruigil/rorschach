@@ -359,7 +359,8 @@ describe("PoolRouter: onWorkerFailure 'escalate'", () => {
     await tick(200)
 
     const terminated = events.filter(
-      e => e.type === 'terminated' && e.ref.name === 'system/pool',
+      (e): e is Extract<LifecycleEvent, { type: 'terminated' }> =>
+        e.type === 'terminated' && (e as Extract<LifecycleEvent, { type: 'terminated' }>).ref.name === 'system/pool',
     )
     expect(terminated).toHaveLength(1)
     expect(terminated[0]?.reason).toBe('failed')
