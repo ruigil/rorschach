@@ -109,17 +109,20 @@ describe('Actor: basic message handling', () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════
-// Actor: Setup Phase
+// Actor: Start Lifecycle
 // ═══════════════════════════════════════════════════════════════════
 
-describe('Actor: setup phase', () => {
-  test('setup runs before message processing and enriches initial state', async () => {
+describe('Actor: start lifecycle', () => {
+  test('start lifecycle runs before message processing and enriches initial state', async () => {
     const log: string[] = []
 
     const def: ActorDef<string, { items: string[] }> = {
-      setup: (state, _ctx) => {
-        log.push('setup')
-        return { items: [...state.items, 'from-setup'] }
+      lifecycle: (state, event) => {
+        if (event.type === 'start') {
+          log.push('start')
+          return { state: { items: [...state.items, 'from-start'] } }
+        }
+        return { state }
       },
       handler: (state, message) => {
         log.push(`message:${message}`)
@@ -128,25 +131,27 @@ describe('Actor: setup phase', () => {
     }
 
     const system = createActorSystem()
-    const ref = system.spawn('setup-actor', def, { items: [] })
+    const ref = system.spawn('start-actor', def, { items: [] })
     await tick()
 
     ref.send('msg1')
     await tick()
 
-    // Setup ran before message handling
-    expect(log).toEqual(['setup', 'message:msg1'])
+    // Start ran before message handling
+    expect(log).toEqual(['start', 'message:msg1'])
     await system.shutdown()
   })
 
-  test('async setup is awaited before processing messages', async () => {
+  test('async start lifecycle is awaited before processing messages', async () => {
     const order: string[] = []
 
     const def: ActorDef<string, null> = {
-      setup: async (state) => {
-        await Bun.sleep(50)
-        order.push('setup-done')
-        return state
+      lifecycle: async (state, event) => {
+        if (event.type === 'start') {
+          await Bun.sleep(50)
+          order.push('start-done')
+        }
+        return { state }
       },
       handler: (state, msg) => {
         order.push(`msg:${msg}`)
@@ -155,21 +160,21 @@ describe('Actor: setup phase', () => {
     }
 
     const system = createActorSystem()
-    const ref = system.spawn('async-setup', def, null)
+    const ref = system.spawn('async-start', def, null)
     ref.send('early')
     await tick(150)
 
-    expect(order).toEqual(['setup-done', 'msg:early'])
+    expect(order).toEqual(['start-done', 'msg:early'])
     await system.shutdown()
   })
 
-  test('context.self is available in setup', async () => {
+  test('context.self is available in start lifecycle', async () => {
     let selfName: string | null = null
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        selfName = ctx.self.name
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') selfName = ctx.self.name
+        return { state }
       },
       handler: (state) => ({ state }),
     }

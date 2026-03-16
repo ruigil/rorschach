@@ -487,20 +487,32 @@ export const createActor = <M, S>(
     // ─── Stash buffer: messages deferred by the current behavior ───
     const stashedMessages: StashedEnvelope<M>[] = []
 
-    // Setup phase — load persisted snapshot first (if adapter provided),
-    // then run setup so it can layer non-serializable resources on top.
-    if (def.persistence) {
-      const loaded = await def.persistence.load()
-      if (loaded !== undefined) state = loaded
+    // Startup phase — load persisted snapshot, register, then deliver the
+    // 'start' lifecycle event so the actor can initialize resources.
+    // Wrapped in try/catch so a throwing start handler is handled by the same
+    // supervised shutdown path as any other failure.
+    try {
+      if (def.persistence) {
+        const loaded = await def.persistence.load()
+        if (loaded !== undefined) state = loaded
+      }
+      // Register before delivering 'start' so the actor is visible during its own startup.
+      services.registry.register(name, ref as ActorRef<unknown>)
+      services.metricsRegistry.register(name, metrics)
+      if (def.lifecycle) {
+        const result = await def.lifecycle(state, { type: 'start' }, context)
+        state = result.state
+      }
+      log.info('started')
+    } catch (startupError: unknown) {
+      log.error('failed — start lifecycle threw', { error: startupError })
+      metrics.setStatus('failed')
+      stopReason = 'failed'
+      stopError = startupError
+      drainStashToDeadLetters(stashedMessages)
+      await runShutdownSequence(state)
+      return
     }
-    if (def.setup) {
-      state = await def.setup(state, context)
-    }
-
-    // Register in the global registry and metrics registry now that setup is complete
-    services.registry.register(name, ref as ActorRef<unknown>)
-    services.metricsRegistry.register(name, metrics)
-    log.info('started')
 
     // Message processing loop
     while (true) {
@@ -600,11 +612,12 @@ export const createActor = <M, S>(
               const loaded = await def.persistence.load()
               if (loaded !== undefined) state = loaded
             }
-            if (def.setup) {
-              state = await def.setup(state, context)
+            if (def.lifecycle) {
+              const result = await def.lifecycle(state, { type: 'start' }, context)
+              state = result.state
             }
           } catch (restartError: unknown) {
-            log.error('failed — setup threw during restart', { error: restartError })
+            log.error('failed — start lifecycle threw during restart', { error: restartError })
             metrics.setStatus('failed')
             stopReason = 'failed'
             stopError = restartError

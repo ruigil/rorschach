@@ -125,10 +125,12 @@ describe('Metrics: gauges (mailboxSize, stashSize, childCount)', () => {
     }
 
     const parentDef: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.spawn('child-a', childDef, null)
-        ctx.spawn('child-b', childDef, null)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.spawn('child-a', childDef, null)
+          ctx.spawn('child-b', childDef, null)
+        }
+        return { state }
       },
       handler: (state) => ({ state }),
     }
@@ -276,10 +278,12 @@ describe('Metrics: getActorTree', () => {
     }
 
     const parentDef: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.spawn('child-1', childDef, null)
-        ctx.spawn('child-2', childDef, null)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.spawn('child-1', childDef, null)
+          ctx.spawn('child-2', childDef, null)
+        }
+        return { state }
       },
       handler: (state) => ({ state }),
     }

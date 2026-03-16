@@ -23,9 +23,9 @@ describe('WorkerBridge: task completion', () => {
 
     type ObserverMsg = { type: 'event'; event: TaskEvent<string> }
     const observerDef: ActorDef<ObserverMsg, null> = {
-      setup: (state, ctx) => {
-        ctx.subscribe(taskTopic<string>('t1'), event => ({ type: 'event' as const, event }))
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.subscribe(taskTopic<string>('t1'), e => ({ type: 'event' as const, event: e }))
+        return { state }
       },
       handler: (state, msg) => {
         received.push(msg.event)
@@ -54,9 +54,9 @@ describe('WorkerBridge: task completion', () => {
 
     type ObserverMsg = { type: 'event'; event: TaskEvent<string> }
     const observerDef: ActorDef<ObserverMsg, null> = {
-      setup: (state, ctx) => {
-        ctx.subscribe(taskTopic<string>('t2'), event => ({ type: 'event' as const, event }))
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.subscribe(taskTopic<string>('t2'), e => ({ type: 'event' as const, event: e }))
+        return { state }
       },
       handler: (state, msg) => {
         received.push(msg.event)
@@ -88,9 +88,9 @@ describe('WorkerBridge: task completion', () => {
 
     type ObserverMsg = { type: 'event'; event: TaskEvent<never> }
     const observerDef: ActorDef<ObserverMsg, null> = {
-      setup: (state, ctx) => {
-        ctx.subscribe(taskTopic<never>('t3'), event => ({ type: 'event' as const, event }))
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.subscribe(taskTopic<never>('t3'), e => ({ type: 'event' as const, event: e }))
+        return { state }
       },
       handler: (state, msg) => {
         received.push(msg.event)
@@ -176,9 +176,9 @@ describe('WorkerBridge: multiple observers', () => {
     type ObserverMsg = { type: 'event'; event: TaskEvent<string> }
 
     const makeObserver = (bucket: TaskEvent<string>[]): ActorDef<ObserverMsg, null> => ({
-      setup: (state, ctx) => {
-        ctx.subscribe(taskTopic<string>('t6'), event => ({ type: 'event' as const, event }))
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.subscribe(taskTopic<string>('t6'), e => ({ type: 'event' as const, event: e }))
+        return { state }
       },
       handler: (state, msg) => {
         bucket.push(msg.event)
@@ -218,9 +218,9 @@ describe('ActorContext: deleteTopic', () => {
       | { type: 'event'; value: string }
 
     const def: ActorDef<Msg, null> = {
-      setup: (state, ctx) => {
-        ctx.subscribe(topic, value => ({ type: 'event' as const, value }))
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.subscribe(topic, value => ({ type: 'event' as const, value }))
+        return { state }
       },
       handler: (state, msg, ctx) => {
         if (msg.type === 'publish') ctx.publish(topic, msg.value)

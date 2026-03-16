@@ -54,16 +54,15 @@ describe('System-as-root-actor: structural symmetry', () => {
     })
 
     const parentDef: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.spawn('child-a', makeLeaf('child-a'), null)
-        ctx.spawn('child-b', makeLeaf('child-b'), null)
-        return state
-      },
-      handler: (state) => ({ state }),
-      lifecycle: (state, event) => {
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.spawn('child-a', makeLeaf('child-a'), null)
+          ctx.spawn('child-b', makeLeaf('child-b'), null)
+        }
         if (event.type === 'stopped') stopOrder.push('parent')
         return { state }
       },
+      handler: (state) => ({ state }),
     }
 
     const system = createActorSystem()

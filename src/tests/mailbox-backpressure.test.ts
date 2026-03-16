@@ -407,10 +407,9 @@ describe('Actor: bounded mailbox integration', () => {
     const def: ActorDef<string, null> = {
       mailbox: { capacity: 1 },
 
-      setup: (state, ctx) => {
-        // Schedule a timer message
-        ctx.timers.startSingleTimer('tick', 'timer-msg', 30)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.timers.startSingleTimer('tick', 'timer-msg', 30)
+        return { state }
       },
 
       handler: (state, message) => {

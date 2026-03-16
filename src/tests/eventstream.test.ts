@@ -29,12 +29,14 @@ describe('EventStream: pub-sub', () => {
     // Subscriber actor
     type SubMsg = { type: 'event'; value: string }
     const subscriberDef: ActorDef<SubMsg, null> = {
-      setup: (state, ctx) => {
-        ctx.subscribe('test.topic', (event) => ({
-          type: 'event' as const,
-          value: (event as { value: string }).value,
-        }))
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.subscribe('test.topic', (e) => ({
+            type: 'event' as const,
+            value: (e as { value: string }).value,
+          }))
+        }
+        return { state }
       },
       handler: (state, msg) => {
         if (msg.type === 'event') {
@@ -74,12 +76,14 @@ describe('EventStream: pub-sub', () => {
 
     type SubMsg = { type: 'got'; value: string }
     const makeSub = (log: string[]): ActorDef<SubMsg, null> => ({
-      setup: (state, ctx) => {
-        ctx.subscribe('shared.topic', (event) => ({
-          type: 'got' as const,
-          value: (event as { value: string }).value,
-        }))
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.subscribe('shared.topic', (e) => ({
+            type: 'got' as const,
+            value: (e as { value: string }).value,
+          }))
+        }
+        return { state }
       },
       handler: (state, msg) => {
         log.push(msg.value)
@@ -106,12 +110,14 @@ describe('EventStream: pub-sub', () => {
 
     type Msg = { type: 'got'; value: string } | { type: 'unsub' }
     const subDef: ActorDef<Msg, null> = {
-      setup: (state, ctx) => {
-        ctx.subscribe('topic', (event) => ({
-          type: 'got' as const,
-          value: (event as { value: string }).value,
-        }))
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.subscribe('topic', (e) => ({
+            type: 'got' as const,
+            value: (e as { value: string }).value,
+          }))
+        }
+        return { state }
       },
       handler: (state, msg, ctx) => {
         if (msg.type === 'got') {
@@ -145,12 +151,14 @@ describe('EventStream: pub-sub', () => {
 
     type Msg = { type: 'got'; value: string }
     const subDef: ActorDef<Msg, null> = {
-      setup: (state, ctx) => {
-        ctx.subscribe('topic', (event) => ({
-          type: 'got' as const,
-          value: (event as { value: string }).value,
-        }))
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.subscribe('topic', (e) => ({
+            type: 'got' as const,
+            value: (e as { value: string }).value,
+          }))
+        }
+        return { state }
       },
       handler: (state, msg) => {
         received.push(msg.value)

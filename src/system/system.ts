@@ -98,9 +98,11 @@ export const createActorSystem = (
     type MetricsMsg = { type: 'tick' }
 
     const metricsActorDef: ActorDef<MetricsMsg, null> = {
-      setup: (s, metCtx) => {
-        metCtx.timers.startPeriodicTimer('metrics-tick', { type: 'tick' }, metricsConfig.intervalMs)
-        return s
+      lifecycle: (s, event, metCtx) => {
+        if (event.type === 'start') {
+          metCtx.timers.startPeriodicTimer('metrics-tick', { type: 'tick' }, metricsConfig.intervalMs)
+        }
+        return { state: s }
       },
       handler: (s, _msg, metCtx) => {
         const event: MetricsEvent = {

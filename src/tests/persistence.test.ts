@@ -60,21 +60,24 @@ describe('Persistence: load on start', () => {
     await system.shutdown()
   })
 
-  test('setup receives loaded state, not initialState', async () => {
-    const setupStates: Counter[] = []
+  test('start lifecycle receives loaded state, not initialState', async () => {
+    const startStates: Counter[] = []
     const adapter = memAdapter<Counter>({ count: 99 })
     const system = createActorSystem()
 
     system.spawn('counter', {
       ...counterDef,
-      setup: (state) => { setupStates.push(state); return state },
+      lifecycle: (state, event) => {
+        if (event.type === 'start') startStates.push(state)
+        return { state }
+      },
       persistence: adapter,
     }, { count: 0 })
 
     await tick()
 
-    expect(setupStates).toHaveLength(1)
-    expect(setupStates[0]!.count).toBe(99)
+    expect(startStates).toHaveLength(1)
+    expect(startStates[0]!.count).toBe(99)
 
     await system.shutdown()
   })
@@ -162,7 +165,10 @@ describe('Persistence: load on restart', () => {
 
     const ref = system.spawn('counter', {
       ...counterDef,
-      setup: (state) => { setupStates.push({ ...state }); return state },
+      lifecycle: (state, event) => {
+        if (event.type === 'start') setupStates.push({ ...state })
+        return { state }
+      },
       supervision: { type: 'restart', maxRetries: 1 },
       persistence: adapter,
     }, { count: 0 })
@@ -180,9 +186,9 @@ describe('Persistence: load on restart', () => {
     ref.send('POISON')
     await tick(200)
 
-    // setup should have been called twice: initial start + restart
+    // start lifecycle should have been called twice: initial start + restart
     expect(setupStates).toHaveLength(2)
-    // Restart setup should have received the last saved snapshot, not initialState (0)
+    // Restart should have received the last saved snapshot, not initialState (0)
     expect(setupStates[1]!.count).toBe(12)
 
     await system.shutdown()
@@ -202,7 +208,10 @@ describe('Persistence: load on restart', () => {
 
     const ref = system.spawn('counter', {
       ...counterDef,
-      setup: (state) => { setupStates.push({ ...state }); return state },
+      lifecycle: (state, event) => {
+        if (event.type === 'start') setupStates.push({ ...state })
+        return { state }
+      },
       supervision: { type: 'restart', maxRetries: 1 },
       persistence: adapter,
     }, { count: 7 })

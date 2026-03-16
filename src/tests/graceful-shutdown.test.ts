@@ -64,8 +64,8 @@ describe('Graceful shutdown: drain mode', () => {
     system.stop({ name: 'system/no-drain' })
     await tick(200)
 
-    // Without drain, no 'stopping' event — only 'stopped' during shutdown sequence
-    expect(lifecycleEvents).toEqual(['stopped'])
+    // Without drain, no 'stopping' event — only 'start' then 'stopped' during shutdown sequence
+    expect(lifecycleEvents).toEqual(['start', 'stopped'])
     await system.shutdown()
   })
 
@@ -133,7 +133,7 @@ describe('Graceful shutdown: stopping lifecycle event', () => {
     system.stop({ name: 'system/lifecycle-order' })
     await tick(200)
 
-    expect(lifecycleOrder).toEqual(['stopping', 'stopped'])
+    expect(lifecycleOrder).toEqual(['start', 'stopping', 'stopped'])
     await system.shutdown()
   })
 
@@ -156,8 +156,8 @@ describe('Graceful shutdown: stopping lifecycle event', () => {
     system.stop({ name: 'system/no-stopping' })
     await tick(200)
 
-    // Should only have 'stopped', not 'stopping'
-    expect(lifecycleOrder).toEqual(['stopped'])
+    // Should have 'start' and 'stopped', but not 'stopping'
+    expect(lifecycleOrder).toEqual(['start', 'stopped'])
     await system.shutdown()
   })
 
@@ -294,16 +294,13 @@ describe('Graceful shutdown: parent-child interaction', () => {
     }
 
     const parentDef: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.spawn('child', childDef, null)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.spawn('child', childDef, null)
+        else events.push(`parent-lifecycle:${event.type}`)
+        return { state }
       },
       handler: (state, message) => {
         events.push(`parent-msg:${message}`)
-        return { state }
-      },
-      lifecycle: (state, event) => {
-        events.push(`parent-lifecycle:${event.type}`)
         return { state }
       },
       shutdown: { drain: true },

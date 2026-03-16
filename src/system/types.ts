@@ -87,6 +87,7 @@ export type SupervisionStrategy =
 
 // ─── Lifecycle Events ───
 export type LifecycleEvent =
+  | { type: 'start' }
   | { type: 'stopping' }
   | { type: 'stopped' }
   | { type: 'terminated'; ref: ActorIdentity; reason: 'stopped' | 'failed'; error?: unknown }
@@ -310,9 +311,9 @@ export type ShutdownConfig = {
 // ─── Persistence Adapter ───
 export type PersistenceAdapter<S> = {
   /**
-   * Called during actor startup (before `setup`).
+   * Called during actor startup (before the `start` lifecycle event).
    * Return the last saved snapshot, or undefined to start from initialState.
-   * Errors propagate as startup failures — same semantics as a throwing `setup()`.
+   * Errors propagate as startup failures.
    */
   load: () => Promise<S | undefined>
   /**
@@ -326,9 +327,6 @@ export type PersistenceAdapter<S> = {
 
 // ─── Actor Definition (behavior specification) ───
 export type ActorDef<M, S> = {
-  /** Runs once on start (or restart). Receives initial state + context. Returns the enriched initial state. */
-  setup?: (state: S, context: ActorContext<M>) => Promise<S> | S
-
   /** Handles incoming messages. Returns the next state. */
   handler: MessageHandler<M,S>
 
@@ -342,7 +340,7 @@ export type ActorDef<M, S> = {
   /**
    * Supervision strategy applied when this actor's message handler throws.
    * - 'stop'     — stop the actor (default if omitted)
-   * - 'restart'  — re-run setup with initial state, optionally bounded by maxRetries/withinMs
+   * - 'restart'  — deliver the `start` lifecycle event with initial state, optionally bounded by maxRetries/withinMs
    */
   supervision?: SupervisionStrategy
 
@@ -382,10 +380,10 @@ export type ActorDef<M, S> = {
   /**
    * Persistence adapter for state snapshots.
    *
-   * When provided, `load()` is called before `setup()` on every start and
-   * restart — so `setup()` always receives the last durable state and can
-   * re-initialize non-serializable resources (connections, subscriptions,
-   * timers) on top of it.
+   * When provided, `load()` is called before the `start` lifecycle event on every
+   * start and restart — so the `start` handler always receives the last durable
+   * state and can re-initialize non-serializable resources (connections,
+   * subscriptions, timers) on top of it.
    *
    * `save(state)` is called after every successfully processed message.
    * Save errors are logged as warnings and do not crash or restart the actor.

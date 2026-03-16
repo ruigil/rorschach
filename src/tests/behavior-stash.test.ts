@@ -421,10 +421,12 @@ describe('Become + Stash: initialization pattern', () => {
     }
 
     const def: ActorDef<Msg, State> = {
-      setup: (state, ctx) => {
-        // Simulate async connection: send self a connected message after delay
-        setTimeout(() => ctx.self.send({ type: 'connected', connId: 'conn-42' }), 30)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          // Simulate async connection: send self a connected message after delay
+          setTimeout(() => ctx.self.send({ type: 'connected', connId: 'conn-42' }), 30)
+        }
+        return { state }
       },
 
       handler: (state, msg) => {

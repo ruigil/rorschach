@@ -56,7 +56,7 @@ const mimeType = (path: string): string => {
 /**
  * Creates an HTTP + WebSocket actor definition.
  *
- * In `setup`, the actor starts a Bun HTTP server that:
+ * On the `start` lifecycle event, the actor starts a Bun HTTP server that:
  *   - serves static files from the `public/` directory at any GET path
  *   - upgrades `/ws` requests to WebSocket connections
  *
@@ -75,69 +75,10 @@ export const createHttpActor = (
   const port = options?.port ?? 3000
   const CHANNEL = 'broadcast'
 
-  // We capture the actor's self ref during setup so WS callbacks can route into the mailbox
+  // We capture the actor's self ref during start so WS callbacks can route into the mailbox
   let selfRef: ActorRef<HttpMessage> | null = null
 
   return {
-    setup: (state, context) => {
-      selfRef = context.self
-
-      const server = Bun.serve<WsData>({
-        port,
-
-        // ─── HTTP handler: static file serving ───
-        async fetch(req, server) {
-          const url = new URL(req.url)
-
-          // WebSocket upgrade
-          if (url.pathname === '/ws') {
-            const clientId = crypto.randomUUID()
-            const upgraded = server.upgrade(req, { data: { clientId } })
-            if (!upgraded) {
-              return new Response('WebSocket upgrade failed', { status: 400 })
-            }
-            return undefined as unknown as Response
-          }
-
-          // Static file serving
-          const filePath = url.pathname === '/'
-            ? join(PUBLIC_DIR, 'index.html')
-            : join(PUBLIC_DIR, url.pathname)
-
-          const file = Bun.file(filePath)
-          if (await file.exists()) {
-            return new Response(file, {
-              headers: { 'Content-Type': mimeType(filePath) },
-            })
-          }
-
-          return new Response('Not Found', { status: 404 })
-        },
-
-        // ─── WebSocket handlers ───
-        websocket: {
-          open(ws: ServerWebSocket<WsData>) {
-            ws.subscribe(CHANNEL)
-            selfRef?.send({ type: 'ws:connected', clientId: ws.data.clientId })
-          },
-
-          message(ws: ServerWebSocket<WsData>, message) {
-            const text = typeof message === 'string' ? message : message.toString()
-            selfRef?.send({ type: 'ws:message', clientId: ws.data.clientId, text })
-          },
-
-          close(ws: ServerWebSocket<WsData>) {
-            ws.unsubscribe(CHANNEL)
-            selfRef?.send({ type: 'ws:closed', clientId: ws.data.clientId })
-          },
-        },
-      })
-
-      context.log.info(`listening on http://localhost:${server.port}`)
-
-      return { ...state, server }
-    },
-
     handler: (state, message, context) => {
       switch (message.type) {
         case 'ws:connected': {
@@ -173,11 +114,71 @@ export const createHttpActor = (
     },
 
     lifecycle: (state, event, context) => {
+      if (event.type === 'start') {
+        selfRef = context.self
+
+        const server = Bun.serve<WsData>({
+          port,
+
+          // ─── HTTP handler: static file serving ───
+          async fetch(req, server) {
+            const url = new URL(req.url)
+
+            // WebSocket upgrade
+            if (url.pathname === '/ws') {
+              const clientId = crypto.randomUUID()
+              const upgraded = server.upgrade(req, { data: { clientId } })
+              if (!upgraded) {
+                return new Response('WebSocket upgrade failed', { status: 400 })
+              }
+              return undefined as unknown as Response
+            }
+
+            // Static file serving
+            const filePath = url.pathname === '/'
+              ? join(PUBLIC_DIR, 'index.html')
+              : join(PUBLIC_DIR, url.pathname)
+
+            const file = Bun.file(filePath)
+            if (await file.exists()) {
+              return new Response(file, {
+                headers: { 'Content-Type': mimeType(filePath) },
+              })
+            }
+
+            return new Response('Not Found', { status: 404 })
+          },
+
+          // ─── WebSocket handlers ───
+          websocket: {
+            open(ws: ServerWebSocket<WsData>) {
+              ws.subscribe(CHANNEL)
+              selfRef?.send({ type: 'ws:connected', clientId: ws.data.clientId })
+            },
+
+            message(ws: ServerWebSocket<WsData>, message) {
+              const text = typeof message === 'string' ? message : message.toString()
+              selfRef?.send({ type: 'ws:message', clientId: ws.data.clientId, text })
+            },
+
+            close(ws: ServerWebSocket<WsData>) {
+              ws.unsubscribe(CHANNEL)
+              selfRef?.send({ type: 'ws:closed', clientId: ws.data.clientId })
+            },
+          },
+        })
+
+        context.log.info(`listening on http://localhost:${server.port}`)
+
+        return { state: { ...state, server } }
+      }
+
       if (event.type === 'stopped' && state.server) {
         context.log.info('stopping HTTP server')
         state.server.stop(true)
         return { state: { ...state, server: null } }
       }
+
       return { state }
     },
   }

@@ -142,27 +142,21 @@ describe('Actor: parent-child hierarchy', () => {
     }
 
     const childDef: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.spawn('grandkid', grandchildDef, null)
-        return state
-      },
-      handler: (state) => ({ state }),
-      lifecycle: (state, event) => {
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.spawn('grandkid', grandchildDef, null)
         if (event.type === 'stopped') stoppedOrder.push('child')
         return { state }
       },
+      handler: (state) => ({ state }),
     }
 
     const parentDef: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.spawn('kid', childDef, null)
-        return state
-      },
-      handler: (state) => ({ state }),
-      lifecycle: (state, event) => {
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.spawn('kid', childDef, null)
         if (event.type === 'stopped') stoppedOrder.push('parent')
         return { state }
       },
+      handler: (state) => ({ state }),
     }
 
     const system = createActorSystem()
@@ -316,9 +310,9 @@ describe('Registry: actor lookup', () => {
     }
 
     const parentDef: ActorDef<'spawn', null> = {
-      setup: (state, ctx) => {
-        ctx.spawn('worker', childDef, null)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.spawn('worker', childDef, null)
+        return { state }
       },
       handler: (state) => ({ state }),
     }

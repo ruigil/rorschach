@@ -60,14 +60,6 @@ export const createPoolRouter = <WM, WS>(
   }
 
   const def: ActorDef<WM, PoolRouterState<WM>> = {
-    setup: (_state, ctx) => {
-      const workers: ActorRef<WM>[] = []
-      for (let i = 0; i < poolSize; i++) {
-        workers.push(ctx.spawn(`worker-${i}`, worker, workerInitialState))
-      }
-      return { workers, index: 0, workerSeq: poolSize }
-    },
-
     handler: (state, message, ctx) => {
       if (state.workers.length === 0) {
         ctx.publish(DeadLetterTopic, {
@@ -83,6 +75,14 @@ export const createPoolRouter = <WM, WS>(
     },
 
     lifecycle: (state, event, ctx) => {
+      if (event.type === 'start') {
+        const workers: ActorRef<WM>[] = []
+        for (let i = 0; i < poolSize; i++) {
+          workers.push(ctx.spawn(`worker-${i}`, worker, workerInitialState))
+        }
+        return { state: { workers, index: 0, workerSeq: poolSize } }
+      }
+
       if (event.type !== 'terminated') return { state }
       // Only react to unexpected failures — graceful stops (shutdown, ctx.stop)
       // are expected and should not trigger the failure strategy.

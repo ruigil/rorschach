@@ -46,7 +46,7 @@ const LOG_LEVEL_ORDER = { debug: 0, info: 1, warn: 2, error: 3 } as const
 /**
  * Creates a JSONL log persistence actor definition.
  *
- * The actor subscribes to the system log topic during `setup` and writes
+ * The actor subscribes to the system log topic on the `start` lifecycle event and writes
  * every received `LogEvent` as a single JSON line to the configured file.
  *
  * It supports optional buffered writes (via `flushIntervalMs`) and minimum
@@ -61,33 +61,6 @@ export const createJsonlLoggerActor = (
   const minLevelValue = LOG_LEVEL_ORDER[minLevel]
 
   return {
-    setup: (state, context) => {
-      // Ensure the target directory exists
-      const dir = dirname(filePath)
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true })
-      }
-
-      // Touch the file so it exists (append mode — preserves existing content)
-      if (!existsSync(filePath)) {
-        writeFileSync(filePath, '')
-      }
-
-      // Subscribe to system log topic — adapter receives LogEvent directly (type-safe)
-      context.subscribe(LogTopic, (event) => {
-        return { type: 'log', event }
-      })
-
-      // Start a periodic flush timer if buffered mode is configured
-      if (flushIntervalMs && flushIntervalMs > 0) {
-        context.timers.startPeriodicTimer('flush', { type: 'flush' }, flushIntervalMs)
-      }
-
-      context.log.info(`persisting logs to ${filePath}`)
-
-      return { ...state, filePath }
-    },
-
     handler: (state, message, context) => {
       switch (message.type) {
         case 'log': {
@@ -134,6 +107,33 @@ export const createJsonlLoggerActor = (
     },
 
     lifecycle: (state, event, context) => {
+      if (event.type === 'start') {
+        // Ensure the target directory exists
+        const dir = dirname(filePath)
+        if (!existsSync(dir)) {
+          mkdirSync(dir, { recursive: true })
+        }
+
+        // Touch the file so it exists (append mode — preserves existing content)
+        if (!existsSync(filePath)) {
+          writeFileSync(filePath, '')
+        }
+
+        // Subscribe to system log topic — adapter receives LogEvent directly (type-safe)
+        context.subscribe(LogTopic, (event) => {
+          return { type: 'log', event }
+        })
+
+        // Start a periodic flush timer if buffered mode is configured
+        if (flushIntervalMs && flushIntervalMs > 0) {
+          context.timers.startPeriodicTimer('flush', { type: 'flush' }, flushIntervalMs)
+        }
+
+        context.log.info(`persisting logs to ${filePath}`)
+
+        return { state: { ...state, filePath } }
+      }
+
       if (event.type === 'stopped') {
         // Flush any remaining buffered entries before stopping
         if (state.buffer.length > 0) {

@@ -14,9 +14,9 @@ describe('Timers: single timer', () => {
     const received: string[] = []
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startSingleTimer('ping', 'delayed-ping', 50)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.timers.startSingleTimer('ping', 'delayed-ping', 50)
+        return { state }
       },
       handler: (state, msg) => {
         received.push(msg)
@@ -36,9 +36,9 @@ describe('Timers: single timer', () => {
     const received: string[] = []
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startSingleTimer('once', 'fire', 30)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.timers.startSingleTimer('once', 'fire', 30)
+        return { state }
       },
       handler: (state, msg) => {
         received.push(msg)
@@ -58,9 +58,9 @@ describe('Timers: single timer', () => {
     let activeAfterFire = false
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startSingleTimer('check', 'go', 30)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.timers.startSingleTimer('check', 'go', 30)
+        return { state }
       },
       handler: (state, msg, ctx) => {
         if (msg === 'go') {
@@ -88,9 +88,9 @@ describe('Timers: periodic timer', () => {
     const received: string[] = []
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startPeriodicTimer('tick', 'tick', 40)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.timers.startPeriodicTimer('tick', 'tick', 40)
+        return { state }
       },
       handler: (state, msg) => {
         received.push(msg)
@@ -112,9 +112,9 @@ describe('Timers: periodic timer', () => {
     let checkedActive = false
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startPeriodicTimer('poll', 'poll', 30)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.timers.startPeriodicTimer('poll', 'poll', 30)
+        return { state }
       },
       handler: (state, _msg, ctx) => {
         if (!checkedActive) {
@@ -143,11 +143,13 @@ describe('Timers: key replacement', () => {
     const received: string[] = []
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        // Start a timer, then immediately replace it with a different message
-        ctx.timers.startSingleTimer('key', 'first', 30)
-        ctx.timers.startSingleTimer('key', 'second', 60)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          // Start a timer, then immediately replace it with a different message
+          ctx.timers.startSingleTimer('key', 'first', 30)
+          ctx.timers.startSingleTimer('key', 'second', 60)
+        }
+        return { state }
       },
       handler: (state, msg) => {
         received.push(msg)
@@ -168,11 +170,13 @@ describe('Timers: key replacement', () => {
     const received: string[] = []
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startPeriodicTimer('key', 'periodic', 20)
-        // Immediately replace with a single timer
-        ctx.timers.startSingleTimer('key', 'single', 80)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.timers.startPeriodicTimer('key', 'periodic', 20)
+          // Immediately replace with a single timer
+          ctx.timers.startSingleTimer('key', 'single', 80)
+        }
+        return { state }
       },
       handler: (state, msg) => {
         received.push(msg)
@@ -199,10 +203,12 @@ describe('Timers: cancel', () => {
     const received: string[] = []
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startSingleTimer('cancel-me', 'nope', 50)
-        ctx.timers.cancel('cancel-me')
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.timers.startSingleTimer('cancel-me', 'nope', 50)
+          ctx.timers.cancel('cancel-me')
+        }
+        return { state }
       },
       handler: (state, msg) => {
         received.push(msg)
@@ -222,9 +228,9 @@ describe('Timers: cancel', () => {
     const received: string[] = []
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startPeriodicTimer('stop-me', 'tick', 20)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.timers.startPeriodicTimer('stop-me', 'tick', 20)
+        return { state }
       },
       handler: (state, msg, ctx) => {
         received.push(msg)
@@ -249,10 +255,12 @@ describe('Timers: cancel', () => {
     let setupCompleted = false
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.cancel('does-not-exist') // should not throw
-        setupCompleted = true
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.timers.cancel('does-not-exist') // should not throw
+          setupCompleted = true
+        }
+        return { state }
       },
       handler: (state) => ({ state }),
     }
@@ -269,12 +277,14 @@ describe('Timers: cancel', () => {
     const received: string[] = []
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startSingleTimer('a', 'timer-a', 50)
-        ctx.timers.startSingleTimer('b', 'timer-b', 60)
-        ctx.timers.startPeriodicTimer('c', 'timer-c', 30)
-        ctx.timers.cancelAll()
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.timers.startSingleTimer('a', 'timer-a', 50)
+          ctx.timers.startSingleTimer('b', 'timer-b', 60)
+          ctx.timers.startPeriodicTimer('c', 'timer-c', 30)
+          ctx.timers.cancelAll()
+        }
+        return { state }
       },
       handler: (state, msg) => {
         received.push(msg)
@@ -300,10 +310,12 @@ describe('Timers: isActive', () => {
     let active = false
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startSingleTimer('check', 'msg', 500)
-        active = ctx.timers.isActive('check')
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.timers.startSingleTimer('check', 'msg', 500)
+          active = ctx.timers.isActive('check')
+        }
+        return { state }
       },
       handler: (state) => ({ state }),
     }
@@ -320,9 +332,9 @@ describe('Timers: isActive', () => {
     let active = true
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        active = ctx.timers.isActive('nonexistent')
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') active = ctx.timers.isActive('nonexistent')
+        return { state }
       },
       handler: (state) => ({ state }),
     }
@@ -339,11 +351,13 @@ describe('Timers: isActive', () => {
     let activeAfterCancel = true
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startSingleTimer('k', 'msg', 500)
-        ctx.timers.cancel('k')
-        activeAfterCancel = ctx.timers.isActive('k')
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.timers.startSingleTimer('k', 'msg', 500)
+          ctx.timers.cancel('k')
+          activeAfterCancel = ctx.timers.isActive('k')
+        }
+        return { state }
       },
       handler: (state) => ({ state }),
     }
@@ -366,10 +380,12 @@ describe('Timers: lifecycle integration', () => {
     const received: string[] = []
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startSingleTimer('delayed', 'should-not-arrive', 200)
-        ctx.timers.startPeriodicTimer('periodic', 'should-not-arrive', 200)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.timers.startSingleTimer('delayed', 'should-not-arrive', 200)
+          ctx.timers.startPeriodicTimer('periodic', 'should-not-arrive', 200)
+        }
+        return { state }
       },
       handler: (state, msg) => {
         received.push(msg)
@@ -393,9 +409,9 @@ describe('Timers: lifecycle integration', () => {
     const received: string[] = []
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startPeriodicTimer('poll', 'poll', 200)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.timers.startPeriodicTimer('poll', 'poll', 200)
+        return { state }
       },
       handler: (state, msg) => {
         received.push(msg)
@@ -419,13 +435,13 @@ describe('Timers: lifecycle integration', () => {
 
     const def: ActorDef<string, null> = {
       supervision: { type: 'restart' },
-      setup: (state, ctx) => {
-        if (firstRun) {
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start' && firstRun) {
           // First run: start a timer that should be cancelled on restart
           ctx.timers.startSingleTimer('stale', 'stale-msg', 150)
           firstRun = false
         }
-        return state
+        return { state }
       },
       handler: (state, msg) => {
         if (msg === 'crash') {
@@ -449,15 +465,17 @@ describe('Timers: lifecycle integration', () => {
     await system.shutdown()
   })
 
-  test('timers can be re-established after restart via setup', async () => {
+  test('timers can be re-established after restart via start lifecycle', async () => {
     const received: string[] = []
 
     const def: ActorDef<string, null> = {
       supervision: { type: 'restart' },
-      setup: (state, ctx) => {
-        // Every start/restart sets up the same timer
-        ctx.timers.startSingleTimer('hello', 'hello', 50)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          // Every start/restart sets up the same timer
+          ctx.timers.startSingleTimer('hello', 'hello', 50)
+        }
+        return { state }
       },
       handler: (state, msg) => {
         if (msg === 'crash') {
@@ -494,9 +512,9 @@ describe('Timers: message interleaving', () => {
     const received: string[] = []
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startSingleTimer('delayed', 'timer-msg', 80)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') ctx.timers.startSingleTimer('delayed', 'timer-msg', 80)
+        return { state }
       },
       handler: (state, msg) => {
         received.push(msg)
@@ -553,10 +571,12 @@ describe('Timers: symbol keys', () => {
     const received: string[] = []
 
     const def: ActorDef<string, null> = {
-      setup: (state, ctx) => {
-        ctx.timers.startSingleTimer(TICK, 'sym-msg', 30)
-        expect(ctx.timers.isActive(TICK)).toBe(true)
-        return state
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.timers.startSingleTimer(TICK, 'sym-msg', 30)
+          expect(ctx.timers.isActive(TICK)).toBe(true)
+        }
+        return { state }
       },
       handler: (state, msg, ctx) => {
         received.push(msg)

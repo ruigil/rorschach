@@ -25,7 +25,7 @@ type CounterState = { count: number }
 
 // 3. Definition
 const counterDef: ActorDef<CounterMsg, CounterState> = {
-  handler: (state, message, context): ActorResult<CounterState> => {
+  handler: (state, message, context): ActorResult<CounterMsg, CounterState> => {
     switch (message.type) {
       case 'increment':
         context.log.info(`count is now ${state.count + 1}`)
@@ -35,7 +35,6 @@ const counterDef: ActorDef<CounterMsg, CounterState> = {
     }
   },
 }
-
 ```
 
 ## Actor Definition Reference
@@ -44,25 +43,67 @@ All fields on `ActorDef<M, S>`:
 
 | Field | Required | Description |
 |---|---|---|
-| `handler(state, message, context)` | **yes** | Called for every incoming message. Returns `{ state }` (and optionally `events`). |
-| `setup(state, context)` | no | Runs once on start (and on restart). Returns the initial state, possibly enriched. |
-| `lifecycle(state, event, context)` | no | Reacts to lifecycle events (`stopped`, `terminated`). Returns `{ state }`. |
+| `handler(state, message, context)` | **yes** | Called for every incoming message. Returns an `ActorResult`. |
+| `lifecycle(state, event, context)` | no | Reacts to lifecycle events (`start`, `stopping`, `stopped`, `terminated`). Returns `{ state }`. May be async. |
 | `supervision` | no | What to do when `handler` throws. Default: `{ type: 'stop' }`. |
+| `mailbox` | no | Backpressure configuration (capacity, overflow strategy). Default: unbounded. |
+| `stashCapacity` | no | Max messages in the stash. Oldest is dropped to dead letters when exceeded. Default: `1000`. |
+| `shutdown` | no | Graceful shutdown: drain mailbox before stopping. Default: immediate stop. |
+| `interceptors` | no | Middleware pipeline wrapping the handler. |
+| `persistence` | no | Persistence adapter for state snapshots across restarts. |
 
-### Handler return value (`ActorResult<S>`)
+## Handler Return Value (`ActorResult<M, S>`)
+
+The handler returns one of three variants:
+
+### Normal — process and update state
 
 ```ts
-{
-  state: S                // required — the next state
-  events?: unknown[]      // optional — domain events auto-published to the event stream
+return {
+  state: newState,
+  events?: TypedEvent[],  // optional domain events to publish
 }
 ```
 
-Returning `events` publishes each entry to the event stream under a topic equal to the actor's name, so other actors or external subscribers can react to them.
+### Become — switch to a different handler
+
+```ts
+return {
+  state: newState,
+  become: otherHandler,   // replace the active handler
+  unstashAll?: true,       // re-enqueue all stashed messages after switching
+  events?: TypedEvent[],
+}
+```
+
+### Stash — defer the current message
+
+```ts
+return {
+  state,
+  stash: true,  // hold this message for later; re-process after unstashAll
+}
+```
+
+### Domain Events
+
+Use `emit(topic, payload)` to construct typed events. Each event is published to its declared topic on the system event bus.
+
+```ts
+import { emit, createTopic } from '../system/index.ts'
+
+const OrderPlacedTopic = createTopic<{ orderId: string }>('orders.placed')
+
+// In handler:
+return {
+  state: newState,
+  events: [emit(OrderPlacedTopic, { orderId: '123' })],
+}
+```
 
 ## Context Services
 
-The `context` object passed to `setup`, `handler`, and `lifecycle` provides the following services:
+The `context` object passed to `handler` and `lifecycle` provides the following services.
 
 ### `context.self`
 A reference to this actor (`ActorRef<M>`). Useful to pass as a `replyTo` address in messages.
@@ -72,6 +113,12 @@ Structured logger. Messages are emitted to the system log topic.
 ```ts
 context.log.info('something happened', { detail: 42 })
 // levels: debug | info | warn | error
+```
+
+### `context.messageHeaders()`
+Returns the headers attached to the message currently being processed. Empty object when none were set. Headers are plain string key-value pairs, compatible with W3C traceparent and similar propagation formats.
+```ts
+const traceId = context.messageHeaders()['traceparent']
 ```
 
 ### `context.timers`
@@ -86,13 +133,16 @@ context.timers.startPeriodicTimer('heartbeat', { type: 'ping' }, 1000)
 // Cancel
 context.timers.cancel('my-timer')
 
+// Cancel all
+context.timers.cancelAll()
+
 // Check
 context.timers.isActive('heartbeat') // boolean
 ```
 Timers are automatically cancelled when the actor stops or restarts.
 
 ### `context.spawn` / `context.stop`
-Create and stop child actors. Children are automatically watched — their termination is delivered as a lifecycle event.
+Create and stop child actors. Children are automatically watched — their termination is delivered as a `terminated` lifecycle event.
 ```ts
 const childRef = context.spawn('worker', workerDef, workerInitialState)
 context.stop(childRef) // request graceful stop
@@ -102,6 +152,7 @@ context.stop(childRef) // request graceful stop
 Watch any actor (not just children) for termination. When the watched actor stops, a `terminated` lifecycle event is delivered.
 ```ts
 context.watch(someRef)
+context.unwatch(someRef)
 ```
 
 ### `context.lookup`
@@ -115,36 +166,38 @@ ref?.send({ type: 'hello' })
 Run async side-effects (fetch, DB queries, file I/O) without blocking the actor's message loop. The promise runs in the background; when it settles, the adapted result is enqueued into the actor's mailbox and processed sequentially like any other message.
 
 ```ts
-// Kick off non-blocking async work
 context.pipeToSelf(
   fetch('/api/data').then(r => r.json()),
-  (data) => ({ type: 'dataLoaded', data }),       // onSuccess → M
-  (err)  => ({ type: 'dataFailed', error: err }), // onFailure → M
+  (data) => ({ type: 'dataLoaded', data }),        // onSuccess → M
+  (err)  => ({ type: 'dataFailed', error: err }),  // onFailure → M
 )
-// Return immediately — the actor keeps processing other messages
 return { state: { ...state, loading: true } }
 ```
 
-**Design notes:**
-- Uses `enqueueSystem` internally — piped results bypass backpressure, matching the semantics of timer-scheduled messages. The actor explicitly requested this work; dropping the result would silently leave it in an inconsistent state.
 - If the actor has stopped by the time the promise resolves, the result is silently discarded.
 - Cancellation is the caller's responsibility (e.g., use `AbortController` inside the promise).
-- If the `onSuccess`/`onFailure` adapter produces a message that causes handler to throw, it flows through the normal supervision policy.
 
-### `context.publish` / `context.subscribe` / `context.unsubscribe`
+### `context.publish` / `context.subscribe` / `context.unsubscribe` / `context.deleteTopic`
 Pub-sub on the system event stream. `subscribe` takes an adapter function that maps the raw event into the actor's message type, so events are processed through the normal message handler.
 ```ts
+import { createTopic } from '../system/index.ts'
+const MyTopic = createTopic<{ value: number }>('my-topic')
+
 // Publishing
-context.publish('my-topic', { some: 'data' })
+context.publish(MyTopic, { value: 42 })
 
-// Subscribing (from inside an actor)
-context.subscribe('my-topic', (event) => {
-  const data = event as { some: string }
-  return { type: 'externalData', payload: data } // must return M
-})
+// Subscribing
+context.subscribe(MyTopic, (event) => ({ type: 'externalData', value: event.value }))
 
-context.unsubscribe('my-topic')
+// Unsubscribing
+context.unsubscribe(MyTopic)
+
+// Remove the topic's subscriber map entry (use after publishing a terminal event
+// on a short-lived topic to prevent accumulation)
+context.deleteTopic(MyTopic)
 ```
+
+Plain strings work as topics too (typed as `EventTopic<unknown>`). Use `createTopic<T>()` for compile-time payload safety.
 
 ## Lifecycle Events
 
@@ -152,11 +205,16 @@ If you provide a `lifecycle` handler, it receives:
 
 | Event | When |
 |---|---|
+| `{ type: 'start' }` | Actor has started (or restarted after supervision). Resources can be acquired here. |
+| `{ type: 'stopping' }` | Graceful shutdown started — mailbox is draining (only if `shutdown.drain` is enabled). |
 | `{ type: 'stopped' }` | This actor is shutting down (after children have stopped). |
 | `{ type: 'terminated', ref, reason, error? }` | A watched or child actor has terminated. `reason` is `'stopped'` or `'failed'`. |
 
 ```ts
 lifecycle: (state, event, context) => {
+  if (event.type === 'start') {
+    context.log.info('actor started')
+  }
   if (event.type === 'terminated') {
     context.log.warn(`${event.ref.name} died: ${event.reason}`)
   }
@@ -169,19 +227,96 @@ lifecycle: (state, event, context) => {
 Control what happens when `handler` throws:
 
 ```ts
+// Stop on failure (default)
+supervision: { type: 'stop' }
+
+// Restart: reset state, re-fire start lifecycle, keep processing
+supervision: { type: 'restart' }
+
+// Bounded restart: max 3 failures within 10 seconds, then stop
+supervision: { type: 'restart', maxRetries: 3, withinMs: 10_000 }
+
+// Restart with exponential backoff: starts at 500ms, doubles each failure, capped at 30s
+supervision: { type: 'restart', backoffMs: 500, maxBackoffMs: 30_000 }
+```
+
+## Mailbox Backpressure
+
+Limit the number of messages queued to an actor. Overflowed messages go to dead letters.
+
+```ts
 const def: ActorDef<Msg, State> = {
-  handler: (state, msg, ctx) => { /* ... */ },
-
-  // Stop on failure (default)
-  supervision: { type: 'stop' },
-
-  // Or restart: reset state, re-run setup, keep processing
-  supervision: { type: 'restart' },
-
-  // Bounded restart: max 3 failures within 10 seconds, then stop
-  supervision: { type: 'restart', maxRetries: 3, withinMs: 10_000 },
+  handler: /* ... */,
+  mailbox: {
+    capacity: 1000,
+    overflowStrategy: 'drop-newest', // or 'drop-oldest'. Default: 'drop-newest'
+    onOverflow: (dropped) => console.warn('dropped', dropped), // optional hook
+  },
 }
 ```
+
+## Graceful Shutdown
+
+By default an actor stops immediately when asked. Enable drain mode to finish processing queued messages first:
+
+```ts
+const def: ActorDef<Msg, State> = {
+  handler: /* ... */,
+  shutdown: {
+    drain: true,         // process remaining mailbox messages before stopping
+    timeoutMs: 5_000,    // force-close after 5 s if not drained
+  },
+}
+```
+
+When `drain` is `true`, the actor receives a `stopping` lifecycle event before `stopped`, giving it a chance to react before the final teardown.
+
+## Interceptors
+
+Interceptors wrap the message handler in a pipeline — useful for logging, metrics, tracing, or authorization. The first interceptor in the array is the outermost wrapper.
+
+```ts
+import type { Interceptor } from '../system/index.ts'
+
+const loggingInterceptor: Interceptor<Msg, State> = (state, message, context, next) => {
+  context.log.debug('handling', { type: message.type })
+  const result = next(state, message)
+  context.log.debug('handled', { type: message.type })
+  return result
+}
+
+const def: ActorDef<Msg, State> = {
+  handler: /* ... */,
+  interceptors: [loggingInterceptor],
+}
+```
+
+Interceptors survive `become` switches (the new handler is re-wrapped) and reset on supervision restart.
+
+## Persistence
+
+Provide a persistence adapter to snapshot state across process restarts. `load()` is called before the `start` lifecycle event, so the `start` handler always receives the last durable state and can re-initialize non-serializable resources on top of it.
+
+```ts
+import type { PersistenceAdapter } from '../system/index.ts'
+
+const myAdapter: PersistenceAdapter<CounterState> = {
+  load: async () => {
+    const raw = await db.get('counter-state')
+    return raw ? JSON.parse(raw) : undefined
+  },
+  save: async (state) => {
+    await db.set('counter-state', JSON.stringify(state))
+  },
+}
+
+const def: ActorDef<CounterMsg, CounterState> = {
+  handler: /* ... */,
+  persistence: myAdapter,
+}
+```
+
+`save(state)` is called after every successfully processed message. Save errors are logged as warnings and do not crash the actor. Note: stash contents and the active `become` variant are not persisted — encode behavioral state you need to survive restarts into `S`.
 
 ## Ask Pattern
 
@@ -203,29 +338,30 @@ const count = await ask<Msg, number>(
 )
 ```
 
-## Setup Pattern (Resource Acquisition)
+## Resource Acquisition Pattern
 
-Use `setup` to acquire resources and `lifecycle` to release them on stop:
+Use the `start` lifecycle event to acquire resources and `stopped` to release them:
 
 ```ts
 const def: ActorDef<Msg, State> = {
-  setup: (state, context) => {
-    const resource = acquireSomething()
-    context.log.info('resource acquired')
-    return { ...state, resource }
-  },
-
-  handler: (state, msg, ctx) => {
-    // use state.resource
-    return { state }
-  },
-
   lifecycle: (state, event, context) => {
+    if (event.type === 'start') {
+      const resource = acquireSomething()
+      context.log.info('resource acquired')
+      return { state: { ...state, resource } }
+    }
     if (event.type === 'stopped' && state.resource) {
       releaseSomething(state.resource)
       context.log.info('resource released')
     }
     return { state }
   },
+
+  handler: (state, msg, ctx) => {
+    // use state.resource
+    return { state }
+  },
 }
 ```
+
+The `start` event fires on initial startup and again on every supervision restart, so resources are always re-acquired cleanly.

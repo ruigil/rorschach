@@ -1,5 +1,5 @@
 import { createTopic } from '../system/types.ts'
-import type { ActorDef, ActorRef, EventTopic } from '../system/types.ts'
+import type { ActorDef, EventTopic } from '../system/types.ts'
 
 // ─── Public types ───
 
@@ -77,18 +77,6 @@ export const createWorkerBridge = <P, R>(
   options: WorkerBridgeOptions,
 ): WorkerBridge<P, R> => {
   const def: ActorDef<WorkerBridgeMsg<P, R>, WorkerBridgeState> = {
-
-    setup: (_state, ctx) => {
-      const worker = new Worker(options.scriptPath)
-      worker.onmessage = (event: MessageEvent) => {
-        ctx.self.send(event.data as WorkerBridgeMsg<P, R>)
-      }
-      worker.onerror = (err) => {
-        ctx.log.error('worker thread error', { error: String(err) })
-      }
-      return { worker }
-    },
-
     handler: (state, msg, ctx) => {
       switch (msg.type) {
         case 'request':
@@ -116,8 +104,19 @@ export const createWorkerBridge = <P, R>(
       }
     },
 
-    lifecycle: async (state, event, _ctx) => {
-      if (event.type === 'stopped') await state.worker.terminate()
+    lifecycle: (state, event, ctx) => {
+      if (event.type === 'start') {
+        const worker = new Worker(options.scriptPath)
+        worker.onmessage = (e: MessageEvent) => {
+          ctx.self.send(e.data as WorkerBridgeMsg<P, R>)
+        }
+        worker.onerror = (err) => {
+          ctx.log.error('worker thread error', { error: String(err) })
+        }
+        return { state: { worker } }
+      }
+
+      if (event.type === 'stopped') state.worker.terminate()
       return { state }
     },
 

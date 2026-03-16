@@ -18,11 +18,6 @@ const failingActorDef = (
 ): ActorDef<string, { count: number }> => ({
   supervision: opts.supervision,
 
-  setup: (state, _ctx) => {
-    opts.onSetup?.()
-    return state
-  },
-
   handler: (state, message, _ctx) => {
     if (message === 'POISON') {
       throw new Error('Poisoned!')
@@ -32,9 +27,8 @@ const failingActorDef = (
   },
 
   lifecycle: (state, event, _ctx) => {
-    if (event.type === 'stopped') {
-      opts.onStopped?.()
-    }
+    if (event.type === 'start') opts.onSetup?.()
+    if (event.type === 'stopped') opts.onStopped?.()
     return { state }
   },
 })
@@ -429,11 +423,11 @@ describe('Supervision: normal operation unaffected', () => {
   })
 })
 
-describe('Supervision: setup failure during restart', () => {
-  test('actor terminates with reason failed when setup throws on restart', async () => {
+describe('Supervision: start lifecycle failure during restart', () => {
+  test('actor terminates with reason failed when start lifecycle throws on restart', async () => {
     const lifecycleEvents: LifecycleEvent[] = []
     const logs: LogEvent[] = []
-    let setupCallCount = 0
+    let startCallCount = 0
 
     const system = createActorSystem()
     system.subscribe('test-lifecycle', SystemLifecycleTopic, (e) => lifecycleEvents.push(e as LifecycleEvent))
@@ -442,13 +436,15 @@ describe('Supervision: setup failure during restart', () => {
     const def: ActorDef<string, null> = {
       supervision: { type: 'restart' },
 
-      setup: (state, _ctx) => {
-        setupCallCount++
-        // Throw on the second call (i.e., the restart), not the initial start
-        if (setupCallCount > 1) {
-          throw new Error('setup exploded during restart')
+      lifecycle: (state, event) => {
+        if (event.type === 'start') {
+          startCallCount++
+          // Throw on the second call (i.e., the restart), not the initial start
+          if (startCallCount > 1) {
+            throw new Error('start lifecycle exploded during restart')
+          }
         }
-        return state
+        return { state }
       },
 
       handler: (_state, message) => {
@@ -457,10 +453,10 @@ describe('Supervision: setup failure during restart', () => {
       },
     }
 
-    const ref = system.spawn('setup-fail-restart', def, null)
+    const ref = system.spawn('start-fail-restart', def, null)
     await tick()
 
-    // Trigger a failure → restart → setup throws → actor should terminate
+    // Trigger a failure → restart → start lifecycle throws → actor should terminate
     ref.send('POISON')
 
     await tick(300)
@@ -469,21 +465,21 @@ describe('Supervision: setup failure during restart', () => {
     const terminated = lifecycleEvents.filter((e) => e.type === 'terminated')
     expect(terminated.length).toBe(1)
     if (terminated[0]!.type === 'terminated') {
-      expect(terminated[0]!.ref.name).toBe('system/setup-fail-restart')
+      expect(terminated[0]!.ref.name).toBe('system/start-fail-restart')
       expect(terminated[0]!.reason).toBe('failed')
     }
 
-    // 2. log.error was emitted for the restart setup failure
+    // 2. log.error was emitted for the restart start lifecycle failure
     const errorLogs = logs.filter(
       (l) =>
         l.level === 'error' &&
-        l.source === 'system/setup-fail-restart' &&
-        l.message.includes('setup threw during restart'),
+        l.source === 'system/start-fail-restart' &&
+        l.message.includes('start lifecycle threw during restart'),
     )
     expect(errorLogs.length).toBeGreaterThanOrEqual(1)
 
     // 3. Actor is no longer tracked in metrics after shutdown
     await system.shutdown()
-    expect(system.getActorMetrics('system/setup-fail-restart')).toBeUndefined()
+    expect(system.getActorMetrics('system/start-fail-restart')).toBeUndefined()
   })
 })
