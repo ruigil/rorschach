@@ -585,18 +585,27 @@ export const createActor = <M, S>(
           drainStashToDeadLetters(stashedMessages)
           currentStashSize = 0
 
-          if (delayMs > 0) {
-            await new Promise<void>(resolve => setTimeout(resolve, delayMs))
+          try {
+            if (delayMs > 0) {
+              await new Promise<void>(resolve => setTimeout(resolve, delayMs))
+            }
+
+            state = initialState
+            if (def.persistence) {
+              const loaded = await def.persistence.load()
+              if (loaded !== undefined) state = loaded
+            }
+            if (def.setup) {
+              state = await def.setup(state, context)
+            }
+          } catch (restartError: unknown) {
+            log.error('failed — setup threw during restart', { error: restartError })
+            metrics.setStatus('failed')
+            stopReason = 'failed'
+            stopError = restartError
+            break
           }
 
-          state = initialState
-          if (def.persistence) {
-            const loaded = await def.persistence.load()
-            if (loaded !== undefined) state = loaded
-          }
-          if (def.setup) {
-            state = await def.setup(state, context)
-          }
           continue
         }
 

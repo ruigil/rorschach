@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
-import { createActorSystem, SystemLifecycleTopic } from '../system/index.ts'
-import type { ActorDef, LifecycleEvent } from '../system/index.ts'
+import { createActorSystem, SystemLifecycleTopic, LogTopic } from '../system/index.ts'
+import type { ActorDef, LifecycleEvent, LogEvent } from '../system/index.ts'
 
 // ─── Helpers ───
 
@@ -426,5 +426,64 @@ describe('Supervision: normal operation unaffected', () => {
     if (terminated[0]!.type === 'terminated') {
       expect(terminated[0]!.reason).toBe('stopped')
     }
+  })
+})
+
+describe('Supervision: setup failure during restart', () => {
+  test('actor terminates with reason failed when setup throws on restart', async () => {
+    const lifecycleEvents: LifecycleEvent[] = []
+    const logs: LogEvent[] = []
+    let setupCallCount = 0
+
+    const system = createActorSystem()
+    system.subscribe('test-lifecycle', SystemLifecycleTopic, (e) => lifecycleEvents.push(e as LifecycleEvent))
+    system.subscribe('test-logs', LogTopic, (e) => logs.push(e))
+
+    const def: ActorDef<string, null> = {
+      supervision: { type: 'restart' },
+
+      setup: (state, _ctx) => {
+        setupCallCount++
+        // Throw on the second call (i.e., the restart), not the initial start
+        if (setupCallCount > 1) {
+          throw new Error('setup exploded during restart')
+        }
+        return state
+      },
+
+      handler: (_state, message) => {
+        if (message === 'POISON') throw new Error('handler failed')
+        return { state: null }
+      },
+    }
+
+    const ref = system.spawn('setup-fail-restart', def, null)
+    await tick()
+
+    // Trigger a failure → restart → setup throws → actor should terminate
+    ref.send('POISON')
+
+    await tick(300)
+
+    // 1. terminated event with reason 'failed'
+    const terminated = lifecycleEvents.filter((e) => e.type === 'terminated')
+    expect(terminated.length).toBe(1)
+    if (terminated[0]!.type === 'terminated') {
+      expect(terminated[0]!.ref.name).toBe('system/setup-fail-restart')
+      expect(terminated[0]!.reason).toBe('failed')
+    }
+
+    // 2. log.error was emitted for the restart setup failure
+    const errorLogs = logs.filter(
+      (l) =>
+        l.level === 'error' &&
+        l.source === 'system/setup-fail-restart' &&
+        l.message.includes('setup threw during restart'),
+    )
+    expect(errorLogs.length).toBeGreaterThanOrEqual(1)
+
+    // 3. Actor is no longer tracked in metrics after shutdown
+    await system.shutdown()
+    expect(system.getActorMetrics('system/setup-fail-restart')).toBeUndefined()
   })
 })
