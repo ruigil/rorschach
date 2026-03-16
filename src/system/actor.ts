@@ -179,7 +179,7 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
         throw new Error(`Actor "${fullName}" already exists as a child of "${name}"`)
       }
 
-      const childHandle = createActor(fullName, childDef, childInitialState, services)
+      const { handle: childHandle } = createActor(fullName, childDef, childInitialState, services)
       children.set(fullName, childHandle as InternalActorHandle)
 
       // Parent implicitly watches its children
@@ -300,12 +300,17 @@ const buildPipeline = <M, S>(
  * No external code can read or mutate it.
  *
  */
+export type ActorCreationResult<M> = {
+  readonly handle: InternalActorHandle<M>
+  readonly context: ActorContext<M>
+}
+
 export const createActor = <M, S>(
   name: string,
   def: ActorDef<M, S>,
   initialState: S,
   services: ActorServices,
-): InternalActorHandle<M> => {
+): ActorCreationResult<M> => {
   // Internal logger for lifecycle events (created early so onOverflow can use it)
   const log = createInternalLog(name, services.eventStream)
 
@@ -626,8 +631,9 @@ export const createActor = <M, S>(
   })()
 
   return {
-    ref,
-    stop: async (): Promise<StopResult> => {
+    handle: {
+      ref,
+      stop: async (): Promise<StopResult> => {
       if (stopped) return { reason: stopReason, ...(stopError !== undefined ? { error: stopError } : {}) }
       stopped = true
 
@@ -667,6 +673,8 @@ export const createActor = <M, S>(
       }
 
       return { reason: stopReason, ...(stopError !== undefined ? { error: stopError } : {}) }
+      },
     },
+    context,
   }
 }

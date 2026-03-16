@@ -4,7 +4,6 @@ import { createMetricsRegistry } from './metrics.ts'
 import {
   MetricsTopic,
   SystemLifecycleTopic,
-  type ActorContext,
   type ActorDef,
   type ActorIdentity,
   type ActorRef,
@@ -74,38 +73,7 @@ export const createActorSystem = (
     metricsRegistry,
   }
 
-  // ─── Root actor context, captured synchronously during setup ───
-  let rootContext: ActorContext<never> | null = null
-
   const rootDef: ActorDef<never, null> = {
-    setup: (state, context) => {
-      rootContext = context
-
-      // ─── Spawn the internal metrics actor if configured ───
-      if (metricsConfig) {
-        type MetricsMsg = { type: 'tick' }
-
-        const metricsActorDef: ActorDef<MetricsMsg, null> = {
-          setup: (s, ctx) => {
-            ctx.timers.startPeriodicTimer('metrics-tick', { type: 'tick' }, metricsConfig.intervalMs)
-            return s
-          },
-          handler: (s, _msg, ctx) => {
-            const event: MetricsEvent = {
-              timestamp: Date.now(),
-              actors: metricsRegistry.snapshotAll(),
-            }
-            ctx.publish(MetricsTopic, event)
-            return { state: s }
-          },
-        }
-
-        context.spawn('$metrics', metricsActorDef, null)
-      }
-
-      return state
-    },
-
     handler: (state) => ({ state }),
 
     lifecycle: (state, event) => {
@@ -123,11 +91,29 @@ export const createActorSystem = (
       : {}),
   }
 
-  const rootHandle = createActor('system', rootDef, null, services)
+  const { handle: rootHandle, context: ctx } = createActor('system', rootDef, null, services)
 
-  // rootContext is guaranteed to be set: createActor calls def.setup()
-  // synchronously within the async IIFE before the first await yields.
-  const ctx = rootContext!
+  // ─── Spawn the internal metrics actor if configured ───
+  if (metricsConfig) {
+    type MetricsMsg = { type: 'tick' }
+
+    const metricsActorDef: ActorDef<MetricsMsg, null> = {
+      setup: (s, metCtx) => {
+        metCtx.timers.startPeriodicTimer('metrics-tick', { type: 'tick' }, metricsConfig.intervalMs)
+        return s
+      },
+      handler: (s, _msg, metCtx) => {
+        const event: MetricsEvent = {
+          timestamp: Date.now(),
+          actors: metricsRegistry.snapshotAll(),
+        }
+        metCtx.publish(MetricsTopic, event)
+        return { state: s }
+      },
+    }
+
+    ctx.spawn('$metrics', metricsActorDef, null)
+  }
 
   // ─── Build the public facade ───
 
