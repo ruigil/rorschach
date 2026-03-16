@@ -179,7 +179,7 @@ export type MessageHandler<M, S> = (
   state: S,
   message: M,
   context: ActorContext<M>,
-) => ActorResult<S>
+) => ActorResult<M, S>
 
 // ─── Interceptor (wraps message processing) ───
 //
@@ -196,11 +196,11 @@ export type Interceptor<M, S> = (
   state: S,
   message: M,
   context: ActorContext<M>,
-  next: (state: S, message: M) => ActorResult<S>,
-) => ActorResult<S>
+  next: (state: S, message: M) => ActorResult<M, S>,
+) => ActorResult<M, S>
 // keeping the common case `{ state }` zero-boilerplate.
 //
-export type ActorResult<S> =
+export type ActorResult<M, S> =
   // ─── Process: handle the message normally, optionally emit domain events ───
   | {
       state: S
@@ -214,7 +214,7 @@ export type ActorResult<S> =
   | {
       state: S
       /** Replace the current message handler with a new one. */
-      become: MessageHandler<any, S>
+      become: MessageHandler<M, S>
       /** Re-enqueue all stashed messages into the mailbox. Typically used alongside `become`. */
       unstashAll?: boolean
       /** Typed domain events produced by this handler invocation. */
