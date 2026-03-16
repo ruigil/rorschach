@@ -1,9 +1,9 @@
-import { createActorSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
+import { createPluginSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
 import { createHttpActor, type HttpState } from '../actors/http.ts'
 import type { LifecycleEvent, LogEvent } from '../system/types.ts'
 
 // ─── Create the actor system ───
-const system = createActorSystem()
+const system = await createPluginSystem()
 
 // ─── Observe top-level actor lifecycle events ───
 system.subscribe('lifecycle-observer', SystemLifecycleTopic, (event) => {

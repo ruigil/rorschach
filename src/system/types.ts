@@ -478,21 +478,56 @@ export type ActorServices = {
   readonly metricsRegistry: MetricsRegistry
 }
 
-// ─── Actor System ───
-export type ActorSystem = {
-  readonly spawn: <M, S>(
-    name: string,
-    def: ActorDef<M, S>,
-    initialState: S,
-  ) => ActorRef<M>
+// ─── Plugin Handle (returned by activate) ───
+export type PluginHandle = {
+  deactivate?(): Promise<void> | void
+}
+
+// ─── Plugin Definition ───
+export type PluginDef<Config = void> = {
+  readonly id: string
+  readonly version: string
+  readonly dependencies?: readonly string[]
+  readonly description?: string
+  activate(ctx: ActorContext<never>, config: Config): Promise<PluginHandle> | PluginHandle
+}
+
+// ─── Plugin Source ───
+export type PluginSource =
+  | { type: 'path'; value: string }
+  | { type: 'inline'; def: PluginDef<any> }
+
+// ─── Loaded Plugin (runtime state) ───
+export type LoadedPlugin = {
+  readonly id: string
+  readonly version: string
+  readonly dependencies: readonly string[]
+  readonly source: PluginSource
+  readonly config: unknown
+  readonly status: 'loading' | 'active' | 'deactivating' | 'failed'
+  readonly handle?: PluginHandle
+  readonly error?: unknown
+  readonly loadedAt: number
+}
+
+// ─── Activation Result (published by plugin root actor to notify the system closure) ───
+export type ActivationResult =
+  | { ok: true; handle: PluginHandle }
+  | { ok: false; error: unknown }
+
+// ─── Load / Unload Results ───
+export type LoadResult = { ok: true; id: string } | { ok: false; error: string }
+export type UnloadResult = { ok: true } | { ok: false; error: string }
+
+// ─── Plugin System (ActorSystem merged with plugin management) ───
+export type PluginSystem = {
+  // ─── Actor management ───
+  readonly spawn: <M, S>(name: string, def: ActorDef<M, S>, initialState: S) => ActorRef<M>
   readonly stop: (child: ActorIdentity) => void
   readonly shutdown: () => Promise<void>
 
-  // ─── Event Stream (external access) ───
-
-  /** Publish a typed event to the system event bus from outside the actor world. */
+  // ─── Event Stream ───
   readonly publish: <T>(topic: EventTopic<T>, event: T) => void
-  /** Subscribe to typed events from outside the actor world. Returns an unsubscribe function. */
   readonly subscribe: <T>(
     subscriberName: string,
     topic: EventTopic<T>,
@@ -500,11 +535,15 @@ export type ActorSystem = {
   ) => () => void
 
   // ─── Introspection ───
-
-  /** Get a point-in-time snapshot of a single actor's metrics by name. */
   readonly getActorMetrics: (name: string) => ActorSnapshot | undefined
-  /** Get snapshots of all live actors. */
   readonly getAllActorMetrics: () => ActorSnapshot[]
-  /** Get the hierarchical tree of live actors with status. */
   readonly getActorTree: () => ActorTreeNode[]
+
+  // ─── Plugin management ───
+  readonly loadPlugin: <Config = void>(source: PluginSource, config?: Config) => Promise<LoadResult>
+  readonly unloadPlugin: (id: string) => Promise<UnloadResult>
+  readonly reloadPlugin: (id: string) => Promise<LoadResult>
+  readonly listPlugins: () => Promise<LoadedPlugin[]>
+  readonly getPluginStatus: (id: string) => Promise<LoadedPlugin | undefined>
+  readonly use: <Config>(def: PluginDef<Config>, config?: Config) => Promise<LoadResult>
 }

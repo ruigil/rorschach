@@ -1,4 +1,4 @@
-import { createActorSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
+import { createPluginSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
 import { createHttpActor, type HttpState } from '../actors/http.ts'
 import { createChatbotActor } from '../actors/chatbot.ts'
 import type { LifecycleEvent, LogEvent } from '../system/types.ts'
@@ -10,7 +10,7 @@ if (!apiKey) {
 }
 
 // ─── Create the actor system ───
-const system = createActorSystem()
+const system = await createPluginSystem()
 
 // ─── Subscribe to system logs ───
 system.subscribe('console-logger', LogTopic, (event) => {
@@ -35,7 +35,10 @@ system.spawn('chatbot', createChatbotActor({
   apiKey,
   model: process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini',
   systemPrompt: process.env.CHATBOT_SYSTEM_PROMPT,
-}), { history: {} })
+}), {
+  history: {},
+  pending: {}
+})
 
 console.log('\n🚀 Chatbot running — open http://localhost:3000\n')
 

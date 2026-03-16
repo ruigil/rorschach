@@ -1,5 +1,5 @@
 // ─── Public API ───
-export { createActorSystem, type ActorSystemOptions } from './system.ts'
+export { createPluginSystem, type PluginSystemOptions } from './system.ts'
 export { createWorkerBridge, taskTopic } from '../actors/worker-bridge.ts'
 export type { TaskEvent, WorkerBridge, WorkerBridgeMsg, WorkerBridgeOptions, WorkerBridgeState } from '../actors/worker-bridge.ts'
 export { ask } from './ask.ts'
@@ -21,7 +21,6 @@ export type {
   ActorContext,
   ActorIdentity,
   ActorResult,
-  ActorSystem,
   Interceptor,
   LifecycleResult,
   DeadLetter,
@@ -49,3 +48,13 @@ export type {
   MetricsRegistry,
   ProcessingTime,
 } from './types.ts'
+
+export type {
+  PluginDef,
+  PluginHandle,
+  PluginSource,
+  LoadedPlugin,
+  LoadResult,
+  UnloadResult,
+  PluginSystem,
+} from '../plugins/index.ts'

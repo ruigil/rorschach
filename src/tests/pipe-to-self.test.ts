@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createActorSystem } from '../system/index.ts'
+import { createPluginSystem } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 
 /** Small delay to let async actor processing settle */
@@ -34,7 +34,7 @@ describe('pipeToSelf', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('pipe-success', def, null)
     await tick()
 
@@ -73,7 +73,7 @@ describe('pipeToSelf', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('pipe-failure', def, null)
     await tick()
 
@@ -114,7 +114,7 @@ describe('pipeToSelf', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('non-blocking', def, null)
     await tick()
 
@@ -152,7 +152,7 @@ describe('pipeToSelf', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('stop-before-resolve', def, null)
     await tick()
 
@@ -203,7 +203,7 @@ describe('pipeToSelf', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('multi-pipe', def, null)
     await tick()
 
@@ -249,7 +249,7 @@ describe('pipeToSelf', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('state-cycle', def, { loading: false, data: null, error: null })
     await tick()
 

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createActorSystem, SystemLifecycleTopic, LogTopic } from '../system/index.ts'
+import { createPluginSystem, SystemLifecycleTopic, LogTopic } from '../system/index.ts'
 import type { ActorDef, LifecycleEvent, LogEvent } from '../system/index.ts'
 
 // ─── Helpers ───
@@ -40,7 +40,7 @@ const failingActorDef = (
 describe('Supervision: stop strategy (default)', () => {
   test('actor stops on failure when no strategy is configured', async () => {
     const events: LifecycleEvent[] = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     const ref = system.spawn('stopper', failingActorDef(), { count: 0 })
@@ -67,7 +67,7 @@ describe('Supervision: stop strategy (default)', () => {
 
   test('messages after failure are silently dropped', async () => {
     const received: string[] = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const ref = system.spawn(
       'drop-after-fail',
@@ -94,7 +94,7 @@ describe('Supervision: restart strategy', () => {
     const received: string[] = []
     let setupCount = 0
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const ref = system.spawn(
       'restarter',
@@ -126,7 +126,7 @@ describe('Supervision: restart strategy', () => {
     const received: string[] = []
     let setupCount = 0
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const ref = system.spawn(
       'multi-restart',
@@ -171,7 +171,7 @@ describe('Supervision: restart strategy', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const ref = system.spawn('state-reset', def, { count: 0 })
 
@@ -196,7 +196,7 @@ describe('Supervision: restart with maxRetries', () => {
     let stoppedCalled = false
     const events: LifecycleEvent[] = []
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     const ref = system.spawn(
@@ -239,7 +239,7 @@ describe('Supervision: restart with maxRetries', () => {
   test('retry window allows retries after time elapses', async () => {
     let setupCount = 0
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const ref = system.spawn(
       'windowed-restart',
@@ -306,7 +306,7 @@ describe('Supervision: child actor failure propagation via watch', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const parent = system.spawn('parent', parentDef, { childRef: null })
     await tick()
@@ -351,7 +351,7 @@ describe('Supervision: child actor failure propagation via watch', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('parent', parentDef, null)
     await tick()
 
@@ -376,7 +376,7 @@ describe('Supervision: normal operation unaffected', () => {
   test('actor with restart strategy works normally when no errors occur', async () => {
     const received: string[] = []
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const ref = system.spawn(
       'happy-path',
@@ -402,7 +402,7 @@ describe('Supervision: normal operation unaffected', () => {
 
   test('system shutdown still works cleanly with supervision configured', async () => {
     const events: LifecycleEvent[] = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     system.spawn(
@@ -429,7 +429,7 @@ describe('Supervision: start lifecycle failure during restart', () => {
     const logs: LogEvent[] = []
     let startCallCount = 0
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.subscribe('test-lifecycle', SystemLifecycleTopic, (e) => lifecycleEvents.push(e as LifecycleEvent))
     system.subscribe('test-logs', LogTopic, (e) => logs.push(e))
 

@@ -1,29 +1,36 @@
 import { createActor } from './actor.ts'
 import { createEventStream, createRegistry } from './services.ts'
 import { createMetricsRegistry } from './metrics.ts'
+import { loadPluginModule } from './loader.ts'
 import {
   MetricsTopic,
   SystemLifecycleTopic,
+  createTopic,
+  emit,
+  type ActorContext,
   type ActorDef,
   type ActorIdentity,
   type ActorRef,
   type ActorServices,
   type ActorSnapshot,
-  type ActorSystem,
   type ActorTreeNode,
   type EventTopic,
   type MetricsEvent,
+  type ActivationResult,
+  type LoadedPlugin,
+  type LoadResult,
+  type PluginDef,
+  type PluginHandle,
+  type PluginSource,
+  type PluginSystem,
+  type UnloadResult,
 } from './types.ts'
 
-/**
- * Options for creating an actor system.
- */
-export type ActorSystemOptions = {
+export type PluginSystemOptions = {
   /**
    * Maximum time (in ms) to wait for the root actor's drain to complete
    * during `shutdown()`. If the drain hasn't finished by this deadline,
    * the root actor's mailbox is force-closed.
-   * Only meaningful when the root actor uses drain-based shutdown (default).
    */
   shutdownTimeoutMs?: number
 
@@ -37,35 +44,80 @@ export type ActorSystemOptions = {
     /** Interval (in ms) between metric snapshot publications. */
     intervalMs: number
   }
+
+  /**
+   * Plugins to load during system startup, in order.
+   * Each plugin is fully activated before the next one is loaded,
+   * so dependency ordering is respected.
+   * A startup plugin failure throws and prevents the system from being returned.
+   */
+  plugins?: Array<{ source: PluginSource; config?: unknown }>
 }
 
-/**
- * Creates the root actor system.
- *
- * The system IS the root actor — a regular actor named 'system' created via
- * `createActor`. Every actor in the hierarchy, including the root, is managed
- * by the same code path. Children of the root receive 'system/'-prefixed
- * names, exactly like children of any other actor — full naming symmetry.
- *
- * The `ActorSystem` facade delegates structural operations (`spawn`, `stop`)
- * to the root actor's context, captured synchronously during setup.
- * Lifecycle events from children flow through the root actor's mailbox
- * like any other actor.
- *
- * Top-level actor terminations are published to `SystemLifecycleTopic`
- * ('system.lifecycle'). External code can observe them via
- * `system.subscribe(name, SystemLifecycleTopic, callback)`.
- *
- * `publish` and `subscribe` are convenience pass-throughs to the shared
- * event stream infrastructure — they are not root actor capabilities.
- */
-export const createActorSystem = (
-  options?: ActorSystemOptions,
-): ActorSystem => {
-  const { shutdownTimeoutMs, metrics: metricsConfig } = options ?? {}
+// ─── Plugin root actor ───────────────────────────────────────────────────────
+//
+// One plugin root actor per loaded plugin, spawned as a direct child of the
+// system root at `system/$plugin-<id>`. Its only responsibilities are:
+//   1. Call def.activate() on start via pipeToSelf (handles async activation)
+//   2. Publish the ActivationResult to a one-shot topic so the closure resolves
+//   3. Call handle.deactivate() in the stopped lifecycle
+//
+// All actors the plugin spawns become children of this root, so stopping it
+// cascades to the entire plugin subtree automatically.
+//
+type PluginRootMsg =
+  | { type: '_activated'; handle: PluginHandle }
+  | { type: '_activationFailed'; error: unknown }
+
+type PluginRootState = { handle?: PluginHandle }
+
+const makePluginRootDef = (
+  def: PluginDef<unknown>,
+  config: unknown,
+  activationTopic: EventTopic<ActivationResult>,
+): ActorDef<PluginRootMsg, PluginRootState> => ({
+  handler: (state, msg) => {
+    if (msg.type === '_activated')
+      return {
+        state: { handle: msg.handle },
+        events: [emit(activationTopic, { ok: true, handle: msg.handle })],
+      }
+    return { state, events: [emit(activationTopic, { ok: false, error: msg.error })] }
+  },
+
+  async lifecycle(state, event, actorCtx) {
+    if (event.type === 'start') {
+      actorCtx.pipeToSelf(
+        Promise.resolve(def.activate(actorCtx as unknown as ActorContext<never>, config)),
+        (handle) => ({ type: '_activated', handle }),
+        (error) => ({ type: '_activationFailed', error }),
+      )
+    }
+    if (event.type === 'stopped') {
+      await state.handle?.deactivate?.()
+    }
+    return { state }
+  },
+})
+
+// ─── createPluginSystem ──────────────────────────────────────────────────────
+//
+// Creates the root actor system with integrated plugin management.
+//
+// The system IS the plugin manager — plugin state lives in this closure
+// alongside the actor infrastructure. Plugin root actors are spawned as
+// direct children of the root actor at `system/$plugin-<id>`.
+//
+// Returns a Promise because initial plugins (from options.plugins) must be
+// fully activated before the system is usable.
+//
+export const createPluginSystem = async (
+  options?: PluginSystemOptions,
+): Promise<PluginSystem> => {
+  const { shutdownTimeoutMs, metrics: metricsConfig, plugins: initialPlugins } = options ?? {}
   let shuttingDown = false
 
-  // Shared infrastructure
+  // ─── Shared infrastructure ───
   const metricsRegistry = createMetricsRegistry()
   const services: ActorServices = {
     registry: createRegistry(),
@@ -77,15 +129,12 @@ export const createActorSystem = (
     handler: (state) => ({ state }),
 
     lifecycle: (state, event) => {
-      // Publish child terminated events to the well-known lifecycle topic.
-      // External observers subscribe via system.subscribe(name, SystemLifecycleTopic, cb).
       if (event.type === 'terminated') {
         services.eventStream.publish(SystemLifecycleTopic, event)
       }
       return { state }
     },
 
-    // Enable drain-based shutdown for the root actor when a timeout is configured
     ...(shutdownTimeoutMs !== undefined
       ? { shutdown: { drain: true, timeoutMs: shutdownTimeoutMs } }
       : {}),
@@ -93,7 +142,7 @@ export const createActorSystem = (
 
   const { handle: rootHandle, context: ctx } = createActor('system', rootDef, null, services)
 
-  // ─── Spawn the internal metrics actor if configured ───
+  // ─── Internal metrics actor ───
   if (metricsConfig) {
     type MetricsMsg = { type: 'tick' }
 
@@ -117,16 +166,103 @@ export const createActorSystem = (
     ctx.spawn('$metrics', metricsActorDef, null)
   }
 
-  // ─── Build the public facade ───
+  // ─── Plugin management state ───
+  const plugins = new Map<string, LoadedPlugin>()
 
-  const spawn = <M, S>(
-    name: string,
-    def: ActorDef<M, S>,
-    initialState: S,
-  ): ActorRef<M> => {
-    if (shuttingDown) {
-      throw new Error('Cannot spawn actors: system is shutting down')
+  const loadPlugin = async (source: PluginSource, config?: unknown): Promise<LoadResult> => {
+    if (shuttingDown) return { ok: false, error: 'system is shutting down' }
+
+    let def: PluginDef<unknown>
+    try {
+      def = await loadPluginModule(source)
+    } catch (e) {
+      return { ok: false, error: String(e) }
     }
+
+    if (plugins.has(def.id)) return { ok: false, error: `plugin '${def.id}' already loaded` }
+
+    for (const dep of def.dependencies ?? []) {
+      if (plugins.get(dep)?.status !== 'active')
+        return { ok: false, error: `unsatisfied dependency: '${dep}'` }
+    }
+
+    plugins.set(def.id, {
+      id: def.id,
+      version: def.version,
+      dependencies: def.dependencies ?? [],
+      source,
+      config,
+      status: 'loading',
+      loadedAt: Date.now(),
+    })
+
+    const activationTopic = createTopic<ActivationResult>(`$plugin:activation:${def.id}`)
+    const subName = `$plugin-load:${def.id}`
+
+    return new Promise<LoadResult>((resolve) => {
+      services.eventStream.subscribe(subName, activationTopic, (result) => {
+        services.eventStream.unsubscribe(subName, activationTopic)
+        services.eventStream.deleteTopic(activationTopic)
+        if (result.ok) {
+          plugins.set(def.id, { ...plugins.get(def.id)!, status: 'active', handle: result.handle })
+          resolve({ ok: true, id: def.id })
+        } else {
+          plugins.set(def.id, { ...plugins.get(def.id)!, status: 'failed', error: result.error })
+          resolve({ ok: false, error: String(result.error) })
+        }
+      })
+      ctx.spawn(`$plugin-${def.id}`, makePluginRootDef(def, config, activationTopic), {})
+    })
+  }
+
+  const unloadPlugin = async (id: string): Promise<UnloadResult> => {
+    const plugin = plugins.get(id)
+    if (!plugin) return { ok: false, error: `plugin '${id}' not found` }
+    if (plugin.status !== 'active')
+      return { ok: false, error: `plugin '${id}' is not active (status: ${plugin.status})` }
+
+    for (const [, p] of plugins) {
+      if (p.status === 'active' && p.dependencies.includes(id))
+        return { ok: false, error: `plugin '${p.id}' depends on '${id}'` }
+    }
+
+    plugins.set(id, { ...plugin, status: 'deactivating' })
+
+    const subName = `$plugin-unload:${id}`
+    return new Promise<UnloadResult>((resolve) => {
+      services.eventStream.subscribe(subName, SystemLifecycleTopic, (event) => {
+        if (event.type === 'terminated' && event.ref.name === `system/$plugin-${id}`) {
+          services.eventStream.unsubscribe(subName, SystemLifecycleTopic)
+          plugins.delete(id)
+          resolve({ ok: true })
+        }
+      })
+      ctx.stop({ name: `system/$plugin-${id}` })
+    })
+  }
+
+  const reloadPlugin = async (id: string): Promise<LoadResult> => {
+    const plugin = plugins.get(id)
+    if (!plugin) return { ok: false, error: `plugin '${id}' not found` }
+    const { source, config } = plugin
+    const result = await unloadPlugin(id)
+    if (!result.ok) return result
+    return loadPlugin(source, config)
+  }
+
+  // ─── Load initial plugins (serially — respects dependency order) ───
+  for (const { source, config } of initialPlugins ?? []) {
+    const result = await loadPlugin(source, config)
+    if (!result.ok) {
+      const label = source.type === 'path' ? source.value : source.def.id
+      throw new Error(`Startup plugin '${label}' failed: ${result.error}`)
+    }
+  }
+
+  // ─── Public facade ───
+
+  const spawn = <M, S>(name: string, def: ActorDef<M, S>, initialState: S): ActorRef<M> => {
+    if (shuttingDown) throw new Error('Cannot spawn actors: system is shutting down')
     return ctx.spawn(name, def, initialState)
   }
 
@@ -139,8 +275,6 @@ export const createActorSystem = (
     shuttingDown = true
     await rootHandle.stop()
   }
-
-  // ─── Event Stream (infrastructure pass-throughs) ───
 
   const publish = <T>(topic: EventTopic<T>, event: T): void => {
     services.eventStream.publish(topic, event)
@@ -155,22 +289,23 @@ export const createActorSystem = (
     return () => services.eventStream.unsubscribe(subscriberName, topic)
   }
 
-  // ─── Introspection (pass-throughs to MetricsRegistry) ───
+  const getActorMetrics = (name: string): ActorSnapshot | undefined =>
+    metricsRegistry.snapshot(name)
 
-  const getActorMetrics = (name: string): ActorSnapshot | undefined => {
-    return metricsRegistry.snapshot(name)
-  }
+  const getAllActorMetrics = (): ActorSnapshot[] =>
+    metricsRegistry.snapshotAll()
 
-  const getAllActorMetrics = (): ActorSnapshot[] => {
-    return metricsRegistry.snapshotAll()
-  }
-
-  const getActorTree = (): ActorTreeNode[] => {
-    return metricsRegistry.actorTree()
-  }
+  const getActorTree = (): ActorTreeNode[] =>
+    metricsRegistry.actorTree()
 
   return {
     spawn, stop, shutdown, publish, subscribe,
     getActorMetrics, getAllActorMetrics, getActorTree,
+    loadPlugin,
+    unloadPlugin,
+    reloadPlugin,
+    listPlugins: () => Promise.resolve([...plugins.values()]),
+    getPluginStatus: (id) => Promise.resolve(plugins.get(id)),
+    use: (def, config) => loadPlugin({ type: 'inline', def }, config),
   }
 }

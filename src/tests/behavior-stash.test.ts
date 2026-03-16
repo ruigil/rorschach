@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createActorSystem, DeadLetterTopic } from '../system/index.ts'
+import { createPluginSystem, DeadLetterTopic } from '../system/index.ts'
 import type {
   ActorDef,
   ActorRef,
@@ -34,7 +34,7 @@ describe('Behavior switching (become)', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('become-basic', def, null)
     await tick()
 
@@ -69,7 +69,7 @@ describe('Behavior switching (become)', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('become-chain', def, null)
     await tick()
 
@@ -101,7 +101,7 @@ describe('Behavior switching (become)', () => {
       return { state }
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('become-return', def, null)
     await tick()
 
@@ -134,7 +134,7 @@ describe('Behavior switching (become)', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('become-state', def, { count: 0 })
     await tick()
 
@@ -167,7 +167,7 @@ describe('Behavior switching (become)', () => {
       supervision: { type: 'restart', maxRetries: 3 },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('become-restart', def, null)
     await tick()
 
@@ -211,7 +211,7 @@ describe('Stash', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('stash-basic', def, null)
     await tick()
 
@@ -249,7 +249,7 @@ describe('Stash', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('stash-mixed', def, null)
     await tick()
 
@@ -282,7 +282,7 @@ describe('Stash', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('stash-empty', def, null)
     await tick()
 
@@ -313,7 +313,7 @@ describe('Stash', () => {
       stashCapacity: 3,
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.subscribe('test-dl', DeadLetterTopic, (e) => deadLetters.push(e))
 
     const ref = system.spawn('stash-overflow', def, null)
@@ -346,7 +346,7 @@ describe('Stash', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.subscribe('test-dl', DeadLetterTopic, (e) => deadLetters.push(e))
 
     const ref = system.spawn('stash-stop', def, null)
@@ -380,7 +380,7 @@ describe('Stash', () => {
       supervision: { type: 'restart', maxRetries: 3 },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.subscribe('test-dl', DeadLetterTopic, (e) => deadLetters.push(e))
 
     const ref = system.spawn('stash-restart', def, null)
@@ -442,7 +442,7 @@ describe('Become + Stash: initialization pattern', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('init-pattern', def, { connId: null })
     await tick()
 

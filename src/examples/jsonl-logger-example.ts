@@ -1,6 +1,6 @@
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createActorSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
+import { createPluginSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
 import { createJsonlLoggerActor, type JsonlLoggerState } from '../actors/jsonl-logger.ts'
 import { createHttpActor, type HttpState } from '../actors/http.ts'
 import type { LifecycleEvent, LogEvent } from '../system/types.ts'
@@ -10,7 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const LOG_FILE = join(__dirname, '../../logs/app.jsonl')
 
 // ─── Create the actor system ───
-const system = createActorSystem()
+const system = await createPluginSystem()
 
 // ─── Observe top-level actor lifecycle events ───
 system.subscribe('lifecycle-observer', SystemLifecycleTopic, (event) => {

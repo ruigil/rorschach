@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createActorSystem, SystemLifecycleTopic } from '../system/index.ts'
+import { createPluginSystem, SystemLifecycleTopic } from '../system/index.ts'
 import type {
   ActorDef,
   LifecycleEvent,
@@ -17,7 +17,7 @@ const tick = (ms = 50) => Bun.sleep(ms)
 describe('Actor: lifecycle events', () => {
   test('system receives terminated event when actor stops', async () => {
     const events: LifecycleEvent[] = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     system.spawn('stopper', {
@@ -52,7 +52,7 @@ describe('Actor: lifecycle events', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.spawn('life', def, null)
     await tick()
 
@@ -62,7 +62,7 @@ describe('Actor: lifecycle events', () => {
 
   test('system receives terminated event on shutdown', async () => {
     const eventTypes: string[] = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.subscribe('test', SystemLifecycleTopic, (e) => eventTypes.push((e as LifecycleEvent).type))
 
     system.spawn('ordered', {
@@ -82,7 +82,7 @@ describe('Actor: lifecycle events', () => {
 
 describe('Actor system', () => {
   test('spawn returns a valid ActorRef', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const ref = system.spawn('test', {
       handler: (state: null) => ({ state }),
@@ -94,8 +94,8 @@ describe('Actor system', () => {
     await system.shutdown()
   })
 
-  test('spawning a top-level actor with a duplicate name throws', () => {
-    const system = createActorSystem()
+  test('spawning a top-level actor with a duplicate name throws', async () => {
+    const system = await createPluginSystem()
 
     system.spawn('same', {
       handler: (state: null) => ({ state }),
@@ -109,7 +109,7 @@ describe('Actor system', () => {
   })
 
   test('spawning after shutdown throws', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     await system.shutdown()
 
     expect(() => {
@@ -130,7 +130,7 @@ describe('Actor system', () => {
       },
     })
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.spawn('a', makeDef('a'), null)
     system.spawn('b', makeDef('b'), null)
     system.spawn('c', makeDef('c'), null)
@@ -143,7 +143,7 @@ describe('Actor system', () => {
 
   test('double shutdown is idempotent', async () => {
     const events: LifecycleEvent[] = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     system.spawn('once', {
@@ -168,7 +168,7 @@ describe('Actor system', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const refA = system.spawn('a', def, null)
     const refB = system.spawn('b', def, null)
     await tick()
@@ -202,7 +202,7 @@ describe('Actor system', () => {
       },
     })
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const refX = system.spawn('x', makeDef('x'), null)
     const refY = system.spawn('y', makeDef('y'), null)
     await tick()

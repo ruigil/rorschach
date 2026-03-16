@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createActorSystem, LogTopic } from '../system/index.ts'
+import { createPluginSystem, LogTopic } from '../system/index.ts'
 import type { ActorDef, PersistenceAdapter, LogEvent } from '../system/index.ts'
 
 // ─── Helpers ───
@@ -32,7 +32,7 @@ const counterDef: ActorDef<string, Counter> = {
 describe('Persistence: load on start', () => {
   test('actor starts from loaded state when adapter returns a snapshot', async () => {
     const adapter = memAdapter<Counter>({ count: 42 })
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { count: 0 })
 
@@ -47,7 +47,7 @@ describe('Persistence: load on start', () => {
 
   test('actor starts from initialState when load returns undefined', async () => {
     const adapter = memAdapter<Counter>(undefined)
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { count: 0 })
 
@@ -63,7 +63,7 @@ describe('Persistence: load on start', () => {
   test('start lifecycle receives loaded state, not initialState', async () => {
     const startStates: Counter[] = []
     const adapter = memAdapter<Counter>({ count: 99 })
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     system.spawn('counter', {
       ...counterDef,
@@ -90,7 +90,7 @@ describe('Persistence: save after message', () => {
       load: async () => undefined,
       save: async (state) => { saves.push(state) },
     }
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { count: 0 })
 
@@ -117,7 +117,7 @@ describe('Persistence: save after message', () => {
         if (saveCallCount === 1) throw new Error('disk full')
       },
     }
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { count: 0 })
 
@@ -141,7 +141,7 @@ describe('Persistence: save after message', () => {
       load: async () => undefined,
       save: async () => { throw new Error('storage unavailable') },
     }
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.subscribe('test', LogTopic, (e) => logs.push(e))
 
     const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { count: 0 })
@@ -161,7 +161,7 @@ describe('Persistence: load on restart', () => {
   test('restarted actor recovers from last snapshot, not initialState', async () => {
     const adapter = memAdapter<Counter>({ count: 10 })
     const setupStates: Counter[] = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const ref = system.spawn('counter', {
       ...counterDef,
@@ -204,7 +204,7 @@ describe('Persistence: load on restart', () => {
       save: async () => {},
     }
     const setupStates: Counter[] = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const ref = system.spawn('counter', {
       ...counterDef,
@@ -229,7 +229,7 @@ describe('Persistence: load on restart', () => {
 
 describe('Persistence: no adapter configured', () => {
   test('actor without persistence works identically to before', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('counter', counterDef, { count: 0 })
 
     await tick()

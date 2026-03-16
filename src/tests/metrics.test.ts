@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import {
-  createActorSystem,
+  createPluginSystem,
   MetricsTopic,
   type ActorDef,
   type ActorSnapshot,
@@ -34,7 +34,7 @@ const restartingCounterDef: ActorDef<CounterMsg, number> = {
 
 describe('Metrics: per-actor counters', () => {
   test('messagesReceived and messagesProcessed are tracked', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('counter', counterDef, 0)
 
     ref.send({ type: 'inc' })
@@ -53,7 +53,7 @@ describe('Metrics: per-actor counters', () => {
   })
 
   test('messagesFailed is incremented on handler error', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.spawn('counter', restartingCounterDef, 0).send({ type: 'fail' })
     await tick()
 
@@ -65,7 +65,7 @@ describe('Metrics: per-actor counters', () => {
   })
 
   test('restartCount is tracked on supervision restart', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('counter', restartingCounterDef, 0)
 
     ref.send({ type: 'fail' })
@@ -83,7 +83,7 @@ describe('Metrics: per-actor counters', () => {
 
 describe('Metrics: processing time', () => {
   test('processingTime tracks min/max/avg/sum/count', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('counter', counterDef, 0)
 
     ref.send({ type: 'slow' })
@@ -102,7 +102,7 @@ describe('Metrics: processing time', () => {
   })
 
   test('processingTime is zero when no messages processed', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.spawn('idle', counterDef, 0)
     await tick()
 
@@ -135,7 +135,7 @@ describe('Metrics: gauges (mailboxSize, stashSize, childCount)', () => {
       handler: (state) => ({ state }),
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.spawn('parent', parentDef, null)
     await tick()
 
@@ -151,7 +151,7 @@ describe('Metrics: gauges (mailboxSize, stashSize, childCount)', () => {
 
 describe('Metrics: status tracking', () => {
   test('actor status is running while alive', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.spawn('counter', counterDef, 0)
     await tick()
 
@@ -163,7 +163,7 @@ describe('Metrics: status tracking', () => {
   })
 
   test('actor metrics are unregistered after stop', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('counter', counterDef, 0)
     await tick()
 
@@ -184,7 +184,7 @@ describe('Metrics: status tracking', () => {
       supervision: { type: 'stop' },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('failer', failingDef, 0)
     ref.send({ type: 'fail' })
     await tick()
@@ -200,7 +200,7 @@ describe('Metrics: status tracking', () => {
 
 describe('Metrics: uptime and lastMessageTimestamp', () => {
   test('uptime increases over time', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.spawn('counter', counterDef, 0)
     await tick()
 
@@ -214,7 +214,7 @@ describe('Metrics: uptime and lastMessageTimestamp', () => {
   })
 
   test('lastMessageTimestamp is null before any message', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.spawn('idle', counterDef, 0)
     await tick()
 
@@ -225,7 +225,7 @@ describe('Metrics: uptime and lastMessageTimestamp', () => {
   })
 
   test('lastMessageTimestamp is updated after processing', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('counter', counterDef, 0)
     ref.send({ type: 'inc' })
     await tick()
@@ -239,7 +239,7 @@ describe('Metrics: uptime and lastMessageTimestamp', () => {
 
 describe('Metrics: getAllActorMetrics', () => {
   test('returns snapshots for all live actors', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.spawn('a', counterDef, 0)
     system.spawn('b', counterDef, 0)
     await tick()
@@ -256,7 +256,7 @@ describe('Metrics: getAllActorMetrics', () => {
   })
 
   test('stopped actors are not included', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('temp', counterDef, 0)
     await tick()
 
@@ -288,7 +288,7 @@ describe('Metrics: getActorTree', () => {
       handler: (state) => ({ state }),
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.spawn('parent', parentDef, null)
     await tick()
 
@@ -313,7 +313,7 @@ describe('Metrics: getActorTree', () => {
 
 describe('Metrics: push-based MetricsTopic', () => {
   test('MetricsTopic receives periodic snapshots when configured', async () => {
-    const system = createActorSystem({ metrics: { intervalMs: 100 } })
+    const system = await createPluginSystem({ metrics: { intervalMs: 100 } })
     system.spawn('counter', counterDef, 0)
     await tick()
 
@@ -339,7 +339,7 @@ describe('Metrics: push-based MetricsTopic', () => {
   })
 
   test('MetricsTopic is not published when metrics option is omitted', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.spawn('counter', counterDef, 0)
 
     const events: unknown[] = []
@@ -355,7 +355,7 @@ describe('Metrics: push-based MetricsTopic', () => {
   })
 
   test('internal $metrics actor appears in the actor tree', async () => {
-    const system = createActorSystem({ metrics: { intervalMs: 1000 } })
+    const system = await createPluginSystem({ metrics: { intervalMs: 1000 } })
     await tick()
 
     const all = system.getAllActorMetrics()
@@ -368,7 +368,7 @@ describe('Metrics: push-based MetricsTopic', () => {
 
 describe('Metrics: system root actor', () => {
   test('system actor itself is tracked in metrics', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     await tick()
 
     const snap = system.getActorMetrics('system')
@@ -380,7 +380,7 @@ describe('Metrics: system root actor', () => {
   })
 
   test('getActorMetrics returns undefined for non-existent actor', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     await tick()
 
     expect(system.getActorMetrics('system/nonexistent')).toBeUndefined()

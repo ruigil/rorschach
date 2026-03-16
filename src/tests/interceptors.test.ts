@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createActorSystem, SystemLifecycleTopic } from '../system/index.ts'
+import { createPluginSystem, SystemLifecycleTopic } from '../system/index.ts'
 import type {
   ActorDef,
   Interceptor,
@@ -35,7 +35,7 @@ describe('Interceptors: basic pipeline', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('intercepted', def, null)
     await tick()
 
@@ -71,7 +71,7 @@ describe('Interceptors: basic pipeline', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('multi', def, null)
     await tick()
 
@@ -98,7 +98,7 @@ describe('Interceptors: basic pipeline', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('no-interceptors', def, null)
     await tick()
 
@@ -125,7 +125,7 @@ describe('Interceptors: basic pipeline', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('state-inspect', def, { count: 0 })
     await tick()
 
@@ -163,7 +163,7 @@ describe('Interceptors: short-circuit', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('filter', def, null)
     await tick()
 
@@ -200,7 +200,7 @@ describe('Interceptors: short-circuit', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('gate', def, null)
     await tick()
 
@@ -237,7 +237,7 @@ describe('Interceptors: message transformation', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('transform', def, null)
     await tick()
 
@@ -286,7 +286,7 @@ describe('Interceptors: message transformation', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('modify-result', defWithObserver, { count: 0 })
     await tick()
 
@@ -321,7 +321,7 @@ describe('Interceptors: context access', () => {
       handler: (state) => ({ state }),
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     // Subscribe to log topic to capture interceptor logs
     const { LogTopic } = await import('../system/types.ts')
@@ -371,7 +371,7 @@ describe('Interceptors: behavior switching', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('become-test', def, null)
     await tick()
 
@@ -417,7 +417,7 @@ describe('Interceptors: supervision restart', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('restart-test', def, null)
     await tick()
 
@@ -464,7 +464,7 @@ describe('Interceptors: error propagation', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('error-prop', def, null)
     await tick()
 
@@ -488,7 +488,7 @@ describe('Interceptors: error propagation', () => {
       handler: (state) => ({ state }),
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     const ref = system.spawn('interceptor-fail', def, null)
@@ -536,7 +536,7 @@ describe('Interceptors: practical examples', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('rate-limit', def, null)
     await tick()
 
@@ -572,7 +572,7 @@ describe('Interceptors: practical examples', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('validator', def, null)
     await tick()
 

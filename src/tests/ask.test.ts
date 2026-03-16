@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createActorSystem, ask } from '../system/index.ts'
+import { createPluginSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 
 // ─── Helpers ───
@@ -29,7 +29,7 @@ describe('Ask pattern', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('counter', def, { count: 0 })
     await tick()
 
@@ -52,7 +52,7 @@ describe('Ask pattern', () => {
       handler: (state) => ({ state }),
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('silent', def, null)
     await tick()
 
@@ -89,7 +89,7 @@ describe('Ask pattern', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('slow-replier', def, { replyTo: null })
     await tick()
 
@@ -120,7 +120,7 @@ describe('Ask pattern', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('echoer', def, null)
     await tick()
 
@@ -159,7 +159,7 @@ describe('Ask pattern', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('calculator', def, null)
     await tick()
 
@@ -195,7 +195,7 @@ describe('Ask pattern', () => {
       },
     }
 
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     const ref = system.spawn('delayed', def, null)
     await tick()
 

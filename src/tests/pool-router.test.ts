@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createActorSystem, DeadLetterTopic, SystemLifecycleTopic } from '../system/index.ts'
+import { createPluginSystem, DeadLetterTopic, SystemLifecycleTopic } from '../system/index.ts'
 import type { ActorDef, DeadLetter, LifecycleEvent } from '../system/index.ts'
 import { createPoolRouter } from '../actors/pool-router.ts'
 
@@ -26,7 +26,7 @@ const makeRecordingWorker = (
 describe('PoolRouter: round-robin distribution', () => {
   test('distributes messages evenly across all workers', async () => {
     const log: Array<{ worker: string; message: string }> = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const router = createPoolRouter({
       poolSize: 3,
@@ -62,7 +62,7 @@ describe('PoolRouter: round-robin distribution', () => {
 
   test('first message always goes to worker-0', async () => {
     const log: Array<{ worker: string; message: string }> = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const router = createPoolRouter({
       poolSize: 3,
@@ -84,7 +84,7 @@ describe('PoolRouter: round-robin distribution', () => {
 
   test('cycles back to the first worker after a full round', async () => {
     const log: Array<{ worker: string; message: string }> = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const router = createPoolRouter({
       poolSize: 2,
@@ -116,7 +116,7 @@ describe('PoolRouter: round-robin distribution', () => {
 
 describe('PoolRouter: worker naming', () => {
   test('workers are named worker-0 through worker-N under the router', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const router = createPoolRouter({
       poolSize: 3,
@@ -145,7 +145,7 @@ describe('PoolRouter: worker naming', () => {
 
 describe("PoolRouter: onWorkerFailure 'replace'", () => {
   test('spawns a replacement worker and maintains pool size', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const router = createPoolRouter({
       poolSize: 3,
@@ -169,7 +169,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
 
   test('replacement worker processes messages normally', async () => {
     const log: Array<{ worker: string; message: string }> = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const router = createPoolRouter({
       poolSize: 2,
@@ -201,7 +201,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
   })
 
   test('replacement worker gets a new sequential name', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const router = createPoolRouter({
       poolSize: 2,
@@ -230,7 +230,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
   })
 
   test('can replace multiple workers across sequential failures', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const router = createPoolRouter({
       poolSize: 3,
@@ -259,7 +259,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
 
 describe("PoolRouter: onWorkerFailure 'shrink'", () => {
   test('reduces pool size when a worker fails', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const router = createPoolRouter({
       poolSize: 3,
@@ -282,7 +282,7 @@ describe("PoolRouter: onWorkerFailure 'shrink'", () => {
 
   test('remaining workers still process messages after shrink', async () => {
     const log: Array<{ worker: string; message: string }> = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const router = createPoolRouter({
       poolSize: 2,
@@ -310,7 +310,7 @@ describe("PoolRouter: onWorkerFailure 'shrink'", () => {
 
   test('messages go to dead letters when pool shrinks to empty', async () => {
     const deadLetters: DeadLetter[] = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.subscribe('test', DeadLetterTopic, (dl) => deadLetters.push(dl))
 
     const router = createPoolRouter({
@@ -342,7 +342,7 @@ describe("PoolRouter: onWorkerFailure 'shrink'", () => {
 describe("PoolRouter: onWorkerFailure 'escalate'", () => {
   test('router terminates when a worker fails', async () => {
     const events: LifecycleEvent[] = []
-    const system = createActorSystem()
+    const system = await createPluginSystem()
     system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e))
 
     const router = createPoolRouter({
@@ -397,7 +397,7 @@ describe('PoolRouter: validation', () => {
 
 describe('PoolRouter: shutdown', () => {
   test('all workers are stopped on system shutdown', async () => {
-    const system = createActorSystem()
+    const system = await createPluginSystem()
 
     const router = createPoolRouter({
       poolSize: 3,
