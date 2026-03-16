@@ -15,6 +15,7 @@ export type HttpMessage =
   | { type: 'ws:message'; clientId: string; text: string }
   | { type: 'ws:closed'; clientId: string }
   | { type: 'broadcast'; text: string }
+  | { type: 'send'; clientId: string; text: string }
 
 // ─── Actor state ───
 
@@ -90,9 +91,6 @@ export const createHttpActor = (
         case 'ws:message': {
           context.log.debug(`[${message.clientId}] ${message.text}`)
 
-          // Echo back to all connected clients via Bun pub/sub
-          state.server?.publish(CHANNEL, message.text)
-
           // Emit as a typed domain event so other actors can subscribe
           return {
             state,
@@ -108,6 +106,11 @@ export const createHttpActor = (
 
         case 'broadcast': {
           state.server?.publish(CHANNEL, message.text)
+          return { state }
+        }
+
+        case 'send': {
+          state.server?.publish(`client:${message.clientId}`, message.text)
           return { state }
         }
       }
@@ -153,6 +156,7 @@ export const createHttpActor = (
           websocket: {
             open(ws: ServerWebSocket<WsData>) {
               ws.subscribe(CHANNEL)
+              ws.subscribe(`client:${ws.data.clientId}`)
               selfRef?.send({ type: 'ws:connected', clientId: ws.data.clientId })
             },
 

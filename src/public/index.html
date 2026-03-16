@@ -3,151 +3,465 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Rorschach — WebSocket Console</title>
+  <title>Rorschach Chat</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    :root {
+      --bg:         #0a0a0f;
+      --surface:    #111118;
+      --border:     #1e1e2e;
+      --muted:      #3b3b52;
+      --text:       #e2e2f0;
+      --text-dim:   #7070a0;
+      --user-bg:    #1e1e6e;
+      --user-text:  #c5c5ff;
+      --bot-bg:     #131320;
+      --bot-text:   #e2e2f0;
+      --accent:     #7c7cff;
+      --accent-dim: #3a3a8a;
+      --error:      #ff6b6b;
+      --radius:     14px;
+    }
+
+    html, body {
+      height: 100%;
+    }
+
     body {
-      font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
-      background: #0e0e0e;
-      color: #d4d4d4;
-      height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
       display: flex;
       flex-direction: column;
-      padding: 1.5rem;
-      gap: 1rem;
+      height: 100vh;
+      overflow: hidden;
     }
 
-    h1 {
-      font-size: 1rem;
-      color: #569cd6;
-      font-weight: normal;
+    /* ─── Header ─── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
     }
 
-    h1 span { color: #6a9955; }
+    .header-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
 
-    #log {
+    .header-dot.connected { background: #4caf82; }
+    .header-dot.disconnected { background: var(--error); }
+
+    header h1 {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-dim);
+      letter-spacing: 0.05em;
+    }
+
+    header h1 strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    #status-label {
+      margin-left: auto;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+    }
+
+    /* ─── Messages ─── */
+    #messages {
       flex: 1;
       overflow-y: auto;
-      background: #1e1e1e;
-      border: 1px solid #333;
-      border-radius: 4px;
-      padding: 0.75rem;
-      font-size: 0.85rem;
-      line-height: 1.6;
+      padding: 1.5rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      scroll-behavior: smooth;
     }
 
-    #log .sent    { color: #dcdcaa; }
-    #log .received { color: #9cdcfe; }
-    #log .system  { color: #6a9955; font-style: italic; }
+    #messages::-webkit-scrollbar { width: 4px; }
+    #messages::-webkit-scrollbar-track { background: transparent; }
+    #messages::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
+
+    .message {
+      display: flex;
+      flex-direction: column;
+      max-width: 72%;
+      gap: 0.25rem;
+      animation: fadeUp 0.18s ease-out;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .message.user {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+
+    .message.error {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+
+    .message-label {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      padding: 0 0.4rem;
+      letter-spacing: 0.04em;
+    }
+
+    .bubble {
+      padding: 0.65rem 1rem;
+      border-radius: var(--radius);
+      line-height: 1.6;
+      font-size: 0.92rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .message.user .bubble {
+      background: var(--user-bg);
+      color: var(--user-text);
+      border-bottom-right-radius: 4px;
+      border: 1px solid var(--accent-dim);
+    }
+
+    .message.assistant .bubble {
+      background: var(--bot-bg);
+      color: var(--bot-text);
+      border-bottom-left-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    .message.error .bubble {
+      background: #1a0a0a;
+      color: var(--error);
+      border: 1px solid #4a1a1a;
+      border-bottom-left-radius: 4px;
+      font-size: 0.85rem;
+    }
+
+    /* ─── Thinking indicator ─── */
+    .thinking .bubble {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0.75rem 1rem;
+    }
+
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes pulse {
+      0%, 60%, 100% { opacity: 0.3; transform: scale(0.85); }
+      30%            { opacity: 1;   transform: scale(1); }
+    }
+
+    /* ─── Input area ─── */
+    .input-area {
+      padding: 1rem 1.5rem 1.25rem;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
 
     form {
       display: flex;
-      gap: 0.5rem;
+      gap: 0.6rem;
+      align-items: flex-end;
     }
 
-    input[type="text"] {
+    textarea {
       flex: 1;
-      padding: 0.6rem 0.8rem;
-      background: #1e1e1e;
-      border: 1px solid #333;
-      border-radius: 4px;
-      color: #d4d4d4;
+      padding: 0.7rem 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
       font-family: inherit;
-      font-size: 0.9rem;
+      font-size: 0.92rem;
+      line-height: 1.5;
+      resize: none;
       outline: none;
+      min-height: 44px;
+      max-height: 140px;
+      overflow-y: auto;
+      transition: border-color 0.15s;
     }
 
-    input[type="text"]:focus { border-color: #569cd6; }
+    textarea:focus { border-color: var(--accent-dim); }
+    textarea::placeholder { color: var(--muted); }
+    textarea:disabled { opacity: 0.4; cursor: not-allowed; }
 
-    button {
-      padding: 0.6rem 1.2rem;
-      background: #264f78;
-      border: 1px solid #569cd6;
-      border-radius: 4px;
-      color: #d4d4d4;
-      font-family: inherit;
-      font-size: 0.9rem;
+    button[type="submit"] {
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+      background: var(--accent);
+      border: none;
+      border-radius: 10px;
+      color: #fff;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, opacity 0.15s;
     }
 
-    button:hover { background: #37699e; }
-    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button[type="submit"]:hover:not(:disabled) { background: #9898ff; }
+    button[type="submit"]:disabled { background: var(--accent-dim); opacity: 0.5; cursor: not-allowed; }
 
-    #status {
-      font-size: 0.75rem;
-      color: #6a9955;
+    button[type="submit"] svg { pointer-events: none; }
+
+    .input-hint {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-top: 0.4rem;
+      padding: 0 0.2rem;
     }
 
-    #status.disconnected { color: #f44747; }
+    /* ─── Empty state ─── */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      color: var(--text-dim);
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .empty-state svg { opacity: 0.2; }
+    .empty-state p { font-size: 0.85rem; opacity: 0.6; }
   </style>
 </head>
 <body>
-  <h1>rorschach <span>› websocket console</span></h1>
-  <div id="status">connecting…</div>
-  <div id="log"></div>
-  <form id="form">
-    <input type="text" id="input" placeholder="type a message…" autocomplete="off" disabled />
-    <button type="submit" id="send" disabled>send</button>
-  </form>
+
+  <header>
+    <div class="header-dot disconnected" id="dot"></div>
+    <h1><strong>rorschach</strong> chat</h1>
+    <span id="status-label">connecting…</span>
+  </header>
+
+  <div id="messages">
+    <div class="empty-state" id="empty">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+      <p>Send a message to start the conversation</p>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <form id="form">
+      <textarea
+        id="input"
+        placeholder="Message…"
+        autocomplete="off"
+        rows="1"
+        disabled
+      ></textarea>
+      <button type="submit" id="send" disabled aria-label="Send">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </form>
+    <p class="input-hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</p>
+  </div>
 
   <script>
-    const log    = document.getElementById('log')
-    const form   = document.getElementById('form')
-    const input  = document.getElementById('input')
-    const send   = document.getElementById('send')
-    const status = document.getElementById('status')
+    const messagesEl = document.getElementById('messages')
+    const emptyEl    = document.getElementById('empty')
+    const form       = document.getElementById('form')
+    const input      = document.getElementById('input')
+    const sendBtn    = document.getElementById('send')
+    const dot        = document.getElementById('dot')
+    const statusLabel= document.getElementById('status-label')
 
-    function appendLog(text, cls) {
-      const div = document.createElement('div')
-      div.className = cls
-      div.textContent = text
-      log.appendChild(div)
-      log.scrollTop = log.scrollHeight
+    let thinkingEl   = null
+    let streamBubble = null  // the bubble element currently receiving chunks
+    let isWaiting    = false
+
+    // ─── Auto-resize textarea ───
+    input.addEventListener('input', () => {
+      input.style.height = 'auto'
+      input.style.height = Math.min(input.scrollHeight, 140) + 'px'
+    })
+
+    // ─── Helpers ───
+
+    function setConnected(connected) {
+      dot.className = 'header-dot ' + (connected ? 'connected' : 'disconnected')
+      statusLabel.textContent = connected ? 'connected' : 'disconnected — reconnecting…'
+      input.disabled = !connected || isWaiting
+      sendBtn.disabled = !connected || isWaiting
     }
 
+    function scrollToBottom() {
+      messagesEl.scrollTop = messagesEl.scrollHeight
+    }
+
+    function appendMessage(role, text) {
+      if (emptyEl) emptyEl.remove()
+
+      const wrap = document.createElement('div')
+      wrap.className = `message ${role}`
+
+      const label = document.createElement('div')
+      label.className = 'message-label'
+      label.textContent = role === 'user' ? 'You' : role === 'assistant' ? 'Assistant' : 'Error'
+
+      const bubble = document.createElement('div')
+      bubble.className = 'bubble'
+      bubble.textContent = text
+
+      wrap.appendChild(label)
+      wrap.appendChild(bubble)
+      messagesEl.appendChild(wrap)
+      scrollToBottom()
+      return wrap
+    }
+
+    function showThinking() {
+      if (emptyEl) emptyEl.remove()
+
+      const wrap = document.createElement('div')
+      wrap.className = 'message assistant thinking'
+
+      const label = document.createElement('div')
+      label.className = 'message-label'
+      label.textContent = 'Assistant'
+
+      const bubble = document.createElement('div')
+      bubble.className = 'bubble'
+      bubble.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>'
+
+      wrap.appendChild(label)
+      wrap.appendChild(bubble)
+      messagesEl.appendChild(wrap)
+      scrollToBottom()
+      thinkingEl = wrap
+    }
+
+    function removeThinking() {
+      if (thinkingEl) {
+        thinkingEl.remove()
+        thinkingEl = null
+      }
+    }
+
+    function setWaiting(waiting) {
+      isWaiting = waiting
+      input.disabled = waiting
+      sendBtn.disabled = waiting
+      if (!waiting) input.focus()
+    }
+
+    // ─── WebSocket ───
+
     function connect() {
-      // Build WebSocket URL relative to the current page so it works behind reverse proxies
       const wsUrl = new URL('ws', location.href)
       wsUrl.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
       const ws = new WebSocket(wsUrl.href)
 
       ws.addEventListener('open', () => {
-        status.textContent = '● connected'
-        status.className = ''
-        input.disabled = false
-        send.disabled = false
+        setConnected(true)
         input.focus()
-        appendLog('— connected —', 'system')
       })
 
       ws.addEventListener('message', (e) => {
-        appendLog(`← ${e.data}`, 'received')
+        let parsed
+        try { parsed = JSON.parse(e.data) } catch { parsed = { type: 'assistant', text: e.data } }
+
+        if (parsed.type === 'chunk') {
+          // First chunk: swap thinking dots for a real bubble
+          if (!streamBubble) {
+            removeThinking()
+            const wrap = document.createElement('div')
+            wrap.className = 'message assistant'
+            const label = document.createElement('div')
+            label.className = 'message-label'
+            label.textContent = 'Assistant'
+            const bubble = document.createElement('div')
+            bubble.className = 'bubble'
+            wrap.appendChild(label)
+            wrap.appendChild(bubble)
+            messagesEl.appendChild(wrap)
+            streamBubble = bubble
+          }
+          streamBubble.textContent += parsed.text
+          scrollToBottom()
+        } else if (parsed.type === 'done') {
+          streamBubble = null
+          setWaiting(false)
+        } else if (parsed.type === 'error') {
+          removeThinking()
+          streamBubble = null
+          appendMessage('error', parsed.text)
+          setWaiting(false)
+        }
       })
 
       ws.addEventListener('close', () => {
-        status.textContent = '● disconnected — reconnecting…'
-        status.className = 'disconnected'
-        input.disabled = true
-        send.disabled = true
-        appendLog('— disconnected —', 'system')
+        setConnected(false)
+        removeThinking()
+        streamBubble = null
+        setWaiting(false)
         setTimeout(connect, 2000)
       })
 
-      ws.addEventListener('error', () => {
-        ws.close()
-      })
+      ws.addEventListener('error', () => ws.close())
 
       form.addEventListener('submit', (e) => {
         e.preventDefault()
         const text = input.value.trim()
-        if (!text || ws.readyState !== WebSocket.OPEN) return
+        if (!text || ws.readyState !== WebSocket.OPEN || isWaiting) return
+
+        appendMessage('user', text)
         ws.send(text)
-        appendLog(`→ ${text}`, 'sent')
         input.value = ''
-        input.focus()
+        input.style.height = 'auto'
+        setWaiting(true)
+        showThinking()
       })
     }
+
+    // ─── Enter key handling ───
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        form.dispatchEvent(new Event('submit'))
+      }
+    })
 
     connect()
   </script>
