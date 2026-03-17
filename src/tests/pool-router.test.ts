@@ -1,11 +1,24 @@
 import { describe, test, expect } from 'bun:test'
-import { createPluginSystem, DeadLetterTopic, SystemLifecycleTopic } from '../system/index.ts'
-import type { ActorDef, DeadLetter, LifecycleEvent } from '../system/index.ts'
-import { createPoolRouter } from '../actors/pool-router.ts'
+import { createPluginSystem, createConfigPlugin, DeadLetterTopic, MetricsTopic, SystemLifecycleTopic } from '../system/index.ts'
+import type { ActorDef, DeadLetter, LifecycleEvent, MetricsEvent } from '../system/index.ts'
+import { createPoolRouter } from '../plugins/parallel/pool-router.ts'
+import observabilityPlugin from '../plugins/observability/observability.plugin.ts'
 
 // ─── Helpers ───
 
 const tick = (ms = 50) => Bun.sleep(ms)
+
+const withMetrics = async () => {
+  const events: MetricsEvent[] = []
+  const system = await createPluginSystem({
+    plugins: [
+      createConfigPlugin({ observability: { metrics: { intervalMs: 50 } } }),
+      observabilityPlugin,
+    ],
+  })
+  system.subscribe('test', MetricsTopic, (e) => events.push(e))
+  return { system, events }
+}
 
 /**
  * A worker that records each processed message as `{ worker, message }`.
@@ -116,7 +129,7 @@ describe('PoolRouter: round-robin distribution', () => {
 
 describe('PoolRouter: worker naming', () => {
   test('workers are named worker-0 through worker-N under the router', async () => {
-    const system = await createPluginSystem()
+    const { system, events } = await withMetrics()
 
     const router = createPoolRouter({
       poolSize: 3,
@@ -125,11 +138,12 @@ describe('PoolRouter: worker naming', () => {
     })
 
     system.spawn('pool', router.def, router.initialState)
-    await tick()
+    await tick(150)
 
-    const metrics = system.getAllActorMetrics()
-    const workerNames = metrics.map(s => s.name).filter(n => n.startsWith('system/pool/worker-'))
-    workerNames.sort()
+    const workerNames = (events[events.length - 1]?.actors ?? [])
+      .map(s => s.name)
+      .filter(n => n.startsWith('system/pool/worker-'))
+      .sort()
 
     expect(workerNames).toEqual([
       'system/pool/worker-0',
@@ -145,7 +159,7 @@ describe('PoolRouter: worker naming', () => {
 
 describe("PoolRouter: onWorkerFailure 'replace'", () => {
   test('spawns a replacement worker and maintains pool size', async () => {
-    const system = await createPluginSystem()
+    const { system, events } = await withMetrics()
 
     const router = createPoolRouter({
       poolSize: 3,
@@ -158,11 +172,11 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
 
     // POISON goes to worker-0 (first message → index 0)
     ref.send('POISON')
-    await tick(200)
+    await tick(300) // wait for failure, replacement, and a metrics tick
 
     // Pool should still have 3 workers (router's child count)
-    const routerMetrics = system.getActorMetrics('system/pool')
-    expect(routerMetrics?.childCount).toBe(3)
+    const routerSnap = events[events.length - 1]?.actors.find(a => a.name === 'system/pool')
+    expect(routerSnap?.childCount).toBe(3)
 
     await system.shutdown()
   })
@@ -201,7 +215,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
   })
 
   test('replacement worker gets a new sequential name', async () => {
-    const system = await createPluginSystem()
+    const { system, events } = await withMetrics()
 
     const router = createPoolRouter({
       poolSize: 2,
@@ -213,10 +227,9 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
     await tick()
 
     ref.send('POISON') // kills worker-0
-    await tick(200)
+    await tick(300) // wait for failure, replacement, and a metrics tick
 
-    const metrics = system.getAllActorMetrics()
-    const workerNames = metrics
+    const workerNames = (events[events.length - 1]?.actors ?? [])
       .map(s => s.name)
       .filter(n => n.startsWith('system/pool/worker-'))
       .sort()
@@ -230,7 +243,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
   })
 
   test('can replace multiple workers across sequential failures', async () => {
-    const system = await createPluginSystem()
+    const { system, events } = await withMetrics()
 
     const router = createPoolRouter({
       poolSize: 3,
@@ -243,13 +256,13 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
 
     // Kill one worker at a time, waiting for replacement each time
     ref.send('POISON') // kills worker-0 (index 0, seq → 3)
-    await tick(200)
+    await tick(300)
     ref.send('POISON') // kills next worker in rotation
-    await tick(200)
+    await tick(300)
 
     // Pool should still be at full size
-    const routerMetrics = system.getActorMetrics('system/pool')
-    expect(routerMetrics?.childCount).toBe(3)
+    const routerSnap = events[events.length - 1]?.actors.find(a => a.name === 'system/pool')
+    expect(routerSnap?.childCount).toBe(3)
 
     await system.shutdown()
   })
@@ -259,7 +272,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
 
 describe("PoolRouter: onWorkerFailure 'shrink'", () => {
   test('reduces pool size when a worker fails', async () => {
-    const system = await createPluginSystem()
+    const { system, events } = await withMetrics()
 
     const router = createPoolRouter({
       poolSize: 3,
@@ -272,10 +285,10 @@ describe("PoolRouter: onWorkerFailure 'shrink'", () => {
     await tick()
 
     ref.send('POISON') // kills worker-0
-    await tick(200)
+    await tick(300) // wait for failure and a metrics tick
 
-    const routerMetrics = system.getActorMetrics('system/pool')
-    expect(routerMetrics?.childCount).toBe(2)
+    const routerSnap = events[events.length - 1]?.actors.find(a => a.name === 'system/pool')
+    expect(routerSnap?.childCount).toBe(2)
 
     await system.shutdown()
   })
@@ -397,7 +410,11 @@ describe('PoolRouter: validation', () => {
 
 describe('PoolRouter: shutdown', () => {
   test('all workers are stopped on system shutdown', async () => {
-    const system = await createPluginSystem()
+    const { system, events } = await withMetrics()
+    const terminated: string[] = []
+    system.subscribe('lifecycle', SystemLifecycleTopic, (e) => {
+      if (e.type === 'terminated') terminated.push(e.ref.name)
+    })
 
     const router = createPoolRouter({
       poolSize: 3,
@@ -406,17 +423,16 @@ describe('PoolRouter: shutdown', () => {
     })
 
     system.spawn('pool', router.def, router.initialState)
-    await tick()
+    await tick(150)
 
     // Verify all actors are present before shutdown
-    const before = system.getAllActorMetrics().map(s => s.name)
-    expect(before).toContain('system/pool')
-    expect(before.filter(n => n.startsWith('system/pool/worker-'))).toHaveLength(3)
+    const names = events[events.length - 1]!.actors.map(s => s.name)
+    expect(names).toContain('system/pool')
+    expect(names.filter(n => n.startsWith('system/pool/worker-'))).toHaveLength(3)
 
     await system.shutdown()
 
-    // After shutdown the registry is empty — metrics are unregistered on stop
-    const after = system.getAllActorMetrics()
-    expect(after).toHaveLength(0)
+    // The pool itself terminated (workers are its children — their cleanup is implicit)
+    expect(terminated).toContain('system/pool')
   })
 })

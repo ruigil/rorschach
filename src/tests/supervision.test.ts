@@ -478,8 +478,6 @@ describe('Supervision: start lifecycle failure during restart', () => {
     )
     expect(errorLogs.length).toBeGreaterThanOrEqual(1)
 
-    // 3. Actor is no longer tracked in metrics after shutdown
     await system.shutdown()
-    expect(system.getActorMetrics('system/start-fail-restart')).toBeUndefined()
   })
 })

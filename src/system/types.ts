@@ -281,6 +281,11 @@ export type ActorContext<M> = {
     onFailure: (error: unknown) => M,
   ) => void
 
+  // ─── Introspection ───
+
+  /** Returns point-in-time snapshots of all currently registered actors. */
+  readonly actorSnapshots: () => ActorSnapshot[]
+
   // ─── Logging ───
 
   readonly log: {
@@ -478,42 +483,30 @@ export type ActorServices = {
   readonly metricsRegistry: MetricsRegistry
 }
 
-// ─── Plugin Handle (returned by activate) ───
-export type PluginHandle = {
-  deactivate?(): Promise<void> | void
-}
-
 // ─── Plugin Definition ───
-export type PluginDef<Config = void> = {
+//
+// A PluginDef is an ActorDef<M, S> augmented with plugin metadata.
+// The plugin root IS the actor — lifecycle.start activates, lifecycle.stopped
+// deactivates.
+//
+export type PluginDef<M, S = unknown> = ActorDef<M, S> & {
   readonly id: string
   readonly version: string
   readonly dependencies?: readonly string[]
   readonly description?: string
-  activate(ctx: ActorContext<never>, config: Config): Promise<PluginHandle> | PluginHandle
+  readonly initialState: S
 }
-
-// ─── Plugin Source ───
-export type PluginSource =
-  | { type: 'path'; value: string }
-  | { type: 'inline'; def: PluginDef<any> }
 
 // ─── Loaded Plugin (runtime state) ───
 export type LoadedPlugin = {
   readonly id: string
   readonly version: string
   readonly dependencies: readonly string[]
-  readonly source: PluginSource
-  readonly config: unknown
+  readonly def: PluginDef<any, any>
   readonly status: 'loading' | 'active' | 'deactivating' | 'failed'
-  readonly handle?: PluginHandle
   readonly error?: unknown
   readonly loadedAt: number
 }
-
-// ─── Activation Result (published by plugin root actor to notify the system closure) ───
-export type ActivationResult =
-  | { ok: true; handle: PluginHandle }
-  | { ok: false; error: unknown }
 
 // ─── Load / Unload Results ───
 export type LoadResult = { ok: true; id: string } | { ok: false; error: string }
@@ -534,16 +527,11 @@ export type PluginSystem = {
     callback: (event: T) => void,
   ) => () => void
 
-  // ─── Introspection ───
-  readonly getActorMetrics: (name: string) => ActorSnapshot | undefined
-  readonly getAllActorMetrics: () => ActorSnapshot[]
-  readonly getActorTree: () => ActorTreeNode[]
-
   // ─── Plugin management ───
-  readonly loadPlugin: <Config = void>(source: PluginSource, config?: Config) => Promise<LoadResult>
+  readonly use: (def: PluginDef<any, any>) => Promise<LoadResult>
   readonly unloadPlugin: (id: string) => Promise<UnloadResult>
   readonly reloadPlugin: (id: string) => Promise<LoadResult>
-  readonly listPlugins: () => Promise<LoadedPlugin[]>
-  readonly getPluginStatus: (id: string) => Promise<LoadedPlugin | undefined>
-  readonly use: <Config>(def: PluginDef<Config>, config?: Config) => Promise<LoadResult>
+  readonly hotReloadPlugin: (id: string, path: string) => Promise<LoadResult>
+  readonly listPlugins: () => LoadedPlugin[]
+  readonly getPluginStatus: (id: string) => LoadedPlugin | undefined
 }

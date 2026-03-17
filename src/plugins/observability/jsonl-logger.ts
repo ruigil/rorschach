@@ -1,7 +1,7 @@
 import { appendFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import type { ActorDef, LogEvent } from '../system/types.ts'
-import { LogTopic } from '../system/types.ts'
+import type { ActorDef, LogEvent } from '../../system/types.ts'
+import { LogTopic } from '../../system/types.ts'
 
 // ─── Message protocol ───
 

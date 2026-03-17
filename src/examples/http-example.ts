@@ -1,9 +1,15 @@
-import { createPluginSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
-import { createHttpActor, type HttpState } from '../actors/http.ts'
+import { createPluginSystem, createConfigPlugin, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
+import { WsMessageTopic } from '../plugins/interfaces/http.ts'
+import interfacesPlugin from '../plugins/interfaces/interfaces.plugin.ts'
 import type { LifecycleEvent, LogEvent } from '../system/types.ts'
 
-// ─── Create the actor system ───
-const system = await createPluginSystem()
+// ─── Create the actor system with unified config ───
+const system = await createPluginSystem({
+  plugins: [
+    createConfigPlugin({ interfaces: { http: { port: 3000 } } }),
+    interfacesPlugin,
+  ],
+})
 
 // ─── Observe top-level actor lifecycle events ───
 system.subscribe('lifecycle-observer', SystemLifecycleTopic, (event) => {
@@ -20,14 +26,8 @@ system.subscribe('console-logger', LogTopic, (event) => {
   console.log(`[${ts}] ${log.level.toUpperCase().padEnd(5)} [${log.source}] ${log.message}`)
 })
 
-// ─── Spawn the HTTP actor ───
-const initialState: HttpState = { server: null, connections: 0 }
-const httpRef = system.spawn('http', createHttpActor({ port: 3000 }), initialState)
-
 // ─── Subscribe to domain events published by the HTTP actor ───
-// The actor publishes { clientId, text } events for every ws:message it receives
-system.subscribe('text-handler', 'system/http', (event) => {
-  const { clientId, text } = event as { clientId: string; text: string }
+system.subscribe('text-handler', WsMessageTopic, ({ clientId, text }) => {
   console.log(`\n📨 Received from browser [${clientId.slice(0, 8)}…]: "${text}"\n`)
 })
 

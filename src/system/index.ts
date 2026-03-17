@@ -1,7 +1,9 @@
 // ─── Public API ───
 export { createPluginSystem, type PluginSystemOptions } from './system.ts'
-export { createWorkerBridge, taskTopic } from '../actors/worker-bridge.ts'
-export type { TaskEvent, WorkerBridge, WorkerBridgeMsg, WorkerBridgeOptions, WorkerBridgeState } from '../actors/worker-bridge.ts'
+export { createConfigPlugin, ConfigTopic, ConfigCommandTopic } from '../plugins/config/config.plugin.ts'
+export type { SystemConfig, ConfigMsg } from '../plugins/config/config.plugin.ts'
+export { createWorkerBridge, taskTopic } from '../plugins/parallel/worker-bridge.ts'
+export type { TaskEvent, WorkerBridge, WorkerBridgeMsg, WorkerBridgeOptions, WorkerBridgeState } from '../plugins/parallel/worker-bridge.ts'
 export { ask } from './ask.ts'
 export { watchTopic } from './services.ts'
 
@@ -47,14 +49,10 @@ export type {
   MetricsEvent,
   MetricsRegistry,
   ProcessingTime,
-} from './types.ts'
-
-export type {
+  // ─── Plugins ───
   PluginDef,
-  PluginHandle,
-  PluginSource,
   LoadedPlugin,
   LoadResult,
   UnloadResult,
   PluginSystem,
-} from '../plugins/index.ts'
+} from './types.ts'

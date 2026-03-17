@@ -1,6 +1,6 @@
-import type { ActorDef, ActorResult } from '../system/types.ts'
-import { WsMessageTopic } from './http.ts'
-import type { HttpMessage } from './http.ts'
+import { emit } from '../../system/types.ts'
+import type { ActorDef, ActorResult } from '../../system/types.ts'
+import { WsMessageTopic, WsSendTopic } from '../interfaces/http.ts'
 
 // ─── Message protocol ───
 
@@ -135,25 +135,18 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
         case 'llm-chunk': {
           const { clientId, text } = message
-
-          const httpRef = context.lookup<HttpMessage>('system/http')
-          httpRef?.send({ type: 'send', clientId, text: JSON.stringify({ type: 'chunk', text }) })
-
           return {
             state: {
               ...state,
               pending: { ...state.pending, [clientId]: (state.pending[clientId] ?? '') + text },
             },
+            events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'chunk', text }) })],
           }
         }
 
         case 'llm-done': {
           const { clientId } = message
           const fullReply = state.pending[clientId] ?? ''
-
-          const httpRef = context.lookup<HttpMessage>('system/http')
-          httpRef?.send({ type: 'send', clientId, text: JSON.stringify({ type: 'done' }) })
-
           const prior = state.history[clientId] ?? []
           const { [clientId]: _, ...restPending } = state.pending
 
@@ -165,6 +158,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
               },
               pending: restPending,
             },
+            events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) })],
           }
         }
 
@@ -172,15 +166,14 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           const { clientId, error } = message
           context.log.error('LLM stream failed', { clientId, error: String(error) })
 
-          const httpRef = context.lookup<HttpMessage>('system/http')
-          httpRef?.send({
-            type: 'send',
-            clientId,
-            text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }),
-          })
-
           const { [clientId]: _, ...restPending } = state.pending
-          return { state: { ...state, pending: restPending } }
+          return {
+            state: { ...state, pending: restPending },
+            events: [emit(WsSendTopic, {
+              clientId,
+              text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }),
+            })],
+          }
         }
       }
     },

@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test'
-import { createPluginSystem, LogTopic } from '../system/index.ts'
-import type { ActorDef, PersistenceAdapter, LogEvent } from '../system/index.ts'
+import { createPluginSystem, createConfigPlugin, LogTopic, MetricsTopic } from '../system/index.ts'
+import type { ActorDef, PersistenceAdapter, LogEvent, MetricsEvent } from '../system/index.ts'
+import observabilityPlugin from '../plugins/observability/observability.plugin.ts'
 
 // ─── Helpers ───
 
@@ -117,7 +118,14 @@ describe('Persistence: save after message', () => {
         if (saveCallCount === 1) throw new Error('disk full')
       },
     }
-    const system = await createPluginSystem()
+    const events: MetricsEvent[] = []
+    const system = await createPluginSystem({
+      plugins: [
+        createConfigPlugin({ observability: { metrics: { intervalMs: 50 } } }),
+        observabilityPlugin,
+      ],
+    })
+    system.subscribe('test', MetricsTopic, (e) => events.push(e))
 
     const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { count: 0 })
 
@@ -125,11 +133,11 @@ describe('Persistence: save after message', () => {
     ref.send('a') // save throws
     ref.send('b') // save succeeds
     ref.send('c') // save succeeds
-    await tick()
+    await tick(150)
 
     expect(saveCallCount).toBe(3)
 
-    const snapshot = system.getActorMetrics('system/counter')
+    const snapshot = events[events.length - 1]?.actors.find(a => a.name === 'system/counter')
     expect(snapshot?.messagesProcessed).toBe(3)
 
     await system.shutdown()
@@ -229,15 +237,22 @@ describe('Persistence: load on restart', () => {
 
 describe('Persistence: no adapter configured', () => {
   test('actor without persistence works identically to before', async () => {
-    const system = await createPluginSystem()
+    const events: MetricsEvent[] = []
+    const system = await createPluginSystem({
+      plugins: [
+        createConfigPlugin({ observability: { metrics: { intervalMs: 50 } } }),
+        observabilityPlugin,
+      ],
+    })
+    system.subscribe('test', MetricsTopic, (e) => events.push(e))
     const ref = system.spawn('counter', counterDef, { count: 0 })
 
     await tick()
     ref.send('a')
     ref.send('b')
-    await tick()
+    await tick(150)
 
-    const snapshot = system.getActorMetrics('system/counter')
+    const snapshot = events[events.length - 1]?.actors.find(a => a.name === 'system/counter')
     expect(snapshot?.messagesProcessed).toBe(2)
 
     await system.shutdown()

@@ -1,12 +1,12 @@
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Server, ServerWebSocket } from 'bun'
-import { createTopic, emit } from '../system/types.ts'
-import type { ActorDef, ActorRef } from '../system/types.ts'
+import { createTopic, emit } from '../../system/types.ts'
+import type { ActorDef, ActorRef } from '../../system/types.ts'
 
 // ─── Public directory (resolved relative to this module) ───
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const PUBLIC_DIR = join(__dirname+"/..", 'public')
+const PUBLIC_DIR = join(__dirname+"/../..", 'public')
 
 // ─── Message protocol ───
 
@@ -34,6 +34,13 @@ export type WsMessageEvent = { clientId: string; text: string }
 
 /** Topic for WebSocket message domain events. Subscribe to receive browser input. */
 export const WsMessageTopic = createTopic<WsMessageEvent>('http.ws.message')
+
+// ─── Domain event: emit to send a message to a specific WebSocket client ───
+
+export type WsSendEvent = { clientId: string; text: string }
+
+/** Topic for sending a message to a specific WebSocket client. Emit to push text to the browser. */
+export const WsSendTopic = createTopic<WsSendEvent>('http.ws.send')
 
 // ─── Options ───
 
@@ -119,6 +126,12 @@ export const createHttpActor = (
     lifecycle: (state, event, context) => {
       if (event.type === 'start') {
         selfRef = context.self
+
+        context.subscribe(WsSendTopic, (e) => ({
+          type: 'send' as const,
+          clientId: e.clientId,
+          text: e.text,
+        }))
 
         const server = Bun.serve<WsData>({
           port,

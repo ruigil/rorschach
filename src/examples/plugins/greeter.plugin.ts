@@ -1,53 +1,52 @@
-import type { ActorContext, ActorDef } from '../../system/index.ts'
-import type { PluginDef, PluginHandle } from '../../plugins/types.ts'
+import type { ActorContext, ActorDef, PluginDef } from '../../system/index.ts'
 
 type GreeterConfig = {
   name: string
   intervalMs: number
 }
 
-type GreeterMsg = { type: 'greet' }
+type GreeterPluginMsg = { type: 'config'; options: GreeterConfig }
 
-const greeterActorDef: ActorDef<GreeterMsg, { name: string }> = {
-  lifecycle: (state, event, ctx) => {
-    if (event.type === 'start')
-      ctx.timers.startPeriodicTimer('greet', { type: 'greet' }, ctx.messageHeaders()['intervalMs'] ? Number(ctx.messageHeaders()['intervalMs']) : 1000)
-    return { state }
-  },
-  handler: (state, _msg, ctx) => {
-    ctx.log.info(`Hello from ${state.name}!`)
-    return { state }
-  },
+const spawnTicker = (config: GreeterConfig, ctx: ActorContext<GreeterPluginMsg>) => {
+  type TickMsg = { type: 'tick' }
+  const tickerDef: ActorDef<TickMsg, null> = {
+    lifecycle: (s, ev, tickCtx) => {
+      if (ev.type === 'start')
+        tickCtx.timers.startPeriodicTimer('tick', { type: 'tick' }, config.intervalMs)
+      return { state: s }
+    },
+    handler: (s, _msg, tickCtx) => {
+      tickCtx.log.info(`Hello from ${config.name}!`)
+      return { state: s }
+    },
+  }
+  ctx.spawn('ticker', tickerDef, null)
 }
 
-const greeterPlugin: PluginDef<GreeterConfig> = {
+const createGreeterPlugin = (config: GreeterConfig): PluginDef<GreeterPluginMsg, null> => ({
   id: 'greeter',
   version: '1.0.0',
   description: 'Periodically logs a greeting',
+  initialState: null,
 
-  activate(ctx: ActorContext<never>, config: GreeterConfig): PluginHandle {
-    type TickMsg = { type: 'tick' }
-    const tickerDef: ActorDef<TickMsg, null> = {
-      lifecycle: (state, event, tickCtx) => {
-        if (event.type === 'start')
-          tickCtx.timers.startPeriodicTimer('tick', { type: 'tick' }, config.intervalMs)
-        return { state }
-      },
-      handler: (state, _msg, tickCtx) => {
-        tickCtx.log.info(`Hello from ${config.name}!`)
-        return { state }
-      },
-    }
-
-    ctx.spawn('ticker', tickerDef, null)
-    ctx.log.info(`greeter plugin activated (name="${config.name}", intervalMs=${config.intervalMs})`)
-
-    return {
-      deactivate() {
-        ctx.log.info('greeter plugin deactivating')
-      },
-    }
+  handler(state, msg, ctx) {
+    const ticker = ctx.lookup('ticker')
+    if (ticker) ctx.stop(ticker)
+    spawnTicker(msg.options, ctx)
+    ctx.log.info(`greeter reconfigured (name="${msg.options.name}", intervalMs=${msg.options.intervalMs})`)
+    return { state }
   },
-}
 
-export default greeterPlugin
+  lifecycle(state, event, ctx) {
+    if (event.type === 'start') {
+      spawnTicker(config, ctx)
+      ctx.log.info(`greeter plugin activated (name="${config.name}", intervalMs=${config.intervalMs})`)
+    }
+    if (event.type === 'stopped') {
+      ctx.log.info('greeter plugin deactivating')
+    }
+    return { state }
+  },
+})
+
+export default createGreeterPlugin

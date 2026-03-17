@@ -1,8 +1,8 @@
 import { describe, test, expect } from 'bun:test'
 import { createPluginSystem, createTopic } from '../system/index.ts'
-import { createWorkerBridge, taskTopic } from '../actors/worker-bridge.ts'
+import { createWorkerBridge, taskTopic } from '../plugins/parallel/worker-bridge.ts'
 import type { ActorDef, EventTopic } from '../system/index.ts'
-import type { TaskEvent, WorkerBridgeMsg } from '../actors/worker-bridge.ts'
+import type { TaskEvent, WorkerBridgeMsg } from '../plugins/parallel/worker-bridge.ts'
 
 const WORKER = new URL('./fixtures/bridge-worker.ts', import.meta.url).href
 

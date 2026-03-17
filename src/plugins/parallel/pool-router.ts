@@ -1,5 +1,5 @@
-import { DeadLetterTopic } from '../system/types.ts'
-import type { ActorDef, ActorRef } from '../system/types.ts'
+import { DeadLetterTopic } from '../../system/types.ts'
+import type { ActorDef, ActorRef } from '../../system/types.ts'
 
 // ─── Public types ───
 

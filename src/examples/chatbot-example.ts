@@ -1,6 +1,6 @@
-import { createPluginSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
-import { createHttpActor, type HttpState } from '../actors/http.ts'
-import { createChatbotActor } from '../actors/chatbot.ts'
+import { createPluginSystem, createConfigPlugin, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
+import interfacesPlugin from '../plugins/interfaces/interfaces.plugin.ts'
+import cognitivePlugin from '../plugins/cognitive/cognitive.plugin.ts'
 import type { LifecycleEvent, LogEvent } from '../system/types.ts'
 
 const apiKey = process.env.OPENROUTER_API_KEY
@@ -9,8 +9,23 @@ if (!apiKey) {
   process.exit(1)
 }
 
-// ─── Create the actor system ───
-const system = await createPluginSystem()
+// ─── Create the actor system with unified config ───
+const system = await createPluginSystem({
+  plugins: [
+    createConfigPlugin({
+      interfaces: { http: { port: 3000 } },
+      cognitive: {
+        chatbot: {
+          apiKey,
+          model: process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini',
+          systemPrompt: process.env.CHATBOT_SYSTEM_PROMPT,
+        },
+      },
+    }),
+    interfacesPlugin,
+    cognitivePlugin,
+  ],
+})
 
 // ─── Subscribe to system logs ───
 system.subscribe('console-logger', LogTopic, (event) => {
@@ -25,19 +40,6 @@ system.subscribe('lifecycle-observer', SystemLifecycleTopic, (event) => {
   if (e.type === 'terminated') {
     console.log(`[system] actor ${e.ref.name} terminated (${e.reason})`)
   }
-})
-
-// ─── Spawn actors ───
-const initialHttpState: HttpState = { server: null, connections: 0 }
-system.spawn('http', createHttpActor({ port: 3000 }), initialHttpState)
-
-system.spawn('chatbot', createChatbotActor({
-  apiKey,
-  model: process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini',
-  systemPrompt: process.env.CHATBOT_SYSTEM_PROMPT,
-}), {
-  history: {},
-  pending: {}
 })
 
 console.log('\n🚀 Chatbot running — open http://localhost:3000\n')
