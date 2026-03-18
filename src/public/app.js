@@ -196,7 +196,6 @@ const actorDetailEl  = document.getElementById('actor-detail')
 const obsLogControls = document.getElementById('obs-log-controls')
 
 let logCount      = 0
-let autoScroll    = true
 const MAX_LOGS    = 500
 
 let actorsMap     = {}
@@ -216,9 +215,6 @@ document.querySelectorAll('.obs-subtab').forEach(btn => {
   })
 })
 
-logStream.addEventListener('scroll', () => {
-  autoScroll = logStream.scrollHeight - logStream.scrollTop - logStream.clientHeight < 30
-})
 
 function tsStr(timestamp) {
   return new Date(timestamp).toISOString().slice(11, 23)
@@ -235,7 +231,7 @@ function appendLog(event) {
   if (logEmpty?.parentNode) logEmpty.remove()
 
   if (logCount >= MAX_LOGS) {
-    logStream.querySelector('.log-entry')?.remove()
+    logStream.querySelector('.log-entry:last-child')?.remove()
     logCount--
   }
 
@@ -252,10 +248,9 @@ function appendLog(event) {
       <span class="log-source">[${event.source || '?'}]</span><span class="log-msg ${level}">${escHtml(event.message || '')}</span>${data}
     </span>
   `
-  logStream.appendChild(entry)
+  logStream.prepend(entry)
   logCount++
   logCountEl.textContent = `${logCount} event${logCount !== 1 ? 's' : ''}`
-  if (autoScroll) logStream.scrollTop = logStream.scrollHeight
 }
 
 // ─── Actor tree ───
