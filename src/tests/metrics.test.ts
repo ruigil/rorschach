@@ -357,7 +357,7 @@ describe('Metrics: push-based MetricsTopic', () => {
     await tick(150)
 
     const names = events[events.length - 1]!.actors.map(s => s.name)
-    expect(names).toContain('system/$plugin-observability/metrics')
+    expect(names).toContain('system/observability/metrics')
 
     await system.shutdown()
   })
