@@ -1,9 +1,6 @@
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { createPluginSystem, LogTopic, onLifecycle } from '../system/index.ts'
 import type { ActorDef, ActorContext, LogEvent, PluginDef } from '../system/index.ts'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // ─── Inline plugin definition ─────────────────────────────────────────────────
 
@@ -92,7 +89,7 @@ console.log('Active plugins:', system.listPlugins().map(p => `${p.id}@${p.versio
 await Bun.sleep(2_000)
 
 console.log('\n── Loading greeter plugin from file ──')
-const greeterPath = join(__dirname, 'plugins/greeter.plugin.ts')
+const greeterPath = import.meta.dir + '/plugins/greeter.plugin.ts'
 const { default: createGreeterPlugin } = await import(greeterPath)
 const result = await system.use(createGreeterPlugin({ name: 'Rorschach', intervalMs: 1_500 }))
 console.log('Load result:', result)
