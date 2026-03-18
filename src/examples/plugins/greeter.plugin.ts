@@ -1,4 +1,5 @@
 import type { ActorContext, ActorDef, PluginDef } from '../../system/index.ts'
+import { onLifecycle } from '../../system/index.ts'
 
 type GreeterConfig = {
   name: string
@@ -10,11 +11,12 @@ type GreeterPluginMsg = { type: 'config'; options: GreeterConfig }
 const spawnTicker = (config: GreeterConfig, ctx: ActorContext<GreeterPluginMsg>) => {
   type TickMsg = { type: 'tick' }
   const tickerDef: ActorDef<TickMsg, null> = {
-    lifecycle: (s, ev, tickCtx) => {
-      if (ev.type === 'start')
+    lifecycle: onLifecycle({
+      start(s, tickCtx) {
         tickCtx.timers.startPeriodicTimer('tick', { type: 'tick' }, config.intervalMs)
-      return { state: s }
-    },
+        return { state: s }
+      },
+    }),
     handler: (s, _msg, tickCtx) => {
       tickCtx.log.info(`Hello from ${config.name}!`)
       return { state: s }
@@ -37,16 +39,17 @@ const createGreeterPlugin = (config: GreeterConfig): PluginDef<GreeterPluginMsg,
     return { state }
   },
 
-  lifecycle(state, event, ctx) {
-    if (event.type === 'start') {
+  lifecycle: onLifecycle({
+    start(state, ctx) {
       spawnTicker(config, ctx)
       ctx.log.info(`greeter plugin activated (name="${config.name}", intervalMs=${config.intervalMs})`)
-    }
-    if (event.type === 'stopped') {
+      return { state }
+    },
+    stopped(state, ctx) {
       ctx.log.info('greeter plugin deactivating')
-    }
-    return { state }
-  },
+      return { state }
+    },
+  }),
 })
 
 export default createGreeterPlugin

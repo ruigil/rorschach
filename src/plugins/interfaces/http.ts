@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import type { Server, ServerWebSocket } from 'bun'
 import { createTopic, emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
+import { onLifecycle, onMessage } from '../../system/match.ts'
 
 // ─── Public directory (resolved relative to this module) ───
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -11,9 +12,9 @@ const PUBLIC_DIR = join(__dirname+"/../..", 'public')
 // ─── Message protocol ───
 
 export type HttpMessage =
-  | { type: 'ws:connected'; clientId: string }
-  | { type: 'ws:message'; clientId: string; text: string }
-  | { type: 'ws:closed'; clientId: string }
+  | { type: 'connected'; clientId: string }
+  | { type: 'message'; clientId: string; text: string }
+  | { type: 'closed'; clientId: string }
   | { type: 'broadcast'; text: string }
   | { type: 'send'; clientId: string; text: string }
 
@@ -87,44 +88,42 @@ export const createHttpActor = (
   let selfRef: ActorRef<HttpMessage> | null = null
 
   return {
-    handler: (state, message, context) => {
-      switch (message.type) {
-        case 'ws:connected': {
-          const connections = state.connections + 1
-          context.log.info(`client connected: ${message.clientId} (${connections} total)`)
-          return { state: { ...state, connections } }
+    handler: onMessage({
+
+      connected: (state, message, context) => {
+        const connections = state.connections + 1
+        context.log.info(`client connected: ${message.clientId} (${connections} total)`)
+        return { state: { ...state, connections } }
+      },
+
+      message: (state, message, context) => {
+        context.log.debug(`[${message.clientId}] ${message.text}`)
+        // Emit as a typed domain event so other actors can subscribe
+        return {
+          state,
+          events: [emit(WsMessageTopic, { clientId: message.clientId, text: message.text })],
         }
+      },
 
-        case 'ws:message': {
-          context.log.debug(`[${message.clientId}] ${message.text}`)
+      closed: (state, message, context) => {
+        const connections = Math.max(0, state.connections - 1)
+        context.log.info(`client disconnected: ${message.clientId} (${connections} remaining)`)
+        return { state: { ...state, connections } }
+      },
 
-          // Emit as a typed domain event so other actors can subscribe
-          return {
-            state,
-            events: [emit(WsMessageTopic, { clientId: message.clientId, text: message.text })],
-          }
-        }
+      broadcast: (state, message) => {
+        state.server?.publish(CHANNEL, message.text)
+        return { state }
+      },
 
-        case 'ws:closed': {
-          const connections = Math.max(0, state.connections - 1)
-          context.log.info(`client disconnected: ${message.clientId} (${connections} remaining)`)
-          return { state: { ...state, connections } }
-        }
+      send: (state, message) => {
+        state.server?.publish(`client:${message.clientId}`, message.text)
+        return { state }
+      },
+    }),
 
-        case 'broadcast': {
-          state.server?.publish(CHANNEL, message.text)
-          return { state }
-        }
-
-        case 'send': {
-          state.server?.publish(`client:${message.clientId}`, message.text)
-          return { state }
-        }
-      }
-    },
-
-    lifecycle: (state, event, context) => {
-      if (event.type === 'start') {
+    lifecycle: onLifecycle({
+      start: (state, context) => {
         selfRef = context.self
 
         context.subscribe(WsSendTopic, (e) => ({
@@ -167,36 +166,34 @@ export const createHttpActor = (
 
           // ─── WebSocket handlers ───
           websocket: {
-            open(ws: ServerWebSocket<WsData>) {
+            open: (ws: ServerWebSocket<WsData>) => {
               ws.subscribe(CHANNEL)
               ws.subscribe(`client:${ws.data.clientId}`)
-              selfRef?.send({ type: 'ws:connected', clientId: ws.data.clientId })
+              selfRef?.send({ type: 'connected', clientId: ws.data.clientId })
             },
-
-            message(ws: ServerWebSocket<WsData>, message) {
+            message: (ws: ServerWebSocket<WsData>, message) => {
               const text = typeof message === 'string' ? message : message.toString()
-              selfRef?.send({ type: 'ws:message', clientId: ws.data.clientId, text })
+              selfRef?.send({ type: 'message', clientId: ws.data.clientId, text })
             },
-
-            close(ws: ServerWebSocket<WsData>) {
+            close: (ws: ServerWebSocket<WsData>) => {
               ws.unsubscribe(CHANNEL)
-              selfRef?.send({ type: 'ws:closed', clientId: ws.data.clientId })
+              selfRef?.send({ type: 'closed', clientId: ws.data.clientId })
             },
           },
         })
 
         context.log.info(`listening on http://localhost:${server.port}`)
-
         return { state: { ...state, server } }
-      }
+      },
 
-      if (event.type === 'stopped' && state.server) {
-        context.log.info('stopping HTTP server')
-        state.server.stop(true)
-        return { state: { ...state, server: null } }
-      }
-
-      return { state }
-    },
+      stopped: (state, context) => {
+        if (state.server) {
+          context.log.info('stopping HTTP server')
+          state.server.stop(true)
+          return { state: { ...state, server: null } }
+        }
+        return { state }
+      },
+    }),
   }
 }

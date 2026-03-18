@@ -1,5 +1,6 @@
 import { createTopic } from '../../system/types.ts'
 import type { ActorDef, EventTopic } from '../../system/types.ts'
+import { onLifecycle, onMessage } from '../../system/match.ts'
 
 // ─── Public types ───
 
@@ -77,35 +78,34 @@ export const createWorkerBridge = <P, R>(
   options: WorkerBridgeOptions,
 ): WorkerBridge<P, R> => {
   const def: ActorDef<WorkerBridgeMsg<P, R>, WorkerBridgeState> = {
-    handler: (state, msg, ctx) => {
-      switch (msg.type) {
-        case 'request':
-          state.worker.postMessage({ id: msg.id, payload: msg.payload })
-          return { state }
+    handler: onMessage({
+      request: (state, msg) => {
+        state.worker.postMessage({ id: msg.id, payload: msg.payload })
+        return { state }
+      },
+      progress: (state, msg, ctx) => {
+        ctx.publish(taskTopic<R>(msg.id), {
+          type: 'task.progress',
+          id: msg.id,
+          pct: msg.pct,
+          ...(msg.note !== undefined ? { note: msg.note } : {}),
+        })
+        return { state }
+      },
+      reply: (state, msg, ctx) => {
+        ctx.publish(taskTopic<R>(msg.id), { type: 'task.done', id: msg.id, result: msg.result })
+        ctx.deleteTopic(taskTopic(msg.id))
+        return { state }
+      },
+      error: (state, msg, ctx) => {
+        ctx.publish(taskTopic<R>(msg.id), { type: 'task.failed', id: msg.id, error: msg.error })
+        ctx.deleteTopic(taskTopic(msg.id))
+        return { state }
+      },
+    }),
 
-        case 'progress':
-          ctx.publish(taskTopic<R>(msg.id), {
-            type: 'task.progress',
-            id: msg.id,
-            pct: msg.pct,
-            ...(msg.note !== undefined ? { note: msg.note } : {}),
-          })
-          return { state }
-
-        case 'reply':
-          ctx.publish(taskTopic<R>(msg.id), { type: 'task.done', id: msg.id, result: msg.result })
-          ctx.deleteTopic(taskTopic(msg.id))
-          return { state }
-
-        case 'error':
-          ctx.publish(taskTopic<R>(msg.id), { type: 'task.failed', id: msg.id, error: msg.error })
-          ctx.deleteTopic(taskTopic(msg.id))
-          return { state }
-      }
-    },
-
-    lifecycle: (state, event, ctx) => {
-      if (event.type === 'start') {
+    lifecycle: onLifecycle({
+      start: (_state, ctx) => {
         const worker = new Worker(options.scriptPath)
         worker.onmessage = (e: MessageEvent) => {
           ctx.self.send(e.data as WorkerBridgeMsg<P, R>)
@@ -114,11 +114,12 @@ export const createWorkerBridge = <P, R>(
           ctx.log.error('worker thread error', { error: String(err) })
         }
         return { state: { worker } }
-      }
-
-      if (event.type === 'stopped') state.worker.terminate()
-      return { state }
-    },
+      },
+      stopped: (state) => {
+        state.worker.terminate()
+        return { state }
+      },
+    }),
 
     shutdown: { drain: true },
     supervision: { type: 'restart' },

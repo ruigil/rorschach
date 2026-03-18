@@ -1,6 +1,7 @@
 import { createJsonlLoggerActor, type JsonlLoggerOptions } from './jsonl-logger.ts'
 import { createMetricsActor, type MetricsActorOptions } from './metrics.ts'
 import type { PluginDef } from '../../system/types.ts'
+import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ConfigTopic, type SystemConfig, type ConfigMsg } from '../config/types.ts'
 import { ask } from '../../system/ask.ts'
 
@@ -24,8 +25,8 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState> = {
   dependencies: ['config'],
   initialState: { initialized: false },
 
-  lifecycle: async (state, event, ctx) => {
-    if (event.type === 'start') {
+  lifecycle: onLifecycle({
+    start: async (_state, ctx) => {
       ctx.subscribe(ConfigTopic, (cfg) => ({ type: 'config' as const, slice: cfg.observability }))
 
       const storeRef = ctx.lookup<ConfigMsg>('system/$plugin-config/store')!
@@ -41,29 +42,31 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState> = {
 
       ctx.log.info('observability plugin activated')
       return { state: { initialized: true } }
-    }
-    if (event.type === 'stopped') {
+    },
+    stopped: (state, ctx) => {
       ctx.log.info('observability plugin deactivating')
-    }
-    return { state }
-  },
+      return { state }
+    },
+  }),
 
-  handler(state, msg, ctx) {
-    const logger = ctx.lookup('jsonl-logger')
-    const metrics = ctx.lookup('metrics')
-    if (logger) ctx.stop(logger)
-    if (metrics) ctx.stop(metrics)
+  handler: onMessage({
+    config: (state, msg, ctx) => {
+      const logger = ctx.lookup('jsonl-logger')
+      const metrics = ctx.lookup('metrics')
+      if (logger) ctx.stop(logger)
+      if (metrics) ctx.stop(metrics)
 
-    if (msg.slice?.jsonlLogger) {
-      const opts = msg.slice.jsonlLogger
-      ctx.spawn('jsonl-logger', createJsonlLoggerActor(opts), { filePath: opts.filePath, written: 0, buffer: [] })
-    }
-    if (msg.slice?.metrics) {
-      ctx.spawn('metrics', createMetricsActor(msg.slice.metrics), null)
-    }
+      if (msg.slice?.jsonlLogger) {
+        const opts = msg.slice.jsonlLogger
+        ctx.spawn('jsonl-logger', createJsonlLoggerActor(opts), { filePath: opts.filePath, written: 0, buffer: [] })
+      }
+      if (msg.slice?.metrics) {
+        ctx.spawn('metrics', createMetricsActor(msg.slice.metrics), null)
+      }
 
-    return { state }
-  },
+      return { state }
+    }
+  })
 }
 
 export default observabilityPlugin

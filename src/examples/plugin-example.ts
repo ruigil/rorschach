@@ -1,6 +1,6 @@
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createPluginSystem, LogTopic } from '../system/index.ts'
+import { createPluginSystem, LogTopic, onLifecycle } from '../system/index.ts'
 import type { ActorDef, ActorContext, LogEvent, PluginDef } from '../system/index.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -10,27 +10,30 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 type CounterConfig = { startAt: number; tickMs: number }
 type CounterPluginMsg = { type: 'config'; options: CounterConfig }
 
-function spawnCounterChildren(config: CounterConfig, ctx: ActorContext<CounterPluginMsg>) {
+const spawnCounterChildren = (config: CounterConfig, ctx: ActorContext<CounterPluginMsg>) => {
   type CounterMsg = { type: 'increment' } | { type: 'reset' }
   const counterDef: ActorDef<CounterMsg, { count: number }> = {
     handler: (s, msg) =>
       msg.type === 'increment'
         ? { state: { count: s.count + 1 } }
         : { state: { count: 0 } },
-    lifecycle: (s, ev, counterCtx) => {
-      if (ev.type === 'start') counterCtx.log.info(`counter started at ${s.count}`)
-      return { state: s }
-    },
+    lifecycle: onLifecycle({
+      start(s, counterCtx) {
+        counterCtx.log.info(`counter started at ${s.count}`)
+        return { state: s }
+      },
+    }),
   }
   const counter = ctx.spawn('counter', counterDef, { count: config.startAt })
 
   type TickMsg = { type: 'tick' }
   const tickerDef: ActorDef<TickMsg, null> = {
-    lifecycle: (s, ev, tickCtx) => {
-      if (ev.type === 'start')
+    lifecycle: onLifecycle({
+      start(s, tickCtx) {
         tickCtx.timers.startPeriodicTimer('tick', { type: 'tick' }, config.tickMs)
-      return { state: s }
-    },
+        return { state: s }
+      },
+    }),
     handler: (s) => {
       counter.send({ type: 'increment' })
       return { state: s }
@@ -55,16 +58,17 @@ const createCounterPlugin = (config: CounterConfig): PluginDef<CounterPluginMsg,
     return { state }
   },
 
-  lifecycle(state, event, ctx) {
-    if (event.type === 'start') {
+  lifecycle: onLifecycle({
+    start(state, ctx) {
       spawnCounterChildren(config, ctx)
       ctx.log.info(`counter plugin activated (startAt=${config.startAt}, tickMs=${config.tickMs})`)
-    }
-    if (event.type === 'stopped') {
+      return { state }
+    },
+    stopped(state, ctx) {
       ctx.log.info('counter plugin deactivating')
-    }
-    return { state }
-  },
+      return { state }
+    },
+  }),
 })
 
 // ─── Create system with counter loaded at startup ─────────────────────────────

@@ -1,14 +1,15 @@
 import { emit } from '../../system/types.ts'
-import type { ActorDef, ActorResult } from '../../system/types.ts'
+import type { ActorDef } from '../../system/types.ts'
+import { onLifecycle, onMessage } from '../../system/match.ts'
 import { WsMessageTopic, WsSendTopic } from '../interfaces/http.ts'
 
 // ─── Message protocol ───
 
 type ChatbotMsg =
-  | { type: 'user-message'; clientId: string; text: string }
-  | { type: 'llm-chunk';    clientId: string; text: string }
-  | { type: 'llm-done';     clientId: string }
-  | { type: 'llm-err';      clientId: string; error: unknown }
+  | { type: 'userMessage'; clientId: string; text: string }
+  | { type: 'llmChunk';    clientId: string; text: string }
+  | { type: 'llmDone';     clientId: string }
+  | { type: 'llmErr';      clientId: string; error: unknown }
 
 // ─── State ───
 
@@ -88,95 +89,81 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
 
   return {
-    lifecycle: (state, event, context) => {
-      if (event.type === 'start') {
+    lifecycle: onLifecycle({
+      start(state, context) {
         context.subscribe(WsMessageTopic, (e) => ({
-          type: 'user-message' as const,
+          type: 'userMessage' as const,
           clientId: e.clientId,
           text: e.text,
         }))
-      }
-      return { state }
-    },
+        return { state }
+      },
+    }),
 
-    handler: (state, message, context): ActorResult<ChatbotMsg, ChatbotState> => {
-      switch (message.type) {
-        case 'user-message': {
-          const { clientId, text } = message
-          const prior = state.history[clientId] ?? []
+    handler: onMessage<ChatbotMsg, ChatbotState>({
+      userMessage: (state, message, context) => {
+        const { clientId, text } = message
+        const prior = state.history[clientId] ?? []
 
-          const apiMessages: ApiMessage[] = [
-            ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
-            ...prior,
-            { role: 'user', content: text },
-          ]
+        const apiMessages: ApiMessage[] = [
+          ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
+          ...prior,
+          { role: 'user', content: text },
+        ]
 
-          // Capture selfRef so the async stream can send messages back into the mailbox
-          const selfRef = context.self
-          streamLLM(apiKey, model, apiMessages, (chunk) => {
-            selfRef.send({ type: 'llm-chunk', clientId, text: chunk })
-          }).then(() => {
-            selfRef.send({ type: 'llm-done', clientId })
-          }).catch((error) => {
-            selfRef.send({ type: 'llm-err', clientId, error })
-          })
+        const selfRef = context.self
+        streamLLM(apiKey, model, apiMessages, (chunk) => {
+          selfRef.send({ type: 'llmChunk', clientId, text: chunk })
+        }).then(() => {
+          selfRef.send({ type: 'llmDone', clientId })
+        }).catch((error) => {
+          selfRef.send({ type: 'llmErr', clientId, error })
+        })
 
-          return {
-            state: {
-              ...state,
-              history: {
-                ...state.history,
-                [clientId]: [...prior, { role: 'user', content: text }],
-              },
-              pending: { ...state.pending, [clientId]: '' },
-            },
-          }
+        return {
+          state: {
+            ...state,
+            history: { ...state.history, [clientId]: [...prior, { role: 'user', content: text }] },
+            pending: { ...state.pending, [clientId]: '' },
+          },
         }
+      },
 
-        case 'llm-chunk': {
-          const { clientId, text } = message
-          return {
-            state: {
-              ...state,
-              pending: { ...state.pending, [clientId]: (state.pending[clientId] ?? '') + text },
-            },
-            events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'chunk', text }) })],
-          }
+      llmChunk: (state, message) => {
+        const { clientId, text } = message
+        return {
+          state: { ...state, pending: { ...state.pending, [clientId]: (state.pending[clientId] ?? '') + text } },
+          events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'chunk', text }) })],
         }
+      },
 
-        case 'llm-done': {
-          const { clientId } = message
-          const fullReply = state.pending[clientId] ?? ''
-          const prior = state.history[clientId] ?? []
-          const { [clientId]: _, ...restPending } = state.pending
-
-          return {
-            state: {
-              history: {
-                ...state.history,
-                [clientId]: [...prior, { role: 'assistant', content: fullReply }],
-              },
-              pending: restPending,
-            },
-            events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) })],
-          }
+      llmDone: (state, message) => {
+        const { clientId } = message
+        const fullReply = state.pending[clientId] ?? ''
+        const prior = state.history[clientId] ?? []
+        const { [clientId]: _, ...restPending } = state.pending
+        return {
+          state: {
+            history: { ...state.history, [clientId]: [...prior, { role: 'assistant', content: fullReply }] },
+            pending: restPending,
+          },
+          events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) })],
         }
+      },
 
-        case 'llm-err': {
-          const { clientId, error } = message
-          context.log.error('LLM stream failed', { clientId, error: String(error) })
-
-          const { [clientId]: _, ...restPending } = state.pending
-          return {
-            state: { ...state, pending: restPending },
-            events: [emit(WsSendTopic, {
-              clientId,
-              text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }),
-            })],
-          }
+      llmErr: (state, message, context) => {
+        const { clientId, error } = message
+        context.log.error('LLM stream failed', { clientId, error: String(error) })
+        const { [clientId]: _, ...restPending } = state.pending
+        return {
+          state: { ...state, pending: restPending },
+          events: [emit(WsSendTopic, {
+            clientId,
+            text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }),
+          })],
         }
-      }
-    },
+      },
+    }),
 
     supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }

@@ -2,6 +2,7 @@ import { appendFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { ActorDef, LogEvent } from '../../system/types.ts'
 import { LogTopic } from '../../system/types.ts'
+import { onLifecycle, onMessage } from '../../system/match.ts'
 
 // ─── Message protocol ───
 
@@ -61,68 +62,46 @@ export const createJsonlLoggerActor = (
   const minLevelValue = LOG_LEVEL_ORDER[minLevel]
 
   return {
-    handler: (state, message, context) => {
-      switch (message.type) {
-        case 'log': {
-          const { event } = message
+    handler: onMessage({
+      log(state, message) {
+        // Drop events below the minimum level
+        if (LOG_LEVEL_ORDER[message.event.level] < minLevelValue) return { state }
 
-          // Drop events below the minimum level
-          if (LOG_LEVEL_ORDER[event.level] < minLevelValue) {
-            return { state }
-          }
+        const line = JSON.stringify(message.event)
 
-          const line = JSON.stringify(event)
-
-          // Buffered mode: accumulate lines, write on flush
-          if (flushIntervalMs && flushIntervalMs > 0) {
-            return {
-              state: {
-                ...state,
-                buffer: [...state.buffer, line],
-              },
-            }
-          }
-
-          // Unbuffered mode: append immediately
-          appendFileSync(state.filePath, line + '\n')
-          return { state: { ...state, written: state.written + 1 } }
+        // Buffered mode: accumulate lines, write on flush
+        if (flushIntervalMs && flushIntervalMs > 0) {
+          return { state: { ...state, buffer: [...state.buffer, line] } }
         }
 
-        case 'flush': {
-          if (state.buffer.length === 0) {
-            return { state }
-          }
+        // Unbuffered mode: append immediately
+        appendFileSync(state.filePath, line + '\n')
+        return { state: { ...state, written: state.written + 1 } }
+      },
 
-          const chunk = state.buffer.join('\n') + '\n'
-          appendFileSync(state.filePath, chunk)
+      flush(state, _message, context) {
+        if (state.buffer.length === 0) return { state }
 
-          const written = state.written + state.buffer.length
-          context.log.debug(`flushed ${state.buffer.length} log entries (${written} total)`)
+        const chunk = state.buffer.join('\n') + '\n'
+        appendFileSync(state.filePath, chunk)
 
-          return {
-            state: { ...state, buffer: [], written },
-          }
-        }
-      }
-    },
+        const written = state.written + state.buffer.length
+        context.log.debug(`flushed ${state.buffer.length} log entries (${written} total)`)
+        return { state: { ...state, buffer: [], written } }
+      },
+    }),
 
-    lifecycle: (state, event, context) => {
-      if (event.type === 'start') {
+    lifecycle: onLifecycle({
+      start: (state, context) => {
         // Ensure the target directory exists
         const dir = dirname(filePath)
-        if (!existsSync(dir)) {
-          mkdirSync(dir, { recursive: true })
-        }
+        if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
 
         // Touch the file so it exists (append mode — preserves existing content)
-        if (!existsSync(filePath)) {
-          writeFileSync(filePath, '')
-        }
+        if (!existsSync(filePath)) writeFileSync(filePath, '')
 
         // Subscribe to system log topic — adapter receives LogEvent directly (type-safe)
-        context.subscribe(LogTopic, (event) => {
-          return { type: 'log', event }
-        })
+        context.subscribe(LogTopic, (event) => ({ type: 'log', event }))
 
         // Start a periodic flush timer if buffered mode is configured
         if (flushIntervalMs && flushIntervalMs > 0) {
@@ -130,11 +109,10 @@ export const createJsonlLoggerActor = (
         }
 
         context.log.info(`persisting logs to ${filePath}`)
-
         return { state: { ...state, filePath } }
-      }
+      },
 
-      if (event.type === 'stopped') {
+      stopped: (state, context) => {
         // Flush any remaining buffered entries before stopping
         if (state.buffer.length > 0) {
           const chunk = state.buffer.join('\n') + '\n'
@@ -145,9 +123,8 @@ export const createJsonlLoggerActor = (
         }
 
         context.log.info(`stopped — ${state.written} log entries persisted`)
-      }
-
-      return { state }
-    },
+        return { state }
+      },
+    }),
   }
 }

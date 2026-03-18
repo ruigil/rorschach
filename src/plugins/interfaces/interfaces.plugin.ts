@@ -1,5 +1,6 @@
 import { createHttpActor, type HttpActorOptions, type HttpState } from './http.ts'
 import type { PluginDef } from '../../system/types.ts'
+import { onLifecycle } from '../../system/match.ts'
 import { ConfigTopic, type SystemConfig, type ConfigMsg } from '../config/types.ts'
 import { ask } from '../../system/ask.ts'
 
@@ -17,8 +18,8 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState> = {
   dependencies: ['config'],
   initialState: { initialized: false },
 
-  lifecycle: async (state, event, ctx) => {
-    if (event.type === 'start') {
+  lifecycle: onLifecycle({
+    start: async (_state, ctx) => {
       ctx.subscribe(ConfigTopic, (cfg) => ({ type: 'config' as const, slice: cfg.interfaces }))
 
       const storeRef = ctx.lookup<ConfigMsg>('system/$plugin-config/store')!
@@ -31,14 +32,14 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState> = {
 
       ctx.log.info('interfaces plugin activated')
       return { state: { initialized: true } }
-    }
-    if (event.type === 'stopped') {
+    },
+    stopped: (state, ctx) => {
       ctx.log.info('interfaces plugin deactivating')
-    }
-    return { state }
-  },
+      return { state }
+    },
+  }),
 
-  handler(state, msg, ctx) {
+  handler: (state, msg, ctx) => {
     const http = ctx.lookup('http')
     if (http) ctx.stop(http)
 

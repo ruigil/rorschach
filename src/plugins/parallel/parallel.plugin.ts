@@ -1,6 +1,7 @@
 import { createPoolRouter, type PoolRouterOptions } from './pool-router.ts'
 import { createWorkerBridge, type WorkerBridgeOptions } from './worker-bridge.ts'
 import type { ActorContext, PluginDef } from '../../system/types.ts'
+import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ConfigTopic, type SystemConfig, type ConfigMsg } from '../config/types.ts'
 import { ask } from '../../system/ask.ts'
 
@@ -22,7 +23,7 @@ export type ParallelConfig = {
 type PluginMsg = { type: 'config'; slice: ParallelConfig | undefined }
 type PluginState = { initialized: boolean; routerNames: string[]; bridgeNames: string[] }
 
-function spawnFromSlice(slice: ParallelConfig, ctx: ActorContext<PluginMsg>) {
+const spawnFromSlice = (slice: ParallelConfig, ctx: ActorContext<PluginMsg>) => {
   const routerNames: string[] = []
   const bridgeNames: string[] = []
 
@@ -47,8 +48,8 @@ const parallelPlugin: PluginDef<PluginMsg, PluginState> = {
   dependencies: ['config'],
   initialState: { initialized: false, routerNames: [], bridgeNames: [] },
 
-  lifecycle: async (state, event, ctx) => {
-    if (event.type === 'start') {
+  lifecycle: onLifecycle({
+    start: async (_state, ctx) => {
       ctx.subscribe(ConfigTopic, (cfg) => ({ type: 'config' as const, slice: cfg.parallel }))
 
       const storeRef = ctx.lookup<ConfigMsg>('system/$plugin-config/store')!
@@ -62,28 +63,30 @@ const parallelPlugin: PluginDef<PluginMsg, PluginState> = {
 
       ctx.log.info('parallel plugin activated')
       return { state: { initialized: true, routerNames: [], bridgeNames: [] } }
-    }
-    if (event.type === 'stopped') {
+    },
+    stopped: (state, ctx) => {
       ctx.log.info('parallel plugin deactivating')
-    }
-    return { state }
-  },
+      return { state }
+    },
+  }),
 
-  handler(state, msg, ctx) {
-    for (const name of state.routerNames) {
-      const ref = ctx.lookup(name)
-      if (ref) ctx.stop(ref)
-    }
-    for (const name of state.bridgeNames) {
-      const ref = ctx.lookup(name)
-      if (ref) ctx.stop(ref)
-    }
+  handler: onMessage({
+    config: (state, msg, ctx) => {
+      for (const name of state.routerNames) {
+        const ref = ctx.lookup(name)
+        if (ref) ctx.stop(ref)
+      }
+      for (const name of state.bridgeNames) {
+        const ref = ctx.lookup(name)
+        if (ref) ctx.stop(ref)
+      }
 
-    if (!msg.slice) return { state: { ...state, routerNames: [], bridgeNames: [] } }
+      if (!msg.slice) return { state: { ...state, routerNames: [], bridgeNames: [] } }
 
-    const { routerNames, bridgeNames } = spawnFromSlice(msg.slice, ctx)
-    return { state: { ...state, routerNames, bridgeNames } }
-  },
+      const { routerNames, bridgeNames } = spawnFromSlice(msg.slice, ctx)
+      return { state: { ...state, routerNames, bridgeNames } }
+    }
+  })
 }
 
 export default parallelPlugin

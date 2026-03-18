@@ -1,5 +1,6 @@
 import { MetricsTopic } from '../../system/types.ts'
-import type { ActorDef, ActorSnapshot, MetricsEvent } from '../../system/types.ts'
+import type { ActorDef, MetricsEvent } from '../../system/types.ts'
+import { onLifecycle, onMessage } from '../../system/match.ts'
 
 type MetricsMsg = { type: 'tick' }
 
@@ -8,19 +9,21 @@ export type MetricsActorOptions = {
 }
 
 export const createMetricsActor = (options: MetricsActorOptions): ActorDef<MetricsMsg, null> => ({
-  lifecycle: (state, event, ctx) => {
-    if (event.type === 'start') {
+  lifecycle: onLifecycle({
+    start: (state, ctx) => {
       ctx.timers.startPeriodicTimer('metrics-tick', { type: 'tick' }, options.intervalMs)
-    }
-    return { state }
-  },
+      return { state }
+    },
+  }),
 
-  handler: (state, _msg, ctx) => {
-    const event: MetricsEvent = {
-      timestamp: Date.now(),
-      actors: ctx.actorSnapshots(),
+  handler: onMessage({
+    tick: (state, _msg, ctx) => {
+      const event: MetricsEvent = {
+        timestamp: Date.now(),
+        actors: ctx.actorSnapshots(),
+      }
+      ctx.publish(MetricsTopic, event)
+      return { state }
     }
-    ctx.publish(MetricsTopic, event)
-    return { state }
-  },
+  }),
 })

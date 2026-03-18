@@ -1,5 +1,6 @@
 import { DeadLetterTopic } from '../../system/types.ts'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
+import { onLifecycle } from '../../system/match.ts'
 
 // ─── Public types ───
 
@@ -74,53 +75,46 @@ export const createPoolRouter = <WM, WS>(
       return { state: { ...state, index: state.index + 1 } }
     },
 
-    lifecycle: (state, event, ctx) => {
-      if (event.type === 'start') {
+    lifecycle: onLifecycle({
+      start: (_state, ctx) => {
         const workers: ActorRef<WM>[] = []
         for (let i = 0; i < poolSize; i++) {
           workers.push(ctx.spawn(`worker-${i}`, worker, workerInitialState))
         }
         return { state: { workers, index: 0, workerSeq: poolSize } }
-      }
+      },
 
-      if (event.type !== 'terminated') return { state }
-      // Only react to unexpected failures — graceful stops (shutdown, ctx.stop)
-      // are expected and should not trigger the failure strategy.
-      if (event.reason !== 'failed') return { state }
+      terminated: (state, event, ctx) => {
+        // Only react to unexpected failures — graceful stops (shutdown, ctx.stop)
+        // are expected and should not trigger the failure strategy.
+        if (event.reason !== 'failed') return { state }
 
-      const deadName = event.ref.name
-      if (!state.workers.some(w => w.name === deadName)) return { state }
+        const deadName = event.ref.name
+        if (!state.workers.some(w => w.name === deadName)) return { state }
 
-      if (onWorkerFailure === 'escalate') {
-        const detail = event.error != null ? String(event.error) : event.reason
-        throw new Error(`Pool router worker "${deadName}" terminated: ${detail}`)
-      }
-
-      const workers = state.workers.filter(w => w.name !== deadName)
-
-      if (onWorkerFailure === 'replace') {
-        const newWorker = ctx.spawn(`worker-${state.workerSeq}`, worker, workerInitialState)
-        return {
-          state: {
-            workers: [...workers, newWorker],
-            index: state.index,
-            workerSeq: state.workerSeq + 1,
-          },
+        if (onWorkerFailure === 'escalate') {
+          const detail = event.error != null ? String(event.error) : event.reason
+          throw new Error(`Pool router worker "${deadName}" terminated: ${detail}`)
         }
-      }
 
-      // shrink
-      if (workers.length === 0) {
-        ctx.log.warn('pool router pool is empty — messages will go to dead letters')
-      }
-      return {
-        state: {
-          workers,
-          index: workers.length > 0 ? state.index % workers.length : 0,
-          workerSeq: state.workerSeq,
-        },
-      }
-    },
+        const workers = state.workers.filter(w => w.name !== deadName)
+
+        if (onWorkerFailure === 'replace') {
+          const newWorker = ctx.spawn(`worker-${state.workerSeq}`, worker, workerInitialState)
+          return {
+            state: { workers: [...workers, newWorker], index: state.index, workerSeq: state.workerSeq + 1 },
+          }
+        }
+
+        // shrink
+        if (workers.length === 0) {
+          ctx.log.warn('pool router pool is empty — messages will go to dead letters')
+        }
+        return {
+          state: { workers, index: workers.length > 0 ? state.index % workers.length : 0, workerSeq: state.workerSeq },
+        }
+      },
+    }),
   }
 
   return {

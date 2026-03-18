@@ -1,5 +1,6 @@
 import { createChatbotActor, type ChatbotActorOptions } from './chatbot.ts'
 import type { PluginDef } from '../../system/types.ts'
+import { onLifecycle } from '../../system/match.ts'
 import { ConfigTopic, type SystemConfig, type ConfigMsg } from '../config/types.ts'
 import { ask } from '../../system/ask.ts'
 
@@ -17,8 +18,8 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState> = {
   dependencies: ['config'],
   initialState: { initialized: false },
 
-  lifecycle: async (state, event, ctx) => {
-    if (event.type === 'start') {
+  lifecycle: onLifecycle({
+    start: async (_state, ctx) => {
       ctx.subscribe(ConfigTopic, (cfg) => ({ type: 'config' as const, slice: cfg.cognitive }))
 
       const storeRef = ctx.lookup<ConfigMsg>('system/$plugin-config/store')!
@@ -30,14 +31,14 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState> = {
 
       ctx.log.info('cognitive plugin activated')
       return { state: { initialized: true } }
-    }
-    if (event.type === 'stopped') {
+    },
+    stopped: (state, ctx) => {
       ctx.log.info('cognitive plugin deactivating')
-    }
-    return { state }
-  },
+      return { state }
+    },
+  }),
 
-  handler(state, msg, ctx) {
+  handler: (state, msg, ctx) => {
     const chatbot = ctx.lookup('chatbot')
     if (chatbot) ctx.stop(chatbot)
 

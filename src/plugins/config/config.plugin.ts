@@ -1,4 +1,5 @@
 import type { PluginDef } from '../../system/types.ts'
+import { onLifecycle } from '../../system/match.ts'
 import { createConfigActor } from './config-actor.ts'
 import type { SystemConfig } from './types.ts'
 
@@ -13,15 +14,17 @@ export const createConfigPlugin = (config: SystemConfig): PluginDef<ConfigPlugin
   description: 'Unified configuration store — single source of truth for all plugin configs',
   initialState: null,
 
-  handler(state, msg, ctx) {
+  handler: (state, msg, ctx) => {
     const store = ctx.lookup('store')
     if (store) ctx.stop(store)
     ctx.spawn('store', createConfigActor(msg.config), msg.config)
     return { state }
   },
 
-  lifecycle(state, event, ctx) {
-    if (event.type === 'start') ctx.spawn('store', createConfigActor(config), config)
-    return { state }
-  },
+  lifecycle: onLifecycle({
+    start: (state, ctx) => {
+      ctx.spawn('store', createConfigActor(config), config)
+      return { state }
+    },
+  }),
 })
