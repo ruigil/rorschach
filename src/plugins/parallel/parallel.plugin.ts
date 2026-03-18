@@ -52,7 +52,7 @@ const parallelPlugin: PluginDef<PluginMsg, PluginState> = {
     start: async (_state, ctx) => {
       ctx.subscribe(ConfigTopic, (cfg) => ({ type: 'config' as const, slice: cfg.parallel }))
 
-      const storeRef = ctx.lookup<ConfigMsg>('system/$plugin-config/store')!
+      const storeRef = ctx.lookup<ConfigMsg>('system/config/store')!
       const current = await ask<ConfigMsg, SystemConfig>(storeRef, (replyTo) => ({ type: 'get', replyTo }))
 
       if (current.parallel) {

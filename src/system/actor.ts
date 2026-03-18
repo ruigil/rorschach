@@ -460,12 +460,16 @@ export const createActor = <M, S>(
   // ─── Stash size — shared between the processing loop and metrics gauge ───
   let currentStashSize = 0
 
+  // ─── Current state — shared between the processing loop and metrics gauge ───
+  let currentStateSnapshot: unknown = initialState
+
   // ─── Actor Metrics ───
   const metrics = createActorMetrics(name, {
     mailboxSize: () => mailbox.size(),
     stashSize: () => currentStashSize,
     childCount: () => children.size,
     children: () => Array.from(children.keys()),
+    getState: () => currentStateSnapshot,
   })
 
   // ─── Stash capacity ───
@@ -500,12 +504,14 @@ export const createActor = <M, S>(
         const loaded = await def.persistence.load()
         if (loaded !== undefined) state = loaded
       }
+      currentStateSnapshot = state
       // Register before delivering 'start' so the actor is visible during its own startup.
       services.registry.register(name, ref as ActorRef<unknown>)
       services.metricsRegistry.register(name, metrics)
       if (def.lifecycle) {
         const result = await def.lifecycle(state, { type: 'start' }, context)
         state = result.state
+        currentStateSnapshot = state
       }
       log.info('started')
     } catch (startupError: unknown) {
@@ -533,6 +539,7 @@ export const createActor = <M, S>(
           metrics.recordMessageProcessed(performance.now() - startTime)
           policy.onSuccess()
           state = result.state
+          currentStateSnapshot = state
 
           // ─── Behavior switching (re-wrap with interceptors) ───
           if (result.become) {
@@ -587,6 +594,7 @@ export const createActor = <M, S>(
           if (def.lifecycle) {
             const result = await def.lifecycle(state, envelope.event, context)
             state = result.state
+            currentStateSnapshot = state
           }
         }
       } catch (error: unknown) {
@@ -616,9 +624,11 @@ export const createActor = <M, S>(
               const loaded = await def.persistence.load()
               if (loaded !== undefined) state = loaded
             }
+            currentStateSnapshot = state
             if (def.lifecycle) {
               const result = await def.lifecycle(state, { type: 'start' }, context)
               state = result.state
+              currentStateSnapshot = state
             }
           } catch (restartError: unknown) {
             log.error('failed — start lifecycle threw during restart', { error: restartError })

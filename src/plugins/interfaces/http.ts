@@ -1,13 +1,11 @@
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import type { Server, ServerWebSocket } from 'bun'
 import { createTopic, emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 
 // ─── Public directory (resolved relative to this module) ───
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const PUBLIC_DIR = join(__dirname+"/../..", 'public')
+const PUBLIC_DIR = join(import.meta.dir, '../..', 'public')
 
 // ─── Message protocol ───
 
@@ -17,6 +15,7 @@ export type HttpMessage =
   | { type: 'closed'; clientId: string }
   | { type: 'broadcast'; text: string }
   | { type: 'send'; clientId: string; text: string }
+  | { type: 'config-post'; data: unknown }
 
 // ─── Actor state ───
 
@@ -42,6 +41,20 @@ export type WsSendEvent = { clientId: string; text: string }
 
 /** Topic for sending a message to a specific WebSocket client. Emit to push text to the browser. */
 export const WsSendTopic = createTopic<WsSendEvent>('http.ws.send')
+
+// ─── Domain event: emit to broadcast a message to all connected WebSocket clients ───
+
+export type WsBroadcastEvent = { text: string }
+
+/** Topic for broadcasting a message to all WebSocket clients. Emit to push text to every open connection. */
+export const WsBroadcastTopic = createTopic<WsBroadcastEvent>('http.ws.broadcast')
+
+// ─── Domain event: emitted when a POST /config request is received ───
+
+export type HttpConfigPayload = Record<string, unknown>
+
+/** Topic emitted when the browser POSTs new config. Subscribe in your app to apply config changes. */
+export const HttpConfigTopic = createTopic<HttpConfigPayload>('http.config.post')
 
 // ─── Options ───
 
@@ -120,6 +133,14 @@ export const createHttpActor = (
         state.server?.publish(`client:${message.clientId}`, message.text)
         return { state }
       },
+
+      'config-post': (state, message, context) => {
+        context.log.debug('config update received via POST /config')
+        return {
+          state,
+          events: [emit(HttpConfigTopic, message.data as HttpConfigPayload)],
+        }
+      },
     }),
 
     lifecycle: onLifecycle({
@@ -132,12 +153,28 @@ export const createHttpActor = (
           text: e.text,
         }))
 
+        context.subscribe(WsBroadcastTopic, (e) => ({
+          type: 'broadcast' as const,
+          text: e.text,
+        }))
+
         const server = Bun.serve<WsData>({
           port,
 
           // ─── HTTP handler: static file serving ───
           async fetch(req, server) {
             const url = new URL(req.url)
+
+            // Config API
+            if (req.method === 'POST' && url.pathname === '/config') {
+              try {
+                const data = await req.json()
+                selfRef?.send({ type: 'config-post', data })
+                return new Response(null, { status: 204 })
+              } catch {
+                return new Response('Invalid JSON', { status: 400 })
+              }
+            }
 
             // WebSocket upgrade
             if (url.pathname === '/ws') {

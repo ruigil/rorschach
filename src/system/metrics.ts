@@ -17,6 +17,7 @@ export const createActorMetrics = (
     readonly stashSize: () => number
     readonly childCount: () => number
     readonly children: () => string[]
+    readonly getState: () => unknown
   },
 ): ActorMetrics => {
   let status: ActorStatus = 'running'
@@ -79,6 +80,7 @@ export const createActorMetrics = (
       lastMessageTimestamp,
       processingTime,
       children: gauges.children(),
+      state: gauges.getState(),
     }
   }
 

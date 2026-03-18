@@ -34,12 +34,12 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
 type ApiMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 
-async function streamLLM(
+const streamLLM = async (
   apiKey: string,
   model: string,
   messages: ApiMessage[],
   onChunk: (text: string) => void,
-): Promise<void> {
+): Promise<void> => {
   const res = await fetch(OPENROUTER_URL, {
     method: 'POST',
     headers: {

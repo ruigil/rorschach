@@ -38,7 +38,7 @@ export type PluginSystemOptions = {
 //
 // The system IS the plugin manager — plugin state lives in this closure
 // alongside the actor infrastructure. Plugin root actors are spawned as
-// direct children of the root actor at `system/$plugin-<id>`.
+// direct children of the root actor at `system/<id>`.
 //
 // Returns a Promise because initial plugins (from options.plugins) must be
 // fully activated before the system is usable.
@@ -116,7 +116,7 @@ export const createPluginSystem = async (
           return orig?.(state, event, actorCtx) ?? { state }
         },
       }
-      ctx.spawn(`$plugin-${def.id}`, wrappedDef, def.initialState)
+      ctx.spawn(`${def.id}`, wrappedDef, def.initialState)
     })
   }
 
@@ -132,7 +132,7 @@ export const createPluginSystem = async (
     }
 
     return new Promise<UnloadResult>((resolve) => {
-      const rootName = `system/$plugin-${id}`
+      const rootName = `system/${id}`
       const watcherName = `$unload-${id}`
       services.eventStream.subscribe(watcherName, SystemLifecycleTopic, (event) => {
         if (event.type === 'terminated' && event.ref.name === rootName) {

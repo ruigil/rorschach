@@ -442,6 +442,7 @@ export type ActorSnapshot = {
   readonly lastMessageTimestamp: number | null
   readonly processingTime: ProcessingTime
   readonly children: string[]
+  readonly state?: unknown
 }
 
 /** Hierarchical tree node for actor tree introspection. */
