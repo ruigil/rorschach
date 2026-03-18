@@ -2,13 +2,15 @@
 
 An actor is a self-contained unit that processes messages one at a time, maintains private state, and communicates with the outside world exclusively through messages.
 
+In this system, actors live inside **plugins**. A `PluginDef<M, S>` is an `ActorDef<M, S>` with plugin metadata attached — it is both the actor and the deployment unit. See [Plugins](#plugins) for details.
+
 ## The Three Parts
 
 To create an actor you define three things:
 
 1. **Message type** — a union of all messages the actor can receive.
 2. **State type** — the shape of the actor's private state.
-3. **Actor definition** (`ActorDef<M, S>`) — the behavior: how to initialize, handle messages, and react to lifecycle events.
+3. **Actor definition** (`ActorDef<M, S>`) — the behavior: how to handle messages and react to lifecycle events.
 
 ## Minimal Example
 
@@ -365,3 +367,136 @@ const def: ActorDef<Msg, State> = {
 ```
 
 The `start` event fires on initial startup and again on every supervision restart, so resources are always re-acquired cleanly.
+
+## Plugins
+
+Actors are deployed as plugins. A `PluginDef<M, S>` is an `ActorDef<M, S>` plus plugin metadata:
+
+| Field | Required | Description |
+|---|---|---|
+| `id` | **yes** | Unique plugin identifier. |
+| `version` | **yes** | Semantic version string. |
+| `initialState` | **yes** | The state value passed to `spawn` when the plugin actor is started. |
+| `dependencies` | no | IDs of plugins that must be active before this one loads. |
+| `description` | no | Human-readable description. |
+
+The plugin root **is** the actor. All `ActorDef` fields (`handler`, `lifecycle`, `supervision`, `mailbox`, etc.) apply directly. Activation runs through `lifecycle.start`; deactivation through `lifecycle.stopped`.
+
+### Minimal Plugin
+
+```ts
+import { createPluginSystem } from '../system/index.ts'
+import type { PluginDef } from '../system/index.ts'
+
+type PingMsg = { type: 'ping' }
+
+const pingPlugin: PluginDef<PingMsg, null> = {
+  id: 'ping',
+  version: '1.0.0',
+  initialState: null,
+  handler: (state, msg, ctx) => {
+    ctx.log.info('ping received')
+    return { state }
+  },
+}
+
+const system = await createPluginSystem({ plugins: [pingPlugin] })
+```
+
+### Plugin with Child Actors
+
+The typical pattern is for the plugin root to spawn child actors in `lifecycle.start` and stop them in `lifecycle.stopped`. The plugin's `handler` can reconfigure children at runtime.
+
+```ts
+import { onLifecycle, createPluginSystem } from '../system/index.ts'
+import type { ActorDef, PluginDef, ActorContext } from '../system/index.ts'
+
+type WorkerMsg = { type: 'process'; payload: string }
+type PluginMsg = { type: 'config'; workerCount: number }
+
+const spawnWorkers = (count: number, ctx: ActorContext<PluginMsg>) => {
+  const workerDef: ActorDef<WorkerMsg, null> = {
+    handler: (state, msg, ctx) => {
+      ctx.log.info(`processing: ${msg.payload}`)
+      return { state }
+    },
+  }
+  for (let i = 0; i < count; i++) {
+    ctx.spawn(`worker-${i}`, workerDef, null)
+  }
+}
+
+const myPlugin: PluginDef<PluginMsg, null> = {
+  id: 'my-plugin',
+  version: '1.0.0',
+  initialState: null,
+
+  lifecycle: onLifecycle({
+    start(state, ctx) {
+      spawnWorkers(3, ctx)
+      ctx.log.info('plugin activated')
+      return { state }
+    },
+    stopped(state, ctx) {
+      ctx.log.info('plugin deactivating')
+      return { state }
+    },
+  }),
+
+  handler: (state, msg, ctx) => {
+    // reconfigure at runtime
+    return { state }
+  },
+}
+```
+
+### Plugin System API
+
+```ts
+const system = await createPluginSystem({ plugins: [/* startup plugins */] })
+
+// Load a plugin at runtime
+await system.use(myPlugin)
+
+// Unload
+await system.unloadPlugin('my-plugin')
+
+// Restart the plugin actor (same def)
+await system.reloadPlugin('my-plugin')
+
+// Hot-reload from disk (re-imports the module, picks up code changes)
+await system.hotReloadPlugin('my-plugin', './path/to/my-plugin.ts')
+
+// Inspect
+system.listPlugins()           // LoadedPlugin[]
+system.getPluginStatus('id')   // LoadedPlugin | undefined
+```
+
+### `onLifecycle` Helper
+
+`onLifecycle` reduces the boilerplate of a full lifecycle handler by letting you declare only the events you care about:
+
+```ts
+import { onLifecycle } from '../system/index.ts'
+
+lifecycle: onLifecycle({
+  start(state, ctx) {
+    // runs on actor start / supervision restart
+    return { state }
+  },
+  stopping(state, ctx) {
+    // runs when graceful drain begins (if shutdown.drain is true)
+    return { state }
+  },
+  stopped(state, ctx) {
+    // runs on actor stop
+    return { state }
+  },
+  terminated(state, ctx, event) {
+    // runs when a watched actor dies; event.ref, event.reason, event.error
+    return { state }
+  },
+})
+```
+
+Unhandled event types fall through to a default `return { state }`. The helper is valid for both plain `ActorDef` actors and `PluginDef` plugins.
