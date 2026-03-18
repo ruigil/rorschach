@@ -3,467 +3,227 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Rorschach Chat</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg:         #0a0a0f;
-      --surface:    #111118;
-      --border:     #1e1e2e;
-      --muted:      #3b3b52;
-      --text:       #e2e2f0;
-      --text-dim:   #7070a0;
-      --user-bg:    #1e1e6e;
-      --user-text:  #c5c5ff;
-      --bot-bg:     #131320;
-      --bot-text:   #e2e2f0;
-      --accent:     #7c7cff;
-      --accent-dim: #3a3a8a;
-      --error:      #ff6b6b;
-      --radius:     14px;
-    }
-
-    html, body {
-      height: 100%;
-    }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-      overflow: hidden;
-    }
-
-    /* ─── Header ─── */
-    header {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 1rem 1.5rem;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-      flex-shrink: 0;
-    }
-
-    .header-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--muted);
-      transition: background 0.3s;
-    }
-
-    .header-dot.connected { background: #4caf82; }
-    .header-dot.disconnected { background: var(--error); }
-
-    header h1 {
-      font-size: 0.9rem;
-      font-weight: 500;
-      color: var(--text-dim);
-      letter-spacing: 0.05em;
-    }
-
-    header h1 strong {
-      color: var(--text);
-      font-weight: 600;
-    }
-
-    #status-label {
-      margin-left: auto;
-      font-size: 0.75rem;
-      color: var(--text-dim);
-    }
-
-    /* ─── Messages ─── */
-    #messages {
-      flex: 1;
-      overflow-y: auto;
-      padding: 1.5rem 1rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      scroll-behavior: smooth;
-    }
-
-    #messages::-webkit-scrollbar { width: 4px; }
-    #messages::-webkit-scrollbar-track { background: transparent; }
-    #messages::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
-
-    .message {
-      display: flex;
-      flex-direction: column;
-      max-width: 72%;
-      gap: 0.25rem;
-      animation: fadeUp 0.18s ease-out;
-    }
-
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(6px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
-    .message.user {
-      align-self: flex-end;
-      align-items: flex-end;
-    }
-
-    .message.assistant {
-      align-self: flex-start;
-      align-items: flex-start;
-    }
-
-    .message.error {
-      align-self: flex-start;
-      align-items: flex-start;
-    }
-
-    .message-label {
-      font-size: 0.7rem;
-      color: var(--text-dim);
-      padding: 0 0.4rem;
-      letter-spacing: 0.04em;
-    }
-
-    .bubble {
-      padding: 0.65rem 1rem;
-      border-radius: var(--radius);
-      line-height: 1.6;
-      font-size: 0.92rem;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-
-    .message.user .bubble {
-      background: var(--user-bg);
-      color: var(--user-text);
-      border-bottom-right-radius: 4px;
-      border: 1px solid var(--accent-dim);
-    }
-
-    .message.assistant .bubble {
-      background: var(--bot-bg);
-      color: var(--bot-text);
-      border-bottom-left-radius: 4px;
-      border: 1px solid var(--border);
-    }
-
-    .message.error .bubble {
-      background: #1a0a0a;
-      color: var(--error);
-      border: 1px solid #4a1a1a;
-      border-bottom-left-radius: 4px;
-      font-size: 0.85rem;
-    }
-
-    /* ─── Thinking indicator ─── */
-    .thinking .bubble {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 0.75rem 1rem;
-    }
-
-    .dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--text-dim);
-      animation: pulse 1.2s ease-in-out infinite;
-    }
-
-    .dot:nth-child(2) { animation-delay: 0.2s; }
-    .dot:nth-child(3) { animation-delay: 0.4s; }
-
-    @keyframes pulse {
-      0%, 60%, 100% { opacity: 0.3; transform: scale(0.85); }
-      30%            { opacity: 1;   transform: scale(1); }
-    }
-
-    /* ─── Input area ─── */
-    .input-area {
-      padding: 1rem 1.5rem 1.25rem;
-      border-top: 1px solid var(--border);
-      background: var(--surface);
-      flex-shrink: 0;
-    }
-
-    form {
-      display: flex;
-      gap: 0.6rem;
-      align-items: flex-end;
-    }
-
-    textarea {
-      flex: 1;
-      padding: 0.7rem 1rem;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      color: var(--text);
-      font-family: inherit;
-      font-size: 0.92rem;
-      line-height: 1.5;
-      resize: none;
-      outline: none;
-      min-height: 44px;
-      max-height: 140px;
-      overflow-y: auto;
-      transition: border-color 0.15s;
-    }
-
-    textarea:focus { border-color: var(--accent-dim); }
-    textarea::placeholder { color: var(--muted); }
-    textarea:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    button[type="submit"] {
-      width: 44px;
-      height: 44px;
-      flex-shrink: 0;
-      background: var(--accent);
-      border: none;
-      border-radius: 10px;
-      color: #fff;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.15s, opacity 0.15s;
-    }
-
-    button[type="submit"]:hover:not(:disabled) { background: #9898ff; }
-    button[type="submit"]:disabled { background: var(--accent-dim); opacity: 0.5; cursor: not-allowed; }
-
-    button[type="submit"] svg { pointer-events: none; }
-
-    .input-hint {
-      font-size: 0.7rem;
-      color: var(--muted);
-      margin-top: 0.4rem;
-      padding: 0 0.2rem;
-    }
-
-    /* ─── Empty state ─── */
-    .empty-state {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      color: var(--text-dim);
-      pointer-events: none;
-      user-select: none;
-    }
-
-    .empty-state svg { opacity: 0.2; }
-    .empty-state p { font-size: 0.85rem; opacity: 0.6; }
-  </style>
+  <title>Rorschach</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
   <header>
-    <div class="header-dot disconnected" id="dot"></div>
-    <h1><strong>rorschach</strong> chat</h1>
-    <span id="status-label">connecting…</span>
+    <div class="logo">
+      <svg class="logo-mark" viewBox="0 0 24 24" fill="none">
+        <path d="M12 2.5 C10.5 4.5 8.5 5.5 6.5 7 C4.8 8.2 4 9.8 4 12 C4 14.2 5 15.8 6.8 17 C8.6 18.2 10.5 19.2 12 21.5 C13.5 19.2 15.4 18.2 17.2 17 C19 15.8 20 14.2 20 12 C20 9.8 19.2 8.2 17.5 7 C15.5 5.5 13.5 4.5 12 2.5Z" fill="currentColor" opacity="0.18"/>
+        <path d="M12 6.5 C11 7.8 9.5 8.8 8.2 9.8 C7 10.8 6.5 11.3 6.5 12 C6.5 12.7 7 13.2 8.2 14.2 C9.5 15.2 11 16.2 12 17.5 C13 16.2 14.5 15.2 15.8 14.2 C17 13.2 17.5 12.7 17.5 12 C17.5 11.3 17 10.8 15.8 9.8 C14.5 8.8 13 7.8 12 6.5Z" fill="currentColor" opacity="0.55"/>
+        <circle cx="12" cy="12" r="1.6" fill="currentColor" opacity="0.9"/>
+      </svg>
+      <span class="logo-name">RORSCHACH</span>
+      <div class="logo-divider"></div>
+      <span class="logo-sub" id="logo-sub">chat</span>
+    </div>
+    <nav class="header-nav">
+      <button class="nav-link active" data-tab="chat">chat</button>
+      <button class="nav-link" data-tab="config">config</button>
+      <button class="nav-link" data-tab="observe">observe</button>
+    </nav>
+    <div class="status-pill">
+      <div class="header-dot disconnected" id="dot"></div>
+      <span id="status-label">connecting…</span>
+    </div>
   </header>
 
-  <div id="messages">
-    <div class="empty-state" id="empty">
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-      </svg>
-      <p>Send a message to start the conversation</p>
+  <!-- ─── Chat panel ─── -->
+  <div id="panel-chat" class="panel active">
+    <div id="messages">
+      <div class="empty-state" id="empty">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        <span class="empty-title">Begin Transmission</span>
+        <span class="empty-sub">awaiting your message</span>
+      </div>
+    </div>
+    <div class="input-area">
+      <form id="chat-form">
+        <textarea
+          id="input"
+          placeholder="Message…"
+          autocomplete="off"
+          rows="1"
+          disabled
+        ></textarea>
+        <button type="submit" id="send" disabled aria-label="Send">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </button>
+      </form>
+      <p class="input-hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</p>
     </div>
   </div>
 
-  <div class="input-area">
-    <form id="form">
-      <textarea
-        id="input"
-        placeholder="Message…"
-        autocomplete="off"
-        rows="1"
-        disabled
-      ></textarea>
-      <button type="submit" id="send" disabled aria-label="Send">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-        </svg>
-      </button>
-    </form>
-    <p class="input-hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</p>
+  <!-- ─── Config panel ─── -->
+  <div id="panel-config" class="panel">
+    <div class="config-inner">
+
+      <div class="page-header">
+        <span class="page-title">Configuration</span>
+        <span class="page-sub">system settings · changes applied on save</span>
+      </div>
+
+      <form id="config-form" novalidate>
+
+        <div class="config-section">
+          <span class="section-label">Observability · Logging</span>
+
+          <div class="field">
+            <label class="field-label" for="log-path">Log file path</label>
+            <input type="text" id="log-path" name="logPath" placeholder="logs/app.jsonl" value="logs/app.jsonl">
+            <span class="field-hint">JSONL output file, relative to project root</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="log-level">Minimum log level</label>
+            <select id="log-level" name="minLevel">
+              <option value="debug">debug</option>
+              <option value="info">info</option>
+              <option value="warn">warn</option>
+              <option value="error">error</option>
+            </select>
+            <span class="field-hint">Events below this level are suppressed</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="flush-interval">Flush interval (ms)</label>
+            <input type="number" id="flush-interval" name="flushIntervalMs" placeholder="3000" value="3000" min="100" step="100">
+            <span class="field-hint">How often buffered log entries are written to disk</span>
+          </div>
+        </div>
+
+        <div class="config-section">
+          <span class="section-label">Observability · Metrics</span>
+
+          <div class="field">
+            <label class="field-label" for="metrics-interval">Metrics interval (ms)</label>
+            <input type="number" id="metrics-interval" name="metricsIntervalMs" placeholder="5000" value="5000" min="500" step="500">
+            <span class="field-hint">How often actor metrics snapshots are emitted</span>
+          </div>
+
+          <div class="field">
+            <div class="field-row">
+              <div>
+                <div class="field-label">Enable metrics collection</div>
+                <div class="field-hint">Collect per-actor processing time and message counts</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" name="metricsEnabled" checked>
+                <span class="toggle-track"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="config-section">
+          <span class="section-label">Chat</span>
+
+          <div class="field">
+            <label class="field-label" for="chat-model">Model</label>
+            <select id="chat-model" name="model">
+              <option value="openai/gpt-4o-mini">openai/gpt-4o-mini</option>
+              <option value="openai/gpt-4o">openai/gpt-4o</option>
+              <option value="anthropic/claude-sonnet-4-5">anthropic/claude-sonnet-4-5</option>
+              <option value="anthropic/claude-haiku-4-5">anthropic/claude-haiku-4-5</option>
+            </select>
+          </div>
+
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-save">Save</button>
+          <button type="button" class="btn-reset" id="reset-btn">Reset</button>
+          <span class="save-status" id="save-status">saved ✓</span>
+          <span class="save-error" id="save-error"></span>
+        </div>
+
+      </form>
+    </div>
   </div>
 
-  <script>
-    const messagesEl = document.getElementById('messages')
-    const emptyEl    = document.getElementById('empty')
-    const form       = document.getElementById('form')
-    const input      = document.getElementById('input')
-    const sendBtn    = document.getElementById('send')
-    const dot        = document.getElementById('dot')
-    const statusLabel= document.getElementById('status-label')
+  <!-- ─── Observe panel ─── -->
+  <div id="panel-observe" class="panel">
 
-    let thinkingEl   = null
-    let streamBubble = null  // the bubble element currently receiving chunks
-    let isWaiting    = false
+    <div class="obs-bar">
+      <div class="obs-subtabs">
+        <button class="obs-subtab active" data-subtab="metrics">metrics</button>
+        <button class="obs-subtab" data-subtab="logs">logs</button>
+      </div>
+      <div class="obs-bar-end">
+        <div class="metrics-summary" id="metrics-summary" style="display:none">
+          <div class="summary-stat">
+            <span class="summary-val" id="sum-actors">0</span>
+            <span class="summary-key">actors</span>
+          </div>
+          <div class="summary-stat">
+            <span class="summary-val" id="sum-recv">0</span>
+            <span class="summary-key">recv</span>
+          </div>
+          <div class="summary-stat">
+            <span class="summary-val" id="sum-done">0</span>
+            <span class="summary-key">done</span>
+          </div>
+          <div class="summary-stat">
+            <span class="summary-val" id="sum-fail">0</span>
+            <span class="summary-key">fail</span>
+          </div>
+        </div>
+        <div class="obs-log-controls" id="obs-log-controls" style="display:none">
+          <span class="log-count" id="log-count">0 events</span>
+          <button class="btn-clear" id="clear-logs">clear</button>
+        </div>
+      </div>
+    </div>
 
-    // ─── Auto-resize textarea ───
-    input.addEventListener('input', () => {
-      input.style.height = 'auto'
-      input.style.height = Math.min(input.scrollHeight, 140) + 'px'
-    })
+    <div id="obs-metrics" class="obs-subpanel active">
+      <div class="metrics-layout">
+        <div class="tree-col">
+          <div id="actor-tree">
+            <div class="empty-panel" id="metrics-empty">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+              </svg>
+              <span>awaiting metrics snapshot</span>
+            </div>
+          </div>
+        </div>
+        <div class="detail-col">
+          <div id="actor-detail">
+            <div class="empty-panel">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
+              </svg>
+              <span>select an actor to inspect</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-    // ─── Helpers ───
+    <div id="obs-logs" class="obs-subpanel">
+      <div id="log-stream">
+        <div class="empty-panel" id="log-empty">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+            <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+          </svg>
+          <span>awaiting log events</span>
+        </div>
+      </div>
+    </div>
 
-    function setConnected(connected) {
-      dot.className = 'header-dot ' + (connected ? 'connected' : 'disconnected')
-      statusLabel.textContent = connected ? 'connected' : 'disconnected — reconnecting…'
-      input.disabled = !connected || isWaiting
-      sendBtn.disabled = !connected || isWaiting
-    }
+  </div>
 
-    function scrollToBottom() {
-      messagesEl.scrollTop = messagesEl.scrollHeight
-    }
-
-    function appendMessage(role, text) {
-      if (emptyEl) emptyEl.remove()
-
-      const wrap = document.createElement('div')
-      wrap.className = `message ${role}`
-
-      const label = document.createElement('div')
-      label.className = 'message-label'
-      label.textContent = role === 'user' ? 'You' : role === 'assistant' ? 'Assistant' : 'Error'
-
-      const bubble = document.createElement('div')
-      bubble.className = 'bubble'
-      bubble.textContent = text
-
-      wrap.appendChild(label)
-      wrap.appendChild(bubble)
-      messagesEl.appendChild(wrap)
-      scrollToBottom()
-      return wrap
-    }
-
-    function showThinking() {
-      if (emptyEl) emptyEl.remove()
-
-      const wrap = document.createElement('div')
-      wrap.className = 'message assistant thinking'
-
-      const label = document.createElement('div')
-      label.className = 'message-label'
-      label.textContent = 'Assistant'
-
-      const bubble = document.createElement('div')
-      bubble.className = 'bubble'
-      bubble.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>'
-
-      wrap.appendChild(label)
-      wrap.appendChild(bubble)
-      messagesEl.appendChild(wrap)
-      scrollToBottom()
-      thinkingEl = wrap
-    }
-
-    function removeThinking() {
-      if (thinkingEl) {
-        thinkingEl.remove()
-        thinkingEl = null
-      }
-    }
-
-    function setWaiting(waiting) {
-      isWaiting = waiting
-      input.disabled = waiting
-      sendBtn.disabled = waiting
-      if (!waiting) input.focus()
-    }
-
-    // ─── WebSocket ───
-
-    function connect() {
-      const wsUrl = new URL('ws', location.href)
-      wsUrl.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const ws = new WebSocket(wsUrl.href)
-
-      ws.addEventListener('open', () => {
-        setConnected(true)
-        input.focus()
-      })
-
-      ws.addEventListener('message', (e) => {
-        let parsed
-        try { parsed = JSON.parse(e.data) } catch { parsed = { type: 'assistant', text: e.data } }
-
-        if (parsed.type === 'chunk') {
-          // First chunk: swap thinking dots for a real bubble
-          if (!streamBubble) {
-            removeThinking()
-            const wrap = document.createElement('div')
-            wrap.className = 'message assistant'
-            const label = document.createElement('div')
-            label.className = 'message-label'
-            label.textContent = 'Assistant'
-            const bubble = document.createElement('div')
-            bubble.className = 'bubble'
-            wrap.appendChild(label)
-            wrap.appendChild(bubble)
-            messagesEl.appendChild(wrap)
-            streamBubble = bubble
-          }
-          streamBubble.textContent += parsed.text
-          scrollToBottom()
-        } else if (parsed.type === 'done') {
-          streamBubble = null
-          setWaiting(false)
-        } else if (parsed.type === 'error') {
-          removeThinking()
-          streamBubble = null
-          appendMessage('error', parsed.text)
-          setWaiting(false)
-        }
-      })
-
-      ws.addEventListener('close', () => {
-        setConnected(false)
-        removeThinking()
-        streamBubble = null
-        setWaiting(false)
-        setTimeout(connect, 2000)
-      })
-
-      ws.addEventListener('error', () => ws.close())
-
-      form.addEventListener('submit', (e) => {
-        e.preventDefault()
-        const text = input.value.trim()
-        if (!text || ws.readyState !== WebSocket.OPEN || isWaiting) return
-
-        appendMessage('user', text)
-        ws.send(text)
-        input.value = ''
-        input.style.height = 'auto'
-        setWaiting(true)
-        showThinking()
-      })
-    }
-
-    // ─── Enter key handling ───
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault()
-        form.dispatchEvent(new Event('submit'))
-      }
-    })
-
-    connect()
-  </script>
+  <script src="app.js"></script>
 </body>
 </html>
