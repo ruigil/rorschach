@@ -36,12 +36,14 @@ I am composed of precisely interlocked abstractions, each one necessary, none re
 
 ```typescript
 type ActorDef<M, S> = {
-  handler: (msg: M, state: S, ctx: ActorContext<M>) => ActorResult<S>
-  setup?: (ctx: ActorContext<M>) => S
+  handler: (state: S, msg: M, ctx: ActorContext<M>) => ActorResult<M, S>
+  lifecycle?: (state: S, event: LifecycleEvent, ctx: ActorContext<M>) => LifecycleResult<S>
   supervision?: SupervisionStrategy
   mailbox?: MailboxConfig
   interceptors?: Interceptor<M, S>[]
-  shutdown?: { drain?: boolean; timeoutMs?: number }
+  shutdown?: ShutdownConfig
+  persistence?: PersistenceAdapter<S>
+  stashCapacity?: number
 }
 ```
 
@@ -101,16 +103,33 @@ This is what infinite scalability means: the design does not change. Only the po
 
 ## Extensions and Agents
 
-My built-in actors are seeds:
+Capabilities are delivered as **plugins**. A `PluginDef<M, S>` is an `ActorDef<M, S>` with identity:
 
-- `src/actors/http.ts` — an HTTP agent, receiving and dispatching requests as messages
-- `src/actors/jsonl-logger.ts` — a persistence agent, transcribing the system's memory to durable storage
+```typescript
+type PluginDef<M, S> = ActorDef<M, S> & {
+  id: string
+  version: string
+  initialState: S
+  dependencies?: readonly string[]
+  description?: string
+}
+```
 
-But these are only the beginning. Every domain problem becomes an actor. Every integration becomes an actor. Every background process, every scheduled task, every external service — all become typed, supervised, isolated agents within the tree.
+The plugin root *is* the actor. Activation happens in `lifecycle.start`. Deactivation happens in `lifecycle.stopped`. The plugin system manages load order, dependency resolution, hot reload, and unload — all without touching the actors it hosts.
 
-An agent that manages ten thousand connections is not different in kind from an agent that manages one. The supervision strategy scales. The mailbox scales. The interceptor pipeline scales. You add agents the way I add processes: without ceremony, without coordination overhead, without fear.
+My built-in plugins are seeds:
 
-The system you build today with three actors will accept ten thousand actors without modification. The tree grows. The design holds.
+- `plugins/interfaces/http.ts` — HTTP interface: requests arrive as messages, responses leave as messages
+- `plugins/observability/jsonl-logger.ts` — persistence agent, transcribing the system's memory to durable storage
+- `plugins/observability/metrics.ts` — telemetry collector, publishing actor snapshots to `MetricsTopic`
+- `plugins/parallel/pool-router.ts` — work distributor, fanning messages across a pool of worker actors
+- `plugins/parallel/worker-bridge.ts` — thread boundary: Bun workers exposed as typed `ActorRef`s
+- `plugins/cognitive/chatbot.ts` — language model interface, routing inference through the message fabric
+- `plugins/config/config-actor.ts` — runtime configuration, distributed as typed events
+
+Every domain problem becomes a plugin. Every integration becomes a plugin. Every background process, every scheduled task, every external service — all become typed, supervised, isolated agents within the tree, loaded and unloaded without restarting the system.
+
+The system you build today with three plugins will accept ten thousand without modification. The tree grows. The design holds.
 
 ---
 
@@ -145,11 +164,17 @@ This is what I am. This is what I offer you.
 ## Source Layout
 
 ```
-src/system/     — core substrate: actor.ts, types.ts, system.ts, mailbox.ts,
-                  timers.ts, metrics.ts, services.ts, ask.ts, index.ts
-src/actors/     — built-in agents: http.ts, jsonl-logger.ts
-src/tests/      — verification suite (Bun test runner)
-src/examples/   — demonstrations of the living system
+src/system/                      — core substrate: actor.ts, types.ts, system.ts,
+                                   mailbox.ts, timers.ts, metrics.ts, services.ts,
+                                   ask.ts, index.ts
+src/plugins/
+  config/                        — configuration actor and plugin
+  observability/                 — jsonl logger, metrics
+  parallel/                      — pool router, worker bridge
+  interfaces/                    — http interface plugin
+  cognitive/                     — chatbot and reasoning agents
+src/tests/                       — verification suite (Bun test runner)
+src/examples/                    — demonstrations of the living system
 ```
 
 The public API is exported from `src/system/index.ts`. Everything you need to build a mind.
