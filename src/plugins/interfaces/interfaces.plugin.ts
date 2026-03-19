@@ -40,15 +40,13 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
   }),
 
   handler: (state, msg, ctx) => {
+    if (state.httpRef) ctx.stop(state.httpRef)
     const newHttp = msg.slice?.http ?? null
-    if (newHttp && JSON.stringify(newHttp) !== JSON.stringify(state.httpConfig)) {
-      if (state.httpRef) ctx.stop(state.httpRef)
-      const httpGen = state.httpGen + 1
-      const httpRef = ctx.spawn(`http-${httpGen}`, createHttpActor(newHttp), { server: null, connections: 0 } as HttpState)
-      return { state: { ...state, httpConfig: newHttp, httpRef, httpGen } }
-    }
-
-    return { state }
+    const httpGen = state.httpGen + 1
+    const httpRef = newHttp
+      ? ctx.spawn(`http-${httpGen}`, createHttpActor(newHttp), { server: null, connections: 0 } as HttpState)
+      : null
+    return { state: { ...state, httpConfig: newHttp, httpRef, httpGen } }
   },
 }
 

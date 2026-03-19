@@ -40,15 +40,13 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   }),
 
   handler: (state, msg, ctx) => {
+    if (state.chatbotRef) ctx.stop(state.chatbotRef)
     const newChatbot = msg.slice?.chatbot ?? null
-    if (newChatbot && JSON.stringify(newChatbot) !== JSON.stringify(state.chatbotConfig)) {
-      if (state.chatbotRef) ctx.stop(state.chatbotRef)
-      const chatbotGen = state.chatbotGen + 1
-      const chatbotRef = ctx.spawn(`chatbot-${chatbotGen}`, createChatbotActor(newChatbot), { history: {}, pending: {} })
-      return { state: { ...state, chatbotConfig: newChatbot, chatbotRef, chatbotGen } }
-    }
-
-    return { state }
+    const chatbotGen = state.chatbotGen + 1
+    const chatbotRef = newChatbot
+      ? ctx.spawn(`chatbot-${chatbotGen}`, createChatbotActor(newChatbot), { history: {}, pending: {} })
+      : null
+    return { state: { ...state, chatbotConfig: newChatbot, chatbotRef, chatbotGen } }
   },
 }
 

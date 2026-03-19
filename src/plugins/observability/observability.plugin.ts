@@ -56,25 +56,21 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig
 
   handler: onMessage({
     config: (state, msg, ctx) => {
-      let { loggerConfig, loggerRef, loggerGen, metricsConfig, metricsRef, metricsGen } = state
+      let { loggerRef, loggerGen, metricsRef, metricsGen } = state
 
       const newLogger = msg.slice?.jsonlLogger ?? null
-      if (newLogger && JSON.stringify(newLogger) !== JSON.stringify(loggerConfig)) {
-        if (loggerRef) ctx.stop(loggerRef)
-        loggerGen++
-        loggerRef = ctx.spawn(`jsonl-logger-${loggerGen}`, createJsonlLoggerActor(newLogger), { filePath: newLogger.filePath, written: 0, buffer: [] })
-        loggerConfig = newLogger
-      }
+      if (loggerRef) ctx.stop(loggerRef)
+      loggerRef = newLogger
+        ? ctx.spawn(`jsonl-logger-${++loggerGen}`, createJsonlLoggerActor(newLogger), { filePath: newLogger.filePath, written: 0, buffer: [] })
+        : null
 
       const newMetrics = msg.slice?.metrics ?? null
-      if (newMetrics && JSON.stringify(newMetrics) !== JSON.stringify(metricsConfig)) {
-        if (metricsRef) ctx.stop(metricsRef)
-        metricsGen++
-        metricsRef = ctx.spawn(`metrics-${metricsGen}`, createMetricsActor(newMetrics), null)
-        metricsConfig = newMetrics
-      }
+      if (metricsRef) ctx.stop(metricsRef)
+      metricsRef = newMetrics
+        ? ctx.spawn(`metrics-${++metricsGen}`, createMetricsActor(newMetrics), null)
+        : null
 
-      return { state: { ...state, loggerConfig, loggerRef, loggerGen, metricsConfig, metricsRef, metricsGen } }
+      return { state: { ...state, loggerConfig: newLogger, loggerRef, loggerGen, metricsConfig: newMetrics, metricsRef, metricsGen } }
     }
   })
 }
