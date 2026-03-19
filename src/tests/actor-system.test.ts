@@ -18,7 +18,7 @@ describe('Actor: lifecycle events', () => {
   test('system receives terminated event when actor stops', async () => {
     const events: LifecycleEvent[] = []
     const system = await createPluginSystem()
-    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
+    system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     system.spawn('stopper', {
       handler: (state: null) => ({ state }),
@@ -63,7 +63,7 @@ describe('Actor: lifecycle events', () => {
   test('system receives terminated event on shutdown', async () => {
     const eventTypes: string[] = []
     const system = await createPluginSystem()
-    system.subscribe('test', SystemLifecycleTopic, (e) => eventTypes.push((e as LifecycleEvent).type))
+    system.subscribe( SystemLifecycleTopic, (e) => eventTypes.push((e as LifecycleEvent).type))
 
     system.spawn('ordered', {
       handler: (state: null) => ({ state }),
@@ -144,7 +144,7 @@ describe('Actor system', () => {
   test('double shutdown is idempotent', async () => {
     const events: LifecycleEvent[] = []
     const system = await createPluginSystem()
-    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
+    system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     system.spawn('once', {
       handler: (state: null) => ({ state }),

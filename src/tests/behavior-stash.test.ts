@@ -314,7 +314,7 @@ describe('Stash', () => {
     }
 
     const system = await createPluginSystem()
-    system.subscribe('test-dl', DeadLetterTopic, (e) => deadLetters.push(e))
+    system.subscribe(DeadLetterTopic, (e) => deadLetters.push(e))
 
     const ref = system.spawn('stash-overflow', def, null)
     await tick()
@@ -347,7 +347,7 @@ describe('Stash', () => {
     }
 
     const system = await createPluginSystem()
-    system.subscribe('test-dl', DeadLetterTopic, (e) => deadLetters.push(e))
+    system.subscribe(DeadLetterTopic, (e) => deadLetters.push(e))
 
     const ref = system.spawn('stash-stop', def, null)
     await tick()
@@ -381,7 +381,7 @@ describe('Stash', () => {
     }
 
     const system = await createPluginSystem()
-    system.subscribe('test-dl', DeadLetterTopic, (e) => deadLetters.push(e))
+    system.subscribe(DeadLetterTopic, (e) => deadLetters.push(e))
 
     const ref = system.spawn('stash-restart', def, null)
     await tick()

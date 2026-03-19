@@ -1,8 +1,6 @@
 import { createChatbotActor, type ChatbotActorOptions } from './chatbot.ts'
 import type { ActorIdentity, PluginDef } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { ConfigTopic, type SystemConfig, type ConfigMsg } from '../config/types.ts'
-import { ask } from '../../system/ask.ts'
 
 export type CognitiveConfig = {
   chatbot?: ChatbotActorOptions
@@ -11,21 +9,23 @@ export type CognitiveConfig = {
 type PluginMsg = { type: 'config'; slice: CognitiveConfig | undefined }
 type PluginState = { initialized: boolean; chatbotConfig: ChatbotActorOptions | null; chatbotRef: ActorIdentity | null; chatbotGen: number }
 
-const cognitivePlugin: PluginDef<PluginMsg, PluginState> = {
+const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   id: 'cognitive',
   version: '1.0.0',
   description: 'Cognitive actors: LLM-backed chatbot',
-  dependencies: ['config'],
+
+  configDescriptor: {
+    defaults: {},
+    onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
+  },
+
   initialState: { initialized: false, chatbotConfig: null, chatbotRef: null, chatbotGen: 0 },
 
   lifecycle: onLifecycle({
-    start: async (_state, ctx) => {
-      ctx.subscribe(ConfigTopic, (cfg) => ({ type: 'config' as const, slice: cfg.cognitive }))
+    start: (_state, ctx) => {
+      const slice = ctx.config as CognitiveConfig | undefined
 
-      const storeRef = ctx.lookup<ConfigMsg>('system/config/store')!
-      const current = await ask<ConfigMsg, SystemConfig>(storeRef, (replyTo) => ({ type: 'get', replyTo }))
-
-      const chatbotConfig = current.cognitive?.chatbot ?? null
+      const chatbotConfig = slice?.chatbot ?? null
       const chatbotRef = chatbotConfig
         ? ctx.spawn('chatbot-0', createChatbotActor(chatbotConfig), { history: {}, pending: {} })
         : null

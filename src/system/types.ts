@@ -248,10 +248,17 @@ export type ActorContext<M> = {
   readonly timers: Timers<M>
   /** Returns the headers attached to the message currently being processed. Empty object when not set. */
   readonly messageHeaders: () => MessageHeaders
+  /**
+   * Config slice injected at spawn time by the plugin system.
+   * Cast to your plugin's config type: `ctx.config as MyPluginConfig`.
+   * Always reflects the latest value — updated in place when `system.updateConfig()` is called.
+   */
+  readonly config: unknown
   readonly spawn: <CM, CS>(
     name: string,
     def: ActorDef<CM, CS>,
     initialState: CS,
+    options?: { config?: unknown },
   ) => ActorRef<CM>
   readonly stop: (child: ActorIdentity) => void
   /** Register interest in another actor's termination. Delivers a `terminated` lifecycle event when the target dies. */
@@ -510,12 +517,29 @@ export type ActorServices = {
 // The plugin root IS the actor — lifecycle.start activates, lifecycle.stopped
 // deactivates.
 //
-export type PluginDef<M, S = unknown> = ActorDef<M, S> & {
+// The optional type parameter C describes the plugin's config slice shape.
+// When configDescriptor is provided, the system merges plugin defaults with
+// user-supplied overrides and injects the result into the plugin actor's
+// ctx.config at spawn time. Use `ctx.config as C` inside handlers.
+//
+export type PluginDef<M, S = unknown, C = unknown> = ActorDef<M, S> & {
   readonly id: string
   readonly version: string
   readonly dependencies?: readonly string[]
   readonly description?: string
   readonly initialState: S
+  readonly configDescriptor?: {
+    /** Default config values for this plugin. Merged with user-supplied overrides. */
+    readonly defaults: C
+    /** Key in the global config tree. Defaults to the plugin's id. */
+    readonly key?: string
+    /**
+     * Maps an updated config slice to a plugin message, enabling reactive config updates.
+     * Called by `system.updateConfig()` when the plugin's config slice changes.
+     * The returned message is sent to the plugin actor.
+     */
+    readonly onConfigChange?: (config: C) => M
+  }
 }
 
 // ─── Loaded Plugin (runtime state) ───
@@ -523,10 +547,12 @@ export type LoadedPlugin = {
   readonly id: string
   readonly version: string
   readonly dependencies: readonly string[]
-  readonly def: PluginDef<any, any>
+  readonly def: PluginDef<any, any, any>
   readonly status: 'loading' | 'active' | 'deactivating' | 'failed'
   readonly error?: unknown
   readonly loadedAt: number
+  /** Live ref to the plugin actor. Used by updateConfig() to deliver config-change messages. */
+  readonly ref?: ActorRef<any>
 }
 
 // ─── Load / Unload Results ───
@@ -547,8 +573,16 @@ export type PluginSystem = {
     callback: (event: T) => void,
   ) => () => void
 
+  // ─── Config management ───
+  /**
+   * Deep-merges the provided patch into the global config tree.
+   * For each loaded plugin whose config slice changed, delivers a config-change
+   * message via the plugin's `configDescriptor.onConfigChange` factory (if defined).
+   */
+  readonly updateConfig: (patch: Record<string, unknown>) => void
+
   // ─── Plugin management ───
-  readonly use: (def: PluginDef<any, any>) => Promise<LoadResult>
+  readonly use: (def: PluginDef<any, any, any>) => Promise<LoadResult>
   readonly unloadPlugin: (id: string) => Promise<UnloadResult>
   readonly reloadPlugin: (id: string) => Promise<LoadResult>
   readonly hotReloadPlugin: (id: string, path: string) => Promise<LoadResult>

@@ -1,7 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import {
   createPluginSystem,
-  createConfigPlugin,
   MetricsTopic,
   type ActorDef,
   type MetricsEvent,
@@ -21,12 +20,10 @@ const getSnap = (events: MetricsEvent[], name: string) =>
 const withMetrics = async (intervalMs = 50): Promise<{ system: PluginSystem; events: MetricsEvent[] }> => {
   const events: MetricsEvent[] = []
   const system = await createPluginSystem({
-    plugins: [
-      createConfigPlugin({ observability: { metrics: { intervalMs } } }),
-      observabilityPlugin,
-    ],
+    config: { observability: { metrics: { intervalMs } } },
+    plugins: [observabilityPlugin],
   })
-  system.subscribe('test', MetricsTopic, (e) => events.push(e))
+  system.subscribe(MetricsTopic, (e) => events.push(e))
   return { system, events }
 }
 
@@ -341,7 +338,7 @@ describe('Metrics: push-based MetricsTopic', () => {
     system.spawn('counter', counterDef, 0)
 
     const events: unknown[] = []
-    system.subscribe('test-subscriber', MetricsTopic, (event) => {
+    system.subscribe(MetricsTopic, (event) => {
       events.push(event)
     })
 
@@ -357,7 +354,7 @@ describe('Metrics: push-based MetricsTopic', () => {
     await tick(150)
 
     const names = events[events.length - 1]!.actors.map(s => s.name)
-    expect(names).toContain('system/observability/metrics')
+    expect(names).toContain('system/observability/metrics-0')
 
     await system.shutdown()
   })

@@ -258,7 +258,7 @@ describe('Actor: bounded mailbox integration', () => {
 
     const system = await createPluginSystem()
 
-    system.subscribe('test-observer', DeadLetterTopic, (event) => {
+    system.subscribe(DeadLetterTopic, (event) => {
       deadLetters.push(event as DeadLetter)
     })
 
@@ -420,7 +420,7 @@ describe('Actor: bounded mailbox integration', () => {
 
     const system = await createPluginSystem()
 
-    system.subscribe('test-dl', DeadLetterTopic, (event) => {
+    system.subscribe(DeadLetterTopic, (event) => {
       deadLetters.push((event as DeadLetter).message as string)
     })
 

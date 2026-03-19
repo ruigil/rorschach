@@ -22,7 +22,7 @@ import type { ActorDef, LogEvent, TaskEvent, WorkerBridgeMsg, WorkerBridgeState 
 
 const system = await createPluginSystem()
 
-system.subscribe('console-logger', LogTopic, (e) => {
+system.subscribe(LogTopic, (e) => {
   const { level, source, message } = e as LogEvent
   const ts = new Date().toISOString().slice(11, 23)
   console.log(`[${ts}] ${level.padEnd(5)} [${source}] ${message}`)
@@ -64,7 +64,7 @@ let received = 0
 
 for (let i = 0; i < inputs.length; i++) {
   const id = `parse-${i}`
-  system.subscribe(`task-sub-${id}`, taskTopic<ParseResult>(id), (event) => {
+  system.subscribe(taskTopic<ParseResult>(id), (event) => {
     if (event.type === 'task.done') {
       results.push({ input: inputs[i]!, output: event.result })
       received++

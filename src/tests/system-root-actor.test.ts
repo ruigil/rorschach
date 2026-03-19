@@ -81,7 +81,7 @@ describe('System-as-root-actor: structural symmetry', () => {
     const events: LifecycleEvent[] = []
 
     const system = await createPluginSystem()
-    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
+    system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     system.spawn('a', { handler: (state: null) => ({ state }) }, null)
     system.spawn('b', { handler: (state: null) => ({ state }) }, null)
@@ -108,7 +108,7 @@ describe('System-as-root-actor: structural symmetry', () => {
     }
 
     const system = await createPluginSystem()
-    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
+    system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
     const ref = system.spawn('doomed', failingDef, null)
     await tick()
 

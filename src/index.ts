@@ -1,8 +1,6 @@
 import { join } from 'node:path'
 import {
   createPluginSystem,
-  createConfigPlugin,
-  ConfigCommandTopic,
   LogTopic,
   MetricsTopic,
   SystemLifecycleTopic,
@@ -11,7 +9,7 @@ import interfacesPlugin from './plugins/interfaces/interfaces.plugin.ts'
 import cognitivePlugin from './plugins/cognitive/cognitive.plugin.ts'
 import observabilityPlugin from './plugins/observability/observability.plugin.ts'
 import { WsBroadcastTopic, HttpConfigTopic } from './plugins/interfaces/http.ts'
-import type { LogEvent, MetricsEvent, LifecycleEvent, SystemConfig } from './system/index.ts'
+import type { LogEvent, MetricsEvent, LifecycleEvent } from './system/index.ts'
 import type { HttpConfigPayload } from './plugins/interfaces/http.ts'
 
 const apiKey = process.env.OPENROUTER_API_KEY
@@ -22,32 +20,32 @@ if (!apiKey) {
 
 const PORT          = Number(process.env.PORT ?? 3000)
 const LOG_FILE      = join(import.meta.dir, '../logs/app.jsonl')
-const SYSTEM_PROMPT = "You're name is Rorschach. The entity of the book Blindsight by Peter Watts. Act like him. Do not break role, ever."
+const SYSTEM_PROMPT = "You're name is Rorschach. The entity of the book Blindsight by Peter Watts. Act like him."
 
 // ─── Create the actor system ───
 
 const system = await createPluginSystem({
+  config: {
+    interfaces: { http: { port: PORT } },
+    cognitive: {
+      chatbot: {
+        apiKey,
+        model: process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini',
+        systemPrompt: SYSTEM_PROMPT,
+      },
+    },
+    observability: {
+      jsonlLogger: {
+        filePath: LOG_FILE,
+        minLevel: 'debug',
+        flushIntervalMs: 30000,
+      },
+      metrics: {
+        intervalMs: 5000,
+      },
+    },
+  },
   plugins: [
-    createConfigPlugin({
-      interfaces: { http: { port: PORT } },
-      cognitive: {
-        chatbot: {
-          apiKey,
-          model: process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini',
-          systemPrompt: SYSTEM_PROMPT,
-        },
-      },
-      observability: {
-        jsonlLogger: {
-          filePath: LOG_FILE,
-          minLevel: 'debug',
-          flushIntervalMs: 3000,
-        },
-        metrics: {
-          intervalMs: 5000,
-        },
-      },
-    }),
     interfacesPlugin,
     cognitivePlugin,
     observabilityPlugin,
@@ -73,7 +71,7 @@ system.subscribe(MetricsTopic, (event: MetricsEvent) => {
 // ─── Apply config page changes to the running system ───
 
 system.subscribe(HttpConfigTopic, (form: HttpConfigPayload) => {
-  const next: SystemConfig = {
+  system.updateConfig({
     interfaces: { http: { port: PORT } },
     cognitive: {
       chatbot: {
@@ -94,8 +92,7 @@ system.subscribe(HttpConfigTopic, (form: HttpConfigPayload) => {
         },
       }),
     },
-  }
-  system.publish(ConfigCommandTopic, { type: 'replace', config: next })
+  })
 })
 
 // ─── Log actor lifecycle events to console ───

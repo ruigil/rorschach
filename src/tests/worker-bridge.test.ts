@@ -130,7 +130,7 @@ describe('WorkerBridge: topic lifecycle', () => {
     await tick()
 
     // If topic still existed with stale subscribers this would be non-zero
-    system.subscribe('test-late', taskTopic<string>('t4'), event => lateReceived.push(event))
+    system.subscribe(taskTopic<string>('t4'), event => lateReceived.push(event))
     ref.send({ type: 'request', id: 't4b', payload: { op: 'echo', value: 'y' } })
     await tick()
 
@@ -150,7 +150,7 @@ describe('WorkerBridge: topic lifecycle', () => {
     await tick()
 
     const lateReceived: unknown[] = []
-    system.subscribe('test-late-fail', taskTopic<never>('t5'), event => lateReceived.push(event))
+    system.subscribe(taskTopic<never>('t5'), event => lateReceived.push(event))
 
     // No further events should be delivered on this deleted topic
     await tick()

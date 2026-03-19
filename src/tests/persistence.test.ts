@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createPluginSystem, createConfigPlugin, LogTopic, MetricsTopic } from '../system/index.ts'
+import { createPluginSystem, LogTopic, MetricsTopic } from '../system/index.ts'
 import type { ActorDef, PersistenceAdapter, LogEvent, MetricsEvent } from '../system/index.ts'
 import observabilityPlugin from '../plugins/observability/observability.plugin.ts'
 
@@ -120,12 +120,10 @@ describe('Persistence: save after message', () => {
     }
     const events: MetricsEvent[] = []
     const system = await createPluginSystem({
-      plugins: [
-        createConfigPlugin({ observability: { metrics: { intervalMs: 50 } } }),
-        observabilityPlugin,
-      ],
+      config: { observability: { metrics: { intervalMs: 50 } } },
+      plugins: [observabilityPlugin],
     })
-    system.subscribe('test', MetricsTopic, (e) => events.push(e))
+    system.subscribe(MetricsTopic, (e) => events.push(e))
 
     const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { count: 0 })
 
@@ -150,7 +148,7 @@ describe('Persistence: save after message', () => {
       save: async () => { throw new Error('storage unavailable') },
     }
     const system = await createPluginSystem()
-    system.subscribe('test', LogTopic, (e) => logs.push(e))
+    system.subscribe(LogTopic, (e) => logs.push(e))
 
     const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { count: 0 })
 
@@ -239,12 +237,10 @@ describe('Persistence: no adapter configured', () => {
   test('actor without persistence works identically to before', async () => {
     const events: MetricsEvent[] = []
     const system = await createPluginSystem({
-      plugins: [
-        createConfigPlugin({ observability: { metrics: { intervalMs: 50 } } }),
-        observabilityPlugin,
-      ],
+      config: { observability: { metrics: { intervalMs: 50 } } },
+      plugins: [observabilityPlugin],
     })
-    system.subscribe('test', MetricsTopic, (e) => events.push(e))
+    system.subscribe(MetricsTopic, (e) => events.push(e))
     const ref = system.spawn('counter', counterDef, { count: 0 })
 
     await tick()

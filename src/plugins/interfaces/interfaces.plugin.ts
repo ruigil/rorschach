@@ -1,8 +1,6 @@
 import { createHttpActor, type HttpActorOptions, type HttpState } from './http.ts'
 import type { ActorIdentity, PluginDef } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { ConfigTopic, type SystemConfig, type ConfigMsg } from '../config/types.ts'
-import { ask } from '../../system/ask.ts'
 
 export type InterfacesConfig = {
   http?: HttpActorOptions
@@ -11,21 +9,23 @@ export type InterfacesConfig = {
 type PluginMsg = { type: 'config'; slice: InterfacesConfig | undefined }
 type PluginState = { initialized: boolean; httpConfig: HttpActorOptions | null; httpRef: ActorIdentity | null; httpGen: number }
 
-const interfacesPlugin: PluginDef<PluginMsg, PluginState> = {
+const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
   id: 'interfaces',
   version: '1.0.0',
   description: 'External interfaces: HTTP server and WebSocket',
-  dependencies: ['config'],
+
+  configDescriptor: {
+    defaults: {},
+    onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
+  },
+
   initialState: { initialized: false, httpConfig: null, httpRef: null, httpGen: 0 },
 
   lifecycle: onLifecycle({
-    start: async (_state, ctx) => {
-      ctx.subscribe(ConfigTopic, (cfg) => ({ type: 'config' as const, slice: cfg.interfaces }))
+    start: (_state, ctx) => {
+      const slice = ctx.config as InterfacesConfig | undefined
 
-      const storeRef = ctx.lookup<ConfigMsg>('system/config/store')!
-      const current = await ask<ConfigMsg, SystemConfig>(storeRef, (replyTo) => ({ type: 'get', replyTo }))
-
-      const httpConfig = current.interfaces?.http ?? null
+      const httpConfig = slice?.http ?? null
       const httpRef = httpConfig
         ? ctx.spawn('http-0', createHttpActor(httpConfig), { server: null, connections: 0 } as HttpState)
         : null

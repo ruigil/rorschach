@@ -75,7 +75,7 @@ const system = await createPluginSystem({
 })
 
 // Print all log events to the console
-system.subscribe('console-logger', LogTopic, (e) => {
+system.subscribe( LogTopic, (e) => {
   const { level, source, message } = e as LogEvent
   const ts = new Date().toISOString().slice(11, 23)
   console.log(`[${ts}] ${level.toUpperCase().padEnd(5)} [${source}] ${message}`)

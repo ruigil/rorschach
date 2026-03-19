@@ -186,7 +186,7 @@ describe('EventStream: pub-sub', () => {
     const system = await createPluginSystem()
     const received: unknown[] = []
 
-    const unsub = system.subscribe('external', 'test', (event) => {
+    const unsub = system.subscribe('test', (event) => {
       received.push(event)
     })
 
@@ -216,7 +216,7 @@ describe('EventStream: handler-returned events', () => {
     const ProducedTopic = createTopic<Evt>('producer.events')
 
     // Subscribe to the typed topic
-    system.subscribe('test-listener', ProducedTopic, (event) => {
+    system.subscribe(ProducedTopic, (event) => {
       published.push(event)
     })
 
@@ -251,7 +251,7 @@ describe('EventStream: handler-returned events', () => {
     const published: unknown[] = []
 
     const SomeTopic = createTopic<unknown>('some.topic')
-    system.subscribe('listener', SomeTopic, (event) => {
+    system.subscribe(SomeTopic, (event) => {
       published.push(event)
     })
 
@@ -279,7 +279,7 @@ describe('Dead letters', () => {
     const system = await createPluginSystem()
     const deadLetters: DeadLetter[] = []
 
-    system.subscribe('dl-listener', DeadLetterTopic, (event) => {
+    system.subscribe(DeadLetterTopic, (event) => {
       deadLetters.push(event)
     })
 
@@ -305,7 +305,7 @@ describe('Dead letters', () => {
     const system = await createPluginSystem()
     const deadLetters: DeadLetter[] = []
 
-    system.subscribe('dl-listener', DeadLetterTopic, (event) => {
+    system.subscribe(DeadLetterTopic, (event) => {
       deadLetters.push(event)
     })
 
@@ -331,7 +331,7 @@ describe('Logging', () => {
     const system = await createPluginSystem()
     const logs: LogEvent[] = []
 
-    system.subscribe('log-listener', LogTopic, (event) => {
+    system.subscribe(LogTopic, (event) => {
       logs.push(event)
     })
 
@@ -357,7 +357,7 @@ describe('Logging', () => {
     const system = await createPluginSystem()
     const logs: LogEvent[] = []
 
-    system.subscribe('log-listener', LogTopic, (event) => {
+    system.subscribe(LogTopic, (event) => {
       logs.push(event)
     })
 
@@ -383,7 +383,7 @@ describe('Logging', () => {
     const system = await createPluginSystem()
     const logs: LogEvent[] = []
 
-    system.subscribe('log-listener', LogTopic, (event) => {
+    system.subscribe(LogTopic, (event) => {
       logs.push(event)
     })
 
@@ -413,7 +413,7 @@ describe('Logging', () => {
     const system = await createPluginSystem()
     const logs: LogEvent[] = []
 
-    system.subscribe('log-listener', LogTopic, (event) => {
+    system.subscribe(LogTopic, (event) => {
       logs.push(event)
     })
 
@@ -446,7 +446,7 @@ describe('Logging', () => {
     const system = await createPluginSystem()
     const logs: LogEvent[] = []
 
-    system.subscribe('log-listener', LogTopic, (event) => {
+    system.subscribe(LogTopic, (event) => {
       logs.push(event)
     })
 

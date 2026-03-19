@@ -151,6 +151,7 @@ type ActorInternals<M> = {
   readonly log: InternalLog
   readonly isStopped: () => boolean
   readonly getHeaders: () => MessageHeaders
+  readonly configRef: { value: unknown } | undefined
 }
 
 /**
@@ -161,17 +162,19 @@ type ActorInternals<M> = {
  */
 const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> => {
   const { name, ref, timers, children, mailbox, services,
-          enqueueLifecycle, log, isStopped, getHeaders } = internals
+          enqueueLifecycle, log, isStopped, getHeaders, configRef } = internals
 
   return {
     self: ref,
     timers,
     messageHeaders: () => getHeaders(),
+    get config() { return configRef?.value },
 
     spawn: <CM, CS>(
       childName: string,
       childDef: ActorDef<CM, CS>,
       childInitialState: CS,
+      options?: { config?: unknown },
     ): ActorRef<CM> => {
       const fullName = `${name}/${childName}`
 
@@ -179,7 +182,8 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
         throw new Error(`Actor "${fullName}" already exists as a child of "${name}"`)
       }
 
-      const { handle: childHandle } = createActor(fullName, childDef, childInitialState, services)
+      const childConfigRef = options?.config !== undefined ? { value: options.config } : undefined
+      const { handle: childHandle } = createActor(fullName, childDef, childInitialState, services, childConfigRef)
       children.set(fullName, childHandle as InternalActorHandle)
 
       // Parent implicitly watches its children
@@ -315,6 +319,7 @@ export const createActor = <M, S>(
   def: ActorDef<M, S>,
   initialState: S,
   services: ActorServices,
+  configRef?: { value: unknown },
 ): ActorCreationResult<M> => {
   // Internal logger for lifecycle events (created early so onOverflow can use it)
   const log = createInternalLog(name, services.eventStream)
@@ -389,6 +394,7 @@ export const createActor = <M, S>(
   const context = createActorContext<M>({
     name, ref, timers, children, mailbox, services,
     enqueueLifecycle, log, isStopped: () => stopped, getHeaders: () => currentHeaders,
+    configRef,
   })
 
   // ─── Supervision policy ───

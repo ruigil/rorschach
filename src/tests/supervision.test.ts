@@ -41,7 +41,7 @@ describe('Supervision: stop strategy (default)', () => {
   test('actor stops on failure when no strategy is configured', async () => {
     const events: LifecycleEvent[] = []
     const system = await createPluginSystem()
-    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
+    system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     const ref = system.spawn('stopper', failingActorDef(), { count: 0 })
 
@@ -197,7 +197,7 @@ describe('Supervision: restart with maxRetries', () => {
     const events: LifecycleEvent[] = []
 
     const system = await createPluginSystem()
-    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
+    system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     const ref = system.spawn(
       'limited-restart',
@@ -403,7 +403,7 @@ describe('Supervision: normal operation unaffected', () => {
   test('system shutdown still works cleanly with supervision configured', async () => {
     const events: LifecycleEvent[] = []
     const system = await createPluginSystem()
-    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
+    system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     system.spawn(
       'clean-shutdown',
@@ -430,8 +430,8 @@ describe('Supervision: start lifecycle failure during restart', () => {
     let startCallCount = 0
 
     const system = await createPluginSystem()
-    system.subscribe('test-lifecycle', SystemLifecycleTopic, (e) => lifecycleEvents.push(e as LifecycleEvent))
-    system.subscribe('test-logs', LogTopic, (e) => logs.push(e))
+    system.subscribe(SystemLifecycleTopic, (e) => lifecycleEvents.push(e as LifecycleEvent))
+    system.subscribe(LogTopic, (e) => logs.push(e))
 
     const def: ActorDef<string, null> = {
       supervision: { type: 'restart' },

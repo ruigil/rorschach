@@ -1,7 +1,6 @@
 import { join } from 'node:path'
 import {
   createPluginSystem,
-  createConfigPlugin,
   LogTopic,
   MetricsTopic,
   onLifecycle,
@@ -51,21 +50,19 @@ const workerDef: ActorDef<WorkerMsg, WorkerState> = {
 // ─── Bootstrap ───
 
 const system = await createPluginSystem({
-  plugins: [
-    createConfigPlugin({
-      observability: {
-        jsonlLogger: {
-          filePath: LOG_FILE,
-          minLevel: 'debug',
-          flushIntervalMs: 3000,
-        },
-        metrics: {
-          intervalMs: 5000,
-        },
+  config: {
+    observability: {
+      jsonlLogger: {
+        filePath: LOG_FILE,
+        minLevel: 'debug',
+        flushIntervalMs: 3000,
       },
-    }),
-    observabilityPlugin,
-  ],
+      metrics: {
+        intervalMs: 5000,
+      },
+    },
+  },
+  plugins: [observabilityPlugin],
 })
 
 // ─── Spawn a worker actor ───
@@ -74,7 +71,7 @@ const worker = system.spawn('worker', workerDef, { processed: 0, failed: 0 })
 
 // ─── Forward logs to console ───
 
-system.subscribe('console-logger', LogTopic, (event: LogEvent) => {
+system.subscribe(LogTopic, (event: LogEvent) => {
   const ts = new Date(event.timestamp).toISOString().slice(11, 23)
   const level = event.level.toUpperCase().padEnd(5)
   const data = event.data !== undefined ? ` ${JSON.stringify(event.data)}` : ''
@@ -83,7 +80,7 @@ system.subscribe('console-logger', LogTopic, (event: LogEvent) => {
 
 // ─── Print a metrics summary on each tick ───
 
-system.subscribe('metrics-printer', MetricsTopic, (event: MetricsEvent) => {
+system.subscribe(MetricsTopic, (event: MetricsEvent) => {
   const ts = new Date(event.timestamp).toISOString().slice(11, 23)
   console.log(`\n[${ts}] --- metrics snapshot (${event.actors.length} actors) ---`)
 

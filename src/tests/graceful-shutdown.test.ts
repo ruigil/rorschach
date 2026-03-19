@@ -86,7 +86,7 @@ describe('Graceful shutdown: drain mode', () => {
     await tick()
 
     // Subscribe to dead letters
-    system.subscribe('test-dl', DeadLetterTopic, (event) => {
+    system.subscribe(DeadLetterTopic, (event) => {
       deadLetters.push(event)
     })
 
@@ -336,7 +336,7 @@ describe('Graceful shutdown: system-level options', () => {
     const events: LifecycleEvent[] = []
 
     const system = await createPluginSystem()
-    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
+    system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     const def: ActorDef<string, null> = {
       handler: (state) => ({ state }),

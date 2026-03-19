@@ -29,7 +29,39 @@ export type PluginSystemOptions = {
    * so dependency ordering is respected.
    * A startup plugin failure throws and prevents the system from being returned.
    */
-  plugins?: PluginDef<any, any>[]
+  plugins?: PluginDef<any, any, any>[]
+
+  /**
+   * Initial configuration tree. Values are keyed by plugin id (or the plugin's
+   * configDescriptor.key) and override plugin defaults. Deep-merged on top of
+   * each plugin's configDescriptor.defaults at load time.
+   */
+  config?: Record<string, unknown>
+}
+
+// ─── Deep merge utility ──────────────────────────────────────────────────────
+//
+// Recursively merges `override` on top of `base`. Only plain objects are merged
+// deeply — arrays, primitives, and class instances are replaced wholesale.
+//
+const deepMerge = (base: unknown, override: unknown): unknown => {
+  if (
+    override === null ||
+    typeof override !== 'object' ||
+    Array.isArray(override)
+  ) {
+    return override ?? base
+  }
+  if (base === null || typeof base !== 'object' || Array.isArray(base)) {
+    return override
+  }
+  const result: Record<string, unknown> = { ...(base as Record<string, unknown>) }
+  for (const [key, val] of Object.entries(override as Record<string, unknown>)) {
+    if (val !== undefined) {
+      result[key] = deepMerge(result[key], val)
+    }
+  }
+  return result
 }
 
 // ─── createPluginSystem ──────────────────────────────────────────────────────
@@ -46,8 +78,11 @@ export type PluginSystemOptions = {
 export const createPluginSystem = async (
   options?: PluginSystemOptions,
 ): Promise<PluginSystem> => {
-  const { shutdownTimeoutMs, plugins: initialPlugins } = options ?? {}
+  const { shutdownTimeoutMs, plugins: initialPlugins, config: initialConfig } = options ?? {}
   let shuttingDown = false
+
+  // ─── Global config tree (keyed by plugin id / configDescriptor.key) ───
+  const globalConfig: Record<string, unknown> = { ...(initialConfig ?? {}) }
 
   // ─── Shared infrastructure ───
   const metricsRegistry = createMetricsRegistry()
@@ -77,7 +112,7 @@ export const createPluginSystem = async (
   // ─── Plugin management state ───
   const plugins = new Map<string, LoadedPlugin>()
 
-  const use = (def: PluginDef<any, any>): Promise<LoadResult> => {
+  const use = (def: PluginDef<any, any, any>): Promise<LoadResult> => {
     if (shuttingDown) return Promise.resolve({ ok: false, error: 'system is shutting down' })
 
     if (plugins.has(def.id)) return Promise.resolve({ ok: false, error: `plugin '${def.id}' already loaded` })
@@ -86,6 +121,16 @@ export const createPluginSystem = async (
       if (plugins.get(dep)?.status !== 'active')
         return Promise.resolve({ ok: false, error: `unsatisfied dependency: '${dep}'` })
     }
+
+    // ─── Compute config slice for this plugin ───
+    const configKey = def.configDescriptor?.key ?? def.id
+    const defaults = def.configDescriptor?.defaults
+    const userOverride = globalConfig[configKey]
+    const configSlice = defaults !== undefined
+      ? deepMerge(defaults, userOverride)
+      : userOverride
+    // Keep global config up to date with merged slice
+    if (configSlice !== undefined) globalConfig[configKey] = configSlice
 
     plugins.set(def.id, {
       id: def.id,
@@ -116,8 +161,30 @@ export const createPluginSystem = async (
           return orig?.(state, event, actorCtx) ?? { state }
         },
       }
-      ctx.spawn(`${def.id}`, wrappedDef, def.initialState)
+      const ref = ctx.spawn(`${def.id}`, wrappedDef, def.initialState, { config: configSlice })
+      // Store ref so updateConfig() can deliver config-change messages
+      plugins.set(def.id, { ...plugins.get(def.id)!, ref })
     })
+  }
+
+  const updateConfig = (patch: Record<string, unknown>): void => {
+    for (const [key, val] of Object.entries(patch)) {
+      const prev = globalConfig[key]
+      const next = deepMerge(prev, val)
+      if (JSON.stringify(prev) === JSON.stringify(next)) continue
+      globalConfig[key] = next
+
+      // Notify affected plugins
+      for (const plugin of plugins.values()) {
+        if (plugin.status !== 'active' || !plugin.ref) continue
+        const pluginKey = plugin.def.configDescriptor?.key ?? plugin.def.id
+        if (pluginKey !== key) continue
+        const onConfigChange = plugin.def.configDescriptor?.onConfigChange
+        if (onConfigChange) {
+          plugin.ref.send(onConfigChange(next))
+        }
+      }
+    }
   }
 
   const unloadPlugin = async (id: string): Promise<UnloadResult> => {
@@ -198,6 +265,7 @@ export const createPluginSystem = async (
 
   return {
     spawn, stop, shutdown, publish, subscribe,
+    updateConfig,
     use,
     unloadPlugin,
     reloadPlugin,

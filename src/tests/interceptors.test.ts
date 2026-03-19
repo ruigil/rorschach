@@ -325,7 +325,7 @@ describe('Interceptors: context access', () => {
 
     // Subscribe to log topic to capture interceptor logs
     const { LogTopic } = await import('../system/types.ts')
-    system.subscribe('test-observer', LogTopic, (event) => {
+    system.subscribe(LogTopic, (event) => {
       if (event.source === 'system/logging-ctx' && event.message.startsWith('interceptor saw:')) {
         logMessages.push(event.message)
       }
@@ -489,7 +489,7 @@ describe('Interceptors: error propagation', () => {
     }
 
     const system = await createPluginSystem()
-    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
+    system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     const ref = system.spawn('interceptor-fail', def, null)
     await tick()

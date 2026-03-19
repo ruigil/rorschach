@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createPluginSystem, createConfigPlugin, DeadLetterTopic, MetricsTopic, SystemLifecycleTopic } from '../system/index.ts'
+import { createPluginSystem, DeadLetterTopic, MetricsTopic, SystemLifecycleTopic } from '../system/index.ts'
 import type { ActorDef, DeadLetter, LifecycleEvent, MetricsEvent } from '../system/index.ts'
 import { createPoolRouter } from '../plugins/parallel/pool-router.ts'
 import observabilityPlugin from '../plugins/observability/observability.plugin.ts'
@@ -11,12 +11,10 @@ const tick = (ms = 50) => Bun.sleep(ms)
 const withMetrics = async () => {
   const events: MetricsEvent[] = []
   const system = await createPluginSystem({
-    plugins: [
-      createConfigPlugin({ observability: { metrics: { intervalMs: 50 } } }),
-      observabilityPlugin,
-    ],
+    config: { observability: { metrics: { intervalMs: 50 } } },
+    plugins: [observabilityPlugin],
   })
-  system.subscribe('test', MetricsTopic, (e) => events.push(e))
+  system.subscribe(MetricsTopic, (e) => events.push(e))
   return { system, events }
 }
 
@@ -324,7 +322,7 @@ describe("PoolRouter: onWorkerFailure 'shrink'", () => {
   test('messages go to dead letters when pool shrinks to empty', async () => {
     const deadLetters: DeadLetter[] = []
     const system = await createPluginSystem()
-    system.subscribe('test', DeadLetterTopic, (dl) => deadLetters.push(dl))
+    system.subscribe(DeadLetterTopic, (dl) => deadLetters.push(dl))
 
     const router = createPoolRouter({
       poolSize: 1,
@@ -356,7 +354,7 @@ describe("PoolRouter: onWorkerFailure 'escalate'", () => {
   test('router terminates when a worker fails', async () => {
     const events: LifecycleEvent[] = []
     const system = await createPluginSystem()
-    system.subscribe('test', SystemLifecycleTopic, (e) => events.push(e))
+    system.subscribe(SystemLifecycleTopic, (e) => events.push(e))
 
     const router = createPoolRouter({
       poolSize: 2,
@@ -412,7 +410,7 @@ describe('PoolRouter: shutdown', () => {
   test('all workers are stopped on system shutdown', async () => {
     const { system, events } = await withMetrics()
     const terminated: string[] = []
-    system.subscribe('lifecycle', SystemLifecycleTopic, (e) => {
+    system.subscribe(SystemLifecycleTopic, (e) => {
       if (e.type === 'terminated') terminated.push(e.ref.name)
     })
 

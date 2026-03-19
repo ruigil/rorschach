@@ -2,8 +2,6 @@ import { createPoolRouter, type PoolRouterOptions } from './pool-router.ts'
 import { createWorkerBridge, type WorkerBridgeOptions } from './worker-bridge.ts'
 import type { ActorContext, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { ConfigTopic, type SystemConfig, type ConfigMsg } from '../config/types.ts'
-import { ask } from '../../system/ask.ts'
 
 export type PoolRouterEntry = {
   name: string
@@ -41,22 +39,24 @@ const spawnFromSlice = (slice: ParallelConfig, ctx: ActorContext<PluginMsg>) => 
   return { routerNames, bridgeNames }
 }
 
-const parallelPlugin: PluginDef<PluginMsg, PluginState> = {
+const parallelPlugin: PluginDef<PluginMsg, PluginState, ParallelConfig> = {
   id: 'parallel',
   version: '1.0.0',
   description: 'Parallel actors: pool routers and worker thread bridges',
-  dependencies: ['config'],
+
+  configDescriptor: {
+    defaults: {},
+    onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
+  },
+
   initialState: { initialized: false, routerNames: [], bridgeNames: [] },
 
   lifecycle: onLifecycle({
-    start: async (_state, ctx) => {
-      ctx.subscribe(ConfigTopic, (cfg) => ({ type: 'config' as const, slice: cfg.parallel }))
+    start: (_state, ctx) => {
+      const slice = ctx.config as ParallelConfig | undefined
 
-      const storeRef = ctx.lookup<ConfigMsg>('system/config/store')!
-      const current = await ask<ConfigMsg, SystemConfig>(storeRef, (replyTo) => ({ type: 'get', replyTo }))
-
-      if (current.parallel) {
-        const { routerNames, bridgeNames } = spawnFromSlice(current.parallel, ctx)
+      if (slice) {
+        const { routerNames, bridgeNames } = spawnFromSlice(slice, ctx)
         ctx.log.info('parallel plugin activated')
         return { state: { initialized: true, routerNames, bridgeNames } }
       }
