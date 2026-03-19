@@ -259,6 +259,7 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
     // ─── Introspection ───
 
     actorSnapshots: () => services.metricsRegistry.snapshotAll(),
+    topicSnapshots: () => services.eventStream.snapshot(),
 
     // ─── Logging (exposed to actor handlers) ───
 

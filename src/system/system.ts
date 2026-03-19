@@ -189,12 +189,11 @@ export const createPluginSystem = async (
   }
 
   const subscribe = <T>(
-    subscriberName: string,
     topic: EventTopic<T>,
     callback: (event: T) => void,
   ): (() => void) => {
-    services.eventStream.subscribe(subscriberName, topic, callback)
-    return () => services.eventStream.unsubscribe(subscriberName, topic)
+    services.eventStream.subscribe("system", topic, callback)
+    return () => services.eventStream.unsubscribe("system", topic)
   }
 
   return {

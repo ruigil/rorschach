@@ -156,6 +156,7 @@
     <div class="obs-bar">
       <div class="obs-subtabs">
         <button class="obs-subtab active" data-subtab="metrics">metrics</button>
+        <button class="obs-subtab" data-subtab="topics">topics</button>
         <button class="obs-subtab" data-subtab="logs">logs</button>
       </div>
       <div class="obs-bar-end">
@@ -207,6 +208,17 @@
               <span>select an actor to inspect</span>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="obs-topics" class="obs-subpanel">
+      <div id="topic-list">
+        <div class="empty-panel" id="topics-empty">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
+          <span>awaiting metrics snapshot</span>
         </div>
       </div>
     </div>

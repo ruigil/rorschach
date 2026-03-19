@@ -21,6 +21,7 @@ export const createMetricsActor = (options: MetricsActorOptions): ActorDef<Metri
       const event: MetricsEvent = {
         timestamp: Date.now(),
         actors: ctx.actorSnapshots(),
+        topics: ctx.topicSnapshots(),
       }
       ctx.publish(MetricsTopic, event)
       return { state }

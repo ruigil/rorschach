@@ -111,10 +111,19 @@ export const createEventStream = (): EventStream => {
     forward.delete(topic)
   }
 
+  const snapshot = () => {
+    const result: { topic: string; subscribers: string[] }[] = []
+    for (const [topic, entries] of forward) {
+      result.push({ topic, subscribers: Array.from(entries).map(e => e.name).sort() })
+    }
+    result.sort((a, b) => a.topic.localeCompare(b.topic))
+    return result
+  }
+
   // The internal implementation stores `unknown` callbacks — the phantom type
   // on EventTopic<T> provides compile-time safety at call sites. The cast here
   // bridges the runtime (untyped) implementation to the typed public interface.
-  return { publish, subscribe, unsubscribe, cleanup, deleteTopic } as EventStream
+  return { publish, subscribe, unsubscribe, cleanup, deleteTopic, snapshot } as EventStream
 }
 
 /**

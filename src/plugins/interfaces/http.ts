@@ -15,7 +15,7 @@ export type HttpMessage =
   | { type: 'closed'; clientId: string }
   | { type: 'broadcast'; text: string }
   | { type: 'send'; clientId: string; text: string }
-  | { type: 'config-post'; data: unknown }
+  | { type: 'config'; data: unknown }
 
 // ─── Actor state ───
 
@@ -134,7 +134,7 @@ export const createHttpActor = (
         return { state }
       },
 
-      'config-post': (state, message, context) => {
+      config: (state, message, context) => {
         context.log.debug('config update received via POST /config')
         return {
           state,
@@ -169,7 +169,7 @@ export const createHttpActor = (
             if (req.method === 'POST' && url.pathname === '/config') {
               try {
                 const data = await req.json()
-                selfRef?.send({ type: 'config-post', data })
+                selfRef?.send({ type: 'config', data })
                 return new Response(null, { status: 204 })
               } catch {
                 return new Response('Invalid JSON', { status: 400 })

@@ -56,7 +56,7 @@ const system = await createPluginSystem({
 
 // ─── Forward logs to the observability page via WebSocket broadcast ───
 
-system.subscribe('ws-log-broadcaster', LogTopic, (event: LogEvent) => {
+system.subscribe(LogTopic, (event: LogEvent) => {
   system.publish(WsBroadcastTopic, {
     text: JSON.stringify({ type: 'log', ...event }),
   })
@@ -64,7 +64,7 @@ system.subscribe('ws-log-broadcaster', LogTopic, (event: LogEvent) => {
 
 // ─── Forward metrics snapshots to the observability page ───
 
-system.subscribe('ws-metrics-broadcaster', MetricsTopic, (event: MetricsEvent) => {
+system.subscribe(MetricsTopic, (event: MetricsEvent) => {
   system.publish(WsBroadcastTopic, {
     text: JSON.stringify({ type: 'metrics', ...event }),
   })
@@ -72,7 +72,7 @@ system.subscribe('ws-metrics-broadcaster', MetricsTopic, (event: MetricsEvent) =
 
 // ─── Apply config page changes to the running system ───
 
-system.subscribe('config-api', HttpConfigTopic, (form: HttpConfigPayload) => {
+system.subscribe(HttpConfigTopic, (form: HttpConfigPayload) => {
   const next: SystemConfig = {
     interfaces: { http: { port: PORT } },
     cognitive: {
@@ -100,7 +100,7 @@ system.subscribe('config-api', HttpConfigTopic, (form: HttpConfigPayload) => {
 
 // ─── Log actor lifecycle events to console ───
 
-system.subscribe('lifecycle-observer', SystemLifecycleTopic, (event) => {
+system.subscribe(SystemLifecycleTopic, (event) => {
   const e = event as LifecycleEvent
   if (e.type === 'terminated') {
     console.log(`[system] actor ${e.ref.name} terminated (${e.reason})`)

@@ -153,6 +153,11 @@ export const emit = <T>(topic: EventTopic<T>, payload: T): TypedEvent<T> =>
 // the internal maps still store `unknown` callbacks. Type safety is purely
 // compile-time via the phantom type on EventTopic<T>.
 //
+export type TopicSnapshot = {
+  readonly topic: string
+  readonly subscribers: string[]
+}
+
 export type EventStream = {
   /** Publish an event to all subscribers of the given topic. */
   readonly publish: <T>(topic: EventTopic<T>, event: T) => void
@@ -168,6 +173,8 @@ export type EventStream = {
   readonly cleanup: (subscriberName: string) => void
   /** Remove the forward-map entry for a topic entirely (used when a watched actor dies). */
   readonly deleteTopic: (topic: EventTopic) => void
+  /** Returns a point-in-time snapshot of all topics and their subscriber names. */
+  readonly snapshot: () => TopicSnapshot[]
 }
 
 // ─── Message Handler (reusable handler function type) ───
@@ -285,6 +292,8 @@ export type ActorContext<M> = {
 
   /** Returns point-in-time snapshots of all currently registered actors. */
   readonly actorSnapshots: () => ActorSnapshot[]
+  /** Returns a point-in-time snapshot of all topics and their subscribers on the event stream. */
+  readonly topicSnapshots: () => TopicSnapshot[]
 
   // ─── Logging ───
 
@@ -475,6 +484,7 @@ export type MetricsRegistry = {
 export type MetricsEvent = {
   readonly timestamp: number
   readonly actors: ActorSnapshot[]
+  readonly topics: TopicSnapshot[]
 }
 
 // ─── Actor Services (shared system-level infrastructure passed to every actor) ───
@@ -523,7 +533,6 @@ export type PluginSystem = {
   // ─── Event Stream ───
   readonly publish: <T>(topic: EventTopic<T>, event: T) => void
   readonly subscribe: <T>(
-    subscriberName: string,
     topic: EventTopic<T>,
     callback: (event: T) => void,
   ) => () => void
