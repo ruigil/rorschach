@@ -406,7 +406,17 @@ export type ActorDef<M, S> = {
    * Behavioral state that must survive restarts should be encoded in S.
    */
   persistence?: PersistenceAdapter<S>
+
+  /**
+   * Called instead of raw state when producing an ActorSnapshot for metrics.
+   * Use to redact secrets (API keys, passwords) before state reaches the UI.
+   * Use `redact()` as a placeholder value for sensitive fields.
+   */
+  maskState?: (state: S) => unknown
 }
+
+/** Replaces a sensitive value with a safe placeholder in metrics snapshots. */
+export const redact = (): string => '[redacted]'
 
 // ─── Stop Result (returned from InternalActorHandle.stop()) ───
 export type StopResult = { reason: 'stopped' | 'failed'; error?: unknown }

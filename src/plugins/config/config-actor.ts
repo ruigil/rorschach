@@ -1,4 +1,5 @@
 import type { ActorDef } from '../../system/types.ts'
+import { redact } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ConfigTopic, ConfigCommandTopic } from './types.ts'
 import type { ConfigMsg, SystemConfig } from './types.ts'
@@ -6,6 +7,17 @@ import type { ConfigMsg, SystemConfig } from './types.ts'
 export function createConfigActor(initial: SystemConfig): ActorDef<ConfigMsg, SystemConfig> {
   return {
     supervision: { type: 'restart', maxRetries: 5, withinMs: 60_000 },
+
+    maskState: (state) => ({
+      ...state,
+      cognitive: state.cognitive && {
+        ...state.cognitive,
+        chatbot: state.cognitive.chatbot && {
+          ...state.cognitive.chatbot,
+          apiKey: redact(),
+        },
+      },
+    }),
 
     lifecycle: onLifecycle({
       start: (state, ctx) => {

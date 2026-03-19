@@ -470,7 +470,7 @@ export const createActor = <M, S>(
     stashSize: () => currentStashSize,
     childCount: () => children.size,
     children: () => Array.from(children.keys()),
-    getState: () => currentStateSnapshot,
+    getState: () => def.maskState ? def.maskState(currentStateSnapshot as S) : currentStateSnapshot,
   })
 
   // ─── Stash capacity ───
