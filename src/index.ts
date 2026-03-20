@@ -21,7 +21,7 @@ if (!apiKey) {
 
 const PORT          = Number(process.env.PORT ?? 3000)
 const LOG_FILE      = join(import.meta.dir, '../logs/app.jsonl')
-const SYSTEM_PROMPT = "You're name is Rorschach. The entity of the book Blindsight by Peter Watts. Act like him."
+const SYSTEM_PROMPT = "You're name is Rorschach. The entity of the book Blindsight by Peter Watts. Act like him. Give short and concise answers."
 
 // ─── Create the actor system ───
 
