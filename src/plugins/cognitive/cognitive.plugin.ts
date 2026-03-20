@@ -1,6 +1,7 @@
 import { createChatbotActor, type ChatbotActorOptions } from './chatbot.ts'
 import type { ActorIdentity, PluginDef } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
+import { redact } from '../../system/types.ts'
 
 export type CognitiveConfig = {
   chatbot?: ChatbotActorOptions
@@ -13,6 +14,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   id: 'cognitive',
   version: '1.0.0',
   description: 'Cognitive actors: LLM-backed chatbot',
+  dependencies: ['tools'],
 
   configDescriptor: {
     defaults: {},
@@ -27,7 +29,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
 
       const chatbotConfig = slice?.chatbot ?? null
       const chatbotRef = chatbotConfig
-        ? ctx.spawn('chatbot-0', createChatbotActor(chatbotConfig), { history: {}, pending: {} })
+        ? ctx.spawn('chatbot-0', createChatbotActor(chatbotConfig), { history: {}, pending: {}, webSearchRef: null, pendingSearch: {} })
         : null
 
       ctx.log.info('cognitive plugin activated')
@@ -39,12 +41,17 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
     },
   }),
 
+  maskState: (state) => ({
+    ...state,
+    chatbotConfig: state.chatbotConfig ? { ...state.chatbotConfig, apiKey: redact() } : null,
+  }),
+
   handler: (state, msg, ctx) => {
     if (state.chatbotRef) ctx.stop(state.chatbotRef)
     const newChatbot = msg.slice?.chatbot ?? null
     const chatbotGen = state.chatbotGen + 1
     const chatbotRef = newChatbot
-      ? ctx.spawn(`chatbot-${chatbotGen}`, createChatbotActor(newChatbot), { history: {}, pending: {} })
+      ? ctx.spawn(`chatbot-${chatbotGen}`, createChatbotActor(newChatbot), { history: {}, pending: {}, webSearchRef: null, pendingSearch: {} })
       : null
     return { state: { ...state, chatbotConfig: newChatbot, chatbotRef, chatbotGen } }
   },

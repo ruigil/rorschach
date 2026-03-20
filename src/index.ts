@@ -7,6 +7,7 @@ import {
 } from './system/index.ts'
 import interfacesPlugin from './plugins/interfaces/interfaces.plugin.ts'
 import cognitivePlugin from './plugins/cognitive/cognitive.plugin.ts'
+import toolsPlugin from './plugins/tools/tools.plugin.ts'
 import observabilityPlugin from './plugins/observability/observability.plugin.ts'
 import { WsBroadcastTopic, HttpConfigTopic } from './plugins/interfaces/http.ts'
 import type { LogEvent, MetricsEvent, LifecycleEvent } from './system/index.ts'
@@ -27,6 +28,11 @@ const SYSTEM_PROMPT = "You're name is Rorschach. The entity of the book Blindsig
 const system = await createPluginSystem({
   config: {
     interfaces: { http: { port: PORT } },
+    tools: {
+      webSearch: {
+        apiKey: process.env.BRAVESEARCH_API_KEY ?? '',
+      },
+    },
     cognitive: {
       chatbot: {
         apiKey,
@@ -47,6 +53,7 @@ const system = await createPluginSystem({
   },
   plugins: [
     interfacesPlugin,
+    toolsPlugin,
     cognitivePlugin,
     observabilityPlugin,
   ],

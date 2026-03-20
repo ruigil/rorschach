@@ -1,3 +1,36 @@
+// ─── Markdown renderer ───
+
+marked.use({ gfm: true, breaks: true })
+
+function copyCode(btn) {
+  const code = btn.closest('.code-block').querySelector('code').textContent
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = 'copied'
+    setTimeout(() => { btn.textContent = 'copy' }, 1800)
+  })
+}
+
+function renderMarkdown(text) {
+  const el = document.createElement('div')
+  el.className = 'md'
+  el.innerHTML = marked.parse(text)
+  el.querySelectorAll('pre > code').forEach(block => {
+    const langClass = Array.from(block.classList).find(c => c.startsWith('language-'))
+    const lang = langClass ? langClass.replace('language-', '') : 'code'
+    hljs.highlightElement(block)
+    const pre = block.parentElement
+    const wrapper = document.createElement('div')
+    wrapper.className = 'code-block'
+    const header = document.createElement('div')
+    header.className = 'code-header'
+    header.innerHTML = `<span class="code-lang">${lang}</span><button class="copy-btn" onclick="copyCode(this)">copy</button>`
+    pre.replaceWith(wrapper)
+    wrapper.appendChild(header)
+    wrapper.appendChild(pre)
+  })
+  return el
+}
+
 // ─── Tab switching ───
 
 const tabBtns = document.querySelectorAll('[data-tab]')
@@ -45,6 +78,9 @@ function connect() {
     setConnected(false)
     removeThinking()
     streamBubble = null
+    streamRawText = ''
+    pendingSources = null
+    sourcesWrap = null
     setWaiting(false)
     setTimeout(connect, 2000)
   })
@@ -55,7 +91,7 @@ function connect() {
     let msg
     try { msg = JSON.parse(e.data) } catch { return }
 
-    if (msg.type === 'chunk' || msg.type === 'done' || msg.type === 'error') {
+    if (msg.type === 'chunk' || msg.type === 'done' || msg.type === 'error' || msg.type === 'searching' || msg.type === 'sources') {
       handleChatMsg(msg)
     } else if (msg.type === 'log') {
       appendLog(msg)
@@ -73,8 +109,11 @@ const chatForm   = document.getElementById('chat-form')
 const input      = document.getElementById('input')
 const send       = document.getElementById('send')
 
-let thinkingEl  = null
+let thinkingEl   = null
 let streamBubble = null
+let streamRawText = ''
+let pendingSources = null
+let sourcesWrap  = null
 
 input.addEventListener('input', () => {
   input.style.height = 'auto'
@@ -128,17 +167,17 @@ function appendMessage(role, text) {
   return wrap
 }
 
-function showThinking() {
+function showThinking(label = 'Rorschach', extraClass = '') {
   if (emptyEl?.parentNode) emptyEl.remove()
   const wrap   = document.createElement('div')
-  wrap.className = 'message assistant thinking'
-  const label  = document.createElement('div')
-  label.className = 'message-label'
-  label.textContent = 'Rorschach'
+  wrap.className = 'message assistant thinking' + (extraClass ? ' ' + extraClass : '')
+  const labelEl = document.createElement('div')
+  labelEl.className = 'message-label'
+  labelEl.textContent = label
   const bubble = document.createElement('div')
   bubble.className = 'bubble'
   bubble.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>'
-  wrap.appendChild(label)
+  wrap.appendChild(labelEl)
   wrap.appendChild(bubble)
   messagesEl.appendChild(wrap)
   scrollToBottom()
@@ -150,8 +189,46 @@ function removeThinking() {
   thinkingEl = null
 }
 
+function renderSources(sources) {
+  const wrap = document.createElement('div')
+  wrap.className = 'sources'
+  const toggle = document.createElement('button')
+  toggle.className = 'sources-toggle'
+  toggle.textContent = `${sources.length} source${sources.length !== 1 ? 's' : ''}`
+  const list = document.createElement('div')
+  list.className = 'sources-list'
+  sources.forEach((s) => {
+    const item = document.createElement('a')
+    item.className = 'source-item'
+    item.href = s.url
+    item.target = '_blank'
+    item.rel = 'noopener noreferrer'
+    const title = document.createElement('span')
+    title.className = 'source-title'
+    title.textContent = s.title
+    const snippet = document.createElement('span')
+    snippet.className = 'source-snippet'
+    snippet.textContent = s.snippet
+    item.appendChild(title)
+    if (s.snippet) item.appendChild(snippet)
+    list.appendChild(item)
+  })
+  toggle.addEventListener('click', () => {
+    const open = list.classList.toggle('open')
+    toggle.classList.toggle('open', open)
+  })
+  wrap.appendChild(toggle)
+  wrap.appendChild(list)
+  return wrap
+}
+
 function handleChatMsg(msg) {
-  if (msg.type === 'chunk') {
+  if (msg.type === 'searching') {
+    removeThinking()
+    showThinking('searching the web…', 'searching')
+  } else if (msg.type === 'sources') {
+    pendingSources = msg.sources
+  } else if (msg.type === 'chunk') {
     if (!streamBubble) {
       removeThinking()
       const wrap   = document.createElement('div')
@@ -163,17 +240,33 @@ function handleChatMsg(msg) {
       bubble.className = 'bubble'
       wrap.appendChild(label)
       wrap.appendChild(bubble)
+      if (pendingSources) {
+        sourcesWrap = renderSources(pendingSources)
+        wrap.appendChild(sourcesWrap)
+        pendingSources = null
+      }
       messagesEl.appendChild(wrap)
       streamBubble = bubble
+      streamRawText = ''
     }
-    streamBubble.textContent += msg.text
+    streamRawText += msg.text
+    streamBubble.textContent = streamRawText
     scrollToBottom()
   } else if (msg.type === 'done') {
+    if (streamBubble && streamRawText) {
+      streamBubble.textContent = ''
+      streamBubble.appendChild(renderMarkdown(streamRawText))
+    }
+    streamRawText = ''
     streamBubble = null
+    sourcesWrap = null
     setWaiting(false)
   } else if (msg.type === 'error') {
     removeThinking()
     streamBubble = null
+    streamRawText = ''
+    pendingSources = null
+    sourcesWrap = null
     appendMessage('error', msg.text)
     setWaiting(false)
   }
