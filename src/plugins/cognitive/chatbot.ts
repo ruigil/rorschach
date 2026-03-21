@@ -1,21 +1,21 @@
 import { emit } from '../../system/types.ts'
-import type { ActorDef, ActorRef } from '../../system/types.ts'
+import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
+import { ask } from '../../system/ask.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { WsMessageTopic, WsSendTopic } from '../interfaces/http.ts'
-import { WebSearchRefTopic } from '../tools/tools.plugin.ts'
-import type { BraveLlmContextResponse, WebSearchMsg, WebSearchReply } from '../tools/web-search.ts'
+import type { ToolCollection, ToolInvokeMsg, ToolReply } from '../tools/tool.ts'
+import type { GetToolsMsg } from '../tools/tools.plugin.ts'
 
 // ─── Message protocol ───
 
 type ChatbotMsg =
-  | { type: 'userMessage';  clientId: string; text: string }
-  | { type: 'llmChunk';     clientId: string; text: string }
-  | { type: 'llmDone';      clientId: string }
-  | { type: 'llmErr';       clientId: string; error: unknown }
-  | { type: 'webSearchRef'; ref: ActorRef<WebSearchMsg> | null }
-  | { type: '_toolCall';    clientId: string; toolCallId: string; toolName: string; toolArguments: string; messagesAtCall: ApiMessage[] }
-  | { type: 'searchResult'; clientId: string; query: string; result: BraveLlmContextResponse }
-  | { type: 'searchError';  clientId: string; query: string; error: string }
+  | { type: 'userMessage';   clientId: string; text: string; traceId: string; parentSpanId: string }
+  | { type: 'llmChunk';      clientId: string; text: string }
+  | { type: 'llmDone';       clientId: string }
+  | { type: 'llmErr';        clientId: string; error: unknown }
+  | { type: '_toolsFetched'; clientId: string; apiMessages: ApiMessage[]; toolCollection: ToolCollection }
+  | { type: '_toolBatch';    clientId: string; calls: Array<{ id: string; name: string; arguments: string }>; messagesAtCall: ApiMessage[]; toolCollection: ToolCollection }
+  | { type: '_toolResult';   clientId: string; toolName: string; toolCallId: string; reply: ToolReply }
 
 // ─── State ───
 
@@ -30,17 +30,25 @@ type ConversationMessage =
   | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
   | { role: 'tool';      content: string; tool_call_id: string }
 
-type PendingSearch = {
-  toolCallId: string
-  query: string
+type PendingBatch = {
+  remaining: number
+  results: Array<{ toolCallId: string; toolName: string; content: string }>
   messagesAtCall: ApiMessage[]
+  assistantToolCalls: ToolCall[]
+}
+
+type SpanHandles = {
+  requestSpan: SpanHandle
+  llmSpan?: SpanHandle
+  toolSpans: Record<string, SpanHandle>
 }
 
 export type ChatbotState = {
-  history:       Record<string, ConversationMessage[]>
-  pending:       Record<string, string>
-  webSearchRef:  ActorRef<WebSearchMsg> | null
-  pendingSearch: Record<string, PendingSearch>
+  history: Record<string, ConversationMessage[]>
+  pending: Record<string, string>
+  pendingBatch: Record<string, PendingBatch>
+  toolsRef: ActorRef<GetToolsMsg> | null
+  spanHandles: Record<string, SpanHandles>
 }
 
 // ─── Options ───
@@ -64,28 +72,13 @@ type Tool = {
   function: { name: string; description: string; parameters: object }
 }
 
-// ─── Tool definition ───
-
-const WEB_SEARCH_TOOL: Tool = {
-  type: 'function',
-  function: {
-    name: 'web_search',
-    description: 'Search the web for current information. Use when the user asks about recent events, live data, or facts you may not know.',
-    parameters: {
-      type: 'object',
-      properties: { query: { type: 'string', description: 'The search query' } },
-      required: ['query'],
-    },
-  },
-}
-
 // ─── OpenRouter SSE streaming ───
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
 type LLMStreamResult =
   | { type: 'content' }
-  | { type: 'toolCall'; id: string; name: string; arguments: string }
+  | { type: 'toolCalls'; calls: Array<{ id: string; name: string; arguments: string }> }
 
 const streamLLM = async (
   apiKey: string,
@@ -130,8 +123,8 @@ const streamLLM = async (
       if (!line.startsWith('data: ')) continue
       const data = line.slice(6).trim()
       if (data === '[DONE]') {
-        const first = toolCalls[0]
-        if (first?.name) return { type: 'toolCall', id: first.id, name: first.name, arguments: first.arguments }
+        const calls = Object.values(toolCalls).filter(tc => tc.name)
+        if (calls.length > 0) return { type: 'toolCalls', calls }
         return { type: 'content' }
       }
 
@@ -164,19 +157,9 @@ const streamLLM = async (
     }
   }
 
-  const first = toolCalls[0]
-  if (first?.name) return { type: 'toolCall', id: first.id, name: first.name, arguments: first.arguments }
+  const calls = Object.values(toolCalls).filter(tc => tc.name)
+  if (calls.length > 0) return { type: 'toolCalls', calls }
   return { type: 'content' }
-}
-
-// ─── Search result formatter ───
-
-const formatSearchResults = (result: BraveLlmContextResponse): string => {
-  const items = result.grounding.generic
-  if (items.length === 0) return 'No results found.'
-  return items
-    .map((item, i) => `[${i + 1}] ${item.title}\n${item.url}\n${item.snippets.join(' ')}`)
-    .join('\n\n')
 }
 
 // ─── Actor definition ───
@@ -191,28 +174,18 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           type: 'userMessage' as const,
           clientId: e.clientId,
           text: e.text,
-        }))
-        context.subscribe(WebSearchRefTopic, (ref) => ({
-          type: 'webSearchRef' as const,
-          ref,
+          traceId: e.traceId,
+          parentSpanId: e.parentSpanId,
         }))
 
-        // Bootstrap: if the tools plugin was already loaded before this actor started,
-        // discover the current web-search actor via actor snapshots (topic was already published)
-        const wsSnapshot = context.actorSnapshots().find(s => s.name.startsWith('system/tools/web-search-'))
-        const webSearchRef = wsSnapshot ? context.lookup<WebSearchMsg>(wsSnapshot.name) ?? null : null
-
-        return { state: { ...state, webSearchRef } }
+        const toolsRef = context.lookup<GetToolsMsg>('system/tools')
+        return { state: { ...state, toolsRef: toolsRef ?? null } }
       },
     }),
 
     handler: onMessage<ChatbotMsg, ChatbotState>({
-      webSearchRef: (state, message) => {
-        return { state: { ...state, webSearchRef: message.ref } }
-      },
-
       userMessage: (state, message, context) => {
-        const { clientId, text } = message
+        const { clientId, text, traceId, parentSpanId } = message
         const prior = state.history[clientId] ?? []
 
         const apiMessages: ApiMessage[] = [
@@ -221,166 +194,206 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           { role: 'user', content: text },
         ]
 
-        const tools = state.webSearchRef ? [WEB_SEARCH_TOOL] : undefined
-        const selfRef = context.self
+        const fetchTools: Promise<ToolCollection> = state.toolsRef
+          ? ask<GetToolsMsg, ToolCollection>(state.toolsRef, (replyTo) => ({ type: 'getTools', replyTo }))
+          : Promise.resolve({})
 
-        streamLLM(apiKey, model, apiMessages, tools, (chunk) => {
-          selfRef.send({ type: 'llmChunk', clientId, text: chunk })
-        }).then((result) => {
-          if (result.type === 'toolCall') {
-            selfRef.send({
-              type: '_toolCall',
-              clientId,
-              toolCallId: result.id,
-              toolName: result.name,
-              toolArguments: result.arguments,
-              messagesAtCall: apiMessages,
-            })
-          } else {
-            selfRef.send({ type: 'llmDone', clientId })
-          }
-        }).catch((error) => {
-          selfRef.send({ type: 'llmErr', clientId, error })
-        })
+        context.pipeToSelf(
+          fetchTools,
+          (toolCollection) => ({ type: '_toolsFetched' as const, clientId, apiMessages, toolCollection }),
+          (error) => ({ type: 'llmErr' as const, clientId, error }),
+        )
+
+        const requestSpan = context.trace.child(traceId, parentSpanId, 'chatbot', { preview: text.slice(0, 80) })
 
         return {
           state: {
             ...state,
             history: { ...state.history, [clientId]: [...prior, { role: 'user', content: text }] },
             pending: { ...state.pending, [clientId]: '' },
+            spanHandles: { ...state.spanHandles, [clientId]: { requestSpan, toolSpans: {} } },
           },
         }
       },
 
-      _toolCall: (state, message, context) => {
-        const { clientId, toolCallId, toolName, toolArguments, messagesAtCall } = message
-        let query = ''
-        try { query = (JSON.parse(toolArguments) as { query: string }).query } catch { query = toolArguments }
+      _toolsFetched: (state, message, context) => {
+        const { clientId, apiMessages, toolCollection } = message
+        const selfRef = context.self
+        const handles = state.spanHandles[clientId]
 
-        const webSearchRef = state.webSearchRef
-        if (!webSearchRef) {
-          const { [clientId]: _, ...restPending } = state.pending
+        const llmSpan = handles
+          ? context.trace.child(handles.requestSpan.traceId, handles.requestSpan.spanId, 'llm-call', { model })
+          : null
+
+        const toolSchemas = Object.values(toolCollection).map(e => e.schema as Tool)
+        const tools = toolSchemas.length > 0 ? toolSchemas : undefined
+
+        context.pipeToSelf(
+          streamLLM(apiKey, model, apiMessages, tools, (chunk) => {
+            selfRef.send({ type: 'llmChunk', clientId, text: chunk })
+          }),
+          (result) => result.type === 'toolCalls'
+            ? { type: '_toolBatch' as const, clientId, calls: result.calls, messagesAtCall: apiMessages, toolCollection }
+            : { type: 'llmDone' as const, clientId },
+          (error) => ({ type: 'llmErr' as const, clientId, error }),
+        )
+
+        return {
+          state: handles && llmSpan
+            ? { ...state, spanHandles: { ...state.spanHandles, [clientId]: { ...handles, llmSpan } } }
+            : state,
+        }
+      },
+
+      _toolBatch: (state, message, context) => {
+        const { clientId, calls, messagesAtCall, toolCollection } = message
+        const handles = state.spanHandles[clientId]
+
+        // Close the llm-call span with tool call info
+        handles?.llmSpan?.done({ toolCalls: calls.map(c => c.name) })
+
+        const unknownCall = calls.find(c => !toolCollection[c.name])
+        if (unknownCall) {
+          handles?.requestSpan.error('tool unavailable')
+          const { [clientId]: _, ...restHandles } = state.spanHandles
           return {
-            state: { ...state, pending: restPending },
+            state: { ...state, spanHandles: restHandles },
             events: [emit(WsSendTopic, {
               clientId,
-              text: JSON.stringify({ type: 'error', text: 'Search unavailable. Please try again.' }),
+              text: JSON.stringify({ type: 'error', text: 'Tool unavailable. Please try again.' }),
             })],
           }
         }
 
-        const replyTo: ActorRef<WebSearchReply> = {
-          name: `${context.self.name}/search-reply`,
-          send: (reply) => {
-            if (reply.type === 'searchResult') {
-              context.self.send({ type: 'searchResult', clientId, query: reply.query, result: reply.result })
-            } else {
-              context.self.send({ type: 'searchError', clientId, query: reply.query, error: reply.error })
-            }
-          },
-        }
+        const assistantToolCalls: ToolCall[] = calls.map(c => ({
+          id: c.id,
+          type: 'function',
+          function: { name: c.name, arguments: c.arguments },
+        }))
 
-        webSearchRef.send({ type: 'search', query, replyTo })
+        const batch: PendingBatch = { remaining: calls.length, results: [], messagesAtCall, assistantToolCalls }
+
+        // Create a tool-invoke span for each call and dispatch with trace headers
+        const newToolSpans: Record<string, SpanHandle> = {}
+        for (const call of calls) {
+          const entry = toolCollection[call.name]!
+          const toolSpan = handles
+            ? context.trace.child(handles.requestSpan.traceId, handles.requestSpan.spanId, 'tool-invoke', { toolName: call.name })
+            : null
+          if (toolSpan) newToolSpans[call.id] = toolSpan
+
+          context.pipeToSelf(
+            ask<ToolInvokeMsg, ToolReply>(
+              entry.ref,
+              (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo }),
+              undefined,
+              toolSpan ? context.trace.injectHeaders(toolSpan) : undefined,
+            ),
+            (reply) => ({ type: '_toolResult' as const, clientId, toolName: call.name, toolCallId: call.id, reply }),
+            (error) => ({
+              type: '_toolResult' as const,
+              clientId,
+              toolName: call.name,
+              toolCallId: call.id,
+              reply: { type: 'toolError' as const, error: String(error) },
+            }),
+          )
+        }
 
         return {
           state: {
             ...state,
-            pendingSearch: { ...state.pendingSearch, [clientId]: { toolCallId, query, messagesAtCall } },
+            pendingBatch: { ...state.pendingBatch, [clientId]: batch },
+            ...(handles ? {
+              spanHandles: {
+                ...state.spanHandles,
+                [clientId]: { ...handles, llmSpan: undefined, toolSpans: newToolSpans },
+              },
+            } : {}),
           },
           events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'searching' }) })],
         }
       },
 
-      searchResult: (state, message, context) => {
-        const { clientId, result } = message
-        const ps = state.pendingSearch[clientId]
-        if (!ps) return { state }
+      _toolResult: (state, message, context) => {
+        const { clientId, toolName, toolCallId, reply } = message
+        const batch = state.pendingBatch[clientId]!
+        const selfRef = context.self
+        const handles = state.spanHandles[clientId]
 
-        const { [clientId]: _, ...restPendingSearch } = state.pendingSearch
-
-        const toolCallMsg: ConversationMessage = {
-          role: 'assistant',
-          content: null,
-          tool_calls: [{ id: ps.toolCallId, type: 'function', function: { name: 'web_search', arguments: JSON.stringify({ query: ps.query }) } }],
-        }
-        const toolResultMsg: ConversationMessage = {
-          role: 'tool',
-          content: formatSearchResults(result),
-          tool_call_id: ps.toolCallId,
+        // Close this tool's span
+        const toolSpan = handles?.toolSpans[toolCallId]
+        if (toolSpan) {
+          reply.type === 'toolResult' ? toolSpan.done() : toolSpan.error(reply.error)
         }
 
-        const priorHistory = state.history[clientId] ?? []
-        const messagesWithResult: ApiMessage[] = [
-          ...ps.messagesAtCall,
-          { role: 'assistant', content: null, tool_calls: toolCallMsg.tool_calls },
-          { role: 'tool', content: toolResultMsg.content, tool_call_id: ps.toolCallId },
+        const content = reply.type === 'toolResult' ? reply.result : `Tool error: ${reply.error}`
+        const sources = reply.type === 'toolResult' ? reply.sources : undefined
+        const updatedResults = [...batch.results, { toolCallId, toolName, content }]
+        const remaining = batch.remaining - 1
+
+        if (remaining > 0) {
+          return {
+            state: {
+              ...state,
+              pendingBatch: { ...state.pendingBatch, [clientId]: { ...batch, remaining, results: updatedResults } },
+            },
+            events: sources
+              ? [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'sources', sources }) })]
+              : [],
+          }
+        }
+
+        const { [clientId]: _, ...restBatch } = state.pendingBatch
+
+        const toolResultMsgs: ApiMessage[] = updatedResults.map(r => ({
+          role: 'tool', content: r.content, tool_call_id: r.toolCallId,
+        }))
+        const messagesWithResults: ApiMessage[] = [
+          ...batch.messagesAtCall,
+          { role: 'assistant', content: null, tool_calls: batch.assistantToolCalls },
+          ...toolResultMsgs,
         ]
 
-        const sources = result.grounding.generic.map((item) => ({
-          title: item.title,
-          url: item.url,
-          snippet: item.snippets[0] ?? '',
+        // Start llm-response span for second LLM call
+        const llmSpan = handles
+          ? context.trace.child(handles.requestSpan.traceId, handles.requestSpan.spanId, 'llm-response', { model })
+          : null
+
+        context.pipeToSelf(
+          streamLLM(apiKey, model, messagesWithResults, undefined, (chunk) => {
+            selfRef.send({ type: 'llmChunk', clientId, text: chunk })
+          }),
+          () => ({ type: 'llmDone' as const, clientId }),
+          (error) => ({ type: 'llmErr' as const, clientId, error }),
+        )
+
+        const priorHistory = state.history[clientId] ?? []
+        const toolCallHistoryMsg: ConversationMessage = {
+          role: 'assistant', content: null, tool_calls: batch.assistantToolCalls,
+        }
+        const toolResultHistoryMsgs: ConversationMessage[] = updatedResults.map(r => ({
+          role: 'tool', content: r.content, tool_call_id: r.toolCallId,
         }))
 
-        const selfRef = context.self
-        streamLLM(apiKey, model, messagesWithResult, undefined, (chunk) => {
-          selfRef.send({ type: 'llmChunk', clientId, text: chunk })
-        }).then(() => {
-          selfRef.send({ type: 'llmDone', clientId })
-        }).catch((error) => {
-          selfRef.send({ type: 'llmErr', clientId, error })
-        })
+        const events = sources
+          ? [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'sources', sources }) })]
+          : []
 
         return {
           state: {
             ...state,
-            history: { ...state.history, [clientId]: [...priorHistory, toolCallMsg, toolResultMsg] },
-            pendingSearch: restPendingSearch,
+            pendingBatch: restBatch,
+            pending: { ...state.pending, [clientId]: '' },
+            history: { ...state.history, [clientId]: [...priorHistory, toolCallHistoryMsg, ...toolResultHistoryMsgs] },
+            ...(handles ? {
+              spanHandles: {
+                ...state.spanHandles,
+                [clientId]: { ...handles, llmSpan: llmSpan ?? undefined, toolSpans: {} },
+              },
+            } : {}),
           },
-          events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'sources', sources }) })],
-        }
-      },
-
-      searchError: (state, message, context) => {
-        const { clientId, query, error } = message
-        const ps = state.pendingSearch[clientId]
-        if (!ps) return { state }
-
-        const { [clientId]: _, ...restPendingSearch } = state.pendingSearch
-
-        const toolCallMsg: ConversationMessage = {
-          role: 'assistant',
-          content: null,
-          tool_calls: [{ id: ps.toolCallId, type: 'function', function: { name: 'web_search', arguments: JSON.stringify({ query }) } }],
-        }
-        const toolResultMsg: ConversationMessage = {
-          role: 'tool',
-          content: `Search failed: ${error}`,
-          tool_call_id: ps.toolCallId,
-        }
-
-        const priorHistory = state.history[clientId] ?? []
-        const messagesWithError: ApiMessage[] = [
-          ...ps.messagesAtCall,
-          { role: 'assistant', content: null, tool_calls: toolCallMsg.tool_calls },
-          { role: 'tool', content: toolResultMsg.content, tool_call_id: ps.toolCallId },
-        ]
-
-        const selfRef = context.self
-        streamLLM(apiKey, model, messagesWithError, undefined, (chunk) => {
-          selfRef.send({ type: 'llmChunk', clientId, text: chunk })
-        }).then(() => {
-          selfRef.send({ type: 'llmDone', clientId })
-        }).catch((error) => {
-          selfRef.send({ type: 'llmErr', clientId, error })
-        })
-
-        return {
-          state: {
-            ...state,
-            history: { ...state.history, [clientId]: [...priorHistory, toolCallMsg, toolResultMsg] },
-            pendingSearch: restPendingSearch,
-          },
+          events,
         }
       },
 
@@ -397,11 +410,16 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         const fullReply = state.pending[clientId] ?? ''
         const prior = state.history[clientId] ?? []
         const { [clientId]: _, ...restPending } = state.pending
+        const { [clientId]: __, ...restHandles } = state.spanHandles
+        const handles = state.spanHandles[clientId]
+        handles?.llmSpan?.done()
+        handles?.requestSpan.done()
         return {
           state: {
             ...state,
             history: { ...state.history, [clientId]: [...prior, { role: 'assistant', content: fullReply }] },
             pending: restPending,
+            spanHandles: restHandles,
           },
           events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) })],
         }
@@ -411,8 +429,12 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         const { clientId, error } = message
         context.log.error('LLM stream failed', { clientId, error: String(error) })
         const { [clientId]: _, ...restPending } = state.pending
+        const { [clientId]: __, ...restHandles } = state.spanHandles
+        const handles = state.spanHandles[clientId]
+        handles?.llmSpan?.error(error)
+        handles?.requestSpan?.error(error)
         return {
-          state: { ...state, pending: restPending },
+          state: { ...state, pending: restPending, spanHandles: restHandles },
           events: [emit(WsSendTopic, {
             clientId,
             text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }),

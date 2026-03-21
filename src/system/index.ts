@@ -6,6 +6,10 @@ export { ask } from './ask.ts'
 export { onLifecycle, onMessage } from './match.ts'
 export { watchTopic } from './services.ts'
 
+export { TraceTopic } from './trace.ts'
+export type { TraceSpan } from './trace.ts'
+export type { SpanHandle } from './types.ts'
+
 export {
   DeadLetterTopic,
   LogTopic,

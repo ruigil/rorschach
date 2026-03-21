@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import type { Server, ServerWebSocket } from 'bun'
 import { createTopic, emit } from '../../system/types.ts'
-import type { ActorDef, ActorRef } from '../../system/types.ts'
+import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 
 // ─── Public directory (resolved relative to this module) ───
@@ -22,6 +22,7 @@ export type HttpMessage =
 export type HttpState = {
   server: Server<WsData> | null
   connections: number
+  activeSpans: Record<string, SpanHandle>
 }
 
 // ─── WebSocket attachment data ───
@@ -30,7 +31,7 @@ type WsData = { clientId: string }
 
 // ─── Domain event: published when a WebSocket message is received ───
 
-export type WsMessageEvent = { clientId: string; text: string }
+export type WsMessageEvent = { clientId: string; text: string; traceId: string; parentSpanId: string }
 
 /** Topic for WebSocket message domain events. Subscribe to receive browser input. */
 export const WsMessageTopic = createTopic<WsMessageEvent>('http.ws.message')
@@ -111,16 +112,27 @@ export const createHttpActor = (
 
       message: (state, message, context) => {
         context.log.debug(`[${message.clientId}] ${message.text}`)
-        // Emit as a typed domain event so other actors can subscribe
+        const span = context.trace.start('request', { clientId: message.clientId })
         return {
-          state,
-          events: [emit(WsMessageTopic, { clientId: message.clientId, text: message.text })],
+          state: { ...state, activeSpans: { ...state.activeSpans, [message.clientId]: span } },
+          events: [emit(WsMessageTopic, {
+            clientId: message.clientId,
+            text: message.text,
+            traceId: span.traceId,
+            parentSpanId: span.spanId,
+          })],
         }
       },
 
       closed: (state, message, context) => {
         const connections = Math.max(0, state.connections - 1)
         context.log.info(`client disconnected: ${message.clientId} (${connections} remaining)`)
+        const span = state.activeSpans[message.clientId]
+        if (span) {
+          span.error('client disconnected')
+          const { [message.clientId]: _, ...rest } = state.activeSpans
+          return { state: { ...state, connections, activeSpans: rest } }
+        }
         return { state: { ...state, connections } }
       },
 
@@ -131,6 +143,17 @@ export const createHttpActor = (
 
       send: (state, message) => {
         state.server?.publish(`client:${message.clientId}`, message.text)
+        try {
+          const parsed = JSON.parse(message.text) as { type: string }
+          if (parsed.type === 'done' || parsed.type === 'error') {
+            const span = state.activeSpans[message.clientId]
+            if (span) {
+              parsed.type === 'done' ? span.done() : span.error()
+              const { [message.clientId]: _, ...rest } = state.activeSpans
+              return { state: { ...state, activeSpans: rest } }
+            }
+          }
+        } catch { /* non-JSON text */ }
         return { state }
       },
 

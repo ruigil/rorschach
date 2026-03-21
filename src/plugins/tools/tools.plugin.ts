@@ -1,20 +1,29 @@
-import { createWebSearchActor, type WebSearchActorOptions, type WebSearchMsg } from './web-search.ts'
+import { createWebSearchActor, type WebSearchActorOptions, WEB_SEARCH_SCHEMA, WEB_SEARCH_TOOL_NAME } from './web-search.ts'
 import type { ActorIdentity, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { createTopic, redact } from '../../system/types.ts'
+import { redact } from '../../system/types.ts'
+import type { ToolCollection, ToolInvokeMsg } from './tool.ts'
+import { ToolRegistrationTopic } from './tool.ts'
 
-export const WebSearchRefTopic = createTopic<ActorRef<WebSearchMsg> | null>('tools/web-search-ref')
+export { ToolRegistrationTopic } from './tool.ts'
+export type { ToolCollection } from './tool.ts'
+
+export type GetToolsMsg = { type: 'getTools'; replyTo: ActorRef<ToolCollection> }
 
 export type ToolsConfig = {
   webSearch?: WebSearchActorOptions
 }
 
-type PluginMsg = { type: 'config'; slice: ToolsConfig | undefined }
+type PluginMsg =
+  | { type: 'config'; slice: ToolsConfig | undefined }
+  | { type: 'getTools'; replyTo: ActorRef<ToolCollection> }
+
 type PluginState = {
   initialized: boolean
   webSearchConfig: WebSearchActorOptions | null
   webSearchRef: ActorIdentity | null
   webSearchGen: number
+  tools: ToolCollection
 }
 
 const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
@@ -32,22 +41,30 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
     onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
   },
 
-  initialState: { initialized: false, webSearchConfig: null, webSearchRef: null, webSearchGen: 0 },
+  initialState: { initialized: false, webSearchConfig: null, webSearchRef: null, webSearchGen: 0, tools: {} },
 
   lifecycle: onLifecycle({
     start: (_state, ctx) => {
       const slice = ctx.config as ToolsConfig | undefined
       const webSearchConfig = slice?.webSearch ?? null
-      const webSearchRef = webSearchConfig
-        ? ctx.spawn('web-search-0', createWebSearchActor(webSearchConfig), null)
-        : null
 
-      ctx.publish(WebSearchRefTopic, webSearchRef)
+      let tools: ToolCollection = {}
+      let webSearchRef: ActorRef<ToolInvokeMsg> | null = null
+
+      if (webSearchConfig) {
+        webSearchRef = ctx.spawn('web-search-0', createWebSearchActor(webSearchConfig), null) as ActorRef<ToolInvokeMsg>
+        tools = { [WEB_SEARCH_TOOL_NAME]: { schema: WEB_SEARCH_SCHEMA, ref: webSearchRef } }
+        ctx.publish(ToolRegistrationTopic, { name: WEB_SEARCH_TOOL_NAME, schema: WEB_SEARCH_SCHEMA, ref: webSearchRef })
+      }
+
       ctx.log.info('tools plugin activated')
-      return { state: { initialized: true, webSearchConfig, webSearchRef, webSearchGen: 0 } }
+      return { state: { initialized: true, webSearchConfig, webSearchRef, webSearchGen: 0, tools } }
     },
+
     stopped: (state, ctx) => {
-      ctx.publish(WebSearchRefTopic, null)
+      if (state.webSearchRef) {
+        ctx.publish(ToolRegistrationTopic, { name: WEB_SEARCH_TOOL_NAME, ref: null })
+      }
       ctx.log.info('tools plugin deactivating')
       return { state }
     },
@@ -61,14 +78,30 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
   }),
 
   handler: (state, msg, ctx) => {
+    if (msg.type === 'getTools') {
+      msg.replyTo.send(state.tools)
+      return { state }
+    }
+
+    // config update
     if (state.webSearchRef) ctx.stop(state.webSearchRef)
+    if (state.webSearchRef) {
+      ctx.publish(ToolRegistrationTopic, { name: WEB_SEARCH_TOOL_NAME, ref: null })
+    }
+
     const newWebSearch = msg.slice?.webSearch ?? null
     const webSearchGen = state.webSearchGen + 1
-    const webSearchRef = newWebSearch
-      ? ctx.spawn(`web-search-${webSearchGen}`, createWebSearchActor(newWebSearch), null)
-      : null
-    ctx.publish(WebSearchRefTopic, webSearchRef)
-    return { state: { ...state, webSearchConfig: newWebSearch, webSearchRef, webSearchGen } }
+
+    let tools: ToolCollection = {}
+    let webSearchRef: ActorRef<ToolInvokeMsg> | null = null
+
+    if (newWebSearch) {
+      webSearchRef = ctx.spawn(`web-search-${webSearchGen}`, createWebSearchActor(newWebSearch), null) as ActorRef<ToolInvokeMsg>
+      tools = { [WEB_SEARCH_TOOL_NAME]: { schema: WEB_SEARCH_SCHEMA, ref: webSearchRef } }
+      ctx.publish(ToolRegistrationTopic, { name: WEB_SEARCH_TOOL_NAME, schema: WEB_SEARCH_SCHEMA, ref: webSearchRef })
+    }
+
+    return { state: { ...state, webSearchConfig: newWebSearch, webSearchRef, webSearchGen, tools } }
   },
 }
 

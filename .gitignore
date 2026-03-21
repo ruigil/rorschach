@@ -34,3 +34,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Database files
 *.db
+
+# personal project notes
+docs/notes.md

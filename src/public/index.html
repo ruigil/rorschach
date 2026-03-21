@@ -158,6 +158,7 @@
         <button class="obs-subtab active" data-subtab="metrics">metrics</button>
         <button class="obs-subtab" data-subtab="topics">topics</button>
         <button class="obs-subtab" data-subtab="logs">logs</button>
+        <button class="obs-subtab" data-subtab="traces">traces</button>
       </div>
       <div class="obs-bar-end">
         <div class="metrics-summary" id="metrics-summary" style="display:none">
@@ -181,6 +182,10 @@
         <div class="obs-log-controls" id="obs-log-controls" style="display:none">
           <span class="log-count" id="log-count">0 events</span>
           <button class="btn-clear" id="clear-logs">clear</button>
+        </div>
+        <div class="obs-traces-controls" id="obs-traces-controls" style="display:none">
+          <span class="log-count" id="traces-count">0 traces</span>
+          <button class="btn-clear" id="clear-traces">clear</button>
         </div>
       </div>
     </div>
@@ -219,6 +224,17 @@
             <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
           </svg>
           <span>awaiting metrics snapshot</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="obs-traces" class="obs-subpanel">
+      <div id="obs-traces-list">
+        <div class="empty-panel" id="traces-empty">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          <span>awaiting traces</span>
         </div>
       </div>
     </div>

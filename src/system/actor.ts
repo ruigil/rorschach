@@ -21,9 +21,12 @@ import {
   type Mailbox,
   type MessageHeaders,
   type MessageHandler,
+  type SpanHandle,
   type StopResult,
-  type SupervisionStrategy
+  type SupervisionStrategy,
+  type TraceContext,
 } from './types.ts'
+import { TraceTopic, newId } from './trace.ts'
 
 // ─── Internal envelope: unifies user messages and lifecycle events ───
 type Envelope<M> =
@@ -164,6 +167,61 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
   const { name, ref, timers, children, mailbox, services,
           enqueueLifecycle, log, isStopped, getHeaders, configRef } = internals
 
+  // ─── Tracing ───
+
+  const makeSpan = (
+    traceId: string,
+    spanId: string,
+    parentSpanId: string | undefined,
+    operation: string,
+    data?: Record<string, unknown>,
+  ): SpanHandle => {
+    const startTime = Date.now()
+    services.eventStream.publish(TraceTopic, {
+      traceId, spanId, actor: name, operation,
+      status: 'started', timestamp: startTime,
+      ...(parentSpanId !== undefined ? { parentSpanId } : {}),
+      ...(data !== undefined ? { data } : {}),
+    })
+    return {
+      traceId,
+      spanId,
+      done: (doneData?: Record<string, unknown>) => {
+        const now = Date.now()
+        services.eventStream.publish(TraceTopic, {
+          traceId, spanId, actor: name, operation,
+          status: 'done', timestamp: now, durationMs: now - startTime,
+          ...(parentSpanId !== undefined ? { parentSpanId } : {}),
+          ...(doneData !== undefined ? { data: doneData } : {}),
+        })
+      },
+      error: (err?: unknown) => {
+        const now = Date.now()
+        services.eventStream.publish(TraceTopic, {
+          traceId, spanId, actor: name, operation,
+          status: 'error', timestamp: now, durationMs: now - startTime,
+          ...(parentSpanId !== undefined ? { parentSpanId } : {}),
+          ...(err !== undefined ? { data: { error: String(err) } } : {}),
+        })
+      },
+    }
+  }
+
+  const traceCtx: TraceContext = {
+    start: (operation, data) => makeSpan(newId(), newId(), undefined, operation, data),
+    child: (traceId, parentSpanId, operation, data) => makeSpan(traceId, newId(), parentSpanId, operation, data),
+    fromHeaders: () => {
+      const traceparent = getHeaders()['traceparent']
+      if (!traceparent) return null
+      const parts = traceparent.split('-')
+      if (parts.length < 4) return null
+      return { traceId: parts[1]!, spanId: parts[2]! }
+    },
+    injectHeaders: (span) => ({
+      traceparent: `00-${span.traceId}-${span.spanId}-01`,
+    }),
+  }
+
   return {
     self: ref,
     timers,
@@ -268,6 +326,7 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
     // ─── Logging (exposed to actor handlers) ───
 
     log,
+    trace: traceCtx,
   }
 }
 

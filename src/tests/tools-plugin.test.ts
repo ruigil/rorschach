@@ -1,12 +1,12 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { createPluginSystem, ask } from '../system/index.ts'
-import type { ActorDef, ActorRef } from '../system/index.ts'
+import type { ActorDef } from '../system/index.ts'
 import {
   createWebSearchActor,
   type WebSearchMsg,
-  type WebSearchReply,
   type BraveLlmContextResponse,
 } from '../plugins/tools/web-search.ts'
+import type { ToolInvokeMsg, ToolReply } from '../plugins/tools/tool.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 
 // ─── Helpers ───
@@ -54,67 +54,65 @@ const stubFetchThrow = (message: string) => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('web-search actor', () => {
-  test('sends searchResult to replyTo on successful Brave API response', async () => {
+  test('sends toolResult to replyTo on successful Brave API response', async () => {
     stubFetchOk(mockBraveResponse)
 
     const system = await createPluginSystem()
     const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }), null)
     await tick()
 
-    const reply = await ask<WebSearchMsg, WebSearchReply>(
+    const reply = await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'search', query: 'bun runtime', replyTo }),
+      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'bun runtime' }), replyTo }),
       { timeoutMs: 500 },
     )
 
-    expect(reply.type).toBe('searchResult')
-    if (reply.type === 'searchResult') {
-      expect(reply.query).toBe('bun runtime')
-      expect(reply.result.grounding.generic).toHaveLength(1)
-      expect(reply.result.grounding.generic[0]!.url).toBe('https://example.com/page')
-      expect(Object.keys(reply.result.sources)).toContain('https://example.com/page')
+    expect(reply.type).toBe('toolResult')
+    if (reply.type === 'toolResult') {
+      expect(reply.result).toContain('Example Page')
+      expect(reply.sources).toHaveLength(1)
+      expect(reply.sources?.[0]?.url).toBe('https://example.com/page')
     }
 
     await system.shutdown()
   })
 
-  test('sends searchError to replyTo when Brave API returns non-ok status', async () => {
+  test('sends toolError to replyTo when Brave API returns non-ok status', async () => {
     stubFetchError(429, 'Rate limit exceeded')
 
     const system = await createPluginSystem()
     const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }), null)
     await tick()
 
-    const reply = await ask<WebSearchMsg, WebSearchReply>(
+    const reply = await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'search', query: 'anything', replyTo }),
+      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'anything' }), replyTo }),
       { timeoutMs: 500 },
     )
 
-    expect(reply.type).toBe('searchError')
-    if (reply.type === 'searchError') {
-      expect(reply.query).toBe('anything')
+    expect(reply.type).toBe('toolError')
+    if (reply.type === 'toolError') {
       expect(reply.error).toContain('429')
     }
 
     await system.shutdown()
   })
 
-  test('sends searchError to replyTo when fetch throws a network error', async () => {
+  test('sends toolError to replyTo when fetch throws a network error', async () => {
     stubFetchThrow('network unreachable')
 
     const system = await createPluginSystem()
     const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }), null)
     await tick()
 
-    const reply = await ask<WebSearchMsg, WebSearchReply>(
+    const reply = await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'search', query: 'anything', replyTo }),
+      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'anything' }), replyTo }),
       { timeoutMs: 500 },
     )
 
-    expect(reply.type).toBe('searchError')
-    if (reply.type === 'searchError') {
+    expect(reply.type).toBe('toolError')
+    if (reply.type === 'toolError') {
       expect(reply.error).toContain('network unreachable')
     }
 
@@ -133,9 +131,9 @@ describe('web-search actor', () => {
     const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key', count: 7 }), null)
     await tick()
 
-    await ask<WebSearchMsg, WebSearchReply>(
+    await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'search', query: 'test', replyTo }),
+      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'test' }), replyTo }),
       { timeoutMs: 500 },
     )
 
@@ -157,9 +155,9 @@ describe('web-search actor', () => {
     const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'my-secret-key' }), null)
     await tick()
 
-    await ask<WebSearchMsg, WebSearchReply>(
+    await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'search', query: 'test', replyTo }),
+      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'test' }), replyTo }),
       { timeoutMs: 500 },
     )
 
@@ -186,21 +184,26 @@ describe('tools plugin', () => {
     const status = system.getPluginStatus('tools')
     expect(status?.status).toBe('active')
 
-    // Probe actor: look up the child, fire a search, collect the reply
-    type ProbeMsg = { type: 'noop' } | WebSearchReply
-    const replies: WebSearchReply[] = []
+    // Probe actor: look up the child, fire an invoke, collect the reply
+    type ProbeMsg = { type: 'noop' } | ToolReply
+    const replies: ToolReply[] = []
 
     const probeDef: ActorDef<ProbeMsg, null> = {
       lifecycle: (state, event, ctx) => {
         if (event.type === 'start') {
           const wsRef = ctx.lookup<WebSearchMsg>('system/tools/web-search-0')
           expect(wsRef).toBeDefined()
-          wsRef?.send({ type: 'search', query: 'probe', replyTo: ctx.self as unknown as ActorRef<WebSearchReply> })
+          wsRef?.send({
+            type: 'invoke',
+            toolName: 'web_search',
+            arguments: JSON.stringify({ query: 'probe' }),
+            replyTo: ctx.self as unknown as import('../plugins/tools/tool.ts').ActorRef<ToolReply>,
+          })
         }
         return { state }
       },
       handler: (state, msg) => {
-        if (msg.type === 'searchResult' || msg.type === 'searchError') {
+        if (msg.type === 'toolResult' || msg.type === 'toolError') {
           replies.push(msg)
         }
         return { state }
@@ -211,7 +214,7 @@ describe('tools plugin', () => {
     await tick(200)
 
     expect(replies).toHaveLength(1)
-    expect(replies[0]!.type).toBe('searchResult')
+    expect(replies[0]!.type).toBe('toolResult')
 
     await system.shutdown()
   })
@@ -222,6 +225,7 @@ describe('tools plugin', () => {
       webSearchConfig: { apiKey: 'super-secret', count: 20 },
       webSearchRef: null,
       webSearchGen: 0,
+      tools: {},
     }
 
     const masked = toolsPlugin.maskState!(state)
@@ -236,6 +240,7 @@ describe('tools plugin', () => {
       webSearchConfig: null,
       webSearchRef: null,
       webSearchGen: 0,
+      tools: {},
     }
 
     const masked = toolsPlugin.maskState!(state)

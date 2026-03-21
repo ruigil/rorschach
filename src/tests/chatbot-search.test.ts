@@ -5,6 +5,7 @@ import { createChatbotActor, type ChatbotActorOptions, type ChatbotState } from 
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import type { BraveLlmContextResponse } from '../plugins/tools/web-search.ts'
 
+
 // ─── Helpers ───
 
 const tick = (ms = 100) => Bun.sleep(ms)
@@ -19,8 +20,9 @@ const CHATBOT_OPTS: ChatbotActorOptions = {
 const INITIAL_CHATBOT_STATE: ChatbotState = {
   history: {},
   pending: {},
-  webSearchRef: null,
-  pendingSearch: {},
+  pendingBatch: {},
+  toolsRef: null,
+  spanHandles: {},
 }
 
 const mockBraveResponse: BraveLlmContextResponse = {
@@ -105,7 +107,7 @@ describe('chatbot search integration', () => {
     system.spawn('chatbot', createChatbotActor(CHATBOT_OPTS), INITIAL_CHATBOT_STATE)
 
     await tick()
-    system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'What is the latest AI news?' })
+    system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'What is the latest AI news?', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(400)
 
     const types = events.map(e => e.type)
@@ -133,7 +135,7 @@ describe('chatbot search integration', () => {
     system.spawn('chatbot', createChatbotActor(CHATBOT_OPTS), INITIAL_CHATBOT_STATE)
 
     await tick()
-    system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'search for something' })
+    system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(400)
 
     const sourcesEvent = events.find(e => e.type === 'sources')
@@ -159,13 +161,13 @@ describe('chatbot search integration', () => {
       return makeSSEResponse(contentPayloads('Direct answer, no search needed.'))
     }) as unknown as typeof fetch
 
-    // No tools plugin — chatbot starts with webSearchRef: null
+    // No tools plugin — chatbot has no toolsRef, ask returns empty collection
     const system = await createPluginSystem()
     const events = collectEvents(system)
     system.spawn('chatbot', createChatbotActor(CHATBOT_OPTS), INITIAL_CHATBOT_STATE)
 
     await tick()
-    system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'hello' })
+    system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(300)
 
     expect(capturedBody?.tools).toBeUndefined()
@@ -189,7 +191,7 @@ describe('chatbot search integration', () => {
     system.spawn('chatbot', createChatbotActor(CHATBOT_OPTS), INITIAL_CHATBOT_STATE)
 
     await tick()
-    system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'search for something' })
+    system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(400)
 
     const types = events.map(e => e.type)
@@ -225,7 +227,7 @@ describe('chatbot search integration', () => {
     system.spawn('chatbot', createChatbotActor(CHATBOT_OPTS), INITIAL_CHATBOT_STATE)
 
     await tick()
-    system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'hello' })
+    system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(300)
 
     expect(capturedBody?.tools).toBeDefined()

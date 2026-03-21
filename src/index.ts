@@ -4,13 +4,14 @@ import {
   LogTopic,
   MetricsTopic,
   SystemLifecycleTopic,
+  TraceTopic,
 } from './system/index.ts'
 import interfacesPlugin from './plugins/interfaces/interfaces.plugin.ts'
 import cognitivePlugin from './plugins/cognitive/cognitive.plugin.ts'
 import toolsPlugin from './plugins/tools/tools.plugin.ts'
 import observabilityPlugin from './plugins/observability/observability.plugin.ts'
 import { WsBroadcastTopic, HttpConfigTopic } from './plugins/interfaces/http.ts'
-import type { LogEvent, MetricsEvent, LifecycleEvent } from './system/index.ts'
+import type { LogEvent, MetricsEvent, LifecycleEvent, TraceSpan } from './system/index.ts'
 import type { HttpConfigPayload } from './plugins/interfaces/http.ts'
 
 const apiKey = process.env.OPENROUTER_API_KEY
@@ -72,6 +73,14 @@ system.subscribe(LogTopic, (event: LogEvent) => {
 system.subscribe(MetricsTopic, (event: MetricsEvent) => {
   system.publish(WsBroadcastTopic, {
     text: JSON.stringify({ type: 'metrics', ...event }),
+  })
+})
+
+// ─── Forward trace spans to the observability page ───
+
+system.subscribe(TraceTopic, (span: TraceSpan) => {
+  system.publish(WsBroadcastTopic, {
+    text: JSON.stringify({ type: 'trace', ...span }),
   })
 })
 

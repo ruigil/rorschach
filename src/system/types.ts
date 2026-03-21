@@ -92,6 +92,28 @@ export type LifecycleEvent =
   | { type: 'stopped' }
   | { type: 'terminated'; ref: ActorIdentity; reason: 'stopped' | 'failed'; error?: unknown }
 
+// ─── Tracing ───
+
+export type SpanHandle = {
+  readonly traceId: string
+  readonly spanId: string
+  /** Close the span as successful. */
+  done(data?: Record<string, unknown>): void
+  /** Close the span as failed. */
+  error(err?: unknown): void
+}
+
+export type TraceContext = {
+  /** Start a new root span (generates a new traceId). */
+  start(operation: string, data?: Record<string, unknown>): SpanHandle
+  /** Start a child span under an existing trace. */
+  child(traceId: string, parentSpanId: string, operation: string, data?: Record<string, unknown>): SpanHandle
+  /** Parse W3C traceparent from the current message's headers. Returns null if absent. */
+  fromHeaders(): { traceId: string; spanId: string } | null
+  /** Produce W3C traceparent headers to propagate to downstream send()/ask() calls. */
+  injectHeaders(span: SpanHandle): MessageHeaders
+}
+
 // ─── Event Stream Topics ───
 //
 // EventTopic<T> carries a phantom type parameter that encodes the payload type.
@@ -310,6 +332,7 @@ export type ActorContext<M> = {
     readonly warn: (message: string, data?: unknown) => void
     readonly error: (message: string, data?: unknown) => void
   }
+  readonly trace: TraceContext
 }
 
 // ─── Shutdown Configuration ───

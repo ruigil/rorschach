@@ -27,7 +27,7 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
 
       const httpConfig = slice?.http ?? null
       const httpRef = httpConfig
-        ? ctx.spawn('http-0', createHttpActor(httpConfig), { server: null, connections: 0 } as HttpState)
+        ? ctx.spawn('http-0', createHttpActor(httpConfig), { server: null, connections: 0, activeSpans: {} } as HttpState)
         : null
 
       ctx.log.info('interfaces plugin activated')
@@ -44,7 +44,7 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
     const newHttp = msg.slice?.http ?? null
     const httpGen = state.httpGen + 1
     const httpRef = newHttp
-      ? ctx.spawn(`http-${httpGen}`, createHttpActor(newHttp), { server: null, connections: 0 } as HttpState)
+      ? ctx.spawn(`http-${httpGen}`, createHttpActor(newHttp), { server: null, connections: 0, activeSpans: {} } as HttpState)
       : null
     return { state: { ...state, httpConfig: newHttp, httpRef, httpGen } }
   },
