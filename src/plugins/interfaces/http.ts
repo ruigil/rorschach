@@ -1,21 +1,48 @@
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import type { Server, ServerWebSocket } from 'bun'
 import { createTopic, emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
+import { ask } from '../../system/ask.ts'
 
 // ─── Public directory (resolved relative to this module) ───
 const PUBLIC_DIR = join(import.meta.dir, '../..', 'public')
+
+// ─── Fallback model list (used when llm-provider is unavailable) ───
+const FALLBACK_MODELS = [
+  'anthropic/claude-haiku-4-5',
+  'anthropic/claude-sonnet-4-5',
+  'anthropic/claude-sonnet-4-5:thinking',
+  'deepseek/deepseek-r1',
+  'google/gemini-flash-1.5',
+  'google/gemini-pro-1.5',
+  'openai/gpt-4o',
+  'openai/gpt-4o-mini',
+]
 
 // ─── Message protocol ───
 
 export type HttpMessage =
   | { type: 'connected'; clientId: string }
-  | { type: 'message'; clientId: string; text: string }
+  | { type: 'message'; clientId: string; text: string; images?: string[] }
+  | { type: '_imagesSaved'; clientId: string; text: string; filePaths: string[] }
   | { type: 'closed'; clientId: string }
   | { type: 'broadcast'; text: string }
   | { type: 'send'; clientId: string; text: string }
   | { type: 'config'; data: unknown }
+
+// ─── Image helpers ───
+
+const saveImagesToTempFiles = (images: string[]): Promise<string[]> =>
+  Promise.all(images.map(async (dataUrl) => {
+    const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/)
+    const ext = match?.[1] ?? 'jpeg'
+    const data = match?.[2] ?? ''
+    const filePath = join(tmpdir(), `rorschach-${crypto.randomUUID()}.${ext}`)
+    await Bun.write(filePath, Buffer.from(data, 'base64'))
+    return filePath
+  }))
 
 // ─── Actor state ───
 
@@ -31,7 +58,7 @@ type WsData = { clientId: string }
 
 // ─── Domain event: published when a WebSocket message is received ───
 
-export type WsMessageEvent = { clientId: string; text: string; traceId: string; parentSpanId: string }
+export type WsMessageEvent = { clientId: string; text: string; images?: string[]; traceId: string; parentSpanId: string }
 
 /** Topic for WebSocket message domain events. Subscribe to receive browser input. */
 export const WsMessageTopic = createTopic<WsMessageEvent>('http.ws.message')
@@ -113,11 +140,38 @@ export const createHttpActor = (
       message: (state, message, context) => {
         context.log.debug(`[${message.clientId}] ${message.text}`)
         const span = context.trace.start('request', { clientId: message.clientId })
+        const newState = { ...state, activeSpans: { ...state.activeSpans, [message.clientId]: span } }
+
+        if (message.images && message.images.length > 0) {
+          context.pipeToSelf(
+            saveImagesToTempFiles(message.images),
+            (filePaths): HttpMessage => ({ type: '_imagesSaved', clientId: message.clientId, text: message.text, filePaths }),
+            (): HttpMessage => ({ type: '_imagesSaved', clientId: message.clientId, text: message.text, filePaths: [] }),
+          )
+          return { state: newState }
+        }
+
         return {
-          state: { ...state, activeSpans: { ...state.activeSpans, [message.clientId]: span } },
+          state: newState,
           events: [emit(WsMessageTopic, {
             clientId: message.clientId,
             text: message.text,
+            traceId: span.traceId,
+            parentSpanId: span.spanId,
+          })],
+        }
+      },
+
+      _imagesSaved: (state, message) => {
+        const { clientId, text, filePaths } = message
+        const span = state.activeSpans[clientId]
+        if (!span) return { state }
+        return {
+          state,
+          events: [emit(WsMessageTopic, {
+            clientId,
+            text,
+            images: filePaths.length > 0 ? filePaths : undefined,
             traceId: span.traceId,
             parentSpanId: span.spanId,
           })],
@@ -170,6 +224,8 @@ export const createHttpActor = (
       start: (state, context) => {
         selfRef = context.self
 
+        const { lookup, actorSnapshots } = context
+
         context.subscribe(WsSendTopic, (e) => ({
           type: 'send' as const,
           clientId: e.clientId,
@@ -187,6 +243,21 @@ export const createHttpActor = (
           // ─── HTTP handler: static file serving ───
           async fetch(req, server) {
             const url = new URL(req.url)
+
+            // Models API
+            if (req.method === 'GET' && url.pathname === '/models') {
+              const snap = actorSnapshots().find(
+                s => s.name.includes('/llm-provider-') && s.status === 'running',
+              )
+              const ref = snap ? lookup<{ type: 'fetchModels'; replyTo: ActorRef<string[]> }>(snap.name) : undefined
+              if (ref) {
+                try {
+                  const models = await ask(ref, replyTo => ({ type: 'fetchModels' as const, replyTo }), { timeoutMs: 10_000 })
+                  return new Response(JSON.stringify(models), { headers: { 'Content-Type': 'application/json' } })
+                } catch { /* timeout — fall through to fallback */ }
+              }
+              return new Response(JSON.stringify(FALLBACK_MODELS), { headers: { 'Content-Type': 'application/json' } })
+            }
 
             // Config API
             if (req.method === 'POST' && url.pathname === '/config') {
@@ -232,8 +303,17 @@ export const createHttpActor = (
               selfRef?.send({ type: 'connected', clientId: ws.data.clientId })
             },
             message: (ws: ServerWebSocket<WsData>, message) => {
-              const text = typeof message === 'string' ? message : message.toString()
-              selfRef?.send({ type: 'message', clientId: ws.data.clientId, text })
+              const raw = typeof message === 'string' ? message : message.toString()
+              let text = raw
+              let images: string[] | undefined
+              try {
+                const parsed = JSON.parse(raw) as { text?: string; images?: string[] }
+                if (typeof parsed.text === 'string') {
+                  text = parsed.text
+                  images = parsed.images
+                }
+              } catch { /* plain text, no images */ }
+              selfRef?.send({ type: 'message', clientId: ws.data.clientId, text, images })
             },
             close: (ws: ServerWebSocket<WsData>) => {
               ws.unsubscribe(CHANNEL)

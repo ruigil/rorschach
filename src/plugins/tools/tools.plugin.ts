@@ -2,7 +2,7 @@ import { createWebSearchActor, type WebSearchActorOptions, WEB_SEARCH_SCHEMA, WE
 import type { ActorIdentity, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'
-import type { ToolCollection, ToolInvokeMsg } from './tool.ts'
+import type { ToolCollection, ToolInvokeMsg, ToolSchema } from './tool.ts'
 import { ToolRegistrationTopic } from './tool.ts'
 
 export { ToolRegistrationTopic } from './tool.ts'
@@ -17,6 +17,8 @@ export type ToolsConfig = {
 type PluginMsg =
   | { type: 'config'; slice: ToolsConfig | undefined }
   | { type: 'getTools'; replyTo: ActorRef<ToolCollection> }
+  | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
+  | { type: '_toolUnregistered'; name: string }
 
 type PluginState = {
   initialized: boolean
@@ -57,6 +59,13 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         ctx.publish(ToolRegistrationTopic, { name: WEB_SEARCH_TOOL_NAME, schema: WEB_SEARCH_SCHEMA, ref: webSearchRef })
       }
 
+      // Subscribe to ToolRegistrationTopic so other plugins (e.g. cognitive) can register their tools
+      ctx.subscribe(ToolRegistrationTopic, (event) =>
+        event.ref === null
+          ? { type: '_toolUnregistered' as const, name: event.name }
+          : { type: '_toolRegistered' as const, name: event.name, schema: event.schema, ref: event.ref },
+      )
+
       ctx.log.info('tools plugin activated')
       return { state: { initialized: true, webSearchConfig, webSearchRef, webSearchGen: 0, tools } }
     },
@@ -81,6 +90,15 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
     if (msg.type === 'getTools') {
       msg.replyTo.send(state.tools)
       return { state }
+    }
+
+    if (msg.type === '_toolRegistered') {
+      return { state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } } }
+    }
+
+    if (msg.type === '_toolUnregistered') {
+      const { [msg.name]: _, ...rest } = state.tools
+      return { state: { ...state, tools: rest } }
     }
 
     // config update

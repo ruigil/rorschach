@@ -109,11 +109,16 @@ function connect() {
 
 // ─── Chat ───
 
-const messagesEl = document.getElementById('messages')
-const emptyEl    = document.getElementById('empty')
-const chatForm   = document.getElementById('chat-form')
-const input      = document.getElementById('input')
-const send       = document.getElementById('send')
+const messagesEl    = document.getElementById('messages')
+const emptyEl       = document.getElementById('empty')
+const chatForm      = document.getElementById('chat-form')
+const input         = document.getElementById('input')
+const send          = document.getElementById('send')
+const attachBtn     = document.getElementById('attach-btn')
+const imageInput    = document.getElementById('image-input')
+const imagePreviewsEl = document.getElementById('image-previews')
+
+let pendingImages = []  // array of base64 data URLs
 
 let thinkingEl   = null
 let streamWrap   = null
@@ -135,14 +140,69 @@ input.addEventListener('keydown', (e) => {
   }
 })
 
+// ─── Image upload ───
+
+attachBtn.addEventListener('click', () => imageInput.click())
+
+imageInput.addEventListener('change', async () => {
+  const files = Array.from(imageInput.files ?? [])
+  for (const file of files) {
+    const dataUrl = await readFileAsDataUrl(file)
+    pendingImages.push(dataUrl)
+  }
+  imageInput.value = ''
+  renderImagePreviews()
+})
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+function renderImagePreviews() {
+  imagePreviewsEl.innerHTML = ''
+  if (pendingImages.length === 0) {
+    imagePreviewsEl.classList.add('hidden')
+    return
+  }
+  imagePreviewsEl.classList.remove('hidden')
+  pendingImages.forEach((dataUrl, i) => {
+    const wrap = document.createElement('div')
+    wrap.className = 'image-thumb-wrap'
+    const img = document.createElement('img')
+    img.src = dataUrl
+    img.className = 'image-thumb'
+    const removeBtn = document.createElement('button')
+    removeBtn.className = 'image-thumb-remove'
+    removeBtn.textContent = '×'
+    removeBtn.addEventListener('click', () => {
+      pendingImages.splice(i, 1)
+      renderImagePreviews()
+    })
+    wrap.appendChild(img)
+    wrap.appendChild(removeBtn)
+    imagePreviewsEl.appendChild(wrap)
+  })
+}
+
+function clearPendingImages() {
+  pendingImages = []
+  renderImagePreviews()
+}
+
 chatForm.addEventListener('submit', (e) => {
   e.preventDefault()
   const text = input.value.trim()
-  if (!text || ws?.readyState !== WebSocket.OPEN || isWaiting) return
-  appendMessage('user', text)
-  ws.send(text)
+  if ((!text && pendingImages.length === 0) || ws?.readyState !== WebSocket.OPEN || isWaiting) return
+  appendUserMessage(text, pendingImages.slice())
+  ws.send(JSON.stringify({ text, images: pendingImages.slice() }))
   input.value = ''
   input.style.height = 'auto'
+  clearPendingImages()
   setWaiting(true)
   showThinking()
 })
@@ -156,6 +216,38 @@ function setWaiting(waiting) {
 
 function scrollToBottom() {
   messagesEl.scrollTop = messagesEl.scrollHeight
+}
+
+function appendUserMessage(text, images) {
+  if (emptyEl?.parentNode) emptyEl.remove()
+  const wrap   = document.createElement('div')
+  wrap.className = 'message user'
+  const label  = document.createElement('div')
+  label.className = 'message-label'
+  label.textContent = 'You'
+  const bubble = document.createElement('div')
+  bubble.className = 'bubble'
+  if (images && images.length > 0) {
+    const imgRow = document.createElement('div')
+    imgRow.className = 'message-images'
+    images.forEach(src => {
+      const img = document.createElement('img')
+      img.src = src
+      img.className = 'message-image'
+      imgRow.appendChild(img)
+    })
+    bubble.appendChild(imgRow)
+  }
+  if (text) {
+    const textEl = document.createElement('span')
+    textEl.textContent = text
+    bubble.appendChild(textEl)
+  }
+  wrap.appendChild(label)
+  wrap.appendChild(bubble)
+  messagesEl.appendChild(wrap)
+  scrollToBottom()
+  return wrap
 }
 
 function appendMessage(role, text) {
@@ -252,10 +344,20 @@ function createReasoningSection() {
   return { section: details, contentEl: content }
 }
 
+function toolActionLabel(toolName) {
+  if (toolName === 'web_search') return 'searching the web…'
+  if (toolName === 'analyze_image') return 'analysing image…'
+  return `running ${toolName}…`
+}
+
 function handleChatMsg(msg) {
   if (msg.type === 'searching') {
     removeThinking()
-    showThinking('searching the web…', 'searching')
+    const tools = msg.tools ?? []
+    const label = tools.length === 1
+      ? toolActionLabel(tools[0])
+      : tools.length > 1 ? `invoking ${tools.length} tools…` : 'working…'
+    showThinking(label, 'searching')
   } else if (msg.type === 'sources') {
     pendingSources = msg.sources
   } else if (msg.type === 'reasoningChunk') {
@@ -432,12 +534,15 @@ function renderSpanRow(span, traceStart, totalMs, depth) {
   const opClass = 'op-' + span.operation.replace(/[^a-z0-9]/g, '-')
   const dur = span.durationMs != null ? span.durationMs + 'ms' : '…'
   const actorShort = span.actor.split('/').pop() ?? span.actor
+  const opLabel = (span.operation === 'tool-invoke' && span.data?.toolName)
+    ? `tool-invoke · ${span.data.toolName}`
+    : span.operation
 
   return `
     <div class="waterfall-row" style="padding-left:${8 + depth * 12}px">
       <div class="waterfall-label">
         <span class="wf-actor">${escHtml(actorShort)}</span>
-        <span class="wf-op">${escHtml(span.operation)}</span>
+        <span class="wf-op">${escHtml(opLabel)}</span>
       </div>
       <div class="waterfall-track">
         <div class="waterfall-bar ${opClass}${isActive ? ' wf-active' : ''}${isError ? ' wf-error' : ''}"
@@ -832,6 +937,20 @@ clearBtn.addEventListener('click', () => {
   }
 })
 
+// ─── Config tabs ───
+
+const configTabBtns = document.querySelectorAll('[data-config-tab]')
+const configPanes   = document.querySelectorAll('[data-config-pane]')
+
+configTabBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    configTabBtns.forEach(b => b.classList.remove('active'))
+    btn.classList.add('active')
+    configPanes.forEach(p => p.classList.remove('active'))
+    document.querySelector(`[data-config-pane="${btn.dataset.configTab}"]`).classList.add('active')
+  })
+})
+
 // ─── Config ───
 
 const configForm = document.getElementById('config-form')
@@ -848,6 +967,7 @@ const configDefaults = {
   model: 'openai/gpt-4o-mini',
   reasoningEnabled: false,
   reasoningEffort: 'medium',
+  visionModel: 'google/gemini-flash-1.5',
 }
 
 function loadConfig() {
@@ -857,14 +977,15 @@ function loadConfig() {
 }
 
 function applyToForm(cfg) {
-  configForm.logPath.value           = cfg.logPath
-  configForm.minLevel.value          = cfg.minLevel
-  configForm.flushIntervalMs.value   = cfg.flushIntervalMs
-  configForm.metricsIntervalMs.value = cfg.metricsIntervalMs
-  configForm.metricsEnabled.checked  = cfg.metricsEnabled
-  configForm.model.value             = cfg.model
+  configForm.logPath.value            = cfg.logPath
+  configForm.minLevel.value           = cfg.minLevel
+  configForm.flushIntervalMs.value    = cfg.flushIntervalMs
+  configForm.metricsIntervalMs.value  = cfg.metricsIntervalMs
+  configForm.metricsEnabled.checked   = cfg.metricsEnabled
+  configForm.model.value              = cfg.model
   configForm.reasoningEnabled.checked = cfg.reasoningEnabled
-  configForm.reasoningEffort.value   = cfg.reasoningEffort
+  configForm.reasoningEffort.value    = cfg.reasoningEffort
+  configForm.visionModel.value        = cfg.visionModel
 }
 
 function readFromForm() {
@@ -877,6 +998,7 @@ function readFromForm() {
     model:             configForm.model.value,
     reasoningEnabled:  String(configForm.reasoningEnabled.checked),
     reasoningEffort:   configForm.reasoningEffort.value,
+    visionModel:       configForm.visionModel.value,
   }
 }
 
@@ -917,7 +1039,29 @@ configForm.addEventListener('submit', async (e) => {
 
 resetBtn.addEventListener('click', () => applyToForm(configDefaults))
 
-applyToForm(loadConfig())
+// ─── Dynamic model list ───
+
+async function initModelSelects() {
+  const chatSel   = document.getElementById('chat-model')
+  const visionSel = document.getElementById('vision-model')
+
+  chatSel.innerHTML   = '<option value="" disabled>loading models…</option>'
+  visionSel.innerHTML = '<option value="" disabled>loading models…</option>'
+
+  let models = []
+  try {
+    const res = await fetch(new URL('models', location.href))
+    if (res.ok) models = await res.json()
+  } catch {}
+
+  const cfg = loadConfig()
+
+  for (const [sel, savedVal] of [[chatSel, cfg.model], [visionSel, cfg.visionModel]]) {
+    sel.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('')
+    if (models.includes(savedVal)) sel.value = savedVal
+  }
+}
 
 // ─── Boot ───
+initModelSelects().then(() => applyToForm(loadConfig()))
 connect()

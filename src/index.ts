@@ -42,6 +42,9 @@ const system = await createPluginSystem({
       chatbot: {
         systemPrompt: SYSTEM_PROMPT,
       },
+      visionActor: {
+        model: process.env.OPENROUTER_VISION_MODEL ?? 'openai/gpt-5.4-nano',
+      },
     },
     observability: {
       jsonlLogger: {
@@ -102,6 +105,9 @@ system.subscribe(HttpConfigTopic, (form: HttpConfigPayload) => {
       },
       chatbot: {
         systemPrompt: SYSTEM_PROMPT,
+      },
+      visionActor: {
+        model: String(form.visionModel ?? process.env.OPENROUTER_VISION_MODEL ?? 'google/gemini-flash-1.5'),
       },
     },
     observability: {

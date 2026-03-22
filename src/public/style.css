@@ -191,7 +191,7 @@ header {
 }
 
 #panel-chat.active    { display: flex; flex-direction: column; }
-#panel-config.active  { display: block; overflow-y: auto; }
+#panel-config.active  { display: flex; overflow: hidden; }
 
 /* ─── Chat: messages ─── */
 #messages {
@@ -404,6 +404,88 @@ button[type="submit"]:active:not(:disabled) { transform: translateY(0); box-shad
 button[type="submit"]:disabled { background: var(--muted); box-shadow: none; opacity: 0.45; cursor: not-allowed; }
 button[type="submit"] svg { pointer-events: none; }
 
+/* ─── Attach button ─── */
+
+#attach-btn {
+  width: 36px; height: 36px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius);
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s, color 0.15s;
+  margin-bottom: 5px;
+}
+
+#attach-btn:hover {
+  border-color: rgba(54, 184, 204, 0.4);
+  color: var(--accent);
+}
+
+/* ─── Image previews strip ─── */
+
+.image-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.image-previews.hidden { display: none; }
+
+.image-thumb-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.image-thumb {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: calc(var(--radius) - 2px);
+  border: 1px solid var(--border-mid);
+}
+
+.image-thumb-remove {
+  position: absolute;
+  top: -6px; right: -6px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.image-thumb-remove:hover { color: var(--text); }
+
+/* ─── Images in message bubbles ─── */
+
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+
+.message-image {
+  max-width: 180px;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: calc(var(--radius) - 2px);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
 .input-hint {
   margin-top: 0.45rem;
   font-size: 0.62rem;
@@ -456,42 +538,107 @@ button[type="submit"] svg { pointer-events: none; }
 }
 
 /* ─── Config panel ─── */
-.config-inner {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 2.5rem 1.75rem;
+.config-layout {
   display: flex;
-  flex-direction: column;
-  gap: 2.5rem;
+  flex: 1;
+  overflow: hidden;
 }
 
-.page-header { display: flex; flex-direction: column; gap: 0.4rem; }
+.config-tabs {
+  width: 158px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 0;
+  gap: 1px;
+  overflow-y: auto;
+}
 
-.page-title {
-  font-size: 1rem;
+.config-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0.55rem 1.25rem;
+  border: none;
+  border-left: 2px solid transparent;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  gap: 0.12rem;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.config-tab:hover { background: rgba(54, 184, 204, 0.05); }
+
+.config-tab.active {
+  border-left-color: var(--accent);
+  background: rgba(54, 184, 204, 0.08);
+}
+
+.config-tab-group {
+  font-family: var(--font-mono);
+  font-size: 0.56rem;
+  font-weight: 400;
+  color: var(--text-dim);
+  letter-spacing: 0.07em;
+  text-transform: lowercase;
+}
+
+.config-tab-name {
+  font-family: var(--font-ui);
+  font-size: 0.71rem;
+  font-weight: 500;
+  color: var(--text-mid);
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+  transition: color 0.15s;
+}
+
+.config-tab.active .config-tab-name { color: var(--accent); }
+
+.config-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+#config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  padding: 2rem 2.5rem;
+  max-width: 540px;
+}
+
+.config-pane {
+  display: none;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.config-pane.active { display: flex; }
+
+.pane-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.pane-title {
+  font-size: 0.85rem;
   font-weight: 700;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text);
 }
 
-.page-sub {
-  font-size: 0.72rem;
+.pane-sub {
+  font-size: 0.66rem;
   color: var(--text-dim);
   font-family: var(--font-mono);
   font-weight: 300;
-}
-
-.config-section { display: flex; flex-direction: column; gap: 1.25rem; }
-
-.section-label {
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--border);
 }
 
 .field { display: flex; flex-direction: column; gap: 0.45rem; }

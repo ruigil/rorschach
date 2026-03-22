@@ -1,6 +1,7 @@
 import { createChatbotActor } from './chatbot.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from './llm-provider.ts'
 import type { LlmProviderMsg } from './llm-provider.ts'
+import { createVisionActor } from './vision-actor.ts'
 import type { ActorContext, ActorIdentity, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'
@@ -17,9 +18,14 @@ type ChatbotConfig = {
   systemPrompt?: string
 }
 
+type VisionActorConfig = {
+  model: string
+}
+
 export type CognitiveConfig = {
   llmProvider?: LlmProviderConfig
   chatbot?: ChatbotConfig
+  visionActor?: VisionActorConfig
 }
 
 // ─── Plugin internals ───
@@ -32,6 +38,8 @@ type PluginState = {
   llmProviderRef: ActorRef<LlmProviderMsg> | null
   chatbotConfig: ChatbotConfig | null
   chatbotRef: ActorIdentity | null
+  visionConfig: VisionActorConfig | null
+  visionRef: ActorIdentity | null
   gen: number
 }
 
@@ -41,15 +49,16 @@ const INITIAL_CHATBOT_STATE = {
   modelInfo: null, requestMap: {}, llmRequests: {},
 }
 
-const spawnPair = (
+const spawnAll = (
   ctx: ActorContext<PluginMsg>,
   llmProviderConfig: LlmProviderConfig,
   chatbotConfig: ChatbotConfig | null,
+  visionConfig: VisionActorConfig | null,
   gen: number,
-): { llmProviderRef: ActorRef<LlmProviderMsg>; chatbotRef: ActorIdentity | null } => {
+): { llmProviderRef: ActorRef<LlmProviderMsg>; chatbotRef: ActorIdentity | null; visionRef: ActorIdentity | null } => {
   const llmProviderRef = ctx.spawn(
     `llm-provider-${gen}`,
-    createLlmProviderActor({ adapter: createOpenRouterAdapter(llmProviderConfig) }),
+    createLlmProviderActor({ adapter: createOpenRouterAdapter({ apiKey: llmProviderConfig.apiKey, reasoning: llmProviderConfig.reasoning }) }),
     null,
   )
 
@@ -65,7 +74,15 @@ const spawnPair = (
       )
     : null
 
-  return { llmProviderRef, chatbotRef }
+  const visionRef = visionConfig
+    ? ctx.spawn(
+        `vision-actor-${gen}`,
+        createVisionActor({ llmRef: llmProviderRef, model: visionConfig.model }),
+        { pending: {} },
+      )
+    : null
+
+  return { llmProviderRef, chatbotRef, visionRef }
 }
 
 const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
@@ -85,6 +102,8 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
     llmProviderRef: null,
     chatbotConfig: null,
     chatbotRef: null,
+    visionConfig: null,
+    visionRef: null,
     gen: 0,
   },
 
@@ -93,15 +112,16 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
       const slice = ctx.config as CognitiveConfig | undefined
       const llmProviderConfig = slice?.llmProvider ?? null
       const chatbotConfig = slice?.chatbot ?? null
+      const visionConfig = slice?.visionActor ?? null
 
       if (!llmProviderConfig) {
         ctx.log.info('cognitive plugin activated (no llmProvider config)')
-        return { state: { initialized: true, llmProviderConfig: null, llmProviderRef: null, chatbotConfig: null, chatbotRef: null, gen: 0 } }
+        return { state: { initialized: true, llmProviderConfig: null, llmProviderRef: null, chatbotConfig: null, chatbotRef: null, visionConfig: null, visionRef: null, gen: 0 } }
       }
 
-      const { llmProviderRef, chatbotRef } = spawnPair(ctx, llmProviderConfig, chatbotConfig, 0)
+      const { llmProviderRef, chatbotRef, visionRef } = spawnAll(ctx, llmProviderConfig, chatbotConfig, visionConfig, 0)
       ctx.log.info('cognitive plugin activated')
-      return { state: { initialized: true, llmProviderConfig, llmProviderRef, chatbotConfig, chatbotRef, gen: 0 } }
+      return { state: { initialized: true, llmProviderConfig, llmProviderRef, chatbotConfig, chatbotRef, visionConfig, visionRef, gen: 0 } }
     },
     stopped: (state, ctx) => {
       ctx.log.info('cognitive plugin deactivating')
@@ -119,17 +139,19 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   handler: (state, msg, ctx) => {
     if (state.chatbotRef) ctx.stop(state.chatbotRef)
     if (state.llmProviderRef) ctx.stop(state.llmProviderRef)
+    if (state.visionRef) ctx.stop(state.visionRef)
 
     const newLlmProviderConfig = msg.slice?.llmProvider ?? null
     const newChatbotConfig = msg.slice?.chatbot ?? null
+    const newVisionConfig = msg.slice?.visionActor ?? null
     const gen = state.gen + 1
 
     if (!newLlmProviderConfig) {
-      return { state: { ...state, llmProviderConfig: null, llmProviderRef: null, chatbotConfig: null, chatbotRef: null, gen } }
+      return { state: { ...state, llmProviderConfig: null, llmProviderRef: null, chatbotConfig: null, chatbotRef: null, visionConfig: null, visionRef: null, gen } }
     }
 
-    const { llmProviderRef, chatbotRef } = spawnPair(ctx, newLlmProviderConfig, newChatbotConfig, gen)
-    return { state: { ...state, llmProviderConfig: newLlmProviderConfig, llmProviderRef, chatbotConfig: newChatbotConfig, chatbotRef, gen } }
+    const { llmProviderRef, chatbotRef, visionRef } = spawnAll(ctx, newLlmProviderConfig, newChatbotConfig, newVisionConfig, gen)
+    return { state: { ...state, llmProviderConfig: newLlmProviderConfig, llmProviderRef, chatbotConfig: newChatbotConfig, chatbotRef, visionConfig: newVisionConfig, visionRef, gen } }
   },
 }
 

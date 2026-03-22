@@ -13,9 +13,13 @@ export type ToolCall = {
   function: { name: string; arguments: string }
 }
 
+export type UserContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
 export type ApiMessage =
   | { role: 'system';    content: string }
-  | { role: 'user';      content: string }
+  | { role: 'user';      content: string | UserContentPart[] }
   | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
   | { role: 'tool';      content: string; tool_call_id: string }
 
@@ -36,10 +40,12 @@ export type LlmProviderReply =
 // ─── Incoming messages ───
 
 export type LlmProviderMsg =
-  | { type: 'stream';        requestId: string; messages: ApiMessage[]; tools?: Tool[]; replyTo: ActorRef<LlmProviderReply> }
-  | { type: 'fetchModelInfo'; replyTo: ActorRef<ModelInfo | null> }
-  | { type: '_streamDone';   result: LlmProviderReply; replyTo: ActorRef<LlmProviderReply> }
+  | { type: 'stream';         requestId: string; model: string; messages: ApiMessage[]; tools?: Tool[]; replyTo: ActorRef<LlmProviderReply> }
+  | { type: 'fetchModelInfo'; model: string; replyTo: ActorRef<ModelInfo | null> }
+  | { type: 'fetchModels';    replyTo: ActorRef<string[]> }
+  | { type: '_streamDone';    result: LlmProviderReply; replyTo: ActorRef<LlmProviderReply> }
   | { type: '_modelInfoDone'; info: ModelInfo | null; replyTo: ActorRef<ModelInfo | null> }
+  | { type: '_modelsDone';    models: string[]; replyTo: ActorRef<string[]> }
 
 // ─── Adapter interface ───
 
@@ -49,29 +55,30 @@ type AdapterStreamResult =
 
 export type LlmProviderAdapter = {
   stream(
+    model: string,
     messages: ApiMessage[],
     tools: Tool[] | undefined,
     onChunk: (text: string) => void,
     onReasoningChunk: (text: string) => void,
   ): Promise<AdapterStreamResult>
-  fetchModelInfo(): Promise<ModelInfo | null>
+  fetchModelInfo(model: string): Promise<ModelInfo | null>
+  fetchModels(): Promise<string[]>
 }
 
 // ─── OpenRouter adapter ───
 
 export type OpenRouterAdapterOptions = {
   apiKey: string
-  model: string
   reasoning?: { enabled?: boolean; effort?: 'high' | 'medium' | 'low' | 'minimal' }
 }
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
 export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmProviderAdapter => {
-  const { apiKey, model, reasoning } = options
+  const { apiKey, reasoning } = options
 
   return {
-    async stream(messages, tools, onChunk, onReasoningChunk) {
+    async stream(model, messages, tools, onChunk, onReasoningChunk) {
       const res = await fetch(OPENROUTER_URL, {
         method: 'POST',
         headers: {
@@ -156,7 +163,7 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
       return { type: 'content', usage: lastUsage }
     },
 
-    async fetchModelInfo() {
+    async fetchModelInfo(model: string) {
       try {
         const res = await fetch('https://openrouter.ai/api/v1/models', {
           headers: { 'Authorization': `Bearer ${apiKey}` },
@@ -176,6 +183,19 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
         return null
       }
     },
+
+    async fetchModels() {
+      try {
+        const res = await fetch('https://openrouter.ai/api/v1/models', {
+          headers: { 'Authorization': `Bearer ${apiKey}` },
+        })
+        if (!res.ok) return []
+        const data = await res.json() as { data: Array<{ id: string }> }
+        return data.data.map(m => m.id).sort()
+      } catch {
+        return []
+      }
+    },
   }
 }
 
@@ -191,10 +211,11 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
   return {
     handler: onMessage<LlmProviderMsg, null>({
       stream: (state, message, context) => {
-        const { requestId, messages, tools, replyTo } = message
+        const { requestId, model, messages, tools, replyTo } = message
 
         context.pipeToSelf(
           adapter.stream(
+            model,
             messages,
             tools,
             (text) => replyTo.send({ type: 'llmChunk', requestId, text }),
@@ -218,12 +239,24 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
       },
 
       fetchModelInfo: (state, message, context) => {
+        const { model, replyTo } = message
+
+        context.pipeToSelf(
+          adapter.fetchModelInfo(model),
+          (info): LlmProviderMsg => ({ type: '_modelInfoDone', info, replyTo }),
+          (): LlmProviderMsg => ({ type: '_modelInfoDone', info: null, replyTo }),
+        )
+
+        return { state }
+      },
+
+      fetchModels: (state, message, context) => {
         const { replyTo } = message
 
         context.pipeToSelf(
-          adapter.fetchModelInfo(),
-          (info): LlmProviderMsg => ({ type: '_modelInfoDone', info, replyTo }),
-          (): LlmProviderMsg => ({ type: '_modelInfoDone', info: null, replyTo }),
+          adapter.fetchModels(),
+          (models): LlmProviderMsg => ({ type: '_modelsDone', models, replyTo }),
+          (): LlmProviderMsg => ({ type: '_modelsDone', models: [], replyTo }),
         )
 
         return { state }
@@ -236,6 +269,11 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
 
       _modelInfoDone: (state, message) => {
         message.replyTo.send(message.info)
+        return { state }
+      },
+
+      _modelsDone: (state, message) => {
+        message.replyTo.send(message.models)
         return { state }
       },
     }),

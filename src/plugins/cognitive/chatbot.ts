@@ -18,7 +18,7 @@ import type {
 // ─── Message protocol ───
 
 type ChatbotMsg =
-  | { type: 'userMessage';   clientId: string; text: string; traceId: string; parentSpanId: string }
+  | { type: 'userMessage';   clientId: string; text: string; images?: string[]; traceId: string; parentSpanId: string }
   | LlmProviderReply
   | { type: '_modelInfo';    info: ModelInfo | null }
   | { type: '_toolsFetched'; clientId: string; apiMessages: ApiMessage[]; toolCollection: ToolCollection }
@@ -59,7 +59,7 @@ export type ChatbotState = {
   sessionUsage:     Record<string, TokenUsage>
   pendingUsage:     Record<string, TokenUsage>
   modelInfo:        ModelInfo | null
-  requestMap:       Record<string, string>          // requestId -> clientId
+  requestMap:       Record<string, string>            // requestId -> clientId
   llmRequests:      Record<string, PendingLlmRequest> // requestId -> context for tool calls
 }
 
@@ -83,12 +83,13 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           type: 'userMessage' as const,
           clientId: e.clientId,
           text: e.text,
+          images: e.images,
           traceId: e.traceId,
           parentSpanId: e.parentSpanId,
         }))
 
         context.pipeToSelf(
-          ask<LlmProviderMsg, ModelInfo | null>(llmRef, (replyTo) => ({ type: 'fetchModelInfo', replyTo })),
+          ask<LlmProviderMsg, ModelInfo | null>(llmRef, (replyTo) => ({ type: 'fetchModelInfo', model, replyTo })),
           (info) => ({ type: '_modelInfo' as const, info }),
           () => ({ type: '_modelInfo' as const, info: null }),
         )
@@ -104,19 +105,26 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       }),
 
       userMessage: (state, message, context) => {
-        const { clientId, text, traceId, parentSpanId } = message
+        const { clientId, text, images, traceId, parentSpanId } = message
         const prior = state.history[clientId] ?? []
+
+        let userText = text
+        if (images && images.length > 0) {
+          const imageNote = images.length === 1
+            ? `[Image attached: "${images[0]}"]`
+            : `[Images attached: ${images.map(p => `"${p}"`).join(', ')}]`
+          userText = text ? `${text}\n\n${imageNote}` : imageNote
+        }
 
         const apiMessages: ApiMessage[] = [
           ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
           ...prior,
-          { role: 'user', content: text },
+          { role: 'user', content: userText },
         ]
 
         const fetchTools: Promise<ToolCollection> = state.toolsRef
           ? ask<GetToolsMsg, ToolCollection>(state.toolsRef, (replyTo) => ({ type: 'getTools', replyTo }))
           : Promise.resolve({})
-
         context.pipeToSelf(
           fetchTools,
           (toolCollection) => ({ type: '_toolsFetched' as const, clientId, apiMessages, toolCollection }),
@@ -124,11 +132,10 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         )
 
         const requestSpan = context.trace.child(traceId, parentSpanId, 'chatbot', { preview: text.slice(0, 80) })
-
         return {
           state: {
             ...state,
-            history: { ...state.history, [clientId]: [...prior, { role: 'user', content: text }] },
+            history: { ...state.history, [clientId]: [...prior, { role: 'user', content: userText }] },
             pending: { ...state.pending, [clientId]: '' },
             spanHandles: { ...state.spanHandles, [clientId]: { requestSpan, toolSpans: {} } },
           },
@@ -151,6 +158,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         llmRef.send({
           type: 'stream',
           requestId,
+          model,
           messages: apiMessages,
           tools,
           replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
@@ -247,7 +255,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
               },
             } : {}),
           },
-          events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'searching' }) })],
+          events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'searching', tools: calls.map(c => c.name) }) })],
         }
       },
 
@@ -298,6 +306,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         llmRef.send({
           type: 'stream',
           requestId,
+          model,
           messages: messagesWithResults,
           tools: undefined,
           replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
