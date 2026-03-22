@@ -95,6 +95,8 @@ function connect() {
 
     if (msg.type === 'chunk' || msg.type === 'done' || msg.type === 'error' || msg.type === 'searching' || msg.type === 'sources' || msg.type === 'reasoningChunk') {
       handleChatMsg(msg)
+    } else if (msg.type === 'usage') {
+      updateUsageBar(msg)
     } else if (msg.type === 'log') {
       appendLog(msg)
     } else if (msg.type === 'metrics') {
@@ -313,6 +315,27 @@ function handleChatMsg(msg) {
     appendMessage('error', msg.text)
     setWaiting(false)
   }
+}
+
+// ─── Usage bar ───
+
+function formatTokens(n) {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
+  return String(n)
+}
+
+function updateUsageBar(msg) {
+  document.getElementById('usage-bar').classList.remove('hidden')
+  const ctx = msg.contextWindow ? ` · ${Math.round(msg.contextWindow / 1000)}k ctx` : ''
+  document.getElementById('usage-model').textContent = msg.model + ctx
+  document.getElementById('usage-in').textContent = formatTokens(msg.inputTokens)
+  document.getElementById('usage-out').textContent = formatTokens(msg.outputTokens)
+  document.getElementById('usage-ctx').textContent = msg.contextPercent != null
+    ? `${(msg.contextPercent * 100).toFixed(1)}%`
+    : '—'
+  document.getElementById('usage-cost').textContent = msg.sessionCost != null
+    ? `$${msg.sessionCost.toFixed(4)}`
+    : '—'
 }
 
 // ─── Observe ───

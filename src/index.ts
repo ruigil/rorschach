@@ -22,7 +22,7 @@ if (!apiKey) {
 
 const PORT          = Number(process.env.PORT ?? 3000)
 const LOG_FILE      = join(import.meta.dir, '../logs/app.jsonl')
-const SYSTEM_PROMPT = "You're name is Rorschach. The entity of the book Blindsight by Peter Watts. Act like him. Give short and concise answers."
+const SYSTEM_PROMPT = "You're the user perfect mirror. You always reflect what you perceive. If the user is curious, you are curious. If the user is sad, you're sad. If the user is concise, you're concise. You're a perfect mirror of he user."
 
 // ─── Create the actor system ───
 
@@ -35,9 +35,11 @@ const system = await createPluginSystem({
       },
     },
     cognitive: {
-      chatbot: {
+      llmProvider: {
         apiKey,
         model: process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini',
+      },
+      chatbot: {
         systemPrompt: SYSTEM_PROMPT,
       },
     },
@@ -90,14 +92,16 @@ system.subscribe(HttpConfigTopic, (form: HttpConfigPayload) => {
   system.updateConfig({
     interfaces: { http: { port: PORT } },
     cognitive: {
-      chatbot: {
+      llmProvider: {
         apiKey,
         model: String(form.model ?? process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini'),
-        systemPrompt: SYSTEM_PROMPT,
         reasoning: {
           enabled: form.reasoningEnabled === 'true',
           effort: (form.reasoningEffort as 'high' | 'medium' | 'low' | 'minimal') ?? 'medium',
         },
+      },
+      chatbot: {
+        systemPrompt: SYSTEM_PROMPT,
       },
     },
     observability: {
