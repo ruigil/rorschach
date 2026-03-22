@@ -1,7 +1,8 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { createPluginSystem } from '../system/index.ts'
 import { WsMessageTopic, WsSendTopic } from '../plugins/interfaces/http.ts'
-import { createChatbotActor, type ChatbotActorOptions, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
+import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
+import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import type { BraveLlmContextResponse } from '../plugins/tools/web-search.ts'
 
@@ -12,7 +13,7 @@ const tick = (ms = 100) => Bun.sleep(ms)
 
 const CLIENT_ID = 'client-1'
 
-const CHATBOT_OPTS: ChatbotActorOptions = {
+const LLM_PROVIDER_ADAPTER_OPTS = {
   apiKey: 'test-openrouter-key',
   model: 'openai/gpt-4o-mini',
 }
@@ -24,6 +25,11 @@ const INITIAL_CHATBOT_STATE: ChatbotState = {
   pendingBatch: {},
   toolsRef: null,
   spanHandles: {},
+  sessionUsage: {},
+  pendingUsage: {},
+  modelInfo: null,
+  requestMap: {},
+  llmRequests: {},
 }
 
 const mockBraveResponse: BraveLlmContextResponse = {
@@ -88,6 +94,18 @@ const collectEvents = (system: Awaited<ReturnType<typeof createPluginSystem>>): 
   return events
 }
 
+// ─── Model info stub ───
+// The LlmProviderActor fetches model info on startup via fetchModelInfo.
+// Tests that use stubFetchSequence must prepend this stub as the first slot.
+const modelInfoStub = () => new Response('Not Found', { status: 404 })
+
+// ─── Spawn helpers ───
+
+const spawnChatbot = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
+  const llmRef = system.spawn('llm-provider', createLlmProviderActor({ adapter: createOpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }), null)
+  system.spawn('chatbot', createChatbotActor({ llmRef, model: LLM_PROVIDER_ADAPTER_OPTS.model }), INITIAL_CHATBOT_STATE)
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Chatbot + search integration
 // ═══════════════════════════════════════════════════════════════════
@@ -95,6 +113,7 @@ const collectEvents = (system: Awaited<ReturnType<typeof createPluginSystem>>): 
 describe('chatbot search integration', () => {
   test('emits searching event and tool call flow when LLM returns a tool_call', async () => {
     stubFetchSequence([
+      modelInfoStub,
       () => makeSSEResponse(toolCallPayloads('call_abc', 'latest AI news')),
       () => new Response(JSON.stringify(mockBraveResponse), { status: 200 }),
       () => makeSSEResponse(contentPayloads('Here is what I found.')),
@@ -105,7 +124,7 @@ describe('chatbot search integration', () => {
       plugins: [toolsPlugin],
     })
     const events = collectEvents(system)
-    system.spawn('chatbot', createChatbotActor(CHATBOT_OPTS), INITIAL_CHATBOT_STATE)
+    spawnChatbot(system)
 
     await tick()
     system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'What is the latest AI news?', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
@@ -123,6 +142,7 @@ describe('chatbot search integration', () => {
 
   test('emits sources event with grounding items before done', async () => {
     stubFetchSequence([
+      modelInfoStub,
       () => makeSSEResponse(toolCallPayloads('call_xyz', 'test query')),
       () => new Response(JSON.stringify(mockBraveResponse), { status: 200 }),
       () => makeSSEResponse(contentPayloads('Answer based on search results.')),
@@ -133,7 +153,7 @@ describe('chatbot search integration', () => {
       plugins: [toolsPlugin],
     })
     const events = collectEvents(system)
-    system.spawn('chatbot', createChatbotActor(CHATBOT_OPTS), INITIAL_CHATBOT_STATE)
+    spawnChatbot(system)
 
     await tick()
     system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
@@ -165,7 +185,7 @@ describe('chatbot search integration', () => {
     // No tools plugin — chatbot has no toolsRef, ask returns empty collection
     const system = await createPluginSystem()
     const events = collectEvents(system)
-    system.spawn('chatbot', createChatbotActor(CHATBOT_OPTS), INITIAL_CHATBOT_STATE)
+    spawnChatbot(system)
 
     await tick()
     system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
@@ -179,6 +199,7 @@ describe('chatbot search integration', () => {
 
   test('continues with LLM call using error content when search returns an error', async () => {
     stubFetchSequence([
+      modelInfoStub,
       () => makeSSEResponse(toolCallPayloads('call_err', 'failing query')),
       () => new Response('Rate limited', { status: 429 }),
       () => makeSSEResponse(contentPayloads('I could not search but here is my best answer.')),
@@ -189,7 +210,7 @@ describe('chatbot search integration', () => {
       plugins: [toolsPlugin],
     })
     const events = collectEvents(system)
-    system.spawn('chatbot', createChatbotActor(CHATBOT_OPTS), INITIAL_CHATBOT_STATE)
+    spawnChatbot(system)
 
     await tick()
     system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
@@ -208,13 +229,6 @@ describe('chatbot search integration', () => {
   test('includes tools in LLM request when web-search actor is available', async () => {
     let capturedBody: { tools?: Array<{ function: { name: string } }> } | undefined
 
-    stubFetchSequence([
-      () => {
-        capturedBody = JSON.parse((globalThis as unknown as { _lastBody: string })._lastBody || '{}') as typeof capturedBody
-        return makeSSEResponse(contentPayloads('No tool call needed.'))
-      },
-    ])
-
     // Intercept and capture the request body
     globalThis.fetch = (async (_: unknown, init?: RequestInit) => {
       capturedBody = JSON.parse(init?.body as string) as typeof capturedBody
@@ -225,7 +239,7 @@ describe('chatbot search integration', () => {
       config: { tools: { webSearch: { apiKey: 'brave-key' } } },
       plugins: [toolsPlugin],
     })
-    system.spawn('chatbot', createChatbotActor(CHATBOT_OPTS), INITIAL_CHATBOT_STATE)
+    spawnChatbot(system)
 
     await tick()
     system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })

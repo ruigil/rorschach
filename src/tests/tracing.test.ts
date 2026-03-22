@@ -2,7 +2,8 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { createPluginSystem, TraceTopic, type TraceSpan } from '../system/index.ts'
 import type { ActorDef, MessageHeaders } from '../system/index.ts'
 import { WsMessageTopic } from '../plugins/interfaces/http.ts'
-import { createChatbotActor, type ChatbotActorOptions, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
+import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
+import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import type { GetToolsMsg } from '../plugins/tools/tools.plugin.ts'
 import type { ToolInvokeMsg } from '../plugins/tools/tool.ts'
@@ -16,7 +17,7 @@ const CLIENT_ID = 'client-1'
 const TRACE_ID = 'testtraceid'
 const PARENT_SPAN_ID = 'testparentspan'
 
-const CHATBOT_OPTS: ChatbotActorOptions = {
+const LLM_PROVIDER_ADAPTER_OPTS = {
   apiKey: 'test-key',
   model: 'openai/gpt-4o-mini',
 }
@@ -28,6 +29,11 @@ const INITIAL_CHATBOT_STATE: ChatbotState = {
   pendingBatch: {},
   toolsRef: null,
   spanHandles: {},
+  sessionUsage: {},
+  pendingUsage: {},
+  modelInfo: null,
+  requestMap: {},
+  llmRequests: {},
 }
 
 // ─── SSE helpers ───
@@ -66,6 +72,11 @@ afterEach(() => {
   globalThis.fetch = originalFetch
 })
 
+// ─── Model info stub ───
+// The LlmProviderActor fetches model info on startup via fetchModelInfo.
+// Tests that use stubFetchSequence must prepend this stub as the first slot.
+const modelInfoStub = () => new Response('Not Found', { status: 404 })
+
 // ─── Span collection helpers ───
 
 const collectSpans = (system: Awaited<ReturnType<typeof createPluginSystem>>): TraceSpan[] => {
@@ -77,6 +88,13 @@ const collectSpans = (system: Awaited<ReturnType<typeof createPluginSystem>>): T
 const spanFor = (spans: TraceSpan[], operation: string, status: TraceSpan['status']): TraceSpan | undefined =>
   spans.find(s => s.operation === operation && s.status === status)
 
+// ─── Spawn helpers ───
+
+const spawnChatbot = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
+  const llmRef = system.spawn('llm-provider', createLlmProviderActor({ adapter: createOpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }), null)
+  system.spawn('chatbot', createChatbotActor({ llmRef, model: LLM_PROVIDER_ADAPTER_OPTS.model }), INITIAL_CHATBOT_STATE)
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Distributed Tracing
 // ═══════════════════════════════════════════════════════════════════
@@ -87,7 +105,7 @@ describe('distributed tracing', () => {
 
     const system = await createPluginSystem()
     const spans = collectSpans(system)
-    system.spawn('chatbot', createChatbotActor(CHATBOT_OPTS), INITIAL_CHATBOT_STATE)
+    spawnChatbot(system)
 
     await tick()
     system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'hi', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
@@ -128,6 +146,7 @@ describe('distributed tracing', () => {
       sources: {},
     }
     stubFetchSequence([
+      modelInfoStub,
       () => makeSSEResponse(toolCallPayloads('call_abc', 'ai news')),
       () => new Response(JSON.stringify(emptyBraveResponse), { status: 200 }),
       () => makeSSEResponse(contentPayloads('Here is the answer.')),
@@ -138,7 +157,7 @@ describe('distributed tracing', () => {
       plugins: [toolsPlugin],
     })
     const spans = collectSpans(system)
-    system.spawn('chatbot', createChatbotActor(CHATBOT_OPTS), INITIAL_CHATBOT_STATE)
+    spawnChatbot(system)
 
     await tick()
     system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'search for ai news', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
@@ -173,7 +192,7 @@ describe('distributed tracing', () => {
 
     const system = await createPluginSystem()
     const spans = collectSpans(system)
-    system.spawn('chatbot', createChatbotActor(CHATBOT_OPTS), INITIAL_CHATBOT_STATE)
+    spawnChatbot(system)
 
     await tick()
     system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'hi', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
@@ -218,6 +237,7 @@ describe('distributed tracing', () => {
     }
 
     stubFetchSequence([
+      modelInfoStub,
       () => makeSSEResponse(toolCallPayloads('call_trace', 'query')),
       () => makeSSEResponse(contentPayloads('Done.')),
     ])
@@ -225,7 +245,7 @@ describe('distributed tracing', () => {
     const system = await createPluginSystem()
     const spans = collectSpans(system)
     system.spawn('tools', fakeToolsDef, null)    // registers at system/tools
-    system.spawn('chatbot', createChatbotActor(CHATBOT_OPTS), INITIAL_CHATBOT_STATE)
+    spawnChatbot(system)
 
     await tick()
     system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'search test', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })

@@ -1,14 +1,72 @@
-import { createChatbotActor, type ChatbotActorOptions } from './chatbot.ts'
-import type { ActorIdentity, PluginDef } from '../../system/types.ts'
+import { createChatbotActor } from './chatbot.ts'
+import { createLlmProviderActor, createOpenRouterAdapter } from './llm-provider.ts'
+import type { LlmProviderMsg } from './llm-provider.ts'
+import type { ActorContext, ActorIdentity, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'
 
-export type CognitiveConfig = {
-  chatbot?: ChatbotActorOptions
+// ─── Config types ───
+
+type LlmProviderConfig = {
+  apiKey: string
+  model: string
+  reasoning?: { enabled?: boolean; effort?: 'high' | 'medium' | 'low' | 'minimal' }
 }
 
+type ChatbotConfig = {
+  systemPrompt?: string
+}
+
+export type CognitiveConfig = {
+  llmProvider?: LlmProviderConfig
+  chatbot?: ChatbotConfig
+}
+
+// ─── Plugin internals ───
+
 type PluginMsg = { type: 'config'; slice: CognitiveConfig | undefined }
-type PluginState = { initialized: boolean; chatbotConfig: ChatbotActorOptions | null; chatbotRef: ActorIdentity | null; chatbotGen: number }
+
+type PluginState = {
+  initialized: boolean
+  llmProviderConfig: LlmProviderConfig | null
+  llmProviderRef: ActorRef<LlmProviderMsg> | null
+  chatbotConfig: ChatbotConfig | null
+  chatbotRef: ActorIdentity | null
+  gen: number
+}
+
+const INITIAL_CHATBOT_STATE = {
+  history: {}, pending: {}, pendingReasoning: {}, pendingBatch: {},
+  toolsRef: null, spanHandles: {}, sessionUsage: {}, pendingUsage: {},
+  modelInfo: null, requestMap: {}, llmRequests: {},
+}
+
+const spawnPair = (
+  ctx: ActorContext<PluginMsg>,
+  llmProviderConfig: LlmProviderConfig,
+  chatbotConfig: ChatbotConfig | null,
+  gen: number,
+): { llmProviderRef: ActorRef<LlmProviderMsg>; chatbotRef: ActorIdentity | null } => {
+  const llmProviderRef = ctx.spawn(
+    `llm-provider-${gen}`,
+    createLlmProviderActor({ adapter: createOpenRouterAdapter(llmProviderConfig) }),
+    null,
+  )
+
+  const chatbotRef = chatbotConfig
+    ? ctx.spawn(
+        `chatbot-${gen}`,
+        createChatbotActor({
+          llmRef: llmProviderRef,
+          model: llmProviderConfig.model,
+          systemPrompt: chatbotConfig.systemPrompt,
+        }),
+        INITIAL_CHATBOT_STATE,
+      )
+    : null
+
+  return { llmProviderRef, chatbotRef }
+}
 
 const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   id: 'cognitive',
@@ -21,19 +79,29 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
     onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
   },
 
-  initialState: { initialized: false, chatbotConfig: null, chatbotRef: null, chatbotGen: 0 },
+  initialState: {
+    initialized: false,
+    llmProviderConfig: null,
+    llmProviderRef: null,
+    chatbotConfig: null,
+    chatbotRef: null,
+    gen: 0,
+  },
 
   lifecycle: onLifecycle({
     start: (_state, ctx) => {
       const slice = ctx.config as CognitiveConfig | undefined
-
+      const llmProviderConfig = slice?.llmProvider ?? null
       const chatbotConfig = slice?.chatbot ?? null
-      const chatbotRef = chatbotConfig
-        ? ctx.spawn('chatbot-0', createChatbotActor(chatbotConfig), { history: {}, pending: {}, pendingReasoning: {}, pendingBatch: {}, toolsRef: null, spanHandles: {} })
-        : null
 
+      if (!llmProviderConfig) {
+        ctx.log.info('cognitive plugin activated (no llmProvider config)')
+        return { state: { initialized: true, llmProviderConfig: null, llmProviderRef: null, chatbotConfig: null, chatbotRef: null, gen: 0 } }
+      }
+
+      const { llmProviderRef, chatbotRef } = spawnPair(ctx, llmProviderConfig, chatbotConfig, 0)
       ctx.log.info('cognitive plugin activated')
-      return { state: { initialized: true, chatbotConfig, chatbotRef, chatbotGen: 0 } }
+      return { state: { initialized: true, llmProviderConfig, llmProviderRef, chatbotConfig, chatbotRef, gen: 0 } }
     },
     stopped: (state, ctx) => {
       ctx.log.info('cognitive plugin deactivating')
@@ -43,17 +111,25 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
 
   maskState: (state) => ({
     ...state,
-    chatbotConfig: state.chatbotConfig ? { ...state.chatbotConfig, apiKey: redact() } : null,
+    llmProviderConfig: state.llmProviderConfig
+      ? { ...state.llmProviderConfig, apiKey: redact() }
+      : null,
   }),
 
   handler: (state, msg, ctx) => {
     if (state.chatbotRef) ctx.stop(state.chatbotRef)
-    const newChatbot = msg.slice?.chatbot ?? null
-    const chatbotGen = state.chatbotGen + 1
-    const chatbotRef = newChatbot
-      ? ctx.spawn(`chatbot-${chatbotGen}`, createChatbotActor(newChatbot), { history: {}, pending: {}, pendingReasoning: {}, pendingBatch: {}, toolsRef: null, spanHandles: {} })
-      : null
-    return { state: { ...state, chatbotConfig: newChatbot, chatbotRef, chatbotGen } }
+    if (state.llmProviderRef) ctx.stop(state.llmProviderRef)
+
+    const newLlmProviderConfig = msg.slice?.llmProvider ?? null
+    const newChatbotConfig = msg.slice?.chatbot ?? null
+    const gen = state.gen + 1
+
+    if (!newLlmProviderConfig) {
+      return { state: { ...state, llmProviderConfig: null, llmProviderRef: null, chatbotConfig: null, chatbotRef: null, gen } }
+    }
+
+    const { llmProviderRef, chatbotRef } = spawnPair(ctx, newLlmProviderConfig, newChatbotConfig, gen)
+    return { state: { ...state, llmProviderConfig: newLlmProviderConfig, llmProviderRef, chatbotConfig: newChatbotConfig, chatbotRef, gen } }
   },
 }
 
