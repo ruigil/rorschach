@@ -94,6 +94,10 @@ system.subscribe(HttpConfigTopic, (form: HttpConfigPayload) => {
         apiKey,
         model: String(form.model ?? process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini'),
         systemPrompt: SYSTEM_PROMPT,
+        reasoning: {
+          enabled: form.reasoningEnabled === 'true',
+          effort: (form.reasoningEffort as 'high' | 'medium' | 'low' | 'minimal') ?? 'medium',
+        },
       },
     },
     observability: {

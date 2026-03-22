@@ -77,8 +77,10 @@ function connect() {
   ws.addEventListener('close', () => {
     setConnected(false)
     removeThinking()
+    streamWrap = null
     streamBubble = null
     streamRawText = ''
+    reasoningEl = null
     pendingSources = null
     sourcesWrap = null
     setWaiting(false)
@@ -91,7 +93,7 @@ function connect() {
     let msg
     try { msg = JSON.parse(e.data) } catch { return }
 
-    if (msg.type === 'chunk' || msg.type === 'done' || msg.type === 'error' || msg.type === 'searching' || msg.type === 'sources') {
+    if (msg.type === 'chunk' || msg.type === 'done' || msg.type === 'error' || msg.type === 'searching' || msg.type === 'sources' || msg.type === 'reasoningChunk') {
       handleChatMsg(msg)
     } else if (msg.type === 'log') {
       appendLog(msg)
@@ -112,8 +114,10 @@ const input      = document.getElementById('input')
 const send       = document.getElementById('send')
 
 let thinkingEl   = null
+let streamWrap   = null
 let streamBubble = null
 let streamRawText = ''
+let reasoningEl  = null
 let pendingSources = null
 let sourcesWrap  = null
 
@@ -224,30 +228,63 @@ function renderSources(sources) {
   return wrap
 }
 
+function createMessageWrap() {
+  const wrap  = document.createElement('div')
+  wrap.className = 'message assistant'
+  const label = document.createElement('div')
+  label.className = 'message-label'
+  label.textContent = 'Rorschach'
+  wrap.appendChild(label)
+  return wrap
+}
+
+function createReasoningSection() {
+  const details = document.createElement('details')
+  details.className = 'reasoning'
+  const summary = document.createElement('summary')
+  summary.textContent = 'Thinking...'
+  const content = document.createElement('pre')
+  content.className = 'reasoning-content'
+  details.appendChild(summary)
+  details.appendChild(content)
+  return { section: details, contentEl: content }
+}
+
 function handleChatMsg(msg) {
   if (msg.type === 'searching') {
     removeThinking()
     showThinking('searching the web…', 'searching')
   } else if (msg.type === 'sources') {
     pendingSources = msg.sources
+  } else if (msg.type === 'reasoningChunk') {
+    if (!streamWrap) {
+      removeThinking()
+      streamWrap = createMessageWrap()
+      messagesEl.appendChild(streamWrap)
+    }
+    if (!reasoningEl) {
+      const { section, contentEl } = createReasoningSection()
+      streamWrap.appendChild(section)
+      reasoningEl = contentEl
+    }
+    reasoningEl.textContent += msg.text
+    scrollToBottom()
   } else if (msg.type === 'chunk') {
     if (!streamBubble) {
       removeThinking()
-      const wrap   = document.createElement('div')
-      wrap.className = 'message assistant'
-      const label  = document.createElement('div')
-      label.className = 'message-label'
-      label.textContent = 'Rorschach'
+      if (!streamWrap) {
+        streamWrap = createMessageWrap()
+        messagesEl.appendChild(streamWrap)
+      }
+      reasoningEl = null
       const bubble = document.createElement('div')
       bubble.className = 'bubble'
-      wrap.appendChild(label)
-      wrap.appendChild(bubble)
       if (pendingSources) {
         sourcesWrap = renderSources(pendingSources)
-        wrap.appendChild(sourcesWrap)
+        streamWrap.appendChild(sourcesWrap)
         pendingSources = null
       }
-      messagesEl.appendChild(wrap)
+      streamWrap.appendChild(bubble)
       streamBubble = bubble
       streamRawText = ''
     }
@@ -261,12 +298,16 @@ function handleChatMsg(msg) {
     }
     streamRawText = ''
     streamBubble = null
+    streamWrap = null
+    reasoningEl = null
     sourcesWrap = null
     setWaiting(false)
   } else if (msg.type === 'error') {
     removeThinking()
+    streamWrap = null
     streamBubble = null
     streamRawText = ''
+    reasoningEl = null
     pendingSources = null
     sourcesWrap = null
     appendMessage('error', msg.text)
@@ -782,6 +823,8 @@ const configDefaults = {
   metricsIntervalMs: 5000,
   metricsEnabled: true,
   model: 'openai/gpt-4o-mini',
+  reasoningEnabled: false,
+  reasoningEffort: 'medium',
 }
 
 function loadConfig() {
@@ -797,6 +840,8 @@ function applyToForm(cfg) {
   configForm.metricsIntervalMs.value = cfg.metricsIntervalMs
   configForm.metricsEnabled.checked  = cfg.metricsEnabled
   configForm.model.value             = cfg.model
+  configForm.reasoningEnabled.checked = cfg.reasoningEnabled
+  configForm.reasoningEffort.value   = cfg.reasoningEffort
 }
 
 function readFromForm() {
@@ -807,6 +852,8 @@ function readFromForm() {
     metricsIntervalMs: Number(configForm.metricsIntervalMs.value),
     metricsEnabled:    configForm.metricsEnabled.checked,
     model:             configForm.model.value,
+    reasoningEnabled:  String(configForm.reasoningEnabled.checked),
+    reasoningEffort:   configForm.reasoningEffort.value,
   }
 }
 

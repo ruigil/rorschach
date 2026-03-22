@@ -29,7 +29,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
 
       const chatbotConfig = slice?.chatbot ?? null
       const chatbotRef = chatbotConfig
-        ? ctx.spawn('chatbot-0', createChatbotActor(chatbotConfig), { history: {}, pending: {}, pendingBatch: {}, toolsRef: null, spanHandles: {} })
+        ? ctx.spawn('chatbot-0', createChatbotActor(chatbotConfig), { history: {}, pending: {}, pendingReasoning: {}, pendingBatch: {}, toolsRef: null, spanHandles: {} })
         : null
 
       ctx.log.info('cognitive plugin activated')
@@ -51,7 +51,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
     const newChatbot = msg.slice?.chatbot ?? null
     const chatbotGen = state.chatbotGen + 1
     const chatbotRef = newChatbot
-      ? ctx.spawn(`chatbot-${chatbotGen}`, createChatbotActor(newChatbot), { history: {}, pending: {}, pendingBatch: {}, toolsRef: null, spanHandles: {} })
+      ? ctx.spawn(`chatbot-${chatbotGen}`, createChatbotActor(newChatbot), { history: {}, pending: {}, pendingReasoning: {}, pendingBatch: {}, toolsRef: null, spanHandles: {} })
       : null
     return { state: { ...state, chatbotConfig: newChatbot, chatbotRef, chatbotGen } }
   },

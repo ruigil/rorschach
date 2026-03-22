@@ -20,6 +20,7 @@ const CHATBOT_OPTS: ChatbotActorOptions = {
 const INITIAL_CHATBOT_STATE: ChatbotState = {
   history: {},
   pending: {},
+  pendingReasoning: {},
   pendingBatch: {},
   toolsRef: null,
   spanHandles: {},

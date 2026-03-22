@@ -134,7 +134,33 @@
               <option value="openai/gpt-4o">openai/gpt-4o</option>
               <option value="anthropic/claude-sonnet-4-5">anthropic/claude-sonnet-4-5</option>
               <option value="anthropic/claude-haiku-4-5">anthropic/claude-haiku-4-5</option>
+              <option value="deepseek/deepseek-r1">deepseek/deepseek-r1</option>
+              <option value="anthropic/claude-sonnet-4-5:thinking">anthropic/claude-sonnet-4-5:thinking</option>
             </select>
+          </div>
+
+          <div class="field">
+            <div class="field-row">
+              <div>
+                <div class="field-label">Enable reasoning</div>
+                <div class="field-hint">Stream thinking tokens for supported models</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" name="reasoningEnabled" id="reasoning-enabled">
+                <span class="toggle-track"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="reasoning-effort">Reasoning effort</label>
+            <select id="reasoning-effort" name="reasoningEffort">
+              <option value="minimal">minimal</option>
+              <option value="low">low</option>
+              <option value="medium" selected>medium</option>
+              <option value="high">high</option>
+            </select>
+            <span class="field-hint">Token budget allocated for thinking</span>
           </div>
 
         </div>

@@ -9,13 +9,14 @@ import type { GetToolsMsg } from '../tools/tools.plugin.ts'
 // ─── Message protocol ───
 
 type ChatbotMsg =
-  | { type: 'userMessage';   clientId: string; text: string; traceId: string; parentSpanId: string }
-  | { type: 'llmChunk';      clientId: string; text: string }
-  | { type: 'llmDone';       clientId: string }
-  | { type: 'llmErr';        clientId: string; error: unknown }
-  | { type: '_toolsFetched'; clientId: string; apiMessages: ApiMessage[]; toolCollection: ToolCollection }
-  | { type: '_toolBatch';    clientId: string; calls: Array<{ id: string; name: string; arguments: string }>; messagesAtCall: ApiMessage[]; toolCollection: ToolCollection }
-  | { type: '_toolResult';   clientId: string; toolName: string; toolCallId: string; reply: ToolReply }
+  | { type: 'userMessage';       clientId: string; text: string; traceId: string; parentSpanId: string }
+  | { type: 'llmChunk';          clientId: string; text: string }
+  | { type: 'llmReasoningChunk'; clientId: string; text: string }
+  | { type: 'llmDone';           clientId: string }
+  | { type: 'llmErr';            clientId: string; error: unknown }
+  | { type: '_toolsFetched';     clientId: string; apiMessages: ApiMessage[]; toolCollection: ToolCollection }
+  | { type: '_toolBatch';        clientId: string; calls: Array<{ id: string; name: string; arguments: string }>; messagesAtCall: ApiMessage[]; toolCollection: ToolCollection }
+  | { type: '_toolResult';       clientId: string; toolName: string; toolCallId: string; reply: ToolReply }
 
 // ─── State ───
 
@@ -46,6 +47,7 @@ type SpanHandles = {
 export type ChatbotState = {
   history: Record<string, ConversationMessage[]>
   pending: Record<string, string>
+  pendingReasoning: Record<string, string>
   pendingBatch: Record<string, PendingBatch>
   toolsRef: ActorRef<GetToolsMsg> | null
   spanHandles: Record<string, SpanHandles>
@@ -57,6 +59,7 @@ export type ChatbotActorOptions = {
   apiKey: string
   model?: string
   systemPrompt?: string
+  reasoning?: { enabled?: boolean; effort?: 'high' | 'medium' | 'low' | 'minimal' }
 }
 
 // ─── OpenRouter types ───
@@ -86,6 +89,8 @@ const streamLLM = async (
   messages: ApiMessage[],
   tools: Tool[] | undefined,
   onChunk: (text: string) => void,
+  onReasoningChunk?: (text: string) => void,
+  reasoningOptions?: { enabled?: boolean; effort?: 'high' | 'medium' | 'low' | 'minimal' },
 ): Promise<LLMStreamResult> => {
   const res = await fetch(OPENROUTER_URL, {
     method: 'POST',
@@ -98,6 +103,7 @@ const streamLLM = async (
       messages,
       stream: true,
       ...(tools ? { tools, tool_choice: 'auto' } : {}),
+      ...(reasoningOptions?.enabled ? { reasoning: { effort: reasoningOptions.effort ?? 'medium' } } : {}),
     }),
   })
 
@@ -133,6 +139,7 @@ const streamLLM = async (
           choices: Array<{
             delta: {
               content?: string
+              reasoning?: string
               tool_calls?: Array<{
                 index: number
                 id?: string
@@ -143,6 +150,7 @@ const streamLLM = async (
         }
         const delta = parsed.choices[0]?.delta
         if (delta?.content) onChunk(delta.content)
+        if (delta?.reasoning && onReasoningChunk) onReasoningChunk(delta.reasoning)
         if (delta?.tool_calls) {
           for (const tc of delta.tool_calls) {
             if (!toolCalls[tc.index]) {
@@ -165,7 +173,7 @@ const streamLLM = async (
 // ─── Actor definition ───
 
 export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<ChatbotMsg, ChatbotState> => {
-  const { apiKey, model = 'openai/gpt-4o-mini', systemPrompt } = options
+  const { apiKey, model = 'openai/gpt-4o-mini', systemPrompt, reasoning } = options
 
   return {
     lifecycle: onLifecycle({
@@ -229,9 +237,12 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         const tools = toolSchemas.length > 0 ? toolSchemas : undefined
 
         context.pipeToSelf(
-          streamLLM(apiKey, model, apiMessages, tools, (chunk) => {
-            selfRef.send({ type: 'llmChunk', clientId, text: chunk })
-          }),
+          streamLLM(
+            apiKey, model, apiMessages, tools,
+            (chunk) => selfRef.send({ type: 'llmChunk', clientId, text: chunk }),
+            reasoning?.enabled ? (chunk) => selfRef.send({ type: 'llmReasoningChunk', clientId, text: chunk }) : undefined,
+            reasoning,
+          ),
           (result) => result.type === 'toolCalls'
             ? { type: '_toolBatch' as const, clientId, calls: result.calls, messagesAtCall: apiMessages, toolCollection }
             : { type: 'llmDone' as const, clientId },
@@ -361,9 +372,12 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           : null
 
         context.pipeToSelf(
-          streamLLM(apiKey, model, messagesWithResults, undefined, (chunk) => {
-            selfRef.send({ type: 'llmChunk', clientId, text: chunk })
-          }),
+          streamLLM(
+            apiKey, model, messagesWithResults, undefined,
+            (chunk) => selfRef.send({ type: 'llmChunk', clientId, text: chunk }),
+            reasoning?.enabled ? (chunk) => selfRef.send({ type: 'llmReasoningChunk', clientId, text: chunk }) : undefined,
+            reasoning,
+          ),
           () => ({ type: 'llmDone' as const, clientId }),
           (error) => ({ type: 'llmErr' as const, clientId, error }),
         )
@@ -405,11 +419,20 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         }
       },
 
+      llmReasoningChunk: (state, message) => {
+        const { clientId, text } = message
+        return {
+          state: { ...state, pendingReasoning: { ...state.pendingReasoning, [clientId]: (state.pendingReasoning[clientId] ?? '') + text } },
+          events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'reasoningChunk', text }) })],
+        }
+      },
+
       llmDone: (state, message) => {
         const { clientId } = message
         const fullReply = state.pending[clientId] ?? ''
         const prior = state.history[clientId] ?? []
         const { [clientId]: _, ...restPending } = state.pending
+        const { [clientId]: _r, ...restReasoning } = state.pendingReasoning
         const { [clientId]: __, ...restHandles } = state.spanHandles
         const handles = state.spanHandles[clientId]
         handles?.llmSpan?.done()
@@ -419,6 +442,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
             ...state,
             history: { ...state.history, [clientId]: [...prior, { role: 'assistant', content: fullReply }] },
             pending: restPending,
+            pendingReasoning: restReasoning,
             spanHandles: restHandles,
           },
           events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) })],
@@ -429,12 +453,13 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         const { clientId, error } = message
         context.log.error('LLM stream failed', { clientId, error: String(error) })
         const { [clientId]: _, ...restPending } = state.pending
+        const { [clientId]: _r, ...restReasoning } = state.pendingReasoning
         const { [clientId]: __, ...restHandles } = state.spanHandles
         const handles = state.spanHandles[clientId]
         handles?.llmSpan?.error(error)
         handles?.requestSpan?.error(error)
         return {
-          state: { ...state, pending: restPending, spanHandles: restHandles },
+          state: { ...state, pending: restPending, pendingReasoning: restReasoning, spanHandles: restHandles },
           events: [emit(WsSendTopic, {
             clientId,
             text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }),

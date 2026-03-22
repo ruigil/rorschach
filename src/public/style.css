@@ -1497,3 +1497,55 @@ button[type="submit"] svg { pointer-events: none; }
   text-align: right;
   white-space: nowrap;
 }
+
+/* ─── Reasoning section ─── */
+
+.reasoning {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 0.78rem;
+}
+
+.reasoning summary {
+  padding: 5px 10px;
+  cursor: pointer;
+  color: var(--text-dim);
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.reasoning summary::-webkit-details-marker { display: none; }
+
+.reasoning summary::before {
+  content: '▶';
+  font-size: 0.55em;
+  opacity: 0.6;
+  transition: transform 0.15s ease;
+}
+
+.reasoning[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.reasoning[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.reasoning-content {
+  padding: 10px 12px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.55;
+  opacity: 0.8;
+}
