@@ -103,6 +103,10 @@ function connect() {
       updateMetrics(msg)
     } else if (msg.type === 'trace') {
       onTraceSpan(msg)
+    } else if (msg.type === 'tool_registered') {
+      onToolRegistered(msg)
+    } else if (msg.type === 'tool_unregistered') {
+      onToolUnregistered(msg)
     }
   })
 }
@@ -461,6 +465,8 @@ const topicsEmpty    = document.getElementById('topics-empty')
 const obsTracesControls = document.getElementById('obs-traces-controls')
 const tracesCountEl      = document.getElementById('traces-count')
 const clearTracesBtn     = document.getElementById('clear-traces')
+const toolsListEl        = document.getElementById('tools-list')
+const toolsEmptyEl       = document.getElementById('tools-empty')
 const tracesListEl       = document.getElementById('obs-traces-list')
 const tracesEmptyEl      = document.getElementById('traces-empty')
 
@@ -605,6 +611,37 @@ const collapsedSet = new Set()
 
 let topicsData    = []
 const expandedTopics = new Set()
+
+// ─── Tools ───
+
+const toolsMap = {}
+
+function onToolRegistered(msg) {
+  toolsMap[msg.name] = msg.schema
+  renderTools()
+}
+
+function onToolUnregistered(msg) {
+  delete toolsMap[msg.name]
+  renderTools()
+}
+
+function renderTools() {
+  const names = Object.keys(toolsMap).sort()
+  toolsListEl.querySelectorAll('.tool-row').forEach(el => el.remove())
+  if (names.length === 0) {
+    toolsEmptyEl.style.display = ''
+    return
+  }
+  toolsEmptyEl.style.display = 'none'
+  for (const name of names) {
+    const desc = toolsMap[name]?.function?.description ?? ''
+    const row = document.createElement('div')
+    row.className = 'tool-row'
+    row.innerHTML = `<span class="tool-name">${escHtml(name)}</span><span class="tool-desc">${escHtml(desc)}</span>`
+    toolsListEl.appendChild(row)
+  }
+}
 
 // Observe subtab switching
 document.querySelectorAll('.obs-subtab').forEach(btn => {
