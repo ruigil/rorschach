@@ -8,6 +8,7 @@ dist
 # code coverage
 coverage
 *.lcov
+.claude
 
 # logs
 logs
