@@ -63,6 +63,13 @@ export type WsMessageEvent = { clientId: string; text: string; images?: string[]
 /** Topic for WebSocket message domain events. Subscribe to receive browser input. */
 export const WsMessageTopic = createTopic<WsMessageEvent>('http.ws.message')
 
+// ─── Domain event: published when a WebSocket client connects ───
+
+export type WsConnectEvent = { clientId: string }
+
+/** Topic emitted when a new WebSocket client connects. Subscribe to send initial state to the client. */
+export const WsConnectTopic = createTopic<WsConnectEvent>('http.ws.connect')
+
 // ─── Domain event: emit to send a message to a specific WebSocket client ───
 
 export type WsSendEvent = { clientId: string; text: string }
@@ -134,7 +141,10 @@ export const createHttpActor = (
       connected: (state, message, context) => {
         const connections = state.connections + 1
         context.log.info(`client connected: ${message.clientId} (${connections} total)`)
-        return { state: { ...state, connections } }
+        return {
+          state: { ...state, connections },
+          events: [emit(WsConnectTopic, { clientId: message.clientId })],
+        }
       },
 
       message: (state, message, context) => {

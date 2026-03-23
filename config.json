@@ -2,6 +2,7 @@
   "plugins": [
     "./src/plugins/interfaces/interfaces.plugin.ts",
     "./src/plugins/tools/tools.plugin.ts",
+    "./src/plugins/memory/memory.plugin.ts",
     "./src/plugins/cognitive/cognitive.plugin.ts",
     "./src/plugins/observability/observability.plugin.ts"
   ],
@@ -29,6 +30,9 @@
       "visionActor": {
         "model": "${OPENROUTER_VISION_MODEL:-openai/gpt-5.4-nano}"
       }
+    },
+    "memory" : {
+      "kgraph": { "dbPath" : "./kgraph" }
     },
     "observability": {
       "jsonlLogger": {

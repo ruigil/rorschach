@@ -17,6 +17,7 @@
   },
   "type": "module",
   "dependencies": {
+    "@grafeo-db/js": "^0.5.23",
     "just-bash": "^2.14.0"
   }
 }

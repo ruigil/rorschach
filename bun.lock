@@ -5,6 +5,7 @@
     "": {
       "name": "rorschach",
       "dependencies": {
+        "@grafeo-db/js": "^0.5.23",
         "just-bash": "^2.14.0",
       },
       "devDependencies": {
@@ -17,6 +18,20 @@
   },
   "packages": {
     "@borewit/text-codec": ["@borewit/text-codec@0.2.2", "", {}, "sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ=="],
+
+    "@grafeo-db/js": ["@grafeo-db/js@0.5.23", "", { "optionalDependencies": { "@grafeo-db/js-darwin-arm64": "0.5.23", "@grafeo-db/js-darwin-x64": "0.5.23", "@grafeo-db/js-linux-arm64-gnu": "0.5.23", "@grafeo-db/js-linux-arm64-musl": "0.5.23", "@grafeo-db/js-linux-x64-gnu": "0.5.23", "@grafeo-db/js-win32-x64-msvc": "0.5.23" } }, "sha512-74ta/pWYeSc2PqF9d5ND7bqIC5hdHqbvMWjxN9ZjgSx74OepM86/RYG1EFD1A5/IpH72gh28QnuQ+lwTowmkwA=="],
+
+    "@grafeo-db/js-darwin-arm64": ["@grafeo-db/js-darwin-arm64@0.5.23", "", { "os": "darwin", "cpu": "arm64" }, "sha512-P9giKG6y33OVnY7fqSlLFBpeESZ52utmD5hI6lhTqINlGmdNABPjWObs0YigW1eU0/eqYdKRa/wme+OlW47j2A=="],
+
+    "@grafeo-db/js-darwin-x64": ["@grafeo-db/js-darwin-x64@0.5.23", "", { "os": "darwin", "cpu": "x64" }, "sha512-u2782Zw9gAJXKeGPPnMMLbIa/5jcrGz9Ejff1uJ5yLgfvpH1cP7kIAtxMjzeN3WMvSVWP1Vl7peq2st/715waw=="],
+
+    "@grafeo-db/js-linux-arm64-gnu": ["@grafeo-db/js-linux-arm64-gnu@0.5.23", "", { "os": "linux", "cpu": "arm64" }, "sha512-dpNRxkNilyc/SAEhgKANfB5YQSE5Q3YinUBjHULGOxWURWcfPYx74eUNdbBzjWbG+9jY0UfAjNtlXszmeYloFA=="],
+
+    "@grafeo-db/js-linux-arm64-musl": ["@grafeo-db/js-linux-arm64-musl@0.5.23", "", { "os": "linux", "cpu": "arm64" }, "sha512-dH1noWxfXRfW4FhoZl/lK34+xLZGuFprVwJnzgsCsHHg3bzWdzgVL5GBFKzRS8M/ndN7Ll4qXdPHGBJfc6ERQw=="],
+
+    "@grafeo-db/js-linux-x64-gnu": ["@grafeo-db/js-linux-x64-gnu@0.5.23", "", { "os": "linux", "cpu": "x64" }, "sha512-P3ZE3h2V8ril8uvO+FHj1G8Y3MxeMbnJoABXoZByAiJ9UWxBezuFEXgeQh4Zg9FgqcS/bYIZIunja728EVzGWQ=="],
+
+    "@grafeo-db/js-win32-x64-msvc": ["@grafeo-db/js-win32-x64-msvc@0.5.23", "", { "os": "win32", "cpu": "x64" }, "sha512-0ByVtW0JmXhAsP0Ag4C42gebzAxeZeDJ4P2N53HQnLb6LhSPDZslmNUKabGqvutjjY+GCCKr8Ga9NDgix3O7Ew=="],
 
     "@jitl/quickjs-ffi-types": ["@jitl/quickjs-ffi-types@0.32.0", "", {}, "sha512-v9T+GQpmk43VDJ7d72sf0Nexhk+ArvtUihW27dy7lqAl0zBObFKtSBBIm5RBjwIhE8VwsPPm9PNuvPvNqLWUEg=="],
 

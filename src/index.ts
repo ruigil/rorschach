@@ -5,10 +5,12 @@ import {
   SystemLifecycleTopic,
   TraceTopic,
 } from './system/index.ts'
-import { WsBroadcastTopic, HttpConfigTopic } from './plugins/interfaces/http.ts'
+import { WsBroadcastTopic, WsConnectTopic, WsSendTopic, HttpConfigTopic } from './plugins/interfaces/http.ts'
 import type { HttpConfigPayload } from './plugins/interfaces/http.ts'
 import { loadConfig } from './config.ts'
 import type { LogEvent, MetricsEvent, LifecycleEvent, TraceSpan } from './system/index.ts'
+import { ToolRegistrationTopic } from './system/tools.ts'
+import type { ToolRegistrationEvent } from './system/tools.ts'
 
 if (!process.env.OPENROUTER_API_KEY) {
   console.error('Error: OPENROUTER_API_KEY environment variable is not set.')
@@ -23,9 +25,9 @@ const PORT         = (config.interfaces as any)?.http?.port as number ?? 3000
 const apiKey       = (config.cognitive as any)?.llmProvider?.apiKey as string
 const SYSTEM_PROMPT = (config.cognitive as any)?.chatbot?.systemPrompt as string
 
-// ─── Create the actor system ───
+// ─── Create the actor system (no plugins yet — subscribe first, then load) ───
 
-const system = await createPluginSystem({ plugins, config })
+const system = await createPluginSystem({ config })
 
 // ─── Forward logs to the observability page via WebSocket broadcast ───
 
@@ -41,6 +43,36 @@ system.subscribe(MetricsTopic, (event: MetricsEvent) => {
   system.publish(WsBroadcastTopic, {
     text: JSON.stringify({ type: 'metrics', ...event }),
   })
+})
+
+// ─── Forward tool registrations to the observability page ───
+// Keep a local snapshot so new clients get the full list on connect.
+
+const toolsSnapshot: Record<string, Extract<ToolRegistrationEvent, { schema: unknown }>> = {}
+
+system.subscribe(ToolRegistrationTopic, (event: ToolRegistrationEvent) => {
+  if (event.ref === null) {
+    delete toolsSnapshot[event.name]
+    system.publish(WsBroadcastTopic, {
+      text: JSON.stringify({ type: 'tool_unregistered', name: event.name }),
+    })
+  } else {
+    toolsSnapshot[event.name] = event
+    system.publish(WsBroadcastTopic, {
+      text: JSON.stringify({ type: 'tool_registered', name: event.name, schema: event.schema }),
+    })
+  }
+})
+
+// ─── Replay current tools to each newly connected client ───
+
+system.subscribe(WsConnectTopic, ({ clientId }) => {
+  for (const event of Object.values(toolsSnapshot)) {
+    system.publish(WsSendTopic, {
+      clientId,
+      text: JSON.stringify({ type: 'tool_registered', name: event.name, schema: event.schema }),
+    })
+  }
 })
 
 // ─── Forward trace spans to the observability page ───
@@ -95,6 +127,13 @@ system.subscribe(SystemLifecycleTopic, (event) => {
     console.log(`[system] actor ${e.ref.name} terminated (${e.reason})`)
   }
 })
+
+// ─── Load plugins after subscriptions are in place ───
+
+for (const def of plugins) {
+  const result = await system.use(def)
+  if (!result.ok) throw new Error(`Startup plugin '${def.id}' failed: ${result.error}`)
+}
 
 console.log(`\n🚀 Rorschach running`)
 console.log(`   chat     → http://localhost:${PORT}`)

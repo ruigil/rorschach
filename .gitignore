@@ -8,7 +8,11 @@ dist
 # code coverage
 coverage
 *.lcov
+
+# dirs
 .claude
+workspace
+kgraph
 
 # logs
 logs
