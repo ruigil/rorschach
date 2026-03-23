@@ -1,4 +1,3 @@
-import { join } from 'node:path'
 import {
   createPluginSystem,
   LogTopic,
@@ -6,64 +5,27 @@ import {
   SystemLifecycleTopic,
   TraceTopic,
 } from './system/index.ts'
-import interfacesPlugin from './plugins/interfaces/interfaces.plugin.ts'
-import cognitivePlugin from './plugins/cognitive/cognitive.plugin.ts'
-import toolsPlugin from './plugins/tools/tools.plugin.ts'
-import observabilityPlugin from './plugins/observability/observability.plugin.ts'
 import { WsBroadcastTopic, HttpConfigTopic } from './plugins/interfaces/http.ts'
-import type { LogEvent, MetricsEvent, LifecycleEvent, TraceSpan } from './system/index.ts'
 import type { HttpConfigPayload } from './plugins/interfaces/http.ts'
+import { loadConfig } from './config.ts'
+import type { LogEvent, MetricsEvent, LifecycleEvent, TraceSpan } from './system/index.ts'
 
-const apiKey = process.env.OPENROUTER_API_KEY
-if (!apiKey) {
+if (!process.env.OPENROUTER_API_KEY) {
   console.error('Error: OPENROUTER_API_KEY environment variable is not set.')
   process.exit(1)
 }
 
-const PORT          = Number(process.env.PORT ?? 3000)
-const LOG_FILE      = join(import.meta.dir, '../logs/app.jsonl')
-const SYSTEM_PROMPT = "You're the user perfect mirror. You always reflect what you perceive. If the user is curious, you are curious. If the user is sad, you're sad. If the user is concise, you're concise. You're a perfect mirror of he user."
+// ─── Load config and plugins from config.json ───
+
+const { plugins, config } = await loadConfig()
+
+const PORT         = (config.interfaces as any)?.http?.port as number ?? 3000
+const apiKey       = (config.cognitive as any)?.llmProvider?.apiKey as string
+const SYSTEM_PROMPT = (config.cognitive as any)?.chatbot?.systemPrompt as string
 
 // ─── Create the actor system ───
 
-const system = await createPluginSystem({
-  config: {
-    interfaces: { http: { port: PORT } },
-    tools: {
-      webSearch: {
-        apiKey: process.env.BRAVESEARCH_API_KEY ?? '',
-      },
-    },
-    cognitive: {
-      llmProvider: {
-        apiKey,
-        model: process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini',
-      },
-      chatbot: {
-        systemPrompt: SYSTEM_PROMPT,
-      },
-      visionActor: {
-        model: process.env.OPENROUTER_VISION_MODEL ?? 'openai/gpt-5.4-nano',
-      },
-    },
-    observability: {
-      jsonlLogger: {
-        filePath: LOG_FILE,
-        minLevel: 'debug',
-        flushIntervalMs: 30000,
-      },
-      metrics: {
-        intervalMs: 5000,
-      },
-    },
-  },
-  plugins: [
-    interfacesPlugin,
-    toolsPlugin,
-    cognitivePlugin,
-    observabilityPlugin,
-  ],
-})
+const system = await createPluginSystem({ plugins, config })
 
 // ─── Forward logs to the observability page via WebSocket broadcast ───
 
@@ -112,7 +74,7 @@ system.subscribe(HttpConfigTopic, (form: HttpConfigPayload) => {
     },
     observability: {
       jsonlLogger: {
-        filePath: String(form.logPath ?? LOG_FILE),
+        filePath: String(form.logPath ?? (config.observability as any)?.jsonlLogger?.filePath ?? './logs/app.jsonl'),
         minLevel: (form.minLevel as any) ?? 'debug',
         flushIntervalMs: Number(form.flushIntervalMs ?? 3000),
       },
