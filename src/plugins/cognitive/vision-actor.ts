@@ -1,8 +1,8 @@
-import { readFile, unlink } from 'node:fs/promises'
+import { unlink } from 'node:fs/promises'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../tools/tool.ts'
-import { ToolRegistrationTopic } from '../tools/tool.ts'
+import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../system/tools.ts'
+import { ToolRegistrationTopic } from '../../system/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from './llm-provider.ts'
 
 // ─── Tool schema ───
@@ -56,11 +56,11 @@ export type VisionActorOptions = {
 const resolveImageUrl = async (imageUrl: string): Promise<string> => {
   if (imageUrl.startsWith('data:') || imageUrl.startsWith('http')) return imageUrl
   // Treat as a local file path: read, encode, delete
-  const buf = await readFile(imageUrl)
+  const buf = await Bun.file(imageUrl).bytes()
   const ext = imageUrl.split('.').pop() ?? 'jpeg'
   const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
   await unlink(imageUrl)
-  return `data:${mimeType};base64,${buf.toString('base64')}`
+  return `data:${mimeType};base64,${Buffer.from(buf).toString('base64')}`
 }
 
 // ─── Actor definition ───
