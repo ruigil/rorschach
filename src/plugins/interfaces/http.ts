@@ -224,7 +224,7 @@ export const createHttpActor = (
       start: (state, context) => {
         selfRef = context.self
 
-        const { lookup, actorSnapshots } = context
+        const { lookupService } = context
 
         context.subscribe(WsSendTopic, (e) => ({
           type: 'send' as const,
@@ -246,10 +246,7 @@ export const createHttpActor = (
 
             // Models API
             if (req.method === 'GET' && url.pathname === '/models') {
-              const snap = actorSnapshots().find(
-                s => s.name.includes('/llm-provider-') && s.status === 'running',
-              )
-              const ref = snap ? lookup<{ type: 'fetchModels'; replyTo: ActorRef<string[]> }>(snap.name) : undefined
+              const ref = lookupService<{ type: 'fetchModels'; replyTo: ActorRef<string[]> }>('llm-provider')
               if (ref) {
                 try {
                   const models = await ask(ref, replyTo => ({ type: 'fetchModels' as const, replyTo }), { timeoutMs: 10_000 })
