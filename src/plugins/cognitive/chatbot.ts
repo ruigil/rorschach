@@ -3,8 +3,7 @@ import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { ask } from '../../system/ask.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { WsMessageTopic, WsSendTopic } from '../interfaces/http.ts'
-import type { ToolCollection, ToolInvokeMsg, ToolReply } from '../tools/tool.ts'
-import type { GetToolsMsg } from '../tools/tools.plugin.ts'
+import type { GetToolsMsg, ToolCollection, ToolInvokeMsg, ToolReply } from '../../system/tools.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
@@ -20,7 +19,6 @@ import type {
 type ChatbotMsg =
   | { type: 'userMessage';   clientId: string; text: string; images?: string[]; traceId: string; parentSpanId: string }
   | LlmProviderReply
-  | { type: '_modelInfo';    info: ModelInfo | null }
   | { type: '_toolsFetched'; clientId: string; apiMessages: ApiMessage[]; toolCollection: ToolCollection }
   | { type: '_toolResult';   clientId: string; toolName: string; toolCallId: string; reply: ToolReply }
 
@@ -67,18 +65,18 @@ export type ChatbotState = {
 
 export type ChatbotActorOptions = {
   llmRef: ActorRef<LlmProviderMsg>
-  model?: string
+  model: string
   systemPrompt?: string
 }
 
 // ─── Actor definition ───
 
 export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<ChatbotMsg, ChatbotState> => {
-  const { llmRef, model = 'openai/gpt-4o-mini', systemPrompt } = options
+  const { llmRef, model, systemPrompt } = options
 
   return {
     lifecycle: onLifecycle({
-      start(state, context) {
+      async start(state, context) {
         context.subscribe(WsMessageTopic, (e) => ({
           type: 'userMessage' as const,
           clientId: e.clientId,
@@ -88,22 +86,15 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           parentSpanId: e.parentSpanId,
         }))
 
-        context.pipeToSelf(
-          ask<LlmProviderMsg, ModelInfo | null>(llmRef, (replyTo) => ({ type: 'fetchModelInfo', model, replyTo })),
-          (info) => ({ type: '_modelInfo' as const, info }),
-          () => ({ type: '_modelInfo' as const, info: null }),
-        )
+        const modelInfo = await ask<LlmProviderMsg, ModelInfo | null>(llmRef, (replyTo) => ({ type: 'fetchModelInfo', model, replyTo }))
+          .catch(() => null)
 
-        const toolsRef = context.lookup<GetToolsMsg>('system/tools')
-        return { state: { ...state, toolsRef: toolsRef ?? null } }
+        const toolsRef = context.lookupService<GetToolsMsg>('tools')
+        return { state: { ...state, modelInfo, toolsRef: toolsRef ?? null } }
       },
     }),
 
     handler: onMessage<ChatbotMsg, ChatbotState>({
-      _modelInfo: (state, message) => ({
-        state: { ...state, modelInfo: message.info },
-      }),
-
       userMessage: (state, message, context) => {
         const { clientId, text, images, traceId, parentSpanId } = message
         const prior = state.history[clientId] ?? []
@@ -125,13 +116,15 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         const fetchTools: Promise<ToolCollection> = state.toolsRef
           ? ask<GetToolsMsg, ToolCollection>(state.toolsRef, (replyTo) => ({ type: 'getTools', replyTo }))
           : Promise.resolve({})
+
         context.pipeToSelf(
           fetchTools,
           (toolCollection) => ({ type: '_toolsFetched' as const, clientId, apiMessages, toolCollection }),
           (error) => ({ type: 'llmError' as const, requestId: clientId, error }),
         )
-
+        
         const requestSpan = context.trace.child(traceId, parentSpanId, 'chatbot', { preview: text.slice(0, 80) })
+        
         return {
           state: {
             ...state,
