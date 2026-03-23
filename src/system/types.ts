@@ -289,6 +289,12 @@ export type ActorContext<M> = {
   readonly unwatch: (target: ActorIdentity) => void
   /** Look up an actor ref by its full hierarchical name. Returns undefined if not registered. */
   readonly lookup: <T = unknown>(name: string) => ActorRef<T> | undefined
+  /** Register a stable service alias for any ref, independent of its position in the actor tree. Overwrites any previous registration under the same name. */
+  readonly registerService: (serviceName: string, ref: ActorRef<unknown>) => void
+  /** Remove a service alias. */
+  readonly unregisterService: (serviceName: string) => void
+  /** Look up a ref by service name. Returns undefined if no actor has registered under that name. */
+  readonly lookupService: <T = unknown>(serviceName: string) => ActorRef<T> | undefined
 
   // ─── Event Stream (pub-sub) ───
 
@@ -462,6 +468,12 @@ export type Registry = {
   readonly register: (name: string, ref: ActorRef<unknown>) => void
   readonly unregister: (name: string) => void
   readonly lookup: <T = unknown>(name: string) => ActorRef<T> | undefined
+  /** Register a stable service alias, independent of the actor's position in the tree. Overwrites any previous registration under the same name. */
+  readonly registerService: (serviceName: string, ref: ActorRef<unknown>) => void
+  /** Remove a service alias. */
+  readonly unregisterService: (serviceName: string) => void
+  /** Look up a ref by service name. Returns undefined if no actor has registered under that name. */
+  readonly lookupService: <T = unknown>(serviceName: string) => ActorRef<T> | undefined
 }
 
 // ─── Actor Metrics Types ───
