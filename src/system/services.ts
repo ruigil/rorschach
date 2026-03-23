@@ -134,6 +134,7 @@ export const createEventStream = (): EventStream => {
  */
 export const createRegistry = (): Registry => {
   const actors = new Map<string, ActorRef<unknown>>()
+  const services = new Map<string, ActorRef<unknown>>()
 
   const register = (name: string, ref: ActorRef<unknown>): void => {
     actors.set(name, ref)
@@ -147,5 +148,17 @@ export const createRegistry = (): Registry => {
     return actors.get(name) as ActorRef<T> | undefined
   }
 
-  return { register, unregister, lookup }
+  const registerService = (serviceName: string, ref: ActorRef<unknown>): void => {
+    services.set(serviceName, ref)
+  }
+
+  const unregisterService = (serviceName: string): void => {
+    services.delete(serviceName)
+  }
+
+  const lookupService = <T = unknown>(serviceName: string): ActorRef<T> | undefined => {
+    return services.get(serviceName) as ActorRef<T> | undefined
+  }
+
+  return { register, unregister, lookup, registerService, unregisterService, lookupService }
 }

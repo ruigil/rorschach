@@ -6,7 +6,7 @@ import {
   type WebSearchMsg,
   type BraveLlmContextResponse,
 } from '../plugins/tools/web-search.ts'
-import type { ToolInvokeMsg, ToolReply } from '../plugins/tools/tool.ts'
+import type { ToolInvokeMsg, ToolReply } from '../system/tools.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 
 // ─── Helpers ───
@@ -197,7 +197,7 @@ describe('tools plugin', () => {
             type: 'invoke',
             toolName: 'web_search',
             arguments: JSON.stringify({ query: 'probe' }),
-            replyTo: ctx.self as unknown as import('../plugins/tools/tool.ts').ActorRef<ToolReply>,
+            replyTo: ctx.self as unknown as import('../system/types.ts').ActorRef<ToolReply>,
           })
         }
         return { state }
@@ -222,30 +222,28 @@ describe('tools plugin', () => {
   test('maskState redacts the API key', () => {
     const state = {
       initialized: true,
-      webSearchConfig: { apiKey: 'super-secret', count: 20 },
-      webSearchRef: null,
-      webSearchGen: 0,
+      webSearch: { config: { apiKey: 'super-secret', count: 20 }, ref: null, gen: 0 },
+      bash:      { config: null, ref: null, gen: 0 },
       tools: {},
     }
 
     const masked = toolsPlugin.maskState!(state)
 
-    expect((masked as typeof state).webSearchConfig?.apiKey).toBe('[redacted]')
-    expect((masked as typeof state).webSearchConfig?.count).toBe(20)
+    expect((masked as typeof state).webSearch.config?.apiKey).toBe('[redacted]')
+    expect((masked as typeof state).webSearch.config?.count).toBe(20)
   })
 
   test('maskState handles null webSearchConfig gracefully', () => {
     const state = {
       initialized: false,
-      webSearchConfig: null,
-      webSearchRef: null,
-      webSearchGen: 0,
+      webSearch: { config: null, ref: null, gen: 0 },
+      bash:      { config: null, ref: null, gen: 0 },
       tools: {},
     }
 
     const masked = toolsPlugin.maskState!(state)
 
-    expect((masked as typeof state).webSearchConfig).toBeNull()
+    expect((masked as typeof state).webSearch.config).toBeNull()
   })
 
   test('config change replaces web-search child actor', async () => {

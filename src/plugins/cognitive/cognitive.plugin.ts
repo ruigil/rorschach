@@ -61,6 +61,7 @@ const spawnAll = (
     createLlmProviderActor({ adapter: createOpenRouterAdapter({ apiKey: llmProviderConfig.apiKey, reasoning: llmProviderConfig.reasoning }) }),
     null,
   )
+  ctx.registerService('llm-provider', llmProviderRef as ActorRef<unknown>)
 
   const chatbotRef = chatbotConfig
     ? ctx.spawn(
@@ -125,6 +126,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
     },
     stopped: (state, ctx) => {
       ctx.log.info('cognitive plugin deactivating')
+      ctx.unregisterService('llm-provider')
       return { state }
     },
   }),

@@ -274,6 +274,18 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       return services.registry.lookup<T>(targetName)
     },
 
+    registerService: (serviceName: string, ref: ActorRef<unknown>) => {
+      services.registry.registerService(serviceName, ref)
+    },
+
+    unregisterService: (serviceName: string) => {
+      services.registry.unregisterService(serviceName)
+    },
+
+    lookupService: <T = unknown>(serviceName: string) => {
+      return services.registry.lookupService<T>(serviceName)
+    },
+
     // ─── Event Stream (pub-sub) ───
 
     publish: <T>(topic: EventTopic<T>, event: T) => {

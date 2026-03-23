@@ -5,8 +5,7 @@ import { WsMessageTopic } from '../plugins/interfaces/http.ts'
 import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
-import type { GetToolsMsg } from '../plugins/tools/tools.plugin.ts'
-import type { ToolInvokeMsg } from '../plugins/tools/tool.ts'
+import type { GetToolsMsg, ToolInvokeMsg } from '../system/tools.ts'
 import { WEB_SEARCH_SCHEMA, WEB_SEARCH_TOOL_NAME } from '../plugins/tools/web-search.ts'
 
 // ─── Helpers ───
