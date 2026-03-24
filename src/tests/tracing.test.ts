@@ -1,7 +1,6 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { createPluginSystem, TraceTopic, type TraceSpan } from '../system/index.ts'
 import type { MessageHeaders } from '../system/index.ts'
-import { WsMessageTopic } from '../plugins/interfaces/http.ts'
 import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
@@ -23,17 +22,17 @@ const LLM_PROVIDER_ADAPTER_OPTS = {
 }
 
 const INITIAL_CHATBOT_STATE: ChatbotState = {
-  history: {},
-  pending: {},
-  pendingReasoning: {},
-  pendingBatch: {},
-  tools: {},
-  spanHandles: {},
-  sessionUsage: {},
-  pendingUsage: {},
-  modelInfo: null,
-  requestMap: {},
-  llmRequests: {},
+  history:          [],
+  tools:            {},
+  modelInfo:        null,
+  sessionUsage:     { promptTokens: 0, completionTokens: 0 },
+  requestId:        null,
+  turnMessages:     null,
+  spanHandles:      null,
+  pendingUsage:     { promptTokens: 0, completionTokens: 0 },
+  pending:          '',
+  pendingReasoning: '',
+  pendingBatch:     null,
 }
 
 // ─── SSE helpers ───
@@ -92,7 +91,7 @@ const spanFor = (spans: TraceSpan[], operation: string, status: TraceSpan['statu
 
 const spawnChatbot = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
   const llmRef = system.spawn('llm-provider', createLlmProviderActor({ adapter: createOpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }), null)
-  system.spawn('chatbot', createChatbotActor({ llmRef, model: LLM_PROVIDER_ADAPTER_OPTS.model }), INITIAL_CHATBOT_STATE)
+  return system.spawn('chatbot', createChatbotActor({ clientId: CLIENT_ID, llmRef, model: LLM_PROVIDER_ADAPTER_OPTS.model }), INITIAL_CHATBOT_STATE)
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -105,10 +104,10 @@ describe('distributed tracing', () => {
 
     const system = await createPluginSystem()
     const spans = collectSpans(system)
-    spawnChatbot(system)
+    const chatbot = spawnChatbot(system)
 
     await tick()
-    system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'hi', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
+    chatbot.send({ type: 'userMessage', text: 'hi', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
     await tick(300)
 
     const chatbotStart  = spanFor(spans, 'chatbot',  'started')
@@ -157,10 +156,10 @@ describe('distributed tracing', () => {
       plugins: [toolsPlugin],
     })
     const spans = collectSpans(system)
-    spawnChatbot(system)
+    const chatbot = spawnChatbot(system)
 
     await tick()
-    system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'search for ai news', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
+    chatbot.send({ type: 'userMessage', text: 'search for ai news', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
     await tick(400)
 
     const chatbotStart       = spanFor(spans, 'chatbot',      'started')
@@ -192,10 +191,10 @@ describe('distributed tracing', () => {
 
     const system = await createPluginSystem()
     const spans = collectSpans(system)
-    spawnChatbot(system)
+    const chatbot = spawnChatbot(system)
 
     await tick()
-    system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'hi', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
+    chatbot.send({ type: 'userMessage', text: 'hi', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
     await tick(300)
 
     const chatbotError = spanFor(spans, 'chatbot',  'error')
@@ -236,10 +235,10 @@ describe('distributed tracing', () => {
     const spans = collectSpans(system)
     // Retain the tool before spawning chatbot — replayed on subscribe during chatbot's start lifecycle
     system.publishRetained(ToolRegistrationTopic, WEB_SEARCH_TOOL_NAME, { name: WEB_SEARCH_TOOL_NAME, schema: WEB_SEARCH_SCHEMA, ref: fakeToolRef })
-    spawnChatbot(system)
+    const chatbot = spawnChatbot(system)
 
     await tick()
-    system.publish(WsMessageTopic, { clientId: CLIENT_ID, text: 'search test', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
+    chatbot.send({ type: 'userMessage', text: 'search test', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
     await tick(400)
 
     // The traceparent header must be present and well-formed (W3C trace context format)

@@ -1,8 +1,7 @@
 import { unlink } from 'node:fs/promises'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import { onMessage } from '../../system/match.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../system/tools.ts'
-import { ToolRegistrationTopic } from '../../system/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from './llm-provider.ts'
 
 // ─── Tool schema ───
@@ -69,23 +68,6 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
   const { llmRef, model } = options
 
   return {
-    lifecycle: onLifecycle({
-      start: (state, context) => {
-        context.publish(ToolRegistrationTopic, {
-          name: ANALYZE_IMAGE_TOOL_NAME,
-          schema: ANALYZE_IMAGE_SCHEMA,
-          ref: context.self as unknown as ActorRef<ToolInvokeMsg>,
-        })
-        context.log.info('vision actor ready', { model })
-        return { state }
-      },
-
-      stopped: (state, context) => {
-        context.publish(ToolRegistrationTopic, { name: ANALYZE_IMAGE_TOOL_NAME, ref: null })
-        return { state }
-      },
-    }),
-
     handler: onMessage<VisionActorMsg, VisionState>({
       invoke: (state, message, context) => {
         const { arguments: args, replyTo } = message

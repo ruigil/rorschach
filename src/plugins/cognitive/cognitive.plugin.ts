@@ -1,8 +1,10 @@
-import { createChatbotActor } from './chatbot.ts'
+import { createSessionManagerActor } from './session-manager.ts'
 import { createLlmProviderActor, createOpenRouterAdapter, LlmProviderTopic } from './llm-provider.ts'
 import type { LlmProviderMsg } from './llm-provider.ts'
-import { createVisionActor } from './vision-actor.ts'
+import { createVisionActor, ANALYZE_IMAGE_TOOL_NAME, ANALYZE_IMAGE_SCHEMA } from './vision-actor.ts'
 import type { ActorContext, ActorIdentity, ActorRef, PluginDef } from '../../system/types.ts'
+import { ToolRegistrationTopic } from '../../system/tools.ts'
+import type { ToolInvokeMsg } from '../../system/tools.ts'
 import { onLifecycle } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'
 
@@ -37,16 +39,10 @@ type PluginState = {
   llmProviderConfig: LlmProviderConfig | null
   llmProviderRef: ActorRef<LlmProviderMsg> | null
   chatbotConfig: ChatbotConfig | null
-  chatbotRef: ActorIdentity | null
+  sessionManagerRef: ActorIdentity | null
   visionConfig: VisionActorConfig | null
   visionRef: ActorIdentity | null
   gen: number
-}
-
-const INITIAL_CHATBOT_STATE = {
-  history: {}, pending: {}, pendingReasoning: {}, pendingBatch: {},
-  tools: {}, spanHandles: {}, sessionUsage: {}, pendingUsage: {},
-  modelInfo: null, requestMap: {}, llmRequests: {},
 }
 
 const spawnAll = (
@@ -55,7 +51,7 @@ const spawnAll = (
   chatbotConfig: ChatbotConfig | null,
   visionConfig: VisionActorConfig | null,
   gen: number,
-): { llmProviderRef: ActorRef<LlmProviderMsg>; chatbotRef: ActorIdentity | null; visionRef: ActorIdentity | null } => {
+): { llmProviderRef: ActorRef<LlmProviderMsg>; sessionManagerRef: ActorIdentity | null; visionRef: ActorIdentity | null } => {
   const llmProviderRef = ctx.spawn(
     `llm-provider-${gen}`,
     createLlmProviderActor({ adapter: createOpenRouterAdapter({ apiKey: llmProviderConfig.apiKey, reasoning: llmProviderConfig.reasoning }) }),
@@ -63,27 +59,34 @@ const spawnAll = (
   )
   ctx.publishRetained(LlmProviderTopic, 'ref', { ref: llmProviderRef })
 
-  const chatbotRef = chatbotConfig
+  const sessionManagerRef = chatbotConfig
     ? ctx.spawn(
-        `chatbot-${gen}`,
-        createChatbotActor({
+        `session-manager-${gen}`,
+        createSessionManagerActor({
           llmRef: llmProviderRef,
           model: llmProviderConfig.model,
           systemPrompt: chatbotConfig.systemPrompt,
         }),
-        INITIAL_CHATBOT_STATE,
+        { sessions: {} },
       )
     : null
 
-  const visionRef = visionConfig
-    ? ctx.spawn(
-        `vision-actor-${gen}`,
-        createVisionActor({ llmRef: llmProviderRef, model: visionConfig.model }),
-        { pending: {} },
-      )
-    : null
+  let visionRef: ActorIdentity | null = null
+  if (visionConfig) {
+    const ref = ctx.spawn(
+      `vision-actor-${gen}`,
+      createVisionActor({ llmRef: llmProviderRef, model: visionConfig.model }),
+      { pending: {} },
+    )
+    ctx.publishRetained(ToolRegistrationTopic, ANALYZE_IMAGE_TOOL_NAME, {
+      name: ANALYZE_IMAGE_TOOL_NAME,
+      schema: ANALYZE_IMAGE_SCHEMA,
+      ref: ref as unknown as ActorRef<ToolInvokeMsg>,
+    })
+    visionRef = ref
+  }
 
-  return { llmProviderRef, chatbotRef, visionRef }
+  return { llmProviderRef, sessionManagerRef, visionRef }
 }
 
 const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
@@ -102,7 +105,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
     llmProviderConfig: null,
     llmProviderRef: null,
     chatbotConfig: null,
-    chatbotRef: null,
+    sessionManagerRef: null,
     visionConfig: null,
     visionRef: null,
     gen: 0,
@@ -117,16 +120,19 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
 
       if (!llmProviderConfig) {
         ctx.log.info('cognitive plugin activated (no llmProvider config)')
-        return { state: { initialized: true, llmProviderConfig: null, llmProviderRef: null, chatbotConfig: null, chatbotRef: null, visionConfig: null, visionRef: null, gen: 0 } }
+        return { state: { initialized: true, llmProviderConfig: null, llmProviderRef: null, chatbotConfig: null, sessionManagerRef: null, visionConfig: null, visionRef: null, gen: 0 } }
       }
 
-      const { llmProviderRef, chatbotRef, visionRef } = spawnAll(ctx, llmProviderConfig, chatbotConfig, visionConfig, 0)
+      const { llmProviderRef, sessionManagerRef, visionRef } = spawnAll(ctx, llmProviderConfig, chatbotConfig, visionConfig, 0)
       ctx.log.info('cognitive plugin activated')
-      return { state: { initialized: true, llmProviderConfig, llmProviderRef, chatbotConfig, chatbotRef, visionConfig, visionRef, gen: 0 } }
+      return { state: { initialized: true, llmProviderConfig, llmProviderRef, chatbotConfig, sessionManagerRef, visionConfig, visionRef, gen: 0 } }
     },
     stopped: (state, ctx) => {
       ctx.log.info('cognitive plugin deactivating')
       ctx.deleteRetained(LlmProviderTopic, 'ref', { ref: null })
+      if (state.visionRef) {
+        ctx.deleteRetained(ToolRegistrationTopic, ANALYZE_IMAGE_TOOL_NAME, { name: ANALYZE_IMAGE_TOOL_NAME, ref: null })
+      }
       return { state }
     },
   }),
@@ -139,9 +145,12 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   }),
 
   handler: (state, msg, ctx) => {
-    if (state.chatbotRef) ctx.stop(state.chatbotRef)
+    if (state.sessionManagerRef) ctx.stop(state.sessionManagerRef)
     if (state.llmProviderRef) ctx.stop(state.llmProviderRef)
-    if (state.visionRef) ctx.stop(state.visionRef)
+    if (state.visionRef) {
+      ctx.stop(state.visionRef)
+      ctx.deleteRetained(ToolRegistrationTopic, ANALYZE_IMAGE_TOOL_NAME, { name: ANALYZE_IMAGE_TOOL_NAME, ref: null })
+    }
 
     const newLlmProviderConfig = msg.slice?.llmProvider ?? null
     const newChatbotConfig = msg.slice?.chatbot ?? null
@@ -149,11 +158,11 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
     const gen = state.gen + 1
 
     if (!newLlmProviderConfig) {
-      return { state: { ...state, llmProviderConfig: null, llmProviderRef: null, chatbotConfig: null, chatbotRef: null, visionConfig: null, visionRef: null, gen } }
+      return { state: { ...state, llmProviderConfig: null, llmProviderRef: null, chatbotConfig: null, sessionManagerRef: null, visionConfig: null, visionRef: null, gen } }
     }
 
-    const { llmProviderRef, chatbotRef, visionRef } = spawnAll(ctx, newLlmProviderConfig, newChatbotConfig, newVisionConfig, gen)
-    return { state: { ...state, llmProviderConfig: newLlmProviderConfig, llmProviderRef, chatbotConfig: newChatbotConfig, chatbotRef, visionConfig: newVisionConfig, visionRef, gen } }
+    const { llmProviderRef, sessionManagerRef, visionRef } = spawnAll(ctx, newLlmProviderConfig, newChatbotConfig, newVisionConfig, gen)
+    return { state: { ...state, llmProviderConfig: newLlmProviderConfig, llmProviderRef, chatbotConfig: newChatbotConfig, sessionManagerRef, visionConfig: newVisionConfig, visionRef, gen } }
   },
 }
 

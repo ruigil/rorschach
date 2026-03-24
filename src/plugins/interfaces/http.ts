@@ -74,6 +74,13 @@ export type WsConnectEvent = { clientId: string }
 /** Topic emitted when a new WebSocket client connects. Subscribe to send initial state to the client. */
 export const WsConnectTopic = createTopic<WsConnectEvent>('http.ws.connect')
 
+// ─── Domain event: published when a WebSocket client disconnects ───
+
+export type WsDisconnectEvent = { clientId: string }
+
+/** Topic emitted when a WebSocket client disconnects. */
+export const WsDisconnectTopic = createTopic<WsDisconnectEvent>('http.ws.disconnect')
+
 // ─── Domain event: emit to send a message to a specific WebSocket client ───
 
 export type WsSendEvent = { clientId: string; text: string }
@@ -200,9 +207,15 @@ export const createHttpActor = (
         if (span) {
           span.error('client disconnected')
           const { [message.clientId]: _, ...rest } = state.activeSpans
-          return { state: { ...state, connections, activeSpans: rest } }
+          return {
+            state: { ...state, connections, activeSpans: rest },
+            events: [emit(WsDisconnectTopic, { clientId: message.clientId })],
+          }
         }
-        return { state: { ...state, connections } }
+        return {
+          state: { ...state, connections },
+          events: [emit(WsDisconnectTopic, { clientId: message.clientId })],
+        }
       },
 
       broadcast: (state, message) => {
