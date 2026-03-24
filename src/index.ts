@@ -25,9 +25,9 @@ const PORT         = (config.interfaces as any)?.http?.port as number ?? 3000
 const apiKey       = (config.cognitive as any)?.llmProvider?.apiKey as string
 const SYSTEM_PROMPT = (config.cognitive as any)?.chatbot?.systemPrompt as string
 
-// ─── Create the actor system (no plugins yet — subscribe first, then load) ───
+// ─── Create the actor system (plugins loaded in topo-sorted order) ───
 
-const system = await createPluginSystem({ config })
+const system = await createPluginSystem({ plugins, config })
 
 // ─── Forward logs to the observability page via WebSocket broadcast ───
 
@@ -127,13 +127,6 @@ system.subscribe(SystemLifecycleTopic, (event) => {
     console.log(`[system] actor ${e.ref.name} terminated (${e.reason})`)
   }
 })
-
-// ─── Load plugins after subscriptions are in place ───
-
-for (const def of plugins) {
-  const result = await system.use(def)
-  if (!result.ok) throw new Error(`Startup plugin '${def.id}' failed: ${result.error}`)
-}
 
 console.log(`\n🚀 Rorschach running`)
 console.log(`   chat     → http://localhost:${PORT}`)

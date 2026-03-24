@@ -61,8 +61,8 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
 
       const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath), null) as ActorRef<ToolInvokeMsg>
 
-      ctx.publish(ToolRegistrationTopic, { name: KGRAPH_QUERY_TOOL_NAME, schema: KGRAPH_QUERY_SCHEMA, ref: kgraphRef })
-      ctx.publish(ToolRegistrationTopic, { name: KGRAPH_WRITE_TOOL_NAME, schema: KGRAPH_WRITE_SCHEMA, ref: kgraphRef })
+      ctx.publishRetained(ToolRegistrationTopic, KGRAPH_QUERY_TOOL_NAME, { name: KGRAPH_QUERY_TOOL_NAME, schema: KGRAPH_QUERY_SCHEMA, ref: kgraphRef })
+      ctx.publishRetained(ToolRegistrationTopic, KGRAPH_WRITE_TOOL_NAME, { name: KGRAPH_WRITE_TOOL_NAME, schema: KGRAPH_WRITE_SCHEMA, ref: kgraphRef })
 
       ctx.log.info('memory plugin activated', { dbPath })
       return { state: {
@@ -73,8 +73,8 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
 
     stopped: (state, ctx) => {
       if (state.kgraph.ref) {
-        ctx.publish(ToolRegistrationTopic, { name: KGRAPH_QUERY_TOOL_NAME, ref: null })
-        ctx.publish(ToolRegistrationTopic, { name: KGRAPH_WRITE_TOOL_NAME, ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, KGRAPH_QUERY_TOOL_NAME, { name: KGRAPH_QUERY_TOOL_NAME, ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, KGRAPH_WRITE_TOOL_NAME, { name: KGRAPH_WRITE_TOOL_NAME, ref: null })
       }
       ctx.log.info('memory plugin deactivating')
       return { state }
@@ -85,8 +85,8 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
     config: (state, msg, ctx) => {
       if (state.kgraph.ref) {
         ctx.stop(state.kgraph.ref)
-        ctx.publish(ToolRegistrationTopic, { name: KGRAPH_QUERY_TOOL_NAME, ref: null })
-        ctx.publish(ToolRegistrationTopic, { name: KGRAPH_WRITE_TOOL_NAME, ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, KGRAPH_QUERY_TOOL_NAME, { name: KGRAPH_QUERY_TOOL_NAME, ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, KGRAPH_WRITE_TOOL_NAME, { name: KGRAPH_WRITE_TOOL_NAME, ref: null })
       }
 
       const newKgraphConfig = msg.slice?.kgraph ?? {}
@@ -95,8 +95,8 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
 
       const kgraphRef = ctx.spawn(`kgraph-${gen}`, createKgraphActor(dbPath), null) as ActorRef<ToolInvokeMsg>
 
-      ctx.publish(ToolRegistrationTopic, { name: KGRAPH_QUERY_TOOL_NAME, schema: KGRAPH_QUERY_SCHEMA, ref: kgraphRef })
-      ctx.publish(ToolRegistrationTopic, { name: KGRAPH_WRITE_TOOL_NAME, schema: KGRAPH_WRITE_SCHEMA, ref: kgraphRef })
+      ctx.publishRetained(ToolRegistrationTopic, KGRAPH_QUERY_TOOL_NAME, { name: KGRAPH_QUERY_TOOL_NAME, schema: KGRAPH_QUERY_SCHEMA, ref: kgraphRef })
+      ctx.publishRetained(ToolRegistrationTopic, KGRAPH_WRITE_TOOL_NAME, { name: KGRAPH_WRITE_TOOL_NAME, schema: KGRAPH_WRITE_SCHEMA, ref: kgraphRef })
 
       ctx.log.info('memory plugin reconfigured', { dbPath, gen })
 

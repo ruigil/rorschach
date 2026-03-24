@@ -1,3 +1,4 @@
+import { createTopic } from '../../system/types.ts'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
 
@@ -46,6 +47,11 @@ export type LlmProviderMsg =
   | { type: '_streamDone';    result: LlmProviderReply; replyTo: ActorRef<LlmProviderReply> }
   | { type: '_modelInfoDone'; info: ModelInfo | null; replyTo: ActorRef<ModelInfo | null> }
   | { type: '_modelsDone';    models: string[]; replyTo: ActorRef<string[]> }
+
+// ─── Retained topic: announces the live llm-provider ref to subscribers ───
+
+export type LlmProviderEvent = { ref: ActorRef<LlmProviderMsg> | null }
+export const LlmProviderTopic = createTopic<LlmProviderEvent>('cognitive.llm-provider')
 
 // ─── Adapter interface ───
 

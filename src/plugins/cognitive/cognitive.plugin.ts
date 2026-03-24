@@ -1,5 +1,5 @@
 import { createChatbotActor } from './chatbot.ts'
-import { createLlmProviderActor, createOpenRouterAdapter } from './llm-provider.ts'
+import { createLlmProviderActor, createOpenRouterAdapter, LlmProviderTopic } from './llm-provider.ts'
 import type { LlmProviderMsg } from './llm-provider.ts'
 import { createVisionActor } from './vision-actor.ts'
 import type { ActorContext, ActorIdentity, ActorRef, PluginDef } from '../../system/types.ts'
@@ -45,7 +45,7 @@ type PluginState = {
 
 const INITIAL_CHATBOT_STATE = {
   history: {}, pending: {}, pendingReasoning: {}, pendingBatch: {},
-  toolsRef: null, spanHandles: {}, sessionUsage: {}, pendingUsage: {},
+  tools: {}, spanHandles: {}, sessionUsage: {}, pendingUsage: {},
   modelInfo: null, requestMap: {}, llmRequests: {},
 }
 
@@ -61,7 +61,7 @@ const spawnAll = (
     createLlmProviderActor({ adapter: createOpenRouterAdapter({ apiKey: llmProviderConfig.apiKey, reasoning: llmProviderConfig.reasoning }) }),
     null,
   )
-  ctx.registerService('llm-provider', llmProviderRef as ActorRef<unknown>)
+  ctx.publishRetained(LlmProviderTopic, 'ref', { ref: llmProviderRef })
 
   const chatbotRef = chatbotConfig
     ? ctx.spawn(
@@ -90,7 +90,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   id: 'cognitive',
   version: '1.0.0',
   description: 'Cognitive actors: LLM-backed chatbot',
-  dependencies: ['tools'],
+  subscribesTo: ['tools', 'memory'],
 
   configDescriptor: {
     defaults: {},
@@ -126,7 +126,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
     },
     stopped: (state, ctx) => {
       ctx.log.info('cognitive plugin deactivating')
-      ctx.unregisterService('llm-provider')
+      ctx.deleteRetained(LlmProviderTopic, 'ref', { ref: null })
       return { state }
     },
   }),

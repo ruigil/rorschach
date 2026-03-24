@@ -39,6 +39,50 @@ export type PluginSystemOptions = {
   config?: Record<string, unknown>
 }
 
+// ─── Topological sort (Kahn's algorithm) ─────────────────────────────────────
+//
+// Accepts a list of PluginDefs and returns them sorted so that for every
+// `subscribesTo` edge A → B ("A must load before B"), A appears before B.
+// Throws if a cycle is detected.
+// References to plugins not present in the input set are silently ignored
+// (they may be loaded dynamically later).
+//
+const topoSort = (defs: PluginDef<any, any, any>[]): PluginDef<any, any, any>[] => {
+  const byId = new Map(defs.map(d => [d.id, d]))
+  // in-degree: how many plugins must load before this one
+  const inDegree = new Map<string, number>(defs.map(d => [d.id, 0]))
+  // successors[A] = plugins that must load AFTER A
+  const successors = new Map<string, string[]>(defs.map(d => [d.id, []]))
+
+  for (const def of defs) {
+    for (const target of def.subscribesTo ?? []) {
+      if (!byId.has(target)) continue  // target not in initial set, ignore
+      successors.get(def.id)!.push(target)
+      inDegree.set(target, inDegree.get(target)! + 1)
+    }
+  }
+
+  const queue = defs.filter(d => inDegree.get(d.id) === 0)
+  const sorted: PluginDef<any, any, any>[] = []
+
+  while (queue.length > 0) {
+    const def = queue.shift()!
+    sorted.push(def)
+    for (const successorId of successors.get(def.id) ?? []) {
+      const deg = inDegree.get(successorId)! - 1
+      inDegree.set(successorId, deg)
+      if (deg === 0) queue.push(byId.get(successorId)!)
+    }
+  }
+
+  if (sorted.length < defs.length) {
+    const cycle = defs.filter(d => inDegree.get(d.id)! > 0).map(d => d.id)
+    throw new Error(`Circular subscribesTo constraint detected among plugins: ${cycle.join(', ')}`)
+  }
+
+  return sorted
+}
+
 // ─── Deep merge utility ──────────────────────────────────────────────────────
 //
 // Recursively merges `override` on top of `base`. Only plain objects are merged
@@ -117,9 +161,9 @@ export const createPluginSystem = async (
 
     if (plugins.has(def.id)) return Promise.resolve({ ok: false, error: `plugin '${def.id}' already loaded` })
 
-    for (const dep of def.dependencies ?? []) {
-      if (plugins.get(dep)?.status !== 'active')
-        return Promise.resolve({ ok: false, error: `unsatisfied dependency: '${dep}'` })
+    for (const target of def.subscribesTo ?? []) {
+      if (plugins.get(target)?.status === 'active')
+        return Promise.resolve({ ok: false, error: `'${def.id}' declares subscribesTo: ['${target}'] but '${target}' is already loaded` })
     }
 
     // ─── Compute config slice for this plugin ───
@@ -135,7 +179,7 @@ export const createPluginSystem = async (
     plugins.set(def.id, {
       id: def.id,
       version: def.version,
-      dependencies: def.dependencies ?? [],
+      subscribesTo: def.subscribesTo ?? [],
       def,
       status: 'loading',
       loadedAt: Date.now(),
@@ -193,11 +237,6 @@ export const createPluginSystem = async (
     if (plugin.status !== 'active')
       return { ok: false, error: `plugin '${id}' is not active (status: ${plugin.status})` }
 
-    for (const [, p] of plugins) {
-      if (p.status === 'active' && p.dependencies.includes(id))
-        return { ok: false, error: `plugin '${p.id}' depends on '${id}'` }
-    }
-
     return new Promise<UnloadResult>((resolve) => {
       const rootName = `system/${id}`
       const watcherName = `$unload-${id}`
@@ -228,8 +267,8 @@ export const createPluginSystem = async (
     return use(def)
   }
 
-  // ─── Load initial plugins (serially — respects dependency order) ───
-  for (const def of initialPlugins ?? []) {
+  // ─── Load initial plugins (topo-sorted by subscribesTo constraints) ───
+  for (const def of topoSort(initialPlugins ?? [])) {
     const result = await use(def)
     if (!result.ok) throw new Error(`Startup plugin '${def.id}' failed: ${result.error}`)
   }
@@ -255,6 +294,10 @@ export const createPluginSystem = async (
     services.eventStream.publish(topic, event)
   }
 
+  const publishRetained = <T>(topic: EventTopic<T>, key: string, event: T): void => {
+    services.eventStream.publishRetained(topic, key, event)
+  }
+
   const subscribe = <T>(
     topic: EventTopic<T>,
     callback: (event: T) => void,
@@ -264,7 +307,7 @@ export const createPluginSystem = async (
   }
 
   return {
-    spawn, stop, shutdown, publish, subscribe,
+    spawn, stop, shutdown, publish, publishRetained, subscribe,
     updateConfig,
     use,
     unloadPlugin,

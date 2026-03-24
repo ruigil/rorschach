@@ -1,11 +1,12 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { createPluginSystem, TraceTopic, type TraceSpan } from '../system/index.ts'
-import type { ActorDef, MessageHeaders } from '../system/index.ts'
+import type { MessageHeaders } from '../system/index.ts'
 import { WsMessageTopic } from '../plugins/interfaces/http.ts'
 import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
-import type { GetToolsMsg, ToolInvokeMsg } from '../system/tools.ts'
+import type { ToolInvokeMsg } from '../system/tools.ts'
+import { ToolRegistrationTopic } from '../system/tools.ts'
 import { WEB_SEARCH_SCHEMA, WEB_SEARCH_TOOL_NAME } from '../plugins/tools/web-search.ts'
 
 // ─── Helpers ───
@@ -26,7 +27,7 @@ const INITIAL_CHATBOT_STATE: ChatbotState = {
   pending: {},
   pendingReasoning: {},
   pendingBatch: {},
-  toolsRef: null,
+  tools: {},
   spanHandles: {},
   sessionUsage: {},
   pendingUsage: {},
@@ -225,16 +226,6 @@ describe('distributed tracing', () => {
       },
     }
 
-    // A minimal tools actor that returns the fake tool when asked
-    const fakeToolsDef: ActorDef<GetToolsMsg, null> = {
-      handler: (state, msg) => {
-        if (msg.type === 'getTools') {
-          msg.replyTo.send({ [WEB_SEARCH_TOOL_NAME]: { schema: WEB_SEARCH_SCHEMA, ref: fakeToolRef } })
-        }
-        return { state }
-      },
-    }
-
     stubFetchSequence([
       modelInfoStub,
       () => makeSSEResponse(toolCallPayloads('call_trace', 'query')),
@@ -243,7 +234,8 @@ describe('distributed tracing', () => {
 
     const system = await createPluginSystem()
     const spans = collectSpans(system)
-    system.spawn('tools', fakeToolsDef, null)    // registers at system/tools
+    // Retain the tool before spawning chatbot — replayed on subscribe during chatbot's start lifecycle
+    system.publishRetained(ToolRegistrationTopic, WEB_SEARCH_TOOL_NAME, { name: WEB_SEARCH_TOOL_NAME, schema: WEB_SEARCH_SCHEMA, ref: fakeToolRef })
     spawnChatbot(system)
 
     await tick()

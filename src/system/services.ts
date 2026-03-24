@@ -33,6 +33,8 @@ export const createEventStream = (): EventStream => {
   const forward = new Map<string, Set<{ name: string; callback: (value: unknown) => void }>>()
   // name → Set of topics
   const reverse = new Map<string, Set<string>>()
+  // topic → (key → event)
+  const retained = new Map<string, Map<string, unknown>>()
 
   const publish = (topic: EventTopic, event: unknown): void => {
     const entries = forward.get(topic)
@@ -41,6 +43,18 @@ export const createEventStream = (): EventStream => {
         callback(event)
       }
     }
+  }
+
+  const publishRetained = (topic: EventTopic, key: string, event: unknown): void => {
+    let keys = retained.get(topic)
+    if (!keys) { keys = new Map(); retained.set(topic, keys) }
+    keys.set(key, event)
+    publish(topic, event)
+  }
+
+  const deleteRetained = (topic: EventTopic, key: string, tombstone: unknown): void => {
+    retained.get(topic)?.delete(key)
+    publish(topic, tombstone)
   }
 
   const subscribe = (
@@ -67,6 +81,14 @@ export const createEventStream = (): EventStream => {
       reverse.set(subscriberName, topics)
     }
     topics.add(topic)
+
+    // Replay retained values synchronously
+    const retainedEntries = retained.get(topic)
+    if (retainedEntries) {
+      for (const event of retainedEntries.values()) {
+        deliver(event)
+      }
+    }
   }
 
   const unsubscribe = (subscriberName: string, topic: EventTopic): void => {
@@ -123,7 +145,7 @@ export const createEventStream = (): EventStream => {
   // The internal implementation stores `unknown` callbacks — the phantom type
   // on EventTopic<T> provides compile-time safety at call sites. The cast here
   // bridges the runtime (untyped) implementation to the typed public interface.
-  return { publish, subscribe, unsubscribe, cleanup, deleteTopic, snapshot } as EventStream
+  return { publish, publishRetained, deleteRetained, subscribe, unsubscribe, cleanup, deleteTopic, snapshot } as EventStream
 }
 
 /**
@@ -134,7 +156,6 @@ export const createEventStream = (): EventStream => {
  */
 export const createRegistry = (): Registry => {
   const actors = new Map<string, ActorRef<unknown>>()
-  const services = new Map<string, ActorRef<unknown>>()
 
   const register = (name: string, ref: ActorRef<unknown>): void => {
     actors.set(name, ref)
@@ -148,17 +169,5 @@ export const createRegistry = (): Registry => {
     return actors.get(name) as ActorRef<T> | undefined
   }
 
-  const registerService = (serviceName: string, ref: ActorRef<unknown>): void => {
-    services.set(serviceName, ref)
-  }
-
-  const unregisterService = (serviceName: string): void => {
-    services.delete(serviceName)
-  }
-
-  const lookupService = <T = unknown>(serviceName: string): ActorRef<T> | undefined => {
-    return services.get(serviceName) as ActorRef<T> | undefined
-  }
-
-  return { register, unregister, lookup, registerService, unregisterService, lookupService }
+  return { register, unregister, lookup }
 }

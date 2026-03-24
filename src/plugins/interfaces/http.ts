@@ -5,6 +5,8 @@ import { createTopic, emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
+import { LlmProviderTopic } from '../cognitive/llm-provider.ts'
+import type { LlmProviderMsg } from '../cognitive/llm-provider.ts'
 
 // ─── Public directory (resolved relative to this module) ───
 const PUBLIC_DIR = join(import.meta.dir, '../..', 'public')
@@ -31,6 +33,7 @@ export type HttpMessage =
   | { type: 'broadcast'; text: string }
   | { type: 'send'; clientId: string; text: string }
   | { type: 'config'; data: unknown }
+  | { type: '_llmProviderChanged'; ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── Image helpers ───
 
@@ -50,6 +53,7 @@ export type HttpState = {
   server: Server<WsData> | null
   connections: number
   activeSpans: Record<string, SpanHandle>
+  llmProviderRef: ActorRef<LlmProviderMsg> | null
 }
 
 // ─── WebSocket attachment data ───
@@ -132,8 +136,9 @@ export const createHttpActor = (
   const port = options?.port ?? 3000
   const CHANNEL = 'broadcast'
 
-  // We capture the actor's self ref during start so WS callbacks can route into the mailbox
+  // Mutable refs captured by Bun's server callbacks (which run outside the actor message loop)
   let selfRef: ActorRef<HttpMessage> | null = null
+  let llmProviderRef: ActorRef<LlmProviderMsg> | null = null
 
   return {
     handler: onMessage({
@@ -228,13 +233,16 @@ export const createHttpActor = (
           events: [emit(HttpConfigTopic, message.data as HttpConfigPayload)],
         }
       },
+
+      _llmProviderChanged: (state, message) => {
+        llmProviderRef = message.ref
+        return { state: { ...state, llmProviderRef: message.ref } }
+      },
     }),
 
     lifecycle: onLifecycle({
       start: (state, context) => {
         selfRef = context.self
-
-        const { lookupService } = context
 
         context.subscribe(WsSendTopic, (e) => ({
           type: 'send' as const,
@@ -247,6 +255,11 @@ export const createHttpActor = (
           text: e.text,
         }))
 
+        context.subscribe(LlmProviderTopic, (e) => ({
+          type: '_llmProviderChanged' as const,
+          ref: e.ref,
+        }))
+
         const server = Bun.serve<WsData>({
           port,
 
@@ -256,10 +269,9 @@ export const createHttpActor = (
 
             // Models API
             if (req.method === 'GET' && url.pathname === '/models') {
-              const ref = lookupService<{ type: 'fetchModels'; replyTo: ActorRef<string[]> }>('llm-provider')
-              if (ref) {
+              if (llmProviderRef) {
                 try {
-                  const models = await ask(ref, replyTo => ({ type: 'fetchModels' as const, replyTo }), { timeoutMs: 10_000 })
+                  const models = await ask(llmProviderRef, replyTo => ({ type: 'fetchModels' as const, replyTo }), { timeoutMs: 10_000 })
                   return new Response(JSON.stringify(models), { headers: { 'Content-Type': 'application/json' } })
                 } catch { /* timeout — fall through to fallback */ }
               }

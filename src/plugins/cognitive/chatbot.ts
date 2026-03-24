@@ -3,7 +3,8 @@ import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { ask } from '../../system/ask.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { WsMessageTopic, WsSendTopic } from '../interfaces/http.ts'
-import type { GetToolsMsg, ToolCollection, ToolInvokeMsg, ToolReply } from '../../system/tools.ts'
+import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply, ToolSchema } from '../../system/tools.ts'
+import { ToolRegistrationTopic } from '../../system/tools.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
@@ -17,10 +18,11 @@ import type {
 // ─── Message protocol ───
 
 type ChatbotMsg =
-  | { type: 'userMessage';   clientId: string; text: string; images?: string[]; traceId: string; parentSpanId: string }
+  | { type: 'userMessage';       clientId: string; text: string; images?: string[]; traceId: string; parentSpanId: string }
   | LlmProviderReply
-  | { type: '_toolsFetched'; clientId: string; apiMessages: ApiMessage[]; toolCollection: ToolCollection }
-  | { type: '_toolResult';   clientId: string; toolName: string; toolCallId: string; reply: ToolReply }
+  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
+  | { type: '_toolUnregistered'; name: string }
+  | { type: '_toolResult';       clientId: string; toolName: string; toolCallId: string; reply: ToolReply }
 
 // ─── State ───
 
@@ -52,7 +54,7 @@ export type ChatbotState = {
   pending:          Record<string, string>
   pendingReasoning: Record<string, string>
   pendingBatch:     Record<string, PendingBatch>
-  toolsRef:         ActorRef<GetToolsMsg> | null
+  tools:            ToolCollection
   spanHandles:      Record<string, SpanHandles>
   sessionUsage:     Record<string, TokenUsage>
   pendingUsage:     Record<string, TokenUsage>
@@ -86,11 +88,16 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           parentSpanId: e.parentSpanId,
         }))
 
+        context.subscribe(ToolRegistrationTopic, (event) =>
+          event.ref === null
+            ? { type: '_toolUnregistered' as const, name: event.name }
+            : { type: '_toolRegistered' as const, name: event.name, schema: event.schema, ref: event.ref },
+        )
+
         const modelInfo = await ask<LlmProviderMsg, ModelInfo | null>(llmRef, (replyTo) => ({ type: 'fetchModelInfo', model, replyTo }))
           .catch(() => null)
 
-        const toolsRef = context.lookupService<GetToolsMsg>('tools')
-        return { state: { ...state, modelInfo, toolsRef: toolsRef ?? null } }
+        return { state: { ...state, modelInfo } }
       },
     }),
 
@@ -113,37 +120,10 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           { role: 'user', content: userText },
         ]
 
-        const fetchTools: Promise<ToolCollection> = state.toolsRef
-          ? ask<GetToolsMsg, ToolCollection>(state.toolsRef, (replyTo) => ({ type: 'getTools', replyTo }))
-          : Promise.resolve({})
-
-        context.pipeToSelf(
-          fetchTools,
-          (toolCollection) => ({ type: '_toolsFetched' as const, clientId, apiMessages, toolCollection }),
-          (error) => ({ type: 'llmError' as const, requestId: clientId, error }),
-        )
-        
         const requestSpan = context.trace.child(traceId, parentSpanId, 'chatbot', { preview: text.slice(0, 80) })
-        
-        return {
-          state: {
-            ...state,
-            history: { ...state.history, [clientId]: [...prior, { role: 'user', content: userText }] },
-            pending: { ...state.pending, [clientId]: '' },
-            spanHandles: { ...state.spanHandles, [clientId]: { requestSpan, toolSpans: {} } },
-          },
-        }
-      },
+        const llmSpan = context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
 
-      _toolsFetched: (state, message, context) => {
-        const { clientId, apiMessages, toolCollection } = message
-        const handles = state.spanHandles[clientId]
-
-        const llmSpan = handles
-          ? context.trace.child(handles.requestSpan.traceId, handles.requestSpan.spanId, 'llm-call', { model })
-          : null
-
-        const toolSchemas = Object.values(toolCollection).map(e => e.schema as Tool)
+        const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
         const tools = toolSchemas.length > 0 ? toolSchemas : undefined
 
         const requestId = crypto.randomUUID()
@@ -160,13 +140,22 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         return {
           state: {
             ...state,
+            history: { ...state.history, [clientId]: [...prior, { role: 'user', content: userText }] },
+            pending: { ...state.pending, [clientId]: '' },
             requestMap: { ...state.requestMap, [requestId]: clientId },
-            llmRequests: { ...state.llmRequests, [requestId]: { messagesAtCall: apiMessages, toolCollection } },
-            ...(handles && llmSpan ? {
-              spanHandles: { ...state.spanHandles, [clientId]: { ...handles, llmSpan } },
-            } : {}),
+            llmRequests: { ...state.llmRequests, [requestId]: { messagesAtCall: apiMessages, toolCollection: state.tools } },
+            spanHandles: { ...state.spanHandles, [clientId]: { requestSpan, llmSpan, toolSpans: {} } },
           },
         }
+      },
+
+      _toolRegistered: (state, msg) => ({
+        state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } },
+      }),
+
+      _toolUnregistered: (state, msg) => {
+        const { [msg.name]: _, ...rest } = state.tools
+        return { state: { ...state, tools: rest } }
       },
 
       llmToolCalls: (state, message, context) => {

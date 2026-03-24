@@ -23,7 +23,7 @@ const INITIAL_CHATBOT_STATE: ChatbotState = {
   pending: {},
   pendingReasoning: {},
   pendingBatch: {},
-  toolsRef: null,
+  tools: {},
   spanHandles: {},
   sessionUsage: {},
   pendingUsage: {},
@@ -182,7 +182,7 @@ describe('chatbot search integration', () => {
       return makeSSEResponse(contentPayloads('Direct answer, no search needed.'))
     }) as unknown as typeof fetch
 
-    // No tools plugin — chatbot has no toolsRef, ask returns empty collection
+    // No tools plugin — chatbot has no registered tools, LLM call uses empty tool list
     const system = await createPluginSystem()
     const events = collectEvents(system)
     spawnChatbot(system)

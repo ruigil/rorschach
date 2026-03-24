@@ -183,6 +183,10 @@ export type TopicSnapshot = {
 export type EventStream = {
   /** Publish an event to all subscribers of the given topic. */
   readonly publish: <T>(topic: EventTopic<T>, event: T) => void
+  /** Publish and retain: stores event under (topic, key) and delivers to current subscribers. New subscribers receive all retained values immediately on subscribe. */
+  readonly publishRetained: <T>(topic: EventTopic<T>, key: string, event: T) => void
+  /** Remove a retained entry and publish the tombstone event to current subscribers. */
+  readonly deleteRetained: <T>(topic: EventTopic<T>, key: string, tombstone: T) => void
   /** Subscribe to a topic. Matching events are delivered via the callback. */
   readonly subscribe: <T>(
     subscriberName: string,
@@ -289,17 +293,14 @@ export type ActorContext<M> = {
   readonly unwatch: (target: ActorIdentity) => void
   /** Look up an actor ref by its full hierarchical name. Returns undefined if not registered. */
   readonly lookup: <T = unknown>(name: string) => ActorRef<T> | undefined
-  /** Register a stable service alias for any ref, independent of its position in the actor tree. Overwrites any previous registration under the same name. */
-  readonly registerService: (serviceName: string, ref: ActorRef<unknown>) => void
-  /** Remove a service alias. */
-  readonly unregisterService: (serviceName: string) => void
-  /** Look up a ref by service name. Returns undefined if no actor has registered under that name. */
-  readonly lookupService: <T = unknown>(serviceName: string) => ActorRef<T> | undefined
-
   // ─── Event Stream (pub-sub) ───
 
   /** Publish a typed event to the system event bus under the given topic. */
   readonly publish: <T>(topic: EventTopic<T>, event: T) => void
+  /** Publish and retain: stores event under (topic, key) and replays to new subscribers. */
+  readonly publishRetained: <T>(topic: EventTopic<T>, key: string, event: T) => void
+  /** Remove a retained entry and publish the tombstone to current subscribers. */
+  readonly deleteRetained: <T>(topic: EventTopic<T>, key: string, tombstone: T) => void
   /** Subscribe to a typed topic. The adapter maps bus events (typed T) into this actor's message type M. */
   readonly subscribe: <T>(topic: EventTopic<T>, adapter: (event: T) => M) => void
   /** Unsubscribe from a topic. */
@@ -468,12 +469,6 @@ export type Registry = {
   readonly register: (name: string, ref: ActorRef<unknown>) => void
   readonly unregister: (name: string) => void
   readonly lookup: <T = unknown>(name: string) => ActorRef<T> | undefined
-  /** Register a stable service alias, independent of the actor's position in the tree. Overwrites any previous registration under the same name. */
-  readonly registerService: (serviceName: string, ref: ActorRef<unknown>) => void
-  /** Remove a service alias. */
-  readonly unregisterService: (serviceName: string) => void
-  /** Look up a ref by service name. Returns undefined if no actor has registered under that name. */
-  readonly lookupService: <T = unknown>(serviceName: string) => ActorRef<T> | undefined
 }
 
 // ─── Actor Metrics Types ───
@@ -560,7 +555,7 @@ export type ActorServices = {
 export type PluginDef<M, S = unknown, C = unknown> = ActorDef<M, S> & {
   readonly id: string
   readonly version: string
-  readonly dependencies?: readonly string[]
+  readonly subscribesTo?: readonly string[]
   readonly description?: string
   readonly initialState: S
   readonly configDescriptor?: {
@@ -581,7 +576,7 @@ export type PluginDef<M, S = unknown, C = unknown> = ActorDef<M, S> & {
 export type LoadedPlugin = {
   readonly id: string
   readonly version: string
-  readonly dependencies: readonly string[]
+  readonly subscribesTo: readonly string[]
   readonly def: PluginDef<any, any, any>
   readonly status: 'loading' | 'active' | 'deactivating' | 'failed'
   readonly error?: unknown
@@ -603,6 +598,7 @@ export type PluginSystem = {
 
   // ─── Event Stream ───
   readonly publish: <T>(topic: EventTopic<T>, event: T) => void
+  readonly publishRetained: <T>(topic: EventTopic<T>, key: string, event: T) => void
   readonly subscribe: <T>(
     topic: EventTopic<T>,
     callback: (event: T) => void,
