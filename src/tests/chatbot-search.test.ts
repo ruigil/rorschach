@@ -1,6 +1,6 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { createPluginSystem } from '../system/index.ts'
-import { WsSendTopic } from '../plugins/interfaces/http.ts'
+import { WsSendTopic } from '../system/topics.ts'
 import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'

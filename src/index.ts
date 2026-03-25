@@ -5,8 +5,8 @@ import {
   SystemLifecycleTopic,
   TraceTopic,
 } from './system/index.ts'
-import { WsBroadcastTopic, WsConnectTopic, WsSendTopic, HttpConfigTopic } from './plugins/interfaces/http.ts'
-import type { HttpConfigPayload } from './plugins/interfaces/http.ts'
+import { WsBroadcastTopic, WsConnectTopic, WsSendTopic, HttpConfigTopic } from './system/topics.ts'
+import type { HttpConfigPayload } from './system/topics.ts'
 import { loadConfig } from './config.ts'
 import type { LogEvent, MetricsEvent, LifecycleEvent, TraceSpan } from './system/index.ts'
 import { ToolRegistrationTopic } from './system/tools.ts'

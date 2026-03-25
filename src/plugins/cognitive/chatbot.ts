@@ -2,7 +2,7 @@ import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../system/types.ts'
 import { ask } from '../../system/ask.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { WsSendTopic } from '../interfaces/http.ts'
+import { WsSendTopic } from '../../system/topics.ts'
 import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply, ToolSchema } from '../../system/tools.ts'
 import { ToolRegistrationTopic } from '../../system/tools.ts'
 import type {

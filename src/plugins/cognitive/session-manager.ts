@@ -1,6 +1,6 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { WsConnectTopic, WsDisconnectTopic, WsMessageTopic } from '../interfaces/http.ts'
+import { WsConnectTopic, WsDisconnectTopic, WsMessageTopic } from '../../system/topics.ts'
 import { createChatbotActor } from './chatbot.ts'
 import type { ChatbotMsg, ChatbotState } from './chatbot.ts'
 import type { LlmProviderMsg } from './llm-provider.ts'

@@ -5,7 +5,7 @@ import {
   WsDisconnectTopic,
   WsMessageTopic,
   WsSendTopic,
-} from './http.ts'
+} from '../../system/topics.ts'
 
 // ─── ANSI codes ───
 const C = {
