@@ -13,6 +13,7 @@ coverage
 .claude
 workspace
 kgraph
+docs
 
 # logs
 logs

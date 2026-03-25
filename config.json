@@ -8,7 +8,8 @@
   ],
   "config": {
     "interfaces": {
-      "http": { "port": "${PORT:-3000}" }
+      "http": { "port": "${PORT:-3000}" },
+      "cli": {}
     },
     "tools": {
       "webSearch": {

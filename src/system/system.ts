@@ -42,7 +42,7 @@ export type PluginSystemOptions = {
 // ─── Topological sort (Kahn's algorithm) ─────────────────────────────────────
 //
 // Accepts a list of PluginDefs and returns them sorted so that for every
-// `subscribesTo` edge A → B ("A must load before B"), A appears before B.
+// `precedes` edge A → B ("A must load before B"), A appears before B.
 // Throws if a cycle is detected.
 // References to plugins not present in the input set are silently ignored
 // (they may be loaded dynamically later).
@@ -55,7 +55,7 @@ const topoSort = (defs: PluginDef<any, any, any>[]): PluginDef<any, any, any>[] 
   const successors = new Map<string, string[]>(defs.map(d => [d.id, []]))
 
   for (const def of defs) {
-    for (const target of def.subscribesTo ?? []) {
+    for (const target of def.precedes ?? []) {
       if (!byId.has(target)) continue  // target not in initial set, ignore
       successors.get(def.id)!.push(target)
       inDegree.set(target, inDegree.get(target)! + 1)
@@ -77,7 +77,7 @@ const topoSort = (defs: PluginDef<any, any, any>[]): PluginDef<any, any, any>[] 
 
   if (sorted.length < defs.length) {
     const cycle = defs.filter(d => inDegree.get(d.id)! > 0).map(d => d.id)
-    throw new Error(`Circular subscribesTo constraint detected among plugins: ${cycle.join(', ')}`)
+    throw new Error(`Circular precedes constraint detected among plugins: ${cycle.join(', ')}`)
   }
 
   return sorted
@@ -161,9 +161,9 @@ export const createPluginSystem = async (
 
     if (plugins.has(def.id)) return Promise.resolve({ ok: false, error: `plugin '${def.id}' already loaded` })
 
-    for (const target of def.subscribesTo ?? []) {
+    for (const target of def.precedes ?? []) {
       if (plugins.get(target)?.status === 'active')
-        return Promise.resolve({ ok: false, error: `'${def.id}' declares subscribesTo: ['${target}'] but '${target}' is already loaded` })
+        return Promise.resolve({ ok: false, error: `'${def.id}' declares precedes: ['${target}'] but '${target}' is already loaded` })
     }
 
     // ─── Compute config slice for this plugin ───
@@ -179,7 +179,7 @@ export const createPluginSystem = async (
     plugins.set(def.id, {
       id: def.id,
       version: def.version,
-      subscribesTo: def.subscribesTo ?? [],
+      precedes: def.precedes ?? [],
       def,
       status: 'loading',
       loadedAt: Date.now(),
@@ -267,7 +267,7 @@ export const createPluginSystem = async (
     return use(def)
   }
 
-  // ─── Load initial plugins (topo-sorted by subscribesTo constraints) ───
+  // ─── Load initial plugins (topo-sorted by precedes constraints) ───
   for (const def of topoSort(initialPlugins ?? [])) {
     const result = await use(def)
     if (!result.ok) throw new Error(`Startup plugin '${def.id}' failed: ${result.error}`)

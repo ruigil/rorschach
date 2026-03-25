@@ -93,7 +93,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   id: 'cognitive',
   version: '1.0.0',
   description: 'Cognitive actors: LLM-backed chatbot',
-  subscribesTo: ['tools', 'memory'],
+  precedes: ['tools', 'memory'],
 
   configDescriptor: {
     defaults: {},

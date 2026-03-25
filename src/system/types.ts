@@ -555,7 +555,7 @@ export type ActorServices = {
 export type PluginDef<M, S = unknown, C = unknown> = ActorDef<M, S> & {
   readonly id: string
   readonly version: string
-  readonly subscribesTo?: readonly string[]
+  readonly precedes?: readonly string[]
   readonly description?: string
   readonly initialState: S
   readonly configDescriptor?: {
@@ -576,7 +576,7 @@ export type PluginDef<M, S = unknown, C = unknown> = ActorDef<M, S> & {
 export type LoadedPlugin = {
   readonly id: string
   readonly version: string
-  readonly subscribesTo: readonly string[]
+  readonly precedes: readonly string[]
   readonly def: PluginDef<any, any, any>
   readonly status: 'loading' | 'active' | 'deactivating' | 'failed'
   readonly error?: unknown
