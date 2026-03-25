@@ -552,6 +552,17 @@ export type ActorServices = {
 // user-supplied overrides and injects the result into the plugin actor's
 // ctx.config at spawn time. Use `ctx.config as C` inside handlers.
 //
+/**
+ * Tracks the lifecycle state of a single child actor managed by a plugin.
+ * Stores the current config slice, a reference to the running actor, and a
+ * generation counter used to produce unique spawn names on reconfiguration.
+ */
+export type PluginActorState<C> = {
+  config: C | null
+  ref: ActorIdentity | null
+  gen: number
+}
+
 export type PluginDef<M, S = unknown, C = unknown> = ActorDef<M, S> & {
   readonly id: string
   readonly version: string

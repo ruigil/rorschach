@@ -1,30 +1,24 @@
-import { createWebSearchActor, type WebSearchActorOptions, WEB_SEARCH_SCHEMA, WEB_SEARCH_TOOL_NAME } from './web-search.ts'
+import { createWebSearchActor, type WebSearchActorOptions as WebSearchActorConfig, WEB_SEARCH_SCHEMA, WEB_SEARCH_TOOL_NAME } from './web-search.ts'
 import { createBashActor, BASH_TOOL_NAME, BASH_SCHEMA, WRITE_TOOL_NAME, WRITE_SCHEMA, READ_TOOL_NAME, READ_SCHEMA } from './bash.ts'
-import type { BashOptions } from 'just-bash'
-import type { ActorIdentity, ActorRef, PluginDef } from '../../system/types.ts'
+import type { BashOptions as BashConfig } from 'just-bash'
+import type { ActorRef, PluginActorState, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'
 import type { ToolInvokeMsg } from '../../system/tools.ts'
 import { ToolRegistrationTopic } from '../../system/tools.ts'
 
 export type ToolsConfig = {
-  webSearch?: WebSearchActorOptions
-  bash?: BashOptions
+  webSearch?: WebSearchActorConfig
+  bash?: BashConfig
 }
 
 type PluginMsg =
   | { type: 'config'; slice: ToolsConfig | undefined }
 
-type ToolActorState<C> = {
-  config: C | null
-  ref: ActorIdentity | null
-  gen: number
-}
-
 type PluginState = {
   initialized: boolean
-  webSearch: ToolActorState<WebSearchActorOptions>
-  bash: ToolActorState<BashOptions>
+  webSearch: PluginActorState<WebSearchActorConfig>
+  bash: PluginActorState<BashConfig>
 }
 
 const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {

@@ -1,4 +1,4 @@
-import type { ActorIdentity, ActorRef, PluginDef } from '../../system/types.ts'
+import type { ActorRef, PluginActorState, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ToolInvokeMsg } from '../../system/tools.ts'
 import { ToolRegistrationTopic } from '../../system/tools.ts'
@@ -18,15 +18,9 @@ export type MemoryConfig = {
 
 // ─── Internal types ───
 
-type KgraphActorState = {
-  config: MemoryConfig['kgraph'] | null
-  ref: ActorIdentity | null
-  gen: number
-}
-
 type MemoryPluginState = {
   initialized: boolean
-  kgraph: KgraphActorState
+  kgraph: PluginActorState<MemoryConfig['kgraph']>
 }
 
 type MemoryPluginMsg =

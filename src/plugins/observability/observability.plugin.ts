@@ -1,6 +1,6 @@
 import { createJsonlLoggerActor, type JsonlLoggerOptions } from './jsonl-logger.ts'
 import { createMetricsActor, type MetricsActorOptions } from './metrics.ts'
-import type { ActorIdentity, PluginDef } from '../../system/types.ts'
+import type { PluginActorState, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 
 export type ObservabilityConfig = {
@@ -11,12 +11,8 @@ export type ObservabilityConfig = {
 type PluginMsg = { type: 'config'; slice: ObservabilityConfig | undefined }
 type PluginState = {
   initialized: boolean
-  loggerConfig: JsonlLoggerOptions | null
-  loggerRef: ActorIdentity | null
-  loggerGen: number
-  metricsConfig: MetricsActorOptions | null
-  metricsRef: ActorIdentity | null
-  metricsGen: number
+  logger:  PluginActorState<JsonlLoggerOptions>
+  metrics: PluginActorState<MetricsActorOptions>
 }
 
 const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig> = {
@@ -29,13 +25,17 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig
     onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
   },
 
-  initialState: { initialized: false, loggerConfig: null, loggerRef: null, loggerGen: 0, metricsConfig: null, metricsRef: null, metricsGen: 0 },
+  initialState: {
+    initialized: false,
+    logger:  { config: null, ref: null, gen: 0 },
+    metrics: { config: null, ref: null, gen: 0 },
+  },
 
   lifecycle: onLifecycle({
     start: (_state, ctx) => {
       const slice = ctx.config as ObservabilityConfig | undefined
 
-      const loggerConfig = slice?.jsonlLogger ?? null
+      const loggerConfig  = slice?.jsonlLogger ?? null
       const metricsConfig = slice?.metrics ?? null
 
       const loggerRef = loggerConfig
@@ -46,7 +46,11 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig
         : null
 
       ctx.log.info('observability plugin activated')
-      return { state: { initialized: true, loggerConfig, loggerRef, loggerGen: 0, metricsConfig, metricsRef, metricsGen: 0 } }
+      return { state: {
+        initialized: true,
+        logger:  { config: loggerConfig,  ref: loggerRef,  gen: 0 },
+        metrics: { config: metricsConfig, ref: metricsRef, gen: 0 },
+      } }
     },
     stopped: (state, ctx) => {
       ctx.log.info('observability plugin deactivating')
@@ -54,25 +58,31 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig
     },
   }),
 
-  handler: onMessage({
+  handler: onMessage<PluginMsg, PluginState>({
     config: (state, msg, ctx) => {
-      let { loggerRef, loggerGen, metricsRef, metricsGen } = state
+      const newLoggerConfig  = msg.slice?.jsonlLogger ?? null
+      const newMetricsConfig = msg.slice?.metrics ?? null
 
-      const newLogger = msg.slice?.jsonlLogger ?? null
-      if (loggerRef) ctx.stop(loggerRef)
-      loggerRef = newLogger
-        ? ctx.spawn(`jsonl-logger-${++loggerGen}`, createJsonlLoggerActor(newLogger), { filePath: newLogger.filePath, written: 0, buffer: [] })
+      if (state.logger.ref)  ctx.stop(state.logger.ref)
+      if (state.metrics.ref) ctx.stop(state.metrics.ref)
+
+      const loggerGen  = state.logger.gen  + 1
+      const metricsGen = state.metrics.gen + 1
+
+      const loggerRef = newLoggerConfig
+        ? ctx.spawn(`jsonl-logger-${loggerGen}`, createJsonlLoggerActor(newLoggerConfig), { filePath: newLoggerConfig.filePath, written: 0, buffer: [] })
+        : null
+      const metricsRef = newMetricsConfig
+        ? ctx.spawn(`metrics-${metricsGen}`, createMetricsActor(newMetricsConfig), null)
         : null
 
-      const newMetrics = msg.slice?.metrics ?? null
-      if (metricsRef) ctx.stop(metricsRef)
-      metricsRef = newMetrics
-        ? ctx.spawn(`metrics-${++metricsGen}`, createMetricsActor(newMetrics), null)
-        : null
-
-      return { state: { ...state, loggerConfig: newLogger, loggerRef, loggerGen, metricsConfig: newMetrics, metricsRef, metricsGen } }
-    }
-  })
+      return { state: {
+        ...state,
+        logger:  { config: newLoggerConfig,  ref: loggerRef,  gen: loggerGen  },
+        metrics: { config: newMetricsConfig, ref: metricsRef, gen: metricsGen },
+      } }
+    },
+  }),
 }
 
 export default observabilityPlugin
