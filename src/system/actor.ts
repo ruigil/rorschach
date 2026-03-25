@@ -53,7 +53,7 @@ type InternalLog = {
  * successfully processed message to reset the consecutive-failure counter
  * (so backoff starts fresh after a period of healthy operation).
  */
-export type SupervisionPolicy = {
+type SupervisionPolicy = {
   /** Returns the action and backoff delay to apply before restarting. */
   readonly onFailure: () => { action: 'restart' | 'stop'; delayMs: number }
   /** Resets the consecutive-failure counter used for backoff calculation. */
@@ -226,7 +226,7 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
     self: ref,
     timers,
     messageHeaders: () => getHeaders(),
-    get config() { return configRef?.value },
+    initialConfig: () => { return configRef?.value },
 
     spawn: <CM, CS>(
       childName: string,
@@ -372,7 +372,7 @@ const buildPipeline = <M, S>(
  * No external code can read or mutate it.
  *
  */
-export type ActorCreationResult<M> = {
+type ActorCreationResult<M> = {
   readonly handle: InternalActorHandle<M>
   readonly context: ActorContext<M>
 }

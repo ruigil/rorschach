@@ -51,7 +51,7 @@ const parallelPlugin: PluginDef<PluginMsg, PluginState, ParallelConfig> = {
 
   lifecycle: onLifecycle({
     start: (_state, ctx) => {
-      const slice = ctx.config as ParallelConfig | undefined
+      const slice = ctx.initialConfig() as ParallelConfig | undefined
 
       if (slice) {
         const { routerRefs, bridgeRefs } = spawnFromSlice(slice, ctx)

@@ -34,7 +34,7 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
 
   lifecycle: onLifecycle({
     start: (_state, ctx) => {
-      const slice = ctx.config as InterfacesConfig | undefined
+      const slice = ctx.initialConfig() as InterfacesConfig | undefined
 
       const httpConfig = slice?.http ?? null
       const cliConfig  = slice?.cli ?? null

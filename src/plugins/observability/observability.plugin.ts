@@ -33,7 +33,7 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig
 
   lifecycle: onLifecycle({
     start: (_state, ctx) => {
-      const slice = ctx.config as ObservabilityConfig | undefined
+      const slice = ctx.initialConfig() as ObservabilityConfig | undefined
 
       const loggerConfig  = slice?.jsonlLogger ?? null
       const metricsConfig = slice?.metrics ?? null

@@ -277,10 +277,10 @@ export type ActorContext<M> = {
   readonly messageHeaders: () => MessageHeaders
   /**
    * Config slice injected at spawn time by the plugin system.
-   * Cast to your plugin's config type: `ctx.config as MyPluginConfig`.
-   * Always reflects the latest value — updated in place when `system.updateConfig()` is called.
+   * Cast to your plugin's config type: `ctx.initialConfig as MyPluginConfig`.
+   * Reflects the value provided at spawn time — use inside `lifecycle.start` to initialize state.
    */
-  readonly config: unknown
+  readonly initialConfig: () => unknown
   readonly spawn: <CM, CS>(
     name: string,
     def: ActorDef<CM, CS>,
@@ -541,7 +541,7 @@ export type ActorServices = {
 // The optional type parameter C describes the plugin's config slice shape.
 // When configDescriptor is provided, the system merges plugin defaults with
 // user-supplied overrides and injects the result into the plugin actor's
-// ctx.config at spawn time. Use `ctx.config as C` inside handlers.
+// ctx.initialConfig() at spawn time. Use `ctx.initialConfig() as C` inside lifecycle.start.
 //
 /**
  * Tracks the lifecycle state of a single child actor managed by a plugin.

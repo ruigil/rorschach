@@ -49,7 +49,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
 
   lifecycle: onLifecycle({
     start: (_state, ctx) => {
-      const slice = ctx.config as MemoryConfig | undefined
+      const slice = ctx.initialConfig() as MemoryConfig | undefined
       const kgraphConfig = slice?.kgraph ?? {}
       const dbPath = kgraphConfig.dbPath ?? './kgraph'
 

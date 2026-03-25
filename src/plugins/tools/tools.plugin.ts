@@ -33,7 +33,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         count: 20,
       },
       bash:{
-        cwd: "/home/rorschach"
+        cwd: process.cwd(),
       },
     },
     onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
@@ -47,7 +47,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
 
   lifecycle: onLifecycle({
     start: (_state, ctx) => {
-      const slice = ctx.config as ToolsConfig | undefined
+      const slice = ctx.initialConfig() as ToolsConfig | undefined
       const webSearchConfig = slice?.webSearch ?? null
 
       let webSearchRef: ActorRef<ToolInvokeMsg> | null = null

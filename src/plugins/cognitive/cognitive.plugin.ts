@@ -116,7 +116,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
 
   lifecycle: onLifecycle({
     start: (_state, ctx) => {
-      const slice = ctx.config as CognitiveConfig | undefined
+      const slice = ctx.initialConfig() as CognitiveConfig | undefined
       const llmProviderConfig = slice?.llmProvider ?? null
       const chatbotConfig = slice?.chatbot ?? null
       const visionConfig = slice?.visionActor ?? null

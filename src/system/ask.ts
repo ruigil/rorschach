@@ -30,6 +30,7 @@ export const ask = <Request, Response>(
           resolve(response)
         }
       },
+      isAlive: () => !settled,
     }
 
     if (options?.timeoutMs !== undefined) {
