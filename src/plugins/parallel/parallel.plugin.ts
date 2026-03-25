@@ -1,6 +1,6 @@
 import { createPoolRouter, type PoolRouterOptions } from './pool-router.ts'
 import { createWorkerBridge, type WorkerBridgeOptions } from './worker-bridge.ts'
-import type { ActorContext, PluginDef } from '../../system/types.ts'
+import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 
 export type PoolRouterEntry = {
@@ -19,24 +19,22 @@ export type ParallelConfig = {
 }
 
 type PluginMsg = { type: 'config'; slice: ParallelConfig | undefined }
-type PluginState = { initialized: boolean; routerNames: string[]; bridgeNames: string[] }
+type PluginState = { initialized: boolean; routerRefs: ActorRef<unknown>[]; bridgeRefs: ActorRef<unknown>[] }
 
 const spawnFromSlice = (slice: ParallelConfig, ctx: ActorContext<PluginMsg>) => {
-  const routerNames: string[] = []
-  const bridgeNames: string[] = []
+  const routerRefs: ActorRef<unknown>[] = []
+  const bridgeRefs: ActorRef<unknown>[] = []
 
   for (const entry of slice.poolRouters ?? []) {
     const router = createPoolRouter(entry.options)
-    ctx.spawn(entry.name, router.def, router.initialState)
-    routerNames.push(entry.name)
+    routerRefs.push(ctx.spawn(entry.name, router.def, router.initialState) as ActorRef<unknown>)
   }
   for (const entry of slice.workerBridges ?? []) {
     const bridge = createWorkerBridge(entry.options)
-    ctx.spawn(entry.name, bridge.def, bridge.initialState)
-    bridgeNames.push(entry.name)
+    bridgeRefs.push(ctx.spawn(entry.name, bridge.def, bridge.initialState) as ActorRef<unknown>)
   }
 
-  return { routerNames, bridgeNames }
+  return { routerRefs, bridgeRefs }
 }
 
 const parallelPlugin: PluginDef<PluginMsg, PluginState, ParallelConfig> = {
@@ -49,20 +47,20 @@ const parallelPlugin: PluginDef<PluginMsg, PluginState, ParallelConfig> = {
     onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
   },
 
-  initialState: { initialized: false, routerNames: [], bridgeNames: [] },
+  initialState: { initialized: false, routerRefs: [], bridgeRefs: [] },
 
   lifecycle: onLifecycle({
     start: (_state, ctx) => {
       const slice = ctx.config as ParallelConfig | undefined
 
       if (slice) {
-        const { routerNames, bridgeNames } = spawnFromSlice(slice, ctx)
+        const { routerRefs, bridgeRefs } = spawnFromSlice(slice, ctx)
         ctx.log.info('parallel plugin activated')
-        return { state: { initialized: true, routerNames, bridgeNames } }
+        return { state: { initialized: true, routerRefs, bridgeRefs } }
       }
 
       ctx.log.info('parallel plugin activated')
-      return { state: { initialized: true, routerNames: [], bridgeNames: [] } }
+      return { state: { initialized: true, routerRefs: [], bridgeRefs: [] } }
     },
     stopped: (state, ctx) => {
       ctx.log.info('parallel plugin deactivating')
@@ -72,19 +70,13 @@ const parallelPlugin: PluginDef<PluginMsg, PluginState, ParallelConfig> = {
 
   handler: onMessage({
     config: (state, msg, ctx) => {
-      for (const name of state.routerNames) {
-        const ref = ctx.lookup(name)
-        if (ref) ctx.stop(ref)
-      }
-      for (const name of state.bridgeNames) {
-        const ref = ctx.lookup(name)
-        if (ref) ctx.stop(ref)
-      }
+      for (const ref of state.routerRefs) ctx.stop(ref)
+      for (const ref of state.bridgeRefs) ctx.stop(ref)
 
-      if (!msg.slice) return { state: { ...state, routerNames: [], bridgeNames: [] } }
+      if (!msg.slice) return { state: { ...state, routerRefs: [], bridgeRefs: [] } }
 
-      const { routerNames, bridgeNames } = spawnFromSlice(msg.slice, ctx)
-      return { state: { ...state, routerNames, bridgeNames } }
+      const { routerRefs, bridgeRefs } = spawnFromSlice(msg.slice, ctx)
+      return { state: { ...state, routerRefs, bridgeRefs } }
     }
   })
 }

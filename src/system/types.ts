@@ -60,6 +60,7 @@ export type Mailbox<T> = {
 export type ActorRef<M> = {
   readonly name: string
   readonly send: (message: M, headers?: MessageHeaders) => void
+  readonly isAlive: () => boolean
 }
 
 // ─── Minimal reference (used where we only need identity, not send) ───
@@ -288,11 +289,9 @@ export type ActorContext<M> = {
   ) => ActorRef<CM>
   readonly stop: (child: ActorIdentity) => void
   /** Register interest in another actor's termination. Delivers a `terminated` lifecycle event when the target dies. */
-  readonly watch: (target: ActorIdentity) => void
+  readonly watch: (target: ActorRef<unknown>) => void
   /** Remove a previously registered watch. */
-  readonly unwatch: (target: ActorIdentity) => void
-  /** Look up an actor ref by its full hierarchical name. Returns undefined if not registered. */
-  readonly lookup: <T = unknown>(name: string) => ActorRef<T> | undefined
+  readonly unwatch: (target: ActorRef<unknown>) => void
   // ─── Event Stream (pub-sub) ───
 
   /** Publish a typed event to the system event bus under the given topic. */
@@ -464,13 +463,6 @@ export type InternalActorHandle<M = unknown> = {
   readonly stop: () => Promise<StopResult>
 }
 
-// ─── Registry (flat map of actor name → ActorRef) ───
-export type Registry = {
-  readonly register: (name: string, ref: ActorRef<unknown>) => void
-  readonly unregister: (name: string) => void
-  readonly lookup: <T = unknown>(name: string) => ActorRef<T> | undefined
-}
-
 // ─── Actor Metrics Types ───
 
 export type ActorStatus = 'running' | 'stopping' | 'stopped' | 'failed'
@@ -536,7 +528,6 @@ export type MetricsEvent = {
 
 // ─── Actor Services (shared system-level infrastructure passed to every actor) ───
 export type ActorServices = {
-  readonly registry: Registry
   readonly eventStream: EventStream
   readonly metricsRegistry: MetricsRegistry
 }

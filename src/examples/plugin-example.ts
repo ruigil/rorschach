@@ -1,11 +1,12 @@
 import { createPluginSystem, LogTopic, onLifecycle } from '../system/index.ts'
-import type { ActorDef, ActorContext, LogEvent, PluginDef } from '../system/index.ts'
+import type { ActorDef, ActorContext, ActorRef, LogEvent, PluginDef } from '../system/index.ts'
 
 
 // ─── Inline plugin definition ─────────────────────────────────────────────────
 
 type CounterConfig = { startAt: number; tickMs: number }
 type CounterPluginMsg = { type: 'config'; options: CounterConfig }
+type CounterPluginState = { counterRef: ActorRef<unknown> | null; tickerRef: ActorRef<unknown> | null }
 
 const spawnCounterChildren = (config: CounterConfig, ctx: ActorContext<CounterPluginMsg>) => {
   type CounterMsg = { type: 'increment' } | { type: 'reset' }
@@ -21,7 +22,7 @@ const spawnCounterChildren = (config: CounterConfig, ctx: ActorContext<CounterPl
       },
     }),
   }
-  const counter = ctx.spawn('counter', counterDef, { count: config.startAt })
+  const counterRef = ctx.spawn('counter', counterDef, { count: config.startAt }) as ActorRef<unknown>
 
   type TickMsg = { type: 'tick' }
   const tickerDef: ActorDef<TickMsg, null> = {
@@ -32,34 +33,34 @@ const spawnCounterChildren = (config: CounterConfig, ctx: ActorContext<CounterPl
       },
     }),
     handler: (s) => {
-      counter.send({ type: 'increment' })
+      counterRef.send({ type: 'increment' } as unknown)
       return { state: s }
     },
   }
-  ctx.spawn('ticker', tickerDef, null)
+  const tickerRef = ctx.spawn('ticker', tickerDef, null) as ActorRef<unknown>
+
+  return { counterRef, tickerRef }
 }
 
-const createCounterPlugin = (config: CounterConfig): PluginDef<CounterPluginMsg, null> => ({
+const createCounterPlugin = (config: CounterConfig): PluginDef<CounterPluginMsg, CounterPluginState> => ({
   id: 'counter',
   version: '1.0.0',
   description: 'Periodically increments a counter and logs its value',
-  initialState: null,
+  initialState: { counterRef: null, tickerRef: null },
 
   handler(state, msg, ctx) {
-    const counter = ctx.lookup('counter')
-    const ticker = ctx.lookup('ticker')
-    if (counter) ctx.stop(counter)
-    if (ticker) ctx.stop(ticker)
-    spawnCounterChildren(msg.options, ctx)
+    if (state.counterRef) ctx.stop(state.counterRef)
+    if (state.tickerRef) ctx.stop(state.tickerRef)
+    const { counterRef, tickerRef } = spawnCounterChildren(msg.options, ctx)
     ctx.log.info(`counter reconfigured (startAt=${msg.options.startAt}, tickMs=${msg.options.tickMs})`)
-    return { state }
+    return { state: { counterRef, tickerRef } }
   },
 
   lifecycle: onLifecycle({
     start(state, ctx) {
-      spawnCounterChildren(config, ctx)
+      const { counterRef, tickerRef } = spawnCounterChildren(config, ctx)
       ctx.log.info(`counter plugin activated (startAt=${config.startAt}, tickMs=${config.tickMs})`)
-      return { state }
+      return { state: { ...state, counterRef, tickerRef } }
     },
     stopped(state, ctx) {
       ctx.log.info('counter plugin deactivating')

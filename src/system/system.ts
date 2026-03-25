@@ -1,5 +1,5 @@
 import { createActor } from './actor.ts'
-import { createEventStream, createRegistry } from './services.ts'
+import { createEventStream } from './services.ts'
 import { createMetricsRegistry } from './metrics.ts'
 import {
   SystemLifecycleTopic,
@@ -131,7 +131,6 @@ export const createPluginSystem = async (
   // ─── Shared infrastructure ───
   const metricsRegistry = createMetricsRegistry()
   const services: ActorServices = {
-    registry: createRegistry(),
     eventStream: createEventStream(),
     metricsRegistry,
   }

@@ -1,4 +1,4 @@
-import type { ActorContext, ActorDef, PluginDef } from '../../system/index.ts'
+import type { ActorContext, ActorDef, ActorRef, PluginDef } from '../../system/index.ts'
 import { onLifecycle } from '../../system/index.ts'
 
 type GreeterConfig = {
@@ -7,8 +7,9 @@ type GreeterConfig = {
 }
 
 type GreeterPluginMsg = { type: 'config'; options: GreeterConfig }
+type GreeterPluginState = { tickerRef: ActorRef<unknown> | null }
 
-const spawnTicker = (config: GreeterConfig, ctx: ActorContext<GreeterPluginMsg>) => {
+const spawnTicker = (config: GreeterConfig, ctx: ActorContext<GreeterPluginMsg>): ActorRef<unknown> => {
   type TickMsg = { type: 'tick' }
   const tickerDef: ActorDef<TickMsg, null> = {
     lifecycle: onLifecycle({
@@ -22,28 +23,27 @@ const spawnTicker = (config: GreeterConfig, ctx: ActorContext<GreeterPluginMsg>)
       return { state: s }
     },
   }
-  ctx.spawn('ticker', tickerDef, null)
+  return ctx.spawn('ticker', tickerDef, null) as ActorRef<unknown>
 }
 
-const createGreeterPlugin = (config: GreeterConfig): PluginDef<GreeterPluginMsg, null> => ({
+const createGreeterPlugin = (config: GreeterConfig): PluginDef<GreeterPluginMsg, GreeterPluginState> => ({
   id: 'greeter',
   version: '1.0.0',
   description: 'Periodically logs a greeting',
-  initialState: null,
+  initialState: { tickerRef: null },
 
   handler(state, msg, ctx) {
-    const ticker = ctx.lookup('ticker')
-    if (ticker) ctx.stop(ticker)
-    spawnTicker(msg.options, ctx)
+    if (state.tickerRef) ctx.stop(state.tickerRef)
+    const tickerRef = spawnTicker(msg.options, ctx)
     ctx.log.info(`greeter reconfigured (name="${msg.options.name}", intervalMs=${msg.options.intervalMs})`)
-    return { state }
+    return { state: { tickerRef } }
   },
 
   lifecycle: onLifecycle({
     start(state, ctx) {
-      spawnTicker(config, ctx)
+      const tickerRef = spawnTicker(config, ctx)
       ctx.log.info(`greeter plugin activated (name="${config.name}", intervalMs=${config.intervalMs})`)
-      return { state }
+      return { state: { ...state, tickerRef } }
     },
     stopped(state, ctx) {
       ctx.log.info('greeter plugin deactivating')

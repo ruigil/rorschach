@@ -38,7 +38,6 @@ export type {
   MailboxOverflowStrategy,
   MessageHandler,
   PersistenceAdapter,
-  Registry,
   ShutdownConfig,
   SupervisionStrategy,
   Timers,

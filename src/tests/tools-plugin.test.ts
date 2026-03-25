@@ -6,7 +6,8 @@ import {
   type WebSearchMsg,
   type BraveLlmContextResponse,
 } from '../plugins/tools/web-search.ts'
-import type { ToolInvokeMsg, ToolReply } from '../system/tools.ts'
+import { ToolRegistrationTopic } from '../system/tools.ts'
+import type { ToolInvokeMsg, ToolReply, ToolRegistrationEvent } from '../system/tools.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 
 // ─── Helpers ───
@@ -184,25 +185,26 @@ describe('tools plugin', () => {
     const status = system.getPluginStatus('tools')
     expect(status?.status).toBe('active')
 
-    // Probe actor: look up the child, fire an invoke, collect the reply
-    type ProbeMsg = { type: 'noop' } | ToolReply
+    // Probe actor: subscribe to ToolRegistrationTopic, fire an invoke, collect the reply
+    type ProbeMsg = ToolReply | { type: 'registered'; event: ToolRegistrationEvent }
     const replies: ToolReply[] = []
 
     const probeDef: ActorDef<ProbeMsg, null> = {
       lifecycle: (state, event, ctx) => {
         if (event.type === 'start') {
-          const wsRef = ctx.lookup<WebSearchMsg>('system/tools/web-search-0')
-          expect(wsRef).toBeDefined()
-          wsRef?.send({
+          ctx.subscribe(ToolRegistrationTopic, (ev): ProbeMsg => ({ type: 'registered', event: ev }))
+        }
+        return { state }
+      },
+      handler: (state, msg, ctx) => {
+        if (msg.type === 'registered' && msg.event.ref !== null && msg.event.name === 'web_search') {
+          msg.event.ref.send({
             type: 'invoke',
             toolName: 'web_search',
             arguments: JSON.stringify({ query: 'probe' }),
             replyTo: ctx.self as unknown as import('../system/types.ts').ActorRef<ToolReply>,
           })
         }
-        return { state }
-      },
-      handler: (state, msg) => {
         if (msg.type === 'toolResult' || msg.type === 'toolError') {
           replies.push(msg)
         }
@@ -255,25 +257,20 @@ describe('tools plugin', () => {
     })
     await tick()
 
+    // Track web_search registrations to verify config change spawns a new actor
+    let webSearchRegistrationCount = 0
+    system.subscribe(ToolRegistrationTopic, (event) => {
+      const e = event as ToolRegistrationEvent
+      if (e.name === 'web_search' && e.ref !== null) webSearchRegistrationCount++
+    })
+    // The retained event replays immediately on subscribe (gen-0 actor)
+    expect(webSearchRegistrationCount).toBe(1)
+
     system.updateConfig({ tools: { webSearch: { apiKey: 'updated-key', count: 15 } } })
     await tick()
 
-    let gen1Exists = false
-
-    const probeDef: ActorDef<{ type: 'noop' }, null> = {
-      lifecycle: (state, event, ctx) => {
-        if (event.type === 'start') {
-          gen1Exists = ctx.lookup('system/tools/web-search-1') !== undefined
-        }
-        return { state }
-      },
-      handler: (state) => ({ state }),
-    }
-
-    system.spawn('probe', probeDef, null)
-    await tick()
-
-    expect(gen1Exists).toBe(true)
+    // After config change a new actor registers (gen-1)
+    expect(webSearchRegistrationCount).toBe(2)
 
     await system.shutdown()
   })

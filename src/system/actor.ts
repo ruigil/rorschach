@@ -258,20 +258,16 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       }
     },
 
-    watch: (target: ActorIdentity) => {
-      if (!services.registry.lookup(target.name)) {
+    watch: (target: ActorRef<unknown>) => {
+      if (!target.isAlive()) {
         enqueueLifecycle({ type: 'terminated', ref: target, reason: 'stopped' })
         return
       }
       services.eventStream.subscribe(name, watchTopic(target.name), enqueueLifecycle)
     },
 
-    unwatch: (target: ActorIdentity) => {
+    unwatch: (target: ActorRef<unknown>) => {
       services.eventStream.unsubscribe(name, watchTopic(target.name))
-    },
-
-    lookup: <T = unknown>(targetName: string) => {
-      return services.registry.lookup<T>(targetName)
     },
 
     // ─── Event Stream (pub-sub) ───
@@ -432,6 +428,7 @@ export const createActor = <M, S>(
         })
       }
     },
+    isAlive: () => !stopped,
   }
 
   // ─── Internal: enqueue a lifecycle event into the unified mailbox ───
@@ -518,7 +515,7 @@ export const createActor = <M, S>(
     }
     services.eventStream.publish(watchTopic(name), terminatedEvent)
 
-    // 6. Clean up subscriptions (both domain and watch) + watch topic forward entry, registry
+    // 6. Clean up subscriptions (both domain and watch) + watch topic forward entry
     services.eventStream.cleanup(name)
     services.eventStream.deleteTopic(watchTopic(name))
     log.info('stopped')
@@ -528,7 +525,6 @@ export const createActor = <M, S>(
       metrics.setStatus('stopped')
     }
     services.metricsRegistry.unregister(name)
-    services.registry.unregister(name)
   }
 
   // ─── Stash size — shared between the processing loop and metrics gauge ───
@@ -579,8 +575,6 @@ export const createActor = <M, S>(
         if (loaded !== undefined) state = loaded
       }
       currentStateSnapshot = state
-      // Register before delivering 'start' so the actor is visible during its own startup.
-      services.registry.register(name, ref as ActorRef<unknown>)
       services.metricsRegistry.register(name, metrics)
       if (def.lifecycle) {
         const result = await def.lifecycle(state, { type: 'start' }, context)
