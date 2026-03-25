@@ -33,7 +33,3 @@ export type ToolRegistrationEvent =
   | { name: string; ref: null }
 
 export const ToolRegistrationTopic = createTopic<ToolRegistrationEvent>('tools/registration')
-
-// ─── Tools plugin protocol ───
-
-export type GetToolsMsg = { type: 'getTools'; replyTo: ActorRef<ToolCollection> }
