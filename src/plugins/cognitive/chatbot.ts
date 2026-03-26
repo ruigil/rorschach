@@ -66,16 +66,25 @@ export type ChatbotState = {
 // ─── Options ───
 
 export type ChatbotActorOptions = {
-  clientId:     string
-  llmRef:       ActorRef<LlmProviderMsg>
-  model:        string
-  systemPrompt?: string
+  clientId:       string
+  llmRef:         ActorRef<LlmProviderMsg>
+  model:          string
+  systemPrompt?:  string
+  historyWindow?: number
+}
+
+// ─── Helpers ───
+
+const trimHistory = (history: ConversationMessage[], maxTurns: number): ConversationMessage[] => {
+  const userIndices = history.reduce<number[]>((acc, m, i) => { if (m.role === 'user') acc.push(i); return acc }, [])
+  if (userIndices.length <= maxTurns) return history
+  return history.slice(userIndices[userIndices.length - maxTurns])
 }
 
 // ─── Actor definition ───
 
 export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<ChatbotMsg, ChatbotState> => {
-  const { clientId, llmRef, model, systemPrompt } = options
+  const { clientId, llmRef, model, systemPrompt, historyWindow } = options
 
   // ─── Shared tool registration handlers (used across all behaviors) ───
 
@@ -268,10 +277,13 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         ? (usage.promptTokens + usage.completionTokens) / info.contextWindow
         : null
 
+      const rawHistory: ConversationMessage[] = [...state.history, { role: 'assistant', content: state.pending }]
+      const newHistory = historyWindow ? trimHistory(rawHistory, historyWindow) : rawHistory
+
       return {
         state: {
           ...state,
-          history: [...state.history, { role: 'assistant', content: state.pending }],
+          history: newHistory,
           pending: '',
           pendingReasoning: '',
           requestId: null,

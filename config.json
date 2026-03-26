@@ -29,7 +29,8 @@
         "model": "${OPENROUTER_MODEL:-x-ai/grok-4.1-fast}"
       },
       "chatbot": {
-        "systemPrompt": "You're the user perfect mirror. You always reflect what you perceive."
+        "systemPrompt": "You're the user perfect mirror. You always reflect what you perceive.",
+        "historyWindow": 40
       },
       "visionActor": {
         "model": "${OPENROUTER_VISION_MODEL:-openai/gpt-5.4-nano}"

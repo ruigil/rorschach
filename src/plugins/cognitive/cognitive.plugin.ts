@@ -17,7 +17,8 @@ type LlmProviderConfig = {
 }
 
 type ChatbotConfig = {
-  systemPrompt?: string
+  systemPrompt?:  string
+  historyWindow?: number
 }
 
 type VisionActorConfig = {
@@ -69,6 +70,7 @@ const spawnAll = (
           llmRef: llmProviderRef,
           model: llmProviderConfig.model,
           systemPrompt: chatbotConfig.systemPrompt,
+          historyWindow: chatbotConfig.historyWindow,
         }),
         { sessions: {} },
       )

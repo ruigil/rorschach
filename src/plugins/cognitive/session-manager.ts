@@ -21,9 +21,10 @@ type SessionManagerState = {
 // ─── Options ───
 
 export type SessionManagerOptions = {
-  llmRef:        ActorRef<LlmProviderMsg>
-  model:         string
-  systemPrompt?: string
+  llmRef:          ActorRef<LlmProviderMsg>
+  model:           string
+  systemPrompt?:   string
+  historyWindow?:  number
 }
 
 // ─── Initial chatbot state ───
@@ -45,7 +46,7 @@ const initialChatbotState = (): ChatbotState => ({
 // ─── Actor definition ───
 
 export const createSessionManagerActor = (options: SessionManagerOptions): ActorDef<SessionManagerMsg, SessionManagerState> => {
-  const { llmRef, model, systemPrompt } = options
+  const { llmRef, model, systemPrompt, historyWindow } = options
 
   return {
     lifecycle: onLifecycle({
@@ -71,7 +72,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
         const { clientId } = message
         const ref = context.spawn(
           `chatbot-${clientId}`,
-          createChatbotActor({ clientId, llmRef, model, systemPrompt }),
+          createChatbotActor({ clientId, llmRef, model, systemPrompt, historyWindow }),
           initialChatbotState(),
         )
         return { state: { sessions: { ...state.sessions, [clientId]: ref } } }
