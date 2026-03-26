@@ -1,4 +1,5 @@
-import { describe, test, expect, afterEach, beforeAll } from 'bun:test'
+import { describe, test, expect, afterEach } from 'bun:test'
+import { tmpdir } from 'node:os'
 import { createPluginSystem } from '../system/index.ts'
 import { createSignalActor, renderForSignal } from '../plugins/interfaces/signal.ts'
 import { WsConnectTopic, WsMessageTopic, WsSendTopic } from '../system/topics.ts'
@@ -6,208 +7,268 @@ import type { WsConnectEvent, WsMessageEvent } from '../system/topics.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
-// ─── Minimal signal-cli JSON-RPC stub ───
+// ─── Mock signal-cli TCP daemon ───
+//
+// Accepts TCP connections, pushes newline-delimited JSON-RPC notifications,
+// and captures any JSON-RPC requests sent back by the actor.
+//
+function startMockSignalDaemon(port: number) {
+  type BunSocket = Parameters<NonNullable<Parameters<typeof Bun.listen>[0]['socket']['open']>>[0]
+  const sockets: BunSocket[] = []
+  const receivedLines: string[] = []
+  let buf = ''
 
-type RpcHandler = (method: string, params: Record<string, unknown>) => unknown
-
-function startMockSignalServer(port: number, handle: RpcHandler) {
-  return Bun.serve({
+  const server = Bun.listen({
+    hostname: '127.0.0.1',
     port,
-    async fetch(req) {
-      const body = await req.json() as { method: string; params: Record<string, unknown>; id: number }
-      const result = handle(body.method, body.params ?? {})
-      return Response.json({ jsonrpc: '2.0', id: body.id, result })
+    socket: {
+      open(s)       { sockets.push(s) },
+      data(_s, raw) {
+        buf += raw.toString()
+        const lines = buf.split('\n')
+        buf = lines.pop()!
+        for (const l of lines) if (l.trim()) receivedLines.push(l.trim())
+      },
+      close(s)  { const i = sockets.indexOf(s); if (i >= 0) sockets.splice(i, 1) },
+      error()   {},
     },
   })
+
+  const pushEnvelope = (envelope: object) => {
+    const line = JSON.stringify({ jsonrpc: '2.0', method: 'receive', params: { envelope } }) + '\n'
+    for (const s of sockets) s.write(line)
+  }
+
+  const closeClients = () => { for (const s of [...sockets]) s.end() }
+  const stop         = () => server.stop(true)
+
+  return { pushEnvelope, receivedLines, closeClients, stop, get clientCount() { return sockets.length } }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Signal actor: HTTP polling
+// Signal actor: TCP socket
 // ═══════════════════════════════════════════════════════════════════
 
-describe('signal actor: HTTP polling', () => {
-  let server: ReturnType<typeof Bun.serve> | null = null
+describe('signal actor: TCP socket', () => {
+  let daemon: ReturnType<typeof startMockSignalDaemon> | null = null
 
   afterEach(async () => {
-    await server?.stop()
-    server = null
+    daemon?.stop()
+    daemon = null
   })
 
-  test('polls receive and emits WsConnect + WsMessage for a new sender', async () => {
+  test('emits WsConnect + WsMessage when the daemon pushes an envelope', async () => {
     const connectEvents: WsConnectEvent[] = []
     const messageEvents: WsMessageEvent[] = []
 
-    let callCount = 0
-    server = startMockSignalServer(17583, (method) => {
-      if (method !== 'receive') return []
-      callCount++
-      if (callCount === 1) {
-        return [{
-          envelope: {
-            source:       '+1111111111',
-            dataMessage:  { message: 'hello from signal' },
-          },
-        }]
-      }
-      return []
-    })
-
+    daemon = startMockSignalDaemon(17590)
     const system = await createPluginSystem()
     system.subscribe(WsConnectTopic,  e => connectEvents.push(e))
     system.subscribe(WsMessageTopic,  e => messageEvents.push(e))
 
-    system.spawn('signal', createSignalActor({
-      url:            'http://127.0.0.1:17583',
-      pollIntervalMs: 80,
-    }), { seenIds: new Set<string>(), pending: new Map<string, string>() })
+    system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17590 }),
+      { seenIds: new Set<string>(), pending: new Map<string, string>() })
 
-    await tick(200)
+    await tick(100)
+    daemon.pushEnvelope({ source: '+1111111111', dataMessage: { message: 'hello via tcp' } })
+    await tick(100)
 
     expect(connectEvents).toHaveLength(1)
-    expect(connectEvents.at(0)!.clientId).toBe('+1111111111')
-
-    expect(messageEvents.length).toBeGreaterThanOrEqual(1)
-    expect(messageEvents.at(0)!.clientId).toBe('+1111111111')
-    expect(messageEvents.at(0)!.text).toBe('hello from signal')
+    expect(connectEvents[0]!.clientId).toBe('+1111111111')
+    expect(messageEvents).toHaveLength(1)
+    expect(messageEvents[0]!.text).toBe('hello via tcp')
 
     await system.shutdown()
   })
 
-  test('does not re-emit WsConnect for the same sender on subsequent polls', async () => {
+  test('does not re-emit WsConnect for the same sender on a second message', async () => {
     const connectEvents: WsConnectEvent[] = []
 
-    server = startMockSignalServer(17584, (method) => {
-      if (method !== 'receive') return []
-      return [{
-        envelope: {
-          source:      '+2222222222',
-          dataMessage: { message: 'hi' },
-        },
-      }]
-    })
-
+    daemon = startMockSignalDaemon(17591)
     const system = await createPluginSystem()
     system.subscribe(WsConnectTopic, e => connectEvents.push(e))
 
-    system.spawn('signal', createSignalActor({
-      url:            'http://127.0.0.1:17584',
-      pollIntervalMs: 60,
-    }), { seenIds: new Set<string>(), pending: new Map<string, string>() })
+    system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17591 }),
+      { seenIds: new Set<string>(), pending: new Map<string, string>() })
 
-    await tick(300)
+    await tick(100)
+    daemon.pushEnvelope({ source: '+2222222222', dataMessage: { message: 'first' } })
+    daemon.pushEnvelope({ source: '+2222222222', dataMessage: { message: 'second' } })
+    await tick(100)
 
-    // Multiple polls, but WsConnect should fire only once per unique sender
     expect(connectEvents.filter(e => e.clientId === '+2222222222')).toHaveLength(1)
 
     await system.shutdown()
   })
 
-  test('sends a message via HTTP POST when WsSend topic fires', async () => {
-    const sentRequests: Array<{ method: string; params: Record<string, unknown> }> = []
-
-    server = startMockSignalServer(17585, (method, params) => {
-      sentRequests.push({ method, params })
-      return method === 'send' ? { timestamp: Date.now() } : []
-    })
+  test('sends a JSON-RPC request over TCP when WsSend fires', async () => {
+    daemon = startMockSignalDaemon(17592)
 
     const system = await createPluginSystem()
+    system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17592, account: '+0000000000' }),
+      { seenIds: new Set<string>(), pending: new Map<string, string>() })
 
-    system.spawn('signal', createSignalActor({
-      url:            'http://127.0.0.1:17585',
-      account:        '+0000000000',
-      pollIntervalMs: 5_000,   // long interval — we don't care about polling here
-    }), { seenIds: new Set<string>(), pending: new Map<string, string>() })
+    await tick(100)
 
-    await tick(50)
-
-    // simulate chatbot streaming markdown: chunks accumulate, 'done' flushes rendered text
-    const md = '## Result\n\n**Important**: hello _world_'
+    const md = '**hello** _world_'
     system.publish(WsSendTopic, { clientId: '+3333333333', text: JSON.stringify({ type: 'chunk', text: md }) })
     system.publish(WsSendTopic, { clientId: '+3333333333', text: JSON.stringify({ type: 'done' }) })
     await tick(200)
 
-    const sendCall = sentRequests.find(r => r.method === 'send')
-    expect(sendCall).toBeDefined()
-    expect(sendCall!.params.account).toBe('+0000000000')
-    expect(sendCall!.params.recipient).toEqual(['+3333333333'])
-    // plain text — no markdown markers
-    expect(sendCall!.params.message).toBe('Result\n\nImportant: hello world')
-    // formatting encoded as textStyles ranges
-    expect(sendCall!.params.textStyles).toContain('0:6:BOLD')       // "Result"
-    expect(sendCall!.params.textStyles).toContain('8:9:BOLD')       // "Important"
-    expect(sendCall!.params.textStyles).toContain('25:5:ITALIC')    // "world"
+    const sendLine = daemon.receivedLines.find(l => {
+      try { return JSON.parse(l).method === 'send' } catch { return false }
+    })
+    expect(sendLine).toBeDefined()
+    const req = JSON.parse(sendLine!)
+    expect(req.params.account).toBe('+0000000000')
+    expect(req.params.recipient).toEqual(['+3333333333'])
+    expect(req.params.message).toBe('hello world')
+    expect(req.params.textStyles).toContain('0:5:BOLD')
+    expect(req.params.textStyles).toContain('6:5:ITALIC')
 
     await system.shutdown()
   })
 
-  test('integration: sends a real message to +41762189620 via signal-cli', async () => {
-    let sendResult: unknown = null
-    let sendError:  string | null = null
+  test('emits WsMessage with images when an envelope contains attachments', async () => {
+    const messageEvents: WsMessageEvent[] = []
 
+    const attachmentsDir = `${tmpdir()}/rorschach-test-${crypto.randomUUID()}`
+    const attachmentId   = 'test-attach-001'
+
+    daemon = startMockSignalDaemon(17595)
     const system = await createPluginSystem()
+    system.subscribe(WsMessageTopic, e => messageEvents.push(e))
 
-    system.spawn('signal', createSignalActor({
-      url:            'http://127.0.0.1:7583/api/v1/rpc',
-      account:        '+41762189620',
-      pollIntervalMs: 5_000,
-    }), { seenIds: new Set<string>(), pending: new Map<string, string>() })
+    system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17595, attachmentsDir }),
+      { seenIds: new Set<string>(), pending: new Map<string, string>() })
 
-    // subscribe to _sendErr surfaced as a log — instead just watch for errors
-    // by piping the raw fetch ourselves to capture the result
-    const fetchResult = await fetch('http://127.0.0.1:7583/api/v1/rpc', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 99, method: 'send',
-        params: {
-          account:   '+41762189620',
-          recipient: ['+41762189620'],
-          message:   'test from rorschach signal actor',
-        },
-      }),
-    }).then(r => r.json()).catch(e => { sendError = String(e); return null })
+    await tick(100)
+    daemon.pushEnvelope({
+      source:      '+5555555555',
+      dataMessage: {
+        message:     'check this out',
+        attachments: [{ id: attachmentId, contentType: 'image/jpeg' }],
+      },
+    })
+    await tick(200)
 
-    sendResult = fetchResult
-
-    expect(sendError).toBeNull()
-    expect((sendResult as any)?.error).toBeUndefined()
-    expect((sendResult as any)?.result).toBeDefined()
+    expect(messageEvents).toHaveLength(1)
+    expect(messageEvents[0]!.clientId).toBe('+5555555555')
+    expect(messageEvents[0]!.text).toBe('check this out')
+    expect(messageEvents[0]!.images).toHaveLength(1)
+    expect(messageEvents[0]!.images![0]).toBe(`${attachmentsDir}/${attachmentId}`)
 
     await system.shutdown()
   })
 
-  test('integration: receives a pending message from signal-cli', async () => {
-    const res: any = await fetch('http://127.0.0.1:7583/api/v1/rpc', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 100, method: 'receive',
-        params: {},
-      }),
-    }).then(r => r.json())
+  test('reconnects after the daemon drops the connection', async () => {
+    const messageEvents: WsMessageEvent[] = []
 
-    console.log('receive result:', JSON.stringify(res, null, 2))
+    daemon = startMockSignalDaemon(17593)
+    const system = await createPluginSystem()
+    system.subscribe(WsMessageTopic, e => messageEvents.push(e))
 
-    // signal-cli only allows one concurrent receive call — if the daemon
-    // is already receiving (e.g. from a polling actor), that's an expected response
-    const alreadyReceiving = res.error?.message?.includes('already being received')
-    if (!alreadyReceiving) {
-      expect(res.error).toBeUndefined()
-      expect(Array.isArray(res.result)).toBe(true)
-    }
+    system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17593, reconnectMs: 200 }),
+      { seenIds: new Set<string>(), pending: new Map<string, string>() })
+
+    await tick(100)
+    daemon.closeClients()
+    await tick(400)
+
+    daemon.pushEnvelope({ source: '+4444444444', dataMessage: { message: 'after reconnect' } })
+    await tick(100)
+
+    expect(messageEvents.some(e => e.text === 'after reconnect')).toBe(true)
+
+    await system.shutdown()
   })
 
-  test('logs an error and keeps running when the HTTP call fails', async () => {
-    // Point at a port with no server — fetch will reject
-    const system = await createPluginSystem()
+  test('survives malformed JSON lines without crashing', async () => {
+    type BunSocket = Parameters<NonNullable<Parameters<typeof Bun.listen>[0]['socket']['open']>>[0]
+    let clientSocket: BunSocket | null = null
+    const server = Bun.listen({
+      hostname: '127.0.0.1', port: 17594,
+      socket: {
+        open(s)  { clientSocket = s },
+        data()   {},
+        close()  {},
+        error()  {},
+      },
+    })
 
-    // verify the actor does not crash — the system stays running
+    const system = await createPluginSystem()
+    const ref = system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17594 }),
+      { seenIds: new Set<string>(), pending: new Map<string, string>() })
+
+    await tick(100)
+    clientSocket!.write('this is not json\n')
+    clientSocket!.write('{broken\n')
+    await tick(100)
+
+    expect(ref.isAlive()).toBe(true)
+
+    server.stop(true)
+    await system.shutdown()
+  })
+
+  test('stays alive when no daemon is listening', async () => {
+    const system = await createPluginSystem()
+    const ref = system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 19998, reconnectMs: 100 }),
+      { seenIds: new Set<string>(), pending: new Map<string, string>() })
+
+    await tick(400)
+
+    expect(ref.isAlive()).toBe(true)
+
+    await system.shutdown()
+  })
+
+  test('integration: receives messages and attachments from signal-cli TCP at 127.0.0.1:7583', async () => {
+    const connectEvents: WsConnectEvent[] = []
+    const messageEvents: WsMessageEvent[] = []
+
+    const system = await createPluginSystem()
+    system.subscribe(WsConnectTopic, e => connectEvents.push(e))
+    system.subscribe(WsMessageTopic, e => messageEvents.push(e))
+
     const ref = system.spawn('signal', createSignalActor({
-      url:            'http://127.0.0.1:19999',
-      pollIntervalMs: 60,
+      host: '127.0.0.1',
+      port: 7583,
     }), { seenIds: new Set<string>(), pending: new Map<string, string>() })
 
-    await tick(250)
+    await tick(2_000)  // wait for any queued messages to be pushed by the daemon
+
+    expect(ref.isAlive()).toBe(true)
+    console.log(`received ${messageEvents.length} message(s) from ${connectEvents.length} sender(s)`)
+    for (const e of messageEvents) {
+      console.log(`  [${e.clientId}] ${e.text}`)
+      if (e.images) {
+        console.log(`    attachments (${e.images.length}):`)
+        for (const path of e.images) {
+          const file = Bun.file(path)
+          console.log(`      ${path} (${await file.exists() ? file.size + ' bytes' : 'missing'})`)
+        }
+      }
+    }
+
+    await system.shutdown()
+  })
+
+  test('integration: sends a real message via signal-cli TCP at 127.0.0.1:7583', async () => {
+    const system = await createPluginSystem()
+
+    const ref = system.spawn('signal', createSignalActor({
+      host:    '127.0.0.1',
+      port:    7583,
+      account: '+41762189620',
+    }), { seenIds: new Set<string>(), pending: new Map<string, string>() })
+
+    await tick(200)  // wait for connection
+
+    system.publish(WsSendTopic, { clientId: '+41762189620', text: JSON.stringify({ type: 'chunk', text: 'test from rorschach TCP actor' }) })
+    system.publish(WsSendTopic, { clientId: '+41762189620', text: JSON.stringify({ type: 'done' }) })
+
+    await tick(500)
 
     expect(ref.isAlive()).toBe(true)
 

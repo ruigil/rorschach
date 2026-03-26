@@ -10,9 +10,9 @@
     "interfaces": {
       "http": { "port": "${PORT:-3000}" },
       "signal": {
-        "url":     "http://127.0.0.1:7583/api/v1/rpc",
-        "account": "+41762189620"
-      }      
+        "host": "127.0.0.1",
+        "port": "7583"
+      }
     },
     "tools": {
       "webSearch": {
@@ -37,7 +37,7 @@
       }
     },
     "memory" : {
-      "kgraph": { "dbPath" : "./kgraph" }
+      "kgraph": { "dbPath" : "./memory/kgraph" }
     },
     "observability": {
       "jsonlLogger": {

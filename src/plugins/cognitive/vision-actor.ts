@@ -1,4 +1,3 @@
-import { unlink } from 'node:fs/promises'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../system/tools.ts'
@@ -54,11 +53,10 @@ export type VisionActorOptions = {
 
 const resolveImageUrl = async (imageUrl: string): Promise<string> => {
   if (imageUrl.startsWith('data:') || imageUrl.startsWith('http')) return imageUrl
-  // Treat as a local file path: read, encode, delete
+  // Treat as a local file path: read and encode
   const buf = await Bun.file(imageUrl).bytes()
   const ext = imageUrl.split('.').pop() ?? 'jpeg'
   const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
-  await unlink(imageUrl)
   return `data:${mimeType};base64,${Buffer.from(buf).toString('base64')}`
 }
 

@@ -12,7 +12,7 @@ coverage
 # dirs
 .claude
 workspace
-kgraph
+memory
 docs
 
 # logs

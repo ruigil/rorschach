@@ -1,4 +1,5 @@
-import { tmpdir } from 'node:os'
+import { createConnection } from 'node:net'
+import type { Socket } from 'node:net'
 import type { ActorDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { emit } from '../../system/types.ts'
@@ -12,7 +13,7 @@ import { WsConnectTopic, WsMessageTopic, WsSendTopic } from '../../system/topics
 //
 export type SignalFormatted = { message: string; textStyles: string[] }
 
-const renderForSignal = (md: string): SignalFormatted => {
+export const renderForSignal = (md: string): SignalFormatted => {
   const spans: Array<{ start: number; length: number; style: string }> = []
   let pos = 0           // cursor into the plain-text output being built
   const parts: string[] = []
@@ -180,10 +181,11 @@ const renderForSignal = (md: string): SignalFormatted => {
 // ─── Options ───
 
 export type SignalActorOptions = {
-  url?:             string  // JSON-RPC endpoint, default: 'http://127.0.0.1:7583/api/v1/rpc'
-  account?:         string  // Signal account phone number
-  pollIntervalMs?:  number  // how often to call receive, default: 2000
-  attachmentsDir?:  string  // where signal-cli stores downloaded attachments
+  host?:           string  // default: '127.0.0.1'
+  port?:           number  // default: 7583
+  account?:        string
+  reconnectMs?:    number  // default: 3000
+  attachmentsDir?: string
 }
 
 // ─── Message protocol ───
@@ -197,14 +199,11 @@ type Envelope = {
   syncMessage?:  { sentMessage?: { destination?: string; destinationNumber?: string; message?: string; attachments?: Attachment[] } }
 }
 
-type IncomingMsg = { source: string; text: string; attachments: Attachment[] }
-
 type SignalMsg =
-  | { type: '_poll' }
-  | { type: '_pollResult';      envelopes: Envelope[] }
-  | { type: '_pollErr';         error: string }
-  | { type: '_attachmentsRead'; msg: IncomingMsg; filePaths: string[] }
-  | { type: '_send';            clientId: string; text: string }
+  | { type: '_reconnect' }
+  | { type: '_socketClosed' }
+  | { type: '_line';  line: string }
+  | { type: '_send'; clientId: string; text: string }
   | { type: '_sendOk' }
   | { type: '_sendErr';         error: string }
   | { type: '_refreshTyping' }
@@ -221,129 +220,134 @@ export type SignalState = {
 export const createSignalActor = (
   options?: SignalActorOptions,
 ): ActorDef<SignalMsg, SignalState> => {
-  const url            = options?.url            ?? 'http://127.0.0.1:7583/api/v1/rpc'
+  const host           = options?.host           ?? '127.0.0.1'
+  const port           = options?.port           ?? 7583
   const account        = options?.account        ?? null
-  const pollMs         = options?.pollIntervalMs ?? 2_000
+  const reconnectMs    = options?.reconnectMs    ?? 3_000
   const attachmentsDir = options?.attachmentsDir ?? `${process.env.HOME}/.local/share/signal-cli/attachments`
 
-  let msgId = 0
+  let msgId        = 0
+  let activeSocket: Socket | null = null
 
-  const rpc = async (method: string, params: Record<string, unknown>): Promise<unknown> => {
-    const id   = ++msgId
-    const body = JSON.stringify({ jsonrpc: '2.0', id, method, params })
-    const res  = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
-    return res.json()
-  }
+  const writeToSocket = (line: string): Promise<void> =>
+    new Promise((resolve, reject) => {
+      if (!activeSocket || activeSocket.destroyed) { reject(new Error('not connected')); return }
+      try {
+        activeSocket.write(line, err => err ? reject(err) : resolve())
+      } catch (err) {
+        reject(err)
+      }
+    })
 
-  const send = (recipient: string, { message, textStyles }: SignalFormatted) =>
-    rpc('send', {
+  const rpcLine = (method: string, params: Record<string, unknown>): string =>
+    JSON.stringify({ jsonrpc: '2.0', id: ++msgId, method, params }) + '\n'
+
+  const sendOverSocket = (recipient: string, { message, textStyles }: SignalFormatted): Promise<void> =>
+    writeToSocket(rpcLine('send', {
       ...(account ? { account } : {}),
       recipient: [recipient],
       message,
       ...(textStyles.length > 0 ? { textStyles } : {}),
-    })
+    }))
 
-  // Fire-and-forget — typing indicators are best-effort, no state implications
-  const sendTyping = (recipient: string, stop = false) =>
-    rpc('sendTyping', { ...(account ? { account } : {}), recipient: [recipient], stop })
-      .catch(() => {})
-
-  // `receive` does not accept an account param — it reads from the daemon's active account
-  const pollReceive = async (): Promise<Envelope[]> => {
-    const res: any = await rpc('receive', {})
-    const items: any[] = Array.isArray(res) ? res : (res?.result ?? [])
-    return items.flatMap(r => r?.envelope ? [r.envelope as Envelope] : [])
+  // Fire-and-forget — typing indicators are best-effort
+  const sendTyping = (recipient: string, stop = false) => {
+    if (!activeSocket || activeSocket.destroyed) return
+    activeSocket.write(rpcLine('sendTyping', { ...(account ? { account } : {}), recipient: [recipient], stop }))
   }
 
-  // Copy each attachment to a temp file so the vision actor can read + delete it
-  // without touching signal-cli's own attachments directory.
-  const resolveAttachments = (attachments: Attachment[]): Promise<string[]> =>
-    Promise.all(attachments.map(async a => {
-      const src     = `${attachmentsDir}/${a.id}`
-      const ext     = a.contentType.split('/')[1] ?? 'jpeg'
-      const tmpPath = `${tmpdir()}/rorschach-${crypto.randomUUID()}.${ext}`
-      await Bun.write(tmpPath, Bun.file(src))
-      return tmpPath
-    }))
+  const attachmentPaths = (attachments: Attachment[]): string[] =>
+    attachments.map(a => `${attachmentsDir}/${a.id}`)
 
   return {
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(WsSendTopic, e => ({ type: '_send' as const, clientId: e.clientId, text: e.text }))
-        ctx.timers.startPeriodicTimer('poll', { type: '_poll' }, pollMs)
-        ctx.log.info(`signal actor polling ${url} every ${pollMs}ms`)
+        ctx.timers.startSingleTimer('reconnect', { type: '_reconnect' }, 0)
+        ctx.log.info(`signal actor: connecting to ${host}:${port}`)
         return { state }
       },
 
-      stopped: (state, ctx) => {
-        ctx.timers.cancel('poll')
-        ctx.log.info('signal actor stopped')
+      stopped: (state) => {
+        activeSocket?.destroy()
+        activeSocket = null
         return { state }
       },
     }),
 
     handler: onMessage<SignalMsg, SignalState>({
-      _poll: (state, _msg, ctx) => {
-        ctx.pipeToSelf(
-          pollReceive(),
-          envelopes => ({ type: '_pollResult' as const, envelopes }),
-          err       => ({ type: '_pollErr'    as const, error: String(err) }),
-        )
+      _reconnect: (state, _msg, ctx) => {
+        const self    = ctx.self
+        const socket  = createConnection(port, host)
+        let   lineBuf = ''
+
+        socket.on('connect', () => {
+          activeSocket = socket
+          ctx.log.info(`signal: connected to ${host}:${port}`)
+        })
+
+        socket.on('data', (chunk: Buffer) => {
+          lineBuf += chunk.toString()
+          const lines = lineBuf.split('\n')
+          lineBuf = lines.pop()!
+          for (const line of lines) if (line.trim()) self.send({ type: '_line', line: line.trim() })
+        })
+
+        socket.on('close', () => {
+          if (activeSocket === socket) {
+            activeSocket = null
+            self.send({ type: '_socketClosed' })
+          }
+        })
+
+        socket.on('error', (err: Error) => {
+          ctx.log.error(`signal: ${err.message}`)
+          // 'close' fires after 'error' — _socketClosed will schedule the reconnect
+        })
+
         return { state }
       },
 
-      _pollResult: (state, msg, ctx) => {
-        const events  = []
-        const seenIds = new Set(state.seenIds)
+      _socketClosed: (state, _msg, ctx) => {
+        ctx.log.warn(`signal: disconnected, reconnecting in ${reconnectMs}ms`)
+        ctx.timers.startSingleTimer('reconnect', { type: '_reconnect' }, reconnectMs)
+        return { state }
+      },
 
-        for (const envelope of msg.envelopes) {
-          const sent        = envelope.syncMessage?.sentMessage
-          const source      = envelope.source ?? envelope.sourceNumber ?? sent?.destination ?? sent?.destinationNumber
-          const text        = envelope.dataMessage?.message ?? sent?.message ?? ''
-          const attachments = envelope.dataMessage?.attachments ?? sent?.attachments ?? []
-
-          if (!source || (!text && attachments.length === 0)) continue
-
-          if (!seenIds.has(source)) {
-            seenIds.add(source)
-            events.push(emit(WsConnectTopic, { clientId: source }))
-          }
-
-          const incoming: IncomingMsg = { source, text, attachments }
-
-          if (attachments.length > 0) {
-            ctx.pipeToSelf(
-              resolveAttachments(attachments),
-              filePaths => ({ type: '_attachmentsRead' as const, msg: incoming, filePaths }),
-              ()        => ({ type: '_attachmentsRead' as const, msg: incoming, filePaths: [] }),
-            )
-          } else {
-            events.push(emit(WsMessageTopic, {
-              clientId:     source,
-              text,
-              traceId:      crypto.randomUUID(),
-              parentSpanId: crypto.randomUUID(),
-            }))
-          }
+      _line: (state, msg, ctx) => {
+        let parsed: any
+        try { parsed = JSON.parse(msg.line) } catch {
+          ctx.log.warn(`signal: malformed line: ${msg.line.slice(0, 80)}`)
+          return { state }
         }
 
-        return { state: { ...state, seenIds }, events }
-      },
+        const envelope: Envelope | undefined = parsed?.params?.envelope
+        if (!envelope) return { state }
 
-      _attachmentsRead: (state, msg) => ({
-        state,
-        events: [emit(WsMessageTopic, {
-          clientId:     msg.msg.source,
-          text:         msg.msg.text,
-          images:       msg.filePaths.length > 0 ? msg.filePaths : undefined,
+        const sent        = envelope.syncMessage?.sentMessage
+        const source      = envelope.source ?? envelope.sourceNumber ?? sent?.destination ?? sent?.destinationNumber
+        const text        = envelope.dataMessage?.message ?? sent?.message ?? ''
+        const attachments = envelope.dataMessage?.attachments ?? sent?.attachments ?? []
+
+        if (!source || (!text && attachments.length === 0)) return { state }
+
+        const seenIds = new Set(state.seenIds)
+        const events  = []
+
+        if (!seenIds.has(source)) {
+          seenIds.add(source)
+          events.push(emit(WsConnectTopic, { clientId: source }))
+        }
+
+        events.push(emit(WsMessageTopic, {
+          clientId:     source,
+          text,
+          ...(attachments.length > 0 ? { images: attachmentPaths(attachments) } : {}),
           traceId:      crypto.randomUUID(),
           parentSpanId: crypto.randomUUID(),
-        })],
-      }),
+        }))
 
-      _pollErr: (state, msg, ctx) => {
-        ctx.log.error(`signal: poll failed: ${msg.error}`)
-        return { state }
+        return { state: { ...state, seenIds }, events }
       },
 
       _send: (state, msg, ctx) => {
@@ -355,7 +359,6 @@ export const createSignalActor = (
             const isFirst = !state.pending.has(msg.clientId)
             if (isFirst) {
               sendTyping(msg.clientId)
-              // start refresh timer if not already running
               if (!ctx.timers.isActive('typing')) {
                 ctx.timers.startPeriodicTimer('typing', { type: '_refreshTyping' }, 10_000)
               }
@@ -373,7 +376,7 @@ export const createSignalActor = (
             sendTyping(msg.clientId, true)
             if (pending.size === 0) ctx.timers.cancel('typing')
             ctx.pipeToSelf(
-              send(msg.clientId, renderForSignal(raw)),
+              sendOverSocket(msg.clientId, renderForSignal(raw)),
               ()    => ({ type: '_sendOk'  as const }),
               (err) => ({ type: '_sendErr' as const, error: String(err) }),
             )
@@ -387,7 +390,7 @@ export const createSignalActor = (
             pendingAfterErr.delete(msg.clientId)
             if (pendingAfterErr.size === 0) ctx.timers.cancel('typing')
             ctx.pipeToSelf(
-              send(msg.clientId, { message: `⚠️ ${text}`, textStyles: [] }),
+              sendOverSocket(msg.clientId, { message: `⚠️ ${text}`, textStyles: [] }),
               ()    => ({ type: '_sendOk'  as const }),
               (err) => ({ type: '_sendErr' as const, error: String(err) }),
             )
