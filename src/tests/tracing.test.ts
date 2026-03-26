@@ -218,8 +218,9 @@ describe('distributed tracing', () => {
 
     // A fake tool actor ref that captures message headers and replies immediately
     const fakeToolRef: import('../system/types.ts').ActorRef<ToolInvokeMsg> = {
-      name: 'fake-tool',
-      send: (msg: ToolInvokeMsg, headers?: MessageHeaders) => {
+      name:    'fake-tool',
+      isAlive: () => true,
+      send:    (msg: ToolInvokeMsg, headers?: MessageHeaders) => {
         capturedHeaders = headers
         msg.replyTo.send({ type: 'toolResult', result: 'fake result' })
       },

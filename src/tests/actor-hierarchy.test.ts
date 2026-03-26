@@ -216,7 +216,7 @@ describe('Watch: cross-hierarchy observation', () => {
       handler: (state) => ({ state }),
     }
 
-    const watcherDef: ActorDef<ActorRef<string>, null> = {
+    const watcherDef: ActorDef<ActorRef<unknown>, null> = {
       handler: (state, ref, ctx) => {
         ctx.watch(ref)
         return { state }
@@ -232,7 +232,7 @@ describe('Watch: cross-hierarchy observation', () => {
     const watcher = system.spawn('watcher', watcherDef, null)
     await tick()
 
-    watcher.send(targetRef)
+    watcher.send(targetRef as ActorRef<unknown>)
     await tick()
 
     // Stop the target — watcher should receive terminated
@@ -256,7 +256,7 @@ describe('Watch: cross-hierarchy observation', () => {
       handler: (state) => ({ state }),
     }
 
-    const watcherDef: ActorDef<ActorRef<string>, null> = {
+    const watcherDef: ActorDef<ActorRef<unknown>, null> = {
       handler: (state, ref, ctx) => {
         // Target is already stopped — should get immediate terminated
         ctx.watch(ref)
@@ -280,7 +280,7 @@ describe('Watch: cross-hierarchy observation', () => {
     const watcher = system.spawn('watcher', watcherDef, null)
     await tick()
 
-    watcher.send(targetRef)
+    watcher.send(targetRef as ActorRef<unknown>)
     await tick()
 
     const terminated = watcherEvents.filter((e) => e.type === 'terminated')
@@ -300,7 +300,7 @@ describe('Watch: cross-hierarchy observation', () => {
       handler: (state) => ({ state }),
     }
 
-    type WatcherMsg = { type: 'watch'; ref: ActorRef<string> } | { type: 'unwatch'; ref: ActorRef<string> }
+    type WatcherMsg = { type: 'watch'; ref: ActorRef<unknown> } | { type: 'unwatch'; ref: ActorRef<unknown> }
     const watcherDef: ActorDef<WatcherMsg, null> = {
       handler: (state, msg, ctx) => {
         if (msg.type === 'watch') ctx.watch(msg.ref)
@@ -318,10 +318,10 @@ describe('Watch: cross-hierarchy observation', () => {
     const watcher = system.spawn('watcher', watcherDef, null)
     await tick()
 
-    watcher.send({ type: 'watch', ref: targetRef })
+    watcher.send({ type: 'watch', ref: targetRef as ActorRef<unknown> })
     await tick()
 
-    watcher.send({ type: 'unwatch', ref: targetRef })
+    watcher.send({ type: 'unwatch', ref: targetRef as ActorRef<unknown> })
     await tick()
 
     // Stop target — watcher should NOT receive terminated (unwatched)
@@ -341,7 +341,7 @@ describe('Watch: cross-hierarchy observation', () => {
       handler: (state) => ({ state }),
     }
 
-    const watcherDef: ActorDef<ActorRef<string>, null> = {
+    const watcherDef: ActorDef<ActorRef<unknown>, null> = {
       handler: (state, ref, ctx) => {
         ctx.watch(ref)
         return { state }
@@ -358,8 +358,8 @@ describe('Watch: cross-hierarchy observation', () => {
     await tick()
 
     // Watch twice
-    watcher.send(targetRef)
-    watcher.send(targetRef)
+    watcher.send(targetRef as ActorRef<unknown>)
+    watcher.send(targetRef as ActorRef<unknown>)
     await tick()
 
     system.stop({ name: 'system/target' })
@@ -379,7 +379,7 @@ describe('Watch: cross-hierarchy observation', () => {
       handler: (state) => ({ state }),
     }
 
-    const watcherDef: ActorDef<ActorRef<string>, null> = {
+    const watcherDef: ActorDef<ActorRef<unknown>, null> = {
       handler: (state, ref, ctx) => {
         ctx.watch(ref)
         return { state }
@@ -390,7 +390,7 @@ describe('Watch: cross-hierarchy observation', () => {
     const watcher = system.spawn('watcher', watcherDef, null)
     await tick()
 
-    watcher.send(targetRef)
+    watcher.send(targetRef as ActorRef<unknown>)
     await tick()
 
     // Stop watcher first — its watches should be cleaned up
@@ -412,7 +412,7 @@ describe('Watch: cross-hierarchy observation', () => {
       handler: (state) => ({ state }),
     }
 
-    const makeWatcher = (events: LifecycleEvent[]): ActorDef<ActorRef<string>, null> => ({
+    const makeWatcher = (events: LifecycleEvent[]): ActorDef<ActorRef<unknown>, null> => ({
       handler: (state, ref, ctx) => {
         ctx.watch(ref)
         return { state }
@@ -429,8 +429,8 @@ describe('Watch: cross-hierarchy observation', () => {
     const watcherB = system.spawn('watcher-b', makeWatcher(eventsB), null)
     await tick()
 
-    watcherA.send(targetRef)
-    watcherB.send(targetRef)
+    watcherA.send(targetRef as ActorRef<unknown>)
+    watcherB.send(targetRef as ActorRef<unknown>)
     await tick()
 
     system.stop({ name: 'system/target' })
