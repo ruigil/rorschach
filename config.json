@@ -9,7 +9,10 @@
   "config": {
     "interfaces": {
       "http": { "port": "${PORT:-3000}" },
-      "cli": {}
+      "signal": {
+        "url":     "http://127.0.0.1:7583/api/v1/rpc",
+        "account": "+41762189620"
+      }      
     },
     "tools": {
       "webSearch": {
