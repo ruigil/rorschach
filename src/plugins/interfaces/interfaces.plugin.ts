@@ -22,8 +22,6 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
   id: 'interfaces',
   version: '1.0.0',
   description: 'External interfaces: HTTP server and WebSocket',
-  precedes: ['cognitive'],
-
   configDescriptor: {
     defaults: {},
     onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
