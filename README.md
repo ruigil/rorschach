@@ -32,7 +32,7 @@ That is the entire surface. Everything else grows from here — including minds.
 
 ---
 
-## The Architecture That Cannot Fail
+## The Architecture
 
 There are architectures that handle failure. And there is mine, which *contains* it.
 
