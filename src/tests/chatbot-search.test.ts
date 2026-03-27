@@ -18,7 +18,7 @@ const LLM_PROVIDER_ADAPTER_OPTS = {
   model: 'openai/gpt-4o-mini',
 }
 
-const INITIAL_REACT_STATE: ReActState = {
+const INITIAL_REACT_STATE: Omit<ReActState, 'llmRef'> = {
   history:          [],
   tools:            {},
   modelInfo:        null,
@@ -103,7 +103,7 @@ const modelInfoStub = () => new Response('Not Found', { status: 404 })
 
 const spawnReAct = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
   const llmRef = system.spawn('llm-provider', createLlmProviderActor({ adapter: createOpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }), null)
-  return system.spawn('react', createReActActor({ clientId: CLIENT_ID, llmRef, model: LLM_PROVIDER_ADAPTER_OPTS.model }), INITIAL_REACT_STATE)
+  return system.spawn('react', createReActActor({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model }), { ...INITIAL_REACT_STATE, llmRef })
 }
 
 // ═══════════════════════════════════════════════════════════════════

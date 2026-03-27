@@ -5,6 +5,7 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { WsSendTopic, MemoryStreamTopic } from '../../system/topics.ts'
 import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply, ToolSchema } from '../../system/tools.ts'
 import { ToolRegistrationTopic } from '../../system/tools.ts'
+import { LlmProviderTopic } from './llm-provider.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
@@ -20,9 +21,10 @@ import type {
 export type ReActMsg =
   | { type: 'userMessage'; text: string; images?: string[]; traceId: string; parentSpanId: string }
   | LlmProviderReply
-  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
-  | { type: '_toolUnregistered'; name: string }
-  | { type: '_toolResult';       toolName: string; toolCallId: string; reply: ToolReply }
+  | { type: '_toolRegistered';      name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
+  | { type: '_toolUnregistered';    name: string }
+  | { type: '_toolResult';          toolName: string; toolCallId: string; reply: ToolReply }
+  | { type: '_llmProviderUpdated';  ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── State ───
 
@@ -50,6 +52,7 @@ export type ReActState = {
   tools:            ToolCollection
   modelInfo:        ModelInfo | null
   sessionUsage:     TokenUsage
+  llmRef:           ActorRef<LlmProviderMsg> | null
 
   // Active turn (set on userMessage, cleared on llmDone/llmError)
   requestId:        string | null
@@ -67,7 +70,6 @@ export type ReActState = {
 
 export type ReActActorOptions = {
   clientId:       string
-  llmRef:         ActorRef<LlmProviderMsg>
   model:          string
   systemPrompt?:  string
   historyWindow?: number
@@ -84,9 +86,9 @@ const trimHistory = (history: ConversationMessage[], maxTurns: number): Conversa
 // ─── Actor definition ───
 
 export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg, ReActState> => {
-  const { clientId, llmRef, model, systemPrompt, historyWindow } = options
+  const { clientId, model, systemPrompt, historyWindow } = options
 
-  // ─── Shared tool registration handlers (used across all behaviors) ───
+  // ─── Shared handlers (used across all behaviors) ───
 
   const toolRegistered = (state: ReActState, msg: Extract<ReActMsg, { type: '_toolRegistered' }>): { state: ReActState } => ({
     state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } },
@@ -96,6 +98,10 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
     const { [msg.name]: _, ...rest } = state.tools
     return { state: { ...state, tools: rest } }
   }
+
+  const llmProviderUpdated = (state: ReActState, msg: Extract<ReActMsg, { type: '_llmProviderUpdated' }>): { state: ReActState } => ({
+    state: { ...state, llmRef: msg.ref },
+  })
 
   // ─── Forward declarations for circular references ───
 
@@ -130,7 +136,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
 
       const requestId = crypto.randomUUID()
 
-      llmRef.send({
+      state.llmRef?.send({
         type: 'stream',
         requestId,
         model,
@@ -154,8 +160,9 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
       }
     },
 
-    _toolRegistered:   toolRegistered,
-    _toolUnregistered: toolUnregistered,
+    _toolRegistered:     toolRegistered,
+    _toolUnregistered:   toolUnregistered,
+    _llmProviderUpdated: llmProviderUpdated,
   })
 
   // ─── Handler: awaitingLlm — LLM running, will return tool calls or text ───
@@ -327,8 +334,9 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
       }
     },
 
-    _toolRegistered:   toolRegistered,
-    _toolUnregistered: toolUnregistered,
+    _toolRegistered:     toolRegistered,
+    _toolUnregistered:   toolUnregistered,
+    _llmProviderUpdated: llmProviderUpdated,
   })
 
   // ─── Handler: toolLoop — tools executing, accumulating results ───
@@ -383,7 +391,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
       const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
       const tools = toolSchemas.length > 0 ? toolSchemas : undefined
 
-      llmRef.send({
+      state.llmRef?.send({
         type: 'stream',
         requestId,
         model,
@@ -407,8 +415,9 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
       }
     },
 
-    _toolRegistered:   toolRegistered,
-    _toolUnregistered: toolUnregistered,
+    _toolRegistered:     toolRegistered,
+    _toolUnregistered:   toolUnregistered,
+    _llmProviderUpdated: llmProviderUpdated,
   })
 
   return {
@@ -420,8 +429,14 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
             : { type: '_toolRegistered' as const, name: event.name, schema: event.schema, ref: event.ref },
         )
 
-        const modelInfo = await ask<LlmProviderMsg, ModelInfo | null>(llmRef, (replyTo) => ({ type: 'fetchModelInfo', model, replyTo }))
-          .catch(() => null)
+        context.subscribe(LlmProviderTopic, (event) =>
+          ({ type: '_llmProviderUpdated' as const, ref: event.ref }),
+        )
+
+        const modelInfo = state.llmRef
+          ? await ask<LlmProviderMsg, ModelInfo | null>(state.llmRef, (replyTo) => ({ type: 'fetchModelInfo', model, replyTo }))
+              .catch(() => null)
+          : null
 
         return { state: { ...state, modelInfo } }
       },

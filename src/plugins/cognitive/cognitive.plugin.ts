@@ -150,24 +150,53 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
 
   handler: onMessage<PluginMsg, PluginState>({
     config: (state, msg, ctx) => {
-      if (state.sessionManager.ref) ctx.stop(state.sessionManager.ref)
-      if (state.llmProvider.ref)    ctx.stop(state.llmProvider.ref)
+      // Only restart the LLM provider and vision actor — keep the session manager alive
+      // so existing WebSocket sessions survive config updates (e.g. toggling reasoning).
+      if (state.llmProvider.ref) ctx.stop(state.llmProvider.ref)
       if (state.vision.ref) {
         ctx.stop(state.vision.ref)
         ctx.deleteRetained(ToolRegistrationTopic, ANALYZE_IMAGE_TOOL_NAME, { name: ANALYZE_IMAGE_TOOL_NAME, ref: null })
       }
 
       const newLlmProviderConfig = msg.slice?.llmProvider ?? null
-      const newChatbotConfig     = msg.slice?.chatbot ?? null
       const newVisionConfig      = msg.slice?.visionActor ?? null
       const gen = state.llmProvider.gen + 1
 
       if (!newLlmProviderConfig) {
+        ctx.publishRetained(LlmProviderTopic, 'ref', { ref: null })
+        if (state.sessionManager.ref) ctx.stop(state.sessionManager.ref)
         return { state: { ...state, ...EMPTY_STATE, initialized: true } }
       }
 
-      const children = spawnAll(ctx, newLlmProviderConfig, newChatbotConfig, newVisionConfig, gen)
-      return { state: { ...state, ...children } }
+      const llmProviderRef = ctx.spawn(
+        `llm-provider-${gen}`,
+        createLlmProviderActor({ adapter: createOpenRouterAdapter({ apiKey: newLlmProviderConfig.apiKey, reasoning: newLlmProviderConfig.reasoning }) }),
+        null,
+      ) as ActorRef<LlmProviderMsg>
+      ctx.publishRetained(LlmProviderTopic, 'ref', { ref: llmProviderRef })
+
+      let visionRef = null as typeof state.vision.ref
+      if (newVisionConfig) {
+        const ref = ctx.spawn(
+          `vision-actor-${gen}`,
+          createVisionActor({ llmRef: llmProviderRef, model: newVisionConfig.model }),
+          { pending: {} },
+        )
+        ctx.publishRetained(ToolRegistrationTopic, ANALYZE_IMAGE_TOOL_NAME, {
+          name: ANALYZE_IMAGE_TOOL_NAME,
+          schema: ANALYZE_IMAGE_SCHEMA,
+          ref: ref as unknown as ActorRef<ToolInvokeMsg>,
+        })
+        visionRef = ref
+      }
+
+      return {
+        state: {
+          ...state,
+          llmProvider: { config: newLlmProviderConfig, ref: llmProviderRef, gen },
+          vision:      { config: newVisionConfig, ref: visionRef, gen },
+        },
+      }
     },
   }),
 }

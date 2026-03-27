@@ -29,11 +29,12 @@ export type SessionManagerOptions = {
 
 // ─── Initial ReAct state ───
 
-const initialReActState = (): ReActState => ({
+const initialReActState = (llmRef: ActorRef<LlmProviderMsg>): ReActState => ({
   history:          [],
   tools:            {},
   modelInfo:        null,
   sessionUsage:     { promptTokens: 0, completionTokens: 0 },
+  llmRef,
   requestId:        null,
   turnMessages:     null,
   spanHandles:      null,
@@ -72,8 +73,8 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
         const { clientId } = message
         const ref = context.spawn(
           `react-${clientId}`,
-          createReActActor({ clientId, llmRef, model, systemPrompt, historyWindow }),
-          initialReActState(),
+          createReActActor({ clientId, model, systemPrompt, historyWindow }),
+          initialReActState(llmRef),
         )
         return { state: { sessions: { ...state.sessions, [clientId]: ref } } }
       },
