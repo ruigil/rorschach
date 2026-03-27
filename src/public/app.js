@@ -1,3 +1,109 @@
+// ─── Void canvas particle field ───
+
+const voidCanvas = document.getElementById('void-canvas')
+const voidCtx    = voidCanvas.getContext('2d')
+let voidRaf = null
+
+function resizeVoidCanvas() {
+  voidCanvas.width  = window.innerWidth
+  voidCanvas.height = window.innerHeight
+}
+
+const PARTICLE_COUNT = 190
+let particles = []
+
+// Star color palette — drawn per-particle at init, not per-frame
+const STAR_COLORS = [
+  // White/blue-white stars — most common background field
+  [220, 240, 255], [200, 230, 255], [240, 245, 255], [255, 255, 255],
+  // Yellow stars
+  [255, 230, 120], [255, 220, 80],  [255, 200, 60],
+  // Orange stars
+  [255, 170, 60],  [255, 140, 40],
+  // Red stars
+  [255, 90,  60],  [255, 60,  40],  [230, 50,  30],
+  // Cyan signal
+  [0,   196, 212], [40,  210, 220],
+  // Violet/purple hints
+  [160, 60,  220], [130, 40,  200],
+]
+
+function makeParticle(type, w, h) {
+  const isGiant = type === 'giant'
+  // Pick a color — giants always cyan, stars pick from the full palette
+  const colorIdx = isGiant ? 12 : Math.floor(Math.random() * STAR_COLORS.length)
+  const [cr, cg, cb] = STAR_COLORS[colorIdx]
+  return {
+    x:           Math.random() * w,
+    y:           isGiant ? (0.45 + Math.random() * 0.65) * h : Math.random() * h,
+    r:           isGiant ? Math.random() * 3.5 + 2.5
+                         : Math.random() * 1.1 + 0.3,
+    baseOpacity: isGiant ? Math.random() * 0.5 + 0.35
+                         : Math.random() * 0.55 + 0.15,
+    phase:      Math.random() * Math.PI * 2,
+    phaseSpeed: isGiant ? Math.random() * 0.003 + 0.001 : Math.random() * 0.009 + 0.002,
+    vx:         (Math.random() - 0.5) * (isGiant ? 0.02 : 0.055),
+    vy:         (Math.random() - 0.5) * (isGiant ? 0.02 : 0.055),
+    cr, cg, cb,
+    isGiant,
+    isStatic: !isGiant && Math.random() < 0.55,
+  }
+}
+
+function initVoidParticles() {
+  const w = voidCanvas.width, h = voidCanvas.height
+  particles = [
+    ...Array.from({ length: 6   }, () => makeParticle('giant', w, h)),
+    ...Array.from({ length: 184 }, () => makeParticle('star',  w, h)),
+  ]
+}
+
+function drawVoidFrame() {
+  const w = voidCanvas.width, h = voidCanvas.height
+  voidCtx.clearRect(0, 0, w, h)
+  for (const p of particles) {
+    p.phase += p.phaseSpeed
+    const opacity = p.baseOpacity * (0.45 + 0.55 * Math.abs(Math.sin(p.phase)))
+    if (!p.isStatic) {
+      p.x += p.vx; p.y += p.vy
+      if (p.x < -4) p.x = w + 4
+      if (p.x > w + 4) p.x = -4
+      if (p.y < -4) p.y = h + 4
+      if (p.y > h + 4) p.y = -4
+    }
+    if (p.isGiant) {
+      const grad = voidCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 4.5)
+      grad.addColorStop(0,    `rgba(0,196,212,${(opacity * 0.9).toFixed(3)})`)
+      grad.addColorStop(0.35, `rgba(0,196,212,${(opacity * 0.35).toFixed(3)})`)
+      grad.addColorStop(1,    `rgba(0,196,212,0)`)
+      voidCtx.beginPath()
+      voidCtx.arc(p.x, p.y, p.r * 4.5, 0, 6.283185)
+      voidCtx.fillStyle = grad
+      voidCtx.fill()
+      voidCtx.beginPath()
+      voidCtx.arc(p.x, p.y, p.r * 0.45, 0, 6.283185)
+      voidCtx.fillStyle = `rgba(200,248,255,${Math.min(1, opacity * 1.5).toFixed(3)})`
+      voidCtx.fill()
+    } else {
+      voidCtx.beginPath()
+      voidCtx.arc(p.x, p.y, p.r, 0, 6.283185)
+      voidCtx.fillStyle = `rgba(${p.cr},${p.cg},${p.cb},${opacity.toFixed(3)})`
+      voidCtx.fill()
+    }
+  }
+  voidRaf = requestAnimationFrame(drawVoidFrame)
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { cancelAnimationFrame(voidRaf); voidRaf = null }
+  else if (!voidRaf) { voidRaf = requestAnimationFrame(drawVoidFrame) }
+})
+window.addEventListener('resize', () => { resizeVoidCanvas(); initVoidParticles() }, { passive: true })
+
+resizeVoidCanvas()
+initVoidParticles()
+voidRaf = requestAnimationFrame(drawVoidFrame)
+
 // ─── Markdown renderer ───
 
 marked.use({ gfm: true, breaks: true })
@@ -209,12 +315,16 @@ chatForm.addEventListener('submit', (e) => {
   clearPendingImages()
   setWaiting(true)
   showThinking()
+  const logoMark = document.querySelector('.logo-mark')
+  logoMark.classList.add('noticing')
+  setTimeout(() => logoMark.classList.remove('noticing'), 700)
 })
 
 function setWaiting(waiting) {
   isWaiting = waiting
   input.disabled  = waiting || !isConnected
   send.disabled   = waiting || !isConnected
+  document.querySelector('header').classList.toggle('streaming', waiting)
   if (!waiting && document.querySelector('[data-tab="chat"].active')) input.focus()
 }
 
@@ -380,6 +490,8 @@ function handleChatMsg(msg) {
   } else if (msg.type === 'chunk') {
     if (!streamBubble) {
       removeThinking()
+      messagesEl.classList.add('receiving')
+      setTimeout(() => messagesEl.classList.remove('receiving'), 700)
       if (!streamWrap) {
         streamWrap = createMessageWrap()
         messagesEl.appendChild(streamWrap)
@@ -667,13 +779,13 @@ document.getElementById('memory-refresh').addEventListener('click', fetchKgraph)
 // ─── Knowledge graph ───
 
 const LABEL_COLORS = {
-  Person:     { fill: 'rgba(54,184,204,0.15)',  stroke: '#36b8cc' },
-  User:       { fill: 'rgba(69,196,154,0.15)',  stroke: '#45c49a' },
-  Project:    { fill: 'rgba(201,150,60,0.15)',  stroke: '#c9963c' },
-  Event:      { fill: 'rgba(122,184,204,0.15)', stroke: '#7ab8cc' },
-  Preference: { fill: 'rgba(201,95,82,0.15)',   stroke: '#c95f52' },
+  Person:     { fill: 'rgba(0,196,212,0.12)',  stroke: '#00c4d4' },
+  User:       { fill: 'rgba(57,232,160,0.12)', stroke: '#39e8a0' },
+  Project:    { fill: 'rgba(196,132,58,0.12)', stroke: '#c4843a' },
+  Event:      { fill: 'rgba(91,160,184,0.12)', stroke: '#5ba0b8' },
+  Preference: { fill: 'rgba(224,96,48,0.12)',  stroke: '#e06030' },
 }
-const DEFAULT_NODE_COLOR = { fill: 'rgba(30,63,84,0.4)', stroke: '#2a5468' }
+const DEFAULT_NODE_COLOR = { fill: 'rgba(10,24,32,0.5)', stroke: '#1a3548' }
 
 function nodeColor(label)       { return (LABEL_COLORS[label] || DEFAULT_NODE_COLOR).fill }
 function nodeColorStroke(label) { return (LABEL_COLORS[label] || DEFAULT_NODE_COLOR).stroke }
