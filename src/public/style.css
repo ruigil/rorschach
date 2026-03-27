@@ -1693,7 +1693,7 @@ button[type="submit"] svg { pointer-events: none; }
 }
 
 .waterfall-bar.op-request        { background: var(--accent-dim);              border: 1px solid var(--accent);                    }
-.waterfall-bar.op-chatbot         { background: rgba(139,92,246,0.15);          border: 1px solid rgba(139,92,246,0.45);            }
+.waterfall-bar.op-react            { background: rgba(139,92,246,0.15);          border: 1px solid rgba(139,92,246,0.45);            }
 .waterfall-bar.op-llm-call        { background: rgba(139,92,246,0.2);           border: 1px solid rgba(139,92,246,0.55);            }
 .waterfall-bar.op-llm-response    { background: rgba(139,92,246,0.2);           border: 1px solid rgba(139,92,246,0.55);            }
 .waterfall-bar.op-llm-synthesize  { background: rgba(168,85,247,0.2);           border: 1px solid rgba(168,85,247,0.55);            }
@@ -1764,4 +1764,54 @@ button[type="submit"] svg { pointer-events: none; }
   font-size: 0.72rem;
   line-height: 1.55;
   opacity: 0.8;
+}
+
+/* ─── Knowledge graph ─── */
+
+#memory-graph {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#memory-graph svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.graph-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text);
+  max-width: 260px;
+  z-index: 10;
+  line-height: 1.5;
+}
+
+.graph-tooltip strong {
+  display: block;
+  color: var(--accent);
+  margin-bottom: 4px;
+  font-size: 0.72rem;
+}
+
+.graph-tooltip pre {
+  margin: 0;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.obs-memory-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }

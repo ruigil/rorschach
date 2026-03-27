@@ -20,7 +20,7 @@
         "count": 20
       },
       "bash":{
-        "cwd": "/home/rorschach"
+        "cwd": "/workspace"
       }
     },
     "cognitive": {
@@ -37,7 +37,12 @@
       }
     },
     "memory" : {
-      "kgraph": { "dbPath" : "./memory/kgraph" }
+      "kgraph": { "dbPath" : "./workspace/memory/kgraph" },
+      "memory": {
+        "model": "${OPENROUTER_MEMORY_MODEL:-x-ai/grok-4.1-fast}",
+        "userId": "default",
+        "consolidationIntervalMs": 300000
+      }
     },
     "observability": {
       "jsonlLogger": {

@@ -2,7 +2,7 @@ import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../system/types.ts'
 import { ask } from '../../system/ask.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { WsSendTopic } from '../../system/topics.ts'
+import { WsSendTopic, MemoryStreamTopic } from '../../system/topics.ts'
 import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply, ToolSchema } from '../../system/tools.ts'
 import { ToolRegistrationTopic } from '../../system/tools.ts'
 import type {
@@ -17,7 +17,7 @@ import type {
 
 // ─── Message protocol ───
 
-export type ChatbotMsg =
+export type ReActMsg =
   | { type: 'userMessage'; text: string; images?: string[]; traceId: string; parentSpanId: string }
   | LlmProviderReply
   | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
@@ -44,7 +44,7 @@ type SpanHandles = {
   toolSpans:   Record<string, import('../../system/types.ts').SpanHandle>
 }
 
-export type ChatbotState = {
+export type ReActState = {
   // Permanent
   history:          ConversationMessage[]
   tools:            ToolCollection
@@ -65,7 +65,7 @@ export type ChatbotState = {
 
 // ─── Options ───
 
-export type ChatbotActorOptions = {
+export type ReActActorOptions = {
   clientId:       string
   llmRef:         ActorRef<LlmProviderMsg>
   model:          string
@@ -83,28 +83,28 @@ const trimHistory = (history: ConversationMessage[], maxTurns: number): Conversa
 
 // ─── Actor definition ───
 
-export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<ChatbotMsg, ChatbotState> => {
+export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg, ReActState> => {
   const { clientId, llmRef, model, systemPrompt, historyWindow } = options
 
   // ─── Shared tool registration handlers (used across all behaviors) ───
 
-  const toolRegistered = (state: ChatbotState, msg: Extract<ChatbotMsg, { type: '_toolRegistered' }>): { state: ChatbotState } => ({
+  const toolRegistered = (state: ReActState, msg: Extract<ReActMsg, { type: '_toolRegistered' }>): { state: ReActState } => ({
     state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } },
   })
 
-  const toolUnregistered = (state: ChatbotState, msg: Extract<ChatbotMsg, { type: '_toolUnregistered' }>): { state: ChatbotState } => {
+  const toolUnregistered = (state: ReActState, msg: Extract<ReActMsg, { type: '_toolUnregistered' }>): { state: ReActState } => {
     const { [msg.name]: _, ...rest } = state.tools
     return { state: { ...state, tools: rest } }
   }
 
   // ─── Forward declarations for circular references ───
 
-  let awaitingLlmHandler: MessageHandler<ChatbotMsg, ChatbotState>
-  let toolLoopHandler: MessageHandler<ChatbotMsg, ChatbotState>
+  let awaitingLlmHandler: MessageHandler<ReActMsg, ReActState>
+  let toolLoopHandler: MessageHandler<ReActMsg, ReActState>
 
   // ─── Handler: idle — waiting for user input ───
 
-  const idleHandler: MessageHandler<ChatbotMsg, ChatbotState> = onMessage<ChatbotMsg, ChatbotState>({
+  const idleHandler: MessageHandler<ReActMsg, ReActState> = onMessage<ReActMsg, ReActState>({
     userMessage: (state, message, context) => {
       const { text, images, traceId, parentSpanId } = message
 
@@ -122,7 +122,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         { role: 'user', content: userText },
       ]
 
-      const requestSpan = context.trace.child(traceId, parentSpanId, 'chatbot', { preview: text.slice(0, 80) })
+      const requestSpan = context.trace.child(traceId, parentSpanId, 'react', { preview: text.slice(0, 80) })
       const llmSpan = context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
 
       const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
@@ -160,7 +160,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
   // ─── Handler: awaitingLlm — LLM running, will return tool calls or text ───
 
-  awaitingLlmHandler = onMessage<ChatbotMsg, ChatbotState>({
+  awaitingLlmHandler = onMessage<ReActMsg, ReActState>({
     llmToolCalls: (state, message, context) => {
       const { requestId, calls, usage } = message
       if (requestId !== state.requestId) return { state }
@@ -280,6 +280,9 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       const rawHistory: ConversationMessage[] = [...state.history, { role: 'assistant', content: state.pending }]
       const newHistory = historyWindow ? trimHistory(rawHistory, historyWindow) : rawHistory
 
+      const userMsg = state.turnMessages?.findLast(m => m.role === 'user')
+      const userText = typeof userMsg?.content === 'string' ? userMsg.content : ''
+
       return {
         state: {
           ...state,
@@ -293,6 +296,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           sessionUsage: newSession,
         },
         events: [
+          emit(MemoryStreamTopic, { userId: clientId, userText, assistantText: state.pending, timestamp: Date.now() }),
           emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
           emit(WsSendTopic, { clientId, text: JSON.stringify({
             type: 'usage',
@@ -329,7 +333,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
   // ─── Handler: toolLoop — tools executing, accumulating results ───
 
-  toolLoopHandler = onMessage<ChatbotMsg, ChatbotState>({
+  toolLoopHandler = onMessage<ReActMsg, ReActState>({
     _toolResult: (state, message, context) => {
       const { toolName, toolCallId, reply } = message
       const batch = state.pendingBatch!

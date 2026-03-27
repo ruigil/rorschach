@@ -12,6 +12,8 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
 import { LlmProviderTopic } from '../cognitive/llm-provider.ts'
 import type { LlmProviderMsg } from '../cognitive/llm-provider.ts'
+import { KgraphTopic } from '../memory/kgraph.ts'
+import type { KgraphMsg, KgraphGraph } from '../memory/kgraph.ts'
 
 // ─── Public directory (resolved relative to this module) ───
 const PUBLIC_DIR = join(import.meta.dir, '../..', 'public')
@@ -39,6 +41,7 @@ export type HttpMessage =
   | { type: 'send'; clientId: string; text: string }
   | { type: 'config'; data: unknown }
   | { type: '_llmProviderChanged'; ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_kgraphChanged'; ref: ActorRef<KgraphMsg> | null }
 
 // ─── Image helpers ───
 
@@ -59,6 +62,7 @@ export type HttpState = {
   connections: number
   activeSpans: Record<string, SpanHandle>
   llmProviderRef: ActorRef<LlmProviderMsg> | null
+  kgraphRef: ActorRef<KgraphMsg> | null
 }
 
 // ─── WebSocket attachment data ───
@@ -109,6 +113,7 @@ export const createHttpActor = (
   // Mutable refs captured by Bun's server callbacks (which run outside the actor message loop)
   let selfRef: ActorRef<HttpMessage> | null = null
   let llmProviderRef: ActorRef<LlmProviderMsg> | null = null
+  let kgraphRef: ActorRef<KgraphMsg> | null = null
 
   return {
     handler: onMessage({
@@ -214,6 +219,11 @@ export const createHttpActor = (
         llmProviderRef = message.ref
         return { state: { ...state, llmProviderRef: message.ref } }
       },
+
+      _kgraphChanged: (state, message) => {
+        kgraphRef = message.ref
+        return { state: { ...state, kgraphRef: message.ref } }
+      },
     }),
 
     lifecycle: onLifecycle({
@@ -236,6 +246,11 @@ export const createHttpActor = (
           ref: e.ref,
         }))
 
+        context.subscribe(KgraphTopic, (e) => ({
+          type: '_kgraphChanged' as const,
+          ref: e.ref,
+        }))
+
         const server = Bun.serve<WsData>({
           port,
 
@@ -252,6 +267,14 @@ export const createHttpActor = (
                 } catch { /* timeout — fall through to fallback */ }
               }
               return new Response(JSON.stringify(FALLBACK_MODELS), { headers: { 'Content-Type': 'application/json' } })
+            }
+
+            // Kgraph dump API
+            if (req.method === 'GET' && url.pathname === '/kgraph') {
+              const graph: KgraphGraph = kgraphRef
+                ? await ask(kgraphRef, replyTo => ({ type: 'dump' as const, replyTo }), { timeoutMs: 5_000 })
+                : { nodes: [], edges: [] }
+              return new Response(JSON.stringify(graph), { headers: { 'Content-Type': 'application/json' } })
             }
 
             // Config API

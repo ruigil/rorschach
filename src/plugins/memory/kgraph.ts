@@ -1,7 +1,19 @@
 import { GrafeoDB } from '@grafeo-db/js'
+import { createTopic } from '../../system/types.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../system/tools.ts'
+
+// ─── Graph dump types ───
+
+export type KgraphNode = { id: number; labels: string[]; properties: Record<string, unknown> }
+export type KgraphEdge = { id: number; type: string; source: number; target: number; properties: Record<string, unknown> }
+export type KgraphGraph = { nodes: KgraphNode[]; edges: KgraphEdge[] }
+
+// ─── Topic: published (retained) when kgraph actor is spawned/replaced ───
+
+export type KgraphRefEvent = { ref: ActorRef<KgraphMsg> | null }
+export const KgraphTopic = createTopic<KgraphRefEvent>('memory.kgraph')
 
 // ─── Tool names & schemas ───
 
@@ -58,10 +70,13 @@ export type KgraphState = { db: GrafeoDB } | null
 
 export type KgraphMsg =
   | ToolInvokeMsg
+  | { type: 'dump'; replyTo: ActorRef<KgraphGraph> }
   | { type: '_queryDone'; rows: unknown[]; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_queryErr';  error: string;   replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_writeDone'; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_writeErr';  error: string;   replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_dumpDone';  graph: KgraphGraph; replyTo: ActorRef<KgraphGraph> }
+  | { type: '_dumpErr';   error: string;      replyTo: ActorRef<KgraphGraph> }
 
 // ─── Actor definition ───
 
@@ -145,6 +160,37 @@ export const createKgraphActor = (dbPath: string): ActorDef<KgraphMsg, KgraphSta
       const { replyTo, span } = message
       span?.done()
       replyTo.send({ type: 'toolResult', result: 'ok' })
+      return { state }
+    },
+
+    dump: (state, message, ctx) => {
+      if (!state?.db) {
+        message.replyTo.send({ nodes: [], edges: [] })
+        return { state }
+      }
+
+      ctx.pipeToSelf(
+        Promise.all([
+          state.db.execute('MATCH (n) RETURN n'),
+          state.db.execute('MATCH ()-[r]->() RETURN r'),
+        ]).then(([nodesResult, edgesResult]) => ({
+          nodes: nodesResult.nodes().map(n => ({ id: n.id, labels: n.labels, properties: n.properties() as Record<string, unknown> })),
+          edges: edgesResult.edges().map(e => ({ id: e.id, type: e.edgeType, source: e.sourceId, target: e.targetId, properties: e.properties() as Record<string, unknown> })),
+        })),
+        (graph)  => ({ type: '_dumpDone' as const, graph, replyTo: message.replyTo }),
+        (error)  => ({ type: '_dumpErr'  as const, error: String(error), replyTo: message.replyTo }),
+      )
+      return { state }
+    },
+
+    _dumpDone: (state, message) => {
+      message.replyTo.send(message.graph)
+      return { state }
+    },
+
+    _dumpErr: (state, message, ctx) => {
+      ctx.log.error('kgraph dump failed', { error: message.error })
+      message.replyTo.send({ nodes: [], edges: [] })
       return { state }
     },
 

@@ -1,8 +1,8 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { WsConnectTopic, WsDisconnectTopic, WsMessageTopic } from '../../system/topics.ts'
-import { createChatbotActor } from './chatbot.ts'
-import type { ChatbotMsg, ChatbotState } from './chatbot.ts'
+import { createReActActor } from './react.ts'
+import type { ReActMsg, ReActState } from './react.ts'
 import type { LlmProviderMsg } from './llm-provider.ts'
 
 // ─── Message protocol ───
@@ -15,7 +15,7 @@ type SessionManagerMsg =
 // ─── State ───
 
 type SessionManagerState = {
-  sessions: Record<string, ActorRef<ChatbotMsg>>
+  sessions: Record<string, ActorRef<ReActMsg>>
 }
 
 // ─── Options ───
@@ -27,9 +27,9 @@ export type SessionManagerOptions = {
   historyWindow?:  number
 }
 
-// ─── Initial chatbot state ───
+// ─── Initial ReAct state ───
 
-const initialChatbotState = (): ChatbotState => ({
+const initialReActState = (): ReActState => ({
   history:          [],
   tools:            {},
   modelInfo:        null,
@@ -58,7 +58,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
       },
 
       terminated: (state, event) => {
-        // A chatbot child crashed — clean up its session entry
+        // A ReAct child crashed — clean up its session entry
         const entry = Object.entries(state.sessions).find(([, ref]) => ref.name === event.ref.name)
         if (!entry) return { state }
         const [clientId] = entry
@@ -71,9 +71,9 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
       _connected: (state, message, context) => {
         const { clientId } = message
         const ref = context.spawn(
-          `chatbot-${clientId}`,
-          createChatbotActor({ clientId, llmRef, model, systemPrompt, historyWindow }),
-          initialChatbotState(),
+          `react-${clientId}`,
+          createReActActor({ clientId, llmRef, model, systemPrompt, historyWindow }),
+          initialReActState(),
         )
         return { state: { sessions: { ...state.sessions, [clientId]: ref } } }
       },

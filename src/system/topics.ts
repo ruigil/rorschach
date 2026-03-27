@@ -35,6 +35,18 @@ export type WsBroadcastEvent = { text: string }
 /** Topic for broadcasting a message to all WebSocket clients. Emit to push text to every open connection. */
 export const WsBroadcastTopic = createTopic<WsBroadcastEvent>('http.ws.broadcast')
 
+// ─── Domain event: published when a ReAct turn completes ───
+
+export type MemoryTurnEvent = {
+  userId:        string
+  userText:      string
+  assistantText: string
+  timestamp:     number
+}
+
+/** Topic emitted when a ReAct LLM turn completes. Subscribe to persist conversation history. */
+export const MemoryStreamTopic = createTopic<MemoryTurnEvent>('memory.turn')
+
 // ─── Domain event: emitted when a POST /config request is received ───
 
 export type HttpConfigPayload = Record<string, unknown>

@@ -9,6 +9,7 @@
   },
   "private": true,
   "scripts": {
+    "rorschach" : "bun run src/index.ts",
     "dev": "bun run src/index.ts",
     "test": "bun test",
     "test:watch": "bun test --watch",

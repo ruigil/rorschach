@@ -86,11 +86,11 @@ export const createBashActor = (options?: BashOptions): ActorDef<BashToolMsg, nu
   const fs = new MountableFs({ base: new InMemoryFs() });
 
   // Mount read-only knowledge base
-  fs.mount("/mnt/system", new OverlayFs({ root: "/home/rigel/rorschach", readOnly: true }));
+  fs.mount("/home/rigel", new OverlayFs({ root: "/home/rigel", readOnly: true }));
   // Mount read-write workspace
-  fs.mount("/home/rorschach", new ReadWriteFs({ root: "/home/rigel/rorschach/workspace" }));
+  fs.mount("/workspace", new ReadWriteFs({ root: "/home/rigel/rorschach/workspace" }));
 
-  const bash = new Bash({ fs,...options })
+  const bash = new Bash({ fs, cwd: options?.cwd })
 
   return {
     handler: onMessage<BashToolMsg, null>({

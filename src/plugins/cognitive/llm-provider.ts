@@ -29,7 +29,7 @@ export type Tool = {
   function: { name: string; description: string; parameters: object }
 }
 
-// ─── Reply types sent back to the chatbot ───
+// ─── Reply types sent back to the ReAct loop ───
 
 export type LlmProviderReply =
   | { type: 'llmChunk';          requestId: string; text: string }

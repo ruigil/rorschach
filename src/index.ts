@@ -128,8 +128,8 @@ system.subscribe(SystemLifecycleTopic, (event) => {
   }
 })
 
-//console.log(`\n🚀 Rorschach running`)
-//console.log(`   chat     → http://localhost:${PORT}`)
+console.log(`\n🚀 Rorschach running`)
+console.log(`   chat     → http://localhost:${PORT}`)
 
 // ─── Graceful shutdown on Ctrl+C ───
 

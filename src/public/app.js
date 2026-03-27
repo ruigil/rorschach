@@ -644,6 +644,8 @@ function renderTools() {
 }
 
 // Observe subtab switching
+const obsMemoryControls = document.getElementById('obs-memory-controls')
+
 document.querySelectorAll('.obs-subtab').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.obs-subtab').forEach(b => b.classList.remove('active'))
@@ -654,9 +656,151 @@ document.querySelectorAll('.obs-subtab').forEach(btn => {
     metricsSummary.style.display = subtab === 'metrics' && Object.keys(actorsMap).length > 0 ? 'flex' : 'none'
     obsLogControls.style.display = subtab === 'logs' ? 'flex' : 'none'
     obsTracesControls.style.display = subtab === 'traces' ? 'flex' : 'none'
+    obsMemoryControls.style.display = subtab === 'memory' ? 'flex' : 'none'
     if (subtab === 'traces') renderTraces()
+    if (subtab === 'memory') fetchKgraph()
   })
 })
+
+document.getElementById('memory-refresh').addEventListener('click', fetchKgraph)
+
+// ─── Knowledge graph ───
+
+const LABEL_COLORS = {
+  Person:     { fill: 'rgba(54,184,204,0.15)',  stroke: '#36b8cc' },
+  User:       { fill: 'rgba(69,196,154,0.15)',  stroke: '#45c49a' },
+  Project:    { fill: 'rgba(201,150,60,0.15)',  stroke: '#c9963c' },
+  Event:      { fill: 'rgba(122,184,204,0.15)', stroke: '#7ab8cc' },
+  Preference: { fill: 'rgba(201,95,82,0.15)',   stroke: '#c95f52' },
+}
+const DEFAULT_NODE_COLOR = { fill: 'rgba(30,63,84,0.4)', stroke: '#2a5468' }
+
+function nodeColor(label)       { return (LABEL_COLORS[label] || DEFAULT_NODE_COLOR).fill }
+function nodeColorStroke(label) { return (LABEL_COLORS[label] || DEFAULT_NODE_COLOR).stroke }
+
+async function fetchKgraph() {
+  const statsEl = document.getElementById('memory-stats')
+  statsEl.textContent = 'loading…'
+  try {
+    const res = await fetch(new URL('kgraph', location.href))
+    const graph = await res.json()
+    renderKgraph(graph)
+    statsEl.textContent = `${graph.nodes.length} nodes · ${graph.edges.length} edges`
+  } catch (e) {
+    statsEl.textContent = 'error'
+  }
+}
+
+function renderKgraph(graph) {
+  const container = document.getElementById('memory-graph')
+  container.innerHTML = ''
+
+  const { nodes, edges } = graph
+
+  if (nodes.length === 0) {
+    container.innerHTML = `<div class="empty-panel"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="5" cy="12" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><line x1="7" y1="11.5" x2="17" y2="6.5"/><line x1="7" y1="12.5" x2="17" y2="17.5"/></svg><span>no graph data</span></div>`
+    return
+  }
+
+  const width  = container.clientWidth
+  const height = container.clientHeight
+  const R = 22  // node radius
+
+  const simNodes = nodes.map(n => ({ ...n }))
+  const nodeById = Object.fromEntries(simNodes.map(n => [n.id, n]))
+  const simEdges = edges
+    .map(e => ({ ...e, source: nodeById[e.source], target: nodeById[e.target] }))
+    .filter(e => e.source && e.target)
+
+  const svg = d3.select(container).append('svg')
+    .attr('width', '100%').attr('height', '100%')
+
+  svg.append('defs').append('marker')
+    .attr('id', 'kg-arrow')
+    .attr('viewBox', '0 -4 8 8')
+    .attr('refX', 8).attr('refY', 0)
+    .attr('markerWidth', 6).attr('markerHeight', 6)
+    .attr('orient', 'auto')
+    .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', '#2a5468')
+
+  const g = svg.append('g')
+  svg.call(d3.zoom().scaleExtent([0.15, 5]).on('zoom', ev => g.attr('transform', ev.transform)))
+
+  const edgeLine = g.append('g').selectAll('line').data(simEdges).enter().append('line')
+    .attr('stroke', '#1e3f54').attr('stroke-width', 1.5)
+    .attr('marker-end', 'url(#kg-arrow)')
+
+  const edgeLabel = g.append('g').selectAll('text').data(simEdges).enter().append('text')
+    .text(d => d.type)
+    .attr('font-size', '9px').attr('fill', '#2a5468')
+    .attr('text-anchor', 'middle').attr('font-family', 'var(--font-mono)')
+    .attr('pointer-events', 'none')
+
+  const tooltip = d3.select(container).append('div').attr('class', 'graph-tooltip').style('display', 'none')
+
+  const nodeGroup = g.append('g').selectAll('g').data(simNodes).enter().append('g')
+    .attr('cursor', 'grab')
+    .call(d3.drag()
+      .on('start', (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y })
+      .on('drag',  (ev, d) => { d.fx = ev.x; d.fy = ev.y })
+      .on('end',   (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null })
+    )
+
+  nodeGroup.append('circle')
+    .attr('r', R)
+    .attr('fill',         d => nodeColor(d.labels[0]))
+    .attr('stroke',       d => nodeColorStroke(d.labels[0]))
+    .attr('stroke-width', 1.5)
+
+  nodeGroup.append('text')
+    .text(d => String(d.properties.name || d.properties.topic || `#${d.id}`).slice(0, 12))
+    .attr('text-anchor', 'middle').attr('dy', '0.35em')
+    .attr('font-size', '10px').attr('fill', '#d8eef5')
+    .attr('font-family', 'var(--font-mono)').attr('pointer-events', 'none')
+
+  nodeGroup.append('text')
+    .text(d => d.labels[0] || '')
+    .attr('text-anchor', 'middle').attr('dy', R + 14 + 'px')
+    .attr('font-size', '8px').attr('fill', '#3d6878')
+    .attr('font-family', 'var(--font-mono)').attr('pointer-events', 'none')
+
+  nodeGroup
+    .on('mouseover', (ev, d) => {
+      const lines = Object.entries(d.properties).map(([k, v]) => `${k}: ${v}`).join('\n')
+      tooltip.style('display', 'block')
+        .html(`<strong>${escHtml(d.labels.join(' · '))}</strong><pre>${escHtml(lines)}</pre>`)
+    })
+    .on('mousemove', ev => {
+      const rect = container.getBoundingClientRect()
+      tooltip.style('left', (ev.clientX - rect.left + 14) + 'px').style('top', (ev.clientY - rect.top - 14) + 'px')
+    })
+    .on('mouseout', () => tooltip.style('display', 'none'))
+
+  const sim = d3.forceSimulation(simNodes)
+    .force('link',    d3.forceLink(simEdges).id(d => d.id).distance(130))
+    .force('charge',  d3.forceManyBody().strength(-320))
+    .force('center',  d3.forceCenter(width / 2, height / 2))
+    .force('collide', d3.forceCollide(R + 18))
+    .on('tick', () => {
+      edgeLine
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => {
+          const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y
+          const dist = Math.sqrt(dx*dx + dy*dy) || 1
+          return d.target.x - (dx / dist) * (R + 10)
+        })
+        .attr('y2', d => {
+          const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y
+          const dist = Math.sqrt(dx*dx + dy*dy) || 1
+          return d.target.y - (dy / dist) * (R + 10)
+        })
+      edgeLabel
+        .attr('x', d => (d.source.x + d.target.x) / 2)
+        .attr('y', d => (d.source.y + d.target.y) / 2 - 5)
+      nodeGroup.attr('transform', d => `translate(${d.x},${d.y})`)
+    })
+}
 
 
 function tsStr(timestamp) {

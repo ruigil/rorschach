@@ -1,7 +1,7 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { createPluginSystem } from '../system/index.ts'
 import { WsSendTopic } from '../system/topics.ts'
-import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
+import { createReActActor, type ReActState } from '../plugins/cognitive/react.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import type { BraveLlmContextResponse } from '../plugins/tools/web-search.ts'
@@ -18,7 +18,7 @@ const LLM_PROVIDER_ADAPTER_OPTS = {
   model: 'openai/gpt-4o-mini',
 }
 
-const INITIAL_CHATBOT_STATE: ChatbotState = {
+const INITIAL_REACT_STATE: ReActState = {
   history:          [],
   tools:            {},
   modelInfo:        null,
@@ -101,16 +101,16 @@ const modelInfoStub = () => new Response('Not Found', { status: 404 })
 
 // ─── Spawn helpers ───
 
-const spawnChatbot = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
+const spawnReAct = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
   const llmRef = system.spawn('llm-provider', createLlmProviderActor({ adapter: createOpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }), null)
-  return system.spawn('chatbot', createChatbotActor({ clientId: CLIENT_ID, llmRef, model: LLM_PROVIDER_ADAPTER_OPTS.model }), INITIAL_CHATBOT_STATE)
+  return system.spawn('react', createReActActor({ clientId: CLIENT_ID, llmRef, model: LLM_PROVIDER_ADAPTER_OPTS.model }), INITIAL_REACT_STATE)
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // Chatbot + search integration
 // ═══════════════════════════════════════════════════════════════════
 
-describe('chatbot search integration', () => {
+describe('ReAct search integration', () => {
   test('emits searching event and tool call flow when LLM returns a tool_call', async () => {
     stubFetchSequence([
       modelInfoStub,
@@ -124,10 +124,10 @@ describe('chatbot search integration', () => {
       plugins: [toolsPlugin],
     })
     const events = collectEvents(system)
-    const chatbot = spawnChatbot(system)
+    const react = spawnReAct(system)
 
     await tick()
-    chatbot.send({ type: 'userMessage', text: 'What is the latest AI news?', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', text: 'What is the latest AI news?', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(400)
 
     const types = events.map(e => e.type)
@@ -153,10 +153,10 @@ describe('chatbot search integration', () => {
       plugins: [toolsPlugin],
     })
     const events = collectEvents(system)
-    const chatbot = spawnChatbot(system)
+    const react = spawnReAct(system)
 
     await tick()
-    chatbot.send({ type: 'userMessage', text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(400)
 
     const sourcesEvent = events.find(e => e.type === 'sources')
@@ -182,13 +182,13 @@ describe('chatbot search integration', () => {
       return makeSSEResponse(contentPayloads('Direct answer, no search needed.'))
     }) as unknown as typeof fetch
 
-    // No tools plugin — chatbot has no registered tools, LLM call uses empty tool list
+    // No tools plugin — ReAct has no registered tools, LLM call uses empty tool list
     const system = await createPluginSystem()
     const events = collectEvents(system)
-    const chatbot = spawnChatbot(system)
+    const react = spawnReAct(system)
 
     await tick()
-    chatbot.send({ type: 'userMessage', text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(300)
 
     expect(capturedBody?.tools).toBeUndefined()
@@ -210,10 +210,10 @@ describe('chatbot search integration', () => {
       plugins: [toolsPlugin],
     })
     const events = collectEvents(system)
-    const chatbot = spawnChatbot(system)
+    const react = spawnReAct(system)
 
     await tick()
-    chatbot.send({ type: 'userMessage', text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(400)
 
     const types = events.map(e => e.type)
@@ -239,10 +239,10 @@ describe('chatbot search integration', () => {
       config: { tools: { webSearch: { apiKey: 'brave-key' } } },
       plugins: [toolsPlugin],
     })
-    const chatbot = spawnChatbot(system)
+    const react = spawnReAct(system)
 
     await tick()
-    chatbot.send({ type: 'userMessage', text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(300)
 
     expect(capturedBody?.tools).toBeDefined()
