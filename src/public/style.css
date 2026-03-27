@@ -11,12 +11,12 @@
   --text-dim:      #3d6878;
   --text-mid:      #8abccc;
 
-  --user-bg:       rgba(0, 100, 90, 0.08);
+  --user-bg:       rgba(0, 40, 35, 0.82);
   --user-text:     #5de0c0;
   --user-border:   rgba(93, 224, 192, 0.18);
 
   --bot-text:      #b8e8f4;
-  --bot-bg:        rgba(0, 196, 212, 0.025);
+  --bot-bg:        rgba(0, 18, 24, 0.82);
   --bot-border:    rgba(0, 196, 212, 0.08);
   --bot-rail:      rgba(0, 196, 212, 0.45);
   --bot-rail-glow: rgba(0, 196, 212, 0.05);
@@ -49,33 +49,6 @@ html, body { height: 100%; overscroll-behavior: none; }
 /* Background lives on html so canvas at z-index:-2 (root stacking context) is visible */
 html { background: var(--bg); }
 
-/* Pulsing energy core — the entity's power source just below the viewport */
-html::after {
-  content: '';
-  position: fixed;
-  bottom: -20%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 70vw;
-  height: 45vw;
-  border-radius: 50%;
-  /* Hot core: white-yellow at center, orange mid, deep red at edge */
-  background: radial-gradient(ellipse,
-    rgba(255,240,180,0.22) 0%,
-    rgba(255,160,40,0.16)  25%,
-    rgba(220,60,20,0.10)   50%,
-    rgba(160,20,10,0.04)   70%,
-    transparent            85%
-  );
-  pointer-events: none;
-  z-index: -1;
-  animation: coreBreath 7s ease-in-out infinite;
-}
-
-@keyframes coreBreath {
-  0%, 100% { opacity: 0.75; transform: translateX(-50%) scale(1); }
-  50%       { opacity: 1.0;  transform: translateX(-50%) scale(1.15); }
-}
 
 #void-canvas {
   position: fixed;
@@ -220,6 +193,7 @@ header.streaming::after {
   background: none;
 }
 
+
 /* ─── Status pill ─── */
 .status-pill {
   display: flex;
@@ -274,7 +248,7 @@ header.streaming::after {
   width: 100%;
   margin: 0 auto;
 }
-#panel-config.active  { display: flex; overflow: hidden; }
+#panel-config.active  { display: flex; overflow: hidden; background: rgba(0,3,5,0.72); }
 
 /* ─── Chat: messages ─── */
 #messages {
@@ -352,7 +326,10 @@ header.streaming::after {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-dim);
+  margin-bottom: 0.45rem;
 }
+
+.bubble-body { display: block; }
 
 .message.user .message-label      { color: rgba(93, 224, 192, 0.35); }
 .message.assistant .message-label { color: rgba(0, 196, 212, 0.4); }
@@ -428,6 +405,12 @@ header.streaming::after {
   border-right: 1px solid rgba(0,196,212,0.04) !important;
   border-bottom: 1px solid rgba(0,196,212,0.04) !important;
   border-radius: 0 2px 2px 0 !important;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.dots-row {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -697,64 +680,42 @@ button[type="submit"] svg { pointer-events: none; }
 }
 
 /* ─── Config panel ─── */
-.config-layout {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}
+#panel-config.active { flex-direction: column; }
 
-.config-tabs {
-  width: 158px;
+.config-bar {
+  display: flex;
+  align-items: stretch;
+  height: 42px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(7, 21, 32, 0.55);
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
+  padding: 0 1.25rem 0 0;
+}
+
+.config-subtabs {
   display: flex;
-  flex-direction: column;
-  padding: 1.5rem 0;
-  gap: 1px;
-  overflow-y: auto;
+  align-items: stretch;
 }
 
-.config-tab {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 0.55rem 1.25rem;
-  border: none;
-  border-left: 2px solid transparent;
-  background: none;
-  cursor: pointer;
-  text-align: left;
-  gap: 0.12rem;
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.config-tab:hover { background: rgba(54, 184, 204, 0.05); }
-
-.config-tab.active {
-  border-left-color: var(--accent);
-  background: rgba(54, 184, 204, 0.08);
-}
-
-.config-tab-group {
-  font-family: var(--font-mono);
-  font-size: 0.56rem;
-  font-weight: 400;
+.config-subtab {
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--text-dim);
-  letter-spacing: 0.07em;
-  text-transform: lowercase;
-}
-
-.config-tab-name {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0 1rem;
+  cursor: pointer;
   font-family: var(--font-ui);
-  font-size: 0.71rem;
-  font-weight: 500;
-  color: var(--text-mid);
-  letter-spacing: 0.05em;
-  text-transform: lowercase;
-  transition: color 0.15s;
+  transition: color 0.15s, border-color 0.15s;
+  position: relative;
+  top: 1px;
 }
 
-.config-tab.active .config-tab-name { color: var(--accent); }
+.config-subtab:hover { color: var(--text-mid); }
+.config-subtab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
 .config-content {
   flex: 1;
@@ -975,7 +936,7 @@ button[type="submit"] svg { pointer-events: none; }
 
 /* ─── Observe panel ─── */
 
-#panel-observe.active { display: flex; flex-direction: column; }
+#panel-observe.active { display: flex; flex-direction: column; background: rgba(0,3,5,0.72); }
 
 .obs-bar {
   display: flex;

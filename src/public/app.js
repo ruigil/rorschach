@@ -1,108 +1,209 @@
-// ─── Void canvas particle field ───
+// ─── Void canvas — black hole WebGL shader ───
 
 const voidCanvas = document.getElementById('void-canvas')
-const voidCtx    = voidCanvas.getContext('2d')
 let voidRaf = null
+
+const VERT_SRC = `
+  attribute vec2 a_pos;
+  void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }
+`
+
+const FRAG_SRC = `
+  precision highp float;
+  uniform vec2  u_res;
+  uniform float u_time;
+
+  float hash(vec2 p) {
+    p = fract(p * vec2(127.1, 311.7));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+
+  float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(hash(i), hash(i + vec2(1,0)), f.x),
+      mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x),
+      f.y
+    );
+  }
+
+  float fbm(vec2 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 6; i++) { v += a * vnoise(p); p *= 2.07; a *= 0.5; }
+    return v;
+  }
+
+  void main() {
+    vec2 uv = (gl_FragCoord.xy - u_res * 0.5) / min(u_res.x, u_res.y);
+    float r  = length(uv);
+    float ag = atan(uv.y, uv.x);
+    float t  = u_time * 0.18;
+
+    const float EH = 0.175;
+
+    // Deep space base
+    vec3 col = vec3(0.0, 0.008, 0.022);
+
+    // Nebula wisps
+    float neb = fbm(uv * 2.8 + t * 0.04);
+    col += vec3(0.005, 0.015, 0.05) * neb * smoothstep(1.1, 0.25, r);
+
+    // Star field — three density layers
+    for (int i = 0; i < 3; i++) {
+      float scale = 38.0 + float(i) * 22.0;
+      vec2  sg    = uv * scale + vec2(float(i) * 17.3, float(i) * 9.1);
+      float s     = hash(floor(sg));
+      if (s > 0.965) {
+        vec2  sp = fract(sg) - 0.5;
+        float sr = length(sp);
+        float sb = smoothstep(0.22, 0.0, sr) * (s - 0.965) * 28.0;
+        float tw = 0.7 + 0.3 * sin(u_time * (1.1 + float(i) * 0.7) + s * 31.4);
+        col += vec3(0.75, 0.88, 1.0) * sb * tw;
+      }
+    }
+
+    // Swirling plasma noise — Cartesian rotated UV avoids atan seam
+    float ca = cos(t * 1.4), sa = sin(t * 1.4);
+    vec2  rotUV  = vec2(ca * uv.x - sa * uv.y, sa * uv.x + ca * uv.y);
+    vec2  swirl  = vec2(r * 5.5 + fbm(rotUV * 3.0 + vec2(t * 0.3, -t * 0.2)) * 0.6,
+                        fbm(rotUV * 1.8 - vec2(t * 0.4, -t * 0.3)) * 2.0 + t * 0.6);
+    float plasma = fbm(swirl);
+
+    // Spiral phase — tightly wound Archimedean spiral co-rotating with disk
+    float spiralAg   = ag - r * 9.0 + t * 3.5;
+    float spiralWave = 0.5 + 0.5 * sin(spiralAg * 3.0);
+
+    // Wave-perturbed radius — radial ripple + angular wobble
+    float waveR = r
+      + 0.022 * sin(ag * 5.0 - t * 5.0 + r * 14.0)
+      + 0.012 * sin(ag * 3.0 + t * 3.2 - r * 8.0);
+
+    // Pulsing multiplier — two beating frequencies
+    float pulse = 0.55 + 0.30 * sin(u_time * 3.2 + r * 9.0)
+                       + 0.15 * sin(u_time * 1.9 - r * 5.0 + ag * 2.0);
+
+    // Accretion ring bands — driven by waveR, tighter radius
+    float band1 = smoothstep(EH + 0.01, EH + 0.07, waveR) * smoothstep(0.32, 0.22, waveR);
+    float band2 = smoothstep(0.20, 0.26, waveR)            * smoothstep(0.36, 0.28, waveR);
+    float disk  = (band1 * 1.0 + band2 * 0.55)
+                * (0.55 + 0.45 * plasma)
+                * (0.45 + 0.55 * spiralWave)
+                * pulse;
+
+    // Inner rim — tight band, spiral-modulated, slow rotation
+    float rimSpiralAg = ag - r * 14.0 + t * 0.8;
+    float rimSpiral   = 0.5 + 0.5 * sin(rimSpiralAg * 4.0);
+    float rimPulse    = 0.6 + 0.4 * sin(u_time * 3.8 + r * 18.0);
+    float rimBase     = smoothstep(EH + 0.005, EH + 0.025, r) * smoothstep(EH + 0.075, EH + 0.04, r);
+    float rim         = rimBase * (0.4 + 0.6 * rimSpiral) * rimPulse;
+
+    // Plasma tendrils — use Cartesian uv to avoid atan seam
+    float ct = cos(t * 0.55), st = sin(t * 0.55);
+    vec2  tendUV    = vec2(ct * uv.x - st * uv.y, st * uv.x + ct * uv.y);
+    float tendNoise = fbm(tendUV * 5.5 + vec2(r * 1.8, 0.0));
+    float tendMask  = smoothstep(EH + 0.02, 0.38, r) * smoothstep(0.55, 0.28, r);
+    float tendrils  = pow(tendNoise, 2.2) * tendMask * 1.8;
+
+    vec3 gold   = vec3(1.0,  0.62, 0.10);   // amber-yellow, less orange
+    vec3 ember  = vec3(1.0,  0.38, 0.04);   // muted orange for spiral crests
+    vec3 hotWhite = vec3(1.0, 0.55, 0.12);  // deep amber, no white
+    vec3 azure  = vec3(0.35, 0.72, 1.0);
+
+    col += mix(gold, ember, spiralWave) * disk * 1.5;                   // amber disk, toned down
+    col += azure * disk * 0.08;                                          // minimal blue
+    col += mix(ember, hotWhite, rimSpiral) * rim * 1.8;                 // rim in amber tones
+    col += mix(gold, ember, tendNoise) * tendrils;                       // orange tendrils
+
+    // Outer deep-orange halo — brighter and wider
+    float halo = smoothstep(0.38, 0.18, r) * smoothstep(EH + 0.02, 0.22, r);
+    col += vec3(0.9, 0.50, 0.05) * halo * 0.40;
+
+    // Horizontal relativistic jets
+    float jetAng  = abs(cos(ag));
+    float jetMask = pow(jetAng, 14.0);
+    float jetFade = smoothstep(EH, 0.75, r) * smoothstep(1.05, 0.28, r);
+    float flicker = 0.78 + 0.22 * sin(u_time * 2.7 + r * 18.0);
+    float jet     = jetMask * jetFade * flicker * 1.3;
+
+    col += azure * jet;
+    col += hotWhite * jet * 0.35;
+
+    // Event horizon — absolute black
+    float bh = smoothstep(EH + 0.008, EH, r);
+    col *= 1.0 - bh;
+
+    // Filmic tone-map
+    col  = col / (col + 0.6);
+    col  = pow(col, vec3(0.88));
+
+    gl_FragColor = vec4(col, 1.0);
+  }
+`
+
+function initVoidGL() {
+  const gl = voidCanvas.getContext('webgl')
+  if (!gl) return null
+
+  function compile(type, src) {
+    const sh = gl.createShader(type)
+    gl.shaderSource(sh, src)
+    gl.compileShader(sh)
+    return sh
+  }
+
+  const prog = gl.createProgram()
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER,   VERT_SRC))
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG_SRC))
+  gl.linkProgram(prog)
+  gl.useProgram(prog)
+
+  const buf = gl.createBuffer()
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf)
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW)
+
+  const aPos = gl.getAttribLocation(prog, 'a_pos')
+  gl.enableVertexAttribArray(aPos)
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0)
+
+  const uRes  = gl.getUniformLocation(prog, 'u_res')
+  const uTime = gl.getUniformLocation(prog, 'u_time')
+
+  return { gl, uRes, uTime }
+}
 
 function resizeVoidCanvas() {
   voidCanvas.width  = window.innerWidth
   voidCanvas.height = window.innerHeight
 }
 
-const PARTICLE_COUNT = 190
-let particles = []
+resizeVoidCanvas()
+const voidGL = initVoidGL()
 
-// Star color palette — drawn per-particle at init, not per-frame
-const STAR_COLORS = [
-  // White/blue-white stars — most common background field
-  [220, 240, 255], [200, 230, 255], [240, 245, 255], [255, 255, 255],
-  // Yellow stars
-  [255, 230, 120], [255, 220, 80],  [255, 200, 60],
-  // Orange stars
-  [255, 170, 60],  [255, 140, 40],
-  // Red stars
-  [255, 90,  60],  [255, 60,  40],  [230, 50,  30],
-  // Cyan signal
-  [0,   196, 212], [40,  210, 220],
-  // Violet/purple hints
-  [160, 60,  220], [130, 40,  200],
-]
+if (voidGL) {
+  const { gl, uRes, uTime } = voidGL
+  const t0 = performance.now()
 
-function makeParticle(type, w, h) {
-  const isGiant = type === 'giant'
-  // Pick a color — giants always cyan, stars pick from the full palette
-  const colorIdx = isGiant ? 12 : Math.floor(Math.random() * STAR_COLORS.length)
-  const [cr, cg, cb] = STAR_COLORS[colorIdx]
-  return {
-    x:           Math.random() * w,
-    y:           isGiant ? (0.45 + Math.random() * 0.65) * h : Math.random() * h,
-    r:           isGiant ? Math.random() * 3.5 + 2.5
-                         : Math.random() * 1.1 + 0.3,
-    baseOpacity: isGiant ? Math.random() * 0.5 + 0.35
-                         : Math.random() * 0.55 + 0.15,
-    phase:      Math.random() * Math.PI * 2,
-    phaseSpeed: isGiant ? Math.random() * 0.003 + 0.001 : Math.random() * 0.009 + 0.002,
-    vx:         (Math.random() - 0.5) * (isGiant ? 0.02 : 0.055),
-    vy:         (Math.random() - 0.5) * (isGiant ? 0.02 : 0.055),
-    cr, cg, cb,
-    isGiant,
-    isStatic: !isGiant && Math.random() < 0.55,
+  function drawVoidFrame() {
+    gl.viewport(0, 0, voidCanvas.width, voidCanvas.height)
+    gl.uniform2f(uRes, voidCanvas.width, voidCanvas.height)
+    gl.uniform1f(uTime, (performance.now() - t0) * 0.001)
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    voidRaf = requestAnimationFrame(drawVoidFrame)
   }
-}
 
-function initVoidParticles() {
-  const w = voidCanvas.width, h = voidCanvas.height
-  particles = [
-    ...Array.from({ length: 6   }, () => makeParticle('giant', w, h)),
-    ...Array.from({ length: 184 }, () => makeParticle('star',  w, h)),
-  ]
-}
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { cancelAnimationFrame(voidRaf); voidRaf = null }
+    else if (!voidRaf)   { voidRaf = requestAnimationFrame(drawVoidFrame) }
+  })
+  window.addEventListener('resize', () => {
+    resizeVoidCanvas()
+    gl.viewport(0, 0, voidCanvas.width, voidCanvas.height)
+  }, { passive: true })
 
-function drawVoidFrame() {
-  const w = voidCanvas.width, h = voidCanvas.height
-  voidCtx.clearRect(0, 0, w, h)
-  for (const p of particles) {
-    p.phase += p.phaseSpeed
-    const opacity = p.baseOpacity * (0.45 + 0.55 * Math.abs(Math.sin(p.phase)))
-    if (!p.isStatic) {
-      p.x += p.vx; p.y += p.vy
-      if (p.x < -4) p.x = w + 4
-      if (p.x > w + 4) p.x = -4
-      if (p.y < -4) p.y = h + 4
-      if (p.y > h + 4) p.y = -4
-    }
-    if (p.isGiant) {
-      const grad = voidCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 4.5)
-      grad.addColorStop(0,    `rgba(0,196,212,${(opacity * 0.9).toFixed(3)})`)
-      grad.addColorStop(0.35, `rgba(0,196,212,${(opacity * 0.35).toFixed(3)})`)
-      grad.addColorStop(1,    `rgba(0,196,212,0)`)
-      voidCtx.beginPath()
-      voidCtx.arc(p.x, p.y, p.r * 4.5, 0, 6.283185)
-      voidCtx.fillStyle = grad
-      voidCtx.fill()
-      voidCtx.beginPath()
-      voidCtx.arc(p.x, p.y, p.r * 0.45, 0, 6.283185)
-      voidCtx.fillStyle = `rgba(200,248,255,${Math.min(1, opacity * 1.5).toFixed(3)})`
-      voidCtx.fill()
-    } else {
-      voidCtx.beginPath()
-      voidCtx.arc(p.x, p.y, p.r, 0, 6.283185)
-      voidCtx.fillStyle = `rgba(${p.cr},${p.cg},${p.cb},${opacity.toFixed(3)})`
-      voidCtx.fill()
-    }
-  }
   voidRaf = requestAnimationFrame(drawVoidFrame)
 }
-
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { cancelAnimationFrame(voidRaf); voidRaf = null }
-  else if (!voidRaf) { voidRaf = requestAnimationFrame(drawVoidFrame) }
-})
-window.addEventListener('resize', () => { resizeVoidCanvas(); initVoidParticles() }, { passive: true })
-
-resizeVoidCanvas()
-initVoidParticles()
-voidRaf = requestAnimationFrame(drawVoidFrame)
 
 // ─── Markdown renderer ───
 
@@ -184,6 +285,7 @@ function connect() {
     setConnected(false)
     removeThinking()
     streamWrap = null
+    streamBubbleContainer = null
     streamBubble = null
     streamRawText = ''
     reasoningEl = null
@@ -230,13 +332,14 @@ const imagePreviewsEl = document.getElementById('image-previews')
 
 let pendingImages = []  // array of base64 data URLs
 
-let thinkingEl   = null
-let streamWrap   = null
-let streamBubble = null
-let streamRawText = ''
-let reasoningEl  = null
-let pendingSources = null
-let sourcesWrap  = null
+let thinkingEl          = null
+let streamWrap          = null
+let streamBubbleContainer = null
+let streamBubble        = null
+let streamRawText       = ''
+let reasoningEl         = null
+let pendingSources      = null
+let sourcesWrap         = null
 
 input.addEventListener('input', () => {
   input.style.height = 'auto'
@@ -336,11 +439,12 @@ function appendUserMessage(text, images) {
   if (emptyEl?.parentNode) emptyEl.remove()
   const wrap   = document.createElement('div')
   wrap.className = 'message user'
+  const bubble = document.createElement('div')
+  bubble.className = 'bubble'
   const label  = document.createElement('div')
   label.className = 'message-label'
   label.textContent = 'You'
-  const bubble = document.createElement('div')
-  bubble.className = 'bubble'
+  bubble.appendChild(label)
   if (images && images.length > 0) {
     const imgRow = document.createElement('div')
     imgRow.className = 'message-images'
@@ -357,7 +461,6 @@ function appendUserMessage(text, images) {
     textEl.textContent = text
     bubble.appendChild(textEl)
   }
-  wrap.appendChild(label)
   wrap.appendChild(bubble)
   messagesEl.appendChild(wrap)
   scrollToBottom()
@@ -368,13 +471,16 @@ function appendMessage(role, text) {
   if (emptyEl?.parentNode) emptyEl.remove()
   const wrap   = document.createElement('div')
   wrap.className = `message ${role}`
+  const bubble = document.createElement('div')
+  bubble.className = 'bubble'
   const label  = document.createElement('div')
   label.className = 'message-label'
   label.textContent = role === 'user' ? 'You' : role === 'assistant' ? 'Rorschach' : 'Error'
-  const bubble = document.createElement('div')
-  bubble.className = 'bubble'
-  bubble.textContent = text
-  wrap.appendChild(label)
+  bubble.appendChild(label)
+  const textEl = document.createElement('div')
+  textEl.className = 'bubble-body'
+  textEl.textContent = text
+  bubble.appendChild(textEl)
   wrap.appendChild(bubble)
   messagesEl.appendChild(wrap)
   scrollToBottom()
@@ -385,13 +491,20 @@ function showThinking(label = 'Rorschach', extraClass = '') {
   if (emptyEl?.parentNode) emptyEl.remove()
   const wrap   = document.createElement('div')
   wrap.className = 'message assistant thinking' + (extraClass ? ' ' + extraClass : '')
+  const bubble = document.createElement('div')
+  bubble.className = 'bubble'
   const labelEl = document.createElement('div')
   labelEl.className = 'message-label'
   labelEl.textContent = label
-  const bubble = document.createElement('div')
-  bubble.className = 'bubble'
-  bubble.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>'
-  wrap.appendChild(labelEl)
+  const dotsRow = document.createElement('div')
+  dotsRow.className = 'dots-row'
+  ;['dot', 'dot', 'dot'].forEach(() => {
+    const d = document.createElement('div')
+    d.className = 'dot'
+    dotsRow.appendChild(d)
+  })
+  bubble.appendChild(labelEl)
+  bubble.appendChild(dotsRow)
   wrap.appendChild(bubble)
   messagesEl.appendChild(wrap)
   scrollToBottom()
@@ -437,13 +550,16 @@ function renderSources(sources) {
 }
 
 function createMessageWrap() {
-  const wrap  = document.createElement('div')
+  const wrap   = document.createElement('div')
   wrap.className = 'message assistant'
-  const label = document.createElement('div')
+  const bubble = document.createElement('div')
+  bubble.className = 'bubble'
+  const label  = document.createElement('div')
   label.className = 'message-label'
   label.textContent = 'Rorschach'
-  wrap.appendChild(label)
-  return wrap
+  bubble.appendChild(label)
+  wrap.appendChild(bubble)
+  return { wrap, bubble }
 }
 
 function createReasoningSection() {
@@ -477,12 +593,14 @@ function handleChatMsg(msg) {
   } else if (msg.type === 'reasoningChunk') {
     if (!streamWrap) {
       removeThinking()
-      streamWrap = createMessageWrap()
+      const { wrap, bubble } = createMessageWrap()
+      streamWrap = wrap
+      streamBubbleContainer = bubble
       messagesEl.appendChild(streamWrap)
     }
     if (!reasoningEl) {
       const { section, contentEl } = createReasoningSection()
-      streamWrap.appendChild(section)
+      streamBubbleContainer.appendChild(section)
       reasoningEl = contentEl
     }
     reasoningEl.textContent += msg.text
@@ -493,19 +611,21 @@ function handleChatMsg(msg) {
       messagesEl.classList.add('receiving')
       setTimeout(() => messagesEl.classList.remove('receiving'), 700)
       if (!streamWrap) {
-        streamWrap = createMessageWrap()
+        const { wrap, bubble } = createMessageWrap()
+        streamWrap = wrap
+        streamBubbleContainer = bubble
         messagesEl.appendChild(streamWrap)
       }
       reasoningEl = null
-      const bubble = document.createElement('div')
-      bubble.className = 'bubble'
+      const bodyEl = document.createElement('div')
+      bodyEl.className = 'bubble-body'
       if (pendingSources) {
         sourcesWrap = renderSources(pendingSources)
-        streamWrap.appendChild(sourcesWrap)
+        streamBubbleContainer.appendChild(sourcesWrap)
         pendingSources = null
       }
-      streamWrap.appendChild(bubble)
-      streamBubble = bubble
+      streamBubbleContainer.appendChild(bodyEl)
+      streamBubble = bodyEl
       streamRawText = ''
     }
     streamRawText += msg.text
@@ -518,6 +638,7 @@ function handleChatMsg(msg) {
     }
     streamRawText = ''
     streamBubble = null
+    streamBubbleContainer = null
     streamWrap = null
     reasoningEl = null
     sourcesWrap = null
@@ -525,6 +646,7 @@ function handleChatMsg(msg) {
   } else if (msg.type === 'error') {
     removeThinking()
     streamWrap = null
+    streamBubbleContainer = null
     streamBubble = null
     streamRawText = ''
     reasoningEl = null

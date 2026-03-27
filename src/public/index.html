@@ -92,28 +92,16 @@
 
   <!-- ─── Config panel ─── -->
   <div id="panel-config" class="panel">
-    <div class="config-layout">
-
-      <nav class="config-tabs">
-        <button class="config-tab active" data-config-tab="logging">
-          <span class="config-tab-group">observability</span>
-          <span class="config-tab-name">logging</span>
-        </button>
-        <button class="config-tab" data-config-tab="metrics">
-          <span class="config-tab-group">observability</span>
-          <span class="config-tab-name">metrics</span>
-        </button>
-        <button class="config-tab" data-config-tab="chat">
-          <span class="config-tab-group">cognitive</span>
-          <span class="config-tab-name">chat</span>
-        </button>
-        <button class="config-tab" data-config-tab="vision">
-          <span class="config-tab-group">cognitive</span>
-          <span class="config-tab-name">vision</span>
-        </button>
+    <div class="config-bar">
+      <nav class="config-subtabs">
+        <button class="config-subtab active" data-config-tab="logging">logging</button>
+        <button class="config-subtab" data-config-tab="metrics">metrics</button>
+        <button class="config-subtab" data-config-tab="chat">chat</button>
+        <button class="config-subtab" data-config-tab="vision">vision</button>
       </nav>
+    </div>
 
-      <div class="config-content">
+    <div class="config-content">
         <form id="config-form" novalidate>
 
           <div class="config-pane active" data-config-pane="logging">
@@ -230,8 +218,6 @@
 
         </form>
       </div>
-
-    </div>
   </div>
 
   <!-- ─── Observe panel ─── -->
