@@ -1,10 +1,7 @@
 import { createSessionManagerActor } from './session-manager.ts'
 import { createLlmProviderActor, createOpenRouterAdapter, LlmProviderTopic } from './llm-provider.ts'
 import type { LlmProviderMsg } from './llm-provider.ts'
-import { createVisionActor, ANALYZE_IMAGE_TOOL_NAME, ANALYZE_IMAGE_SCHEMA } from './vision-actor.ts'
 import type { ActorContext, ActorRef, PluginActorState, PluginDef } from '../../system/types.ts'
-import { ToolRegistrationTopic } from '../../system/tools.ts'
-import type { ToolInvokeMsg } from '../../system/tools.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'
 
@@ -21,14 +18,9 @@ type ChatbotConfig = {
   historyWindow?: number
 }
 
-type VisionActorConfig = {
-  model: string
-}
-
 export type CognitiveConfig = {
   llmProvider?: LlmProviderConfig
   chatbot?: ChatbotConfig
-  visionActor?: VisionActorConfig
 }
 
 // ─── Plugin internals ───
@@ -39,23 +31,20 @@ type PluginState = {
   initialized: boolean
   llmProvider: PluginActorState<LlmProviderConfig>
   sessionManager: PluginActorState<ChatbotConfig>
-  vision: PluginActorState<VisionActorConfig>
 }
 
 const EMPTY_STATE: PluginState = {
   initialized: true,
   llmProvider:    { config: null, ref: null, gen: 0 },
   sessionManager: { config: null, ref: null, gen: 0 },
-  vision:         { config: null, ref: null, gen: 0 },
 }
 
 const spawnAll = (
   ctx: ActorContext<PluginMsg>,
   llmProviderConfig: LlmProviderConfig,
   chatbotConfig: ChatbotConfig | null,
-  visionConfig: VisionActorConfig | null,
   gen: number,
-): Pick<PluginState, 'llmProvider' | 'sessionManager' | 'vision'> => {
+): Pick<PluginState, 'llmProvider' | 'sessionManager'> => {
   const llmProviderRef = ctx.spawn(
     `llm-provider-${gen}`,
     createLlmProviderActor({ adapter: createOpenRouterAdapter({ apiKey: llmProviderConfig.apiKey, reasoning: llmProviderConfig.reasoning }) }),
@@ -76,32 +65,16 @@ const spawnAll = (
       )
     : null
 
-  let visionRef = null
-  if (visionConfig) {
-    const ref = ctx.spawn(
-      `vision-actor-${gen}`,
-      createVisionActor({ llmRef: llmProviderRef, model: visionConfig.model }),
-      { pending: {} },
-    )
-    ctx.publishRetained(ToolRegistrationTopic, ANALYZE_IMAGE_TOOL_NAME, {
-      name: ANALYZE_IMAGE_TOOL_NAME,
-      schema: ANALYZE_IMAGE_SCHEMA,
-      ref: ref as unknown as ActorRef<ToolInvokeMsg>,
-    })
-    visionRef = ref
-  }
-
   return {
     llmProvider:    { config: llmProviderConfig, ref: llmProviderRef, gen },
     sessionManager: { config: chatbotConfig,     ref: sessionManagerRef, gen },
-    vision:         { config: visionConfig,       ref: visionRef, gen },
   }
 }
 
 const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   id: 'cognitive',
   version: '1.0.0',
-  description: 'Cognitive actors: LLM provider, ReAct loop (the fundamental cognition loop reused by all reasoning agents), vision, and session management',
+  description: 'Cognitive actors: LLM provider, ReAct loop (the fundamental cognition loop reused by all reasoning agents), and session management',
   configDescriptor: {
     defaults: {},
     onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
@@ -111,7 +84,6 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
     initialized: false,
     llmProvider:    { config: null, ref: null, gen: 0 },
     sessionManager: { config: null, ref: null, gen: 0 },
-    vision:         { config: null, ref: null, gen: 0 },
   },
 
   lifecycle: onLifecycle({
@@ -119,14 +91,13 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
       const slice = ctx.initialConfig() as CognitiveConfig | undefined
       const llmProviderConfig = slice?.llmProvider ?? null
       const chatbotConfig = slice?.chatbot ?? null
-      const visionConfig = slice?.visionActor ?? null
 
       if (!llmProviderConfig) {
         ctx.log.info('cognitive plugin activated (no llmProvider config)')
         return { state: EMPTY_STATE }
       }
 
-      const children = spawnAll(ctx, llmProviderConfig, chatbotConfig, visionConfig, 0)
+      const children = spawnAll(ctx, llmProviderConfig, chatbotConfig, 0)
       ctx.log.info('cognitive plugin activated')
       return { state: { initialized: true, ...children } }
     },
@@ -134,9 +105,6 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
     stopped: (state, ctx) => {
       ctx.log.info('cognitive plugin deactivating')
       ctx.deleteRetained(LlmProviderTopic, 'ref', { ref: null })
-      if (state.vision.ref) {
-        ctx.deleteRetained(ToolRegistrationTopic, ANALYZE_IMAGE_TOOL_NAME, { name: ANALYZE_IMAGE_TOOL_NAME, ref: null })
-      }
       return { state }
     },
   }),
@@ -150,16 +118,11 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
 
   handler: onMessage<PluginMsg, PluginState>({
     config: (state, msg, ctx) => {
-      // Only restart the LLM provider and vision actor — keep the session manager alive
+      // Only restart the LLM provider — keep the session manager alive
       // so existing WebSocket sessions survive config updates (e.g. toggling reasoning).
       if (state.llmProvider.ref) ctx.stop(state.llmProvider.ref)
-      if (state.vision.ref) {
-        ctx.stop(state.vision.ref)
-        ctx.deleteRetained(ToolRegistrationTopic, ANALYZE_IMAGE_TOOL_NAME, { name: ANALYZE_IMAGE_TOOL_NAME, ref: null })
-      }
 
       const newLlmProviderConfig = msg.slice?.llmProvider ?? null
-      const newVisionConfig      = msg.slice?.visionActor ?? null
       const gen = state.llmProvider.gen + 1
 
       if (!newLlmProviderConfig) {
@@ -175,26 +138,10 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
       ) as ActorRef<LlmProviderMsg>
       ctx.publishRetained(LlmProviderTopic, 'ref', { ref: llmProviderRef })
 
-      let visionRef = null as typeof state.vision.ref
-      if (newVisionConfig) {
-        const ref = ctx.spawn(
-          `vision-actor-${gen}`,
-          createVisionActor({ llmRef: llmProviderRef, model: newVisionConfig.model }),
-          { pending: {} },
-        )
-        ctx.publishRetained(ToolRegistrationTopic, ANALYZE_IMAGE_TOOL_NAME, {
-          name: ANALYZE_IMAGE_TOOL_NAME,
-          schema: ANALYZE_IMAGE_SCHEMA,
-          ref: ref as unknown as ActorRef<ToolInvokeMsg>,
-        })
-        visionRef = ref
-      }
-
       return {
         state: {
           ...state,
           llmProvider: { config: newLlmProviderConfig, ref: llmProviderRef, gen },
-          vision:      { config: newVisionConfig, ref: visionRef, gen },
         },
       }
     },

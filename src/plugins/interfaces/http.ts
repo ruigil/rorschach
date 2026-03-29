@@ -4,7 +4,7 @@ import type { Server, ServerWebSocket } from 'bun'
 import { emit } from '../../system/types.ts'
 import {
   WsMessageTopic, WsConnectTopic, WsDisconnectTopic,
-  WsSendTopic, WsBroadcastTopic, HttpConfigTopic,
+  WsSendTopic, WsBroadcastTopic, HttpConfigTopic, ImageGeneratedTopic,
 } from '../../system/topics.ts'
 import type { HttpConfigPayload } from '../../system/topics.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
@@ -42,6 +42,7 @@ export type HttpMessage =
   | { type: 'config'; data: unknown }
   | { type: '_llmProviderChanged'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_kgraphChanged'; ref: ActorRef<KgraphMsg> | null }
+  | { type: '_imageGenerated'; publicUrl: string }
 
 // ─── Image helpers ───
 
@@ -224,6 +225,11 @@ export const createHttpActor = (
         kgraphRef = message.ref
         return { state: { ...state, kgraphRef: message.ref } }
       },
+
+      _imageGenerated: (state, message) => {
+        state.server?.publish(CHANNEL, JSON.stringify({ type: 'generatedImage', url: message.publicUrl }))
+        return { state }
+      },
     }),
 
     lifecycle: onLifecycle({
@@ -249,6 +255,11 @@ export const createHttpActor = (
         context.subscribe(KgraphTopic, (e) => ({
           type: '_kgraphChanged' as const,
           ref: e.ref,
+        }))
+
+        context.subscribe(ImageGeneratedTopic, (e) => ({
+          type: '_imageGenerated' as const,
+          publicUrl: e.publicUrl,
         }))
 
         const server = Bun.serve<WsData>({

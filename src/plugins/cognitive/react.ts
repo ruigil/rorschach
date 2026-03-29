@@ -303,7 +303,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
           sessionUsage: newSession,
         },
         events: [
-          emit(MemoryStreamTopic, { userId: clientId, userText, assistantText: state.pending, timestamp: Date.now() }),
+          emit(MemoryStreamTopic, { userId: 'default', userText, assistantText: state.pending, timestamp: Date.now() }),
           emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
           emit(WsSendTopic, { clientId, text: JSON.stringify({
             type: 'usage',

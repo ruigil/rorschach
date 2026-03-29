@@ -1616,6 +1616,14 @@ button[type="submit"] svg { pointer-events: none; }
 
 .md hr { border: none; border-top: 1px solid var(--border); margin: 1.2em 0; }
 
+.md img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  display: block;
+  margin: 0.5em 0;
+}
+
 /* Inline code */
 .md code {
   font-family: var(--font-mono);

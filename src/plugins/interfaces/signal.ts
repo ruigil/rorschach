@@ -3,7 +3,7 @@ import type { Socket } from 'node:net'
 import type { ActorDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { emit } from '../../system/types.ts'
-import { WsConnectTopic, WsMessageTopic, WsSendTopic } from '../../system/topics.ts'
+import { WsConnectTopic, WsMessageTopic, WsSendTopic, ImageGeneratedTopic } from '../../system/topics.ts'
 
 // ─── Markdown → Signal formatting ───
 //
@@ -202,10 +202,11 @@ type Envelope = {
 type SignalMsg =
   | { type: '_reconnect' }
   | { type: '_socketClosed' }
-  | { type: '_line';  line: string }
-  | { type: '_send'; clientId: string; text: string }
+  | { type: '_line';          line: string }
+  | { type: '_send';          clientId: string; text: string }
+  | { type: '_imageGenerated'; filePath: string }
   | { type: '_sendOk' }
-  | { type: '_sendErr';         error: string }
+  | { type: '_sendErr';        error: string }
   | { type: '_refreshTyping' }
 
 // ─── State ───
@@ -263,6 +264,7 @@ export const createSignalActor = (
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(WsSendTopic, e => ({ type: '_send' as const, clientId: e.clientId, text: e.text }))
+        ctx.subscribe(ImageGeneratedTopic, e => ({ type: '_imageGenerated' as const, filePath: e.filePath }))
         ctx.timers.startSingleTimer('reconnect', { type: '_reconnect' }, 0)
         ctx.log.info(`signal actor: connecting to ${host}:${port}`)
         return { state }
@@ -400,6 +402,22 @@ export const createSignalActor = (
           default:
             return { state }
         }
+      },
+
+      _imageGenerated: (state, msg, ctx) => {
+        for (const recipient of state.seenIds) {
+          ctx.pipeToSelf(
+            writeToSocket(rpcLine('send', {
+              ...(account ? { account } : {}),
+              recipient: [recipient],
+              message: '',
+              attachments: [msg.filePath],
+            })),
+            () => ({ type: '_sendOk'  as const }),
+            (err) => ({ type: '_sendErr' as const, error: String(err) }),
+          )
+        }
+        return { state }
       },
 
       _sendOk: (state) => ({ state }),

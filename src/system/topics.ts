@@ -53,3 +53,13 @@ export type HttpConfigPayload = Record<string, unknown>
 
 /** Topic emitted when the browser POSTs new config. Subscribe in your app to apply config changes. */
 export const HttpConfigTopic = createTopic<HttpConfigPayload>('http.config.post')
+
+// ─── Domain event: emitted when a tool generates an image ───
+
+export type ImageGeneratedEvent = {
+  filePath:  string  // absolute path to the saved PNG file
+  publicUrl: string  // relative URL path for HTTP clients, e.g. '/generated/uuid.png'
+}
+
+/** Topic emitted when a generated image has been saved to disk. Interfaces use this to deliver it to clients. */
+export const ImageGeneratedTopic = createTopic<ImageGeneratedEvent>('image.generated')

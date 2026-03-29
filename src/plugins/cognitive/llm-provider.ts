@@ -37,16 +37,19 @@ export type LlmProviderReply =
   | { type: 'llmDone';           requestId: string; usage: TokenUsage | null }
   | { type: 'llmToolCalls';      requestId: string; calls: Array<{ id: string; name: string; arguments: string }>; usage: TokenUsage | null }
   | { type: 'llmError';          requestId: string; error: unknown }
+  | { type: 'llmImageChunk';     requestId: string; dataUrl: string }
 
 // ─── Incoming messages ───
 
 export type LlmProviderMsg =
-  | { type: 'stream';         requestId: string; model: string; messages: ApiMessage[]; tools?: Tool[]; replyTo: ActorRef<LlmProviderReply> }
-  | { type: 'fetchModelInfo'; model: string; replyTo: ActorRef<ModelInfo | null> }
-  | { type: 'fetchModels';    replyTo: ActorRef<string[]> }
-  | { type: '_streamDone';    result: LlmProviderReply; replyTo: ActorRef<LlmProviderReply> }
-  | { type: '_modelInfoDone'; info: ModelInfo | null; replyTo: ActorRef<ModelInfo | null> }
-  | { type: '_modelsDone';    models: string[]; replyTo: ActorRef<string[]> }
+  | { type: 'stream';           requestId: string; model: string; messages: ApiMessage[]; tools?: Tool[]; replyTo: ActorRef<LlmProviderReply> }
+  | { type: 'streamImage';      requestId: string; model: string; messages: ApiMessage[]; replyTo: ActorRef<LlmProviderReply> }
+  | { type: 'fetchModelInfo';   model: string; replyTo: ActorRef<ModelInfo | null> }
+  | { type: 'fetchModels';      replyTo: ActorRef<string[]> }
+  | { type: '_streamDone';      result: LlmProviderReply; replyTo: ActorRef<LlmProviderReply> }
+  | { type: '_streamImageDone'; result: LlmProviderReply; replyTo: ActorRef<LlmProviderReply> }
+  | { type: '_modelInfoDone';   info: ModelInfo | null; replyTo: ActorRef<ModelInfo | null> }
+  | { type: '_modelsDone';      models: string[]; replyTo: ActorRef<string[]> }
 
 // ─── Retained topic: announces the live llm-provider ref to subscribers ───
 
@@ -66,6 +69,12 @@ export type LlmProviderAdapter = {
     tools: Tool[] | undefined,
     onChunk: (text: string) => void,
     onReasoningChunk: (text: string) => void,
+  ): Promise<AdapterStreamResult>
+  streamImage(
+    model: string,
+    messages: ApiMessage[],
+    onChunk: (text: string) => void,
+    onImageChunk: (dataUrl: string) => void,
   ): Promise<AdapterStreamResult>
   fetchModelInfo(model: string): Promise<ModelInfo | null>
   fetchModels(): Promise<string[]>
@@ -169,6 +178,72 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
       return { type: 'content', usage: lastUsage }
     },
 
+    async streamImage(model, messages, onChunk, onImageChunk) {
+      const res = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          modalities: ['image', 'text'],
+          stream: true,
+          stream_options: { include_usage: true },
+        }),
+      })
+
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`OpenRouter ${res.status}: ${body}`)
+      }
+
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let lastUsage: TokenUsage | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const data = line.slice(6).trim()
+          if (data === '[DONE]') return { type: 'content', usage: lastUsage }
+
+          try {
+            const parsed = JSON.parse(data) as {
+              choices: Array<{
+                delta: {
+                  content?: string
+                  images?: Array<{ image_url: { url: string } }>
+                }
+              }>
+              usage?: { prompt_tokens: number; completion_tokens: number }
+            }
+            if (parsed.usage) {
+              lastUsage = { promptTokens: parsed.usage.prompt_tokens, completionTokens: parsed.usage.completion_tokens }
+            }
+            const delta = parsed.choices[0]?.delta
+            if (delta?.content) onChunk(delta.content)
+            if (delta?.images) {
+              for (const img of delta.images) onImageChunk(img.image_url.url)
+            }
+          } catch {
+            // ignore malformed SSE lines
+          }
+        }
+      }
+
+      return { type: 'content', usage: lastUsage }
+    },
+
     async fetchModelInfo(model: string) {
       try {
         const res = await fetch('https://openrouter.ai/api/v1/models', {
@@ -244,6 +319,31 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
         return { state }
       },
 
+      streamImage: (state, message, context) => {
+        const { requestId, model, messages, replyTo } = message
+
+        context.pipeToSelf(
+          adapter.streamImage(
+            model,
+            messages,
+            (text)   => replyTo.send({ type: 'llmChunk',      requestId, text }),
+            (dataUrl) => replyTo.send({ type: 'llmImageChunk', requestId, dataUrl }),
+          ),
+          (result): LlmProviderMsg => ({
+            type: '_streamImageDone',
+            result: { type: 'llmDone', requestId, usage: result.usage },
+            replyTo,
+          }),
+          (error): LlmProviderMsg => ({
+            type: '_streamImageDone',
+            result: { type: 'llmError', requestId, error },
+            replyTo,
+          }),
+        )
+
+        return { state }
+      },
+
       fetchModelInfo: (state, message, context) => {
         const { model, replyTo } = message
 
@@ -269,6 +369,11 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
       },
 
       _streamDone: (state, message) => {
+        message.replyTo.send(message.result)
+        return { state }
+      },
+
+      _streamImageDone: (state, message) => {
         message.replyTo.send(message.result)
         return { state }
       },

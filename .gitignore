@@ -14,6 +14,7 @@ coverage
 workspace
 docs
 scripts
+generated
 
 # logs
 logs
