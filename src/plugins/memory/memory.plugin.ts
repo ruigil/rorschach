@@ -1,25 +1,25 @@
 import type { ActorRef, PluginActorState, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg } from '../../system/tools.ts'
-import { ToolRegistrationTopic } from '../../system/tools.ts'
+import type { ToolInvokeMsg } from '../../types/tools.ts'
+import { ToolRegistrationTopic } from '../../types/tools.ts'
+import type { KgraphMsg } from '../../types/memory.ts'
+import type { MemoryConsolidationMsg } from '../../types/memory.ts'
+import type { UserMemoryMsg } from '../../types/memory.ts'
 import {
   createKgraphActor,
   KgraphTopic,
   KGRAPH_QUERY_TOOL_NAME, KGRAPH_QUERY_SCHEMA,
   KGRAPH_WRITE_TOOL_NAME, KGRAPH_WRITE_SCHEMA,
 } from './kgraph.ts'
-import type { KgraphMsg } from './kgraph.ts'
 import {
   createMemoryConsolidationActor,
   INITIAL_CONSOLIDATION_STATE,
 } from './memory-consolidation.ts'
-import type { MemoryConsolidationMsg } from './memory-consolidation.ts'
 import {
   createUserMemoryActor,
   INITIAL_USER_MEMORY_STATE,
   RECALL_MEMORY_TOOL_NAME,
 } from './user-memory.ts'
-import type { UserMemoryMsg } from './user-memory.ts'
 
 // ─── Config ───
 

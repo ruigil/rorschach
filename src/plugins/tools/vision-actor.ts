@@ -3,9 +3,9 @@ import { mkdir } from 'node:fs/promises'
 import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../system/tools.ts'
-import { ImageGeneratedTopic } from '../../system/topics.ts'
-import type { LlmProviderMsg, LlmProviderReply } from '../cognitive/llm-provider.ts'
+import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { ImageGeneratedTopic } from '../../types/ws.ts'
+import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 
 // ─── Output directory for generated images ───
 

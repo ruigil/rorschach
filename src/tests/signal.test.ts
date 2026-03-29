@@ -2,8 +2,8 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { tmpdir } from 'node:os'
 import { createPluginSystem } from '../system/index.ts'
 import { createSignalActor, renderForSignal } from '../plugins/interfaces/signal.ts'
-import { WsConnectTopic, WsMessageTopic, WsSendTopic } from '../system/topics.ts'
-import type { WsConnectEvent, WsMessageEvent } from '../system/topics.ts'
+import { WsConnectTopic, WsMessageTopic, WsSendTopic } from '../types/ws.ts'
+import type { WsConnectEvent, WsMessageEvent } from '../types/ws.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 

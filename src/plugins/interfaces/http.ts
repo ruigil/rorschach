@@ -5,15 +5,15 @@ import { emit } from '../../system/types.ts'
 import {
   WsMessageTopic, WsConnectTopic, WsDisconnectTopic,
   WsSendTopic, WsBroadcastTopic, HttpConfigTopic, ImageGeneratedTopic,
-} from '../../system/topics.ts'
-import type { HttpConfigPayload } from '../../system/topics.ts'
+} from '../../types/ws.ts'
+import type { HttpConfigPayload } from '../../types/ws.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
-import { LlmProviderTopic } from '../cognitive/llm-provider.ts'
-import type { LlmProviderMsg } from '../cognitive/llm-provider.ts'
-import { KgraphTopic } from '../memory/kgraph.ts'
-import type { KgraphMsg, KgraphGraph } from '../memory/kgraph.ts'
+import { LlmProviderTopic } from '../../types/llm.ts'
+import type { LlmProviderMsg } from '../../types/llm.ts'
+import { KgraphTopic } from '../../types/memory.ts'
+import type { KgraphMsg, KgraphGraph } from '../../types/memory.ts'
 
 // ─── Public directory (resolved relative to this module) ───
 const PUBLIC_DIR = join(import.meta.dir, '../..', 'public')

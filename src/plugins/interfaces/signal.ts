@@ -3,7 +3,7 @@ import type { Socket } from 'node:net'
 import type { ActorDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { emit } from '../../system/types.ts'
-import { WsConnectTopic, WsMessageTopic, WsSendTopic, ImageGeneratedTopic } from '../../system/topics.ts'
+import { WsConnectTopic, WsMessageTopic, WsSendTopic, ImageGeneratedTopic } from '../../types/ws.ts'
 
 // ─── Markdown → Signal formatting ───
 //

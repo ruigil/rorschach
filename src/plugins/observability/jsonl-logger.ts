@@ -2,13 +2,8 @@ import { appendFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { ActorDef, LogEvent } from '../../system/types.ts'
 import { LogTopic } from '../../system/types.ts'
+import type { JsonlLoggerMsg } from '../../types/observability.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-
-// ─── Message protocol ───
-
-export type JsonlLoggerMsg =
-  | { type: 'log'; event: LogEvent }
-  | { type: 'flush' }
 
 // ─── Actor state ───
 
@@ -86,7 +81,7 @@ export const createJsonlLoggerActor = (
         appendFileSync(state.filePath, chunk)
 
         const written = state.written + state.buffer.length
-        context.log.debug(`flushed ${state.buffer.length} log entries (${written} total)`)
+        //context.log.debug(`flushed ${state.buffer.length} log entries (${written} total)`)
         return { state: { ...state, buffer: [], written } }
       },
     }),

@@ -5,12 +5,12 @@ import {
   SystemLifecycleTopic,
   TraceTopic,
 } from './system/index.ts'
-import { WsBroadcastTopic, WsConnectTopic, WsSendTopic, HttpConfigTopic } from './system/topics.ts'
-import type { HttpConfigPayload } from './system/topics.ts'
+import { WsBroadcastTopic, WsConnectTopic, WsSendTopic, HttpConfigTopic } from './types/ws.ts'
+import type { HttpConfigPayload } from './types/ws.ts'
 import { loadConfig } from './config.ts'
 import type { LogEvent, MetricsEvent, LifecycleEvent, TraceSpan } from './system/index.ts'
-import { ToolRegistrationTopic } from './system/tools.ts'
-import type { ToolRegistrationEvent } from './system/tools.ts'
+import { ToolRegistrationTopic } from './types/tools.ts'
+import type { ToolRegistrationEvent } from './types/tools.ts'
 
 if (!process.env.OPENROUTER_API_KEY) {
   console.error('Error: OPENROUTER_API_KEY environment variable is not set.')

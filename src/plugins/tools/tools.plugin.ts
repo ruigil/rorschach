@@ -1,14 +1,14 @@
 import { createWebSearchActor, type WebSearchActorOptions as WebSearchActorConfig, WEB_SEARCH_SCHEMA, WEB_SEARCH_TOOL_NAME } from './web-search.ts'
 import { createBashActor, BASH_TOOL_NAME, BASH_SCHEMA, WRITE_TOOL_NAME, WRITE_SCHEMA, READ_TOOL_NAME, READ_SCHEMA } from './bash.ts'
 import { createVisionActor, ANALYZE_IMAGE_TOOL_NAME, ANALYZE_IMAGE_SCHEMA, GENERATE_IMAGE_TOOL_NAME, GENERATE_IMAGE_SCHEMA } from './vision-actor.ts'
-import { LlmProviderTopic } from '../cognitive/llm-provider.ts'
-import type { LlmProviderMsg } from '../cognitive/llm-provider.ts'
+import { LlmProviderTopic } from '../../types/llm.ts'
+import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { BashOptions as BashConfig } from 'just-bash'
 import type { ActorRef, PluginActorState, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'
-import type { ToolInvokeMsg } from '../../system/tools.ts'
-import { ToolRegistrationTopic } from '../../system/tools.ts'
+import type { ToolInvokeMsg } from '../../types/tools.ts'
+import { ToolRegistrationTopic } from '../../types/tools.ts'
 
 // ─── Config types ───
 

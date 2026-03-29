@@ -2,10 +2,10 @@ import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../system/types.ts'
 import { ask } from '../../system/ask.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { WsSendTopic, MemoryStreamTopic } from '../../system/topics.ts'
-import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply, ToolSchema } from '../../system/tools.ts'
-import { ToolRegistrationTopic } from '../../system/tools.ts'
-import { LlmProviderTopic } from './llm-provider.ts'
+import { WsSendTopic, MemoryStreamTopic } from '../../types/ws.ts'
+import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { ToolRegistrationTopic } from '../../types/tools.ts'
+import { LlmProviderTopic } from '../../types/llm.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
@@ -14,17 +14,8 @@ import type {
   TokenUsage,
   Tool,
   ToolCall,
-} from './llm-provider.ts'
-
-// ─── Message protocol ───
-
-export type ReActMsg =
-  | { type: 'userMessage'; text: string; images?: string[]; traceId: string; parentSpanId: string }
-  | LlmProviderReply
-  | { type: '_toolRegistered';      name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
-  | { type: '_toolUnregistered';    name: string }
-  | { type: '_toolResult';          toolName: string; toolCallId: string; reply: ToolReply }
-  | { type: '_llmProviderUpdated';  ref: ActorRef<LlmProviderMsg> | null }
+} from '../../types/llm.ts'
+import type { ReActMsg } from '../../types/react.ts'
 
 // ─── State ───
 

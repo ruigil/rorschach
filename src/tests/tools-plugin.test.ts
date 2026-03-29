@@ -6,8 +6,8 @@ import {
   type WebSearchMsg,
   type BraveLlmContextResponse,
 } from '../plugins/tools/web-search.ts'
-import { ToolRegistrationTopic } from '../system/tools.ts'
-import type { ToolInvokeMsg, ToolReply, ToolRegistrationEvent } from '../system/tools.ts'
+import { ToolRegistrationTopic } from '../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply, ToolRegistrationEvent } from '../types/tools.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 
 // ─── Helpers ───
@@ -226,6 +226,8 @@ describe('tools plugin', () => {
       initialized: true,
       webSearch: { config: { apiKey: 'super-secret', count: 20 }, ref: null, gen: 0 },
       bash:      { config: null, ref: null, gen: 0 },
+      vision:    { config: null, ref: null, gen: 0 },
+      llmRef:    null,
       tools: {},
     }
 
@@ -240,6 +242,8 @@ describe('tools plugin', () => {
       initialized: false,
       webSearch: { config: null, ref: null, gen: 0 },
       bash:      { config: null, ref: null, gen: 0 },
+      vision:    { config: null, ref: null, gen: 0 },
+      llmRef:    null,
       tools: {},
     }
 

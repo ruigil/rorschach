@@ -1,5 +1,5 @@
 import { createPluginSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
-import { WsMessageTopic } from '../system/topics.ts'
+import { WsMessageTopic } from '../types/ws.ts'
 import interfacesPlugin from '../plugins/interfaces/interfaces.plugin.ts'
 import type { LifecycleEvent, LogEvent } from '../system/types.ts'
 

@@ -1,11 +1,12 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply, ToolSchema } from '../../system/tools.ts'
-import { ToolRegistrationTopic } from '../../system/tools.ts'
-import type { LlmProviderMsg } from '../cognitive/llm-provider.ts'
-import { LlmProviderTopic } from '../cognitive/llm-provider.ts'
+import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { ToolRegistrationTopic } from '../../types/tools.ts'
+import type { LlmProviderMsg } from '../../types/llm.ts'
+import { LlmProviderTopic } from '../../types/llm.ts'
 import { createMemoryRecallActor, INITIAL_RECALL_STATE } from './memory-recall.ts'
-import type { MemoryRecallMsg } from './memory-recall.ts'
+import type { MemoryRecallMsg } from '../../types/memory.ts'
+import type { UserMemoryMsg } from '../../types/memory.ts'
 
 // ─── Tool allowlist ───
 
@@ -37,15 +38,6 @@ export type UserMemoryOptions = {
   model:  string
   userId: string
 }
-
-// ─── Message protocol ───
-
-export type UserMemoryMsg =
-  | { type: 'invoke';           toolName: string; arguments: string; replyTo: ActorRef<ToolReply> }
-  | { type: '_recallDone';      recallId: string }
-  | { type: '_llmProvider';     ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
-  | { type: '_toolUnregistered'; name: string }
 
 // ─── State ───
 

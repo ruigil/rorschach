@@ -2,7 +2,7 @@ import { Bash, InMemoryFs, MountableFs, OverlayFs, ReadWriteFs } from 'just-bash
 import type { BashOptions, BashExecResult } from 'just-bash'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../system/tools.ts'
+import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
 
 // ─── Tool schemas ───
 

@@ -1,15 +1,15 @@
 import type { ActorDef, ActorRef, MessageHandler } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
-import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply } from '../../system/tools.ts'
+import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
   LlmProviderReply,
   Tool,
   ToolCall,
-} from '../cognitive/llm-provider.ts'
-import type { UserMemoryMsg } from './user-memory.ts'
+} from '../../types/llm.ts'
+import type { UserMemoryMsg, MemoryRecallMsg } from '../../types/memory.ts'
 
 // ─── Options ───
 
@@ -23,12 +23,6 @@ export type MemoryRecallOptions = {
   userId:    string
   tools:     ToolCollection
 }
-
-// ─── Message protocol ───
-
-export type MemoryRecallMsg =
-  | { type: '_toolResult'; toolCallId: string; toolName: string; reply: ToolReply }
-  | LlmProviderReply
 
 // ─── Internal types ───
 

@@ -1,19 +1,11 @@
 import { GrafeoDB } from '@grafeo-db/js'
-import { createTopic } from '../../system/types.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../system/tools.ts'
-
-// ─── Graph dump types ───
-
-export type KgraphNode = { id: number; labels: string[]; properties: Record<string, unknown> }
-export type KgraphEdge = { id: number; type: string; source: number; target: number; properties: Record<string, unknown> }
-export type KgraphGraph = { nodes: KgraphNode[]; edges: KgraphEdge[] }
-
-// ─── Topic: published (retained) when kgraph actor is spawned/replaced ───
-
-export type KgraphRefEvent = { ref: ActorRef<KgraphMsg> | null }
-export const KgraphTopic = createTopic<KgraphRefEvent>('memory.kgraph')
+import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import type { KgraphGraph, KgraphMsg, KgraphRefEvent } from '../../types/memory.ts'
+import { KgraphTopic } from '../../types/memory.ts'
+export { KgraphTopic }
+export type { KgraphGraph, KgraphMsg, KgraphRefEvent }
 
 // ─── Tool names & schemas ───
 
@@ -67,16 +59,6 @@ export const KGRAPH_WRITE_SCHEMA: ToolSchema = {
 // ─── Message protocol ───
 
 export type KgraphState = { db: GrafeoDB } | null
-
-export type KgraphMsg =
-  | ToolInvokeMsg
-  | { type: 'dump'; replyTo: ActorRef<KgraphGraph> }
-  | { type: '_queryDone'; rows: unknown[]; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_queryErr';  error: string;   replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_writeDone'; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_writeErr';  error: string;   replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_dumpDone';  graph: KgraphGraph; replyTo: ActorRef<KgraphGraph> }
-  | { type: '_dumpErr';   error: string;      replyTo: ActorRef<KgraphGraph> }
 
 // ─── Actor definition ───
 

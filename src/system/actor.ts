@@ -26,7 +26,7 @@ import {
   type SupervisionStrategy,
   type TraceContext,
 } from './types.ts'
-import { TraceTopic, newId } from './trace.ts'
+import { TraceTopic, newId } from '../types/trace.ts'
 
 // ─── Internal envelope: unifies user messages and lifecycle events ───
 type Envelope<M> =

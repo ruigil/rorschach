@@ -1,9 +1,10 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { WsConnectTopic, WsDisconnectTopic, WsMessageTopic } from '../../system/topics.ts'
+import { WsConnectTopic, WsDisconnectTopic, WsMessageTopic } from '../../types/ws.ts'
 import { createReActActor } from './react.ts'
-import type { ReActMsg, ReActState } from './react.ts'
-import type { LlmProviderMsg } from './llm-provider.ts'
+import type { ReActState } from './react.ts'
+import type { ReActMsg } from '../../types/react.ts'
+import type { LlmProviderMsg } from '../../types/llm.ts'
 
 // ─── Message protocol ───
 

@@ -1,5 +1,6 @@
 import { createPoolRouter, type PoolRouterOptions } from './pool-router.ts'
-import { createWorkerBridge, type WorkerBridgeOptions } from './worker-bridge.ts'
+import { createWorkerBridge } from './worker-bridge.ts'
+import type { WorkerBridgeOptions } from '../../types/parallel.ts'
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 

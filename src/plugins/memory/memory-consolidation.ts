@@ -1,9 +1,9 @@
 import type { ActorDef, ActorRef, MessageHandler } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { MemoryStreamTopic } from '../../system/topics.ts'
-import type { MemoryTurnEvent } from '../../system/topics.ts'
-import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply, ToolSchema } from '../../system/tools.ts'
-import { ToolRegistrationTopic } from '../../system/tools.ts'
+import { MemoryStreamTopic } from '../../types/ws.ts'
+import type { MemoryTurnEvent } from '../../types/ws.ts'
+import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { ToolRegistrationTopic } from '../../types/tools.ts'
 import { ask } from '../../system/ask.ts'
 import type {
   ApiMessage,
@@ -11,8 +11,9 @@ import type {
   LlmProviderReply,
   Tool,
   ToolCall,
-} from '../cognitive/llm-provider.ts'
-import { LlmProviderTopic } from '../cognitive/llm-provider.ts'
+} from '../../types/llm.ts'
+import { LlmProviderTopic } from '../../types/llm.ts'
+import type { MemoryConsolidationMsg } from '../../types/memory.ts'
 
 // ─── Tool allowlist ───
 
@@ -24,17 +25,6 @@ export type MemoryConsolidationOptions = {
   model:      string
   intervalMs: number
 }
-
-// ─── Message protocol ───
-
-export type MemoryConsolidationMsg =
-  | { type: '_turn';            userId: string; userText: string; assistantText: string; timestamp: number }
-  | { type: '_consolidate' }
-  | { type: '_llmProvider';     ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
-  | { type: '_toolUnregistered'; name: string }
-  | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolReply }
-  | LlmProviderReply
 
 // ─── Internal types ───
 

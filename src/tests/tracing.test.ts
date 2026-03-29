@@ -4,8 +4,8 @@ import type { MessageHeaders } from '../system/index.ts'
 import { createReActActor, type ReActState } from '../plugins/cognitive/react.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
-import type { ToolInvokeMsg } from '../system/tools.ts'
-import { ToolRegistrationTopic } from '../system/tools.ts'
+import type { ToolInvokeMsg } from '../types/tools.ts'
+import { ToolRegistrationTopic } from '../types/tools.ts'
 import { WEB_SEARCH_SCHEMA, WEB_SEARCH_TOOL_NAME } from '../plugins/tools/web-search.ts'
 
 // ─── Helpers ───

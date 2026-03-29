@@ -1,4 +1,4 @@
-import { createTopic } from './types.ts'
+import { createTopic } from '../system/types.ts'
 
 // ─── Domain event: published when a WebSocket message is received ───
 
