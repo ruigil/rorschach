@@ -186,6 +186,8 @@ export type SignalActorOptions = {
   account?:        string
   reconnectMs?:    number  // default: 3000
   attachmentsDir?: string
+  allowList?:      string[]  // if set, only these numbers/UUIDs may interact
+  groupId?:        string    // if set, only messages from this group are handled; replies go to the group
 }
 
 // ─── Message protocol ───
@@ -195,8 +197,8 @@ type Attachment = { id: string; contentType: string }
 type Envelope = {
   source?:       string
   sourceNumber?: string
-  dataMessage?:  { message?: string; attachments?: Attachment[] }
-  syncMessage?:  { sentMessage?: { destination?: string; destinationNumber?: string; message?: string; attachments?: Attachment[] } }
+  dataMessage?:  { message?: string; attachments?: Attachment[]; groupInfo?: { groupId?: string } }
+  syncMessage?:  { sentMessage?: { destination?: string; destinationNumber?: string; message?: string; attachments?: Attachment[]; groupInfo?: { groupId?: string } } }
 }
 
 type SignalMsg =
@@ -226,6 +228,8 @@ export const createSignalActor = (
   const account        = options?.account        ?? null
   const reconnectMs    = options?.reconnectMs    ?? 3_000
   const attachmentsDir = options?.attachmentsDir ?? `${process.env.HOME}/.local/share/signal-cli/attachments`
+  const allowList      = options?.allowList      ?? null
+  const groupId        = options?.groupId        ?? null
 
   let msgId        = 0
   let activeSocket: Socket | null = null
@@ -243,10 +247,10 @@ export const createSignalActor = (
   const rpcLine = (method: string, params: Record<string, unknown>): string =>
     JSON.stringify({ jsonrpc: '2.0', id: ++msgId, method, params }) + '\n'
 
-  const sendOverSocket = (recipient: string, { message, textStyles }: SignalFormatted): Promise<void> =>
+  const sendOverSocket = (clientId: string, { message, textStyles }: SignalFormatted): Promise<void> =>
     writeToSocket(rpcLine('send', {
       ...(account ? { account } : {}),
-      recipient: [recipient],
+      ...(groupId && clientId === groupId ? { groupId } : { recipient: [clientId] }),
       message,
       ...(textStyles.length > 0 ? { textStyles } : {}),
     }))
@@ -326,23 +330,33 @@ export const createSignalActor = (
         const envelope: Envelope | undefined = parsed?.params?.envelope
         if (!envelope) return { state }
 
-        const sent        = envelope.syncMessage?.sentMessage
-        const source      = envelope.source ?? envelope.sourceNumber ?? sent?.destination ?? sent?.destinationNumber
-        const text        = envelope.dataMessage?.message ?? sent?.message ?? ''
-        const attachments = envelope.dataMessage?.attachments ?? sent?.attachments ?? []
+        const sent           = envelope.syncMessage?.sentMessage
+        const source         = envelope.source ?? envelope.sourceNumber ?? sent?.destination ?? sent?.destinationNumber
+        const incomingGroup  = envelope.dataMessage?.groupInfo?.groupId ?? envelope.syncMessage?.sentMessage?.groupInfo?.groupId ?? null
+        const text           = envelope.dataMessage?.message ?? sent?.message ?? ''
+        const attachments    = envelope.dataMessage?.attachments ?? sent?.attachments ?? []
 
         if (!source || (!text && attachments.length === 0)) return { state }
 
+        // Group mode: only accept messages from the configured group
+        if (groupId) {
+          if (incomingGroup !== groupId) return { state }
+        } else {
+          if (allowList && !allowList.includes(source)) return { state }
+        }
+
+        // Use groupId as clientId when in group mode so all members share one session
+        const clientId = groupId ?? source
         const seenIds = new Set(state.seenIds)
         const events  = []
 
-        if (!seenIds.has(source)) {
-          seenIds.add(source)
-          events.push(emit(WsConnectTopic, { clientId: source }))
+        if (!seenIds.has(clientId)) {
+          seenIds.add(clientId)
+          events.push(emit(WsConnectTopic, { clientId }))
         }
 
         events.push(emit(WsMessageTopic, {
-          clientId:     source,
+          clientId,
           text,
           ...(attachments.length > 0 ? { images: attachmentPaths(attachments) } : {}),
           traceId:      crypto.randomUUID(),
@@ -405,11 +419,11 @@ export const createSignalActor = (
       },
 
       _imageGenerated: (state, msg, ctx) => {
-        for (const recipient of state.seenIds) {
+        for (const clientId of state.seenIds) {
           ctx.pipeToSelf(
             writeToSocket(rpcLine('send', {
               ...(account ? { account } : {}),
-              recipient: [recipient],
+              ...(groupId && clientId === groupId ? { groupId } : { recipient: [clientId] }),
               message: '',
               attachments: [msg.filePath],
             })),
