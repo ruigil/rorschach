@@ -49,7 +49,7 @@ const buildSystemPrompt = (userId: string): string =>
   `2. Use read to read referenced markdown files\n` +
   `3. Run follow-up queries as needed\n` +
   `4. Synthesize a concise answer\n\n` +
-  `Memory files are at /system/workspace/memory/${userId}/. If nothing relevant is found, say so plainly.`
+  `Memory files are at /workspace/memory/${userId}/. If nothing relevant is found, say so plainly.`
 
 // ─── Actor definition ───
 

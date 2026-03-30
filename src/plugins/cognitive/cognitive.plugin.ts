@@ -17,6 +17,7 @@ type LlmProviderConfig = {
 type ChatbotConfig = {
   systemPrompt?:  string
   historyWindow?: number
+  toolFilter?:    { allow: string[] } | { deny: string[] }
 }
 
 export type CognitiveConfig = {
@@ -62,6 +63,7 @@ const spawnAll = (
           model: llmProviderConfig.model,
           systemPrompt: chatbotConfig.systemPrompt,
           historyWindow: chatbotConfig.historyWindow,
+          toolFilter: chatbotConfig.toolFilter,
         }),
         { sessions: {} },
       )

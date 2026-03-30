@@ -1,16 +1,12 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
-import { ToolRegistrationTopic } from '../../types/tools.ts'
+import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import { createMemoryRecallActor, INITIAL_RECALL_STATE } from './memory-recall.ts'
 import type { MemoryRecallMsg } from '../../types/memory.ts'
 import type { UserMemoryMsg } from '../../types/memory.ts'
-
-// ─── Tool allowlist ───
-
-const RECALL_ALLOWED = new Set(['kgraph_query', 'read'])
 
 // ─── Tool schemas ───
 
@@ -35,8 +31,9 @@ export const RECALL_MEMORY_SCHEMA: ToolSchema = {
 // ─── Options ───
 
 export type UserMemoryOptions = {
-  model:  string
-  userId: string
+  model:       string
+  userId:      string
+  toolFilter?: ToolFilter
 }
 
 // ─── State ───
@@ -50,7 +47,7 @@ type UserMemoryState = {
 // ─── Actor definition ───
 
 export const createUserMemoryActor = (options: UserMemoryOptions): ActorDef<UserMemoryMsg, UserMemoryState> => {
-  const { model, userId } = options
+  const { model, userId, toolFilter } = options
 
   return {
     lifecycle: onLifecycle({
@@ -59,11 +56,12 @@ export const createUserMemoryActor = (options: UserMemoryOptions): ActorDef<User
           type: '_llmProvider' as const,
           ref: e.ref,
         }))
-        context.subscribe(ToolRegistrationTopic, (e) =>
-          e.ref === null
+        context.subscribe(ToolRegistrationTopic, (e) => {
+          if (!applyToolFilter(e.name, toolFilter)) return null
+          return e.ref === null
             ? { type: '_toolUnregistered' as const, name: e.name }
-            : { type: '_toolRegistered' as const, name: e.name, schema: e.schema, ref: e.ref },
-        )
+            : { type: '_toolRegistered' as const, name: e.name, schema: e.schema, ref: e.ref }
+        })
         context.publishRetained(ToolRegistrationTopic, RECALL_MEMORY_TOOL_NAME, {
           name: RECALL_MEMORY_TOOL_NAME,
           schema: RECALL_MEMORY_SCHEMA,
@@ -145,10 +143,9 @@ export const createUserMemoryActor = (options: UserMemoryOptions): ActorDef<User
 
       _llmProvider: (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
 
-      _toolRegistered: (state, msg) => {
-        if (!RECALL_ALLOWED.has(msg.name)) return { state }
-        return { state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } } }
-      },
+      _toolRegistered: (state, msg) => ({
+        state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } },
+      }),
 
       _toolUnregistered: (state, msg) => {
         const { [msg.name]: _dropped, ...rest } = state.tools

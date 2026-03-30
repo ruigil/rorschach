@@ -3,6 +3,7 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { WsConnectTopic, WsDisconnectTopic, WsMessageTopic } from '../../types/ws.ts'
 import { createReActActor } from './react.ts'
 import type { ReActState } from './react.ts'
+import type { ToolFilter } from '../../types/tools.ts'
 import type { ReActMsg } from '../../types/react.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 
@@ -22,10 +23,11 @@ type SessionManagerState = {
 // ─── Options ───
 
 export type SessionManagerOptions = {
-  llmRef:          ActorRef<LlmProviderMsg>
-  model:           string
-  systemPrompt?:   string
-  historyWindow?:  number
+  llmRef:         ActorRef<LlmProviderMsg>
+  model:          string
+  systemPrompt?:  string
+  historyWindow?: number
+  toolFilter?:    ToolFilter
 }
 
 // ─── Initial ReAct state ───
@@ -48,7 +50,7 @@ const initialReActState = (llmRef: ActorRef<LlmProviderMsg>): ReActState => ({
 // ─── Actor definition ───
 
 export const createSessionManagerActor = (options: SessionManagerOptions): ActorDef<SessionManagerMsg, SessionManagerState> => {
-  const { llmRef, model, systemPrompt, historyWindow } = options
+  const { llmRef, model, systemPrompt, historyWindow, toolFilter } = options
 
   return {
     lifecycle: onLifecycle({
@@ -74,7 +76,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
         const { clientId } = message
         const ref = context.spawn(
           `react-${clientId}`,
-          createReActActor({ clientId, model, systemPrompt, historyWindow }),
+          createReActActor({ clientId, model, systemPrompt, historyWindow, toolFilter }),
           initialReActState(llmRef),
         )
         return { state: { sessions: { ...state.sessions, [clientId]: ref } } }

@@ -2,8 +2,8 @@ import type { ActorDef, ActorRef, MessageHandler } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { MemoryStreamTopic } from '../../types/ws.ts'
 import type { MemoryTurnEvent } from '../../types/ws.ts'
-import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
-import { ToolRegistrationTopic } from '../../types/tools.ts'
+import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
+import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import { ask } from '../../system/ask.ts'
 import type {
   ApiMessage,
@@ -15,15 +15,12 @@ import type {
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { MemoryConsolidationMsg } from '../../types/memory.ts'
 
-// ─── Tool allowlist ───
-
-const ALLOWED_TOOLS = new Set(['kgraph_query', 'kgraph_write', 'bash', 'write', 'read'])
-
 // ─── Options ───
 
 export type MemoryConsolidationOptions = {
-  model:      string
-  intervalMs: number
+  model:       string
+  intervalMs:  number
+  toolFilter?: ToolFilter
 }
 
 // ─── Internal types ───
@@ -58,8 +55,8 @@ export type ConsolidationState = {
 const buildSystemPrompt = (userId: string): string =>
   `You are a memory consolidation agent for user "${userId}". Analyze the conversation turns below and persist what is worth remembering.\n\n` +
   `Three memory types:\n` +
-  `- Episodic (markdown): notable events, decisions, experiences → /system/workspace/memory/${userId}/episodic/YYYY-MM-DD.md (append)\n` +
-  `- Procedural (markdown): skills, workflows, preferences, recipes → /system/workspace/memory/${userId}/procedural/{topic}.md (update in-place)\n` +
+  `- Episodic (markdown): notable events, decisions, experiences → /workspace/memory/${userId}/episodic/YYYY-MM-DD.md (append)\n` +
+  `- Procedural (markdown): skills, workflows, preferences, recipes → /workspace/memory/${userId}/procedural/{topic}.md (update in-place)\n` +
   `- Semantic (kgraph): facts, entities, relationships → kgraph_write with MERGE. Add a filePath property on nodes that reference their markdown file.\n\n` +
   `Use bash to mkdir -p directories before writing. Read existing files with read before appending to avoid duplication. Skip small talk.`
 
@@ -76,10 +73,9 @@ const buildMessages = (userId: string, turns: MemoryTurnEvent[]): ApiMessage[] =
 
 // ─── Shared tool handlers ───
 
-const toolRegistered = (state: ConsolidationState, msg: Extract<MemoryConsolidationMsg, { type: '_toolRegistered' }>): { state: ConsolidationState } => {
-  if (!ALLOWED_TOOLS.has(msg.name)) return { state }
-  return { state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } } }
-}
+const toolRegistered = (state: ConsolidationState, msg: Extract<MemoryConsolidationMsg, { type: '_toolRegistered' }>): { state: ConsolidationState } => ({
+  state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } },
+})
 
 const toolUnregistered = (state: ConsolidationState, msg: Extract<MemoryConsolidationMsg, { type: '_toolUnregistered' }>): { state: ConsolidationState } => {
   const { [msg.name]: _, ...rest } = state.tools
@@ -89,7 +85,7 @@ const toolUnregistered = (state: ConsolidationState, msg: Extract<MemoryConsolid
 // ─── Actor definition ───
 
 export const createMemoryConsolidationActor = (options: MemoryConsolidationOptions): ActorDef<MemoryConsolidationMsg, ConsolidationState> => {
-  const { model, intervalMs } = options
+  const { model, intervalMs, toolFilter } = options
 
   let awaitingLlmHandler: MessageHandler<MemoryConsolidationMsg, ConsolidationState>
   let toolLoopHandler:    MessageHandler<MemoryConsolidationMsg, ConsolidationState>
@@ -307,6 +303,8 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
         ...toolResultMsgs,
       ]
 
+      context.log.debug(JSON.stringify(toolResultMsgs))
+
       const requestId = crypto.randomUUID()
       const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
 
@@ -344,11 +342,12 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
           type: '_llmProvider' as const,
           ref: e.ref,
         }))
-        context.subscribe(ToolRegistrationTopic, (e) =>
-          e.ref === null
+        context.subscribe(ToolRegistrationTopic, (e) => {
+          if (!applyToolFilter(e.name, toolFilter)) return null
+          return e.ref === null
             ? { type: '_toolUnregistered' as const, name: e.name }
-            : { type: '_toolRegistered' as const, name: e.name, schema: e.schema, ref: e.ref },
-        )
+            : { type: '_toolRegistered' as const, name: e.name, schema: e.schema, ref: e.ref }
+        })
         context.timers.startPeriodicTimer('consolidation', { type: '_consolidate' }, intervalMs)
         return { state: _state }
       },

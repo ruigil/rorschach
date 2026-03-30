@@ -58,12 +58,12 @@ const spawnMemoryActors = (
 ): { consolidation: ActorRef<MemoryConsolidationMsg>; userMemory: ActorRef<UserMemoryMsg> } => {
   const consolidation = ctx.spawn(
     `memory-consolidation-${gen}`,
-    createMemoryConsolidationActor({ model: config.model, intervalMs: config.consolidationIntervalMs }),
+    createMemoryConsolidationActor({ model: config.model, intervalMs: config.consolidationIntervalMs, toolFilter: { allow: ['kgraph_query', 'kgraph_write', 'bash', 'write', 'read'] } }),
     INITIAL_CONSOLIDATION_STATE,
   )
   const userMemory = ctx.spawn(
     `user-memory-${gen}`,
-    createUserMemoryActor({ model: config.model, userId: config.userId }),
+    createUserMemoryActor({ model: config.model, userId: config.userId, toolFilter: { allow: ['kgraph_query', 'read'] } }),
     INITIAL_USER_MEMORY_STATE,
   )
   return { consolidation, userMemory }

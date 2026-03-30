@@ -3,8 +3,8 @@ import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../syste
 import { ask } from '../../system/ask.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { WsSendTopic, MemoryStreamTopic } from '../../types/ws.ts'
-import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
-import { ToolRegistrationTopic } from '../../types/tools.ts'
+import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
+import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type {
   ApiMessage,
@@ -64,6 +64,7 @@ export type ReActActorOptions = {
   model:          string
   systemPrompt?:  string
   historyWindow?: number
+  toolFilter?:    ToolFilter
 }
 
 // ─── Helpers ───
@@ -77,7 +78,7 @@ const trimHistory = (history: ConversationMessage[], maxTurns: number): Conversa
 // ─── Actor definition ───
 
 export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg, ReActState> => {
-  const { clientId, model, systemPrompt, historyWindow } = options
+  const { clientId, model, systemPrompt, historyWindow, toolFilter } = options
 
   // ─── Shared handlers (used across all behaviors) ───
 
@@ -414,11 +415,12 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
   return {
     lifecycle: onLifecycle({
       start: async (state, context) => {
-        context.subscribe(ToolRegistrationTopic, (event) =>
-          event.ref === null
+        context.subscribe(ToolRegistrationTopic, (event) => {
+          if (!applyToolFilter(event.name, toolFilter)) return null
+          return event.ref === null
             ? { type: '_toolUnregistered' as const, name: event.name }
-            : { type: '_toolRegistered' as const, name: event.name, schema: event.schema, ref: event.ref },
-        )
+            : { type: '_toolRegistered' as const, name: event.name, schema: event.schema, ref: event.ref }
+        })
 
         context.subscribe(LlmProviderTopic, (event) =>
           ({ type: '_llmProviderUpdated' as const, ref: event.ref }),

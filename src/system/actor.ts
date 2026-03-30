@@ -284,10 +284,11 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       services.eventStream.deleteRetained(topic, key, tombstone)
     },
 
-    subscribe: <T>(topic: EventTopic<T>, adapter: (event: T) => M) => {
+    subscribe: <T>(topic: EventTopic<T>, adapter: (event: T) => M | null) => {
       services.eventStream.subscribe(name, topic, (event: T) => {
         if (!isStopped()) {
-          mailbox.enqueue({ tag: 'message', payload: adapter(event), headers: {} })
+          const msg = adapter(event)
+          if (msg !== null) mailbox.enqueue({ tag: 'message', payload: msg, headers: {} })
         }
       })
     },

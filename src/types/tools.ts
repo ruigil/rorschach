@@ -33,3 +33,13 @@ export type ToolRegistrationEvent =
   | { name: string; ref: null }
 
 export const ToolRegistrationTopic = createTopic<ToolRegistrationEvent>('tools/registration')
+
+// ─── Tool filter ───
+
+export type ToolFilter = { allow: string[] } | { deny: string[] }
+
+export const applyToolFilter = (name: string, filter?: ToolFilter): boolean => {
+  if (!filter) return true
+  if ('allow' in filter) return filter.allow.includes(name)
+  return !filter.deny.includes(name)
+}

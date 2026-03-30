@@ -33,7 +33,8 @@
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "historyWindow": 40
+        "historyWindow": 40,
+        "toolFilter": { "deny": ["kgraph_query", "kgraph_write"] }
       }
     },
     "memory" : {
@@ -41,7 +42,7 @@
       "memory": {
         "model": "${OPENROUTER_MEMORY_MODEL:-x-ai/grok-4.1-fast}",
         "userId": "default",
-        "consolidationIntervalMs": 300000
+        "consolidationIntervalMs": 30000
       }
     },
     "observability": {
