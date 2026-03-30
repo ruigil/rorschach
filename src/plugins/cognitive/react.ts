@@ -413,7 +413,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
 
   return {
     lifecycle: onLifecycle({
-      async start(state, context) {
+      start: async (state, context) => {
         context.subscribe(ToolRegistrationTopic, (event) =>
           event.ref === null
             ? { type: '_toolUnregistered' as const, name: event.name }
