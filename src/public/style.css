@@ -55,6 +55,9 @@ html { background: var(--bg); }
   inset: 0;
   z-index: -2;
   pointer-events: none;
+  width: 100% !important;
+  height: 100% !important;
+  image-rendering: pixelated;
 }
 
 body {

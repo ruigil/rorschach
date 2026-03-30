@@ -29,9 +29,15 @@ const FRAG_SRC = `
     );
   }
 
-  float fbm(vec2 p) {
+  float fbm3(vec2 p) {
     float v = 0.0, a = 0.5;
-    for (int i = 0; i < 6; i++) { v += a * vnoise(p); p *= 2.07; a *= 0.5; }
+    for (int i = 0; i < 3; i++) { v += a * vnoise(p); p *= 2.07; a *= 0.5; }
+    return v;
+  }
+
+  float fbm5(vec2 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 5; i++) { v += a * vnoise(p); p *= 2.07; a *= 0.5; }
     return v;
   }
 
@@ -47,11 +53,11 @@ const FRAG_SRC = `
     vec3 col = vec3(0.0, 0.008, 0.022);
 
     // Nebula wisps
-    float neb = fbm(uv * 2.8 + t * 0.04);
+    float neb = fbm3(uv * 2.8 + t * 0.04);
     col += vec3(0.005, 0.015, 0.05) * neb * smoothstep(1.1, 0.25, r);
 
-    // Star field — three density layers
-    for (int i = 0; i < 3; i++) {
+    // Star field — two density layers
+    for (int i = 0; i < 2; i++) {
       float scale = 38.0 + float(i) * 22.0;
       vec2  sg    = uv * scale + vec2(float(i) * 17.3, float(i) * 9.1);
       float s     = hash(floor(sg));
@@ -67,9 +73,9 @@ const FRAG_SRC = `
     // Swirling plasma noise — Cartesian rotated UV avoids atan seam
     float ca = cos(t * 1.4), sa = sin(t * 1.4);
     vec2  rotUV  = vec2(ca * uv.x - sa * uv.y, sa * uv.x + ca * uv.y);
-    vec2  swirl  = vec2(r * 5.5 + fbm(rotUV * 3.0 + vec2(t * 0.3, -t * 0.2)) * 0.6,
-                        fbm(rotUV * 1.8 - vec2(t * 0.4, -t * 0.3)) * 2.0 + t * 0.6);
-    float plasma = fbm(swirl);
+    vec2  swirl  = vec2(r * 5.5 + fbm5(rotUV * 3.0 + vec2(t * 0.3, -t * 0.2)) * 0.6,
+                        fbm5(rotUV * 1.8 - vec2(t * 0.4, -t * 0.3)) * 2.0 + t * 0.6);
+    float plasma = fbm5(swirl);
 
     // Spiral phase — tightly wound Archimedean spiral co-rotating with disk
     float spiralAg   = ag - r * 9.0 + t * 3.5;
@@ -99,13 +105,6 @@ const FRAG_SRC = `
     float rimBase     = smoothstep(EH + 0.005, EH + 0.025, r) * smoothstep(EH + 0.075, EH + 0.04, r);
     float rim         = rimBase * (0.4 + 0.6 * rimSpiral) * rimPulse;
 
-    // Plasma tendrils — use Cartesian uv to avoid atan seam
-    float ct = cos(t * 0.55), st = sin(t * 0.55);
-    vec2  tendUV    = vec2(ct * uv.x - st * uv.y, st * uv.x + ct * uv.y);
-    float tendNoise = fbm(tendUV * 5.5 + vec2(r * 1.8, 0.0));
-    float tendMask  = smoothstep(EH + 0.02, 0.38, r) * smoothstep(0.55, 0.28, r);
-    float tendrils  = pow(tendNoise, 2.2) * tendMask * 1.8;
-
     vec3 gold   = vec3(1.0,  0.62, 0.10);   // amber-yellow, less orange
     vec3 ember  = vec3(1.0,  0.38, 0.04);   // muted orange for spiral crests
     vec3 hotWhite = vec3(1.0, 0.55, 0.12);  // deep amber, no white
@@ -114,7 +113,6 @@ const FRAG_SRC = `
     col += mix(gold, ember, spiralWave) * disk * 1.5;                   // amber disk, toned down
     col += azure * disk * 0.08;                                          // minimal blue
     col += mix(ember, hotWhite, rimSpiral) * rim * 1.8;                 // rim in amber tones
-    col += mix(gold, ember, tendNoise) * tendrils;                       // orange tendrils
 
     // Outer deep-orange halo — brighter and wider
     float halo = smoothstep(0.38, 0.18, r) * smoothstep(EH + 0.02, 0.22, r);
@@ -174,8 +172,8 @@ function initVoidGL() {
 }
 
 function resizeVoidCanvas() {
-  voidCanvas.width  = window.innerWidth
-  voidCanvas.height = window.innerHeight
+  voidCanvas.width  = Math.ceil(window.innerWidth  * 0.5)
+  voidCanvas.height = Math.ceil(window.innerHeight * 0.5)
 }
 
 resizeVoidCanvas()
@@ -184,13 +182,16 @@ const voidGL = initVoidGL()
 if (voidGL) {
   const { gl, uRes, uTime } = voidGL
   const t0 = performance.now()
+  let lastFrameTs = 0
 
-  function drawVoidFrame() {
+  function drawVoidFrame(ts) {
+    voidRaf = requestAnimationFrame(drawVoidFrame)
+    if (ts - lastFrameTs < 33) return  // ~30 fps cap
+    lastFrameTs = ts
     gl.viewport(0, 0, voidCanvas.width, voidCanvas.height)
     gl.uniform2f(uRes, voidCanvas.width, voidCanvas.height)
     gl.uniform1f(uTime, (performance.now() - t0) * 0.001)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
-    voidRaf = requestAnimationFrame(drawVoidFrame)
   }
 
   document.addEventListener('visibilitychange', () => {
