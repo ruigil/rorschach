@@ -32,7 +32,7 @@
         "model": "${OPENROUTER_MODEL:-x-ai/grok-4.1-fast}"
       },
       "chatbot": {
-        "systemPrompt": "You're the user perfect mirror. You always reflect what you perceive.",
+        "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
         "historyWindow": 40
       }
     },
@@ -46,7 +46,7 @@
     },
     "observability": {
       "jsonlLogger": {
-        "filePath": "./logs/app.jsonl",
+        "filePath": "./logs/rorschach.jsonl",
         "minLevel": "debug",
         "flushIntervalMs": 300000
       },

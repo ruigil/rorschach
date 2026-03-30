@@ -46,6 +46,7 @@ const spawnAll = (
   chatbotConfig: ChatbotConfig | null,
   gen: number,
 ): Pick<PluginState, 'llmProvider' | 'sessionManager'> => {
+  
   const llmProviderRef = ctx.spawn(
     `llm-provider-${gen}`,
     createLlmProviderActor({ adapter: createOpenRouterAdapter({ apiKey: llmProviderConfig.apiKey, reasoning: llmProviderConfig.reasoning }) }),
@@ -75,7 +76,7 @@ const spawnAll = (
 const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   id: 'cognitive',
   version: '1.0.0',
-  description: 'Cognitive actors: LLM provider, ReAct loop (the fundamental cognition loop reused by all reasoning agents), and session management',
+  description: 'Cognitive actors: LLM provider, ReAct loop and session management',
   configDescriptor: {
     defaults: {},
     onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
@@ -119,32 +120,58 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
 
   handler: onMessage<PluginMsg, PluginState>({
     config: (state, msg, ctx) => {
-      // Only restart the LLM provider — keep the session manager alive
-      // so existing WebSocket sessions survive config updates (e.g. toggling reasoning).
-      if (state.llmProvider.ref) ctx.stop(state.llmProvider.ref)
-
       const newLlmProviderConfig = msg.slice?.llmProvider ?? null
+      const newChatbotConfig    = msg.slice?.chatbot     ?? null
+
+      const llmProviderChanged = JSON.stringify(newLlmProviderConfig) !== JSON.stringify(state.llmProvider.config)
+      const chatbotChanged     = JSON.stringify(newChatbotConfig)     !== JSON.stringify(state.sessionManager.config)
+
+      if (!llmProviderChanged && !chatbotChanged) return { state }
+
       const gen = state.llmProvider.gen + 1
 
+      // No LLM provider → stop everything
       if (!newLlmProviderConfig) {
-        ctx.publishRetained(LlmProviderTopic, 'ref', { ref: null })
+        if (state.llmProvider.ref)    ctx.stop(state.llmProvider.ref)
         if (state.sessionManager.ref) ctx.stop(state.sessionManager.ref)
+        ctx.publishRetained(LlmProviderTopic, 'ref', { ref: null })
         return { state: { ...state, ...EMPTY_STATE, initialized: true } }
       }
 
-      const llmProviderRef = ctx.spawn(
-        `llm-provider-${gen}`,
-        createLlmProviderActor({ adapter: createOpenRouterAdapter({ apiKey: newLlmProviderConfig.apiKey, reasoning: newLlmProviderConfig.reasoning }) }),
-        null,
-      ) as ActorRef<LlmProviderMsg>
-      ctx.publishRetained(LlmProviderTopic, 'ref', { ref: llmProviderRef })
-
-      return {
-        state: {
-          ...state,
-          llmProvider: { config: newLlmProviderConfig, ref: llmProviderRef, gen },
-        },
+      // Restart LLM provider if its config changed
+      let llmProviderRef: ActorRef<LlmProviderMsg> | null = state.llmProvider.ref as ActorRef<LlmProviderMsg> | null
+      let llmProviderState = state.llmProvider
+      if (llmProviderChanged) {
+        if (state.llmProvider.ref) ctx.stop(state.llmProvider.ref)
+        llmProviderRef = ctx.spawn(
+          `llm-provider-${gen}`,
+          createLlmProviderActor({ adapter: createOpenRouterAdapter({ apiKey: newLlmProviderConfig.apiKey, reasoning: newLlmProviderConfig.reasoning }) }),
+          null,
+        ) as ActorRef<LlmProviderMsg>
+        ctx.publishRetained(LlmProviderTopic, 'ref', { ref: llmProviderRef })
+        llmProviderState = { config: newLlmProviderConfig, ref: llmProviderRef, gen }
       }
+
+      // Restart session manager if its config changed
+      let sessionManagerState = state.sessionManager
+      if (chatbotChanged) {
+        if (state.sessionManager.ref) ctx.stop(state.sessionManager.ref)
+        const sessionManagerRef = newChatbotConfig
+          ? ctx.spawn(
+              `session-manager-${gen}`,
+              createSessionManagerActor({
+                llmRef: llmProviderRef!,
+                model: newLlmProviderConfig.model,
+                systemPrompt: newChatbotConfig.systemPrompt,
+                historyWindow: newChatbotConfig.historyWindow,
+              }),
+              { sessions: {} },
+            )
+          : null
+        sessionManagerState = { config: newChatbotConfig, ref: sessionManagerRef, gen }
+      }
+
+      return { state: { ...state, llmProvider: llmProviderState, sessionManager: sessionManagerState } }
     },
   }),
 }
