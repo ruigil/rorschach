@@ -1,8 +1,7 @@
 import type { ActorDef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
 import type {
-  TokenUsage, ModelInfo, ApiMessage, Tool,
-  LlmProviderMsg, LlmProviderReply, LlmProviderAdapter, OpenRouterAdapterOptions,
+  TokenUsage, LlmProviderMsg, LlmProviderAdapter, OpenRouterAdapterOptions
 } from '../../types/llm.ts'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
