@@ -1,4 +1,4 @@
-// ─── Void canvas — black hole WebGL shader ───
+// ─── Void canvas — solar corona / eclipse WebGL shader ───
 
 const voidCanvas = document.getElementById('void-canvas')
 let voidRaf = null
@@ -45,96 +45,96 @@ const FRAG_SRC = `
     vec2 uv = (gl_FragCoord.xy - u_res * 0.5) / min(u_res.x, u_res.y);
     float r  = length(uv);
     float ag = atan(uv.y, uv.x);
-    float t  = u_time * 0.18;
+    float t  = u_time * 0.18;   // faster base speed
 
-    const float EH = 0.175;
+    const float MOON = 0.185;
 
-    // Deep space base
-    vec3 col = vec3(0.0, 0.008, 0.022);
+    // Deep space — near-total dark during totality
+    vec3 col = vec3(0.001, 0.002, 0.015);
 
-    // Nebula wisps
-    float neb = fbm5(uv * 2.8 + t * 0.04);
-    col += vec3(0.005, 0.015, 0.05) * neb * smoothstep(1.1, 0.25, r);
-
-    // Star field — two density layers
+    // Stars — more visible during eclipse
     for (int i = 0; i < 2; i++) {
-      float scale = 38.0 + float(i) * 22.0;
+      float scale = 40.0 + float(i) * 24.0;
       vec2  sg    = uv * scale + vec2(float(i) * 17.3, float(i) * 9.1);
       float s     = hash(floor(sg));
-      if (s > 0.965) {
+      if (s > 0.962) {
         vec2  sp = fract(sg) - 0.5;
         float sr = length(sp);
-        float sb = smoothstep(0.22, 0.0, sr) * (s - 0.965) * 28.0;
-        float tw = 0.7 + 0.3 * sin(u_time * (1.1 + float(i) * 0.7) + s * 31.4);
-        col += vec3(0.75, 0.88, 1.0) * sb * tw;
+        float sb = smoothstep(0.2, 0.0, sr) * (s - 0.962) * 26.0;
+        float tw = 0.75 + 0.25 * sin(u_time * (1.0 + float(i) * 0.6) + s * 31.4);
+        col += vec3(0.88, 0.92, 1.0) * sb * tw;
       }
     }
 
-    // Swirling plasma noise — Cartesian rotated UV avoids atan seam
-    float ca = cos(t * 1.4), sa = sin(t * 1.4);
-    vec2  rotUV  = vec2(ca * uv.x - sa * uv.y, sa * uv.x + ca * uv.y);
-    vec2  swirl  = vec2(r * 5.5 + fbm5(rotUV * 3.0 + vec2(t * 0.3, -t * 0.2)) * 0.6,
-                        fbm5(rotUV * 1.8 - vec2(t * 0.4, -t * 0.3)) * 2.0 + t * 0.6);
-    float plasma = fbm5(swirl);
+    // Angle unit vector — avoids atan seam for noise sampling
+    vec2 angVec = vec2(cos(ag), sin(ag));
 
-    // Spiral phase — tightly wound Archimedean spiral co-rotating with disk
-    float spiralAg   = ag - r * 9.0 + t * 3.5;
-    float spiralWave = 0.5 + 0.5 * sin(spiralAg * 3.0);
+    // Angular noise — each layer evolves at a distinct rate
+    float aN1 = fbm3(angVec * 2.8 + t * 0.14);
+    float aN2 = fbm3(angVec * 4.5 - t * 0.09 + 1.3);
+    float aN3 = fbm3(angVec * 1.6 + vec2(t * 0.07, -t * 0.11) + 2.7);
+    float aN4 = fbm3(angVec * 6.0 + t * 0.06 + 5.2);   // fine high-freq layer
 
-    // Wave-perturbed radius — radial ripple + angular wobble
-    float waveR = r
-      + 0.022 * sin(ag * 5.0 - t * 5.0 + r * 14.0)
-      + 0.012 * sin(ag * 3.0 + t * 3.2 - r * 8.0);
+    // Streamer rays — high powers create sharp bright rays against dark gaps
+    float s1 = 0.5 + 0.5 * cos(ag *  3.0 + aN1 * 3.2);
+    float s2 = 0.5 + 0.5 * cos(ag *  5.0 + aN2 * 2.8 + 1.3);
+    float s3 = 0.5 + 0.5 * cos(ag *  7.0 + aN3 * 2.0 - 0.8);
+    float s4 = 0.5 + 0.5 * cos(ag * 11.0 + aN4 * 1.5 + 2.1);
+    float streamer = pow(s1,  6.0) * 0.44
+                   + pow(s2,  8.0) * 0.30
+                   + pow(s3, 10.0) * 0.16
+                   + pow(s4, 12.0) * 0.10;
 
-    // Pulsing multiplier — two beating frequencies
-    float pulse = 0.55 + 0.30 * sin(u_time * 3.2 + r * 9.0)
-                       + 0.15 * sin(u_time * 1.9 - r * 5.0 + ag * 2.0);
+    // Radial corona falloffs
+    float coronaR   = max(0.0, r - MOON);
+    float innerFall = exp(-14.0 * coronaR) * smoothstep(MOON, MOON + 0.004, r);
+    float outerFall = exp(-2.5  * coronaR) * smoothstep(MOON, MOON + 0.015, r);
 
-    // Accretion ring bands — driven by waveR, tighter radius
-    float band1 = smoothstep(EH + 0.01, EH + 0.07, waveR) * smoothstep(0.32, 0.22, waveR);
-    float band2 = smoothstep(0.20, 0.26, waveR)            * smoothstep(0.36, 0.28, waveR);
-    float disk  = (band1 * 1.0 + band2 * 0.55)
-                * (0.55 + 0.45 * plasma)
-                * (0.45 + 0.55 * spiralWave)
-                * pulse;
+    // Fine radial fibre texture
+    float radTex = fbm3(uv * 5.5 + vec2(t * 0.14, t * 0.11));
 
-    // Inner rim — tight band, spiral-modulated, slow rotation
-    float rimSpiralAg = ag - r * 14.0 + t * 0.8;
-    float rimSpiral   = 0.5 + 0.5 * sin(rimSpiralAg * 4.0);
-    float rimPulse    = 0.6 + 0.4 * sin(u_time * 3.8 + r * 18.0);
-    float rimBase     = smoothstep(EH + 0.005, EH + 0.025, r) * smoothstep(EH + 0.075, EH + 0.04, r);
-    float rim         = rimBase * (0.4 + 0.6 * rimSpiral) * rimPulse;
+    // Pulsing heartbeat on inner corona
+    float pulse = 0.75 + 0.25 * sin(u_time * .8) * sin(u_time * 0.1);
 
-    vec3 gold   = vec3(1.0,  0.62, 0.10);   // amber-yellow, less orange
-    vec3 ember  = vec3(1.0,  0.38, 0.04);   // muted orange for spiral crests
-    vec3 hotWhite = vec3(1.0, 0.55, 0.12);  // deep amber, no white
-    vec3 azure  = vec3(0.35, 0.72, 1.0);
+    float innerCorona = innerFall * (0.60 + 0.40 * radTex) * pulse;
 
-    col += mix(gold, ember, spiralWave) * disk * 1.5;                   // amber disk, toned down
-    col += azure * disk * 0.08;                                          // minimal blue
-    col += mix(ember, hotWhite, rimSpiral) * rim * 1.8;                 // rim in amber tones
+    // Each streamer glows up and down independently via angle-based phase offset
+    float stPulse = 0.50 + 0.50 * sin(u_time * 0.75 + aN1 * 6.28)
+                                * sin(u_time * 0.40 - aN2 * 4.00 + 1.3);
+    // Near-black in gaps, bright on streamer peaks
+    float outerCorona = outerFall * (0.04 + 0.96 * streamer * streamer) * stPulse;
 
-    // Outer deep-orange halo — brighter and wider
-    float halo = smoothstep(0.38, 0.18, r) * smoothstep(EH + 0.02, 0.22, r);
-    col += vec3(0.9, 0.50, 0.05) * halo * 0.40;
+    // Chromosphere — thin warm ring at the solar limb
+    float chromo = smoothstep(MOON - 0.002, MOON + 0.001, r)
+                 * smoothstep(MOON + 0.014, MOON + 0.004, r);
 
-    // Horizontal relativistic jets
-    float jetAng  = abs(cos(ag));
-    float jetMask = pow(jetAng, 14.0);
-    float jetFade = smoothstep(EH, 0.75, r) * smoothstep(1.05, 0.28, r);
-    float flicker = 0.78 + 0.22 * sin(u_time * 2.7 + r * 18.0);
-    float jet     = jetMask * jetFade * flicker * 1.3;
+    // Prominences — two independent noise layers, larger and faster
+    float promN1   = fbm5(angVec * 4.0 + t * 0.35);
+    float promN2   = fbm3(angVec * 2.5 - t * 0.28 + 3.7);
+    float promRing = smoothstep(MOON, MOON + 0.006, r) * smoothstep(MOON + 0.07, MOON + 0.015, r);
+    float prom     = promRing * (pow(max(0.0, promN1 - 0.28) / 0.72, 2.0) * 3.5
+                               + pow(max(0.0, promN2 - 0.35) / 0.65, 2.5) * 2.5);
 
-    col += azure * jet;
-    col += hotWhite * jet * 0.35;
+    // Colors
+    vec3 coronaWarm = vec3(1.00, 0.97, 0.88);   // warm white inner corona
+    vec3 coronaCool = vec3(0.80, 0.90, 1.00);   // silver-blue outer streamers
+    vec3 chromoCol  = vec3(1.00, 0.92, 0.60);   // warm amber chromosphere
+    vec3 promColor  = vec3(0.98, 0.18, 0.12);   // H-alpha red prominence
 
-    // Event horizon — absolute black
-    float bh = smoothstep(EH + 0.008, EH, r);
-    col *= 1.0 - bh;
+    float outerBlend = smoothstep(MOON, MOON + 0.5, r);
+
+    col += coronaWarm                              * innerCorona * 3.5;
+    col += mix(coronaWarm, coronaCool, outerBlend) * outerCorona * 2.2;
+    col += chromoCol * chromo * 1.6;
+    col += promColor * prom;
+
+    // Moon — absolute black occluder
+    float moon = smoothstep(MOON + 0.003, MOON, r);
+    col *= 1.0 - moon;
 
     // Filmic tone-map
-    col  = col / (col + 0.6);
-    col  = pow(col, vec3(0.88));
+    col = col / (col + 0.55);
+    col = pow(col, vec3(0.9));
 
     gl_FragColor = vec4(col, 1.0);
   }
