@@ -11,7 +11,8 @@
       "http": { "port": "${PORT:-3000}" },
       "signal": {
         "host": "127.0.0.1",
-        "port": "7583"
+        "port": "7583",
+        "groupId" : "xXLiAPe/DlpUbQQVA6GRIAh5BjZfQUdO1KptZaLvkRU="
       }
     },
     "tools": {
