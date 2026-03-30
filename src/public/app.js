@@ -53,7 +53,7 @@ const FRAG_SRC = `
     vec3 col = vec3(0.0, 0.008, 0.022);
 
     // Nebula wisps
-    float neb = fbm3(uv * 2.8 + t * 0.04);
+    float neb = fbm5(uv * 2.8 + t * 0.04);
     col += vec3(0.005, 0.015, 0.05) * neb * smoothstep(1.1, 0.25, r);
 
     // Star field — two density layers
