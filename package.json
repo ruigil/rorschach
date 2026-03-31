@@ -9,7 +9,7 @@
   },
   "private": true,
   "scripts": {
-    "rorschach" : "bun run src/index.ts",
+    "rorschach": "bun run src/index.ts",
     "dev": "bun run src/index.ts",
     "test": "bun test",
     "test:watch": "bun test --watch",
@@ -19,6 +19,7 @@
   "type": "module",
   "dependencies": {
     "@grafeo-db/js": "^0.5.23",
+    "cron-parser": "^5.5.0",
     "just-bash": "^2.14.0"
   }
 }

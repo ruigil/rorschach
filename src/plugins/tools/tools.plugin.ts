@@ -1,6 +1,7 @@
 import { createWebSearchActor, type WebSearchActorOptions as WebSearchActorConfig, WEB_SEARCH_SCHEMA, WEB_SEARCH_TOOL_NAME } from './web-search.ts'
 import { createBashActor, BASH_TOOL_NAME, BASH_SCHEMA, WRITE_TOOL_NAME, WRITE_SCHEMA, READ_TOOL_NAME, READ_SCHEMA } from './bash.ts'
 import { createVisionActor, ANALYZE_IMAGE_TOOL_NAME, ANALYZE_IMAGE_SCHEMA, GENERATE_IMAGE_TOOL_NAME, GENERATE_IMAGE_SCHEMA } from './vision-actor.ts'
+import { createCronActor, type CronState, CRON_CREATE_TOOL_NAME, CRON_CREATE_SCHEMA, CRON_DELETE_TOOL_NAME, CRON_DELETE_SCHEMA, CRON_LIST_TOOL_NAME, CRON_LIST_SCHEMA, CURRENT_TIME_TOOL_NAME, CURRENT_TIME_SCHEMA } from './cron.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { BashOptions as BashConfig } from 'just-bash'
@@ -33,6 +34,7 @@ type PluginState = {
   webSearch: PluginActorState<WebSearchActorConfig>
   bash: PluginActorState<BashConfig>
   vision: PluginActorState<VisionActorConfig>
+  cron: { ref: ActorRef<ToolInvokeMsg> | null }
   llmRef: ActorRef<LlmProviderMsg> | null
 }
 
@@ -60,6 +62,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
     webSearch: { config: null, ref: null, gen: 0 },
     bash:      { config: null, ref: null, gen: 0 },
     vision:    { config: null, ref: null, gen: 0 },
+    cron:      { ref: null },
     llmRef:    null,
   },
 
@@ -81,6 +84,12 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       ctx.publishRetained(ToolRegistrationTopic, WRITE_TOOL_NAME, { name: WRITE_TOOL_NAME, schema: WRITE_SCHEMA, ref: bashRef })
       ctx.publishRetained(ToolRegistrationTopic, READ_TOOL_NAME,  { name: READ_TOOL_NAME,  schema: READ_SCHEMA,  ref: bashRef })
 
+      const cronRef = ctx.spawn('cron-0', createCronActor(), { jobs: {}, clientIds: new Set() } as CronState) as unknown as ActorRef<ToolInvokeMsg>
+      ctx.publishRetained(ToolRegistrationTopic, CRON_CREATE_TOOL_NAME,   { name: CRON_CREATE_TOOL_NAME,   schema: CRON_CREATE_SCHEMA,   ref: cronRef })
+      ctx.publishRetained(ToolRegistrationTopic, CRON_DELETE_TOOL_NAME,   { name: CRON_DELETE_TOOL_NAME,   schema: CRON_DELETE_SCHEMA,   ref: cronRef })
+      ctx.publishRetained(ToolRegistrationTopic, CRON_LIST_TOOL_NAME,     { name: CRON_LIST_TOOL_NAME,     schema: CRON_LIST_SCHEMA,     ref: cronRef })
+      ctx.publishRetained(ToolRegistrationTopic, CURRENT_TIME_TOOL_NAME,  { name: CURRENT_TIME_TOOL_NAME,  schema: CURRENT_TIME_SCHEMA,  ref: cronRef })
+
       // Subscribe to LLM provider — vision actor is spawned when the ref arrives
       ctx.subscribe(LlmProviderTopic, (event) => ({ type: '_llmProviderUpdated' as const, ref: event.ref }))
 
@@ -90,6 +99,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         webSearch: { config: webSearchConfig, ref: webSearchRef, gen: 0 },
         bash:      { config: bashConfig, ref: bashRef, gen: 0 },
         vision:    { config: slice?.visionActor ?? null, ref: null, gen: 0 },
+        cron:      { ref: cronRef },
         llmRef:    null,
       } }
     },
@@ -106,6 +116,12 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       if (state.vision.ref) {
         ctx.deleteRetained(ToolRegistrationTopic, ANALYZE_IMAGE_TOOL_NAME,  { name: ANALYZE_IMAGE_TOOL_NAME,  ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, GENERATE_IMAGE_TOOL_NAME, { name: GENERATE_IMAGE_TOOL_NAME, ref: null })
+      }
+      if (state.cron.ref) {
+        ctx.deleteRetained(ToolRegistrationTopic, CRON_CREATE_TOOL_NAME,  { name: CRON_CREATE_TOOL_NAME,  ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, CRON_DELETE_TOOL_NAME,  { name: CRON_DELETE_TOOL_NAME,  ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, CRON_LIST_TOOL_NAME,    { name: CRON_LIST_TOOL_NAME,    ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, CURRENT_TIME_TOOL_NAME, { name: CURRENT_TIME_TOOL_NAME, ref: null })
       }
       ctx.log.info('tools plugin deactivating')
       return { state }
