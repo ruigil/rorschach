@@ -227,6 +227,7 @@ describe('tools plugin', () => {
       webSearch: { config: { apiKey: 'super-secret', count: 20 }, ref: null, gen: 0 },
       bash:      { config: null, ref: null, gen: 0 },
       vision:    { config: null, ref: null, gen: 0 },
+      cron:      { ref: null },
       llmRef:    null,
       tools: {},
     }
@@ -243,6 +244,7 @@ describe('tools plugin', () => {
       webSearch: { config: null, ref: null, gen: 0 },
       bash:      { config: null, ref: null, gen: 0 },
       vision:    { config: null, ref: null, gen: 0 },
+      cron:      { ref: null },
       llmRef:    null,
       tools: {},
     }
