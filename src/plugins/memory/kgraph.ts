@@ -19,7 +19,7 @@ export const KGRAPH_QUERY_SCHEMA: ToolSchema = {
       'This knowledge graph is where you store information about your user. ' +
       'Run a read-only Cypher query against the persistent knowledge graph to retrieve stored facts. ' +
       'Use MATCH/RETURN clauses only. Returns a JSON array of row objects. ' +
-      'Example: MATCH (p:Person {name: "Alice"})-[:KNOWS]->(f) RETURN p.name, f.name',
+      'Example: MATCH (p:User {name: "Default"})-[:KNOWS]->(f) RETURN p.name, f.name',
     parameters: {
       type: 'object',
       properties: {
