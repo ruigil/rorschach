@@ -488,7 +488,7 @@ function appendMessage(role, text) {
   return wrap
 }
 
-function showThinking(label = 'Rorschach', extraClass = '') {
+function showThinking(toolLabel = '', extraClass = '') {
   if (emptyEl?.parentNode) emptyEl.remove()
   const wrap   = document.createElement('div')
   wrap.className = 'message assistant thinking' + (extraClass ? ' ' + extraClass : '')
@@ -496,7 +496,7 @@ function showThinking(label = 'Rorschach', extraClass = '') {
   bubble.className = 'bubble'
   const labelEl = document.createElement('div')
   labelEl.className = 'message-label'
-  labelEl.textContent = label
+  labelEl.textContent = 'Rorschach'
   const dotsRow = document.createElement('div')
   dotsRow.className = 'dots-row'
   ;['dot', 'dot', 'dot'].forEach(() => {
@@ -505,6 +505,12 @@ function showThinking(label = 'Rorschach', extraClass = '') {
     dotsRow.appendChild(d)
   })
   bubble.appendChild(labelEl)
+  if (toolLabel) {
+    const badge = document.createElement('div')
+    badge.className = 'tool-badge'
+    badge.textContent = toolLabel
+    bubble.appendChild(badge)
+  }
   bubble.appendChild(dotsRow)
   wrap.appendChild(bubble)
   messagesEl.appendChild(wrap)
