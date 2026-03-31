@@ -91,13 +91,13 @@ system.subscribe(HttpConfigTopic, (form: HttpConfigPayload) => {
     cognitive: {
       llmProvider: {
         apiKey,
-        model: String(form.model ?? process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini'),
         reasoning: {
           enabled: form.reasoningEnabled === 'true',
           effort: (form.reasoningEffort as 'high' | 'medium' | 'low' | 'minimal') ?? 'medium',
         },
       },
       chatbot: {
+        model: String(form.model ?? process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini'),
         systemPrompt: SYSTEM_PROMPT,
       },
       visionActor: {

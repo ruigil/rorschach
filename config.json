@@ -29,11 +29,11 @@
     },
     "cognitive": {
       "llmProvider": {
-        "apiKey": "${OPENROUTER_API_KEY}",
-        "model": "${OPENROUTER_MODEL:-x-ai/grok-4.1-fast}"
+        "apiKey": "${OPENROUTER_API_KEY}"
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
+        "model": "${OPENROUTER_MODEL:-inception/mercury-2}",
         "historyWindow": 40,
         "toolFilter": { "deny": ["kgraph_query", "kgraph_write"] }
       }

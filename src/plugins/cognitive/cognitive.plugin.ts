@@ -10,11 +10,11 @@ import { redact } from '../../system/types.ts'
 
 type LlmProviderConfig = {
   apiKey: string
-  model: string
   reasoning?: { enabled?: boolean; effort?: 'high' | 'medium' | 'low' | 'minimal' }
 }
 
 type ChatbotConfig = {
+  model:          string
   systemPrompt?:  string
   historyWindow?: number
   toolFilter?:    { allow: string[] } | { deny: string[] }
@@ -60,7 +60,7 @@ const spawnAll = (
         `session-manager-${gen}`,
         createSessionManagerActor({
           llmRef: llmProviderRef,
-          model: llmProviderConfig.model,
+          model: chatbotConfig.model,
           systemPrompt: chatbotConfig.systemPrompt,
           historyWindow: chatbotConfig.historyWindow,
           toolFilter: chatbotConfig.toolFilter,
@@ -163,9 +163,10 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
               `session-manager-${gen}`,
               createSessionManagerActor({
                 llmRef: llmProviderRef!,
-                model: newLlmProviderConfig.model,
+                model: newChatbotConfig.model,
                 systemPrompt: newChatbotConfig.systemPrompt,
                 historyWindow: newChatbotConfig.historyWindow,
+                toolFilter: newChatbotConfig.toolFilter,
               }),
               { sessions: {} },
             )
