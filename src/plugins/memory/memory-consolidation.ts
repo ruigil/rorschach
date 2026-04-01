@@ -13,7 +13,8 @@ import type {
   ToolCall,
 } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type { MemoryConsolidationMsg } from '../../types/memory.ts'
+import type { MemoryConsolidationMsg, UserContextMsg } from '../../types/memory.ts'
+import { createUserContextActor, INITIAL_USER_CONTEXT_STATE } from './user-context.ts'
 
 // ─── Options ───
 
@@ -48,17 +49,20 @@ export type ConsolidationState = {
   turnMessages:       ApiMessage[] | null
   accumulated:        string
   pendingBatch:       PendingBatch | null
+
+  // Spawned user-context actors keyed by userId
+  userContexts:       Record<string, ActorRef<UserContextMsg>>
 }
 
 // ─── System prompt ───
 
 const buildSystemPrompt = (userId: string): string =>
-  `You are a memory consolidation agent for user "${userId}". Analyze the conversation turns below and persist what is worth remembering.\n\n` +
-  `Three memory types:\n` +
-  `- Episodic (markdown): notable events, decisions, experiences → /workspace/memory/${userId}/episodic/YYYY-MM-DD.md (append)\n` +
-  `- Procedural (markdown): skills, workflows, preferences, recipes → /workspace/memory/${userId}/procedural/{topic}.md (update in-place)\n` +
-  `- Semantic (kgraph): facts, entities, relationships → kgraph_write with MERGE. Add a filePath property on nodes that reference their markdown file.\n\n` +
-  `Use bash to mkdir -p directories before writing. Read existing files with read before appending to avoid duplication. Skip small talk.`
+  `You are a user model agent for user "${userId}". Your goal is to build and maintain a rich, accurate model of this user — their identity, projects, preferences, interests, working style, and goals.\n\n` +
+  `You have access to three memory stores:\n` +
+  `- Episodic (markdown): notable events, decisions, experiences → /workspace/memory/${userId}/episodic/YYYY-MM-DD.md (append). Record what happened, what was decided, and why.\n` +
+  `- Procedural (markdown): skills, workflows, preferences, tools, recurring patterns → /workspace/memory/${userId}/procedural/{topic}.md (update in-place). Keep these concise and current.\n` +
+  `- Semantic (kgraph): entities, facts, and relationships → use kgraph_write with MERGE. Add a filePath property on nodes that reference their markdown file.\n\n` +
+  `Use bash to mkdir -p directories before writing. Read existing files with read before appending to avoid duplication. Skip small talk. Prioritize information that reveals who this user is, how they think, and what they are working on.`
 
 const buildMessages = (userId: string, turns: MemoryTurnEvent[]): ApiMessage[] => {
   const turnList = turns.map((t, i) => {
@@ -67,7 +71,7 @@ const buildMessages = (userId: string, turns: MemoryTurnEvent[]): ApiMessage[] =
   }).join('\n\n')
   return [
     { role: 'system', content: buildSystemPrompt(userId) },
-    { role: 'user', content: `Please consolidate these conversation turns:\n\n${turnList}` },
+    { role: 'user', content: `Please consolidate these conversation turns into memory:\n\n${turnList}` },
   ]
 }
 
@@ -140,7 +144,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
     }
   }
 
-  // ─── Enqueue users with pending turns (used by _consolidate in any behavior) ───
+  // ─── Enqueue users with pending turns ───
 
   const enqueueNewUsers = (state: ConsolidationState): ConsolidationState => {
     const newUserIds = Object.keys(state.buffer).filter(
@@ -153,18 +157,22 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
     return { ...state, consolidationQueue: [...state.consolidationQueue, ...newUserIds] }
   }
 
+  // ─── Shared buffer handler ───
+
+  const bufferTurn = (state: ConsolidationState, msg: Extract<MemoryConsolidationMsg, { type: '_turn' }>): { state: ConsolidationState } => ({
+    state: {
+      ...state,
+      buffer: {
+        ...state.buffer,
+        [msg.userId]: [...(state.buffer[msg.userId] ?? []), { userId: msg.userId, userText: msg.userText, assistantText: msg.assistantText, timestamp: msg.timestamp }],
+      },
+    },
+  })
+
   // ─── Handler: idle ───
 
   const idleHandler: MessageHandler<MemoryConsolidationMsg, ConsolidationState> = onMessage<MemoryConsolidationMsg, ConsolidationState>({
-    _turn: (state, msg) => ({
-      state: {
-        ...state,
-        buffer: {
-          ...state.buffer,
-          [msg.userId]: [...(state.buffer[msg.userId] ?? []), { userId: msg.userId, userText: msg.userText, assistantText: msg.assistantText, timestamp: msg.timestamp }],
-        },
-      },
-    }),
+    _turn: bufferTurn,
 
     _consolidate: (state, _, context) => {
       if (state.llmRef === null) return { state }
@@ -173,7 +181,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       return startNextConsolidation(updated, context)
     },
 
-    _llmProvider: (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
+    _llmProvider:      (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
     _toolRegistered:   toolRegistered,
     _toolUnregistered: toolUnregistered,
   })
@@ -181,15 +189,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
   // ─── Handler: awaitingLlm ───
 
   awaitingLlmHandler = onMessage<MemoryConsolidationMsg, ConsolidationState>({
-    _turn: (state, msg) => ({
-      state: {
-        ...state,
-        buffer: {
-          ...state.buffer,
-          [msg.userId]: [...(state.buffer[msg.userId] ?? []), { userId: msg.userId, userText: msg.userText, assistantText: msg.assistantText, timestamp: msg.timestamp }],
-        },
-      },
-    }),
+    _turn: bufferTurn,
 
     _consolidate: (state) => ({ state: enqueueNewUsers(state) }),
 
@@ -247,9 +247,25 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
 
     llmDone: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
-      context.log.info('memory consolidation done', { userId: state.activeUserId })
+      const doneUserId = state.activeUserId!
+      context.log.info('memory consolidation done', { userId: doneUserId })
+
+      let ucRef = state.userContexts[doneUserId]
+      if (!ucRef) {
+        const userContextTools = Object.fromEntries(
+          Object.entries(state.tools).filter(([n]) => n === 'read' || n === 'kgraph_query'),
+        ) as ToolCollection
+        ucRef = context.spawn(
+          `user-context-${doneUserId}`,
+          createUserContextActor({ model, userId: doneUserId, llmRef: state.llmRef!, tools: userContextTools }),
+          INITIAL_USER_CONTEXT_STATE,
+        )
+      }
+      ucRef.send({ type: '_run' })
+      const userContexts = { ...state.userContexts, [doneUserId]: ucRef }
+
       return startNextConsolidation(
-        { ...state, requestId: null, turnMessages: null, accumulated: '', activeUserId: null },
+        { ...state, requestId: null, turnMessages: null, accumulated: '', activeUserId: null, userContexts },
         context,
       )
     },
@@ -263,7 +279,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       )
     },
 
-    _llmProvider: (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
+    _llmProvider:      (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
     _toolRegistered:   toolRegistered,
     _toolUnregistered: toolUnregistered,
   })
@@ -271,15 +287,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
   // ─── Handler: toolLoop ───
 
   toolLoopHandler = onMessage<MemoryConsolidationMsg, ConsolidationState>({
-    _turn: (state, msg) => ({
-      state: {
-        ...state,
-        buffer: {
-          ...state.buffer,
-          [msg.userId]: [...(state.buffer[msg.userId] ?? []), { userId: msg.userId, userText: msg.userText, assistantText: msg.assistantText, timestamp: msg.timestamp }],
-        },
-      },
-    }),
+    _turn: bufferTurn,
 
     _consolidate: (state) => ({ state: enqueueNewUsers(state) }),
 
@@ -323,7 +331,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       }
     },
 
-    _llmProvider: (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
+    _llmProvider:      (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
     _toolRegistered:   toolRegistered,
     _toolUnregistered: toolUnregistered,
   })
@@ -367,4 +375,5 @@ export const INITIAL_CONSOLIDATION_STATE: ConsolidationState = {
   turnMessages:       null,
   accumulated:        '',
   pendingBatch:       null,
+  userContexts:       {},
 }

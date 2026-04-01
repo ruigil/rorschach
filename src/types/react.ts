@@ -11,3 +11,4 @@ export type ReActMsg =
   | { type: '_toolUnregistered';    name: string }
   | { type: '_toolResult';          toolName: string; toolCallId: string; reply: ToolReply }
   | { type: '_llmProviderUpdated';  ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_userContext';         summary: string }

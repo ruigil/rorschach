@@ -38,6 +38,7 @@ const initialReActState = (llmRef: ActorRef<LlmProviderMsg>): ReActState => ({
   modelInfo:        null,
   sessionUsage:     { promptTokens: 0, completionTokens: 0 },
   llmRef,
+  userContext:      null,
   requestId:        null,
   turnMessages:     null,
   spanHandles:      null,

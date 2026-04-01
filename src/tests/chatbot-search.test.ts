@@ -30,6 +30,7 @@ const INITIAL_REACT_STATE: Omit<ReActState, 'llmRef'> = {
   pending:          '',
   pendingReasoning: '',
   pendingBatch:     null,
+  userContext:      null,
 }
 
 const mockBraveResponse: BraveLlmContextResponse = {

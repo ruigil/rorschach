@@ -16,6 +16,7 @@ import type {
   ToolCall,
 } from '../../types/llm.ts'
 import type { ReActMsg } from '../../types/react.ts'
+import { UserContextTopic } from '../../types/memory.ts'
 
 // ─── State ───
 
@@ -44,6 +45,7 @@ export type ReActState = {
   modelInfo:        ModelInfo | null
   sessionUsage:     TokenUsage
   llmRef:           ActorRef<LlmProviderMsg> | null
+  userContext:      string | null
 
   // Active turn (set on userMessage, cleared on llmDone/llmError)
   requestId:        string | null
@@ -114,8 +116,9 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
         userText = text ? `${text}\n\n${imageNote}` : imageNote
       }
 
+      const fullSystemPrompt = [systemPrompt, state.userContext].filter(Boolean).join('\n\n---\n\n')
       const apiMessages: ApiMessage[] = [
-        ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
+        ...(fullSystemPrompt ? [{ role: 'system' as const, content: fullSystemPrompt }] : []),
         ...state.history,
         { role: 'user', content: userText },
       ]
@@ -155,6 +158,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
     _toolRegistered:     toolRegistered,
     _toolUnregistered:   toolUnregistered,
     _llmProviderUpdated: llmProviderUpdated,
+    _userContext:        (state, msg) => ({ state: { ...state, userContext: msg.summary } }),
   })
 
   // ─── Handler: awaitingLlm — LLM running, will return tool calls or text ───
@@ -329,6 +333,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
     _toolRegistered:     toolRegistered,
     _toolUnregistered:   toolUnregistered,
     _llmProviderUpdated: llmProviderUpdated,
+    _userContext:        (state, msg) => ({ state: { ...state, userContext: msg.summary } }),
   })
 
   // ─── Handler: toolLoop — tools executing, accumulating results ───
@@ -410,6 +415,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
     _toolRegistered:     toolRegistered,
     _toolUnregistered:   toolUnregistered,
     _llmProviderUpdated: llmProviderUpdated,
+    _userContext:        (state, msg) => ({ state: { ...state, userContext: msg.summary } }),
   })
 
   return {
@@ -424,6 +430,10 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
 
         context.subscribe(LlmProviderTopic, (event) =>
           ({ type: '_llmProviderUpdated' as const, ref: event.ref }),
+        )
+
+        context.subscribe(UserContextTopic, (event) =>
+          ({ type: '_userContext' as const, summary: event.summary }),
         )
 
         const modelInfo = state.llmRef

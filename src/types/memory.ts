@@ -41,13 +41,27 @@ export type UserMemoryMsg =
   | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
   | { type: '_toolUnregistered'; name: string }
 
+// ─── Topic: published (retained) after each context summary generation ───
+
+export type UserContextEvent = { userId: string; summary: string }
+export const UserContextTopic = createTopic<UserContextEvent>('memory.user-context')
+
 // ─── Memory consolidation message protocol ───
 
 export type MemoryConsolidationMsg =
-  | { type: '_turn';            userId: string; userText: string; assistantText: string; timestamp: number }
+  | { type: '_turn';             userId: string; userText: string; assistantText: string; timestamp: number }
   | { type: '_consolidate' }
-  | { type: '_llmProvider';     ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
   | { type: '_toolUnregistered'; name: string }
   | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolReply }
+  | LlmProviderReply
+
+// ─── User context message protocol ───
+
+export type UserContextMsg =
+  | { type: '_run' }
+  | { type: '_toolResult';        toolCallId: string; toolName: string; reply: ToolReply }
+  | { type: '_contextSaved';      userId: string }
+  | { type: '_contextSaveFailed'; userId: string; error: string }
   | LlmProviderReply
