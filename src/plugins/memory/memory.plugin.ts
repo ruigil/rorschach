@@ -91,7 +91,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
   configDescriptor: {
     defaults: {
       kgraph: {
-        dbPath: './kgraph',
+        dbPath: './workspace/memory/kgraph',
       },
     },
     onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
