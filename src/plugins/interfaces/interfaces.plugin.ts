@@ -49,7 +49,7 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
         ? ctx.spawn('cli-0', createCliActor(), { ...CLI_INITIAL_STATE })
         : null
       const signalRef = signalConfig
-        ? ctx.spawn('signal-0', createSignalActor(signalConfig), { seenIds: new Set<string>(), pending: new Map<string, string>() })
+        ? ctx.spawn('signal-0', createSignalActor(signalConfig), { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {} })
         : null
 
       ctx.log.info('interfaces plugin activated')
@@ -86,7 +86,7 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
         ? ctx.spawn(`cli-${cliGen}`, createCliActor(), { ...CLI_INITIAL_STATE })
         : null
       const signalRef = newSignalConfig
-        ? ctx.spawn(`signal-${signalGen}`, createSignalActor(newSignalConfig), { seenIds: new Set<string>(), pending: new Map<string, string>() })
+        ? ctx.spawn(`signal-${signalGen}`, createSignalActor(newSignalConfig), { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {} })
         : null
 
       return { state: {

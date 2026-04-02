@@ -1,6 +1,6 @@
 import { createConnection } from 'node:net'
 import type { Socket } from 'node:net'
-import type { ActorDef } from '../../system/types.ts'
+import type { ActorDef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { emit } from '../../system/types.ts'
 import { join } from 'node:path'
@@ -219,8 +219,9 @@ type SignalMsg =
 // ─── State ───
 
 export type SignalState = {
-  seenIds: Set<string>
-  pending: Map<string, string>  // clientId → buffered chunks waiting for 'done'
+  seenIds:     Set<string>
+  pending:     Map<string, string>    // clientId → buffered chunks waiting for 'done'
+  activeSpans: Record<string, SpanHandle>
 }
 
 // ─── Actor factory ───
@@ -363,16 +364,19 @@ export const createSignalActor = (
           events.push(emit(WsConnectTopic, { clientId }))
         }
 
+        const span = ctx.trace.start('request', { clientId })
+        const activeSpans = { ...state.activeSpans, [clientId]: span }
+
         events.push(emit(WsMessageTopic, {
           clientId,
           text,
           ...(imageAttachments.length > 0 ? { images: attachmentPaths(imageAttachments) } : {}),
           ...(audioAttachment ? { audio: `${attachmentsDir}/${audioAttachment.id}` } : {}),
-          traceId:      crypto.randomUUID(),
-          parentSpanId: crypto.randomUUID(),
+          traceId:      span.traceId,
+          parentSpanId: span.spanId,
         }))
 
-        return { state: { ...state, seenIds }, events }
+        return { state: { ...state, seenIds, activeSpans }, events }
       },
 
       _send: (state, msg, ctx) => {
@@ -405,6 +409,12 @@ export const createSignalActor = (
               ()    => ({ type: '_sendOk'  as const }),
               (err) => ({ type: '_sendErr' as const, error: String(err) }),
             )
+            const span = state.activeSpans[msg.clientId]
+            if (span) {
+              span.done()
+              const { [msg.clientId]: _, ...activeSpans } = state.activeSpans
+              return { state: { ...state, pending, activeSpans } }
+            }
             return { state: { ...state, pending } }
           }
 
@@ -419,6 +429,12 @@ export const createSignalActor = (
               ()    => ({ type: '_sendOk'  as const }),
               (err) => ({ type: '_sendErr' as const, error: String(err) }),
             )
+            const errSpan = state.activeSpans[msg.clientId]
+            if (errSpan) {
+              errSpan.error(text)
+              const { [msg.clientId]: _, ...activeSpans } = state.activeSpans
+              return { state: { ...state, activeSpans } }
+            }
             return { state }
           }
 
