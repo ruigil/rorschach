@@ -43,7 +43,7 @@
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "model": "openai/gpt-5.4-nano",
+        "model": "x-ai/grok-4.1-fast",
         "historyWindow": 40,
         "toolFilter": {
           "deny": [
@@ -58,7 +58,7 @@
         "dbPath": "./workspace/memory/kgraph"
       },
       "memory": {
-        "model": "x-ai/grok-4.1-fast",
+        "model": "google/gemini-3.1-pro-preview",
         "userId": "rigel",
         "consolidationIntervalMs": 30000
       }
