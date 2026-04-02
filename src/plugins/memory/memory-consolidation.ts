@@ -1,4 +1,4 @@
-import type { ActorDef, ActorRef, MessageHandler } from '../../system/types.ts'
+import type { ActorDef, ActorRef, ActorResult, MessageHandler } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { emit } from '../../system/types.ts'
 import { MemoryStreamTopic, WsBroadcastTopic } from '../../types/ws.ts'
@@ -21,9 +21,10 @@ import { createUserContextActor, INITIAL_USER_CONTEXT_STATE } from './user-conte
 // ─── Options ───
 
 export type MemoryConsolidationOptions = {
-  model:       string
-  intervalMs:  number
-  toolFilter?: ToolFilter
+  model:         string
+  intervalMs:    number
+  toolFilter?:   ToolFilter
+  maxToolLoops?: number
 }
 
 // ─── Internal types ───
@@ -52,6 +53,7 @@ export type ConsolidationState = {
   turnMessages:       ApiMessage[] | null
   accumulated:        string
   pendingBatch:       PendingBatch | null
+  toolLoopCount:      number
 
   // Spawned user-context actors keyed by userId
   userContexts:       Record<string, ActorRef<UserContextMsg>>
@@ -92,7 +94,7 @@ const toolUnregistered = (state: ConsolidationState, msg: Extract<MemoryConsolid
 // ─── Actor definition ───
 
 export const createMemoryConsolidationActor = (options: MemoryConsolidationOptions): ActorDef<MemoryConsolidationMsg, ConsolidationState> => {
-  const { model, intervalMs, toolFilter } = options
+  const { model, intervalMs, toolFilter, maxToolLoops = 25 } = options
 
   let awaitingLlmHandler: MessageHandler<MemoryConsolidationMsg, ConsolidationState>
   let toolLoopHandler:    MessageHandler<MemoryConsolidationMsg, ConsolidationState>
@@ -142,6 +144,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
         turnMessages: messages,
         accumulated: '',
         pendingBatch: null,
+        toolLoopCount: 0,
       },
       become: awaitingLlmHandler,
     }
@@ -298,7 +301,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
           context,
         ),
         events: usageEvents,
-      }
+      } as ActorResult<MemoryConsolidationMsg, ConsolidationState>
     },
 
     llmError: (state, msg, context) => {
@@ -342,7 +345,18 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
         return { state: { ...state, pendingBatch: { ...batch, remaining, results: updatedResults } } }
       }
 
-      // All tools done — build next LLM request
+      // All tools done — check loop limit before looping back
+      const nextLoopCount = state.toolLoopCount + 1
+
+      if (nextLoopCount >= maxToolLoops) {
+        context.log.warn('memory consolidation tool loop limit reached', { userId: state.activeUserId, limit: maxToolLoops })
+        return startNextConsolidation(
+          { ...state, requestId: null, turnMessages: null, accumulated: '', pendingBatch: null, activeUserId: null, toolLoopCount: 0 },
+          context,
+        )
+      }
+
+      // Build next LLM request
       const toolResultMsgs: ApiMessage[] = updatedResults.map(r => ({
         role: 'tool', content: r.content, tool_call_id: r.toolCallId,
       }))
@@ -367,7 +381,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       })
 
       return {
-        state: { ...state, requestId, turnMessages: nextMessages, pendingBatch: null },
+        state: { ...state, requestId, turnMessages: nextMessages, pendingBatch: null, toolLoopCount: nextLoopCount },
         become: awaitingLlmHandler,
       }
     },
@@ -427,5 +441,6 @@ export const INITIAL_CONSOLIDATION_STATE: ConsolidationState = {
   turnMessages:       null,
   accumulated:        '',
   pendingBatch:       null,
+  toolLoopCount:      0,
   userContexts:       {},
 }

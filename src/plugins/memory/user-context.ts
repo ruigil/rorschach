@@ -18,10 +18,11 @@ import { UserContextTopic } from '../../types/memory.ts'
 // ─── Options ───
 
 export type UserContextOptions = {
-  model:  string
-  userId: string
-  llmRef: ActorRef<LlmProviderMsg>
-  tools:  ToolCollection
+  model:         string
+  userId:        string
+  llmRef:        ActorRef<LlmProviderMsg>
+  tools:         ToolCollection
+  maxToolLoops?: number
 }
 
 // ─── Internal types ───
@@ -34,12 +35,13 @@ type PendingBatch = {
 }
 
 export type UserContextState = {
-  pendingRun:   boolean
-  requestId:    string | null
-  messages:     ApiMessage[] | null
-  accumulated:  string
-  pendingBatch: PendingBatch | null
-  modelInfo:    ModelInfo | null
+  pendingRun:    boolean
+  requestId:     string | null
+  messages:      ApiMessage[] | null
+  accumulated:   string
+  pendingBatch:  PendingBatch | null
+  modelInfo:     ModelInfo | null
+  toolLoopCount: number
 }
 
 // ─── System prompt ───
@@ -69,7 +71,7 @@ const buildInitialMessages = (userId: string): ApiMessage[] => [
 // ─── Actor definition ───
 
 export const createUserContextActor = (options: UserContextOptions): ActorDef<UserContextMsg, UserContextState> => {
-  const { model, userId, llmRef, tools } = options
+  const { model, userId, llmRef, tools, maxToolLoops = 25 } = options
 
   let awaitingLlmHandler: MessageHandler<UserContextMsg, UserContextState>
   let toolLoopHandler:    MessageHandler<UserContextMsg, UserContextState>
@@ -96,7 +98,7 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
     context.log.info('user context summary started', { userId })
 
     return {
-      state: { ...state, pendingRun: false, requestId, messages, accumulated: '', pendingBatch: null },
+      state: { ...state, pendingRun: false, requestId, messages, accumulated: '', pendingBatch: null, toolLoopCount: 0 },
       become: awaitingLlmHandler,
     }
   }
@@ -197,7 +199,10 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
         : []
 
       const next = { ...state, requestId: null, messages: null, accumulated: '', pendingBatch: null }
-      if (state.pendingRun) return { ...startSummary(next, context), events: usageEvents }
+      if (state.pendingRun) {
+        const { state: nextState } = startSummary(next, context)
+        return { state: nextState, become: awaitingLlmHandler, events: usageEvents }
+      }
       return { state: next, become: idleHandler, events: usageEvents }
     },
 
@@ -228,7 +233,17 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
         return { state: { ...state, pendingBatch: { ...batch, remaining, results: updatedResults } } }
       }
 
-      // All tools done — build next LLM request
+      // All tools done — check loop limit before looping back
+      const nextLoopCount = state.toolLoopCount + 1
+
+      if (nextLoopCount >= maxToolLoops) {
+        context.log.warn('user context tool loop limit reached', { userId, limit: maxToolLoops })
+        const next = { ...state, requestId: null, messages: null, accumulated: '', pendingBatch: null, toolLoopCount: 0 }
+        if (state.pendingRun) return startSummary(next, context)
+        return { state: next, become: idleHandler }
+      }
+
+      // Build next LLM request
       const toolResultMsgs: ApiMessage[] = updatedResults.map(r => ({
         role: 'tool', content: r.content, tool_call_id: r.toolCallId,
       }))
@@ -251,7 +266,7 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
       })
 
       return {
-        state: { ...state, requestId, messages: nextMessages, pendingBatch: null },
+        state: { ...state, requestId, messages: nextMessages, pendingBatch: null, toolLoopCount: nextLoopCount },
         become: awaitingLlmHandler,
       }
     },
@@ -276,10 +291,11 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
 }
 
 export const INITIAL_USER_CONTEXT_STATE: UserContextState = {
-  pendingRun:   false,
-  requestId:    null,
-  messages:     null,
-  accumulated:  '',
-  pendingBatch: null,
-  modelInfo:    null,
+  pendingRun:    false,
+  requestId:     null,
+  messages:      null,
+  accumulated:   '',
+  pendingBatch:  null,
+  modelInfo:     null,
+  toolLoopCount: 0,
 }

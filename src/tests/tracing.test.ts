@@ -34,6 +34,7 @@ const INITIAL_REACT_STATE: Omit<ReActState, 'llmRef'> = {
   pendingReasoning: '',
   pendingBatch:     null,
   userContext:      null,
+  toolLoopCount:    0,
 }
 
 // ─── SSE helpers ───

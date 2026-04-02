@@ -46,6 +46,7 @@ const initialReActState = (llmRef: ActorRef<LlmProviderMsg>): ReActState => ({
   pending:          '',
   pendingReasoning: '',
   pendingBatch:     null,
+  toolLoopCount:    0,
 })
 
 // ─── Actor definition ───

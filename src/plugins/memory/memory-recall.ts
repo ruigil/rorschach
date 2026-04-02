@@ -14,14 +14,15 @@ import type { UserMemoryMsg, MemoryRecallMsg } from '../../types/memory.ts'
 // ─── Options ───
 
 export type MemoryRecallOptions = {
-  recallId:  string
-  query:     string
-  replyTo:   ActorRef<ToolReply>
-  parentRef: ActorRef<UserMemoryMsg>
-  llmRef:    ActorRef<LlmProviderMsg>
-  model:     string
-  userId:    string
-  tools:     ToolCollection
+  recallId:      string
+  query:         string
+  replyTo:       ActorRef<ToolReply>
+  parentRef:     ActorRef<UserMemoryMsg>
+  llmRef:        ActorRef<LlmProviderMsg>
+  model:         string
+  userId:        string
+  tools:         ToolCollection
+  maxToolLoops?: number
 }
 
 // ─── Internal types ───
@@ -34,10 +35,11 @@ type PendingBatch = {
 }
 
 type RecallState = {
-  requestId:    string | null
-  turnMessages: ApiMessage[] | null
-  accumulated:  string
-  pendingBatch: PendingBatch | null
+  requestId:     string | null
+  turnMessages:  ApiMessage[] | null
+  accumulated:   string
+  pendingBatch:  PendingBatch | null
+  toolLoopCount: number
 }
 
 // ─── System prompt ───
@@ -54,7 +56,7 @@ const buildSystemPrompt = (userId: string): string =>
 // ─── Actor definition ───
 
 export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<MemoryRecallMsg, RecallState> => {
-  const { recallId, query, replyTo, parentRef, llmRef, model, userId, tools } = options
+  const { recallId, query, replyTo, parentRef, llmRef, model, userId, tools, maxToolLoops = 25 } = options
 
   let toolLoopHandler: MessageHandler<MemoryRecallMsg, RecallState>
 
@@ -145,7 +147,18 @@ export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<
         return { state: { ...state, pendingBatch: { ...batch, remaining, results: updatedResults } } }
       }
 
-      // All tools done — build next LLM request
+      // All tools done — check loop limit before looping back
+      const nextLoopCount = state.toolLoopCount + 1
+
+      if (nextLoopCount >= maxToolLoops) {
+        context.log.warn('memory recall tool loop limit reached', { userId, limit: maxToolLoops })
+        return finish(
+          { ...state, pendingBatch: null, toolLoopCount: 0 },
+          state.accumulated ? { type: 'toolResult', result: state.accumulated } : { type: 'toolError', error: 'Tool loop limit reached' },
+        )
+      }
+
+      // Build next LLM request
       const toolResultMsgs: ApiMessage[] = updatedResults.map(r => ({
         role: 'tool', content: r.content, tool_call_id: r.toolCallId,
       }))
@@ -167,7 +180,7 @@ export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<
       })
 
       return {
-        state: { ...state, requestId, turnMessages: nextMessages, pendingBatch: null },
+        state: { ...state, requestId, turnMessages: nextMessages, pendingBatch: null, toolLoopCount: nextLoopCount },
         become: awaitingLlmHandler,
       }
     },
@@ -198,8 +211,9 @@ export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<
 }
 
 export const INITIAL_RECALL_STATE: RecallState = {
-  requestId:    null,
-  turnMessages: null,
-  accumulated:  '',
-  pendingBatch: null,
+  requestId:     null,
+  turnMessages:  null,
+  accumulated:   '',
+  pendingBatch:  null,
+  toolLoopCount: 0,
 }

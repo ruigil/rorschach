@@ -57,6 +57,7 @@ export type ReActState = {
 
   // Active tool batch (set on llmToolCalls, cleared when all results arrive)
   pendingBatch:     PendingBatch | null
+  toolLoopCount:    number
 }
 
 // ─── Options ───
@@ -67,6 +68,7 @@ export type ReActActorOptions = {
   systemPrompt?:  string
   historyWindow?: number
   toolFilter?:    ToolFilter
+  maxToolLoops?:  number
 }
 
 // ─── Helpers ───
@@ -80,7 +82,7 @@ const trimHistory = (history: ConversationMessage[], maxTurns: number): Conversa
 // ─── Actor definition ───
 
 export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg, ReActState> => {
-  const { clientId, model, systemPrompt, historyWindow, toolFilter } = options
+  const { clientId, model, systemPrompt, historyWindow, toolFilter, maxToolLoops = 25 } = options
 
   // ─── Shared handlers (used across all behaviors) ───
 
@@ -154,6 +156,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
           pendingReasoning: '',
           pendingUsage: { promptTokens: 0, completionTokens: 0 },
           spanHandles: { requestSpan, llmSpan, toolSpans: {} },
+          toolLoopCount: 0,
         },
         become: awaitingLlmHandler,
       }
@@ -366,7 +369,39 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
         }
       }
 
-      // All tools done — build next LLM request, loop back to awaitingLlm
+      // All tools done — check loop limit before looping back
+      const nextLoopCount = state.toolLoopCount + 1
+
+      const toolCallHistoryMsgs: Array<ConversationMessage> = [
+        { role: 'assistant', content: null, tool_calls: batch.assistantToolCalls },
+        ...updatedResults.map(r => ({ role: 'tool' as const, content: r.content, tool_call_id: r.toolCallId })),
+      ]
+
+      if (nextLoopCount >= maxToolLoops) {
+        context.log.warn('tool loop limit reached', { clientId, limit: maxToolLoops })
+        handles?.requestSpan.error('tool loop limit reached')
+        return {
+          state: {
+            ...state,
+            history: [...state.history, ...toolCallHistoryMsgs],
+            requestId: null,
+            turnMessages: null,
+            spanHandles: null,
+            pendingBatch: null,
+            pending: '',
+            pendingReasoning: '',
+            pendingUsage: { promptTokens: 0, completionTokens: 0 },
+            toolLoopCount: 0,
+          },
+          events: [
+            ...sourceEvents,
+            emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'error', text: 'Tool loop limit reached. Please try again.' }) }),
+          ],
+          become: idleHandler,
+        }
+      }
+
+      // Build next LLM request, loop back to awaitingLlm
       const toolResultMsgs: ApiMessage[] = updatedResults.map(r => ({
         role: 'tool', content: r.content, tool_call_id: r.toolCallId,
       }))
@@ -374,11 +409,6 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
         ...batch.messagesAtCall,
         { role: 'assistant', content: null, tool_calls: batch.assistantToolCalls },
         ...toolResultMsgs,
-      ]
-
-      const toolCallHistoryMsgs: Array<ConversationMessage> = [
-        { role: 'assistant', content: null, tool_calls: batch.assistantToolCalls },
-        ...updatedResults.map(r => ({ role: 'tool' as const, content: r.content, tool_call_id: r.toolCallId })),
       ]
 
       const llmSpan = handles
@@ -406,6 +436,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
           history: [...state.history, ...toolCallHistoryMsgs],
           pendingBatch: null,
           pending: '',
+          toolLoopCount: nextLoopCount,
           ...(handles ? { spanHandles: { ...handles, llmSpan: llmSpan ?? undefined, toolSpans: {} } } : {}),
         },
         events: sourceEvents,

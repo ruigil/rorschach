@@ -415,7 +415,7 @@ export const createSignalActor = (
             pendingAfterErr.delete(msg.clientId)
             if (pendingAfterErr.size === 0) ctx.timers.cancel('typing')
             ctx.pipeToSelf(
-              sendOverSocket(msg.clientId, { message: `⚠️ ${text}`, textStyles: [] }),
+              sendOverSocket(msg.clientId, { message: `⚠️ ${text}`, textStyles: [], attachments: [] }),
               ()    => ({ type: '_sendOk'  as const }),
               (err) => ({ type: '_sendErr' as const, error: String(err) }),
             )
