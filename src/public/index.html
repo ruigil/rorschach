@@ -50,17 +50,6 @@
       </div>
     </div>
     <div class="chat-dock">
-      <div id="usage-bar" class="usage-bar hidden">
-        <span class="usage-item usage-model" id="usage-model">—</span>
-        <span class="usage-sep">·</span>
-        <span class="usage-item"><span class="usage-label">in</span><span id="usage-in">—</span></span>
-        <span class="usage-sep">·</span>
-        <span class="usage-item"><span class="usage-label">out</span><span id="usage-out">—</span></span>
-        <span class="usage-sep">·</span>
-        <span class="usage-item"><span class="usage-label">ctx</span><span id="usage-ctx">—</span></span>
-        <span class="usage-sep">·</span>
-        <span class="usage-item"><span class="usage-label">cost</span><span id="usage-cost">—</span></span>
-      </div>
       <div class="input-area">
         <div id="image-previews" class="image-previews hidden"></div>
         <form id="chat-form">
@@ -333,6 +322,7 @@
         <button class="obs-subtab" data-subtab="traces">traces</button>
         <button class="obs-subtab" data-subtab="tools">tools</button>
         <button class="obs-subtab" data-subtab="memory">memory</button>
+        <button class="obs-subtab" data-subtab="costs">costs</button>
       </div>
       <div class="obs-bar-end">
         <div class="metrics-summary" id="metrics-summary" style="display:none">
@@ -437,6 +427,26 @@
           <span>no tools registered</span>
         </div>
       </div>
+    </div>
+
+    <div id="obs-costs" class="obs-subpanel">
+      <div id="costs-empty" class="empty-panel">
+        <span>no usage data yet</span>
+      </div>
+      <table class="costs-table" id="costs-table" style="display:none">
+        <thead>
+          <tr>
+            <th>role</th>
+            <th>model</th>
+            <th>in</th>
+            <th>out</th>
+            <th>ctx</th>
+            <th>cost</th>
+          </tr>
+        </thead>
+        <tbody id="costs-rows"></tbody>
+        <tfoot id="costs-summary"></tfoot>
+      </table>
     </div>
 
     <div id="obs-memory" class="obs-subpanel">

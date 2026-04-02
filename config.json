@@ -8,11 +8,13 @@
   ],
   "config": {
     "interfaces": {
-      "http": { "port": "${PORT:-3000}" },
+      "http": {
+        "port": "${PORT:-3000}"
+      },
       "signal": {
         "host": "127.0.0.1",
         "port": "7583",
-        "groupId" : "77CjSqNjZUanJ4oMTQRkhQKqPZM1WKnEZ55wKpaAbuo="
+        "groupId": "77CjSqNjZUanJ4oMTQRkhQKqPZM1WKnEZ55wKpaAbuo="
       }
     },
     "tools": {
@@ -20,32 +22,43 @@
         "apiKey": "${BRAVESEARCH_API_KEY}",
         "count": 20
       },
-      "bash":{
+      "bash": {
         "cwd": "/workspace"
       },
       "visionActor": {
-        "model": "${OPENROUTER_VISION_MODEL:-google/gemini-3-pro-image-preview}"
+        "model": "google/gemini-3-pro-image-preview"
       },
       "audioActor": {
-        "model": "${OPENROUTER_AUDIO_MODEL:-mistralai/voxtral-small-24b-2507}",
-        "voice": "alloy"
+        "model": "openai/gpt-audio",
+        "voice": "nova"
       }
     },
     "cognitive": {
       "llmProvider": {
-        "apiKey": "${OPENROUTER_API_KEY}"
+        "apiKey": "${OPENROUTER_API_KEY}",
+        "reasoning": {
+          "enabled": true,
+          "effort": "medium"
+        }
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "model": "${OPENROUTER_MODEL:-inception/mercury-2}",
+        "model": "openai/gpt-5.4-nano",
         "historyWindow": 40,
-        "toolFilter": { "deny": ["kgraph_query", "kgraph_write"] }
+        "toolFilter": {
+          "deny": [
+            "kgraph_query",
+            "kgraph_write"
+          ]
+        }
       }
     },
-    "memory" : {
-      "kgraph": { "dbPath" : "./workspace/memory/kgraph" },
+    "memory": {
+      "kgraph": {
+        "dbPath": "./workspace/memory/kgraph"
+      },
       "memory": {
-        "model": "${OPENROUTER_MEMORY_MODEL:-x-ai/grok-4.1-fast}",
+        "model": "x-ai/grok-4.1-fast",
         "userId": "rigel",
         "consolidationIntervalMs": 30000
       }

@@ -452,33 +452,45 @@ header.streaming::after {
   overflow: hidden;
 }
 
-.usage-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.3rem 1.25rem;
+/* ─── Observe: costs table ─── */
+.costs-table {
+  width: 100%;
+  border-collapse: collapse;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   color: var(--text-mid);
-  border-bottom: 1px solid rgba(0, 196, 212, 0.06);
-  background: transparent;
-  flex-shrink: 0;
-  letter-spacing: 0.03em;
 }
 
-.usage-bar.hidden { display: none; }
-
-.usage-model {
-  color: var(--accent);
-  opacity: 0.75;
-}
-
-.usage-label {
+.costs-table th {
+  text-align: left;
+  padding: 0.4rem 0.75rem;
   color: var(--text-dim);
-  margin-right: 0.25rem;
+  font-weight: normal;
+  border-bottom: 1px solid rgba(0, 196, 212, 0.1);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 0.65rem;
 }
 
-.usage-sep { color: var(--border-mid); }
+.costs-table td {
+  padding: 0.35rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.costs-table td:first-child { color: var(--accent); opacity: 0.85; }
+.costs-table td:nth-child(2) { color: var(--text-mid); max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.costs-table td:nth-child(3),
+.costs-table td:nth-child(4),
+.costs-table td:nth-child(5) { text-align: right; }
+.costs-table td:last-child { text-align: right; color: var(--text-bright); }
+
+.costs-table tfoot td {
+  border-top: 1px solid rgba(0, 196, 212, 0.15);
+  border-bottom: none;
+  color: var(--text-bright);
+  font-weight: bold;
+  padding-top: 0.5rem;
+}
 
 /* ─── Chat: input area ─── */
 .input-area {

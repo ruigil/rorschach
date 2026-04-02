@@ -40,7 +40,7 @@ const interpolate = (value: unknown): unknown => {
 //
 export const loadConfig = async (
   override?: string,
-): Promise<{ plugins: PluginDef<any, any, any>[]; config: Record<string, unknown> }> => {
+): Promise<{ plugins: PluginDef<any, any, any>[]; config: Record<string, unknown>; configPath: string }> => {
   const argIdx = process.argv.indexOf('--config')
   const path = resolve(
     override ??
@@ -93,5 +93,36 @@ export const loadConfig = async (
 
   const config = interpolate(obj.config ?? {}) as Record<string, unknown>
 
-  return { plugins, config }
+  return { plugins, config, configPath: path }
+}
+
+// ─── saveConfig ───────────────────────────────────────────────────────────────
+//
+// Deep-merges `patch` into the on-disk config file at `configPath`, preserving
+// env-var references (e.g. ${MY_KEY}) for any key not touched by the patch.
+// Only plain-object nodes are merged; arrays and primitives are replaced.
+//
+const deepMergeRaw = (base: unknown, override: unknown): unknown => {
+  if (override === undefined) return base
+  if (
+    override === null ||
+    typeof override !== 'object' ||
+    Array.isArray(override)
+  ) return override ?? base
+  if (base === null || typeof base !== 'object' || Array.isArray(base)) return override
+  const result: Record<string, unknown> = { ...(base as Record<string, unknown>) }
+  for (const [key, val] of Object.entries(override as Record<string, unknown>)) {
+    if (val !== undefined) result[key] = deepMergeRaw(result[key], val)
+  }
+  return result
+}
+
+export const saveConfig = async (
+  configPath: string,
+  patch: Record<string, unknown>,
+): Promise<void> => {
+  const raw = await Bun.file(configPath).text()
+  const obj = JSON.parse(raw) as Record<string, unknown>
+  const merged = deepMergeRaw(obj.config ?? {}, patch)
+  await Bun.write(configPath, JSON.stringify({ ...obj, config: merged }, null, 2) + '\n')
 }

@@ -208,7 +208,18 @@ if (voidGL) {
 
 // ─── Markdown renderer ───
 
-marked.use({ gfm: true, breaks: true })
+marked.use({
+  gfm: true,
+  breaks: true,
+  renderer: {
+    image(href, title, text) {
+      if (/\.(wav|mp3|ogg|m4a|flac)(\?.*)?$/i.test(href)) {
+        return `<audio controls autoplay class="message-audio" src="${href}"></audio>`
+      }
+      return false
+    }
+  }
+})
 
 function copyCode(btn) {
   const code = btn.closest('.code-block').querySelector('code').textContent
@@ -305,9 +316,7 @@ function connect() {
     if (msg.type === 'chunk' || msg.type === 'done' || msg.type === 'error' || msg.type === 'searching' || msg.type === 'sources' || msg.type === 'reasoningChunk') {
       handleChatMsg(msg)
     } else if (msg.type === 'usage') {
-      updateUsageBar(msg)
-    } else if (msg.type === 'generatedAudio') {
-      onGeneratedAudio(msg)
+      onUsageMsg(msg)
     } else if (msg.type === 'log') {
       appendLog(msg)
     } else if (msg.type === 'metrics') {
@@ -825,19 +834,6 @@ function handleChatMsg(msg) {
   }
 }
 
-function onGeneratedAudio(msg) {
-  // Append an autoplay audio element into the current or last assistant bubble
-  const target = streamBubbleContainer ?? messagesEl.querySelector('.message.assistant:last-child .bubble')
-  if (!target) return
-  const audioEl = document.createElement('audio')
-  audioEl.src = msg.url
-  audioEl.controls = true
-  audioEl.autoplay = true
-  audioEl.className = 'message-audio'
-  target.appendChild(audioEl)
-  scrollToBottom()
-}
-
 // ─── Usage bar ───
 
 function formatTokens(n) {
@@ -845,18 +841,67 @@ function formatTokens(n) {
   return String(n)
 }
 
-function updateUsageBar(msg) {
-  document.getElementById('usage-bar').classList.remove('hidden')
-  const ctx = msg.contextWindow ? ` · ${Math.round(msg.contextWindow / 1000)}k ctx` : ''
-  document.getElementById('usage-model').textContent = msg.model + ctx
-  document.getElementById('usage-in').textContent = formatTokens(msg.inputTokens)
-  document.getElementById('usage-out').textContent = formatTokens(msg.outputTokens)
-  document.getElementById('usage-ctx').textContent = msg.contextPercent != null
-    ? `${(msg.contextPercent * 100).toFixed(1)}%`
-    : '—'
-  document.getElementById('usage-cost').textContent = msg.sessionCost != null
-    ? `$${msg.sessionCost.toFixed(4)}`
-    : '—'
+// ─── Costs tab ───
+
+const costsMap = new Map() // key: `${role}:${model}` → { role, model, inputTokens, outputTokens, contextWindow, cost }
+
+function onUsageMsg(msg) {
+  if (!msg.role || !msg.model) return
+  const key = `${msg.role}:${msg.model}`
+  const prev = costsMap.get(key) ?? { role: msg.role, model: msg.model, inputTokens: 0, outputTokens: 0, contextWindow: null, cost: 0 }
+  costsMap.set(key, {
+    ...prev,
+    inputTokens:   prev.inputTokens  + (msg.inputTokens  ?? 0),
+    outputTokens:  prev.outputTokens + (msg.outputTokens ?? 0),
+    contextWindow: msg.contextWindow ?? prev.contextWindow,
+    cost:          (prev.cost ?? 0)  + (msg.cost ?? 0),
+  })
+  if (document.getElementById('obs-costs')?.classList.contains('active')) renderCostsTable()
+}
+
+function renderCostsTable() {
+  const empty  = document.getElementById('costs-empty')
+  const table  = document.getElementById('costs-table')
+  const tbody  = document.getElementById('costs-rows')
+  const tfoot  = document.getElementById('costs-summary')
+  if (!tbody || !tfoot) return
+
+  if (costsMap.size === 0) {
+    empty.style.display = 'flex'
+    table.style.display = 'none'
+    return
+  }
+
+  empty.style.display = 'none'
+  table.style.display = 'table'
+
+  let totalIn = 0, totalOut = 0, totalCost = 0
+
+  tbody.innerHTML = [...costsMap.values()].map(entry => {
+    totalIn   += entry.inputTokens
+    totalOut  += entry.outputTokens
+    totalCost += entry.cost ?? 0
+    const ctx = entry.contextWindow ? `${Math.round(entry.contextWindow / 1000)}k` : '—'
+    const cost = entry.cost != null && entry.cost > 0 ? `$${entry.cost.toFixed(4)}` : '—'
+    return `<tr>
+      <td>${entry.role}</td>
+      <td title="${entry.model}">${entry.model}</td>
+      <td>${formatTokens(entry.inputTokens)}</td>
+      <td>${formatTokens(entry.outputTokens)}</td>
+      <td>${ctx}</td>
+      <td>${cost}</td>
+    </tr>`
+  }).join('')
+
+  const totalCostStr = totalCost > 0 ? `$${totalCost.toFixed(4)}` : '—'
+  tfoot.innerHTML = `<tr>
+    <td>total</td>
+    <td></td>
+    <td>${formatTokens(totalIn)}</td>
+    <td>${formatTokens(totalOut)}</td>
+    <td></td>
+    <td>${totalCostStr}</td>
+  </tr>`
 }
 
 // ─── Observe ───
@@ -1074,6 +1119,7 @@ document.querySelectorAll('.obs-subtab').forEach(btn => {
     obsMemoryControls.style.display = subtab === 'memory' ? 'flex' : 'none'
     if (subtab === 'traces') renderTraces()
     if (subtab === 'memory') fetchKgraph()
+    if (subtab === 'costs') renderCostsTable()
   })
 })
 
@@ -1576,10 +1622,12 @@ const configDefaults = {
   memoryConsolidationIntervalMs: 30000,
 }
 
-function loadConfig() {
+async function fetchServerConfig() {
   try {
-    return { ...configDefaults, ...JSON.parse(localStorage.getItem('rorschach-config') || '{}') }
-  } catch { return { ...configDefaults } }
+    const res = await fetch(new URL('config', location.href))
+    if (res.ok) return { ...configDefaults, ...await res.json() }
+  } catch {}
+  return { ...configDefaults }
 }
 
 function applyToForm(cfg) {
@@ -1649,7 +1697,6 @@ function flashError(msg) {
 configForm.addEventListener('submit', async (e) => {
   e.preventDefault()
   const cfg = readFromForm()
-  localStorage.setItem('rorschach-config', JSON.stringify(cfg))
   try {
     const res = await fetch(new URL('config', location.href), {
       method: 'POST',
@@ -1667,7 +1714,7 @@ resetBtn.addEventListener('click', () => applyToForm(configDefaults))
 
 // ─── Dynamic model list ───
 
-async function initModelSelects() {
+async function initModelSelects(cfg) {
   const chatSel   = document.getElementById('chat-model')
   const visionSel = document.getElementById('vision-model')
   const audioSel  = document.getElementById('audio-model')
@@ -1683,8 +1730,6 @@ async function initModelSelects() {
     if (res.ok) models = await res.json()
   } catch {}
 
-  const cfg = loadConfig()
-
   for (const [sel, savedVal, allowEmpty] of [
     [chatSel,   cfg.model,       false],
     [visionSel, cfg.visionModel, false],
@@ -1698,5 +1743,7 @@ async function initModelSelects() {
 }
 
 // ─── Boot ───
-initModelSelects().then(() => applyToForm(loadConfig()))
+fetchServerConfig().then(cfg => {
+  initModelSelects(cfg).then(() => applyToForm(cfg))
+})
 connect()
