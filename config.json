@@ -4,7 +4,8 @@
     "./src/plugins/tools/tools.plugin.ts",
     "./src/plugins/memory/memory.plugin.ts",
     "./src/plugins/cognitive/cognitive.plugin.ts",
-    "./src/plugins/observability/observability.plugin.ts"
+    "./src/plugins/observability/observability.plugin.ts",
+    "./src/plugins/notebook/notebook.plugin.ts"
   ],
   "config": {
     "interfaces": {
@@ -62,6 +63,13 @@
         "userId": "rigel",
         "consolidationIntervalMs": 30000
       }
+    },
+    "notebook": {
+      "notebookDir": "workspace/notebook",
+      "agentModel": "google/gemini-3.1-pro-preview",
+      "consolidationModel": "google/gemini-3.1-pro-preview",
+      "consolidationIntervalMs": 604800000,
+      "maxToolLoops": 10
     },
     "observability": {
       "jsonlLogger": {
