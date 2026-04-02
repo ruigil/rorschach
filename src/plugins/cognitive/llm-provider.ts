@@ -10,7 +10,7 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
   const { apiKey, reasoning } = options
 
   return {
-    async stream(model, messages, tools, onChunk, onReasoningChunk) {
+    stream: async (model, messages, tools, onChunk, onReasoningChunk) => {
       const res = await fetch(OPENROUTER_URL, {
         method: 'POST',
         headers: {
@@ -95,7 +95,7 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
       return { type: 'content', usage: lastUsage }
     },
 
-    async streamImage(model, messages, onChunk, onImageChunk) {
+    streamImage: async (model, messages, onChunk, onImageChunk) => {
       const res = await fetch(OPENROUTER_URL, {
         method: 'POST',
         headers: {
@@ -161,7 +161,7 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
       return { type: 'content', usage: lastUsage }
     },
 
-    async streamAudio(model, messages, voice, onChunk, onAudioChunk) {
+    streamAudio: async (model, messages, voice, onChunk, onAudioChunk) => {
       const res = await fetch(OPENROUTER_URL, {
         method: 'POST',
         headers: {
@@ -225,7 +225,7 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
       return { type: 'content', usage: lastUsage }
     },
 
-    async fetchModelInfo(model: string) {
+    fetchModelInfo: async (model: string) => {
       try {
         const res = await fetch('https://openrouter.ai/api/v1/models', {
           headers: { 'Authorization': `Bearer ${apiKey}` },
@@ -246,7 +246,7 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
       }
     },
 
-    async fetchModels() {
+    fetchModels: async () => {
       try {
         const res = await fetch('https://openrouter.ai/api/v1/models', {
           headers: { 'Authorization': `Bearer ${apiKey}` },
