@@ -43,7 +43,7 @@
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "model": "x-ai/grok-4.1-fast",
+        "model": "x-ai/grok-4.20",
         "historyWindow": 40,
         "toolFilter": {
           "deny": [
@@ -71,6 +71,9 @@
       },
       "metrics": {
         "intervalMs": 5000
+      },
+      "traceRecorder": {
+        "tracesDir": "./traces"
       }
     }
   }
