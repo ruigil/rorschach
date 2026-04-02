@@ -1,13 +1,15 @@
 import type { ActorDef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
 import type {
-  TokenUsage, LlmProviderMsg, LlmProviderAdapter, OpenRouterAdapterOptions, VisionProviderReply, AudioProviderReply
+  TokenUsage, LlmProviderMsg, LlmProviderAdapter, OpenRouterAdapterOptions, VisionProviderReply, AudioProviderReply,
+  ModelInfo
 } from '../../types/llm.ts'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
 export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmProviderAdapter => {
   const { apiKey, reasoning } = options
+  const modelInfoCache = new Map<string, ModelInfo>()
 
   return {
     stream: async (model, messages, tools, onChunk, onReasoningChunk) => {
@@ -226,6 +228,8 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
     },
 
     fetchModelInfo: async (model: string) => {
+      if (modelInfoCache.has(model)) return modelInfoCache.get(model)!
+
       try {
         const res = await fetch('https://openrouter.ai/api/v1/models', {
           headers: { 'Authorization': `Bearer ${apiKey}` },
@@ -234,13 +238,14 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
         const data = await res.json() as {
           data: Array<{ id: string; context_length: number; pricing: { prompt: string; completion: string } }>
         }
-        const entry = data.data.find(m => m.id === model)
-        if (!entry) return null
-        return {
-          contextWindow: entry.context_length,
-          promptPer1M: parseFloat(entry.pricing.prompt) * 1_000_000,
-          completionPer1M: parseFloat(entry.pricing.completion) * 1_000_000,
+        for (const entry of data.data) {
+          modelInfoCache.set(entry.id, {
+            contextWindow:   entry.context_length,
+            promptPer1M:     parseFloat(entry.pricing.prompt)     * 1_000_000,
+            completionPer1M: parseFloat(entry.pricing.completion) * 1_000_000,
+          })
         }
+        return modelInfoCache.get(model) ?? null
       } catch {
         return null
       }

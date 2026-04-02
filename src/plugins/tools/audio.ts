@@ -1,11 +1,12 @@
 import { join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
-import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
-import { onMessage } from '../../system/match.ts'
+import { onLifecycle, onMessage } from '../../system/match.ts'
+import { emit } from '../../system/types.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
-import type { LlmProviderMsg, ApiMessage, AudioProviderReply, LlmProviderReply } from '../../types/llm.ts'
-import { AudioGeneratedTopic } from '../../types/ws.ts'
+import type { LlmProviderMsg, ApiMessage, AudioProviderReply, LlmProviderReply, ModelInfo } from '../../types/llm.ts'
+import { WsSendTopic } from '../../types/ws.ts'
+import { ask } from '../../system/ask.ts'
 
 // ─── Output directory for generated audio ───
 
@@ -67,16 +68,19 @@ type TranscriptionPending = {
   kind: 'transcription'
   accumulated: string
   replyTo: ActorRef<ToolReply>
+  clientId?: string
 }
 
 type TtsPending = {
   kind: 'tts'
   accumulatedPcm: Buffer[]
   replyTo: ActorRef<ToolReply>
+  clientId?: string
 }
 
 export type AudioState = {
   pending: Record<string, TranscriptionPending | TtsPending>
+  modelInfo: ModelInfo | null
 }
 
 // ─── Options ───
@@ -142,7 +146,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
     handler: onMessage<AudioActorMsg, AudioState>({
 
       invoke: (state, message, context) => {
-        const { toolName, arguments: args, replyTo } = message
+        const { toolName, arguments: args, replyTo, clientId } = message
 
         if (toolName === TEXT_TO_SPEECH_TOOL_NAME) {
           let text = ''
@@ -174,7 +178,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
           return {
             state: {
               ...state,
-              pending: { ...state.pending, [requestId]: { kind: 'tts', accumulatedPcm: [], replyTo } },
+              pending: { ...state.pending, [requestId]: { kind: 'tts', accumulatedPcm: [], replyTo, clientId } },
             },
           }
         }
@@ -200,7 +204,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
         return {
           state: {
             ...state,
-            pending: { ...state.pending, [requestId]: { kind: 'transcription', accumulated: '', replyTo } },
+            pending: { ...state.pending, [requestId]: { kind: 'transcription', accumulated: '', replyTo, clientId } },
           },
         }
       },
@@ -216,7 +220,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
           model,
           messages: [
             { role: 'user', content: [
-              { type: 'text', text: "Reply with: 'The User said: \"<content of the audio only.>\"'" },
+              { type: 'text', text: "Reply with: 'The User said: \"<what the user said>\"'. Nothing Else." },
               { type: 'input_audio', input_audio: { data, format } }
             ] },
           ],
@@ -258,16 +262,31 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
         const { [message.requestId]: req, ...rest } = state.pending
         if (!req) return { state }
 
+        const usageEvents = (req.clientId && message.usage)
+          ? [emit(WsSendTopic, { clientId: req.clientId, text: JSON.stringify({
+              type: 'usage',
+              role: 'audio',
+              model,
+              inputTokens:   message.usage.promptTokens,
+              outputTokens:  message.usage.completionTokens,
+              contextWindow: state.modelInfo?.contextWindow ?? null,
+              cost: state.modelInfo
+                ? (message.usage.promptTokens     / 1_000_000 * state.modelInfo.promptPer1M)
+                + (message.usage.completionTokens / 1_000_000 * state.modelInfo.completionPer1M)
+                : null,
+            }) })]
+          : []
+
         if (req.kind === 'transcription') {
           req.replyTo.send({ type: 'toolResult', result: req.accumulated || '(no transcription)' })
-          return { state: { ...state, pending: rest } }
+          return { state: { ...state, pending: rest }, events: usageEvents }
         }
 
         // tts — save PCM to WAV
         if (!req.accumulatedPcm.length) {
           context.log.error('audio: TTS completed but no audio data received')
           req.replyTo.send({ type: 'toolError', error: 'No audio data received from model.' })
-          return { state: { ...state, pending: rest } }
+          return { state: { ...state, pending: rest }, events: usageEvents }
         }
 
         context.pipeToSelf(
@@ -275,7 +294,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
           (r): AudioActorMsg => ({ type: '_audioSaved',     requestId: message.requestId, filePath: r.filePath, publicUrl: r.publicUrl, replyTo: req.replyTo }),
           (e): AudioActorMsg => ({ type: '_audioSaveError', requestId: message.requestId, error: String(e), replyTo: req.replyTo }),
         )
-        return { state: { ...state, pending: rest } }
+        return { state: { ...state, pending: rest }, events: usageEvents }
       },
 
       llmError: (state, message, context) => {
@@ -287,18 +306,25 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
       },
 
       _audioSaved: (state, message) => {
-        const { filePath, publicUrl, replyTo } = message
-        replyTo.send({ type: 'toolResult', result: `<audio controls autoplay src="${publicUrl}" class="message-audio"></audio>` })
-        return {
-          state,
-          events: [emit(AudioGeneratedTopic, { filePath, publicUrl })],
-        }
+        const { publicUrl, replyTo } = message
+        replyTo.send({ type: 'toolResult', result: `Audio generated. Include this in your reply to the user: ![audio](${publicUrl})` })
+        return { state }
       },
 
       _audioSaveError: (state, message, context) => {
         context.log.error('audio: failed to save TTS output', { error: message.error })
         message.replyTo.send({ type: 'toolError', error: `Failed to save audio: ${message.error}` })
         return { state }
+      },
+    }),
+
+    lifecycle: onLifecycle({
+      start: async (state, _context) => {
+        const modelInfo = await ask<LlmProviderMsg, ModelInfo | null>(
+          llmRef,
+          (replyTo) => ({ type: 'fetchModelInfo', model, replyTo }),
+        ).catch(() => null)
+        return { state: { ...state, modelInfo } }
       },
     }),
 

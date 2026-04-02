@@ -54,22 +54,9 @@ export type HttpConfigPayload = Record<string, unknown>
 /** Topic emitted when the browser POSTs new config. Subscribe in your app to apply config changes. */
 export const HttpConfigTopic = createTopic<HttpConfigPayload>('http.config.post')
 
-// ─── Domain event: emitted when a tool generates an image ───
+// ─── Domain event: publish to push the current flat config to the HTTP actor ───
 
-export type ImageGeneratedEvent = {
-  filePath:  string  // absolute path to the saved PNG file
-  publicUrl: string  // relative URL path for HTTP clients, e.g. '/generated/uuid.png'
-}
+export type ConfigSnapshotEvent = { config: Record<string, unknown> }
 
-/** Topic emitted when a generated image has been saved to disk. Interfaces use this to deliver it to clients. */
-export const ImageGeneratedTopic = createTopic<ImageGeneratedEvent>('image.generated')
-
-// ─── Domain event: emitted when the TTS tool generates audio ───
-
-export type AudioGeneratedEvent = {
-  filePath:  string  // absolute path to the saved WAV file
-  publicUrl: string  // relative URL path for HTTP clients, e.g. 'generated/uuid.wav'
-}
-
-/** Topic emitted when a generated audio file has been saved to disk. Interfaces use this to deliver it to clients. */
-export const AudioGeneratedTopic = createTopic<AudioGeneratedEvent>('audio.generated')
+/** Publish to update the flat config snapshot served at GET /config. */
+export const ConfigSnapshotTopic = createTopic<ConfigSnapshotEvent>('http.config.snapshot')

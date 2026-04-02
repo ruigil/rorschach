@@ -213,7 +213,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
         context.pipeToSelf(
           ask<ToolInvokeMsg, ToolReply>(
             entry.ref,
-            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo }),
+            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId }),
             undefined,
             toolSpan ? context.trace.injectHeaders(toolSpan) : undefined,
           ),
@@ -277,12 +277,6 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
         : prevSession
 
       const info = state.modelInfo
-      const sessionCost = info
-        ? (newSession.promptTokens / 1_000_000 * info.promptPer1M) + (newSession.completionTokens / 1_000_000 * info.completionPer1M)
-        : null
-      const contextPercent = (info && usage)
-        ? (usage.promptTokens + usage.completionTokens) / info.contextWindow
-        : null
 
       const rawHistory: ConversationMessage[] = [...state.history, { role: 'assistant', content: state.pending }]
       const newHistory = historyWindow ? trimHistory(rawHistory, historyWindow) : rawHistory
@@ -307,12 +301,15 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
           emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
           emit(WsSendTopic, { clientId, text: JSON.stringify({
             type: 'usage',
+            role: 'reasoning',
             model,
-            inputTokens: newSession.promptTokens,
-            outputTokens: newSession.completionTokens,
+            inputTokens:   totalUsage?.promptTokens     ?? 0,
+            outputTokens:  totalUsage?.completionTokens ?? 0,
             contextWindow: info?.contextWindow ?? null,
-            contextPercent,
-            sessionCost,
+            cost: info && totalUsage
+              ? (totalUsage.promptTokens     / 1_000_000 * info.promptPer1M)
+              + (totalUsage.completionTokens / 1_000_000 * info.completionPer1M)
+              : null,
           })}),
         ],
         become: idleHandler,

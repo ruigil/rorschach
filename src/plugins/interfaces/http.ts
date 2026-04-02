@@ -4,9 +4,9 @@ import type { Server, ServerWebSocket } from 'bun'
 import { emit } from '../../system/types.ts'
 import {
   WsMessageTopic, WsConnectTopic, WsDisconnectTopic,
-  WsSendTopic, WsBroadcastTopic, HttpConfigTopic, ImageGeneratedTopic, AudioGeneratedTopic,
+  WsSendTopic, WsBroadcastTopic, HttpConfigTopic, ConfigSnapshotTopic,
 } from '../../types/ws.ts'
-import type { HttpConfigPayload } from '../../types/ws.ts'
+import type { HttpConfigPayload, ConfigSnapshotEvent } from '../../types/ws.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
@@ -40,6 +40,7 @@ export type HttpMessage =
   | { type: 'broadcast'; text: string }
   | { type: 'send'; clientId: string; text: string }
   | { type: 'config'; data: unknown }
+  | { type: '_configSnapshot'; data: Record<string, unknown> }
   | { type: '_llmProviderChanged'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_kgraphChanged'; ref: ActorRef<KgraphMsg> | null }
   | { type: '_imageGenerated'; publicUrl: string }
@@ -127,6 +128,7 @@ export const createHttpActor = (
   let selfRef: ActorRef<HttpMessage> | null = null
   let llmProviderRef: ActorRef<LlmProviderMsg> | null = null
   let kgraphRef: ActorRef<KgraphMsg> | null = null
+  let configSnapshot: Record<string, unknown> | null = null
 
   return {
     handler: onMessage({
@@ -232,6 +234,11 @@ export const createHttpActor = (
         }
       },
 
+      _configSnapshot: (state, message) => {
+        configSnapshot = message.data
+        return { state }
+      },
+
       _llmProviderChanged: (state, message) => {
         llmProviderRef = message.ref
         return { state: { ...state, llmProviderRef: message.ref } }
@@ -242,15 +249,7 @@ export const createHttpActor = (
         return { state: { ...state, kgraphRef: message.ref } }
       },
 
-      _imageGenerated: (state, message) => {
-        state.server?.publish(CHANNEL, JSON.stringify({ type: 'generatedImage', url: message.publicUrl }))
-        return { state }
-      },
 
-      _audioGenerated: (state, message) => {
-        state.server?.publish(CHANNEL, JSON.stringify({ type: 'generatedAudio', url: message.publicUrl }))
-        return { state }
-      },
     }),
 
     lifecycle: onLifecycle({
@@ -278,15 +277,11 @@ export const createHttpActor = (
           ref: e.ref,
         }))
 
-        context.subscribe(ImageGeneratedTopic, (e) => ({
-          type: '_imageGenerated' as const,
-          publicUrl: e.publicUrl,
+        context.subscribe(ConfigSnapshotTopic, (e: ConfigSnapshotEvent) => ({
+          type: '_configSnapshot' as const,
+          data: e.config,
         }))
 
-        context.subscribe(AudioGeneratedTopic, (e) => ({
-          type: '_audioGenerated' as const,
-          publicUrl: e.publicUrl,
-        }))
 
         const server = Bun.serve<WsData>({
           port,
@@ -314,7 +309,12 @@ export const createHttpActor = (
               return new Response(JSON.stringify(graph), { headers: { 'Content-Type': 'application/json' } })
             }
 
-            // Config API
+            // Config API — GET returns current server config, POST applies changes
+            if (req.method === 'GET' && url.pathname === '/config') {
+              if (!configSnapshot) return new Response('Not ready', { status: 503 })
+              return new Response(JSON.stringify(configSnapshot), { headers: { 'Content-Type': 'application/json' } })
+            }
+
             if (req.method === 'POST' && url.pathname === '/config') {
               try {
                 const data = await req.json()

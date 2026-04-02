@@ -1,14 +1,17 @@
 import type { ActorDef, ActorRef, MessageHandler } from '../../system/types.ts'
-import { onMessage } from '../../system/match.ts'
+import { onLifecycle, onMessage } from '../../system/match.ts'
+import { emit } from '../../system/types.ts'
 import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { ask } from '../../system/ask.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
   LlmProviderReply,
+  ModelInfo,
   Tool,
   ToolCall,
 } from '../../types/llm.ts'
+import { WsBroadcastTopic } from '../../types/ws.ts'
 import type { UserContextMsg } from '../../types/memory.ts'
 import { UserContextTopic } from '../../types/memory.ts'
 
@@ -36,6 +39,7 @@ export type UserContextState = {
   messages:     ApiMessage[] | null
   accumulated:  string
   pendingBatch: PendingBatch | null
+  modelInfo:    ModelInfo | null
 }
 
 // ─── System prompt ───
@@ -177,9 +181,24 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
         (error) => ({ type: '_contextSaveFailed' as const, userId, error: String(error) }),
       )
 
+      const usageEvents = msg.usage
+        ? [emit(WsBroadcastTopic, { text: JSON.stringify({
+            type: 'usage',
+            role: 'user-context',
+            model,
+            inputTokens:   msg.usage.promptTokens,
+            outputTokens:  msg.usage.completionTokens,
+            contextWindow: state.modelInfo?.contextWindow ?? null,
+            cost: state.modelInfo
+              ? (msg.usage.promptTokens     / 1_000_000 * state.modelInfo.promptPer1M)
+              + (msg.usage.completionTokens / 1_000_000 * state.modelInfo.completionPer1M)
+              : null,
+          }) })]
+        : []
+
       const next = { ...state, requestId: null, messages: null, accumulated: '', pendingBatch: null }
-      if (state.pendingRun) return startSummary(next, context)
-      return { state: next, become: idleHandler }
+      if (state.pendingRun) return { ...startSummary(next, context), events: usageEvents }
+      return { state: next, become: idleHandler, events: usageEvents }
     },
 
     llmError: (state, msg, context) => {
@@ -243,6 +262,16 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
 
   return {
     handler: idleHandler,
+
+    lifecycle: onLifecycle({
+      start: async (state, _context) => {
+        const modelInfo = await ask<LlmProviderMsg, ModelInfo | null>(
+          llmRef,
+          (replyTo) => ({ type: 'fetchModelInfo', model, replyTo }),
+        ).catch(() => null)
+        return { state: { ...state, modelInfo } }
+      },
+    }),
   }
 }
 
@@ -252,4 +281,5 @@ export const INITIAL_USER_CONTEXT_STATE: UserContextState = {
   messages:     null,
   accumulated:  '',
   pendingBatch: null,
+  modelInfo:    null,
 }

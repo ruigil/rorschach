@@ -1,11 +1,12 @@
 import { join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
-import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
-import { onMessage } from '../../system/match.ts'
+import { onLifecycle, onMessage } from '../../system/match.ts'
+import { emit } from '../../system/types.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
-import { ImageGeneratedTopic } from '../../types/ws.ts'
-import type { LlmProviderMsg, LlmProviderReply, VisionProviderReply } from '../../types/llm.ts'
+import type { LlmProviderMsg, LlmProviderReply, ModelInfo, VisionProviderReply } from '../../types/llm.ts'
+import { WsSendTopic } from '../../types/ws.ts'
+import { ask } from '../../system/ask.ts'
 
 // ─── Output directory for generated images ───
 
@@ -66,6 +67,7 @@ type AnalysisPending = {
   kind: 'analysis'
   accumulated: string
   replyTo: ActorRef<ToolReply>
+  clientId?: string
 }
 
 type GenerationPending = {
@@ -73,12 +75,14 @@ type GenerationPending = {
   accumulatedText: string
   accumulatedImage: string
   replyTo: ActorRef<ToolReply>
+  clientId?: string
 }
 
 type PendingRequest = AnalysisPending | GenerationPending
 
 export type VisionState = {
   pending: Record<string, PendingRequest>
+  modelInfo: ModelInfo | null
 }
 
 // ─── Options ───
@@ -119,7 +123,7 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
 
       // ── analyze_image invoke ──
       invoke: (state, message, context) => {
-        const { toolName, arguments: args, replyTo } = message
+        const { toolName, arguments: args, replyTo, clientId } = message
 
         if (toolName === GENERATE_IMAGE_TOOL_NAME) {
           let prompt = ''
@@ -144,7 +148,7 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
               ...state,
               pending: {
                 ...state.pending,
-                [requestId]: { kind: 'generation', accumulatedText: '', accumulatedImage: '', replyTo },
+                [requestId]: { kind: 'generation', accumulatedText: '', accumulatedImage: '', replyTo, clientId },
               },
             },
           }
@@ -171,7 +175,7 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
         return {
           state: {
             ...state,
-            pending: { ...state.pending, [requestId]: { kind: 'analysis', accumulated: '', replyTo } },
+            pending: { ...state.pending, [requestId]: { kind: 'analysis', accumulated: '', replyTo, clientId } },
           },
         }
       },
@@ -211,10 +215,7 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
           .replace(/generated_image_url_placeholder/g, message.publicUrl)
         const result = `![Generated Image](${message.publicUrl})\n\n${rawDescription}`
         req.replyTo.send({ type: 'toolResult', result })
-        return {
-          state: { ...state, pending: rest },
-          events: [emit(ImageGeneratedTopic, { filePath: message.filePath, publicUrl: message.publicUrl })],
-        }
+        return { state: { ...state, pending: rest } }
       },
 
       _saveError: (state, message, context) => {
@@ -261,16 +262,31 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
         const { [message.requestId]: req, ...rest } = state.pending
         if (!req) return { state }
 
+        const usageEvents = (req.clientId && message.usage)
+          ? [emit(WsSendTopic, { clientId: req.clientId, text: JSON.stringify({
+              type: 'usage',
+              role: 'vision',
+              model,
+              inputTokens:   message.usage.promptTokens,
+              outputTokens:  message.usage.completionTokens,
+              contextWindow: state.modelInfo?.contextWindow ?? null,
+              cost: state.modelInfo
+                ? (message.usage.promptTokens     / 1_000_000 * state.modelInfo.promptPer1M)
+                + (message.usage.completionTokens / 1_000_000 * state.modelInfo.completionPer1M)
+                : null,
+            }) })]
+          : []
+
         if (req.kind === 'analysis') {
           req.replyTo.send({ type: 'toolResult', result: req.accumulated || 'No description available.' })
-          return { state: { ...state, pending: rest } }
+          return { state: { ...state, pending: rest }, events: usageEvents }
         }
 
         // generation — save image to disk, then reply via _imageSaved
         if (!req.accumulatedImage) {
           context.log.error('vision: image generation completed but no image data received')
           req.replyTo.send({ type: 'toolError', error: 'No image data received from model.' })
-          return { state: { ...state, pending: rest } }
+          return { state: { ...state, pending: rest }, events: usageEvents }
         }
 
         // Keep the pending entry alive until the file is saved
@@ -279,7 +295,7 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
           (r) => ({ type: '_imageSaved'  as const, requestId: message.requestId, filePath: r.filePath, publicUrl: r.publicUrl }),
           (e) => ({ type: '_saveError'   as const, requestId: message.requestId, error: String(e) }),
         )
-        return { state }
+        return { state, events: usageEvents }
       },
 
       llmError: (state, message, context) => {
@@ -290,6 +306,16 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
         return { state: { ...state, pending: rest } }
       },
 
+    }),
+
+    lifecycle: onLifecycle({
+      start: async (state, _context) => {
+        const modelInfo = await ask<LlmProviderMsg, ModelInfo | null>(
+          llmRef,
+          (replyTo) => ({ type: 'fetchModelInfo', model, replyTo }),
+        ).catch(() => null)
+        return { state: { ...state, modelInfo } }
+      },
     }),
 
     supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },

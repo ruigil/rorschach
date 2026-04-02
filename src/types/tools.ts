@@ -17,6 +17,7 @@ export type ToolInvokeMsg = {
   toolName: string
   arguments: string  // raw JSON string from LLM
   replyTo: ActorRef<ToolReply>
+  clientId?: string
 }
 
 export type ToolReply =

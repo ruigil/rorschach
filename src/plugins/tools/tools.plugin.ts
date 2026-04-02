@@ -198,7 +198,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
 
       let visionRef: ActorRef<ToolInvokeMsg> | null = null
       if (state.llmRef && newVisionConfig) {
-        const ref = ctx.spawn(`vision-actor-${visionGen}`, createVisionActor({ llmRef: state.llmRef, model: newVisionConfig.model }), { pending: {} })
+        const ref = ctx.spawn(`vision-actor-${visionGen}`, createVisionActor({ llmRef: state.llmRef, model: newVisionConfig.model }), { pending: {}, modelInfo: null })
         const visionRefTyped = ref as unknown as ActorRef<ToolInvokeMsg>
         ctx.publishRetained(ToolRegistrationTopic, ANALYZE_IMAGE_TOOL_NAME,  { name: ANALYZE_IMAGE_TOOL_NAME,  schema: ANALYZE_IMAGE_SCHEMA,  ref: visionRefTyped })
         ctx.publishRetained(ToolRegistrationTopic, GENERATE_IMAGE_TOOL_NAME, { name: GENERATE_IMAGE_TOOL_NAME, schema: GENERATE_IMAGE_SCHEMA, ref: visionRefTyped })
@@ -207,7 +207,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
 
       let audioRef: ActorRef<ToolInvokeMsg> | null = null
       if (state.llmRef && newAudioConfig) {
-        const ref = ctx.spawn(`audio-actor-${audioGen}`, createAudioActor({ llmRef: state.llmRef, model: newAudioConfig.model, voice: newAudioConfig.voice ?? 'alloy' }), { pending: {} } as AudioState)
+        const ref = ctx.spawn(`audio-actor-${audioGen}`, createAudioActor({ llmRef: state.llmRef, model: newAudioConfig.model, voice: newAudioConfig.voice ?? 'alloy' }), { pending: {}, modelInfo: null } as AudioState)
         const audioRefTyped = ref as unknown as ActorRef<ToolInvokeMsg>
         ctx.publishRetained(ToolRegistrationTopic, TRANSCRIBE_AUDIO_TOOL_NAME, { name: TRANSCRIBE_AUDIO_TOOL_NAME, schema: TRANSCRIBE_AUDIO_SCHEMA, ref: audioRefTyped })
         ctx.publishRetained(ToolRegistrationTopic, TEXT_TO_SPEECH_TOOL_NAME,   { name: TEXT_TO_SPEECH_TOOL_NAME,   schema: TEXT_TO_SPEECH_SCHEMA,   ref: audioRefTyped })
@@ -242,7 +242,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       let visionRef: ActorRef<ToolInvokeMsg> | null = null
 
       if (msg.ref && state.vision.config) {
-        const ref = ctx.spawn(`vision-actor-${visionGen}`, createVisionActor({ llmRef: msg.ref, model: state.vision.config.model }), { pending: {} })
+        const ref = ctx.spawn(`vision-actor-${visionGen}`, createVisionActor({ llmRef: msg.ref, model: state.vision.config.model }), { pending: {}, modelInfo: null })
         const visionRefTyped = ref as unknown as ActorRef<ToolInvokeMsg>
         ctx.publishRetained(ToolRegistrationTopic, ANALYZE_IMAGE_TOOL_NAME,  { name: ANALYZE_IMAGE_TOOL_NAME,  schema: ANALYZE_IMAGE_SCHEMA,  ref: visionRefTyped })
         ctx.publishRetained(ToolRegistrationTopic, GENERATE_IMAGE_TOOL_NAME, { name: GENERATE_IMAGE_TOOL_NAME, schema: GENERATE_IMAGE_SCHEMA, ref: visionRefTyped })
@@ -253,7 +253,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       let audioRef: ActorRef<ToolInvokeMsg> | null = null
 
       if (msg.ref && state.audio.config) {
-        const ref = ctx.spawn(`audio-actor-${audioGen}`, createAudioActor({ llmRef: msg.ref, model: state.audio.config.model, voice: state.audio.config.voice ?? 'alloy' }), { pending: {} } as AudioState)
+        const ref = ctx.spawn(`audio-actor-${audioGen}`, createAudioActor({ llmRef: msg.ref, model: state.audio.config.model, voice: state.audio.config.voice ?? 'alloy' }), { pending: {}, modelInfo: null } as AudioState)
         const audioRefTyped = ref as unknown as ActorRef<ToolInvokeMsg>
         ctx.publishRetained(ToolRegistrationTopic, TRANSCRIBE_AUDIO_TOOL_NAME, { name: TRANSCRIBE_AUDIO_TOOL_NAME, schema: TRANSCRIBE_AUDIO_SCHEMA, ref: audioRefTyped })
         ctx.publishRetained(ToolRegistrationTopic, TEXT_TO_SPEECH_TOOL_NAME,   { name: TEXT_TO_SPEECH_TOOL_NAME,   schema: TEXT_TO_SPEECH_SCHEMA,   ref: audioRefTyped })

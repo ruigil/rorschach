@@ -3,7 +3,8 @@ import type { Socket } from 'node:net'
 import type { ActorDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { emit } from '../../system/types.ts'
-import { WsConnectTopic, WsMessageTopic, WsSendTopic, ImageGeneratedTopic, AudioGeneratedTopic } from '../../types/ws.ts'
+import { join } from 'node:path'
+import { WsConnectTopic, WsMessageTopic, WsSendTopic } from '../../types/ws.ts'
 
 // ─── Markdown → Signal formatting ───
 //
@@ -11,10 +12,11 @@ import { WsConnectTopic, WsMessageTopic, WsSendTopic, ImageGeneratedTopic, Audio
 // This function strips all markdown markers, produces clean plain text, and tracks
 // the byte-offset ranges for BOLD, ITALIC, STRIKETHROUGH, and MONOSPACE.
 //
-export type SignalFormatted = { message: string; textStyles: string[] }
+export type SignalFormatted = { message: string; textStyles: string[]; attachments: string[] }
 
 export const renderForSignal = (md: string): SignalFormatted => {
   const spans: Array<{ start: number; length: number; style: string }> = []
+  const mediaUrls: string[] = []
   let pos = 0           // cursor into the plain-text output being built
   const parts: string[] = []
 
@@ -29,12 +31,15 @@ export const renderForSignal = (md: string): SignalFormatted => {
     const flushPlain = () => { push(plain); plain = '' }
 
     while (i < src.length) {
-      // Images — drop entirely
+      // Images — extract URL as attachment, drop from text
       if (src[i] === '!' && src[i+1] === '[') {
         const be = src.indexOf(']', i + 2)
         if (be !== -1 && src[be+1] === '(') {
           const pe = src.indexOf(')', be + 2)
-          if (pe !== -1) { i = pe + 1; continue }
+          if (pe !== -1) {
+            mediaUrls.push(src.slice(be + 2, pe))
+            i = pe + 1; continue
+          }
         }
       }
       // Links: [text](url) → text (url)
@@ -175,7 +180,7 @@ export const renderForSignal = (md: string): SignalFormatted => {
     .filter(s => s.start >= 0 && s.length > 0 && s.start + s.length <= message.length)
     .map(s => `${s.start}:${s.length}:${s.style}`)
 
-  return { message, textStyles }
+  return { message, textStyles, attachments: mediaUrls }
 }
 
 // ─── Options ───
@@ -186,6 +191,7 @@ export type SignalActorOptions = {
   account?:        string
   reconnectMs?:    number  // default: 3000
   attachmentsDir?: string
+  publicDir?:      string  // default: <signal.ts dir>/../../public — used to resolve media URLs to absolute paths
   allowList?:      string[]  // if set, only these numbers/UUIDs may interact
   groupId?:        string    // if set, only messages from this group are handled; replies go to the group
 }
@@ -206,8 +212,6 @@ type SignalMsg =
   | { type: '_socketClosed' }
   | { type: '_line';           line: string }
   | { type: '_send';           clientId: string; text: string }
-  | { type: '_imageGenerated'; filePath: string }
-  | { type: '_audioGenerated'; filePath: string }
   | { type: '_sendOk' }
   | { type: '_sendErr';        error: string }
   | { type: '_refreshTyping' }
@@ -229,6 +233,7 @@ export const createSignalActor = (
   const account        = options?.account        ?? null
   const reconnectMs    = options?.reconnectMs    ?? 3_000
   const attachmentsDir = options?.attachmentsDir ?? `${process.env.HOME}/.local/share/signal-cli/attachments`
+  const publicDir      = options?.publicDir      ?? join(import.meta.dir, '../../public')
   const allowList      = options?.allowList      ?? null
   const groupId        = options?.groupId        ?? null
 
@@ -248,12 +253,13 @@ export const createSignalActor = (
   const rpcLine = (method: string, params: Record<string, unknown>): string =>
     JSON.stringify({ jsonrpc: '2.0', id: ++msgId, method, params }) + '\n'
 
-  const sendOverSocket = (clientId: string, { message, textStyles }: SignalFormatted): Promise<void> =>
+  const sendOverSocket = (clientId: string, { message, textStyles, attachments }: SignalFormatted): Promise<void> =>
     writeToSocket(rpcLine('send', {
       ...(account ? { account } : {}),
       ...(groupId && clientId === groupId ? { groupId } : { recipient: [clientId] }),
       message,
       ...(textStyles.length > 0 ? { textStyles } : {}),
+      ...(attachments.length > 0 ? { attachments: attachments.map(url => join(publicDir, url)) } : {}),
     }))
 
   // Fire-and-forget — typing indicators are best-effort
@@ -269,8 +275,6 @@ export const createSignalActor = (
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(WsSendTopic, e => ({ type: '_send' as const, clientId: e.clientId, text: e.text }))
-        ctx.subscribe(ImageGeneratedTopic, e => ({ type: '_imageGenerated' as const, filePath: e.filePath }))
-        ctx.subscribe(AudioGeneratedTopic, e => ({ type: '_audioGenerated' as const, filePath: e.filePath }))
         ctx.timers.startSingleTimer('reconnect', { type: '_reconnect' }, 0)
         ctx.log.info(`signal actor: connecting to ${host}:${port}`)
         return { state }
@@ -421,38 +425,6 @@ export const createSignalActor = (
           default:
             return { state }
         }
-      },
-
-      _imageGenerated: (state, msg, ctx) => {
-        for (const clientId of state.seenIds) {
-          ctx.pipeToSelf(
-            writeToSocket(rpcLine('send', {
-              ...(account ? { account } : {}),
-              ...(groupId && clientId === groupId ? { groupId } : { recipient: [clientId] }),
-              message: '',
-              attachments: [msg.filePath],
-            })),
-            () => ({ type: '_sendOk'  as const }),
-            (err) => ({ type: '_sendErr' as const, error: String(err) }),
-          )
-        }
-        return { state }
-      },
-
-      _audioGenerated: (state, msg, ctx) => {
-        for (const clientId of state.seenIds) {
-          ctx.pipeToSelf(
-            writeToSocket(rpcLine('send', {
-              ...(account ? { account } : {}),
-              ...(groupId && clientId === groupId ? { groupId } : { recipient: [clientId] }),
-              message: '',
-              attachments: [msg.filePath],
-            })),
-            () => ({ type: '_sendOk'  as const }),
-            (err) => ({ type: '_sendErr' as const, error: String(err) }),
-          )
-        }
-        return { state }
       },
 
       _sendOk: (state) => ({ state }),

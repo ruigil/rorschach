@@ -1,6 +1,7 @@
 import type { ActorDef, ActorRef, MessageHandler } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { MemoryStreamTopic } from '../../types/ws.ts'
+import { emit } from '../../system/types.ts'
+import { MemoryStreamTopic, WsBroadcastTopic } from '../../types/ws.ts'
 import type { MemoryTurnEvent } from '../../types/ws.ts'
 import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
@@ -9,6 +10,7 @@ import type {
   ApiMessage,
   LlmProviderMsg,
   LlmProviderReply,
+  ModelInfo,
   Tool,
   ToolCall,
 } from '../../types/llm.ts'
@@ -35,6 +37,7 @@ type PendingBatch = {
 
 export type ConsolidationState = {
   llmRef:             ActorRef<LlmProviderMsg> | null
+  modelInfo:          ModelInfo | null
   tools:              ToolCollection
 
   // Per-user turn buffer
@@ -181,7 +184,17 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       return startNextConsolidation(updated, context)
     },
 
-    _llmProvider:      (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
+    _llmProvider:      (state, msg, context) => {
+      if (msg.ref) {
+        context.pipeToSelf(
+          ask<LlmProviderMsg, ModelInfo | null>(msg.ref, (replyTo) => ({ type: 'fetchModelInfo', model, replyTo })),
+          (info): MemoryConsolidationMsg => ({ type: '_modelInfo', info }),
+          ():    MemoryConsolidationMsg => ({ type: '_modelInfo', info: null }),
+        )
+      }
+      return { state: { ...state, llmRef: msg.ref } }
+    },
+    _modelInfo:        (state, msg) => ({ state: { ...state, modelInfo: msg.info } }),
     _toolRegistered:   toolRegistered,
     _toolUnregistered: toolUnregistered,
   })
@@ -264,10 +277,28 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       ucRef.send({ type: '_run' })
       const userContexts = { ...state.userContexts, [doneUserId]: ucRef }
 
-      return startNextConsolidation(
-        { ...state, requestId: null, turnMessages: null, accumulated: '', activeUserId: null, userContexts },
-        context,
-      )
+      const usageEvents = msg.usage
+        ? [emit(WsBroadcastTopic, { text: JSON.stringify({
+            type: 'usage',
+            role: 'memory',
+            model,
+            inputTokens:   msg.usage.promptTokens,
+            outputTokens:  msg.usage.completionTokens,
+            contextWindow: state.modelInfo?.contextWindow ?? null,
+            cost: state.modelInfo
+              ? (msg.usage.promptTokens     / 1_000_000 * state.modelInfo.promptPer1M)
+              + (msg.usage.completionTokens / 1_000_000 * state.modelInfo.completionPer1M)
+              : null,
+          }) })]
+        : []
+
+      return {
+        ...startNextConsolidation(
+          { ...state, requestId: null, turnMessages: null, accumulated: '', activeUserId: null, userContexts },
+          context,
+        ),
+        events: usageEvents,
+      }
     },
 
     llmError: (state, msg, context) => {
@@ -279,7 +310,17 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       )
     },
 
-    _llmProvider:      (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
+    _llmProvider:      (state, msg, context) => {
+      if (msg.ref) {
+        context.pipeToSelf(
+          ask<LlmProviderMsg, ModelInfo | null>(msg.ref, (replyTo) => ({ type: 'fetchModelInfo', model, replyTo })),
+          (info): MemoryConsolidationMsg => ({ type: '_modelInfo', info }),
+          ():    MemoryConsolidationMsg => ({ type: '_modelInfo', info: null }),
+        )
+      }
+      return { state: { ...state, llmRef: msg.ref } }
+    },
+    _modelInfo:        (state, msg) => ({ state: { ...state, modelInfo: msg.info } }),
     _toolRegistered:   toolRegistered,
     _toolUnregistered: toolUnregistered,
   })
@@ -331,7 +372,17 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       }
     },
 
-    _llmProvider:      (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
+    _llmProvider:      (state, msg, context) => {
+      if (msg.ref) {
+        context.pipeToSelf(
+          ask<LlmProviderMsg, ModelInfo | null>(msg.ref, (replyTo) => ({ type: 'fetchModelInfo', model, replyTo })),
+          (info): MemoryConsolidationMsg => ({ type: '_modelInfo', info }),
+          ():    MemoryConsolidationMsg => ({ type: '_modelInfo', info: null }),
+        )
+      }
+      return { state: { ...state, llmRef: msg.ref } }
+    },
+    _modelInfo:        (state, msg) => ({ state: { ...state, modelInfo: msg.info } }),
     _toolRegistered:   toolRegistered,
     _toolUnregistered: toolUnregistered,
   })
@@ -367,6 +418,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
 
 export const INITIAL_CONSOLIDATION_STATE: ConsolidationState = {
   llmRef:             null,
+  modelInfo:          null,
   tools:              {},
   buffer:             {},
   activeUserId:       null,
