@@ -5,7 +5,7 @@ import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
 import { ImageGeneratedTopic } from '../../types/ws.ts'
-import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
+import type { LlmProviderMsg, LlmProviderReply, VisionProviderReply } from '../../types/llm.ts'
 
 // ─── Output directory for generated images ───
 
@@ -54,6 +54,7 @@ export const GENERATE_IMAGE_SCHEMA: ToolSchema = {
 export type VisionActorMsg =
   | ToolInvokeMsg
   | LlmProviderReply
+  | VisionProviderReply
   | { type: '_resolved';     requestId: string; imageUrl: string; prompt: string }
   | { type: '_resolveError'; requestId: string; error: string }
   | { type: '_imageSaved';   requestId: string; filePath: string; publicUrl: string }
@@ -136,7 +137,7 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
             requestId,
             model,
             messages: [{ role: 'user', content: prompt }],
-            replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
+            replyTo: context.self as unknown as ActorRef<VisionProviderReply>,
           })
           return {
             state: {
@@ -289,15 +290,6 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
         return { state: { ...state, pending: rest } }
       },
 
-      llmToolCalls: (state, message, context) => {
-        const { [message.requestId]: req, ...rest } = state.pending
-        if (!req) return { state }
-        context.log.warn('vision model returned unexpected tool calls')
-        req.replyTo.send({ type: 'toolError', error: 'Vision model returned unexpected tool calls' })
-        return { state: { ...state, pending: rest } }
-      },
-
-      llmReasoningChunk: (state) => ({ state }),
     }),
 
     supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },

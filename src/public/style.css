@@ -552,9 +552,11 @@ button[type="submit"]:active:not(:disabled) { transform: translateY(0); box-shad
 button[type="submit"]:disabled { background: var(--muted); box-shadow: none; opacity: 0.45; cursor: not-allowed; }
 button[type="submit"] svg { pointer-events: none; }
 
-/* ─── Attach button ─── */
+/* ─── Attach / audio / mic buttons ─── */
 
-#attach-btn {
+#attach-btn,
+#audio-attach-btn,
+#mic-btn {
   width: 36px; height: 36px;
   flex-shrink: 0;
   background: transparent;
@@ -565,13 +567,43 @@ button[type="submit"] svg { pointer-events: none; }
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.15s, color 0.15s;
+  transition: border-color 0.15s, color 0.15s, box-shadow 0.15s;
   margin-bottom: 5px;
 }
 
-#attach-btn:hover {
+#attach-btn:hover,
+#audio-attach-btn:hover,
+#mic-btn:hover {
   border-color: rgba(54, 184, 204, 0.4);
   color: var(--accent);
+}
+
+#mic-btn.recording {
+  border-color: rgba(224, 96, 48, 0.65);
+  color: var(--error);
+  animation: recordPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes recordPulse {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(224, 96, 48, 0.45); }
+  50%       { box-shadow: 0 0 0 6px rgba(224, 96, 48, 0);    }
+}
+
+/* ─── Audio preview (in the shared media strip) ─── */
+
+.audio-preview-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 60px;
+}
+
+.audio-preview-player {
+  height: 32px;
+  width: 220px;
+  accent-color: var(--accent);
+  border-radius: calc(var(--radius) - 2px);
+  outline: none;
 }
 
 /* ─── Image previews strip ─── */
@@ -632,6 +664,14 @@ button[type="submit"] svg { pointer-events: none; }
   object-fit: cover;
   border-radius: calc(var(--radius) - 2px);
   border: 1px solid rgba(255,255,255,0.08);
+}
+
+.message-audio {
+  display: block;
+  width: 260px;
+  margin-top: 0.45rem;
+  accent-color: var(--accent);
+  outline: none;
 }
 
 .input-hint {
@@ -1250,8 +1290,9 @@ button[type="submit"] svg { pointer-events: none; }
   border-radius: var(--radius);
   margin: 0 1.5rem 1rem;
   padding: 0.85rem 1rem;
-  overflow-x: auto;
-  white-space: pre;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  word-break: break-all;
   flex-shrink: 0;
 }
 

@@ -12,7 +12,7 @@ import type { LlmProviderMsg } from '../../types/llm.ts'
 type SessionManagerMsg =
   | { type: '_connected';    clientId: string }
   | { type: '_disconnected'; clientId: string }
-  | { type: '_message';      clientId: string; text: string; images?: string[]; traceId: string; parentSpanId: string }
+  | { type: '_message';      clientId: string; text: string; images?: string[]; audio?: string; traceId: string; parentSpanId: string }
 
 // ─── State ───
 
@@ -58,7 +58,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
       start: (state, context) => {
         context.subscribe(WsConnectTopic,    e => ({ type: '_connected'    as const, clientId: e.clientId }))
         context.subscribe(WsDisconnectTopic, e => ({ type: '_disconnected' as const, clientId: e.clientId }))
-        context.subscribe(WsMessageTopic,    e => ({ type: '_message' as const, clientId: e.clientId, text: e.text, images: e.images, traceId: e.traceId, parentSpanId: e.parentSpanId }))
+        context.subscribe(WsMessageTopic,    e => ({ type: '_message' as const, clientId: e.clientId, text: e.text, images: e.images, audio: e.audio, traceId: e.traceId, parentSpanId: e.parentSpanId }))
         return { state }
       },
 
@@ -92,8 +92,8 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
       },
 
       _message: (state, message) => {
-        const { clientId, text, images, traceId, parentSpanId } = message
-        state.sessions[clientId]?.send({ type: 'userMessage', text, images, traceId, parentSpanId })
+        const { clientId, text, images, audio, traceId, parentSpanId } = message
+        state.sessions[clientId]?.send({ type: 'userMessage', text, images, audio, traceId, parentSpanId })
         return { state }
       },
     }),

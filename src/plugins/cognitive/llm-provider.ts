@@ -1,7 +1,7 @@
 import type { ActorDef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
 import type {
-  TokenUsage, LlmProviderMsg, LlmProviderAdapter, OpenRouterAdapterOptions
+  TokenUsage, LlmProviderMsg, LlmProviderAdapter, OpenRouterAdapterOptions, VisionProviderReply, AudioProviderReply
 } from '../../types/llm.ts'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
@@ -161,6 +161,70 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
       return { type: 'content', usage: lastUsage }
     },
 
+    async streamAudio(model, messages, voice, onChunk, onAudioChunk) {
+      const res = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          modalities: ['text', 'audio'],
+          audio: { voice, format: 'pcm16' },
+          stream: true,
+          stream_options: { include_usage: true },
+        }),
+      })
+
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`OpenRouter ${res.status}: ${body}`)
+      }
+
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let lastUsage: TokenUsage | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const data = line.slice(6).trim()
+          if (data === '[DONE]') return { type: 'content', usage: lastUsage }
+
+          try {
+            const parsed = JSON.parse(data) as {
+              choices: Array<{
+                delta: {
+                  audio?: { data?: string; transcript?: string }
+                }
+              }>
+              usage?: { prompt_tokens: number; completion_tokens: number }
+            }
+            if (parsed.usage) {
+              lastUsage = { promptTokens: parsed.usage.prompt_tokens, completionTokens: parsed.usage.completion_tokens }
+            }
+            const audio = parsed.choices[0]?.delta?.audio
+            if (audio?.data) onAudioChunk(audio.data)
+            if (audio?.transcript) onChunk(audio.transcript)
+          } catch {
+            // ignore malformed SSE lines
+          }
+        }
+      }
+
+      return { type: 'content', usage: lastUsage }
+    },
+
     async fetchModelInfo(model: string) {
       try {
         const res = await fetch('https://openrouter.ai/api/v1/models', {
@@ -248,12 +312,38 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
           ),
           (result): LlmProviderMsg => ({
             type: '_streamImageDone',
-            result: { type: 'llmDone', requestId, usage: result.usage },
+            result: { type: 'llmDone', requestId, usage: result.usage } as VisionProviderReply,
             replyTo,
           }),
           (error): LlmProviderMsg => ({
             type: '_streamImageDone',
-            result: { type: 'llmError', requestId, error },
+            result: { type: 'llmError', requestId, error } as VisionProviderReply,
+            replyTo,
+          }),
+        )
+
+        return { state }
+      },
+
+      streamAudio: (state, message, context) => {
+        const { requestId, model, messages, voice, replyTo } = message
+
+        context.pipeToSelf(
+          adapter.streamAudio(
+            model,
+            messages,
+            voice ?? 'alloy',
+            (text) => replyTo.send({ type: 'llmChunk',      requestId, text }),
+            (data) => replyTo.send({ type: 'llmAudioChunk', requestId, data }),
+          ),
+          (result): LlmProviderMsg => ({
+            type: '_streamAudioDone',
+            result: { type: 'llmDone', requestId, usage: result.usage } as AudioProviderReply,
+            replyTo,
+          }),
+          (error): LlmProviderMsg => ({
+            type: '_streamAudioDone',
+            result: { type: 'llmError', requestId, error } as AudioProviderReply,
             replyTo,
           }),
         )
@@ -291,6 +381,11 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
       },
 
       _streamImageDone: (state, message) => {
+        message.replyTo.send(message.result)
+        return { state }
+      },
+
+      _streamAudioDone: (state, message) => {
         message.replyTo.send(message.result)
         return { state }
       },

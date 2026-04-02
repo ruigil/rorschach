@@ -306,6 +306,8 @@ function connect() {
       handleChatMsg(msg)
     } else if (msg.type === 'usage') {
       updateUsageBar(msg)
+    } else if (msg.type === 'generatedAudio') {
+      onGeneratedAudio(msg)
     } else if (msg.type === 'log') {
       appendLog(msg)
     } else if (msg.type === 'metrics') {
@@ -331,7 +333,9 @@ const attachBtn     = document.getElementById('attach-btn')
 const imageInput    = document.getElementById('image-input')
 const imagePreviewsEl = document.getElementById('image-previews')
 
-let pendingImages = []  // array of base64 data URLs
+let pendingImages    = []    // array of base64 data URLs
+let pendingAudio     = null  // base64 data URL
+let pendingAudioName = null  // display name
 
 let thinkingEl          = null
 let streamWrap          = null
@@ -365,7 +369,7 @@ imageInput.addEventListener('change', async () => {
     pendingImages.push(dataUrl)
   }
   imageInput.value = ''
-  renderImagePreviews()
+  renderMediaPreviews()
 })
 
 function readFileAsDataUrl(file) {
@@ -377,13 +381,12 @@ function readFileAsDataUrl(file) {
   })
 }
 
-function renderImagePreviews() {
+function renderMediaPreviews() {
   imagePreviewsEl.innerHTML = ''
-  if (pendingImages.length === 0) {
-    imagePreviewsEl.classList.add('hidden')
-    return
-  }
-  imagePreviewsEl.classList.remove('hidden')
+  const hasContent = pendingImages.length > 0 || pendingAudio !== null
+  imagePreviewsEl.classList.toggle('hidden', !hasContent)
+  if (!hasContent) return
+
   pendingImages.forEach((dataUrl, i) => {
     const wrap = document.createElement('div')
     wrap.className = 'image-thumb-wrap'
@@ -395,28 +398,179 @@ function renderImagePreviews() {
     removeBtn.textContent = '×'
     removeBtn.addEventListener('click', () => {
       pendingImages.splice(i, 1)
-      renderImagePreviews()
+      renderMediaPreviews()
     })
     wrap.appendChild(img)
     wrap.appendChild(removeBtn)
     imagePreviewsEl.appendChild(wrap)
   })
+
+  if (pendingAudio) {
+    const wrap = document.createElement('div')
+    wrap.className = 'audio-preview-wrap'
+    const player = document.createElement('audio')
+    player.src = pendingAudio
+    player.controls = true
+    player.className = 'audio-preview-player'
+    const removeBtn = document.createElement('button')
+    removeBtn.className = 'image-thumb-remove'
+    removeBtn.textContent = '×'
+    removeBtn.addEventListener('click', () => {
+      pendingAudio = null
+      pendingAudioName = null
+      renderMediaPreviews()
+    })
+    wrap.appendChild(player)
+    wrap.appendChild(removeBtn)
+    imagePreviewsEl.appendChild(wrap)
+  }
 }
 
 function clearPendingImages() {
   pendingImages = []
-  renderImagePreviews()
+  renderMediaPreviews()
+}
+
+// ─── Audio upload ───
+
+const audioInput     = document.getElementById('audio-input')
+const audioAttachBtn = document.getElementById('audio-attach-btn')
+
+audioAttachBtn.addEventListener('click', () => audioInput.click())
+
+audioInput.addEventListener('change', async () => {
+  const file = audioInput.files?.[0]
+  if (!file) return
+  pendingAudio = await readFileAsDataUrl(file)
+  pendingAudioName = file.name
+  audioInput.value = ''
+  renderMediaPreviews()
+})
+
+function clearPendingAudio() {
+  pendingAudio = null
+  pendingAudioName = null
+  renderMediaPreviews()
+}
+
+// ─── Mic recording ───
+
+const micBtn = document.getElementById('mic-btn')
+
+let mediaRecorder = null
+let audioChunks   = []
+let audioCtx      = null
+let recordingStream = null
+
+micBtn.addEventListener('click', async () => {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop()
+    return
+  }
+
+  try {
+    recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+  } catch {
+    return
+  }
+
+  // Use AudioWorkletNode to capture raw PCM → encode as WAV
+  const processorSrc = `
+    class RecorderProcessor extends AudioWorkletProcessor {
+      process(inputs) {
+        const ch = inputs[0]?.[0]
+        if (ch) this.port.postMessage(new Float32Array(ch))
+        return true
+      }
+    }
+    registerProcessor('recorder-processor', RecorderProcessor)
+  `
+  const workletBlob = new Blob([processorSrc], { type: 'application/javascript' })
+  const workletUrl  = URL.createObjectURL(workletBlob)
+
+  audioCtx = new AudioContext({ sampleRate: 16000 })
+  await audioCtx.audioWorklet.addModule(workletUrl)
+  URL.revokeObjectURL(workletUrl)
+
+  const source      = audioCtx.createMediaStreamSource(recordingStream)
+  const workletNode = new AudioWorkletNode(audioCtx, 'recorder-processor')
+  const samples     = []
+
+  workletNode.port.onmessage = (e) => { samples.push(e.data) }
+
+  source.connect(workletNode)
+
+  micBtn.classList.add('recording')
+
+  mediaRecorder = {
+    state: 'recording',
+    stop: () => {
+      mediaRecorder.state = 'stopped'
+      workletNode.disconnect()
+      source.disconnect()
+      audioCtx.close()
+      recordingStream.getTracks().forEach(t => t.stop())
+      micBtn.classList.remove('recording')
+
+      // Flatten samples → Int16 PCM → WAV → base64
+      const totalLen = samples.reduce((n, s) => n + s.length, 0)
+      const pcm = new Int16Array(totalLen)
+      let offset = 0
+      for (const chunk of samples) {
+        for (let i = 0; i < chunk.length; i++) {
+          pcm[offset++] = Math.max(-32768, Math.min(32767, chunk[i] * 32768))
+        }
+      }
+      const wav = pcm16ToWav(pcm, 16000)
+      const blob = new Blob([wav], { type: 'audio/wav' })
+      readFileAsDataUrl(blob).then(dataUrl => {
+        pendingAudio = dataUrl
+        pendingAudioName = 'recording.wav'
+        renderMediaPreviews()
+      })
+    },
+  }
+})
+
+function pcm16ToWav(pcm, sampleRate) {
+  const dataBytes = pcm.buffer
+  const header = new ArrayBuffer(44)
+  const view = new DataView(header)
+  const channels = 1
+  const byteRate = sampleRate * channels * 2
+  const dataSize = dataBytes.byteLength
+
+  const writeStr = (offset, str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)) }
+  writeStr(0, 'RIFF')
+  view.setUint32(4,  36 + dataSize, true)
+  writeStr(8, 'WAVE')
+  writeStr(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1,         true)
+  view.setUint16(22, channels,  true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, byteRate,  true)
+  view.setUint16(32, channels * 2, true)
+  view.setUint16(34, 16,        true)
+  writeStr(36, 'data')
+  view.setUint32(40, dataSize, true)
+
+  const out = new Uint8Array(44 + dataSize)
+  out.set(new Uint8Array(header), 0)
+  out.set(new Uint8Array(dataBytes), 44)
+  return out
 }
 
 chatForm.addEventListener('submit', (e) => {
   e.preventDefault()
   const text = input.value.trim()
-  if ((!text && pendingImages.length === 0) || ws?.readyState !== WebSocket.OPEN || isWaiting) return
-  appendUserMessage(text, pendingImages.slice())
-  ws.send(JSON.stringify({ text, images: pendingImages.slice() }))
+  if ((!text && pendingImages.length === 0 && !pendingAudio) || ws?.readyState !== WebSocket.OPEN || isWaiting) return
+  appendUserMessage(text, pendingImages.slice(), pendingAudio)
+  ws.send(JSON.stringify({ text, images: pendingImages.slice(), ...(pendingAudio ? { audio: pendingAudio } : {}) }))
   input.value = ''
   input.style.height = 'auto'
   clearPendingImages()
+  clearPendingAudio()
   setWaiting(true)
   showThinking()
   const logoMark = document.querySelector('.logo-mark')
@@ -436,7 +590,7 @@ function scrollToBottom() {
   messagesEl.scrollTop = messagesEl.scrollHeight
 }
 
-function appendUserMessage(text, images) {
+function appendUserMessage(text, images, audio) {
   if (emptyEl?.parentNode) emptyEl.remove()
   const wrap   = document.createElement('div')
   wrap.className = 'message user'
@@ -456,6 +610,13 @@ function appendUserMessage(text, images) {
       imgRow.appendChild(img)
     })
     bubble.appendChild(imgRow)
+  }
+  if (audio) {
+    const audioEl = document.createElement('audio')
+    audioEl.src = audio
+    audioEl.controls = true
+    audioEl.className = 'message-audio'
+    bubble.appendChild(audioEl)
   }
   if (text) {
     const textEl = document.createElement('span')
@@ -662,6 +823,19 @@ function handleChatMsg(msg) {
     appendMessage('error', msg.text)
     setWaiting(false)
   }
+}
+
+function onGeneratedAudio(msg) {
+  // Append an autoplay audio element into the current or last assistant bubble
+  const target = streamBubbleContainer ?? messagesEl.querySelector('.message.assistant:last-child .bubble')
+  if (!target) return
+  const audioEl = document.createElement('audio')
+  audioEl.src = msg.url
+  audioEl.controls = true
+  audioEl.autoplay = true
+  audioEl.className = 'message-audio'
+  target.appendChild(audioEl)
+  scrollToBottom()
 }
 
 // ─── Usage bar ───
@@ -1387,9 +1561,19 @@ const configDefaults = {
   metricsIntervalMs: 5000,
   metricsEnabled: true,
   model: 'openai/gpt-4o-mini',
+  systemPrompt: '',
+  historyWindow: 40,
   reasoningEnabled: false,
   reasoningEffort: 'medium',
   visionModel: 'google/gemini-flash-1.5',
+  audioModel: '',
+  audioVoice: 'alloy',
+  bashCwd: '/workspace',
+  webSearchCount: 20,
+  kgraphDbPath: './workspace/memory/kgraph',
+  memoryModel: '',
+  memoryUserId: 'default',
+  memoryConsolidationIntervalMs: 30000,
 }
 
 function loadConfig() {
@@ -1399,28 +1583,48 @@ function loadConfig() {
 }
 
 function applyToForm(cfg) {
-  configForm.logPath.value            = cfg.logPath
-  configForm.minLevel.value           = cfg.minLevel
-  configForm.flushIntervalMs.value    = cfg.flushIntervalMs
-  configForm.metricsIntervalMs.value  = cfg.metricsIntervalMs
-  configForm.metricsEnabled.checked   = cfg.metricsEnabled
-  configForm.model.value              = cfg.model
-  configForm.reasoningEnabled.checked = cfg.reasoningEnabled
-  configForm.reasoningEffort.value    = cfg.reasoningEffort
-  configForm.visionModel.value        = cfg.visionModel
+  configForm.logPath.value                    = cfg.logPath
+  configForm.minLevel.value                   = cfg.minLevel
+  configForm.flushIntervalMs.value            = cfg.flushIntervalMs
+  configForm.metricsIntervalMs.value          = cfg.metricsIntervalMs
+  configForm.metricsEnabled.checked           = cfg.metricsEnabled
+  configForm.model.value                      = cfg.model
+  configForm.systemPrompt.value               = cfg.systemPrompt ?? ''
+  configForm.historyWindow.value              = cfg.historyWindow ?? 40
+  configForm.reasoningEnabled.checked         = cfg.reasoningEnabled
+  configForm.reasoningEffort.value            = cfg.reasoningEffort
+  configForm.visionModel.value                = cfg.visionModel
+  configForm.audioModel.value                 = cfg.audioModel ?? ''
+  configForm.audioVoice.value                 = cfg.audioVoice ?? 'alloy'
+  configForm.bashCwd.value                    = cfg.bashCwd ?? '/workspace'
+  configForm.webSearchCount.value             = cfg.webSearchCount ?? 20
+  configForm.kgraphDbPath.value               = cfg.kgraphDbPath ?? './workspace/memory/kgraph'
+  configForm.memoryModel.value                = cfg.memoryModel ?? ''
+  configForm.memoryUserId.value               = cfg.memoryUserId ?? 'default'
+  configForm.memoryConsolidationIntervalMs.value = cfg.memoryConsolidationIntervalMs ?? 30000
 }
 
 function readFromForm() {
   return {
-    logPath:           configForm.logPath.value.trim(),
-    minLevel:          configForm.minLevel.value,
-    flushIntervalMs:   Number(configForm.flushIntervalMs.value),
-    metricsIntervalMs: Number(configForm.metricsIntervalMs.value),
-    metricsEnabled:    configForm.metricsEnabled.checked,
-    model:             configForm.model.value,
-    reasoningEnabled:  String(configForm.reasoningEnabled.checked),
-    reasoningEffort:   configForm.reasoningEffort.value,
-    visionModel:       configForm.visionModel.value,
+    logPath:                      configForm.logPath.value.trim(),
+    minLevel:                     configForm.minLevel.value,
+    flushIntervalMs:              Number(configForm.flushIntervalMs.value),
+    metricsIntervalMs:            Number(configForm.metricsIntervalMs.value),
+    metricsEnabled:               configForm.metricsEnabled.checked,
+    model:                        configForm.model.value,
+    systemPrompt:                 configForm.systemPrompt.value,
+    historyWindow:                Number(configForm.historyWindow.value),
+    reasoningEnabled:             String(configForm.reasoningEnabled.checked),
+    reasoningEffort:              configForm.reasoningEffort.value,
+    visionModel:                  configForm.visionModel.value,
+    audioModel:                   configForm.audioModel.value,
+    audioVoice:                   configForm.audioVoice.value,
+    bashCwd:                      configForm.bashCwd.value.trim(),
+    webSearchCount:               Number(configForm.webSearchCount.value),
+    kgraphDbPath:                 configForm.kgraphDbPath.value.trim(),
+    memoryModel:                  configForm.memoryModel.value,
+    memoryUserId:                 configForm.memoryUserId.value.trim(),
+    memoryConsolidationIntervalMs: Number(configForm.memoryConsolidationIntervalMs.value),
   }
 }
 
@@ -1466,9 +1670,12 @@ resetBtn.addEventListener('click', () => applyToForm(configDefaults))
 async function initModelSelects() {
   const chatSel   = document.getElementById('chat-model')
   const visionSel = document.getElementById('vision-model')
+  const audioSel  = document.getElementById('audio-model')
+  const memorySel = document.getElementById('memory-model')
 
-  chatSel.innerHTML   = '<option value="" disabled>loading models…</option>'
-  visionSel.innerHTML = '<option value="" disabled>loading models…</option>'
+  for (const sel of [chatSel, visionSel, audioSel, memorySel]) {
+    sel.innerHTML = '<option value="" disabled>loading models…</option>'
+  }
 
   let models = []
   try {
@@ -1478,9 +1685,15 @@ async function initModelSelects() {
 
   const cfg = loadConfig()
 
-  for (const [sel, savedVal] of [[chatSel, cfg.model], [visionSel, cfg.visionModel]]) {
-    sel.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('')
-    if (models.includes(savedVal)) sel.value = savedVal
+  for (const [sel, savedVal, allowEmpty] of [
+    [chatSel,   cfg.model,       false],
+    [visionSel, cfg.visionModel, false],
+    [audioSel,  cfg.audioModel,  true],
+    [memorySel, cfg.memoryModel, true],
+  ]) {
+    const emptyOpt = allowEmpty ? '<option value="">— none —</option>' : ''
+    sel.innerHTML = emptyOpt + models.map(m => `<option value="${m}">${m}</option>`).join('')
+    if (savedVal && models.includes(savedVal)) sel.value = savedVal
   }
 }
 

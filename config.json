@@ -25,6 +25,10 @@
       },
       "visionActor": {
         "model": "${OPENROUTER_VISION_MODEL:-google/gemini-3-pro-image-preview}"
+      },
+      "audioActor": {
+        "model": "${OPENROUTER_AUDIO_MODEL:-mistralai/voxtral-small-24b-2507}",
+        "voice": "alloy"
       }
     },
     "cognitive": {
@@ -42,7 +46,7 @@
       "kgraph": { "dbPath" : "./workspace/memory/kgraph" },
       "memory": {
         "model": "${OPENROUTER_MEMORY_MODEL:-x-ai/grok-4.1-fast}",
-        "userId": "default",
+        "userId": "rigel",
         "consolidationIntervalMs": 30000
       }
     },

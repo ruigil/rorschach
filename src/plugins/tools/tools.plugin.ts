@@ -2,6 +2,7 @@ import { createWebSearchActor, type WebSearchActorOptions as WebSearchActorConfi
 import { createBashActor, BASH_TOOL_NAME, BASH_SCHEMA, WRITE_TOOL_NAME, WRITE_SCHEMA, READ_TOOL_NAME, READ_SCHEMA } from './bash.ts'
 import { createVisionActor, ANALYZE_IMAGE_TOOL_NAME, ANALYZE_IMAGE_SCHEMA, GENERATE_IMAGE_TOOL_NAME, GENERATE_IMAGE_SCHEMA } from './vision-actor.ts'
 import { createCronActor, type CronState, CRON_CREATE_TOOL_NAME, CRON_CREATE_SCHEMA, CRON_DELETE_TOOL_NAME, CRON_DELETE_SCHEMA, CRON_LIST_TOOL_NAME, CRON_LIST_SCHEMA, CURRENT_TIME_TOOL_NAME, CURRENT_TIME_SCHEMA } from './cron.ts'
+import { createAudioActor, type AudioState, TRANSCRIBE_AUDIO_TOOL_NAME, TRANSCRIBE_AUDIO_SCHEMA, TEXT_TO_SPEECH_TOOL_NAME, TEXT_TO_SPEECH_SCHEMA } from './audio.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { BashOptions as BashConfig } from 'just-bash'
@@ -17,10 +18,16 @@ type VisionActorConfig = {
   model: string
 }
 
+type AudioActorConfig = {
+  model: string
+  voice?: string
+}
+
 export type ToolsConfig = {
   webSearch?: WebSearchActorConfig
   bash?: BashConfig
   visionActor?: VisionActorConfig
+  audioActor?: AudioActorConfig
 }
 
 // ─── Plugin internals ───
@@ -34,6 +41,7 @@ type PluginState = {
   webSearch: PluginActorState<WebSearchActorConfig>
   bash: PluginActorState<BashConfig>
   vision: PluginActorState<VisionActorConfig>
+  audio: PluginActorState<AudioActorConfig>
   cron: { ref: ActorRef<ToolInvokeMsg> | null }
   llmRef: ActorRef<LlmProviderMsg> | null
 }
@@ -62,6 +70,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
     webSearch: { config: null, ref: null, gen: 0 },
     bash:      { config: null, ref: null, gen: 0 },
     vision:    { config: null, ref: null, gen: 0 },
+    audio:     { config: null, ref: null, gen: 0 },
     cron:      { ref: null },
     llmRef:    null,
   },
@@ -90,7 +99,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       ctx.publishRetained(ToolRegistrationTopic, CRON_LIST_TOOL_NAME,     { name: CRON_LIST_TOOL_NAME,     schema: CRON_LIST_SCHEMA,     ref: cronRef })
       ctx.publishRetained(ToolRegistrationTopic, CURRENT_TIME_TOOL_NAME,  { name: CURRENT_TIME_TOOL_NAME,  schema: CURRENT_TIME_SCHEMA,  ref: cronRef })
 
-      // Subscribe to LLM provider — vision actor is spawned when the ref arrives
+      // Subscribe to LLM provider — vision and audio actors are spawned when the ref arrives
       ctx.subscribe(LlmProviderTopic, (event) => ({ type: '_llmProviderUpdated' as const, ref: event.ref }))
 
       ctx.log.info('tools plugin activated')
@@ -99,6 +108,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         webSearch: { config: webSearchConfig, ref: webSearchRef, gen: 0 },
         bash:      { config: bashConfig, ref: bashRef, gen: 0 },
         vision:    { config: slice?.visionActor ?? null, ref: null, gen: 0 },
+        audio:     { config: slice?.audioActor ?? null, ref: null, gen: 0 },
         cron:      { ref: cronRef },
         llmRef:    null,
       } }
@@ -116,6 +126,10 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       if (state.vision.ref) {
         ctx.deleteRetained(ToolRegistrationTopic, ANALYZE_IMAGE_TOOL_NAME,  { name: ANALYZE_IMAGE_TOOL_NAME,  ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, GENERATE_IMAGE_TOOL_NAME, { name: GENERATE_IMAGE_TOOL_NAME, ref: null })
+      }
+      if (state.audio.ref) {
+        ctx.deleteRetained(ToolRegistrationTopic, TRANSCRIBE_AUDIO_TOOL_NAME, { name: TRANSCRIBE_AUDIO_TOOL_NAME, ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, TEXT_TO_SPEECH_TOOL_NAME,   { name: TEXT_TO_SPEECH_TOOL_NAME,   ref: null })
       }
       if (state.cron.ref) {
         ctx.deleteRetained(ToolRegistrationTopic, CRON_CREATE_TOOL_NAME,  { name: CRON_CREATE_TOOL_NAME,  ref: null })
@@ -155,6 +169,11 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         ctx.deleteRetained(ToolRegistrationTopic, ANALYZE_IMAGE_TOOL_NAME,  { name: ANALYZE_IMAGE_TOOL_NAME,  ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, GENERATE_IMAGE_TOOL_NAME, { name: GENERATE_IMAGE_TOOL_NAME, ref: null })
       }
+      if (state.audio.ref) {
+        ctx.stop(state.audio.ref)
+        ctx.deleteRetained(ToolRegistrationTopic, TRANSCRIBE_AUDIO_TOOL_NAME, { name: TRANSCRIBE_AUDIO_TOOL_NAME, ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, TEXT_TO_SPEECH_TOOL_NAME,   { name: TEXT_TO_SPEECH_TOOL_NAME,   ref: null })
+      }
 
       const newWebSearchConfig = msg.slice?.webSearch ?? null
       const webSearchGen = state.webSearch.gen + 1
@@ -162,6 +181,8 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       const bashGen = state.bash.gen + 1
       const newVisionConfig = msg.slice?.visionActor ?? null
       const visionGen = state.vision.gen + 1
+      const newAudioConfig = msg.slice?.audioActor ?? null
+      const audioGen = state.audio.gen + 1
 
       let webSearchRef: ActorRef<ToolInvokeMsg> | null = null
 
@@ -184,11 +205,21 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         visionRef = visionRefTyped
       }
 
+      let audioRef: ActorRef<ToolInvokeMsg> | null = null
+      if (state.llmRef && newAudioConfig) {
+        const ref = ctx.spawn(`audio-actor-${audioGen}`, createAudioActor({ llmRef: state.llmRef, model: newAudioConfig.model, voice: newAudioConfig.voice ?? 'alloy' }), { pending: {} } as AudioState)
+        const audioRefTyped = ref as unknown as ActorRef<ToolInvokeMsg>
+        ctx.publishRetained(ToolRegistrationTopic, TRANSCRIBE_AUDIO_TOOL_NAME, { name: TRANSCRIBE_AUDIO_TOOL_NAME, schema: TRANSCRIBE_AUDIO_SCHEMA, ref: audioRefTyped })
+        ctx.publishRetained(ToolRegistrationTopic, TEXT_TO_SPEECH_TOOL_NAME,   { name: TEXT_TO_SPEECH_TOOL_NAME,   schema: TEXT_TO_SPEECH_SCHEMA,   ref: audioRefTyped })
+        audioRef = audioRefTyped
+      }
+
       return { state: {
         ...state,
         webSearch: { config: newWebSearchConfig, ref: webSearchRef, gen: webSearchGen },
         bash:      { config: newBashConfig, ref: bashRef, gen: bashGen },
         vision:    { config: newVisionConfig, ref: visionRef, gen: visionGen },
+        audio:     { config: newAudioConfig,  ref: audioRef,  gen: audioGen  },
       } }
     },
 
@@ -200,7 +231,14 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         ctx.deleteRetained(ToolRegistrationTopic, GENERATE_IMAGE_TOOL_NAME, { name: GENERATE_IMAGE_TOOL_NAME, ref: null })
       }
 
-      const visionGen = state.vision.gen + 1
+      // Stop existing audio actor
+      if (state.audio.ref) {
+        ctx.stop(state.audio.ref)
+        ctx.deleteRetained(ToolRegistrationTopic, TRANSCRIBE_AUDIO_TOOL_NAME, { name: TRANSCRIBE_AUDIO_TOOL_NAME, ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, TEXT_TO_SPEECH_TOOL_NAME,   { name: TEXT_TO_SPEECH_TOOL_NAME,   ref: null })
+      }
+
+      const visionGen = state.vision.gen
       let visionRef: ActorRef<ToolInvokeMsg> | null = null
 
       if (msg.ref && state.vision.config) {
@@ -211,10 +249,22 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         visionRef = visionRefTyped
       }
 
+      const audioGen = state.audio.gen
+      let audioRef: ActorRef<ToolInvokeMsg> | null = null
+
+      if (msg.ref && state.audio.config) {
+        const ref = ctx.spawn(`audio-actor-${audioGen}`, createAudioActor({ llmRef: msg.ref, model: state.audio.config.model, voice: state.audio.config.voice ?? 'alloy' }), { pending: {} } as AudioState)
+        const audioRefTyped = ref as unknown as ActorRef<ToolInvokeMsg>
+        ctx.publishRetained(ToolRegistrationTopic, TRANSCRIBE_AUDIO_TOOL_NAME, { name: TRANSCRIBE_AUDIO_TOOL_NAME, schema: TRANSCRIBE_AUDIO_SCHEMA, ref: audioRefTyped })
+        ctx.publishRetained(ToolRegistrationTopic, TEXT_TO_SPEECH_TOOL_NAME,   { name: TEXT_TO_SPEECH_TOOL_NAME,   schema: TEXT_TO_SPEECH_SCHEMA,   ref: audioRefTyped })
+        audioRef = audioRefTyped
+      }
+
       return { state: {
         ...state,
         llmRef: msg.ref,
-        vision: { ...state.vision, ref: visionRef, gen: visionGen },
+        vision: { ...state.vision, ref: visionRef, gen: visionGen + 1 },
+        audio:  { ...state.audio,  ref: audioRef,  gen: audioGen  + 1 },
       } }
     },
   }),

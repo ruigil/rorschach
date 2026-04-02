@@ -16,6 +16,7 @@ export type ToolCall = {
 export type UserContentPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string } }
+  | { type: 'input_audio'; input_audio: { data: string; format: string } }
 
 export type ApiMessage =
   | { role: 'system';    content: string }
@@ -38,17 +39,35 @@ export type LlmProviderReply =
   | { type: 'llmError';          requestId: string; error: unknown }
   | { type: 'llmImageChunk';     requestId: string; dataUrl: string }
 
+// ─── Reply type for streamImage — used only by the vision actor ───
+
+export type VisionProviderReply =
+  | { type: 'llmChunk';      requestId: string; text: string }
+  | { type: 'llmImageChunk'; requestId: string; dataUrl: string }
+  | { type: 'llmDone';       requestId: string; usage: TokenUsage | null }
+  | { type: 'llmError';      requestId: string; error: unknown }
+
+// ─── Reply type for streamAudio — used only by the audio actor ───
+
+export type AudioProviderReply =
+  | { type: 'llmAudioChunk'; requestId: string; data: string }
+  | { type: 'llmChunk';      requestId: string; text: string }
+  | { type: 'llmDone';       requestId: string; usage: TokenUsage | null }
+  | { type: 'llmError';      requestId: string; error: unknown }
+
 // ─── Incoming messages ───
 
 export type LlmProviderMsg =
-  | { type: 'stream';           requestId: string; model: string; messages: ApiMessage[]; tools?: Tool[]; replyTo: ActorRef<LlmProviderReply> }
-  | { type: 'streamImage';      requestId: string; model: string; messages: ApiMessage[]; replyTo: ActorRef<LlmProviderReply> }
-  | { type: 'fetchModelInfo';   model: string; replyTo: ActorRef<ModelInfo | null> }
-  | { type: 'fetchModels';      replyTo: ActorRef<string[]> }
-  | { type: '_streamDone';      result: LlmProviderReply; replyTo: ActorRef<LlmProviderReply> }
-  | { type: '_streamImageDone'; result: LlmProviderReply; replyTo: ActorRef<LlmProviderReply> }
-  | { type: '_modelInfoDone';   info: ModelInfo | null; replyTo: ActorRef<ModelInfo | null> }
-  | { type: '_modelsDone';      models: string[]; replyTo: ActorRef<string[]> }
+  | { type: 'stream';            requestId: string; model: string; messages: ApiMessage[]; tools?: Tool[]; replyTo: ActorRef<LlmProviderReply> }
+  | { type: 'streamImage';       requestId: string; model: string; messages: ApiMessage[]; replyTo: ActorRef<VisionProviderReply> }
+  | { type: 'streamAudio';       requestId: string; model: string; messages: ApiMessage[]; voice?: string; replyTo: ActorRef<AudioProviderReply> }
+  | { type: 'fetchModelInfo';    model: string; replyTo: ActorRef<ModelInfo | null> }
+  | { type: 'fetchModels';       replyTo: ActorRef<string[]> }
+  | { type: '_streamDone';       result: LlmProviderReply; replyTo: ActorRef<LlmProviderReply> }
+  | { type: '_streamImageDone';  result: VisionProviderReply; replyTo: ActorRef<VisionProviderReply> }
+  | { type: '_streamAudioDone';  result: AudioProviderReply; replyTo: ActorRef<AudioProviderReply> }
+  | { type: '_modelInfoDone';    info: ModelInfo | null; replyTo: ActorRef<ModelInfo | null> }
+  | { type: '_modelsDone';       models: string[]; replyTo: ActorRef<string[]> }
 
 // ─── Retained topic: announces the live llm-provider ref to subscribers ───
 
@@ -74,6 +93,13 @@ export type LlmProviderAdapter = {
     messages: ApiMessage[],
     onChunk: (text: string) => void,
     onImageChunk: (dataUrl: string) => void,
+  ): Promise<AdapterStreamResult>
+  streamAudio(
+    model: string,
+    messages: ApiMessage[],
+    voice: string,
+    onChunk: (text: string) => void,
+    onAudioChunk: (data: string) => void,
   ): Promise<AdapterStreamResult>
   fetchModelInfo(model: string): Promise<ModelInfo | null>
   fetchModels(): Promise<string[]>

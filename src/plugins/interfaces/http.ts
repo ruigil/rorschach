@@ -4,7 +4,7 @@ import type { Server, ServerWebSocket } from 'bun'
 import { emit } from '../../system/types.ts'
 import {
   WsMessageTopic, WsConnectTopic, WsDisconnectTopic,
-  WsSendTopic, WsBroadcastTopic, HttpConfigTopic, ImageGeneratedTopic,
+  WsSendTopic, WsBroadcastTopic, HttpConfigTopic, ImageGeneratedTopic, AudioGeneratedTopic,
 } from '../../types/ws.ts'
 import type { HttpConfigPayload } from '../../types/ws.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
@@ -34,8 +34,8 @@ const FALLBACK_MODELS = [
 
 export type HttpMessage =
   | { type: 'connected'; clientId: string }
-  | { type: 'message'; clientId: string; text: string; images?: string[] }
-  | { type: '_imagesSaved'; clientId: string; text: string; filePaths: string[] }
+  | { type: 'message'; clientId: string; text: string; images?: string[]; audio?: string }
+  | { type: '_mediaSaved'; clientId: string; text: string; imagePaths: string[]; audioPath?: string }
   | { type: 'closed'; clientId: string }
   | { type: 'broadcast'; text: string }
   | { type: 'send'; clientId: string; text: string }
@@ -43,6 +43,7 @@ export type HttpMessage =
   | { type: '_llmProviderChanged'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_kgraphChanged'; ref: ActorRef<KgraphMsg> | null }
   | { type: '_imageGenerated'; publicUrl: string }
+  | { type: '_audioGenerated'; publicUrl: string }
 
 // ─── Image helpers ───
 
@@ -55,6 +56,15 @@ const saveImagesToTempFiles = (images: string[]): Promise<string[]> =>
     await Bun.write(filePath, Buffer.from(data, 'base64'))
     return filePath
   }))
+
+const saveAudioToTempFile = async (dataUrl: string): Promise<string> => {
+  const match = dataUrl.match(/^data:audio\/(\w+);base64,(.+)$/)
+  const ext  = match?.[1] ?? 'wav'
+  const data = match?.[2] ?? ''
+  const filePath = join(tmpdir(), `rorschach-${crypto.randomUUID()}.${ext}`)
+  await Bun.write(filePath, Buffer.from(data, 'base64'))
+  return filePath
+}
 
 // ─── Actor state ───
 
@@ -86,6 +96,8 @@ const mimeType = (path: string): string => {
   if (path.endsWith('.svg')) return 'image/svg+xml'
   if (path.endsWith('.png')) return 'image/png'
   if (path.endsWith('.ico')) return 'image/x-icon'
+  if (path.endsWith('.wav')) return 'audio/wav'
+  if (path.endsWith('.mp3')) return 'audio/mpeg'
   return 'application/octet-stream'
 }
 
@@ -133,11 +145,14 @@ export const createHttpActor = (
         const span = context.trace.start('request', { clientId: message.clientId })
         const newState = { ...state, activeSpans: { ...state.activeSpans, [message.clientId]: span } }
 
-        if (message.images && message.images.length > 0) {
+        if ((message.images && message.images.length > 0) || message.audio) {
           context.pipeToSelf(
-            saveImagesToTempFiles(message.images),
-            (filePaths): HttpMessage => ({ type: '_imagesSaved', clientId: message.clientId, text: message.text, filePaths }),
-            (): HttpMessage => ({ type: '_imagesSaved', clientId: message.clientId, text: message.text, filePaths: [] }),
+            Promise.all([
+              message.images && message.images.length > 0 ? saveImagesToTempFiles(message.images) : Promise.resolve([]),
+              message.audio ? saveAudioToTempFile(message.audio) : Promise.resolve(undefined),
+            ]).then(([imagePaths, audioPath]) => ({ imagePaths, audioPath })),
+            ({ imagePaths, audioPath }): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, text: message.text, imagePaths, audioPath }),
+            (): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, text: message.text, imagePaths: [] }),
           )
           return { state: newState }
         }
@@ -153,8 +168,8 @@ export const createHttpActor = (
         }
       },
 
-      _imagesSaved: (state, message) => {
-        const { clientId, text, filePaths } = message
+      _mediaSaved: (state, message) => {
+        const { clientId, text, imagePaths, audioPath } = message
         const span = state.activeSpans[clientId]
         if (!span) return { state }
         return {
@@ -162,7 +177,8 @@ export const createHttpActor = (
           events: [emit(WsMessageTopic, {
             clientId,
             text,
-            images: filePaths.length > 0 ? filePaths : undefined,
+            images: imagePaths.length > 0 ? imagePaths : undefined,
+            audio: audioPath,
             traceId: span.traceId,
             parentSpanId: span.spanId,
           })],
@@ -230,6 +246,11 @@ export const createHttpActor = (
         state.server?.publish(CHANNEL, JSON.stringify({ type: 'generatedImage', url: message.publicUrl }))
         return { state }
       },
+
+      _audioGenerated: (state, message) => {
+        state.server?.publish(CHANNEL, JSON.stringify({ type: 'generatedAudio', url: message.publicUrl }))
+        return { state }
+      },
     }),
 
     lifecycle: onLifecycle({
@@ -259,6 +280,11 @@ export const createHttpActor = (
 
         context.subscribe(ImageGeneratedTopic, (e) => ({
           type: '_imageGenerated' as const,
+          publicUrl: e.publicUrl,
+        }))
+
+        context.subscribe(AudioGeneratedTopic, (e) => ({
+          type: '_audioGenerated' as const,
           publicUrl: e.publicUrl,
         }))
 
@@ -335,14 +361,16 @@ export const createHttpActor = (
               const raw = typeof message === 'string' ? message : message.toString()
               let text = raw
               let images: string[] | undefined
+              let audio: string | undefined
               try {
-                const parsed = JSON.parse(raw) as { text?: string; images?: string[] }
+                const parsed = JSON.parse(raw) as { text?: string; images?: string[]; audio?: string }
                 if (typeof parsed.text === 'string') {
                   text = parsed.text
                   images = parsed.images
+                  audio = parsed.audio
                 }
               } catch { /* plain text, no images */ }
-              selfRef?.send({ type: 'message', clientId: ws.data.clientId, text, images })
+              selfRef?.send({ type: 'message', clientId: ws.data.clientId, text, images, audio })
             },
             close: (ws: ServerWebSocket<WsData>) => {
               ws.unsubscribe(CHANNEL)

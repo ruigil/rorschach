@@ -97,17 +97,45 @@ system.subscribe(HttpConfigTopic, (form: HttpConfigPayload) => {
         },
       },
       chatbot: {
-        model: String(form.model ?? process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini'),
-        systemPrompt: SYSTEM_PROMPT,
+        model:         String(form.model ?? process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini'),
+        systemPrompt:  form.systemPrompt ? String(form.systemPrompt) : SYSTEM_PROMPT,
+        historyWindow: form.historyWindow ? Number(form.historyWindow) : undefined,
       },
+    },
+    tools: {
       visionActor: {
         model: String(form.visionModel ?? process.env.OPENROUTER_VISION_MODEL ?? 'google/gemini-flash-1.5'),
       },
+      ...(form.audioModel ? {
+        audioActor: {
+          model: String(form.audioModel),
+          voice: String(form.audioVoice ?? 'alloy'),
+        },
+      } : {}),
+      bash: {
+        cwd: String(form.bashCwd ?? (config.tools as any)?.bash?.cwd ?? process.cwd()),
+      },
+      webSearch: {
+        apiKey: process.env.BRAVESEARCH_API_KEY ?? '',
+        count:  Number(form.webSearchCount ?? (config.tools as any)?.webSearch?.count ?? 20),
+      },
+    },
+    memory: {
+      kgraph: {
+        dbPath: String(form.kgraphDbPath ?? (config.memory as any)?.kgraph?.dbPath ?? './workspace/memory/kgraph'),
+      },
+      ...(form.memoryModel ? {
+        memory: {
+          model:                   String(form.memoryModel),
+          userId:                  String(form.memoryUserId ?? 'default'),
+          consolidationIntervalMs: Number(form.memoryConsolidationIntervalMs ?? 30000),
+        },
+      } : {}),
     },
     observability: {
       jsonlLogger: {
-        filePath: String(form.logPath ?? (config.observability as any)?.jsonlLogger?.filePath ?? './logs/app.jsonl'),
-        minLevel: (form.minLevel as any) ?? 'debug',
+        filePath:       String(form.logPath ?? (config.observability as any)?.jsonlLogger?.filePath ?? './logs/app.jsonl'),
+        minLevel:       (form.minLevel as any) ?? 'debug',
         flushIntervalMs: Number(form.flushIntervalMs ?? 3000),
       },
       ...(form.metricsEnabled !== false && {

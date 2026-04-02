@@ -3,7 +3,7 @@ import type { Socket } from 'node:net'
 import type { ActorDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { emit } from '../../system/types.ts'
-import { WsConnectTopic, WsMessageTopic, WsSendTopic, ImageGeneratedTopic } from '../../types/ws.ts'
+import { WsConnectTopic, WsMessageTopic, WsSendTopic, ImageGeneratedTopic, AudioGeneratedTopic } from '../../types/ws.ts'
 
 // ─── Markdown → Signal formatting ───
 //
@@ -204,9 +204,10 @@ type Envelope = {
 type SignalMsg =
   | { type: '_reconnect' }
   | { type: '_socketClosed' }
-  | { type: '_line';          line: string }
-  | { type: '_send';          clientId: string; text: string }
+  | { type: '_line';           line: string }
+  | { type: '_send';           clientId: string; text: string }
   | { type: '_imageGenerated'; filePath: string }
+  | { type: '_audioGenerated'; filePath: string }
   | { type: '_sendOk' }
   | { type: '_sendErr';        error: string }
   | { type: '_refreshTyping' }
@@ -269,6 +270,7 @@ export const createSignalActor = (
       start: (state, ctx) => {
         ctx.subscribe(WsSendTopic, e => ({ type: '_send' as const, clientId: e.clientId, text: e.text }))
         ctx.subscribe(ImageGeneratedTopic, e => ({ type: '_imageGenerated' as const, filePath: e.filePath }))
+        ctx.subscribe(AudioGeneratedTopic, e => ({ type: '_audioGenerated' as const, filePath: e.filePath }))
         ctx.timers.startSingleTimer('reconnect', { type: '_reconnect' }, 0)
         ctx.log.info(`signal actor: connecting to ${host}:${port}`)
         return { state }
@@ -333,8 +335,10 @@ export const createSignalActor = (
         const sent           = envelope.syncMessage?.sentMessage
         const source         = envelope.source ?? envelope.sourceNumber ?? sent?.destination ?? sent?.destinationNumber
         const incomingGroup  = envelope.dataMessage?.groupInfo?.groupId ?? envelope.syncMessage?.sentMessage?.groupInfo?.groupId ?? null
-        const text           = envelope.dataMessage?.message ?? sent?.message ?? ''
-        const attachments    = envelope.dataMessage?.attachments ?? sent?.attachments ?? []
+        const text            = envelope.dataMessage?.message ?? sent?.message ?? ''
+        const attachments     = envelope.dataMessage?.attachments ?? sent?.attachments ?? []
+        const imageAttachments = attachments.filter(a => a.contentType.startsWith('image/'))
+        const audioAttachment  = attachments.find(a  => a.contentType.startsWith('audio/'))
 
         if (!source || (!text && attachments.length === 0)) return { state }
 
@@ -358,7 +362,8 @@ export const createSignalActor = (
         events.push(emit(WsMessageTopic, {
           clientId,
           text,
-          ...(attachments.length > 0 ? { images: attachmentPaths(attachments) } : {}),
+          ...(imageAttachments.length > 0 ? { images: attachmentPaths(imageAttachments) } : {}),
+          ...(audioAttachment ? { audio: `${attachmentsDir}/${audioAttachment.id}` } : {}),
           traceId:      crypto.randomUUID(),
           parentSpanId: crypto.randomUUID(),
         }))
@@ -419,6 +424,22 @@ export const createSignalActor = (
       },
 
       _imageGenerated: (state, msg, ctx) => {
+        for (const clientId of state.seenIds) {
+          ctx.pipeToSelf(
+            writeToSocket(rpcLine('send', {
+              ...(account ? { account } : {}),
+              ...(groupId && clientId === groupId ? { groupId } : { recipient: [clientId] }),
+              message: '',
+              attachments: [msg.filePath],
+            })),
+            () => ({ type: '_sendOk'  as const }),
+            (err) => ({ type: '_sendErr' as const, error: String(err) }),
+          )
+        }
+        return { state }
+      },
+
+      _audioGenerated: (state, msg, ctx) => {
         for (const clientId of state.seenIds) {
           ctx.pipeToSelf(
             writeToSocket(rpcLine('send', {

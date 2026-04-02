@@ -2,7 +2,7 @@ import { createTopic } from '../system/types.ts'
 
 // ─── Domain event: published when a WebSocket message is received ───
 
-export type WsMessageEvent = { clientId: string; text: string; images?: string[]; traceId: string; parentSpanId: string }
+export type WsMessageEvent = { clientId: string; text: string; images?: string[]; audio?: string; traceId: string; parentSpanId: string }
 
 /** Topic for WebSocket message domain events. Subscribe to receive browser input. */
 export const WsMessageTopic = createTopic<WsMessageEvent>('http.ws.message')
@@ -63,3 +63,13 @@ export type ImageGeneratedEvent = {
 
 /** Topic emitted when a generated image has been saved to disk. Interfaces use this to deliver it to clients. */
 export const ImageGeneratedTopic = createTopic<ImageGeneratedEvent>('image.generated')
+
+// ─── Domain event: emitted when the TTS tool generates audio ───
+
+export type AudioGeneratedEvent = {
+  filePath:  string  // absolute path to the saved WAV file
+  publicUrl: string  // relative URL path for HTTP clients, e.g. 'generated/uuid.wav'
+}
+
+/** Topic emitted when a generated audio file has been saved to disk. Interfaces use this to deliver it to clients. */
+export const AudioGeneratedTopic = createTopic<AudioGeneratedEvent>('audio.generated')
