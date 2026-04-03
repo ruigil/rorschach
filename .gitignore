@@ -19,9 +19,6 @@ generated
 # observability
 observability
 
-# config
-config.json
-
 # logs
 _.log
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
