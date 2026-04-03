@@ -5,7 +5,7 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { WsSendTopic, MemoryStreamTopic } from '../../types/ws.ts'
 import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
-import { LlmProviderTopic } from '../../types/llm.ts'
+import { LlmProviderTopic, CostTopic } from '../../types/llm.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
@@ -308,18 +308,18 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
         events: [
           emit(MemoryStreamTopic, { userId: 'default', userText, assistantText: state.pending, timestamp: Date.now() }),
           emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
-          emit(WsSendTopic, { clientId, text: JSON.stringify({
-            type: 'usage',
-            role: 'reasoning',
+          emit(CostTopic, {
+            timestamp:    Date.now(),
+            role:         'reasoning',
             model,
-            inputTokens:   totalUsage?.promptTokens     ?? 0,
-            outputTokens:  totalUsage?.completionTokens ?? 0,
-            contextWindow: info?.contextWindow ?? null,
+            inputTokens:  totalUsage?.promptTokens     ?? 0,
+            outputTokens: totalUsage?.completionTokens ?? 0,
             cost: info && totalUsage
               ? (totalUsage.promptTokens     / 1_000_000 * info.promptPer1M)
               + (totalUsage.completionTokens / 1_000_000 * info.completionPer1M)
               : null,
-          })}),
+            clientId,
+          }),
         ],
         become: idleHandler,
       }

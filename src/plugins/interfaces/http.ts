@@ -10,8 +10,8 @@ import type { HttpConfigPayload, ConfigSnapshotEvent } from '../../types/ws.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
-import { LlmProviderTopic } from '../../types/llm.ts'
-import type { LlmProviderMsg } from '../../types/llm.ts'
+import { LlmProviderTopic, CostTopic } from '../../types/llm.ts'
+import type { LlmProviderMsg, CostEvent } from '../../types/llm.ts'
 import { KgraphTopic } from '../../types/memory.ts'
 import type { KgraphMsg, KgraphGraph } from '../../types/memory.ts'
 
@@ -45,6 +45,7 @@ export type HttpMessage =
   | { type: '_kgraphChanged'; ref: ActorRef<KgraphMsg> | null }
   | { type: '_imageGenerated'; publicUrl: string }
   | { type: '_audioGenerated'; publicUrl: string }
+  | { type: '_cost'; event: CostEvent }
 
 // ─── Image helpers ───
 
@@ -221,6 +222,24 @@ export const createHttpActor = (
         return { state }
       },
 
+      _cost: (state, message) => {
+        const { event } = message
+        const text = JSON.stringify({
+          type:         'usage',
+          role:         event.role,
+          model:        event.model,
+          inputTokens:  event.inputTokens,
+          outputTokens: event.outputTokens,
+          cost:         event.cost,
+        })
+        if (event.clientId) {
+          state.server?.publish(`client:${event.clientId}`, text)
+        } else {
+          state.server?.publish(CHANNEL, text)
+        }
+        return { state }
+      },
+
       send: (state, message) => {
         state.server?.publish(`client:${message.clientId}`, message.text)
         try {
@@ -276,6 +295,11 @@ export const createHttpActor = (
         context.subscribe(WsBroadcastTopic, (e) => ({
           type: 'broadcast' as const,
           text: e.text,
+        }))
+
+        context.subscribe(CostTopic, (event) => ({
+          type: '_cost' as const,
+          event,
         }))
 
         context.subscribe(LlmProviderTopic, (e) => ({

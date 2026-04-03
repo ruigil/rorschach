@@ -41,11 +41,13 @@ The notebook has four areas — use the request field to describe exactly what y
 - "Search notes for 'authentication'"
 - "Attach the file /tmp/diagram.png to the note titled 'Architecture'" — attaches a file (image or PDF) to an existing note; the file must exist at an absolute path
 
-**Habit tracker** — CSV-based habit logging:
+**Tracker** — CSV-based logging for habits, expenses, or any numeric metric:
+- "Define a new tracker called 'Expenses' with unit 'EUR' or 'CHF'"
 - "Define a new habit called 'Exercise' with unit 'minutes'"
-- "List all habits"
+- "List all tracked metrics"
 - "Log 30 minutes of Exercise for today"
-- "Show my Exercise stats for the last 7 days"
+- "Log 45 EUR for Expenses today — lunch"
+- "Show my Expenses stats" — includes weekly and monthly totals
 
 **Todos** — task list with due dates and optional recurrence:
 - "Create a todo: call dentist, due Friday"
@@ -205,7 +207,7 @@ const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void =>
 const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
   id:          'notebook',
   version:     '1.0.0',
-  description: 'Personal notebook: journal, notes, habit tracker, todos — exposed as a single "note" tool.',
+  description: 'Personal notebook: journal, notes, tracker (habits, expenses, or any numeric metric), todos — exposed as a single "note" tool.',
 
   configDescriptor: {
     defaults: {

@@ -49,7 +49,10 @@
         "toolFilter": {
           "deny": [
             "kgraph_query",
-            "kgraph_write"
+            "kgraph_write",
+            "bash",
+            "write", 
+            "read"
           ]
         }
       }
@@ -73,7 +76,7 @@
     },
     "observability": {
       "jsonlLogger": {
-        "filePath": "./logs/rorschach-{date}.jsonl",
+        "filePath": "./observability/logs/rorschach-{date}.jsonl",
         "minLevel": "debug",
         "flushIntervalMs": 300000
       },
@@ -81,7 +84,11 @@
         "intervalMs": 5000
       },
       "traceRecorder": {
-        "tracesDir": "./traces"
+        "tracesDir": "./observability/traces"
+      },
+      "costTracker": {
+        "costsDir": "./observability/costs",
+        "flushIntervalMs": 300000
       }
     }
   }

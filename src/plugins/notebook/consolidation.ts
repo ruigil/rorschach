@@ -1,7 +1,6 @@
 import type { ActorDef, ActorRef, MessageHandler } from '../../system/types.ts'
 import { emit } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { WsBroadcastTopic } from '../../types/ws.ts'
 import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import { ask } from '../../system/ask.ts'
@@ -13,7 +12,7 @@ import type {
   Tool,
   ToolCall,
 } from '../../types/llm.ts'
-import { LlmProviderTopic } from '../../types/llm.ts'
+import { LlmProviderTopic, CostTopic } from '../../types/llm.ts'
 import type { NotebookConsolidationMsg, Todo } from './types.ts'
 
 // ─── Options ───
@@ -262,16 +261,15 @@ export const createNotebookConsolidationActor = (
       context.log.info('notebook consolidation complete')
 
       const usageEvents = (msg.usage && state.modelInfo)
-        ? [emit(WsBroadcastTopic, { text: JSON.stringify({
-            type:          'usage',
-            role:          'notebook',
+        ? [emit(CostTopic, {
+            timestamp:    Date.now(),
+            role:         'notebook',
             model,
-            inputTokens:   msg.usage.promptTokens,
-            outputTokens:  msg.usage.completionTokens,
-            contextWindow: state.modelInfo.contextWindow,
+            inputTokens:  msg.usage.promptTokens,
+            outputTokens: msg.usage.completionTokens,
             cost: (msg.usage.promptTokens     / 1_000_000 * state.modelInfo.promptPer1M)
                 + (msg.usage.completionTokens / 1_000_000 * state.modelInfo.completionPer1M),
-          }) })]
+          })]
         : []
 
       return {

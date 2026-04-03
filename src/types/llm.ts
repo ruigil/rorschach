@@ -74,6 +74,22 @@ export type LlmProviderMsg =
 export type LlmProviderEvent = { ref: ActorRef<LlmProviderMsg> | null }
 export const LlmProviderTopic = createTopic<LlmProviderEvent>('cognitive.llm-provider')
 
+// ─── Cost event: emitted by any actor that completes an LLM call ───
+
+export type CostEvent = {
+  timestamp: number
+  /** Caller role: 'reasoning' | 'vision' | 'audio' | 'memory' | 'user-context' | 'notebook' */
+  role: string
+  model: string
+  inputTokens: number
+  outputTokens: number
+  /** Cost in USD; null when model pricing is unavailable */
+  cost: number | null
+  /** Present for per-client usage; absent for background tasks */
+  clientId?: string
+}
+export const CostTopic = createTopic<CostEvent>('system.costs')
+
 // ─── Adapter interface ───
 
 type AdapterStreamResult =

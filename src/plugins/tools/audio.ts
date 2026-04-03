@@ -4,8 +4,8 @@ import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { emit } from '../../system/types.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { CostTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg, ApiMessage, AudioProviderReply, LlmProviderReply, ModelInfo } from '../../types/llm.ts'
-import { WsSendTopic } from '../../types/ws.ts'
 import { ask } from '../../system/ask.ts'
 
 // ─── Output directory for generated audio ───
@@ -262,19 +262,19 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
         const { [message.requestId]: req, ...rest } = state.pending
         if (!req) return { state }
 
-        const usageEvents = (req.clientId && message.usage)
-          ? [emit(WsSendTopic, { clientId: req.clientId, text: JSON.stringify({
-              type: 'usage',
-              role: 'audio',
+        const usageEvents = message.usage
+          ? [emit(CostTopic, {
+              timestamp:    Date.now(),
+              role:         'audio',
               model,
-              inputTokens:   message.usage.promptTokens,
-              outputTokens:  message.usage.completionTokens,
-              contextWindow: state.modelInfo?.contextWindow ?? null,
+              inputTokens:  message.usage.promptTokens,
+              outputTokens: message.usage.completionTokens,
               cost: state.modelInfo
                 ? (message.usage.promptTokens     / 1_000_000 * state.modelInfo.promptPer1M)
                 + (message.usage.completionTokens / 1_000_000 * state.modelInfo.completionPer1M)
                 : null,
-            }) })]
+              ...(req.clientId ? { clientId: req.clientId } : {}),
+            })]
           : []
 
         if (req.kind === 'transcription') {

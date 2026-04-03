@@ -15,13 +15,14 @@ export const TRACKER_LOG_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: TRACKER_LOG_TOOL_NAME,
-    description: 'Log a value for a tracked habit.',
+    description: 'Log a numeric value for a tracked habit or any recurring metric (e.g. expenses, weight, steps, mood).',
     parameters: {
       type: 'object',
       properties: {
-        habit: { type: 'string', description: 'Habit name (must exist in habits.json).' },
-        value: { type: 'number', description: 'Numeric value to log.' },
-        date:  { type: 'string', description: 'Date in YYYY-MM-DD format. Defaults to today.' },
+        habit:       { type: 'string', description: 'Habit name (must exist in habits.json).' },
+        value:       { type: 'number', description: 'Numeric value to log.' },
+        date:        { type: 'string', description: 'Date in YYYY-MM-DD format. Defaults to today.' },
+        description: { type: 'string', description: 'Optional note describing the expense or entry.' },
       },
       required: ['habit', 'value'],
     },
@@ -32,7 +33,7 @@ export const TRACKER_STATS_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: TRACKER_STATS_TOOL_NAME,
-    description: 'Get statistics for a tracked habit: daily totals, weekly/monthly averages, current streak, and personal best.',
+    description: 'Get statistics for a tracked metric: weekly/monthly totals and averages, current streak, and personal best. Works for habits, expenses, or any numeric series.',
     parameters: {
       type: 'object',
       properties: {
@@ -47,7 +48,7 @@ export const TRACKER_DEFINE_HABIT_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: TRACKER_DEFINE_HABIT_TOOL_NAME,
-    description: 'Create or update a habit definition.',
+    description: 'Create or update a tracked metric definition (habit, expense category, or any numeric series).',
     parameters: {
       type: 'object',
       properties: {
@@ -64,7 +65,7 @@ export const TRACKER_LIST_HABITS_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: TRACKER_LIST_HABITS_TOOL_NAME,
-    description: 'List all defined habits.',
+    description: 'List all defined tracked metrics (habits, expense categories, or any numeric series).',
     parameters: { type: 'object', properties: {} },
   },
 }
@@ -86,16 +87,41 @@ const todayISO = (): string => new Date().toISOString().slice(0, 10)
 
 // ─── Operations ───
 
-const logHabit = async (notebookDir: string, habit: string, value: number, date: string): Promise<string> => {
+const csvEscape = (s: string): string =>
+  s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s
+
+const logHabit = async (notebookDir: string, habit: string, value: number, date: string, description?: string): Promise<string> => {
   await mkdir(trackerDir(notebookDir), { recursive: true })
   const path     = csvPath(notebookDir)
   const file     = Bun.file(path)
-  const existing = (await file.exists()) ? await file.text() : 'date,habit,value\n'
-  await Bun.write(path, existing + `${date},${habit},${value}\n`)
-  return `Logged ${value} for habit "${habit}" on ${date}.`
+  const existing = (await file.exists()) ? await file.text() : 'date,habit,value,description\n'
+  const desc     = description ? csvEscape(description) : ''
+  await Bun.write(path, existing + `${date},${habit},${value},${desc}\n`)
+  const note = description ? ` (${description})` : ''
+  return `Logged ${value} for habit "${habit}" on ${date}${note}.`
 }
 
-type CsvRow = { date: string; habit: string; value: number }
+type CsvRow = { date: string; habit: string; value: number; description?: string }
+
+const parseCsvLine = (line: string): string[] => {
+  const fields: string[] = []
+  let field = ''
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]!
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') { field += '"'; i++ }
+      else if (ch === '"') inQuotes = false
+      else field += ch
+    } else {
+      if (ch === '"') inQuotes = true
+      else if (ch === ',') { fields.push(field); field = '' }
+      else field += ch
+    }
+  }
+  fields.push(field)
+  return fields
+}
 
 const parseCsv = async (notebookDir: string): Promise<CsvRow[]> => {
   const file = Bun.file(csvPath(notebookDir))
@@ -105,8 +131,8 @@ const parseCsv = async (notebookDir: string): Promise<CsvRow[]> => {
   return lines
     .filter(l => l.trim())
     .map(l => {
-      const [date, habit, value] = l.split(',')
-      return { date: date!, habit: habit!, value: parseFloat(value!) }
+      const [date, habit, value, description] = parseCsvLine(l)
+      return { date: date!, habit: habit!, value: parseFloat(value!), description: description || undefined }
     })
     .filter(r => !isNaN(r.value))
 }
@@ -140,16 +166,20 @@ const computeStats = async (notebookDir: string, habit: string): Promise<string>
     cursor.setDate(cursor.getDate() - 1)
   }
 
-  // Weekly average (last 7 days with entries)
-  const recentWeekDates = dates.filter(d => d >= shiftDays(today, -6))
-  const weeklyAvg = recentWeekDates.length > 0
-    ? (recentWeekDates.reduce((s, d) => s + byDay.get(d)!, 0) / recentWeekDates.length).toFixed(1)
+  // Weekly total + average (current calendar week, Mon–today)
+  const weekStart = currentWeekStart()
+  const weekDates = dates.filter(d => d >= weekStart)
+  const weeklyTotal = weekDates.reduce((s, d) => s + byDay.get(d)!, 0)
+  const weeklyAvg = weekDates.length > 0
+    ? (weeklyTotal / weekDates.length).toFixed(1)
     : 'n/a'
 
-  // Monthly average (last 30 days with entries)
-  const recentMonthDates = dates.filter(d => d >= shiftDays(today, -29))
-  const monthlyAvg = recentMonthDates.length > 0
-    ? (recentMonthDates.reduce((s, d) => s + byDay.get(d)!, 0) / recentMonthDates.length).toFixed(1)
+  // Monthly total + average (current calendar month)
+  const monthStart = currentMonthStart()
+  const monthDates = dates.filter(d => d >= monthStart)
+  const monthlyTotal = monthDates.reduce((s, d) => s + byDay.get(d)!, 0)
+  const monthlyAvg = monthDates.length > 0
+    ? (monthlyTotal / monthDates.length).toFixed(1)
     : 'n/a'
 
   return [
@@ -157,8 +187,8 @@ const computeStats = async (notebookDir: string, habit: string): Promise<string>
     `Total log entries: ${rows.length} across ${dates.length} days`,
     `Personal best: ${personalBest} (${personalBestDay})`,
     `Current streak: ${streak} day(s)`,
-    `Weekly avg (last 7 days): ${weeklyAvg}`,
-    `Monthly avg (last 30 days): ${monthlyAvg}`,
+    `This week total (since ${weekStart}): ${weeklyTotal} | avg/day: ${weeklyAvg}`,
+    `This month total (since ${monthStart}): ${monthlyTotal} | avg/day: ${monthlyAvg}`,
     `Recent days: ${dates.slice(-7).map(d => `${d}=${byDay.get(d)}`).join(', ')}`,
   ].join('\n')
 }
@@ -167,6 +197,18 @@ const shiftDays = (isoDate: string, delta: number): string => {
   const d = new Date(isoDate)
   d.setDate(d.getDate() + delta)
   return d.toISOString().slice(0, 10)
+}
+
+const currentWeekStart = (): string => {
+  const d = new Date()
+  const day = d.getDay() === 0 ? 6 : d.getDay() - 1 // Monday = 0
+  d.setDate(d.getDate() - day)
+  return d.toISOString().slice(0, 10)
+}
+
+const currentMonthStart = (): string => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
 const defineHabit = async (notebookDir: string, name: string, unit: string, dailyTarget?: number): Promise<string> => {
@@ -208,7 +250,7 @@ export const createTrackerActor = (notebookDir: string): ActorDef<TrackerMsg, nu
         const args = JSON.parse(msg.arguments) as Record<string, unknown>
 
         if (msg.toolName === TRACKER_LOG_TOOL_NAME) {
-          promise = logHabit(notebookDir, args.habit as string, args.value as number, (args.date as string | undefined) ?? todayISO())
+          promise = logHabit(notebookDir, args.habit as string, args.value as number, (args.date as string | undefined) ?? todayISO(), args.description as string | undefined)
         } else if (msg.toolName === TRACKER_STATS_TOOL_NAME) {
           promise = computeStats(notebookDir, args.habit as string)
         } else if (msg.toolName === TRACKER_DEFINE_HABIT_TOOL_NAME) {

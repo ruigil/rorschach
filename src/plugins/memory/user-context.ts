@@ -11,7 +11,7 @@ import type {
   Tool,
   ToolCall,
 } from '../../types/llm.ts'
-import { WsBroadcastTopic } from '../../types/ws.ts'
+import { CostTopic } from '../../types/llm.ts'
 import type { UserContextMsg } from '../../types/memory.ts'
 import { UserContextTopic } from '../../types/memory.ts'
 
@@ -184,18 +184,17 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
       )
 
       const usageEvents = msg.usage
-        ? [emit(WsBroadcastTopic, { text: JSON.stringify({
-            type: 'usage',
-            role: 'user-context',
+        ? [emit(CostTopic, {
+            timestamp:    Date.now(),
+            role:         'user-context',
             model,
-            inputTokens:   msg.usage.promptTokens,
-            outputTokens:  msg.usage.completionTokens,
-            contextWindow: state.modelInfo?.contextWindow ?? null,
+            inputTokens:  msg.usage.promptTokens,
+            outputTokens: msg.usage.completionTokens,
             cost: state.modelInfo
               ? (msg.usage.promptTokens     / 1_000_000 * state.modelInfo.promptPer1M)
               + (msg.usage.completionTokens / 1_000_000 * state.modelInfo.completionPer1M)
               : null,
-          }) })]
+          })]
         : []
 
       const next = { ...state, requestId: null, messages: null, accumulated: '', pendingBatch: null }

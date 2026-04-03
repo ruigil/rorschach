@@ -1,7 +1,7 @@
 import type { ActorDef, ActorRef, ActorResult, MessageHandler } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { emit } from '../../system/types.ts'
-import { MemoryStreamTopic, WsBroadcastTopic } from '../../types/ws.ts'
+import { MemoryStreamTopic } from '../../types/ws.ts'
 import type { MemoryTurnEvent } from '../../types/ws.ts'
 import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
@@ -14,7 +14,7 @@ import type {
   Tool,
   ToolCall,
 } from '../../types/llm.ts'
-import { LlmProviderTopic } from '../../types/llm.ts'
+import { LlmProviderTopic, CostTopic } from '../../types/llm.ts'
 import type { MemoryConsolidationMsg, UserContextMsg } from '../../types/memory.ts'
 import { createUserContextActor, INITIAL_USER_CONTEXT_STATE } from './user-context.ts'
 
@@ -281,18 +281,17 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       const userContexts = { ...state.userContexts, [doneUserId]: ucRef }
 
       const usageEvents = msg.usage
-        ? [emit(WsBroadcastTopic, { text: JSON.stringify({
-            type: 'usage',
-            role: 'memory',
+        ? [emit(CostTopic, {
+            timestamp:    Date.now(),
+            role:         'memory',
             model,
-            inputTokens:   msg.usage.promptTokens,
-            outputTokens:  msg.usage.completionTokens,
-            contextWindow: state.modelInfo?.contextWindow ?? null,
+            inputTokens:  msg.usage.promptTokens,
+            outputTokens: msg.usage.completionTokens,
             cost: state.modelInfo
               ? (msg.usage.promptTokens     / 1_000_000 * state.modelInfo.promptPer1M)
               + (msg.usage.completionTokens / 1_000_000 * state.modelInfo.completionPer1M)
               : null,
-          }) })]
+          })]
         : []
 
       return {
