@@ -7,3 +7,5 @@
 {"timestamp":1775234330465,"role":"reasoning","model":"x-ai/grok-4.20","inputTokens":2037,"outputTokens":497,"cost":0.007056000000000001,"clientId":"ab6ab530-ef81-46fb-b8cd-6c323d1eb9e0"}
 {"timestamp":1775234376919,"role":"reasoning","model":"x-ai/grok-4.20","inputTokens":4215,"outputTokens":926,"cost":0.013986,"clientId":"ab6ab530-ef81-46fb-b8cd-6c323d1eb9e0"}
 {"timestamp":1775234436215,"role":"reasoning","model":"x-ai/grok-4.20","inputTokens":4461,"outputTokens":198,"cost":0.01011,"clientId":"ab6ab530-ef81-46fb-b8cd-6c323d1eb9e0"}
+{"timestamp":1775234774707,"role":"reasoning","model":"x-ai/grok-4.20","inputTokens":3626,"outputTokens":853,"cost":0.012369999999999999,"clientId":"f8379966-38d3-4072-b1e8-12321e1b4921"}
+{"timestamp":1775236645163,"role":"reasoning","model":"minimax/minimax-m2.7","inputTokens":3641,"outputTokens":128,"cost":0.0012459,"clientId":"816eddfa-1ebe-494f-a988-dac09acea05a"}
