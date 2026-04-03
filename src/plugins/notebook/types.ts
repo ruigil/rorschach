@@ -1,6 +1,6 @@
 import type { ActorRef } from '../../system/types.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
-import type { LlmProviderMsg, LlmProviderReply, ModelInfo } from '../../types/llm.ts'
+import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 
 // ─── Domain types ───
 
@@ -72,7 +72,6 @@ export type NotebookConsolidationMsg =
   | { type: '_consolidate' }
   | { type: '_ready'; requestId: string; messages: import('../../types/llm.ts').ApiMessage[] }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_modelInfo'; info: ModelInfo | null }
   | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
   | { type: '_toolUnregistered'; name: string }
   | { type: '_toolResult'; toolCallId: string; toolName: string; reply: ToolReply }

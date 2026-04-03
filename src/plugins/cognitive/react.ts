@@ -5,12 +5,11 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { WsSendTopic, MemoryStreamTopic } from '../../types/ws.ts'
 import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
-import { LlmProviderTopic, CostTopic } from '../../types/llm.ts'
+import { LlmProviderTopic } from '../../types/llm.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
   LlmProviderReply,
-  ModelInfo,
   TokenUsage,
   Tool,
   ToolCall,
@@ -42,7 +41,6 @@ export type ReActState = {
   // Permanent
   history:          ConversationMessage[]
   tools:            ToolCollection
-  modelInfo:        ModelInfo | null
   sessionUsage:     TokenUsage
   llmRef:           ActorRef<LlmProviderMsg> | null
   userContext:      string | null
@@ -149,6 +147,8 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
         model,
         messages: apiMessages,
         tools,
+        role: 'reasoning',
+        clientId,
         replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
       })
 
@@ -285,8 +285,6 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
         ? { promptTokens: prevSession.promptTokens + totalUsage.promptTokens, completionTokens: prevSession.completionTokens + totalUsage.completionTokens }
         : prevSession
 
-      const info = state.modelInfo
-
       const rawHistory: ConversationMessage[] = [...state.history, { role: 'assistant', content: state.pending }]
       const newHistory = historyWindow ? trimHistory(rawHistory, historyWindow) : rawHistory
 
@@ -308,18 +306,6 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
         events: [
           emit(MemoryStreamTopic, { userId: 'default', userText, assistantText: state.pending, timestamp: Date.now() }),
           emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
-          emit(CostTopic, {
-            timestamp:    Date.now(),
-            role:         'reasoning',
-            model,
-            inputTokens:  totalUsage?.promptTokens     ?? 0,
-            outputTokens: totalUsage?.completionTokens ?? 0,
-            cost: info && totalUsage
-              ? (totalUsage.promptTokens     / 1_000_000 * info.promptPer1M)
-              + (totalUsage.completionTokens / 1_000_000 * info.completionPer1M)
-              : null,
-            clientId,
-          }),
         ],
         become: idleHandler,
       }
@@ -431,6 +417,8 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
         model,
         messages: messagesWithResults,
         tools,
+        role: 'reasoning',
+        clientId,
         replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
       })
 
@@ -458,7 +446,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
 
   return {
     lifecycle: onLifecycle({
-      start: async (state, context) => {
+      start: (state, context) => {
         context.subscribe(ToolRegistrationTopic, (event) => {
           if (!applyToolFilter(event.name, toolFilter)) return null
           return event.ref === null
@@ -474,12 +462,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
           ({ type: '_userContext' as const, summary: event.summary }),
         )
 
-        const modelInfo = state.llmRef
-          ? await ask<LlmProviderMsg, ModelInfo | null>(state.llmRef, (replyTo) => ({ type: 'fetchModelInfo', model, replyTo }))
-              .catch(() => null)
-          : null
-
-        return { state: { ...state, modelInfo } }
+        return { state }
       },
     }),
 

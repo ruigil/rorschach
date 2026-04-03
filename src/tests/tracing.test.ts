@@ -24,7 +24,6 @@ const LLM_PROVIDER_ADAPTER_OPTS = {
 const INITIAL_REACT_STATE: Omit<ReActState, 'llmRef'> = {
   history:          [],
   tools:            {},
-  modelInfo:        null,
   sessionUsage:     { promptTokens: 0, completionTokens: 0 },
   requestId:        null,
   turnMessages:     null,
@@ -64,19 +63,21 @@ const contentPayloads = (text: string) => [
 
 const originalFetch = globalThis.fetch
 
-const stubFetchSequence = (factories: (() => Response)[]) => {
-  let i = 0
-  globalThis.fetch = (async () => factories[i++]?.() ?? new Response('stub exhausted', { status: 500 })) as unknown as typeof fetch
-}
-
 afterEach(() => {
   globalThis.fetch = originalFetch
 })
 
-// ─── Model info stub ───
-// The LlmProviderActor fetches model info on startup via fetchModelInfo.
-// Tests that use stubFetchSequence must prepend this stub as the first slot.
-const modelInfoStub = () => new Response('Not Found', { status: 404 })
+// ─── URL-aware fetch stub ───
+// Routes by URL: /api/v1/models → 404, brave search → braveFactory, chat completions → sequence.
+const stubFetchByUrl = (completions: (() => Response)[], braveFactory?: () => Response) => {
+  let ci = 0
+  globalThis.fetch = (async (url: string | URL) => {
+    const u = String(url)
+    if (u.includes('openrouter.ai/api/v1/models')) return new Response('Not Found', { status: 404 })
+    if (u.includes('brave.com')) return braveFactory?.() ?? new Response('{}', { status: 200 })
+    return completions[ci++]?.() ?? new Response('stub exhausted', { status: 500 })
+  }) as unknown as typeof fetch
+}
 
 // ─── Span collection helpers ───
 
@@ -146,12 +147,13 @@ describe('distributed tracing', () => {
       grounding: { generic: [], poi: null, map: [] },
       sources: {},
     }
-    stubFetchSequence([
-      modelInfoStub,
-      () => makeSSEResponse(toolCallPayloads('call_abc', 'ai news')),
+    stubFetchByUrl(
+      [
+        () => makeSSEResponse(toolCallPayloads('call_abc', 'ai news')),
+        () => makeSSEResponse(contentPayloads('Here is the answer.')),
+      ],
       () => new Response(JSON.stringify(emptyBraveResponse), { status: 200 }),
-      () => makeSSEResponse(contentPayloads('Here is the answer.')),
-    ])
+    )
 
     const system = await createPluginSystem({
       config: { tools: { webSearch: { apiKey: 'test-key' } } },
@@ -228,11 +230,12 @@ describe('distributed tracing', () => {
       },
     }
 
-    stubFetchSequence([
-      modelInfoStub,
-      () => makeSSEResponse(toolCallPayloads('call_trace', 'query')),
-      () => makeSSEResponse(contentPayloads('Done.')),
-    ])
+    stubFetchByUrl(
+      [
+        () => makeSSEResponse(toolCallPayloads('call_trace', 'query')),
+        () => makeSSEResponse(contentPayloads('Done.')),
+      ],
+    )
 
     const system = await createPluginSystem()
     const spans = collectSpans(system)

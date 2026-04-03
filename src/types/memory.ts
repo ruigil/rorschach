@@ -1,7 +1,7 @@
 import { createTopic } from '../system/types.ts'
 import type { ActorRef, SpanHandle } from '../system/types.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from './tools.ts'
-import type { LlmProviderMsg, LlmProviderReply, ModelInfo } from './llm.ts'
+import type { LlmProviderMsg, LlmProviderReply } from './llm.ts'
 
 // ─── Graph dump types ───
 
@@ -52,7 +52,6 @@ export type MemoryConsolidationMsg =
   | { type: '_turn';             userId: string; userText: string; assistantText: string; timestamp: number }
   | { type: '_consolidate' }
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_modelInfo';        info: ModelInfo | null }
   | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
   | { type: '_toolUnregistered'; name: string }
   | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolReply }

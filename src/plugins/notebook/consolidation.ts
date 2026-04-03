@@ -1,18 +1,15 @@
 import type { ActorDef, ActorRef, MessageHandler } from '../../system/types.ts'
-import { emit } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
-import { ask } from '../../system/ask.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
   LlmProviderReply,
-  ModelInfo,
   Tool,
   ToolCall,
 } from '../../types/llm.ts'
-import { LlmProviderTopic, CostTopic } from '../../types/llm.ts'
+import { LlmProviderTopic } from '../../types/llm.ts'
 import type { NotebookConsolidationMsg, Todo } from './types.ts'
 
 // ─── Options ───
@@ -35,7 +32,6 @@ type PendingBatch = {
 
 export type NotebookConsolidationState = {
   llmRef:        ActorRef<LlmProviderMsg> | null
-  modelInfo:     ModelInfo | null
   tools:         ToolCollection
   requestId:     string | null
   turnMessages:  ApiMessage[] | null
@@ -140,17 +136,9 @@ const toolUnregistered = (
 const llmProviderChanged = (
   state: NotebookConsolidationState,
   msg: Extract<NotebookConsolidationMsg, { type: '_llmProvider' }>,
-  context: Parameters<MessageHandler<NotebookConsolidationMsg, NotebookConsolidationState>>[2],
-): { state: NotebookConsolidationState } => {
-  if (msg.ref) {
-    context.pipeToSelf(
-      ask<LlmProviderMsg, ModelInfo | null>(msg.ref, (replyTo) => ({ type: 'fetchModelInfo', model: '', replyTo })),
-      (info): NotebookConsolidationMsg => ({ type: '_modelInfo', info }),
-      ():    NotebookConsolidationMsg => ({ type: '_modelInfo', info: null }),
-    )
-  }
-  return { state: { ...state, llmRef: msg.ref } }
-}
+): { state: NotebookConsolidationState } => ({
+  state: { ...state, llmRef: msg.ref },
+})
 
 // ─── Actor ───
 
@@ -185,7 +173,6 @@ export const createNotebookConsolidationActor = (
     },
 
     _llmProvider:      llmProviderChanged,
-    _modelInfo:        (state, msg) => ({ state: { ...state, modelInfo: msg.info } }),
     _toolRegistered:   toolRegistered,
     _toolUnregistered: toolUnregistered,
   })
@@ -205,6 +192,7 @@ export const createNotebookConsolidationActor = (
         model,
         messages: msg.messages,
         tools: toolSchemas.length > 0 ? toolSchemas : undefined,
+        role: 'notebook-consolidation',
         replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
       })
 
@@ -260,21 +248,8 @@ export const createNotebookConsolidationActor = (
       if (msg.requestId !== state.requestId) return { state }
       context.log.info('notebook consolidation complete')
 
-      const usageEvents = (msg.usage && state.modelInfo)
-        ? [emit(CostTopic, {
-            timestamp:    Date.now(),
-            role:         'notebook',
-            model,
-            inputTokens:  msg.usage.promptTokens,
-            outputTokens: msg.usage.completionTokens,
-            cost: (msg.usage.promptTokens     / 1_000_000 * state.modelInfo.promptPer1M)
-                + (msg.usage.completionTokens / 1_000_000 * state.modelInfo.completionPer1M),
-          })]
-        : []
-
       return {
         state: { ...state, requestId: null, turnMessages: null, accumulated: '', pendingBatch: null, toolLoopCount: 0 },
-        events: usageEvents,
         become: idleHandler,
       }
     },
@@ -289,7 +264,6 @@ export const createNotebookConsolidationActor = (
     },
 
     _llmProvider:      llmProviderChanged,
-    _modelInfo:        (state, msg) => ({ state: { ...state, modelInfo: msg.info } }),
     _toolRegistered:   toolRegistered,
     _toolUnregistered: toolUnregistered,
   })
@@ -336,6 +310,7 @@ export const createNotebookConsolidationActor = (
         model,
         messages: nextMessages,
         tools: toolSchemas.length > 0 ? toolSchemas : undefined,
+        role: 'notebook-consolidation',
         replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
       })
 
@@ -346,7 +321,6 @@ export const createNotebookConsolidationActor = (
     },
 
     _llmProvider:      llmProviderChanged,
-    _modelInfo:        (state, msg) => ({ state: { ...state, modelInfo: msg.info } }),
     _toolRegistered:   toolRegistered,
     _toolUnregistered: toolUnregistered,
   })
@@ -373,7 +347,6 @@ export const createNotebookConsolidationActor = (
 
 export const INITIAL_CONSOLIDATION_STATE: NotebookConsolidationState = {
   llmRef:        null,
-  modelInfo:     null,
   tools:         {},
   requestId:     null,
   turnMessages:  null,

@@ -58,16 +58,17 @@ export type AudioProviderReply =
 // ─── Incoming messages ───
 
 export type LlmProviderMsg =
-  | { type: 'stream';            requestId: string; model: string; messages: ApiMessage[]; tools?: Tool[]; replyTo: ActorRef<LlmProviderReply> }
-  | { type: 'streamImage';       requestId: string; model: string; messages: ApiMessage[]; replyTo: ActorRef<VisionProviderReply> }
-  | { type: 'streamAudio';       requestId: string; model: string; messages: ApiMessage[]; voice?: string; replyTo: ActorRef<AudioProviderReply> }
+  | { type: 'stream';            requestId: string; model: string; messages: ApiMessage[]; tools?: Tool[]; role: string; clientId?: string; replyTo: ActorRef<LlmProviderReply> }
+  | { type: 'streamImage';       requestId: string; model: string; messages: ApiMessage[]; role: string; clientId?: string; replyTo: ActorRef<VisionProviderReply> }
+  | { type: 'streamAudio';       requestId: string; model: string; messages: ApiMessage[]; voice?: string; role: string; clientId?: string; replyTo: ActorRef<AudioProviderReply> }
   | { type: 'fetchModelInfo';    model: string; replyTo: ActorRef<ModelInfo | null> }
   | { type: 'fetchModels';       replyTo: ActorRef<string[]> }
-  | { type: '_streamDone';       result: LlmProviderReply; replyTo: ActorRef<LlmProviderReply> }
-  | { type: '_streamImageDone';  result: VisionProviderReply; replyTo: ActorRef<VisionProviderReply> }
-  | { type: '_streamAudioDone';  result: AudioProviderReply; replyTo: ActorRef<AudioProviderReply> }
+  | { type: '_streamDone';       result: LlmProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<LlmProviderReply> }
+  | { type: '_streamImageDone';  result: VisionProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<VisionProviderReply> }
+  | { type: '_streamAudioDone';  result: AudioProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<AudioProviderReply> }
   | { type: '_modelInfoDone';    info: ModelInfo | null; replyTo: ActorRef<ModelInfo | null> }
   | { type: '_modelsDone';       models: string[]; replyTo: ActorRef<string[]> }
+  | { type: '_costReady';        model: string; role: string; clientId?: string; usage: TokenUsage; info: ModelInfo | null }
 
 // ─── Retained topic: announces the live llm-provider ref to subscribers ───
 

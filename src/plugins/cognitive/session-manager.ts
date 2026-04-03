@@ -35,7 +35,6 @@ export type SessionManagerOptions = {
 const initialReActState = (llmRef: ActorRef<LlmProviderMsg>): ReActState => ({
   history:          [],
   tools:            {},
-  modelInfo:        null,
   sessionUsage:     { promptTokens: 0, completionTokens: 0 },
   llmRef,
   userContext:      null,

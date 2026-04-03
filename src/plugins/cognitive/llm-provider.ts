@@ -1,9 +1,11 @@
 import type { ActorDef } from '../../system/types.ts'
+import { emit } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
 import type {
   TokenUsage, LlmProviderMsg, LlmProviderAdapter, OpenRouterAdapterOptions, VisionProviderReply, AudioProviderReply,
   ModelInfo
 } from '../../types/llm.ts'
+import { CostTopic } from '../../types/llm.ts'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
@@ -278,7 +280,7 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
   return {
     handler: onMessage<LlmProviderMsg, null>({
       stream: (state, message, context) => {
-        const { requestId, model, messages, tools, replyTo } = message
+        const { requestId, model, messages, tools, role, clientId, replyTo } = message
 
         context.pipeToSelf(
           adapter.stream(
@@ -293,11 +295,13 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
             result: result.type === 'content'
               ? { type: 'llmDone', requestId, usage: result.usage }
               : { type: 'llmToolCalls', requestId, calls: result.calls, usage: result.usage },
+            model, role, clientId,
             replyTo,
           }),
           (error): LlmProviderMsg => ({
             type: '_streamDone',
             result: { type: 'llmError', requestId, error },
+            model, role, clientId,
             replyTo,
           }),
         )
@@ -306,23 +310,25 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
       },
 
       streamImage: (state, message, context) => {
-        const { requestId, model, messages, replyTo } = message
+        const { requestId, model, messages, role, clientId, replyTo } = message
 
         context.pipeToSelf(
           adapter.streamImage(
             model,
             messages,
-            (text)   => replyTo.send({ type: 'llmChunk',      requestId, text }),
+            (text)    => replyTo.send({ type: 'llmChunk',      requestId, text }),
             (dataUrl) => replyTo.send({ type: 'llmImageChunk', requestId, dataUrl }),
           ),
           (result): LlmProviderMsg => ({
             type: '_streamImageDone',
             result: { type: 'llmDone', requestId, usage: result.usage } as VisionProviderReply,
+            model, role, clientId,
             replyTo,
           }),
           (error): LlmProviderMsg => ({
             type: '_streamImageDone',
             result: { type: 'llmError', requestId, error } as VisionProviderReply,
+            model, role, clientId,
             replyTo,
           }),
         )
@@ -331,7 +337,7 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
       },
 
       streamAudio: (state, message, context) => {
-        const { requestId, model, messages, voice, replyTo } = message
+        const { requestId, model, messages, voice, role, clientId, replyTo } = message
 
         context.pipeToSelf(
           adapter.streamAudio(
@@ -344,11 +350,13 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
           (result): LlmProviderMsg => ({
             type: '_streamAudioDone',
             result: { type: 'llmDone', requestId, usage: result.usage } as AudioProviderReply,
+            model, role, clientId,
             replyTo,
           }),
           (error): LlmProviderMsg => ({
             type: '_streamAudioDone',
             result: { type: 'llmError', requestId, error } as AudioProviderReply,
+            model, role, clientId,
             replyTo,
           }),
         )
@@ -380,19 +388,65 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
         return { state }
       },
 
-      _streamDone: (state, message) => {
+      _streamDone: (state, message, context) => {
         message.replyTo.send(message.result)
+        const usage = (message.result.type === 'llmDone' || message.result.type === 'llmToolCalls')
+          ? message.result.usage
+          : null
+        if (usage) {
+          context.pipeToSelf(
+            adapter.fetchModelInfo(message.model),
+            (info): LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info }),
+            ():    LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info: null }),
+          )
+        }
         return { state }
       },
 
-      _streamImageDone: (state, message) => {
+      _streamImageDone: (state, message, context) => {
         message.replyTo.send(message.result)
+        const usage = message.result.type === 'llmDone' ? message.result.usage : null
+        if (usage) {
+          context.pipeToSelf(
+            adapter.fetchModelInfo(message.model),
+            (info): LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info }),
+            ():    LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info: null }),
+          )
+        }
         return { state }
       },
 
-      _streamAudioDone: (state, message) => {
+      _streamAudioDone: (state, message, context) => {
         message.replyTo.send(message.result)
+        const usage = message.result.type === 'llmDone' ? message.result.usage : null
+        if (usage) {
+          context.pipeToSelf(
+            adapter.fetchModelInfo(message.model),
+            (info): LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info }),
+            ():    LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info: null }),
+          )
+        }
         return { state }
+      },
+
+      _costReady: (state, message) => {
+        const { model, role, clientId, usage, info } = message
+        const cost = info
+          ? (usage.promptTokens     / 1_000_000 * info.promptPer1M)
+          + (usage.completionTokens / 1_000_000 * info.completionPer1M)
+          : null
+        return {
+          state,
+          events: [emit(CostTopic, {
+            timestamp:    Date.now(),
+            role,
+            model,
+            inputTokens:  usage.promptTokens,
+            outputTokens: usage.completionTokens,
+            cost,
+            ...(clientId ? { clientId } : {}),
+          })],
+        }
       },
 
       _modelInfoDone: (state, message) => {

@@ -107,6 +107,8 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
         model: state.model,
         messages,
         tools: toolSchemas.length > 0 ? toolSchemas : undefined,
+        role: 'notebook',
+        clientId: state.clientId,
         replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
       })
 
@@ -241,6 +243,8 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
         model: state.model,
         messages: nextMessages,
         tools: toolSchemas.length > 0 ? toolSchemas : undefined,
+        role: 'notebook',
+        clientId: state.clientId,
         replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
       })
 

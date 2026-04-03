@@ -21,7 +21,6 @@ const LLM_PROVIDER_ADAPTER_OPTS = {
 const INITIAL_REACT_STATE: Omit<ReActState, 'llmRef'> = {
   history:          [],
   tools:            {},
-  modelInfo:        null,
   sessionUsage:     { promptTokens: 0, completionTokens: 0 },
   requestId:        null,
   turnMessages:     null,
@@ -72,13 +71,7 @@ const contentPayloads = (text: string) => [
   { choices: [{ delta: { content: text } }] },
 ]
 
-// Sequence-aware fetch stub: each call returns the next factory's result
 const originalFetch = globalThis.fetch
-
-const stubFetchSequence = (factories: (() => Response)[]) => {
-  let i = 0
-  globalThis.fetch = (async () => factories[i++]?.() ?? new Response('stub exhausted', { status: 500 })) as unknown as typeof fetch
-}
 
 afterEach(() => {
   globalThis.fetch = originalFetch
@@ -96,10 +89,17 @@ const collectEvents = (system: Awaited<ReturnType<typeof createPluginSystem>>): 
   return events
 }
 
-// ─── Model info stub ───
-// The LlmProviderActor fetches model info on startup via fetchModelInfo.
-// Tests that use stubFetchSequence must prepend this stub as the first slot.
-const modelInfoStub = () => new Response('Not Found', { status: 404 })
+// ─── URL-aware fetch stub ───
+// Routes by URL: /api/v1/models → 404, brave search → braveFactory, chat completions → sequence.
+const stubFetchByUrl = (completions: (() => Response)[], braveFactory?: () => Response) => {
+  let ci = 0
+  globalThis.fetch = (async (url: string | URL) => {
+    const u = String(url)
+    if (u.includes('openrouter.ai/api/v1/models')) return new Response('Not Found', { status: 404 })
+    if (u.includes('brave.com')) return braveFactory?.() ?? new Response('{}', { status: 200 })
+    return completions[ci++]?.() ?? new Response('stub exhausted', { status: 500 })
+  }) as unknown as typeof fetch
+}
 
 // ─── Spawn helpers ───
 
@@ -114,12 +114,13 @@ const spawnReAct = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
 
 describe('ReAct search integration', () => {
   test('emits searching event and tool call flow when LLM returns a tool_call', async () => {
-    stubFetchSequence([
-      modelInfoStub,
-      () => makeSSEResponse(toolCallPayloads('call_abc', 'latest AI news')),
+    stubFetchByUrl(
+      [
+        () => makeSSEResponse(toolCallPayloads('call_abc', 'latest AI news')),
+        () => makeSSEResponse(contentPayloads('Here is what I found.')),
+      ],
       () => new Response(JSON.stringify(mockBraveResponse), { status: 200 }),
-      () => makeSSEResponse(contentPayloads('Here is what I found.')),
-    ])
+    )
 
     const system = await createPluginSystem({
       config: { tools: { webSearch: { apiKey: 'brave-key' } } },
@@ -143,12 +144,13 @@ describe('ReAct search integration', () => {
   })
 
   test('emits sources event with grounding items before done', async () => {
-    stubFetchSequence([
-      modelInfoStub,
-      () => makeSSEResponse(toolCallPayloads('call_xyz', 'test query')),
+    stubFetchByUrl(
+      [
+        () => makeSSEResponse(toolCallPayloads('call_xyz', 'test query')),
+        () => makeSSEResponse(contentPayloads('Answer based on search results.')),
+      ],
       () => new Response(JSON.stringify(mockBraveResponse), { status: 200 }),
-      () => makeSSEResponse(contentPayloads('Answer based on search results.')),
-    ])
+    )
 
     const system = await createPluginSystem({
       config: { tools: { webSearch: { apiKey: 'brave-key' } } },
@@ -200,12 +202,13 @@ describe('ReAct search integration', () => {
   })
 
   test('continues with LLM call using error content when search returns an error', async () => {
-    stubFetchSequence([
-      modelInfoStub,
-      () => makeSSEResponse(toolCallPayloads('call_err', 'failing query')),
+    stubFetchByUrl(
+      [
+        () => makeSSEResponse(toolCallPayloads('call_err', 'failing query')),
+        () => makeSSEResponse(contentPayloads('I could not search but here is my best answer.')),
+      ],
       () => new Response('Rate limited', { status: 429 }),
-      () => makeSSEResponse(contentPayloads('I could not search but here is my best answer.')),
-    ])
+    )
 
     const system = await createPluginSystem({
       config: { tools: { webSearch: { apiKey: 'brave-key' } } },

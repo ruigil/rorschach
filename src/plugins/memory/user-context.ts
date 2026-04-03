@@ -1,17 +1,14 @@
 import type { ActorDef, ActorRef, MessageHandler } from '../../system/types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
-import { emit } from '../../system/types.ts'
+import { onMessage } from '../../system/match.ts'
 import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { ask } from '../../system/ask.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
   LlmProviderReply,
-  ModelInfo,
   Tool,
   ToolCall,
 } from '../../types/llm.ts'
-import { CostTopic } from '../../types/llm.ts'
 import type { UserContextMsg } from '../../types/memory.ts'
 import { UserContextTopic } from '../../types/memory.ts'
 
@@ -40,7 +37,6 @@ export type UserContextState = {
   messages:      ApiMessage[] | null
   accumulated:   string
   pendingBatch:  PendingBatch | null
-  modelInfo:     ModelInfo | null
   toolLoopCount: number
 }
 
@@ -92,6 +88,7 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
       model,
       messages,
       tools: toolSchemas.length > 0 ? toolSchemas : undefined,
+      role: 'user-context',
       replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
     })
 
@@ -183,26 +180,12 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
         (error) => ({ type: '_contextSaveFailed' as const, userId, error: String(error) }),
       )
 
-      const usageEvents = msg.usage
-        ? [emit(CostTopic, {
-            timestamp:    Date.now(),
-            role:         'user-context',
-            model,
-            inputTokens:  msg.usage.promptTokens,
-            outputTokens: msg.usage.completionTokens,
-            cost: state.modelInfo
-              ? (msg.usage.promptTokens     / 1_000_000 * state.modelInfo.promptPer1M)
-              + (msg.usage.completionTokens / 1_000_000 * state.modelInfo.completionPer1M)
-              : null,
-          })]
-        : []
-
       const next = { ...state, requestId: null, messages: null, accumulated: '', pendingBatch: null }
       if (state.pendingRun) {
         const { state: nextState } = startSummary(next, context)
-        return { state: nextState, become: awaitingLlmHandler, events: usageEvents }
+        return { state: nextState, become: awaitingLlmHandler }
       }
-      return { state: next, become: idleHandler, events: usageEvents }
+      return { state: next, become: idleHandler }
     },
 
     llmError: (state, msg, context) => {
@@ -261,6 +244,7 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
         model,
         messages: nextMessages,
         tools: toolSchemas.length > 0 ? toolSchemas : undefined,
+        role: 'user-context',
         replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
       })
 
@@ -276,16 +260,6 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
 
   return {
     handler: idleHandler,
-
-    lifecycle: onLifecycle({
-      start: async (state, _context) => {
-        const modelInfo = await ask<LlmProviderMsg, ModelInfo | null>(
-          llmRef,
-          (replyTo) => ({ type: 'fetchModelInfo', model, replyTo }),
-        ).catch(() => null)
-        return { state: { ...state, modelInfo } }
-      },
-    }),
   }
 }
 
@@ -295,6 +269,5 @@ export const INITIAL_USER_CONTEXT_STATE: UserContextState = {
   messages:      null,
   accumulated:   '',
   pendingBatch:  null,
-  modelInfo:     null,
   toolLoopCount: 0,
 }
