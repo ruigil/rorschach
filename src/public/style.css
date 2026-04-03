@@ -403,17 +403,12 @@ header.streaming::after {
   font-size: 0.82rem;
 }
 
-.thinking .bubble {
-  padding: 0.6rem 1rem !important;
-  background: var(--bot-bg) !important;
-  border-left: 2px solid var(--bot-rail) !important;
-  border-top: 1px solid rgba(0,196,212,0.07) !important;
-  border-right: 1px solid rgba(0,196,212,0.04) !important;
-  border-bottom: 1px solid rgba(0,196,212,0.04) !important;
-  border-radius: 4px 14px 14px 14px !important;
+.tool-indicator {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.4rem 0;
 }
 
 .dots-row {

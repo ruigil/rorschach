@@ -691,13 +691,20 @@ function appendMessage(role, text) {
 
 function showThinking(toolLabel = '', extraClass = '') {
   if (emptyEl?.parentNode) emptyEl.remove()
-  const wrap   = document.createElement('div')
-  wrap.className = 'message assistant thinking' + (extraClass ? ' ' + extraClass : '')
-  const bubble = document.createElement('div')
-  bubble.className = 'bubble'
-  const labelEl = document.createElement('div')
-  labelEl.className = 'message-label'
-  labelEl.textContent = 'Rorschach'
+  if (!streamWrap) {
+    const { wrap, bubble } = createMessageWrap()
+    streamWrap = wrap
+    streamBubbleContainer = bubble
+    messagesEl.appendChild(streamWrap)
+  }
+  const indicator = document.createElement('div')
+  indicator.className = 'tool-indicator' + (extraClass ? ' ' + extraClass : '')
+  if (toolLabel) {
+    const badge = document.createElement('div')
+    badge.className = 'tool-badge'
+    badge.textContent = toolLabel
+    indicator.appendChild(badge)
+  }
   const dotsRow = document.createElement('div')
   dotsRow.className = 'dots-row'
   ;['dot', 'dot', 'dot'].forEach(() => {
@@ -705,18 +712,10 @@ function showThinking(toolLabel = '', extraClass = '') {
     d.className = 'dot'
     dotsRow.appendChild(d)
   })
-  bubble.appendChild(labelEl)
-  if (toolLabel) {
-    const badge = document.createElement('div')
-    badge.className = 'tool-badge'
-    badge.textContent = toolLabel
-    bubble.appendChild(badge)
-  }
-  bubble.appendChild(dotsRow)
-  wrap.appendChild(bubble)
-  messagesEl.appendChild(wrap)
+  indicator.appendChild(dotsRow)
+  streamBubbleContainer.appendChild(indicator)
   scrollToBottom()
-  thinkingEl = wrap
+  thinkingEl = indicator
 }
 
 function removeThinking() {
@@ -799,8 +798,8 @@ function handleChatMsg(msg) {
   } else if (msg.type === 'sources') {
     pendingSources = msg.sources
   } else if (msg.type === 'reasoningChunk') {
+    removeThinking()
     if (!streamWrap) {
-      removeThinking()
       const { wrap, bubble } = createMessageWrap()
       streamWrap = wrap
       streamBubbleContainer = bubble
