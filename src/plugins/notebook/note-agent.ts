@@ -1,4 +1,4 @@
-import type { ActorDef, ActorRef, MessageHandler } from '../../system/types.ts'
+import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
 import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
@@ -40,6 +40,7 @@ export type NoteAgentState = {
   pending:       string
   pendingBatch:  PendingBatch | null
   toolLoopCount: number
+  activeSpan:    SpanHandle | null
 }
 
 // ─── Helpers ───
@@ -66,6 +67,7 @@ const resetTurn = (state: NoteAgentState): NoteAgentState => ({
   pending:       '',
   pendingBatch:  null,
   toolLoopCount: 0,
+  activeSpan:    null,
 })
 
 // ─── Actor ───
@@ -101,6 +103,11 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
       ]
       const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
 
+      const parent = context.trace.fromHeaders()
+      const activeSpan = parent
+        ? context.trace.child(parent.traceId, parent.spanId, 'note-agent', { request })
+        : null
+
       state.llmRef.send({
         type: 'stream',
         requestId,
@@ -122,6 +129,7 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
           pending:      '',
           pendingBatch: null,
           toolLoopCount: 0,
+          activeSpan,
         },
         become: awaitingLlmHandler,
       }
@@ -157,11 +165,24 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
         return { state: resetTurn(state), become: idleHandler, unstashAll: true }
       }
 
+      const spans: Record<string, SpanHandle> = {}
+      for (const call of msg.calls) {
+        if (state.activeSpan) {
+          spans[call.id] = context.trace.child(
+            state.activeSpan.traceId,
+            state.activeSpan.spanId,
+            call.name,
+            { toolName: call.name, arguments: call.arguments },
+          )
+        }
+      }
+
       const batch: PendingBatch = {
         remaining: msg.calls.length,
         results: [],
         messagesAtCall: state.turnMessages!,
         assistantToolCalls,
+        spans,
       }
 
       for (const call of msg.calls) {
@@ -187,6 +208,7 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
 
     llmDone: (state, msg) => {
       if (msg.requestId !== state.requestId) return { state }
+      state.activeSpan?.done()
       state.replyTo?.send({ type: 'toolResult', result: state.pending || '(done)' })
       return { state: resetTurn(state), become: idleHandler, unstashAll: true }
     },
@@ -194,6 +216,7 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
     llmError: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
       context.log.error('note-agent LLM error', { error: String(msg.error) })
+      state.activeSpan?.error(msg.error)
       state.replyTo?.send({ type: 'toolError', error: 'Notebook agent encountered an LLM error.' })
       return { state: resetTurn(state), become: idleHandler, unstashAll: true }
     },
@@ -208,6 +231,9 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
 
     _toolResult: (state, msg, context) => {
       const batch   = state.pendingBatch!
+      const span    = batch.spans[msg.toolCallId]
+      if (msg.reply.type === 'toolResult') span?.done()
+      else span?.error(msg.reply.error)
       const content = msg.reply.type === 'toolResult' ? msg.reply.result : `Tool error: ${msg.reply.error}`
       const updated = [...batch.results, { toolCallId: msg.toolCallId, toolName: msg.toolName, content }]
       const remaining = batch.remaining - 1
@@ -293,4 +319,5 @@ export const createInitialNoteAgentState = (options: NoteAgentOptions): NoteAgen
   pending:       '',
   pendingBatch:  null,
   toolLoopCount: 0,
+  activeSpan:    null,
 })

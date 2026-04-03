@@ -1,4 +1,4 @@
-import type { ActorRef } from '../../system/types.ts'
+import type { ActorRef, SpanHandle } from '../../system/types.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 
@@ -56,6 +56,7 @@ export type PendingBatch = {
   results:            Array<{ toolCallId: string; toolName: string; content: string }>
   messagesAtCall:     import('../../types/llm.ts').ApiMessage[]
   assistantToolCalls: import('../../types/llm.ts').ToolCall[]
+  spans:              Record<string, SpanHandle>
 }
 
 // ─── Note agent message protocol ───
