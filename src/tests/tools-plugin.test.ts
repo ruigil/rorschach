@@ -229,6 +229,7 @@ describe('tools plugin', () => {
       vision:    { config: null, ref: null, gen: 0 },
       audio:     { config: null, ref: null, gen: 0 },
       cron:      { ref: null },
+      pdf:       { ref: null },
       llmRef:    null,
       tools: {},
     }
@@ -247,6 +248,7 @@ describe('tools plugin', () => {
       vision:    { config: null, ref: null, gen: 0 },
       audio:     { config: null, ref: null, gen: 0 },
       cron:      { ref: null },
+      pdf:       { ref: null },
       llmRef:    null,
       tools: {},
     }

@@ -34,8 +34,8 @@ const FALLBACK_MODELS = [
 
 export type HttpMessage =
   | { type: 'connected'; clientId: string }
-  | { type: 'message'; clientId: string; text: string; images?: string[]; audio?: string }
-  | { type: '_mediaSaved'; clientId: string; text: string; imagePaths: string[]; audioPath?: string }
+  | { type: 'message'; clientId: string; text: string; images?: string[]; audio?: string; pdfs?: Array<{ data: string; name: string }> }
+  | { type: '_mediaSaved'; clientId: string; text: string; imagePaths: string[]; audioPath?: string; pdfPaths?: string[] }
   | { type: 'closed'; clientId: string }
   | { type: 'broadcast'; text: string }
   | { type: 'send'; clientId: string; text: string }
@@ -66,6 +66,15 @@ const saveAudioToTempFile = async (dataUrl: string): Promise<string> => {
   await Bun.write(filePath, Buffer.from(data, 'base64'))
   return filePath
 }
+
+const savePdfsToTempFiles = (pdfs: Array<{ data: string; name: string }>): Promise<string[]> =>
+  Promise.all(pdfs.map(async ({ data, name }) => {
+    const match = data.match(/^data:[^;]+;base64,(.+)$/)
+    const b64 = match?.[1] ?? data
+    const filePath = join(tmpdir(), `rorschach-${crypto.randomUUID()}-${name}`)
+    await Bun.write(filePath, Buffer.from(b64, 'base64'))
+    return filePath
+  }))
 
 // ─── Actor state ───
 
@@ -147,13 +156,14 @@ export const createHttpActor = (
         const span = context.trace.start('request', { clientId: message.clientId })
         const newState = { ...state, activeSpans: { ...state.activeSpans, [message.clientId]: span } }
 
-        if ((message.images && message.images.length > 0) || message.audio) {
+        if ((message.images && message.images.length > 0) || message.audio || (message.pdfs && message.pdfs.length > 0)) {
           context.pipeToSelf(
             Promise.all([
               message.images && message.images.length > 0 ? saveImagesToTempFiles(message.images) : Promise.resolve([]),
               message.audio ? saveAudioToTempFile(message.audio) : Promise.resolve(undefined),
-            ]).then(([imagePaths, audioPath]) => ({ imagePaths, audioPath })),
-            ({ imagePaths, audioPath }): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, text: message.text, imagePaths, audioPath }),
+              message.pdfs && message.pdfs.length > 0 ? savePdfsToTempFiles(message.pdfs) : Promise.resolve([]),
+            ]).then(([imagePaths, audioPath, pdfPaths]) => ({ imagePaths, audioPath, pdfPaths })),
+            ({ imagePaths, audioPath, pdfPaths }): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, text: message.text, imagePaths, audioPath, pdfPaths }),
             (): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, text: message.text, imagePaths: [] }),
           )
           return { state: newState }
@@ -171,7 +181,7 @@ export const createHttpActor = (
       },
 
       _mediaSaved: (state, message) => {
-        const { clientId, text, imagePaths, audioPath } = message
+        const { clientId, text, imagePaths, audioPath, pdfPaths } = message
         const span = state.activeSpans[clientId]
         if (!span) return { state }
         return {
@@ -181,6 +191,7 @@ export const createHttpActor = (
             text,
             images: imagePaths.length > 0 ? imagePaths : undefined,
             audio: audioPath,
+            pdfs: pdfPaths && pdfPaths.length > 0 ? pdfPaths : undefined,
             traceId: span.traceId,
             parentSpanId: span.spanId,
           })],
@@ -362,15 +373,17 @@ export const createHttpActor = (
               let text = raw
               let images: string[] | undefined
               let audio: string | undefined
+              let pdfs: Array<{ data: string; name: string }> | undefined
               try {
-                const parsed = JSON.parse(raw) as { text?: string; images?: string[]; audio?: string }
+                const parsed = JSON.parse(raw) as { text?: string; images?: string[]; audio?: string; pdfs?: Array<{ data: string; name: string }> }
                 if (typeof parsed.text === 'string') {
                   text = parsed.text
                   images = parsed.images
                   audio = parsed.audio
+                  pdfs = parsed.pdfs
                 }
               } catch { /* plain text, no images */ }
-              selfRef?.send({ type: 'message', clientId: ws.data.clientId, text, images, audio })
+              selfRef?.send({ type: 'message', clientId: ws.data.clientId, text, images, audio, pdfs })
             },
             close: (ws: ServerWebSocket<WsData>) => {
               ws.unsubscribe(CHANNEL)

@@ -339,12 +339,13 @@ const chatForm      = document.getElementById('chat-form')
 const input         = document.getElementById('input')
 const send          = document.getElementById('send')
 const attachBtn     = document.getElementById('attach-btn')
-const imageInput    = document.getElementById('image-input')
+const fileInput     = document.getElementById('file-input')
 const imagePreviewsEl = document.getElementById('image-previews')
 
 let pendingImages    = []    // array of base64 data URLs
 let pendingAudio     = null  // base64 data URL
 let pendingAudioName = null  // display name
+let pendingPdfs      = []    // array of { dataUrl, name }
 
 let thinkingEl          = null
 let streamWrap          = null
@@ -367,17 +368,24 @@ input.addEventListener('keydown', (e) => {
   }
 })
 
-// ─── Image upload ───
+// ─── File upload ───
 
-attachBtn.addEventListener('click', () => imageInput.click())
+attachBtn.addEventListener('click', () => fileInput.click())
 
-imageInput.addEventListener('change', async () => {
-  const files = Array.from(imageInput.files ?? [])
+fileInput.addEventListener('change', async () => {
+  const files = Array.from(fileInput.files ?? [])
   for (const file of files) {
     const dataUrl = await readFileAsDataUrl(file)
-    pendingImages.push(dataUrl)
+    if (file.type.startsWith('image/')) {
+      pendingImages.push(dataUrl)
+    } else if (file.type.startsWith('audio/') || /\.(mp3|wav)$/i.test(file.name)) {
+      pendingAudio = dataUrl
+      pendingAudioName = file.name
+    } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      pendingPdfs.push({ dataUrl, name: file.name })
+    }
   }
-  imageInput.value = ''
+  fileInput.value = ''
   renderMediaPreviews()
 })
 
@@ -392,7 +400,7 @@ function readFileAsDataUrl(file) {
 
 function renderMediaPreviews() {
   imagePreviewsEl.innerHTML = ''
-  const hasContent = pendingImages.length > 0 || pendingAudio !== null
+  const hasContent = pendingImages.length > 0 || pendingAudio !== null || pendingPdfs.length > 0
   imagePreviewsEl.classList.toggle('hidden', !hasContent)
   if (!hasContent) return
 
@@ -433,6 +441,28 @@ function renderMediaPreviews() {
     wrap.appendChild(removeBtn)
     imagePreviewsEl.appendChild(wrap)
   }
+
+  pendingPdfs.forEach((pdf, i) => {
+    const wrap = document.createElement('div')
+    wrap.className = 'pdf-preview-wrap'
+    const icon = document.createElement('span')
+    icon.className = 'pdf-preview-icon'
+    icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
+    const name = document.createElement('span')
+    name.className = 'pdf-preview-name'
+    name.textContent = pdf.name
+    const removeBtn = document.createElement('button')
+    removeBtn.className = 'image-thumb-remove pdf-remove'
+    removeBtn.textContent = '×'
+    removeBtn.addEventListener('click', () => {
+      pendingPdfs.splice(i, 1)
+      renderMediaPreviews()
+    })
+    wrap.appendChild(icon)
+    wrap.appendChild(name)
+    wrap.appendChild(removeBtn)
+    imagePreviewsEl.appendChild(wrap)
+  })
 }
 
 function clearPendingImages() {
@@ -440,25 +470,14 @@ function clearPendingImages() {
   renderMediaPreviews()
 }
 
-// ─── Audio upload ───
-
-const audioInput     = document.getElementById('audio-input')
-const audioAttachBtn = document.getElementById('audio-attach-btn')
-
-audioAttachBtn.addEventListener('click', () => audioInput.click())
-
-audioInput.addEventListener('change', async () => {
-  const file = audioInput.files?.[0]
-  if (!file) return
-  pendingAudio = await readFileAsDataUrl(file)
-  pendingAudioName = file.name
-  audioInput.value = ''
-  renderMediaPreviews()
-})
-
 function clearPendingAudio() {
   pendingAudio = null
   pendingAudioName = null
+  renderMediaPreviews()
+}
+
+function clearPendingPdfs() {
+  pendingPdfs = []
   renderMediaPreviews()
 }
 
@@ -573,13 +592,14 @@ function pcm16ToWav(pcm, sampleRate) {
 chatForm.addEventListener('submit', (e) => {
   e.preventDefault()
   const text = input.value.trim()
-  if ((!text && pendingImages.length === 0 && !pendingAudio) || ws?.readyState !== WebSocket.OPEN || isWaiting) return
-  appendUserMessage(text, pendingImages.slice(), pendingAudio)
-  ws.send(JSON.stringify({ text, images: pendingImages.slice(), ...(pendingAudio ? { audio: pendingAudio } : {}) }))
+  if ((!text && pendingImages.length === 0 && !pendingAudio && pendingPdfs.length === 0) || ws?.readyState !== WebSocket.OPEN || isWaiting) return
+  appendUserMessage(text, pendingImages.slice(), pendingAudio, pendingPdfs.slice())
+  ws.send(JSON.stringify({ text, images: pendingImages.slice(), ...(pendingAudio ? { audio: pendingAudio } : {}), ...(pendingPdfs.length > 0 ? { pdfs: pendingPdfs.map(p => ({ data: p.dataUrl, name: p.name })) } : {}) }))
   input.value = ''
   input.style.height = 'auto'
   clearPendingImages()
   clearPendingAudio()
+  clearPendingPdfs()
   setWaiting(true)
   showThinking()
   const logoMark = document.querySelector('.logo-mark')
@@ -599,7 +619,7 @@ function scrollToBottom() {
   messagesEl.scrollTop = messagesEl.scrollHeight
 }
 
-function appendUserMessage(text, images, audio) {
+function appendUserMessage(text, images, audio, pdfs = []) {
   if (emptyEl?.parentNode) emptyEl.remove()
   const wrap   = document.createElement('div')
   wrap.className = 'message user'
@@ -626,6 +646,17 @@ function appendUserMessage(text, images, audio) {
     audioEl.controls = true
     audioEl.className = 'message-audio'
     bubble.appendChild(audioEl)
+  }
+  if (pdfs && pdfs.length > 0) {
+    pdfs.forEach(pdf => {
+      const chip = document.createElement('div')
+      chip.className = 'message-pdf-chip'
+      chip.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
+      const nameSpan = document.createElement('span')
+      nameSpan.textContent = pdf.name
+      chip.appendChild(nameSpan)
+      bubble.appendChild(chip)
+    })
   }
   if (text) {
     const textEl = document.createElement('span')

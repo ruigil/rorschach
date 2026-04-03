@@ -2,7 +2,7 @@ import { createTopic } from '../system/types.ts'
 
 // ─── Domain event: published when a WebSocket message is received ───
 
-export type WsMessageEvent = { clientId: string; text: string; images?: string[]; audio?: string; traceId: string; parentSpanId: string }
+export type WsMessageEvent = { clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string }
 
 /** Topic for WebSocket message domain events. Subscribe to receive browser input. */
 export const WsMessageTopic = createTopic<WsMessageEvent>('http.ws.message')

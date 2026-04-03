@@ -5,7 +5,7 @@ import type { ToolInvokeMsg, ToolReply, ToolSchema } from './tools.ts'
 // ─── ReAct loop message protocol ───
 
 export type ReActMsg =
-  | { type: 'userMessage'; text: string; images?: string[]; audio?: string; traceId: string; parentSpanId: string }
+  | { type: 'userMessage'; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string }
   | LlmProviderReply
   | { type: '_toolRegistered';      name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
   | { type: '_toolUnregistered';    name: string }

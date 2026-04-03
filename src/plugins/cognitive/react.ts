@@ -108,7 +108,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
 
   const idleHandler: MessageHandler<ReActMsg, ReActState> = onMessage<ReActMsg, ReActState>({
     userMessage: (state, message, context) => {
-      const { text, images, audio, traceId, parentSpanId } = message
+      const { text, images, audio, pdfs, traceId, parentSpanId } = message
 
       let userText = text
       if (images && images.length > 0) {
@@ -120,6 +120,12 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
       if (audio) {
         const audioNote = `[Audio attached: "${audio}"]`
         userText = userText ? `${userText}\n\n${audioNote}` : audioNote
+      }
+      if (pdfs && pdfs.length > 0) {
+        const pdfNote = pdfs.length === 1
+          ? `[PDF attached: "${pdfs[0]}"]`
+          : `[PDFs attached: ${pdfs.map(p => `"${p}"`).join(', ')}]`
+        userText = userText ? `${userText}\n\n${pdfNote}` : pdfNote
       }
 
       const fullSystemPrompt = [systemPrompt, state.userContext].filter(Boolean).join('\n\n---\n\n')

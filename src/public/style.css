@@ -564,10 +564,9 @@ button[type="submit"]:active:not(:disabled) { transform: translateY(0); box-shad
 button[type="submit"]:disabled { background: var(--muted); box-shadow: none; opacity: 0.45; cursor: not-allowed; }
 button[type="submit"] svg { pointer-events: none; }
 
-/* ─── Attach / audio / mic buttons ─── */
+/* ─── Attach / mic buttons ─── */
 
 #attach-btn,
-#audio-attach-btn,
 #mic-btn {
   width: 36px; height: 36px;
   flex-shrink: 0;
@@ -584,7 +583,6 @@ button[type="submit"] svg { pointer-events: none; }
 }
 
 #attach-btn:hover,
-#audio-attach-btn:hover,
 #mic-btn:hover {
   border-color: rgba(54, 184, 204, 0.4);
   color: var(--accent);
@@ -616,6 +614,44 @@ button[type="submit"] svg { pointer-events: none; }
   accent-color: var(--accent);
   border-radius: calc(var(--radius) - 2px);
   outline: none;
+}
+
+/* ─── PDF preview (in the shared media strip) ─── */
+
+.pdf-preview-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 36px;
+  padding: 0 0.6rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 0.72rem;
+  max-width: 200px;
+}
+
+.pdf-preview-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+}
+
+.pdf-preview-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-remove {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  margin-left: 0.25rem;
+  flex-shrink: 0;
 }
 
 /* ─── Image previews strip ─── */
@@ -685,6 +721,23 @@ button[type="submit"] svg { pointer-events: none; }
   accent-color: var(--accent);
   outline: none;
 }
+
+.message-pdf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+  padding: 0.25rem 0.55rem;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius);
+  font-size: 0.72rem;
+  color: var(--muted);
+  max-width: 220px;
+}
+
+.message-pdf-chip svg { flex-shrink: 0; color: var(--accent); }
+.message-pdf-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .input-hint {
   margin-top: 0.45rem;
