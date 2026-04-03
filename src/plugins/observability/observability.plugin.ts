@@ -44,7 +44,7 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig
       const traceRecorderConfig = slice?.traceRecorder ?? null
 
       const loggerRef = loggerConfig
-        ? ctx.spawn('jsonl-logger-0', createJsonlLoggerActor(loggerConfig), { filePath: loggerConfig.filePath, written: 0, buffer: [] })
+        ? ctx.spawn('jsonl-logger-0', createJsonlLoggerActor(loggerConfig), { filePath: loggerConfig.filePath, resolvedPath: loggerConfig.filePath, dateStr: '', written: 0, buffer: [] })
         : null
       const metricsRef = metricsConfig
         ? ctx.spawn('metrics-0', createMetricsActor(metricsConfig), null)
@@ -82,7 +82,7 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig
       const traceRecorderGen = state.traceRecorder.gen + 1
 
       const loggerRef = newLoggerConfig
-        ? ctx.spawn(`jsonl-logger-${loggerGen}`, createJsonlLoggerActor(newLoggerConfig), { filePath: newLoggerConfig.filePath, written: 0, buffer: [] })
+        ? ctx.spawn(`jsonl-logger-${loggerGen}`, createJsonlLoggerActor(newLoggerConfig), { filePath: newLoggerConfig.filePath, resolvedPath: newLoggerConfig.filePath, dateStr: '', written: 0, buffer: [] })
         : null
       const metricsRef = newMetricsConfig
         ? ctx.spawn(`metrics-${metricsGen}`, createMetricsActor(newMetricsConfig), null)

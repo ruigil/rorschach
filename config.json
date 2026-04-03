@@ -61,7 +61,7 @@
       "memory": {
         "model": "google/gemini-3.1-pro-preview",
         "userId": "rigel",
-        "consolidationIntervalMs": 30000
+        "consolidationIntervalMs": 3600000
       }
     },
     "notebook": {
@@ -73,7 +73,7 @@
     },
     "observability": {
       "jsonlLogger": {
-        "filePath": "./logs/rorschach.jsonl",
+        "filePath": "./logs/rorschach-{date}.jsonl",
         "minLevel": "debug",
         "flushIntervalMs": 300000
       },
