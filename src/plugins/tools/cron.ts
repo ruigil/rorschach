@@ -234,14 +234,15 @@ export const createCronActor = (): ActorDef<CronMsg, CronState> => ({
         ctx.log.warn('cron job fired but no connected clients', { id: job.id })
       }
 
-      const events = [...state.clientIds].map(clientId =>
-        emit(WsMessageTopic, {
+      const events = [...state.clientIds].map(clientId => {
+        const span = ctx.trace.start('cron', { clientId, jobId: job.id })
+        return emit(WsMessageTopic, {
           clientId,
           text: job.prompt,
-          traceId: crypto.randomUUID(),
-          parentSpanId: crypto.randomUUID(),
+          traceId:      span.traceId,
+          parentSpanId: span.spanId,
         })
-      )
+      })
 
       if (job.runOnce) {
         ctx.log.info('cron job completed (run_once)', { id: job.id })
