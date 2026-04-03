@@ -15,10 +15,14 @@ workspace
 docs
 scripts
 generated
-traces
+
+# observability
+observability
+
+# config
+config.json
 
 # logs
-logs
 _.log
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
