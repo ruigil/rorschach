@@ -24,16 +24,47 @@ export const NOTE_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: NOTE_TOOL_NAME,
-    description:
-      'Interact with your personal notebook: daily journal, notes with tags and wiki-links, ' +
-      'habit tracker, and todos with due dates and recurrence. Pass a natural language request.',
+    description: `Interact with your personal notebook via a natural language request. A sub-agent handles the request and returns a summary of what was done.
+
+The notebook has four areas — use the request field to describe exactly what you want:
+
+**Journal** — daily markdown diary entries:
+- "Write a journal entry: had a productive morning, finished the auth PR"
+- "Read my journal entry for 2025-11-03"
+- "Search the journal for mentions of 'deployment'"
+
+**Notes** — tagged notes with [[wiki-links]] between them:
+- "Create a note titled 'Project Alpha' with content '...' and tags work, alpha"
+- "Update the note titled 'Project Alpha', append a new section about the API changes"
+- "Read the note titled 'Meeting Notes'"
+- "List all notes tagged 'work'"
+- "Search notes for 'authentication'"
+- "Attach the file /tmp/diagram.png to the note titled 'Architecture'" — attaches a file (image or PDF) to an existing note; the file must exist at an absolute path
+
+**Habit tracker** — CSV-based habit logging:
+- "Define a new habit called 'Exercise' with unit 'minutes'"
+- "List all habits"
+- "Log 30 minutes of Exercise for today"
+- "Show my Exercise stats for the last 7 days"
+
+**Todos** — task list with due dates and optional recurrence:
+- "Create a todo: call dentist, due Friday"
+- "List all open todos"
+- "List todos due today"
+- "Mark the todo 'call dentist' as complete"
+- "Delete the todo 'old task'"
+- "Update the todo 'call dentist': change due date to next Monday"
+
+**Cross-area search**:
+- "Search the entire notebook for 'budget'"
+
+Always include enough detail in the request so the sub-agent can act without ambiguity (e.g. specify note titles, habit names, dates, file paths).`,
     parameters: {
       type: 'object',
       properties: {
         request: {
           type: 'string',
-          description: 'What you want to do, e.g. "write a journal entry about today\'s meeting", ' +
-            '"create a todo to call dentist on Friday", "how many steps did I walk this week?".',
+          description: 'A natural language instruction describing what to do in the notebook. Be specific: include titles, tags, dates, file paths, or content as needed.',
         },
       },
       required: ['request'],
