@@ -1,8 +1,9 @@
-import { mkdir } from 'node:fs/promises'
+import { mkdir, copyFile } from 'node:fs/promises'
+import { extname, basename } from 'node:path'
 import type { ActorDef, ActorRef } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../../types/tools.ts'
-import type { NoteEntry } from '../types.ts'
+import type { Attachment, NoteEntry } from '../types.ts'
 
 // ─── Tool names & schemas ───
 
@@ -11,7 +12,7 @@ export const NOTES_UPDATE_TOOL_NAME       = 'notes_update'
 export const NOTES_READ_TOOL_NAME         = 'notes_read'
 export const NOTES_LIST_TOOL_NAME         = 'notes_list'
 export const NOTES_SEARCH_TOOL_NAME       = 'notes_search'
-export const NOTES_ATTACH_IMAGE_TOOL_NAME = 'notes_attach_image'
+export const NOTES_ATTACH_FILE_TOOL_NAME = 'notes_attach_file'
 
 export const NOTES_CREATE_SCHEMA: ToolSchema = {
   type: 'function',
@@ -91,19 +92,19 @@ export const NOTES_SEARCH_SCHEMA: ToolSchema = {
   },
 }
 
-export const NOTES_ATTACH_IMAGE_SCHEMA: ToolSchema = {
+export const NOTES_ATTACH_FILE_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
-    name: NOTES_ATTACH_IMAGE_TOOL_NAME,
-    description: 'Attach an image file to a note by recording its path.',
+    name: NOTES_ATTACH_FILE_TOOL_NAME,
+    description: 'Attach a file (image, PDF, or other) to a note. The file is copied into the notebook attachments directory and a reference is added to the note body.',
     parameters: {
       type: 'object',
       properties: {
-        id:        { type: 'string', description: 'Note id.' },
-        imagePath: { type: 'string', description: 'Absolute or relative path to the image file.' },
-        caption:   { type: 'string', description: 'Optional caption for the image.' },
+        id:       { type: 'string', description: 'Note id.' },
+        filePath: { type: 'string', description: 'Absolute path to the file to attach.' },
+        caption:  { type: 'string', description: 'Optional caption or label for the attachment.' },
       },
-      required: ['id', 'imagePath'],
+      required: ['id', 'filePath'],
     },
   },
 }
@@ -119,9 +120,21 @@ type NotesMsg =
 
 type NotesIndex = { notes: NoteEntry[] }
 
-const indexPath  = (notebookDir: string) => `${notebookDir}/notes/index.json`
-const notePath   = (notebookDir: string, id: string) => `${notebookDir}/notes/${id}.md`
-const notesDir   = (notebookDir: string) => `${notebookDir}/notes`
+const indexPath       = (notebookDir: string) => `${notebookDir}/notes/index.json`
+const notePath        = (notebookDir: string, id: string) => `${notebookDir}/notes/${id}.md`
+const notesDir        = (notebookDir: string) => `${notebookDir}/notes`
+const attachmentsDir  = (notebookDir: string) => `${notebookDir}/attachments`
+
+const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.avif'])
+
+const mimeForExt = (ext: string): string => {
+  const map: Record<string, string> = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+    '.avif': 'image/avif', '.pdf': 'application/pdf',
+  }
+  return map[ext] ?? 'application/octet-stream'
+}
 
 const readIndex = async (notebookDir: string): Promise<NotesIndex> => {
   const file = Bun.file(indexPath(notebookDir))
@@ -150,7 +163,7 @@ const createNote = async (
   const id    = crypto.randomUUID()
   const now   = Date.now()
   const links = extractLinks(content)
-  const entry: NoteEntry = { id, title, tags, createdAt: now, updatedAt: now, path: `notes/${id}.md`, links }
+  const entry: NoteEntry = { id, title, tags, createdAt: now, updatedAt: now, path: `notes/${id}.md`, links, attachments: [] }
 
   await mkdir(notesDir(notebookDir), { recursive: true })
   await Bun.write(notePath(notebookDir, id), `# ${title}\n\n${content}`)
@@ -234,20 +247,55 @@ const searchNotes = async (notebookDir: string, query: string): Promise<string> 
   return results.length > 0 ? results.join('\n') : `No results for "${query}".`
 }
 
-const attachImage = async (
+const attachFile = async (
   notebookDir: string,
   id: string,
-  imagePath: string,
+  filePath: string,
   caption?: string,
 ): Promise<string> => {
-  const path    = notePath(notebookDir, id)
-  const file    = Bun.file(path)
-  if (!(await file.exists())) return `Note not found: ${id}`
-  const existing = await file.text()
-  const label    = caption ?? imagePath.split('/').pop() ?? imagePath
-  const imgLine  = `\n![${label}](${imagePath})\n`
-  await Bun.write(path, existing + imgLine)
-  return `Image attached to note ${id}.`
+  const index    = await readIndex(notebookDir)
+  const entryIdx = index.notes.findIndex(n => n.id === id)
+  if (entryIdx === -1) return `Note not found: ${id}`
+
+  const src      = Bun.file(filePath)
+  if (!(await src.exists())) return `File not found: ${filePath}`
+
+  const ext          = extname(filePath).toLowerCase()
+  const origName     = basename(filePath)
+  const attachId     = crypto.randomUUID()
+  const destName     = `${attachId}-${origName}`
+  const destDir      = attachmentsDir(notebookDir)
+  const destAbsolute = `${destDir}/${destName}`
+  const destRelative = `attachments/${destName}`
+
+  await mkdir(destDir, { recursive: true })
+  await copyFile(filePath, destAbsolute)
+
+  const label: string = caption ?? origName
+  const ref   = IMAGE_EXTS.has(ext)
+    ? `\n![${label}](../${destRelative})\n`
+    : `\n[${label}](../${destRelative})\n`
+
+  const noteMd = notePath(notebookDir, id)
+  const existing = await Bun.file(noteMd).text()
+  await Bun.write(noteMd, existing + ref)
+
+  const attachment: Attachment = {
+    id:           attachId,
+    originalName: origName,
+    path:         destRelative,
+    mimeType:     mimeForExt(ext),
+    addedAt:      Date.now(),
+  }
+  const entry = index.notes[entryIdx]!
+  index.notes[entryIdx] = {
+    ...entry,
+    attachments: [...(entry.attachments ?? []), attachment],
+    updatedAt:   Date.now(),
+  }
+  await writeIndex(notebookDir, index)
+
+  return `File attached to note ${id}: ${destRelative}`
 }
 
 // ─── Actor ───
@@ -269,8 +317,8 @@ export const createNotesActor = (notebookDir: string): ActorDef<NotesMsg, null> 
           promise = listNotes(notebookDir, args.tags as string[] | undefined)
         } else if (msg.toolName === NOTES_SEARCH_TOOL_NAME) {
           promise = searchNotes(notebookDir, args.query as string)
-        } else if (msg.toolName === NOTES_ATTACH_IMAGE_TOOL_NAME) {
-          promise = attachImage(notebookDir, args.id as string, args.imagePath as string, args.caption as string | undefined)
+        } else if (msg.toolName === NOTES_ATTACH_FILE_TOOL_NAME) {
+          promise = attachFile(notebookDir, args.id as string, args.filePath as string, args.caption as string | undefined)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }

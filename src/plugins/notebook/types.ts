@@ -10,14 +10,23 @@ export type HabitDef = {
   dailyTarget?: number
 }
 
+export type Attachment = {
+  id:           string
+  originalName: string
+  path:         string    // relative to notebookDir: attachments/{uuid}-{filename}
+  mimeType:     string
+  addedAt:      number
+}
+
 export type NoteEntry = {
-  id:        string
-  title:     string
-  tags:      string[]
-  createdAt: number
-  updatedAt: number
-  path:      string    // relative to notebookDir: notes/{uuid}.md
-  links:     string[]  // [[wiki-link]] targets extracted from content
+  id:          string
+  title:       string
+  tags:        string[]
+  createdAt:   number
+  updatedAt:   number
+  path:        string       // relative to notebookDir: notes/{uuid}.md
+  links:       string[]     // [[wiki-link]] targets extracted from content
+  attachments: Attachment[]
 }
 
 export type Todo = {
