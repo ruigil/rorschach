@@ -45,13 +45,14 @@ type RecallState = {
 // ─── System prompt ───
 
 const buildSystemPrompt = (userId: string): string =>
-  `You are a memory retrieval agent for user "${userId}". Answer the query by searching the knowledge graph and reading referenced files.\n\n` +
+  `You are a memory retrieval agent for user "${userId}". Answer the query by searching the knowledge graph and reading referenced knowledge base files.\n\n` +
   `Strategy:\n` +
-  `1. Use kgraph_query to find relevant facts, entities, and filePath references\n` +
-  `2. Use read to read referenced markdown files\n` +
-  `3. Run follow-up queries as needed\n` +
-  `4. Synthesize a concise answer\n\n` +
-  `Memory files are at /workspace/memory/${userId}/. If nothing relevant is found, say so plainly.`
+  `1. Use kgraph_query to find relevant entities and relationships. Relationships carry a source_file property pointing to the kbase file that documents the fact.\n` +
+  `   e.g. MATCH (n)-[r]->(m) WHERE n.name CONTAINS "..." RETURN n.name, type(r), m.name, r.source_file\n` +
+  `2. Use read to read the source_file paths returned by the graph — these are the knowledge base files at /workspace/memory/${userId}/kbase/.\n` +
+  `3. Run follow-up graph queries if needed to explore related entities.\n` +
+  `4. Synthesize a concise answer from what you found.\n\n` +
+  `Only read files the graph points to. If nothing relevant is found, say so plainly.`
 
 // ─── Actor definition ───
 
@@ -176,6 +177,7 @@ export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<
         model,
         messages: nextMessages,
         tools: toolSchemas.length > 0 ? toolSchemas : undefined,
+        role: 'memory-recall',
         replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
       })
 
@@ -200,6 +202,7 @@ export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<
           model,
           messages,
           tools: toolSchemas.length > 0 ? toolSchemas : undefined,
+          role: 'memory-recall',
           replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
         })
         return { state: { ...state, requestId, turnMessages: messages } }

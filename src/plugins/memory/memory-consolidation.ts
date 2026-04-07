@@ -14,6 +14,7 @@ import type {
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { MemoryConsolidationMsg, UserContextMsg } from '../../types/memory.ts'
 import { createUserContextActor, INITIAL_USER_CONTEXT_STATE } from './user-context.ts'
+import { ask } from '../../system/ask.ts'
 
 // ─── Options ───
 
@@ -58,12 +59,55 @@ export type ConsolidationState = {
 // ─── System prompt ───
 
 const buildSystemPrompt = (userId: string): string =>
-  `You are a user model agent for user "${userId}". Your goal is to build and maintain a rich, accurate model of this user — their identity, projects, preferences, interests, working style, and goals.\n\n` +
-  `You have access to three memory stores:\n` +
-  `- Episodic (markdown): notable events, decisions, experiences → /workspace/memory/${userId}/episodic/YYYY-MM-DD.md (append). Record what happened, what was decided, and why.\n` +
-  `- Procedural (markdown): skills, workflows, preferences, tools, recurring patterns → /workspace/memory/${userId}/procedural/{topic}.md (update in-place). Keep these concise and current.\n` +
-  `- Semantic (kgraph): entities, facts, and relationships → use kgraph_write with MERGE. Add a filePath property on nodes that reference their markdown file.\n\n` +
-  `Use bash to mkdir -p directories before writing. Read existing files with read before appending to avoid duplication. Skip small talk. Prioritize information that reveals who this user is, how they think, and what they are working on.`
+  `You are a user model agent for user "${userId}".\n\n` +
+
+  `## Primary Goal\n` +
+  `Build the most complete and accurate knowledge base about this user. The knowledge base is the most important artifact — it is a living document about who this user is. The graph and episodic logs exist to support it.\n\n` +
+  `After each consolidation, review the knowledge base for gaps. If important information is missing (identity, preferences, goals, projects, relationships, beliefs, dreams), schedule a proactive question to the user using cron_create (run_once: true) to fill it. Ask one focused question at a time.\n\n` +
+
+  `## Memory Architecture\n\n` +
+
+  `### Knowledge Base  /workspace/memory/${userId}/kbase/{topic}.md\n` +
+  `The primary store. One file per topic. Update in-place. Keep entries concise and current.\n` +
+  `Suggested topics (create as needed):\n` +
+  `- identity.md — name, location, background, profession, life stage\n` +
+  `- preferences.md — tools, languages, workflows, communication style\n` +
+  `- projects.md — active and past projects, their status and goals\n` +
+  `- goals.md — short and long-term goals, aspirations, dreams\n` +
+  `- beliefs.md — values, principles, opinions\n` +
+  `- relationships.md — people the user mentions and their relevance\n\n` +
+  `When recording a fact, link inline to the episodic entry it came from:\n` +
+  `  e.g. \`uses Bun as runtime ([2026-03-12](../episodic/2026-03-12.md))\`\n` +
+  `Read the file before writing to avoid duplication.\n\n` +
+
+  `### Episodic  /workspace/memory/${userId}/episodic/YYYY-MM-DD.md\n` +
+  `Append-only. Record notable events, decisions, and the reasoning behind them.\n` +
+  `Skip small talk and trivial exchanges.\n\n` +
+
+  `### Knowledge Graph (kgraph)\n` +
+  `An index into the knowledge base — not a copy of it. Use it to quickly locate which kbase file contains a given fact.\n\n` +
+  `**Nodes** — named anchors only. Always MERGE, never INSERT.\n` +
+  `- Use broad, minimal labels. Avoid near-synonyms — prefer one general label over two specific ones.\n` +
+  `  Acceptable: :Entity :Project :Tool :Concept :Preference\n` +
+  `  Avoid: both :Person and :User, both :Library and :Framework, etc.\n\n` +
+  `**Relationships** — carry the fact and its provenance. Always MERGE (never INSERT).\n` +
+  `- Every relationship MUST include a \`source_file\` property: the kbase file path documenting this fact.\n` +
+  `  e.g. MERGE (u:Entity {name:"${userId}"})-[:USES {source_file:"/workspace/memory/${userId}/kbase/preferences.md"}]->(t:Tool {name:"Bun"})\n` +
+  `- Before writing, query the graph to check if a contradicting relationship already exists.\n\n` +
+  `**Conflict resolution**: if a new fact contradicts an existing graph relationship:\n` +
+  `1. Do NOT overwrite the existing relationship.\n` +
+  `2. Write the new fact to the kbase file only (as a note with episodic link).\n` +
+  `3. Use cron_create (run_once: true) to schedule a clarifying question to the user.\n` +
+  `   Frame it clearly: "I noticed a conflict — previously X, now Y. Which is correct?"\n` +
+  `4. Resolve when the user's answer arrives as a new turn.\n\n` +
+
+  `## Write Order (per consolidation)\n` +
+  `1. bash mkdir -p for any new directories\n` +
+  `2. Write episodic entry (append)\n` +
+  `3. Update kbase file(s) with inline episodic link (read first, then write)\n` +
+  `4. Query kgraph for contradictions before writing\n` +
+  `5. MERGE nodes and relationships (skip and schedule question if contradiction detected)\n` +
+  `6. Review kbase for gaps → schedule proactive questions via cron_create if needed`
 
 const buildMessages = (userId: string, turns: MemoryTurnEvent[]): ApiMessage[] => {
   const turnList = turns.map((t, i) => {

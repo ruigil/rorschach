@@ -43,21 +43,18 @@ export type UserContextState = {
 // ─── System prompt ───
 
 const buildSystemPrompt = (userId: string): string =>
-  `You are a user model agent for user "${userId}". Your task is to read the user's accumulated memory and produce a comprehensive user context summary.\n\n` +
-  `This summary will be injected into a chatbot's system prompt before every response. Its purpose is to give the chatbot a complete, up-to-date picture of who this user is, so that every answer, suggestion, and action is adapted to them specifically.\n\n` +
-  `Read the following to build a complete picture:\n` +
-  `- Procedural memory files at /workspace/memory/${userId}/procedural/ — skills, preferences, workflows, tools\n` +
-  `- Episodic memory files at /workspace/memory/${userId}/episodic/ — notable events and decisions (skim for recurring themes)\n` +
-  `- The knowledge graph via kgraph_query — entities, facts, and relationships\n` +
-  `- The existing context summary at /workspace/memory/${userId}/context.md if it exists — use it as a starting point\n\n` +
-  `The summary should cover:\n` +
-  `- Who the user is: role, profession, background, domain expertise\n` +
-  `- Current projects and goals: what they are actively working on and why\n` +
-  `- Preferences and working style: tools, languages, frameworks, workflows they prefer or avoid\n` +
-  `- Interests and areas of curiosity beyond their main work\n` +
-  `- Key attributes and personality: how they communicate, what they value, how they like to collaborate\n` +
-  `- Any important context that changes how an AI assistant should respond to them\n\n` +
-  `Write 2–4 dense, well-organized paragraphs. Be specific and concrete — prefer "uses TypeScript and Bun, prefers functional patterns" over "is a developer". Do not include raw conversation excerpts. Write in third person, present tense. Your final text response (with no trailing tool calls) is the summary.`
+  `You are a user model agent for user "${userId}". Your task is to produce an updated user context summary.\n\n` +
+  `This summary will be injected into a chatbot's system prompt before every response. Its purpose is to give the chatbot a complete, up-to-date picture of who this user is.\n\n` +
+  `## Workflow\n\n` +
+  `1. Read the existing summary at /workspace/memory/${userId}/context.md (if it exists) — this is your starting point.\n` +
+  `2. Query the knowledge graph to get the full index of known facts:\n` +
+  `   MATCH (n)-[r]->(m) RETURN n.name, type(r), m.name, r.source_file\n` +
+  `3. For any fact whose source_file you have not yet reflected in the current summary, read that kbase file.\n` +
+  `4. Produce an updated summary incorporating the new information.\n\n` +
+  `Only read kbase files when the graph points to facts not yet captured in the existing summary. Do not read files speculatively.\n\n` +
+  `## Output\n\n` +
+  `Write the most concise description of the user possible — maximum 10 paragraphs, use fewer if the model is small. Each paragraph covers one dimension: identity, current work, projects, goals, preferences, beliefs, relationships, etc. Only include a paragraph if there is meaningful content.\n\n` +
+  `Be specific and concrete — prefer "builds actor systems in TypeScript with Bun" over "is a developer". Do not pad or speculate. Write in third person, present tense. Your final text response (with no trailing tool calls) is the summary.`
 
 const buildInitialMessages = (userId: string): ApiMessage[] => [
   { role: 'system', content: buildSystemPrompt(userId) },
