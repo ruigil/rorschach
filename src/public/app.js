@@ -271,9 +271,16 @@ tabBtns.forEach(btn => {
 let isConnected = false
 let isWaiting   = false
 let ws          = null
+let currentUserId = null
 
 const dot         = document.getElementById('dot')
 const statusLabel = document.getElementById('status-label')
+const logoutBtn   = document.getElementById('logout-btn')
+
+logoutBtn.addEventListener('click', async () => {
+  await fetch(new URL('auth/logout', location.href), { method: 'POST' })
+  window.location.href = new URL('auth/login.html', location.href).href
+})
 
 function setConnected(connected) {
   isConnected = connected
@@ -283,9 +290,24 @@ function setConnected(connected) {
   send.disabled   = !connected || isWaiting
 }
 
-function connect() {
+async function connect() {
   const wsUrl = new URL('ws', location.href)
   wsUrl.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+
+  try {
+    const ticketRes = await fetch(new URL('auth/ticket', location.href), { method: 'POST' })
+    if (ticketRes.status === 401) {
+      window.location.href = new URL('auth/login.html', location.href).href
+      return
+    }
+    if (ticketRes.ok) {
+      const { ticket } = await ticketRes.json()
+      wsUrl.searchParams.set('ticket', ticket)
+      logoutBtn.style.display = ''
+    }
+    // 503 or other → connect without ticket (auth not configured)
+  } catch { /* network error — attempt connection anyway */ }
+
   ws = new WebSocket(wsUrl.href)
 
   ws.addEventListener('open', () => {
@@ -1175,10 +1197,36 @@ async function fetchKgraph() {
   try {
     const res = await fetch(new URL('kgraph', location.href))
     const graph = await res.json()
-    renderKgraph(graph)
-    statsEl.textContent = `${graph.nodes.length} nodes · ${graph.edges.length} edges`
+    const userId = currentUserId || 'default'
+    const filtered = filterKgraphFromRoot(graph, userId)
+    renderKgraph(filtered)
+    statsEl.textContent = `${filtered.nodes.length} nodes · ${filtered.edges.length} edges`
   } catch (e) {
     statsEl.textContent = 'error'
+  }
+}
+
+function filterKgraphFromRoot(graph, userId) {
+  const { nodes, edges } = graph
+  const rootNode = nodes.find(n => n.properties?.name === userId)
+  if (!rootNode) return graph
+
+  // BFS over outgoing edges from the root node
+  const reachable = new Set([rootNode.id])
+  const queue = [rootNode.id]
+  while (queue.length) {
+    const current = queue.shift()
+    for (const e of edges) {
+      if (e.source === current && !reachable.has(e.target)) {
+        reachable.add(e.target)
+        queue.push(e.target)
+      }
+    }
+  }
+
+  return {
+    nodes: nodes.filter(n => reachable.has(n.id)),
+    edges: edges.filter(e => reachable.has(e.source) && reachable.has(e.target)),
   }
 }
 
@@ -1648,7 +1696,6 @@ const configDefaults = {
   webSearchCount: 20,
   kgraphDbPath: './workspace/memory/kgraph',
   memoryModel: '',
-  memoryUserId: 'default',
   memoryConsolidationIntervalMs: 30000,
 }
 
@@ -1678,7 +1725,6 @@ function applyToForm(cfg) {
   configForm.webSearchCount.value             = cfg.webSearchCount ?? 20
   configForm.kgraphDbPath.value               = cfg.kgraphDbPath ?? './workspace/memory/kgraph'
   configForm.memoryModel.value                = cfg.memoryModel ?? ''
-  configForm.memoryUserId.value               = cfg.memoryUserId ?? 'default'
   configForm.memoryConsolidationIntervalMs.value = cfg.memoryConsolidationIntervalMs ?? 30000
 }
 
@@ -1701,7 +1747,6 @@ function readFromForm() {
     webSearchCount:               Number(configForm.webSearchCount.value),
     kgraphDbPath:                 configForm.kgraphDbPath.value.trim(),
     memoryModel:                  configForm.memoryModel.value,
-    memoryUserId:                 configForm.memoryUserId.value.trim(),
     memoryConsolidationIntervalMs: Number(configForm.memoryConsolidationIntervalMs.value),
   }
 }
@@ -1776,4 +1821,5 @@ async function initModelSelects(cfg) {
 fetchServerConfig().then(cfg => {
   initModelSelects(cfg).then(() => applyToForm(cfg))
 })
+fetch(new URL('me', location.href)).then(r => r.json()).then(({ userId }) => { currentUserId = userId }).catch(() => {})
 connect()

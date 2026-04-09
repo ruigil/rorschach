@@ -44,6 +44,7 @@ export type ReActState = {
   sessionUsage:     TokenUsage
   llmRef:           ActorRef<LlmProviderMsg> | null
   userContext:      string | null
+  activeClientId:   string   // updated per userMessage to route responses to current sender
 
   // Active turn (set on userMessage, cleared on llmDone/llmError)
   requestId:        string | null
@@ -67,6 +68,8 @@ export type ReActActorOptions = {
   historyWindow?: number
   toolFilter?:    ToolFilter
   maxToolLoops?:  number
+  userId?:        string | null
+  roles?:         string[]
 }
 
 // ─── Helpers ───
@@ -80,7 +83,7 @@ const trimHistory = (history: ConversationMessage[], maxTurns: number): Conversa
 // ─── Actor definition ───
 
 export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg, ReActState> => {
-  const { clientId, model, systemPrompt, historyWindow, toolFilter, maxToolLoops = 25 } = options
+  const { clientId, model, systemPrompt, historyWindow, toolFilter, maxToolLoops = 25, userId } = options
 
   // ─── Shared handlers (used across all behaviors) ───
 
@@ -106,7 +109,8 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
 
   const idleHandler: MessageHandler<ReActMsg, ReActState> = onMessage<ReActMsg, ReActState>({
     userMessage: (state, message, context) => {
-      const { text, images, audio, pdfs, traceId, parentSpanId } = message
+      const { clientId: msgClientId, text, images, audio, pdfs, traceId, parentSpanId } = message
+      const activeClientId = msgClientId
 
       let userText = text
       if (images && images.length > 0) {
@@ -155,6 +159,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
       return {
         state: {
           ...state,
+          activeClientId,
           history: [...state.history, { role: 'user', content: userText }],
           requestId,
           turnMessages: apiMessages,
@@ -193,7 +198,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
         handles?.requestSpan.error('tool unavailable')
         return {
           state: { ...state, requestId: null, turnMessages: null, spanHandles: null, pendingUsage: { promptTokens: 0, completionTokens: 0 } },
-          events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'error', text: 'Tool unavailable. Please try again.' }) })],
+          events: [emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool unavailable. Please try again.' }) })],
           become: idleHandler,
         }
       }
@@ -222,7 +227,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
         context.pipeToSelf(
           ask<ToolInvokeMsg, ToolReply>(
             entry.ref,
-            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId }),
+            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId, userId: userId ?? undefined }),
             undefined,
             toolSpan ? context.trace.injectHeaders(toolSpan) : undefined,
           ),
@@ -244,7 +249,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
           pendingBatch: batch,
           ...(handles ? { spanHandles: { ...handles, llmSpan: undefined, toolSpans: newToolSpans } } : {}),
         },
-        events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'searching', tools: calls.map(c => c.name) }) })],
+        events: [emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'searching', tools: calls.map(c => c.name) }) })],
         become: toolLoopHandler,
       }
     },
@@ -254,7 +259,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
       const { text } = message
       return {
         state: { ...state, pending: state.pending + text },
-        events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'chunk', text }) })],
+        events: [emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'chunk', text }) })],
       }
     },
 
@@ -263,7 +268,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
       const { text } = message
       return {
         state: { ...state, pendingReasoning: state.pendingReasoning + text },
-        events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'reasoningChunk', text }) })],
+        events: [emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'reasoningChunk', text }) })],
       }
     },
 
@@ -304,8 +309,8 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
           sessionUsage: newSession,
         },
         events: [
-          emit(MemoryStreamTopic, { userId: 'default', userText, assistantText: state.pending, timestamp: Date.now() }),
-          emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
+          emit(MemoryStreamTopic, { userId: userId ?? 'default', userText, assistantText: state.pending, timestamp: Date.now() }),
+          emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) }),
         ],
         become: idleHandler,
       }
@@ -321,7 +326,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
 
       return {
         state: { ...state, requestId: null, turnMessages: null, spanHandles: null, pending: '', pendingReasoning: '', pendingUsage: { promptTokens: 0, completionTokens: 0 } },
-        events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }) })],
+        events: [emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }) })],
         become: idleHandler,
       }
     },
@@ -351,7 +356,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
       const remaining = batch.remaining - 1
 
       const sourceEvents = sources
-        ? [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'sources', sources }) })]
+        ? [emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'sources', sources }) })]
         : []
 
       if (remaining > 0) {
@@ -387,7 +392,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
           },
           events: [
             ...sourceEvents,
-            emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'error', text: 'Tool loop limit reached. Please try again.' }) }),
+            emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool loop limit reached. Please try again.' }) }),
           ],
           become: idleHandler,
         }

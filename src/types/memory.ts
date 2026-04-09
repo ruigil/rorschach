@@ -35,7 +35,7 @@ export type MemoryRecallMsg =
 // ─── User memory message protocol ───
 
 export type UserMemoryMsg =
-  | { type: 'invoke';           toolName: string; arguments: string; replyTo: ActorRef<ToolReply> }
+  | { type: 'invoke';           toolName: string; arguments: string; replyTo: ActorRef<ToolReply>; userId?: string }
   | { type: '_recallDone';      recallId: string }
   | { type: '_llmProvider';     ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }

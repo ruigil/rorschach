@@ -67,7 +67,7 @@ describe('signal actor: TCP socket', () => {
     system.subscribe(WsMessageTopic,  e => messageEvents.push(e))
 
     system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17590 }),
-      { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {} })
+      { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {}, userStoreRef: null, pendingConnect: new Map() })
 
     await tick(100)
     daemon.pushEnvelope({ source: '+1111111111', dataMessage: { message: 'hello via tcp' } })
@@ -89,7 +89,7 @@ describe('signal actor: TCP socket', () => {
     system.subscribe(WsConnectTopic, e => connectEvents.push(e))
 
     system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17591 }),
-      { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {} })
+      { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {}, userStoreRef: null, pendingConnect: new Map() })
 
     await tick(100)
     daemon.pushEnvelope({ source: '+2222222222', dataMessage: { message: 'first' } })
@@ -106,7 +106,7 @@ describe('signal actor: TCP socket', () => {
 
     const system = await createPluginSystem()
     system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17592, account: '+0000000000' }),
-      { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {} })
+      { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {}, userStoreRef: null, pendingConnect: new Map() })
 
     await tick(100)
 
@@ -140,7 +140,7 @@ describe('signal actor: TCP socket', () => {
     system.subscribe(WsMessageTopic, e => messageEvents.push(e))
 
     system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17595, attachmentsDir }),
-      { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {} })
+      { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {}, userStoreRef: null, pendingConnect: new Map() })
 
     await tick(100)
     daemon.pushEnvelope({
@@ -169,7 +169,7 @@ describe('signal actor: TCP socket', () => {
     system.subscribe(WsMessageTopic, e => messageEvents.push(e))
 
     system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17593, reconnectMs: 200 }),
-      { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {} })
+      { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {}, userStoreRef: null, pendingConnect: new Map() })
 
     await tick(100)
     daemon.closeClients()
@@ -198,7 +198,7 @@ describe('signal actor: TCP socket', () => {
 
     const system = await createPluginSystem()
     const ref = system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17594 }),
-      { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {} })
+      { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {}, userStoreRef: null, pendingConnect: new Map() })
 
     await tick(100)
     clientSocket!.write('this is not json\n')
@@ -214,7 +214,7 @@ describe('signal actor: TCP socket', () => {
   test('stays alive when no daemon is listening', async () => {
     const system = await createPluginSystem()
     const ref = system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 19998, reconnectMs: 100 }),
-      { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {} })
+      { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {}, userStoreRef: null, pendingConnect: new Map() })
 
     await tick(400)
 
@@ -234,7 +234,7 @@ describe('signal actor: TCP socket', () => {
     const ref = system.spawn('signal', createSignalActor({
       host: '127.0.0.1',
       port: 7583,
-    }), { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {} })
+    }), { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {}, userStoreRef: null, pendingConnect: new Map() })
 
     await tick(2_000)  // wait for any queued messages to be pushed by the daemon
 
@@ -261,7 +261,7 @@ describe('signal actor: TCP socket', () => {
       host:    '127.0.0.1',
       port:    7583,
       account: '+41762189620',
-    }), { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {} })
+    }), { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {}, userStoreRef: null, pendingConnect: new Map() })
 
     await tick(200)  // wait for connection
 

@@ -25,7 +25,6 @@ import {
 
 export type MemoryActorConfig = {
   model:                   string
-  userId:                  string
   consolidationIntervalMs: number
 }
 
@@ -63,7 +62,7 @@ const spawnMemoryActors = (
   )
   const userMemory = ctx.spawn(
     `user-memory-${gen}`,
-    createUserMemoryActor({ model: config.model, userId: config.userId, toolFilter: { allow: ['kgraph_query', 'read'] } }),
+    createUserMemoryActor({ model: config.model, toolFilter: { allow: ['kgraph_query', 'read'] } }),
     INITIAL_USER_MEMORY_STATE,
   )
   return { consolidation, userMemory }
@@ -124,7 +123,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         const actors = spawnMemoryActors(ctx, slice.memory, 0)
         consolidation = actors.consolidation
         userMemory = actors.userMemory
-        ctx.log.info('memory actors activated', { userId: slice.memory.userId, model: slice.memory.model })
+        ctx.log.info('memory actors activated', { model: slice.memory.model })
       }
 
       ctx.log.info('memory plugin activated', { dbPath })
@@ -183,7 +182,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         const actors = spawnMemoryActors(ctx, msg.slice.memory, memoryGen)
         consolidation = actors.consolidation
         userMemory = actors.userMemory
-        ctx.log.info('memory actors reconfigured', { userId: msg.slice.memory.userId, gen: memoryGen })
+        ctx.log.info('memory actors reconfigured', { gen: memoryGen })
       }
 
       ctx.log.info('memory plugin reconfigured', { dbPath, kgraphGen })

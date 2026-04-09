@@ -14,6 +14,8 @@ import { LlmProviderTopic, CostTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg, CostEvent } from '../../types/llm.ts'
 import { KgraphTopic } from '../../types/memory.ts'
 import type { KgraphMsg, KgraphGraph } from '../../types/memory.ts'
+import { AuthenticatorTopic } from '../auth/types.ts'
+import type { AuthenticatorMsg, AuthSession, RegistrationBeginResult, AuthenticationBeginResult } from '../auth/types.ts'
 
 // ─── Public directory (resolved relative to this module) ───
 const PUBLIC_DIR = join(import.meta.dir, '../..', 'public')
@@ -33,7 +35,7 @@ const FALLBACK_MODELS = [
 // ─── Message protocol ───
 
 export type HttpMessage =
-  | { type: 'connected'; clientId: string }
+  | { type: 'connected'; clientId: string; userId: string | null; roles: string[] }
   | { type: 'message'; clientId: string; text: string; images?: string[]; audio?: string; pdfs?: Array<{ data: string; name: string }> }
   | { type: '_mediaSaved'; clientId: string; text: string; imagePaths: string[]; audioPath?: string; pdfPaths?: string[] }
   | { type: 'closed'; clientId: string }
@@ -43,6 +45,7 @@ export type HttpMessage =
   | { type: '_configSnapshot'; data: Record<string, unknown> }
   | { type: '_llmProviderChanged'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_kgraphChanged'; ref: ActorRef<KgraphMsg> | null }
+  | { type: '_authenticatorChanged'; ref: ActorRef<AuthenticatorMsg> | null }
   | { type: '_imageGenerated'; publicUrl: string }
   | { type: '_audioGenerated'; publicUrl: string }
   | { type: '_cost'; event: CostEvent }
@@ -80,16 +83,17 @@ const savePdfsToTempFiles = (pdfs: Array<{ data: string; name: string }>): Promi
 // ─── Actor state ───
 
 export type HttpState = {
-  server: Server<WsData> | null
-  connections: number
-  activeSpans: Record<string, SpanHandle>
-  llmProviderRef: ActorRef<LlmProviderMsg> | null
-  kgraphRef: ActorRef<KgraphMsg> | null
+  server:           Server<WsData> | null
+  connections:      number
+  activeSpans:      Record<string, SpanHandle>
+  llmProviderRef:   ActorRef<LlmProviderMsg>   | null
+  kgraphRef:        ActorRef<KgraphMsg>         | null
+  authenticatorRef: ActorRef<AuthenticatorMsg>  | null
 }
 
 // ─── WebSocket attachment data ───
 
-type WsData = { clientId: string }
+type WsData = { clientId: string; userId: string | null; roles: string[] }
 
 // ─── Options ───
 
@@ -135,20 +139,21 @@ export const createHttpActor = (
   const CHANNEL = 'broadcast'
 
   // Mutable refs captured by Bun's server callbacks (which run outside the actor message loop)
-  let selfRef: ActorRef<HttpMessage> | null = null
-  let llmProviderRef: ActorRef<LlmProviderMsg> | null = null
-  let kgraphRef: ActorRef<KgraphMsg> | null = null
-  let configSnapshot: Record<string, unknown> | null = null
+  let selfRef:          ActorRef<HttpMessage>    | null = null
+  let llmProviderRef:   ActorRef<LlmProviderMsg> | null = null
+  let kgraphRef:        ActorRef<KgraphMsg>       | null = null
+  let authenticatorRef: ActorRef<AuthenticatorMsg>| null = null
+  let configSnapshot:   Record<string, unknown>   | null = null
 
   return {
     handler: onMessage({
 
       connected: (state, message, context) => {
         const connections = state.connections + 1
-        context.log.info(`client connected: ${message.clientId} (${connections} total)`)
+        context.log.info(`client connected: ${message.clientId} userId=${message.userId ?? 'anon'} (${connections} total)`)
         return {
           state: { ...state, connections },
-          events: [emit(WsConnectTopic, { clientId: message.clientId })],
+          events: [emit(WsConnectTopic, { clientId: message.clientId, userId: message.userId, roles: message.roles })],
         }
       },
 
@@ -279,6 +284,11 @@ export const createHttpActor = (
         return { state: { ...state, kgraphRef: message.ref } }
       },
 
+      _authenticatorChanged: (state, message) => {
+        authenticatorRef = message.ref
+        return { state: { ...state, authenticatorRef: message.ref } }
+      },
+
 
     }),
 
@@ -317,6 +327,11 @@ export const createHttpActor = (
           data: e.config,
         }))
 
+        context.subscribe(AuthenticatorTopic, (e) => ({
+          type: '_authenticatorChanged' as const,
+          ref: e.ref,
+        }))
+
 
         const server = Bun.serve<WsData>({
           port,
@@ -334,6 +349,20 @@ export const createHttpActor = (
                 } catch { /* timeout — fall through to fallback */ }
               }
               return new Response(JSON.stringify(FALLBACK_MODELS), { headers: { 'Content-Type': 'application/json' } })
+            }
+
+            // Current user identity
+            if (req.method === 'GET' && url.pathname === '/me') {
+              const cookieToken = req.headers.get('cookie')?.split(';')
+                .reduce<string | null>((found, pair) => {
+                  const [k, v] = pair.trim().split('=')
+                  return k === 'session' ? (v ?? null) : found
+                }, null) ?? null
+              if (!cookieToken || !authenticatorRef) {
+                return new Response(JSON.stringify({ userId: null }), { headers: { 'Content-Type': 'application/json' } })
+              }
+              const session = await ask<AuthenticatorMsg, AuthSession | null>(authenticatorRef, (r) => ({ type: 'validateToken' as const, token: cookieToken, replyTo: r }), { timeoutMs: 3_000 })
+              return new Response(JSON.stringify({ userId: session?.userId ?? null }), { headers: { 'Content-Type': 'application/json' } })
             }
 
             // Kgraph dump API
@@ -360,13 +389,138 @@ export const createHttpActor = (
               }
             }
 
-            // WebSocket upgrade
+            // ─── Auth REST routes ───
+
+            const getCookieToken = (r: Request): string | null => {
+              const cookies = r.headers.get('cookie') ?? ''
+              return cookies.split(';').reduce<string | null>((found, pair) => {
+                const [k, v] = pair.trim().split('=')
+                return k === 'session' ? (v ?? null) : found
+              }, null)
+            }
+
+            const SESSION_MAX_AGE = 7 * 24 * 60 * 60  // 7 days in seconds
+            const sessionCookie = (token: string): string =>
+              `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${SESSION_MAX_AGE}`
+
+            if (req.method === 'GET' && url.pathname === '/auth/register/options') {
+              if (!authenticatorRef) return new Response('Auth unavailable', { status: 503 })
+              const challengeId = url.searchParams.get('challenge')
+              if (!challengeId) return new Response('challenge required', { status: 400 })
+              const result = await ask<AuthenticatorMsg, import('../auth/types.ts').RegistrationOptions | null>(authenticatorRef, (r) => ({ type: 'getRegOptions' as const, challengeId, replyTo: r }), { timeoutMs: 5_000 })
+              if (!result) return new Response(JSON.stringify({ error: 'challenge not found or expired' }), { status: 404, headers: { 'Content-Type': 'application/json' } })
+              return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } })
+            }
+
+            if (req.method === 'GET' && url.pathname === '/auth/register/status') {
+              if (!authenticatorRef) return new Response('Auth unavailable', { status: 503 })
+              const challengeId = url.searchParams.get('challenge')
+              if (!challengeId) return new Response('challenge required', { status: 400 })
+              const result = await ask<AuthenticatorMsg, { token: string } | { pending: true } | { error: string }>(authenticatorRef, (r) => ({ type: 'pollRegistration' as const, challengeId, replyTo: r }), { timeoutMs: 5_000 })
+              if ('error' in result) return new Response(JSON.stringify({ status: 'error', error: result.error }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+              if ('pending' in result) return new Response(JSON.stringify({ status: 'pending' }), { headers: { 'Content-Type': 'application/json' } })
+              return new Response(JSON.stringify({ status: 'fulfilled' }), {
+                headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookie(result.token) },
+              })
+            }
+
+            if (req.method === 'POST' && url.pathname === '/auth/register/begin') {
+              if (!authenticatorRef) return new Response('Auth unavailable', { status: 503 })
+              try {
+                const body = await req.json() as { phone?: string }
+                if (!body.phone) return new Response('phone required', { status: 400 })
+                const result = await ask<AuthenticatorMsg, RegistrationBeginResult | { error: string }>(authenticatorRef, (r) => ({ type: 'beginRegistration' as const, phone: body.phone!, replyTo: r }), { timeoutMs: 5_000 })
+                if ('error' in result) return new Response(JSON.stringify(result), { status: 400, headers: { 'Content-Type': 'application/json' } })
+                return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } })
+              } catch { return new Response('Bad request', { status: 400 }) }
+            }
+
+            if (req.method === 'POST' && url.pathname === '/auth/register/finish') {
+              if (!authenticatorRef) return new Response('Auth unavailable', { status: 503 })
+              try {
+                const body = await req.json() as { challengeId?: string; credential?: unknown }
+                if (!body.challengeId || !body.credential) return new Response('missing fields', { status: 400 })
+                const result = await ask<AuthenticatorMsg, { token: string } | { error: string }>(authenticatorRef, (r) => ({ type: 'finishRegistration' as const, challengeId: body.challengeId!, credential: body.credential as import('../auth/types.ts').WebAuthnCredential, replyTo: r }), { timeoutMs: 15_000 })
+                if ('error' in result) return new Response(JSON.stringify(result), { status: 400, headers: { 'Content-Type': 'application/json' } })
+                return new Response(JSON.stringify({ ok: true }), {
+                  headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookie(result.token) },
+                })
+              } catch { return new Response('Bad request', { status: 400 }) }
+            }
+
+            if (req.method === 'POST' && url.pathname === '/auth/login/begin') {
+              if (!authenticatorRef) return new Response('Auth unavailable', { status: 503 })
+              const result = await ask<AuthenticatorMsg, AuthenticationBeginResult | { error: string }>(authenticatorRef, (r) => ({ type: 'beginAuthentication' as const, replyTo: r }), { timeoutMs: 5_000 })
+              if ('error' in result) return new Response(JSON.stringify(result), { status: 400, headers: { 'Content-Type': 'application/json' } })
+              return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } })
+            }
+
+            if (req.method === 'GET' && url.pathname === '/auth/login/options') {
+              if (!authenticatorRef) return new Response('Auth unavailable', { status: 503 })
+              const challengeId = url.searchParams.get('challenge')
+              if (!challengeId) return new Response('challenge required', { status: 400 })
+              const result = await ask<AuthenticatorMsg, import('../auth/types.ts').AuthenticationOptions | null>(authenticatorRef, (r) => ({ type: 'getAuthOptions' as const, challengeId, replyTo: r }), { timeoutMs: 5_000 })
+              if (!result) return new Response(JSON.stringify({ error: 'challenge not found or expired' }), { status: 404, headers: { 'Content-Type': 'application/json' } })
+              return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } })
+            }
+
+            if (req.method === 'POST' && url.pathname === '/auth/login/finish') {
+              if (!authenticatorRef) return new Response('Auth unavailable', { status: 503 })
+              try {
+                const body = await req.json() as { challengeId?: string; credential?: unknown }
+                if (!body.challengeId || !body.credential) return new Response('missing fields', { status: 400 })
+                const result = await ask<AuthenticatorMsg, { token: string } | { error: string }>(authenticatorRef, (r) => ({ type: 'finishAuthentication' as const, challengeId: body.challengeId!, credential: body.credential as import('../auth/types.ts').WebAuthnCredential, replyTo: r }), { timeoutMs: 15_000 })
+                if ('error' in result) return new Response(JSON.stringify(result), { status: 400, headers: { 'Content-Type': 'application/json' } })
+                return new Response(JSON.stringify({ ok: true }), {
+                  headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookie(result.token) },
+                })
+              } catch { return new Response('Bad request', { status: 400 }) }
+            }
+
+            if (req.method === 'GET' && url.pathname === '/auth/login/status') {
+              if (!authenticatorRef) return new Response('Auth unavailable', { status: 503 })
+              const challengeId = url.searchParams.get('challenge')
+              if (!challengeId) return new Response('challenge required', { status: 400 })
+              const result = await ask<AuthenticatorMsg, { token: string } | { pending: true } | { error: string }>(authenticatorRef, (r) => ({ type: 'pollChallenge' as const, challengeId, replyTo: r }), { timeoutMs: 5_000 })
+              if ('error' in result) return new Response(JSON.stringify({ status: 'error', error: result.error }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+              if ('pending' in result) return new Response(JSON.stringify({ status: 'pending' }), { headers: { 'Content-Type': 'application/json' } })
+              return new Response(JSON.stringify({ status: 'fulfilled' }), {
+                headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookie(result.token) },
+              })
+            }
+
+            if (req.method === 'POST' && url.pathname === '/auth/ticket') {
+              if (!authenticatorRef) return new Response('Auth unavailable', { status: 503 })
+              const token = getCookieToken(req)
+              if (!token) return new Response('Unauthorized', { status: 401 })
+              const result = await ask<AuthenticatorMsg, { ticket: string } | { error: string }>(authenticatorRef, (r) => ({ type: 'issueTicket' as const, token, replyTo: r }), { timeoutMs: 5_000 })
+              if ('error' in result) return new Response('Unauthorized', { status: 401 })
+              return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } })
+            }
+
+            if (req.method === 'POST' && url.pathname === '/auth/logout') {
+              const token = getCookieToken(req)
+              if (token && authenticatorRef) authenticatorRef.send({ type: 'revokeToken', token })
+              return new Response(null, {
+                status: 204,
+                headers: { 'Set-Cookie': 'session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0' },
+              })
+            }
+
+            // ─── WebSocket upgrade ───
             if (url.pathname === '/ws') {
-              const clientId = crypto.randomUUID()
-              const upgraded = server.upgrade(req, { data: { clientId } })
-              if (!upgraded) {
-                return new Response('WebSocket upgrade failed', { status: 400 })
+              const ticket = url.searchParams.get('ticket') ?? ''
+              let session: AuthSession | null | { userId: null; roles: string[] } = null
+              if (authenticatorRef) {
+                session = await ask(authenticatorRef, (r) => ({ type: 'validateTicket' as const, ticket, replyTo: r }), { timeoutMs: 3_000 })
+              } else {
+                // Auth plugin not active — allow anonymous connections
+                session = { userId: null, roles: [] }
               }
+              if (!session) return new Response('Unauthorized', { status: 401 })
+              const clientId = crypto.randomUUID()
+              const upgraded = server.upgrade(req, { data: { clientId, userId: session.userId, roles: session.roles } })
+              if (!upgraded) return new Response('WebSocket upgrade failed', { status: 400 })
               return undefined as unknown as Response
             }
 
@@ -390,7 +544,7 @@ export const createHttpActor = (
             open: (ws: ServerWebSocket<WsData>) => {
               ws.subscribe(CHANNEL)
               ws.subscribe(`client:${ws.data.clientId}`)
-              selfRef?.send({ type: 'connected', clientId: ws.data.clientId })
+              selfRef?.send({ type: 'connected', clientId: ws.data.clientId, userId: ws.data.userId, roles: ws.data.roles })
             },
             message: (ws: ServerWebSocket<WsData>, message) => {
               const raw = typeof message === 'string' ? message : message.toString()

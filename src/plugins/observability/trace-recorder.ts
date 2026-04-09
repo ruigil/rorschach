@@ -5,12 +5,23 @@ import { TraceTopic } from '../../types/trace.ts'
 import type { TraceRecorderMsg } from '../../types/observability.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 
+// ─── Helpers ───
+
+const dayFolder = (timestamp: number): string =>
+  new Date(timestamp).toISOString().slice(0, 10) // "YYYY-MM-DD"
+
+const tracePath = (tracesDir: string, timestamp: number, traceId: string): string => {
+  const dir = join(tracesDir, dayFolder(timestamp))
+  mkdirSync(dir, { recursive: true })
+  return join(dir, traceId + '.jsonl')
+}
+
 // ─── Actor state ───
 
 export type TraceRecorderState = {
   tracesDir: string
   written: number
-  buffer: { traceId: string; line: string }[]
+  buffer: { traceId: string; timestamp: number; line: string }[]
 }
 
 // ─── Options ───
@@ -46,25 +57,25 @@ export const createTraceRecorderActor = (
         const line = JSON.stringify(message.span)
 
         if (flushIntervalMs && flushIntervalMs > 0) {
-          return { state: { ...state, buffer: [...state.buffer, { traceId: message.span.traceId, line }] } }
+          return { state: { ...state, buffer: [...state.buffer, { traceId: message.span.traceId, timestamp: message.span.timestamp, line }] } }
         }
 
-        appendFileSync(join(state.tracesDir, message.span.traceId + '.jsonl'), line + '\n')
+        appendFileSync(tracePath(state.tracesDir, message.span.timestamp, message.span.traceId), line + '\n')
         return { state: { ...state, written: state.written + 1 } }
       },
 
       flush(state, _message, context) {
         if (state.buffer.length === 0) return { state }
 
-        const byTrace = new Map<string, string[]>()
-        for (const { traceId, line } of state.buffer) {
-          const lines = byTrace.get(traceId) ?? []
-          lines.push(line)
-          byTrace.set(traceId, lines)
+        const byTrace = new Map<string, { timestamp: number; lines: string[] }>()
+        for (const { traceId, timestamp, line } of state.buffer) {
+          const entry = byTrace.get(traceId) ?? { timestamp, lines: [] }
+          entry.lines.push(line)
+          byTrace.set(traceId, entry)
         }
 
-        for (const [traceId, lines] of byTrace) {
-          appendFileSync(join(state.tracesDir, traceId + '.jsonl'), lines.join('\n') + '\n')
+        for (const [traceId, { timestamp, lines }] of byTrace) {
+          appendFileSync(tracePath(state.tracesDir, timestamp, traceId), lines.join('\n') + '\n')
         }
 
         const written = state.written + state.buffer.length
@@ -89,14 +100,14 @@ export const createTraceRecorderActor = (
 
       stopped: (state, context) => {
         if (state.buffer.length > 0) {
-          const byTrace = new Map<string, string[]>()
-          for (const { traceId, line } of state.buffer) {
-            const lines = byTrace.get(traceId) ?? []
-            lines.push(line)
-            byTrace.set(traceId, lines)
+          const byTrace = new Map<string, { timestamp: number; lines: string[] }>()
+          for (const { traceId, timestamp, line } of state.buffer) {
+            const entry = byTrace.get(traceId) ?? { timestamp, lines: [] }
+            entry.lines.push(line)
+            byTrace.set(traceId, entry)
           }
-          for (const [traceId, lines] of byTrace) {
-            appendFileSync(join(state.tracesDir, traceId + '.jsonl'), lines.join('\n') + '\n')
+          for (const [traceId, { timestamp, lines }] of byTrace) {
+            appendFileSync(tracePath(state.tracesDir, timestamp, traceId), lines.join('\n') + '\n')
           }
           const written = state.written + state.buffer.length
           context.log.info(`final flush: ${state.buffer.length} spans (${written} total)`)

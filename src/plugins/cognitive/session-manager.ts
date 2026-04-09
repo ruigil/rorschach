@@ -10,14 +10,17 @@ import type { LlmProviderMsg } from '../../types/llm.ts'
 // ─── Message protocol ───
 
 type SessionManagerMsg =
-  | { type: '_connected';    clientId: string }
+  | { type: '_connected';    clientId: string; userId: string | null; roles: string[] }
   | { type: '_disconnected'; clientId: string }
   | { type: '_message';      clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string }
 
 // ─── State ───
 
 type SessionManagerState = {
-  sessions: Record<string, ActorRef<ReActMsg>>
+  userSessions:  Record<string, ActorRef<ReActMsg>>  // userId  → actor (authenticated)
+  anonSessions:  Record<string, ActorRef<ReActMsg>>  // clientId → actor (anonymous)
+  clientIndex:   Record<string, string>               // clientId → userId (for routing & cleanup)
+  activeClients: Record<string, number>               // userId → active connection count
 }
 
 // ─── Options ───
@@ -46,6 +49,7 @@ const initialReActState = (llmRef: ActorRef<LlmProviderMsg>): ReActState => ({
   pendingReasoning: '',
   pendingBatch:     null,
   toolLoopCount:    0,
+  activeClientId:   '',
 })
 
 // ─── Actor definition ───
@@ -56,44 +60,102 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
   return {
     lifecycle: onLifecycle({
       start: (state, context) => {
-        context.subscribe(WsConnectTopic,    e => ({ type: '_connected'    as const, clientId: e.clientId }))
+        context.subscribe(WsConnectTopic,    e => ({ type: '_connected'    as const, clientId: e.clientId, userId: e.userId, roles: e.roles }))
         context.subscribe(WsDisconnectTopic, e => ({ type: '_disconnected' as const, clientId: e.clientId }))
         context.subscribe(WsMessageTopic,    e => ({ type: '_message' as const, clientId: e.clientId, text: e.text, images: e.images, audio: e.audio, pdfs: e.pdfs, traceId: e.traceId, parentSpanId: e.parentSpanId }))
         return { state }
       },
 
       terminated: (state, event) => {
-        // A ReAct child crashed — clean up its session entry
-        const entry = Object.entries(state.sessions).find(([, ref]) => ref.name === event.ref.name)
-        if (!entry) return { state }
-        const [clientId] = entry
-        const { [clientId]: _, ...rest } = state.sessions
-        return { state: { ...state, sessions: rest } }
+        // Check userSessions
+        const userEntry = Object.entries(state.userSessions).find(([, ref]) => ref.name === event.ref.name)
+        if (userEntry) {
+          const [userId] = userEntry
+          const { [userId]: _, ...userSessions } = state.userSessions
+          const clientIndex = Object.fromEntries(Object.entries(state.clientIndex).filter(([, uid]) => uid !== userId))
+          const { [userId]: __, ...activeClients } = state.activeClients
+          return { state: { ...state, userSessions, clientIndex, activeClients } }
+        }
+        // Check anonSessions
+        const anonEntry = Object.entries(state.anonSessions).find(([, ref]) => ref.name === event.ref.name)
+        if (anonEntry) {
+          const [clientId] = anonEntry
+          const { [clientId]: _, ...anonSessions } = state.anonSessions
+          return { state: { ...state, anonSessions } }
+        }
+        return { state }
       },
     }),
 
     handler: onMessage<SessionManagerMsg, SessionManagerState>({
       _connected: (state, message, context) => {
-        const { clientId } = message
+        const { clientId, userId, roles } = message
+
+        if (userId) {
+          // Authenticated: key by userId, share actor across reconnects and channels
+          const existing = state.userSessions[userId]
+          if (existing) {
+            return {
+              state: {
+                ...state,
+                clientIndex:   { ...state.clientIndex,   [clientId]: userId },
+                activeClients: { ...state.activeClients, [userId]: (state.activeClients[userId] ?? 0) + 1 },
+              },
+            }
+          }
+          const ref = context.spawn(
+            `react-${userId}`,
+            createReActActor({ clientId, model, systemPrompt, historyWindow, toolFilter, userId, roles }),
+            initialReActState(llmRef),
+          )
+          return {
+            state: {
+              ...state,
+              userSessions:  { ...state.userSessions,  [userId]: ref },
+              clientIndex:   { ...state.clientIndex,   [clientId]: userId },
+              activeClients: { ...state.activeClients, [userId]: 1 },
+            },
+          }
+        }
+
+        // Anonymous: one actor per clientId (old behaviour)
         const ref = context.spawn(
           `react-${clientId}`,
           createReActActor({ clientId, model, systemPrompt, historyWindow, toolFilter }),
           initialReActState(llmRef),
         )
-        return { state: { sessions: { ...state.sessions, [clientId]: ref } } }
+        return { state: { ...state, anonSessions: { ...state.anonSessions, [clientId]: ref } } }
       },
 
       _disconnected: (state, message, context) => {
         const { clientId } = message
-        const ref = state.sessions[clientId]
+        const userId = state.clientIndex[clientId]
+
+        if (userId) {
+          const count = (state.activeClients[userId] ?? 1) - 1
+          const { [clientId]: _, ...clientIndex } = state.clientIndex
+          if (count <= 0) {
+            const ref = state.userSessions[userId]
+            if (ref) context.stop(ref)
+            const { [userId]: __, ...userSessions } = state.userSessions
+            const { [userId]: ___, ...activeClients } = state.activeClients
+            return { state: { ...state, userSessions, clientIndex, activeClients } }
+          }
+          return { state: { ...state, clientIndex, activeClients: { ...state.activeClients, [userId]: count } } }
+        }
+
+        // Anonymous
+        const ref = state.anonSessions[clientId]
         if (ref) context.stop(ref)
-        const { [clientId]: _, ...rest } = state.sessions
-        return { state: { sessions: rest } }
+        const { [clientId]: _, ...anonSessions } = state.anonSessions
+        return { state: { ...state, anonSessions } }
       },
 
       _message: (state, message) => {
         const { clientId, text, images, audio, pdfs, traceId, parentSpanId } = message
-        state.sessions[clientId]?.send({ type: 'userMessage', text, images, audio, pdfs, traceId, parentSpanId })
+        const userId = state.clientIndex[clientId]
+        const actor  = userId ? state.userSessions[userId] : state.anonSessions[clientId]
+        actor?.send({ type: 'userMessage', clientId, text, images, audio, pdfs, traceId, parentSpanId })
         return { state }
       },
     }),

@@ -29,9 +29,16 @@
       <button class="nav-link" data-tab="config">config</button>
       <button class="nav-link" data-tab="observe">observe</button>
     </nav>
-    <div class="status-pill">
-      <div class="header-dot disconnected" id="dot"></div>
-      <span id="status-label">connecting…</span>
+    <div class="header-end">
+      <div class="status-pill">
+        <div class="header-dot disconnected" id="dot"></div>
+        <span id="status-label">connecting…</span>
+      </div>
+      <button class="logout-btn" id="logout-btn" title="Sign out" style="display:none">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -279,11 +286,6 @@
               <span class="field-hint">Model used for memory consolidation and recall</span>
             </div>
 
-            <div class="field">
-              <label class="field-label" for="memory-user-id">User ID</label>
-              <input type="text" id="memory-user-id" name="memoryUserId" placeholder="default" value="default">
-              <span class="field-hint">User identifier for memory scoping</span>
-            </div>
 
             <div class="field">
               <label class="field-label" for="memory-consolidation-interval">Consolidation interval (ms)</label>

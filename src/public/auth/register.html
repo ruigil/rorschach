@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register — Rorschach</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:         #03070a;
+      --surface:    #060e14;
+      --surface-2:  #0a1820;
+      --border:     #0d1f2d;
+      --border-mid: #1a3548;
+      --text:       #e8f6fa;
+      --text-dim:   #3d6878;
+      --text-mid:   #8abccc;
+      --accent:     #00c4d4;
+      --accent-dim: rgba(0,196,212,0.06);
+      --error:      #e06030;
+      --green:      #39e8a0;
+      --font-ui:    'Space Grotesk', system-ui, sans-serif;
+      --radius:     8px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-ui);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+    .card {
+      width: 100%;
+      max-width: 380px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) * 2);
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--text-mid);
+    }
+    .logo svg { width: 20px; height: 20px; color: var(--accent); }
+    h1 { font-size: 1.05rem; font-weight: 600; }
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 11px; font-weight: 600; color: var(--text-mid); letter-spacing: 0.05em; text-transform: uppercase; }
+    .field input {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      padding: 9px 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .field input:focus { border-color: var(--accent); }
+    .field input::placeholder { color: var(--text-dim); }
+    .hint { font-size: 11px; color: var(--text-dim); }
+    .btn {
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
+      color: var(--accent);
+      font-family: var(--font-ui);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 10px 16px;
+      width: 100%;
+      letter-spacing: 0.03em;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn:hover:not(:disabled) { background: var(--accent); color: var(--bg); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .status { font-size: 12px; min-height: 1.1em; color: var(--text-dim); }
+    .status.err { color: var(--error); }
+    .status.ok  { color: var(--green); }
+    .foot { font-size: 12px; color: var(--text-dim); text-align: center; }
+    .foot a { color: var(--accent); text-decoration: none; }
+    .foot a:hover { text-decoration: underline; }
+
+    /* ─── QR area ─── */
+    .qr-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .qr-frame {
+      position: relative;
+      background: #fff;
+      border-radius: var(--radius);
+      padding: 12px;
+      line-height: 0;
+    }
+    .qr-frame.expired::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      background: rgba(3,7,10,0.72);
+      backdrop-filter: blur(3px);
+    }
+    .qr-expired-btn {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border-radius: var(--radius);
+      border: none;
+      background: none;
+      cursor: pointer;
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .qr-expired-btn svg { width: 20px; height: 20px; color: var(--accent); }
+    .qr-frame.expired .qr-expired-btn { display: flex; }
+    .qr-status {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-align: center;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .qr-status.waiting { color: var(--text-mid); }
+    .qr-status.ok      { color: var(--green); }
+    .qr-status.err     { color: var(--error); }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 1.2s linear infinite; display: inline-block; }
+    .qr-timer { width: 28px; height: 28px; flex-shrink: 0; }
+    .qr-timer circle { fill: none; stroke: var(--border-mid); stroke-width: 3; }
+    .qr-timer .progress {
+      stroke: var(--accent);
+      stroke-linecap: round;
+      stroke-dasharray: 69.1;
+      stroke-dashoffset: 0;
+      transform: rotate(-90deg);
+      transform-origin: 50% 50%;
+      transition: stroke-dashoffset 1s linear, stroke 0.3s;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M12 2.5 C10.5 4.5 8.5 5.5 6.5 7 C4.8 8.2 4 9.8 4 12 C4 14.2 5 15.8 6.8 17 C8.6 18.2 10.5 19.2 12 21.5 C13.5 19.2 15.4 18.2 17.2 17 C19 15.8 20 14.2 20 12 C20 9.8 19.2 8.2 17.5 7 C15.5 5.5 13.5 4.5 12 2.5Z" fill="currentColor" opacity="0.18"/>
+        <path d="M12 6.5 C11 7.8 9.5 8.8 8.2 9.8 C7 10.8 6.5 11.3 6.5 12 C6.5 12.7 7 13.2 8.2 14.2 C9.5 15.2 11 16.2 12 17.5 C13 16.2 14.5 15.2 15.8 14.2 C17 13.2 17.5 12.7 17.5 12 C17.5 11.3 17 10.8 15.8 9.8 C14.5 8.8 13 7.8 12 6.5Z" fill="currentColor" opacity="0.55"/>
+        <circle cx="12" cy="12" r="1.6" fill="currentColor" opacity="0.9"/>
+      </svg>
+      RORSCHACH
+    </div>
+
+    <h1 id="heading">Create account</h1>
+
+    <!-- Step 1: Username form -->
+    <div id="step-form">
+      <form id="form" novalidate>
+        <div class="field">
+          <label for="phone">Phone number</label>
+          <input type="tel" id="phone" autocomplete="tel" required placeholder="+41 76 123 45 67">
+        </div>
+
+        <button class="btn" type="submit" id="submit-btn" style="margin-top: 1.5rem">Continue</button>
+      </form>
+    </div>
+
+    <!-- Step 2: QR code -->
+    <div id="step-qr" style="display:none">
+      <p style="font-size:13px; color:var(--text-mid); margin-bottom:0.75rem">
+        Scan with your phone to create a passkey on your mobile device.
+      </p>
+      <div class="qr-area">
+        <div class="qr-frame" id="qr-frame">
+          <canvas id="qr-canvas" width="240" height="240"></canvas>
+          <button class="qr-expired-btn" id="qr-refresh-btn" aria-label="Refresh QR code">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+            Refresh
+          </button>
+        </div>
+        <div class="qr-status" id="qr-status">
+          <svg class="qr-timer" id="qr-timer" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="11"/>
+            <circle class="progress" id="qr-progress" cx="12" cy="12" r="11"/>
+          </svg>
+          <span id="qr-status-text">Scan with your phone to register</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="status" id="status"></div>
+    <p class="foot"><a href="login.html">Already have an account? Sign in</a></p>
+  </div>
+
+  <script type="module">
+    import { renderQR } from './auth.js'
+
+    const statusEl     = document.getElementById('status')
+    const stepForm     = document.getElementById('step-form')
+    const stepQr       = document.getElementById('step-qr')
+    const headingEl    = document.getElementById('heading')
+    const qrFrame      = document.getElementById('qr-frame')
+    const qrStatusEl   = document.getElementById('qr-status')
+    const qrStatusText = document.getElementById('qr-status-text')
+    const qrProgress   = document.getElementById('qr-progress')
+    const qrRefreshBtn = document.getElementById('qr-refresh-btn')
+
+    const CIRC = 2 * Math.PI * 11
+    const QR_TTL_MS = 5 * 60 * 1000
+    const POLL_MS   = 2000
+
+    let pollTimer    = null
+    let countdownRaf = null
+    let pendingPhone = ''
+
+    function setStatus(msg, cls = '') {
+      statusEl.textContent = msg
+      statusEl.className = 'status' + (cls ? ' ' + cls : '')
+    }
+
+    function setQrStatus(msg, cls = '') {
+      qrStatusText.textContent = msg
+      qrStatusEl.className = 'qr-status' + (cls ? ' ' + cls : '')
+    }
+
+    function stopQr() {
+      if (pollTimer)    { clearInterval(pollTimer);           pollTimer    = null }
+      if (countdownRaf) { cancelAnimationFrame(countdownRaf); countdownRaf = null }
+    }
+
+    function startCountdown(startedAt) {
+      if (countdownRaf) cancelAnimationFrame(countdownRaf)
+      function tick() {
+        const elapsed  = Date.now() - startedAt
+        const fraction = Math.max(0, 1 - elapsed / QR_TTL_MS)
+        qrProgress.style.strokeDashoffset = CIRC * (1 - fraction)
+        qrProgress.style.stroke = fraction < 0.1 ? 'var(--error)' : fraction < 0.2 ? 'var(--warn, #c4843a)' : 'var(--accent)'
+        if (fraction > 0) countdownRaf = requestAnimationFrame(tick)
+      }
+      countdownRaf = requestAnimationFrame(tick)
+    }
+
+    async function startQr() {
+      stopQr()
+      qrFrame.classList.remove('expired')
+      setQrStatus('Generating…')
+      qrProgress.style.strokeDashoffset = 0
+      setStatus('')
+
+      try {
+        const beginRes = await fetch(new URL('register/begin', location.href), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: pendingPhone }),
+        })
+        const begin = await beginRes.json()
+        if (!beginRes.ok) { setQrStatus(begin.error ?? 'Failed to generate QR.', 'err'); return }
+
+        const challengeId = begin.challengeId
+        const startedAt   = Date.now()
+
+        const qrUrl = new URL('qr-register.html', location.href)
+        qrUrl.searchParams.set('c', challengeId)
+
+        renderQR(document.getElementById('qr-canvas'), qrUrl.href, { size: 240, quiet: 4 })
+        setQrStatus('Scan with your phone to register', 'waiting')
+        startCountdown(startedAt)
+
+        let polls = 0
+        const maxPolls = QR_TTL_MS / POLL_MS
+        pollTimer = setInterval(async () => {
+          polls++
+          if (polls >= maxPolls) {
+            stopQr()
+            qrFrame.classList.add('expired')
+            setQrStatus('QR code expired — tap to refresh', 'err')
+            return
+          }
+          try {
+            const url = new URL('register/status', location.href)
+            url.searchParams.set('challenge', challengeId)
+            const res  = await fetch(url)
+            if (!res.ok) return
+            const data = await res.json()
+            if (data.status === 'fulfilled') {
+              stopQr()
+              setQrStatus('Passkey created! Redirecting…', 'ok')
+              window.location.href = new URL('../', location.href).href
+            }
+          } catch { /* network blip */ }
+        }, POLL_MS)
+
+      } catch (err) {
+        setQrStatus(err.message || 'An error occurred.', 'err')
+      }
+    }
+
+    document.getElementById('form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const phone = document.getElementById('phone').value.trim()
+      if (!phone) { setStatus('Phone number is required.', 'err'); return }
+
+      pendingPhone = phone
+
+      // Switch to QR step
+      stepForm.style.display = 'none'
+      stepQr.style.display   = ''
+      headingEl.textContent  = 'Scan with your phone'
+
+      await startQr()
+    })
+
+    qrRefreshBtn.addEventListener('click', startQr)
+  </script>
+</body>
+</html>

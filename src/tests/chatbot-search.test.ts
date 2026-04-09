@@ -31,6 +31,7 @@ const INITIAL_REACT_STATE: Omit<ReActState, 'llmRef'> = {
   pendingBatch:     null,
   userContext:      null,
   toolLoopCount:    0,
+  activeClientId:   '',
 }
 
 const mockBraveResponse: BraveLlmContextResponse = {
@@ -130,7 +131,7 @@ describe('ReAct search integration', () => {
     const react = spawnReAct(system)
 
     await tick()
-    react.send({ type: 'userMessage', text: 'What is the latest AI news?', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'What is the latest AI news?', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(400)
 
     const types = events.map(e => e.type)
@@ -160,7 +161,7 @@ describe('ReAct search integration', () => {
     const react = spawnReAct(system)
 
     await tick()
-    react.send({ type: 'userMessage', text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(400)
 
     const sourcesEvent = events.find(e => e.type === 'sources')
@@ -192,7 +193,7 @@ describe('ReAct search integration', () => {
     const react = spawnReAct(system)
 
     await tick()
-    react.send({ type: 'userMessage', text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(300)
 
     expect(capturedBody?.tools).toBeUndefined()
@@ -218,7 +219,7 @@ describe('ReAct search integration', () => {
     const react = spawnReAct(system)
 
     await tick()
-    react.send({ type: 'userMessage', text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(400)
 
     const types = events.map(e => e.type)
@@ -247,7 +248,7 @@ describe('ReAct search integration', () => {
     const react = spawnReAct(system)
 
     await tick()
-    react.send({ type: 'userMessage', text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
     await tick(300)
 
     expect(capturedBody?.tools).toBeDefined()

@@ -315,7 +315,7 @@ export const createCliActor = (): ActorDef<CliMsg, CliState> => {
       _userInput: (state, message, ctx) => {
         if (state.status === 'waiting') return { state }
 
-        if (!state.connected) ctx.publish(WsConnectTopic, { clientId: CLI_CLIENT_ID })
+        if (!state.connected) ctx.publish(WsConnectTopic, { clientId: CLI_CLIENT_ID, userId: null, roles: [] })
 
         ctx.publish(WsMessageTopic, {
           clientId: CLI_CLIENT_ID,

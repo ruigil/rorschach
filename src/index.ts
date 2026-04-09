@@ -37,7 +37,6 @@ const buildConfigSnapshot = (c: Record<string, unknown>): Record<string, unknown
     webSearchCount:                tls.webSearch?.count                    ?? 20,
     kgraphDbPath:                  mem.kgraph?.dbPath                      ?? './workspace/memory/kgraph',
     memoryModel:                   mem.memory?.model                       ?? '',
-    memoryUserId:                  mem.memory?.userId                      ?? 'default',
     memoryConsolidationIntervalMs: mem.memory?.consolidationIntervalMs     ?? 30000,
     logPath:                       obs.jsonlLogger?.filePath               ?? './logs/app.jsonl',
     minLevel:                      obs.jsonlLogger?.minLevel               ?? 'debug',
@@ -148,7 +147,6 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
     ...(form.memoryModel ? {
       memory: {
         model:                   String(form.memoryModel),
-        userId:                  String(form.memoryUserId ?? 'default'),
         consolidationIntervalMs: Number(form.memoryConsolidationIntervalMs ?? 30000),
       },
     } : {}),

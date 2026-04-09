@@ -1,10 +1,13 @@
 import { createConnection } from 'node:net'
 import type { Socket } from 'node:net'
-import type { ActorDef, SpanHandle } from '../../system/types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { emit } from '../../system/types.ts'
+import { onLifecycle, onMessage } from '../../system/match.ts'
 import { join } from 'node:path'
+import { ask } from '../../system/ask.ts'
 import { WsConnectTopic, WsMessageTopic, WsSendTopic } from '../../types/ws.ts'
+import { UserStoreTopic } from '../auth/types.ts'
+import type { UserStoreMsg, User } from '../auth/types.ts'
 
 // ─── Markdown → Signal formatting ───
 //
@@ -186,14 +189,12 @@ export const renderForSignal = (md: string): SignalFormatted => {
 // ─── Options ───
 
 export type SignalActorOptions = {
-  host?:           string  // default: '127.0.0.1'
-  port?:           number  // default: 7583
+  host?:           string     // default: '127.0.0.1'
+  port?:           number     // default: 7583
   account?:        string
-  reconnectMs?:    number  // default: 3000
+  reconnectMs?:    number     // default: 3000
   attachmentsDir?: string
-  publicDir?:      string  // default: <signal.ts dir>/../../public — used to resolve media URLs to absolute paths
-  allowList?:      string[]  // if set, only these numbers/UUIDs may interact
-  groupId?:        string    // if set, only messages from this group are handled; replies go to the group
+  publicDir?:      string     // default: <signal.ts dir>/../../public
 }
 
 // ─── Message protocol ───
@@ -207,21 +208,27 @@ type Envelope = {
   syncMessage?:  { sentMessage?: { destination?: string; destinationNumber?: string; message?: string; attachments?: Attachment[]; groupInfo?: { groupId?: string } } }
 }
 
+type BufferedMsg = { text: string; images?: string[]; audio?: string }
+
 type SignalMsg =
   | { type: '_reconnect' }
   | { type: '_socketClosed' }
-  | { type: '_line';           line: string }
-  | { type: '_send';           clientId: string; text: string }
+  | { type: '_line';             line: string }
+  | { type: '_send';             clientId: string; text: string }
   | { type: '_sendOk' }
-  | { type: '_sendErr';        error: string }
+  | { type: '_sendErr';          error: string }
   | { type: '_refreshTyping' }
+  | { type: '_userStoreChanged'; ref: ActorRef<UserStoreMsg> | null }
+  | { type: '_phoneResolved';    phone: string; userId: string | null }
 
 // ─── State ───
 
 export type SignalState = {
-  seenIds:     Set<string>
-  pending:     Map<string, string>    // clientId → buffered chunks waiting for 'done'
-  activeSpans: Record<string, SpanHandle>
+  seenIds:        Set<string>
+  pending:        Map<string, string>                    // clientId → buffered chunks waiting for 'done'
+  activeSpans:    Record<string, SpanHandle>
+  userStoreRef:   ActorRef<UserStoreMsg> | null
+  pendingConnect: Map<string, BufferedMsg[]>             // phone → buffered messages while resolving userId
 }
 
 // ─── Actor factory ───
@@ -235,8 +242,6 @@ export const createSignalActor = (
   const reconnectMs    = options?.reconnectMs    ?? 3_000
   const attachmentsDir = options?.attachmentsDir ?? `${process.env.HOME}/.local/share/signal-cli/attachments`
   const publicDir      = options?.publicDir      ?? join(import.meta.dir, '../../public')
-  const allowList      = options?.allowList      ?? null
-  const groupId        = options?.groupId        ?? null
 
   let msgId        = 0
   let activeSocket: Socket | null = null
@@ -257,7 +262,7 @@ export const createSignalActor = (
   const sendOverSocket = (clientId: string, { message, textStyles, attachments }: SignalFormatted): Promise<void> =>
     writeToSocket(rpcLine('send', {
       ...(account ? { account } : {}),
-      ...(groupId && clientId === groupId ? { groupId } : { recipient: [clientId] }),
+      recipient: [clientId],
       message,
       ...(textStyles.length > 0 ? { textStyles } : {}),
       ...(attachments.length > 0 ? { attachments: attachments.map(url => join(publicDir, url)) } : {}),
@@ -275,7 +280,8 @@ export const createSignalActor = (
   return {
     lifecycle: onLifecycle({
       start: (state, ctx) => {
-        ctx.subscribe(WsSendTopic, e => ({ type: '_send' as const, clientId: e.clientId, text: e.text }))
+        ctx.subscribe(WsSendTopic,    e => ({ type: '_send'             as const, clientId: e.clientId, text: e.text }))
+        ctx.subscribe(UserStoreTopic, e => ({ type: '_userStoreChanged' as const, ref: e.ref }))
         ctx.timers.startSingleTimer('reconnect', { type: '_reconnect' }, 0)
         ctx.log.info(`signal actor: connecting to ${host}:${port}`)
         return { state }
@@ -347,36 +353,53 @@ export const createSignalActor = (
 
         if (!source || (!text && attachments.length === 0)) return { state }
 
-        // Group mode: only accept messages from the configured group
-        if (groupId) {
-          if (incomingGroup !== groupId) return { state }
-        } else {
-          if (allowList && !allowList.includes(source)) return { state }
+        // Ignore messages from Signal groups
+        if (incomingGroup) return { state }
+
+        const phone = source
+
+        // Already an identified, seen sender — emit directly
+        if (state.seenIds.has(phone)) {
+          const span = ctx.trace.start('request', { clientId: phone })
+          const activeSpans = { ...state.activeSpans, [phone]: span }
+          return {
+            state: { ...state, activeSpans },
+            events: [emit(WsMessageTopic, {
+              clientId:    phone,
+              text,
+              ...(imageAttachments.length > 0 ? { images: attachmentPaths(imageAttachments) } : {}),
+              ...(audioAttachment ? { audio: `${attachmentsDir}/${audioAttachment.id}` } : {}),
+              traceId:      span.traceId,
+              parentSpanId: span.spanId,
+            })],
+          }
         }
 
-        // Use groupId as clientId when in group mode so all members share one session
-        const clientId = groupId ?? source
-        const seenIds = new Set(state.seenIds)
-        const events  = []
-
-        if (!seenIds.has(clientId)) {
-          seenIds.add(clientId)
-          events.push(emit(WsConnectTopic, { clientId }))
-        }
-
-        const span = ctx.trace.start('request', { clientId })
-        const activeSpans = { ...state.activeSpans, [clientId]: span }
-
-        events.push(emit(WsMessageTopic, {
-          clientId,
+        // New sender — buffer and resolve via userStore
+        const existing = state.pendingConnect.get(phone) ?? []
+        const pendingConnect = new Map(state.pendingConnect)
+        pendingConnect.set(phone, [...existing, {
           text,
           ...(imageAttachments.length > 0 ? { images: attachmentPaths(imageAttachments) } : {}),
           ...(audioAttachment ? { audio: `${attachmentsDir}/${audioAttachment.id}` } : {}),
-          traceId:      span.traceId,
-          parentSpanId: span.spanId,
-        }))
+        }])
 
-        return { state: { ...state, seenIds, activeSpans }, events }
+        if (existing.length === 0) {
+          // First message from this phone — trigger lookup
+          if (state.userStoreRef) {
+            ctx.pipeToSelf(
+              ask<UserStoreMsg, User | null>(state.userStoreRef, (r) => ({ type: 'getUserByPhone' as const, phone, replyTo: r }), { timeoutMs: 3_000 }),
+              (user): SignalMsg => ({ type: '_phoneResolved', phone, userId: user?.id ?? null }),
+              ():    SignalMsg => ({ type: '_phoneResolved', phone, userId: null }),
+            )
+          } else {
+            // Auth plugin not loaded — send rejection immediately (fire-and-forget)
+            writeToSocket(rpcLine('send', { ...(account ? { account } : {}), recipient: [phone], message: 'Please register on the web interface to use Signal.' })).catch(() => {})
+            pendingConnect.delete(phone)
+          }
+        }
+
+        return { state: { ...state, pendingConnect } }
       },
 
       _send: (state, msg, ctx) => {
@@ -441,6 +464,44 @@ export const createSignalActor = (
           default:
             return { state }
         }
+      },
+
+      _userStoreChanged: (state, msg) => ({
+        state: { ...state, userStoreRef: msg.ref },
+      }),
+
+      _phoneResolved: (state, msg, ctx) => {
+        const { phone, userId } = msg
+        const buffered = state.pendingConnect.get(phone) ?? []
+        const pendingConnect = new Map(state.pendingConnect)
+        pendingConnect.delete(phone)
+
+        if (!userId) {
+          // Not registered — send rejection
+          writeToSocket(rpcLine('send', { ...(account ? { account } : {}), recipient: [phone], message: 'Please register on the web interface to use Signal.' })).catch(() => {})
+          return { state: { ...state, pendingConnect } }
+        }
+
+        // Registered user — mark seen, emit connect then flush messages
+        const seenIds = new Set(state.seenIds)
+        seenIds.add(phone)
+        const events: ReturnType<typeof emit>[] = [
+          emit(WsConnectTopic, { clientId: phone, userId, roles: [] }),
+        ]
+        let activeSpans = { ...state.activeSpans }
+        for (const buf of buffered) {
+          const span = ctx.trace.start('request', { clientId: phone })
+          activeSpans = { ...activeSpans, [phone]: span }
+          events.push(emit(WsMessageTopic, {
+            clientId:    phone,
+            text:        buf.text,
+            ...(buf.images ? { images: buf.images } : {}),
+            ...(buf.audio  ? { audio:  buf.audio  } : {}),
+            traceId:     span.traceId,
+            parentSpanId: span.spanId,
+          }))
+        }
+        return { state: { ...state, seenIds, pendingConnect, activeSpans }, events }
       },
 
       _sendOk: (state) => ({ state }),

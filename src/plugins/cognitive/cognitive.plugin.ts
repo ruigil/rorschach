@@ -65,7 +65,7 @@ const spawnAll = (
           historyWindow: chatbotConfig.historyWindow,
           toolFilter: chatbotConfig.toolFilter,
         }),
-        { sessions: {} },
+        { userSessions: {}, anonSessions: {}, clientIndex: {}, activeClients: {} },
       )
     : null
 
@@ -168,7 +168,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
                 historyWindow: newChatbotConfig.historyWindow,
                 toolFilter: newChatbotConfig.toolFilter,
               }),
-              { sessions: {} },
+              { userSessions: {}, anonSessions: {}, clientIndex: {}, activeClients: {} },
             )
           : null
         sessionManagerState = { config: newChatbotConfig, ref: sessionManagerRef, gen }

@@ -1,5 +1,6 @@
 {
   "plugins": [
+    "./src/plugins/auth/auth.plugin.ts",
     "./src/plugins/interfaces/interfaces.plugin.ts",
     "./src/plugins/tools/tools.plugin.ts",
     "./src/plugins/memory/memory.plugin.ts",
@@ -8,6 +9,12 @@
     "./src/plugins/notebook/notebook.plugin.ts"
   ],
   "config": {
+    "auth": {
+      "rpId":    "oceanos.blog",
+      "rpName":  "Rorschach",
+      "origin":  "https://oceanos.blog",
+      "baseUrl": "https://oceanos.blog/code/proxy/3000"
+    },
     "interfaces": {
       "http": {
         "port": "${PORT:-3000}"
@@ -15,7 +22,7 @@
       "signal": {
         "host": "127.0.0.1",
         "port": "7583",
-        "groupId": "77CjSqNjZUanJ4oMTQRkhQKqPZM1WKnEZ55wKpaAbuo="
+        "allowList": ["+41762189620"]
       }
     },
     "tools": {
@@ -59,11 +66,10 @@
     },
     "memory": {
       "kgraph": {
-        "dbPath": "./workspace/memory/kgraph"
+        "dbPath": "workspace/memory/kgraph"
       },
       "memory": {
         "model": "google/gemini-3.1-pro-preview",
-        "userId": "rigel",
         "consolidationIntervalMs": 3600000
       }
     },
@@ -76,7 +82,7 @@
     },
     "observability": {
       "jsonlLogger": {
-        "filePath": "./observability/logs/rorschach-{date}.jsonl",
+        "filePath": "workspace/observability/logs/rorschach-{date}.jsonl",
         "minLevel": "debug",
         "flushIntervalMs": 300000
       },
@@ -84,10 +90,10 @@
         "intervalMs": 5000
       },
       "traceRecorder": {
-        "tracesDir": "./observability/traces"
+        "tracesDir": "workspace/observability/traces"
       },
       "costTracker": {
-        "costsDir": "./observability/costs",
+        "costsDir": "workspace/observability/costs",
         "flushIntervalMs": 300000
       }
     }

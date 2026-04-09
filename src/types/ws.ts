@@ -9,7 +9,7 @@ export const WsMessageTopic = createTopic<WsMessageEvent>('http.ws.message')
 
 // ─── Domain event: published when a WebSocket client connects ───
 
-export type WsConnectEvent = { clientId: string }
+export type WsConnectEvent = { clientId: string; userId: string | null; roles: string[] }
 
 /** Topic emitted when a new WebSocket client connects. Subscribe to send initial state to the client. */
 export const WsConnectTopic = createTopic<WsConnectEvent>('http.ws.connect')

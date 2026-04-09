@@ -1,5 +1,6 @@
 import type { ActorDef, ActorRef, MessageHandler } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
+import { ask } from '../../system/ask.ts'
 import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import type {

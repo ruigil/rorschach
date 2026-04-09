@@ -32,7 +32,6 @@ export const RECALL_MEMORY_SCHEMA: ToolSchema = {
 
 export type UserMemoryOptions = {
   model:       string
-  userId:      string
   toolFilter?: ToolFilter
 }
 
@@ -47,7 +46,7 @@ type UserMemoryState = {
 // ─── Actor definition ───
 
 export const createUserMemoryActor = (options: UserMemoryOptions): ActorDef<UserMemoryMsg, UserMemoryState> => {
-  const { model, userId, toolFilter } = options
+  const { model, toolFilter } = options
 
   return {
     lifecycle: onLifecycle({
@@ -119,7 +118,7 @@ export const createUserMemoryActor = (options: UserMemoryOptions): ActorDef<User
             parentRef: context.self,
             llmRef: state.llmRef,
             model,
-            userId,
+            userId: msg.userId ?? 'default',
             tools: state.tools,
           }),
           INITIAL_RECALL_STATE,

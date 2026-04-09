@@ -197,6 +197,27 @@ header.streaming::after {
 }
 
 
+/* ─── Header end group ─── */
+.header-end {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ─── Logout button ─── */
+.logout-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  transition: color 0.15s, background 0.15s;
+}
+.logout-btn:hover { color: var(--error); background: var(--error-bg); }
+
 /* ─── Status pill ─── */
 .status-pill {
   display: flex;

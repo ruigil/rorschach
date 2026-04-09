@@ -34,6 +34,7 @@ const INITIAL_REACT_STATE: Omit<ReActState, 'llmRef'> = {
   pendingBatch:     null,
   userContext:      null,
   toolLoopCount:    0,
+  activeClientId:   '',
 }
 
 // ─── SSE helpers ───
@@ -110,7 +111,7 @@ describe('distributed tracing', () => {
     const react = spawnReAct(system)
 
     await tick()
-    react.send({ type: 'userMessage', text: 'hi', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hi', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
     await tick(300)
 
     const reactStart  = spanFor(spans, 'react',  'started')
@@ -163,7 +164,7 @@ describe('distributed tracing', () => {
     const react = spawnReAct(system)
 
     await tick()
-    react.send({ type: 'userMessage', text: 'search for ai news', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for ai news', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
     await tick(400)
 
     const reactStart       = spanFor(spans, 'react',      'started')
@@ -198,7 +199,7 @@ describe('distributed tracing', () => {
     const react = spawnReAct(system)
 
     await tick()
-    react.send({ type: 'userMessage', text: 'hi', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hi', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
     await tick(300)
 
     const reactError = spanFor(spans, 'react',  'error')
@@ -244,7 +245,7 @@ describe('distributed tracing', () => {
     const react = spawnReAct(system)
 
     await tick()
-    react.send({ type: 'userMessage', text: 'search test', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search test', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
     await tick(400)
 
     // The traceparent header must be present and well-formed (W3C trace context format)
