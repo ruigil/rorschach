@@ -45,8 +45,11 @@ export type ReflectionState = {
 
 // ─── System prompt ───
 
-const buildSystemPrompt = (): string =>
-  `You are a reflection agent for a personal AI assistant. Your task is NOT to transcribe what users said — the consolidation agent already does that. Your task is to identify patterns that users have never explicitly stated but consistently reveal through their behaviour across multiple conversations.\n\n` +
+const buildSystemPrompt = (intervalMs: number): string => {
+  const intervalMin = Math.round(intervalMs / 60_000)
+  const scheduleMin = Math.max(1, intervalMin - 10)
+
+  return `You are a reflection agent for a personal AI assistant. Your task is NOT to transcribe what users said — the consolidation agent already does that. Your task is to identify patterns that users have never explicitly stated but consistently reveal through their behaviour across multiple conversations.\n\n` +
 
   `## Primary Goal\n` +
   `Discover implicit knowledge about each user by reading across their episodic history. Look for recurring behaviours, consistent tool choices, temporal rhythms, and communication patterns that have not yet been captured as stable facts.\n\n` +
@@ -87,10 +90,16 @@ const buildSystemPrompt = (): string =>
   `- Do NOT infer facts already explicit in the kgraph (check first)\n` +
   `- Do NOT write :HAS_HABIT relationships — that is the reflection agent's exclusive domain\n` +
   `- Do NOT infer emotional or psychological states — stick to observable behaviour\n` +
-  `- Do NOT write to graph with confidence:"inferred" if you are not confident — schedule a question instead`
+  `- Do NOT write to graph with confidence:"inferred" if you are not confident — schedule a question instead\n\n` +
 
-const buildInitialMessages = (): ApiMessage[] => [
-  { role: 'system', content: buildSystemPrompt() },
+  `## Scheduling Policy for cron_create\n` +
+  `Always call get_current_time before creating a cron job.\n` +
+  `Schedule the question to fire ${scheduleMin} minutes from now — just before the next reflection run.\n` +
+  `Never schedule a question more than ${intervalMin} minutes in the future. Questions scheduled days ahead are useless because the pattern may already be confirmed or disproved by then.`
+}
+
+const buildInitialMessages = (intervalMs: number): ApiMessage[] => [
+  { role: 'system', content: buildSystemPrompt(intervalMs) },
   { role: 'user', content: 'Run the weekly reflection pass for all users.' },
 ]
 
@@ -121,7 +130,7 @@ export const createMemoryReflectionActor = (options: ReflectionOptions): ActorDe
   ): ReturnType<MessageHandler<MemoryReflectionMsg, ReflectionState>> => {
     if (state.llmRef === null) return { state }
 
-    const messages = buildInitialMessages()
+    const messages = buildInitialMessages(intervalMs)
     const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
     const requestId = crypto.randomUUID()
 

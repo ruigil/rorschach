@@ -59,8 +59,11 @@ export type ConsolidationState = {
 
 // ─── System prompt ───
 
-const buildSystemPrompt = (userId: string): string =>
-  `You are a user model agent for user "${userId}".\n\n` +
+const buildSystemPrompt = (userId: string, intervalMs: number): string => {
+  const intervalMin = Math.round(intervalMs / 60_000)
+  const scheduleMin = Math.max(1, intervalMin - 10)
+
+  return `You are a user model agent for user "${userId}".\n\n` +
 
   `## Primary Goal\n` +
   `Build the most complete and accurate knowledge base about this user. The knowledge base is the most important artifact — it is a living document about who this user is. The graph and episodic logs exist to support it.\n\n` +
@@ -116,15 +119,21 @@ const buildSystemPrompt = (userId: string): string =>
   `6. MERGE new current-state nodes and relationships\n` +
   `7. Observe interaction patterns from the turn text (message length, question style, corrections)\n` +
   `   → update /workspace/memory/${userId}/kbase/communication.md (read first, create if missing)\n` +
-  `8. Review kbase for gaps → schedule proactive questions via cron_create if needed`
+  `8. Review kbase for gaps → schedule proactive questions via cron_create if needed\n\n` +
 
-const buildMessages = (userId: string, turns: MemoryTurnEvent[]): ApiMessage[] => {
+  `## Scheduling Policy for cron_create\n` +
+  `Always call get_current_time before creating a cron job.\n` +
+  `Schedule the question to fire ${scheduleMin} minutes from now — just before the next consolidation run.\n` +
+  `Never schedule a question more than ${intervalMin} minutes in the future. Questions scheduled days ahead are useless because the answer may already be known by then.`
+}
+
+const buildMessages = (userId: string, intervalMs: number, turns: MemoryTurnEvent[]): ApiMessage[] => {
   const turnList = turns.map((t, i) => {
     const date = new Date(t.timestamp).toISOString()
     return `Turn ${i + 1} [${date}]\nUser: ${t.userText}\nAssistant: ${t.assistantText}`
   }).join('\n\n')
   return [
-    { role: 'system', content: buildSystemPrompt(userId) },
+    { role: 'system', content: buildSystemPrompt(userId, intervalMs) },
     { role: 'user', content: `Please consolidate these conversation turns into memory:\n\n${turnList}` },
   ]
 }
@@ -169,7 +178,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
     const { [nextUserId]: _dropped, ...remainingBuffer } = state.buffer
 
     const requestId = crypto.randomUUID()
-    const messages = buildMessages(nextUserId, snapshotTurns)
+    const messages = buildMessages(nextUserId, intervalMs, snapshotTurns)
     const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
 
     state.llmRef.send({
