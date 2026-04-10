@@ -1,5 +1,5 @@
 import { emit } from '../../system/types.ts'
-import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../system/types.ts'
+import type { ActorDef, ActorRef, MessageHandler, PersistenceAdapter, SpanHandle } from '../../system/types.ts'
 import { ask } from '../../system/ask.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { WsSendTopic, MemoryStreamTopic } from '../../types/ws.ts'
@@ -84,6 +84,58 @@ const trimHistory = (history: ConversationMessage[], maxTurns: number): Conversa
   const userIndices = history.reduce<number[]>((acc, m, i) => { if (m.role === 'user') acc.push(i); return acc }, [])
   if (userIndices.length <= maxTurns) return history
   return history.slice(userIndices[userIndices.length - maxTurns])
+}
+
+// ─── Persistence ───
+//
+// Only the durable fields are saved. Ephemeral turn state and ActorRefs are
+// always reset to defaults on load — they are restored via subscriptions at startup.
+
+type PersistedReActState = {
+  history:     ConversationMessage[]
+  userContext: string | null
+}
+
+// Drop any incomplete turn at the tail (e.g. a user message without a reply,
+// or a mid-tool-loop assistant turn) so the history is always clean on restart.
+const sanitizeHistory = (history: ConversationMessage[]): ConversationMessage[] => {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i]!
+    if (m.role === 'assistant' && typeof m.content === 'string') return history.slice(0, i + 1)
+  }
+  return []
+}
+
+const createPersistence = (userId: string, clientId: string): PersistenceAdapter<ReActState> => {
+  const path = `workspace/history/${userId}.json`
+  return {
+    load: async () => {
+      const file = Bun.file(path)
+      if (!await file.exists()) return undefined
+      const saved = JSON.parse(await file.text()) as PersistedReActState
+      return {
+        history:          sanitizeHistory(saved.history ?? []),
+        sessionUsage:     { promptTokens: 0, completionTokens: 0 },
+        userContext:      saved.userContext ?? null,
+        // Ephemeral fields — reset to defaults; restored via subscriptions on start
+        tools:            {},
+        llmRef:           null,
+        activeClientId:   clientId,
+        requestId:        null,
+        turnMessages:     null,
+        spanHandles:      null,
+        pendingUsage:     { promptTokens: 0, completionTokens: 0 },
+        pending:          '',
+        pendingReasoning: '',
+        pendingBatch:     null,
+        toolLoopCount:    0,
+      }
+    },
+    save: async (state) => {
+      const data: PersistedReActState = { history: state.history, userContext: state.userContext }
+      await Bun.write(path, JSON.stringify(data, null, 2))
+    },
+  }
 }
 
 // ─── Actor definition ───
@@ -487,6 +539,8 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
   })
 
   return {
+    persistence: userId ? createPersistence(userId, clientId) : undefined,
+
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(ToolRegistrationTopic, (event) => {

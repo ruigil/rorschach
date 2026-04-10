@@ -3,7 +3,7 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ToolInvokeMsg } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { KgraphMsg } from '../../types/memory.ts'
-import type { MemoryConsolidationMsg } from '../../types/memory.ts'
+import type { MemoryConsolidationMsg, MemoryReflectionMsg } from '../../types/memory.ts'
 import type { UserMemoryMsg } from '../../types/memory.ts'
 import {
   createKgraphActor,
@@ -16,6 +16,10 @@ import {
   INITIAL_CONSOLIDATION_STATE,
 } from './memory-consolidation.ts'
 import {
+  createMemoryReflectionActor,
+  INITIAL_REFLECTION_STATE,
+} from './memory-reflection.ts'
+import {
   createUserMemoryActor,
   INITIAL_USER_MEMORY_STATE,
   RECALL_MEMORY_TOOL_NAME,
@@ -26,6 +30,7 @@ import {
 export type MemoryActorConfig = {
   model:                   string
   consolidationIntervalMs: number
+  reflectionIntervalMs?:   number
 }
 
 export type MemoryConfig = {
@@ -41,6 +46,7 @@ type MemoryPluginState = {
   initialized:   boolean
   kgraph:        PluginActorState<MemoryConfig['kgraph']>
   consolidation: ActorRef<MemoryConsolidationMsg> | null
+  reflection:    ActorRef<MemoryReflectionMsg> | null
   userMemory:    ActorRef<UserMemoryMsg> | null
   memoryGen:     number
 }
@@ -50,30 +56,39 @@ type MemoryPluginMsg =
 
 // ─── Helpers ───
 
+const REFLECTION_DEFAULT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000 // 1 week
+
 const spawnMemoryActors = (
   ctx: Parameters<NonNullable<PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig>['lifecycle']>>[2],
   config: MemoryActorConfig,
   gen: number,
-): { consolidation: ActorRef<MemoryConsolidationMsg>; userMemory: ActorRef<UserMemoryMsg> } => {
+): { consolidation: ActorRef<MemoryConsolidationMsg>; reflection: ActorRef<MemoryReflectionMsg>; userMemory: ActorRef<UserMemoryMsg> } => {
   const consolidation = ctx.spawn(
     `memory-consolidation-${gen}`,
     createMemoryConsolidationActor({ model: config.model, intervalMs: config.consolidationIntervalMs, toolFilter: { allow: ['kgraph_query', 'kgraph_write', 'bash', 'write', 'read', 'cron_create'] } }),
     INITIAL_CONSOLIDATION_STATE,
+  )
+  const reflection = ctx.spawn(
+    `memory-reflection-${gen}`,
+    createMemoryReflectionActor({ model: config.model, intervalMs: config.reflectionIntervalMs ?? REFLECTION_DEFAULT_INTERVAL_MS, toolFilter: { allow: ['kgraph_query', 'kgraph_write', 'bash', 'write', 'read', 'cron_create'] } }),
+    INITIAL_REFLECTION_STATE,
   )
   const userMemory = ctx.spawn(
     `user-memory-${gen}`,
     createUserMemoryActor({ model: config.model, toolFilter: { allow: ['kgraph_query', 'read'] } }),
     INITIAL_USER_MEMORY_STATE,
   )
-  return { consolidation, userMemory }
+  return { consolidation, reflection, userMemory }
 }
 
 const stopMemoryActors = (
   ctx: Parameters<NonNullable<PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig>['lifecycle']>>[2],
   consolidation: ActorRef<MemoryConsolidationMsg> | null,
+  reflection: ActorRef<MemoryReflectionMsg> | null,
   userMemory: ActorRef<UserMemoryMsg> | null,
 ): void => {
   if (consolidation) ctx.stop(consolidation)
+  if (reflection) ctx.stop(reflection)
   if (userMemory) {
     ctx.stop(userMemory)
     ctx.deleteRetained(ToolRegistrationTopic, RECALL_MEMORY_TOOL_NAME, { name: RECALL_MEMORY_TOOL_NAME, ref: null })
@@ -100,6 +115,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
     initialized:   false,
     kgraph:        { config: null, ref: null, gen: 0 },
     consolidation: null,
+    reflection:    null,
     userMemory:    null,
     memoryGen:     0,
   },
@@ -117,12 +133,14 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       ctx.publishRetained(KgraphTopic, 'ref', { ref: kgraphRef })
 
       let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
-      let userMemory: ActorRef<UserMemoryMsg> | null = null
+      let reflection:    ActorRef<MemoryReflectionMsg> | null = null
+      let userMemory:    ActorRef<UserMemoryMsg> | null = null
 
       if (slice?.memory) {
         const actors = spawnMemoryActors(ctx, slice.memory, 0)
         consolidation = actors.consolidation
-        userMemory = actors.userMemory
+        reflection    = actors.reflection
+        userMemory    = actors.userMemory
         ctx.log.info('memory actors activated', { model: slice.memory.model })
       }
 
@@ -132,6 +150,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           initialized: true,
           kgraph: { config: kgraphConfig, ref: kgraphRef, gen: 0 },
           consolidation,
+          reflection,
           userMemory,
           memoryGen: 0,
         },
@@ -144,6 +163,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         ctx.deleteRetained(ToolRegistrationTopic, KGRAPH_WRITE_TOOL_NAME, { name: KGRAPH_WRITE_TOOL_NAME, ref: null })
         ctx.deleteRetained(KgraphTopic, 'ref', { ref: null })
       }
+      if (state.reflection) ctx.stop(state.reflection)
       if (state.userMemory) {
         ctx.deleteRetained(ToolRegistrationTopic, RECALL_MEMORY_TOOL_NAME, { name: RECALL_MEMORY_TOOL_NAME, ref: null })
       }
@@ -172,16 +192,18 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       ctx.publishRetained(KgraphTopic, 'ref', { ref: kgraphRef })
 
       // ─── Reconfigure memory actors ───
-      stopMemoryActors(ctx, state.consolidation, state.userMemory)
+      stopMemoryActors(ctx, state.consolidation, state.reflection, state.userMemory)
 
       let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
-      let userMemory: ActorRef<UserMemoryMsg> | null = null
+      let reflection:    ActorRef<MemoryReflectionMsg> | null = null
+      let userMemory:    ActorRef<UserMemoryMsg> | null = null
       const memoryGen = state.memoryGen + 1
 
       if (msg.slice?.memory) {
         const actors = spawnMemoryActors(ctx, msg.slice.memory, memoryGen)
         consolidation = actors.consolidation
-        userMemory = actors.userMemory
+        reflection    = actors.reflection
+        userMemory    = actors.userMemory
         ctx.log.info('memory actors reconfigured', { gen: memoryGen })
       }
 
@@ -192,6 +214,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           ...state,
           kgraph: { config: newKgraphConfig, ref: kgraphRef, gen: kgraphGen },
           consolidation,
+          reflection,
           userMemory,
           memoryGen,
         },

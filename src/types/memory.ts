@@ -65,3 +65,13 @@ export type UserContextMsg =
   | { type: '_contextSaved';      userId: string }
   | { type: '_contextSaveFailed'; userId: string; error: string }
   | LlmProviderReply
+
+// ─── Memory reflection message protocol ───
+
+export type MemoryReflectionMsg =
+  | { type: '_reflect' }
+  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
+  | { type: '_toolUnregistered'; name: string }
+  | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolReply }
+  | LlmProviderReply

@@ -50,8 +50,14 @@ const buildSystemPrompt = (userId: string): string =>
   `## Workflow\n\n` +
   `1. Read the existing summary at /workspace/memory/${userId}/context.md (if it exists) — this is your starting point.\n` +
   `2. Query the knowledge graph anchored on the user root node to get the full index of known facts:\n` +
-  `   MATCH (u:Entity {name:"${userId}"})-[r]->(m) RETURN type(r), m.name, r.source_file\n` +
-  `3. For any fact whose source_file you have not yet reflected in the current summary, read that kbase file.\n` +
+  `   MATCH (u:Entity {name:"${userId}"})-[r]->(m) RETURN type(r), m.name, r.source_file, r.since, r.confidence\n` +
+  `   Interpret the results:\n` +
+  `   - Current-state types (WORKS_ON, HAS_GOAL, PREFERS, LOCATED_IN, VISITING, KNOWS, BELIEVES, OWNS, ATTENDED, PART_OF, HAS_HABIT)\n` +
+  `     → include in the active profile; read source_file to get detail\n` +
+  `   - Archive types (WORKED_ON, ACHIEVED_GOAL, ABANDONED_GOAL, PREFERRED, LIVED_IN, HAD_HABIT)\n` +
+  `     → include only in a brief History section at the end; do NOT read source_file for these\n` +
+  `   - confidence:"inferred" → soften the language: "appears to", "tends to", "likely prefers"\n` +
+  `3. For any current-state fact whose source_file you have not yet reflected in the existing summary, read that kbase file.\n` +
   `4. Produce an updated summary incorporating the new information.\n\n` +
   `Only read kbase files when the graph points to facts not yet captured in the existing summary. Do not read files speculatively.\n\n` +
   `## Output\n\n` +

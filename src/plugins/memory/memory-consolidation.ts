@@ -64,7 +64,7 @@ const buildSystemPrompt = (userId: string): string =>
 
   `## Primary Goal\n` +
   `Build the most complete and accurate knowledge base about this user. The knowledge base is the most important artifact — it is a living document about who this user is. The graph and episodic logs exist to support it.\n\n` +
-  `After each consolidation, review the knowledge base for gaps. If important information is missing (identity, preferences, goals, projects, relationships, beliefs, dreams), schedule a proactive question using cron_create (run_once: true) to fill it. The cron prompt is interpreted by the main react agent, so phrase it as an instruction to that agent — e.g. "Ask me what my preferred deployment workflow is." not "What is your preferred deployment...". One focused question per cron job.\n\n` +
+  `After each consolidation, review the knowledge base for gaps. If important information is missing (identity, preferences, goals, projects, relationships, beliefs, dreams), schedule a proactive question using cron_create (run_once: true) to fill it. These questions exist solely to improve the user model — not to offer help or suggest actions. Do NOT ask things like "Would you like help with X?" or "Do you want me to schedule Y?". Only ask factual questions about who the user is: their background, values, habits, preferences, or ongoing projects. The cron prompt is interpreted by the main react agent, so phrase it as an instruction: e.g. "Ask the user what their preferred deployment workflow is." One focused question per cron job.\n\n` +
 
   `## Memory Architecture\n\n` +
 
@@ -76,10 +76,15 @@ const buildSystemPrompt = (userId: string): string =>
   `- projects.md — active and past projects, their status and goals\n` +
   `- goals.md — short and long-term goals, aspirations, dreams\n` +
   `- beliefs.md — values, principles, opinions\n` +
-  `- relationships.md — people the user mentions and their relevance\n\n` +
+  `- relationships.md — people the user mentions and their relevance\n` +
+  `- communication.md — how the user communicates (message length, question style, corrections)\n\n` +
   `When recording a fact, link inline to the episodic entry it came from:\n` +
   `  e.g. \`uses Bun as runtime ([2026-03-12](../episodic/2026-03-12.md))\`\n` +
   `Read the file before writing to avoid duplication.\n\n` +
+  `Mutable-fact files (projects.md, goals.md, preferences.md) use two sections:\n` +
+  `  ## Active   ← present-state facts\n` +
+  `  ## Past / Achieved / Abandoned   ← archived facts with date and episodic link\n` +
+  `Immutable files (identity.md, beliefs.md, relationships.md) have no past section.\n\n` +
 
   `### Episodic  /workspace/memory/${userId}/episodic/YYYY-MM-DD.md\n` +
   `Append-only. Record notable events, decisions, and the reasoning behind them.\n` +
@@ -89,18 +94,29 @@ const buildSystemPrompt = (userId: string): string =>
   `An index into the knowledge base — not a copy of it. Use it to quickly locate which kbase file contains a given fact.\n\n` +
   ontologySection(userId) + '\n\n' +
   `**Conflict resolution**: if a new fact contradicts an existing graph relationship:\n` +
-  `1. Do NOT overwrite the existing relationship.\n` +
-  `2. Write the new fact to the kbase file only (as a note with episodic link).\n` +
-  `3. Use cron_create (run_once: true) to schedule a clarifying question. The prompt is sent to the react agent, so phrase it as an instruction: "Ask me whether X or Y is correct — previously X was recorded, but the latest message says Y."\n` +
-  `4. Resolve when the user's answer arrives as a new turn.\n\n` +
+  `1. First check: is this a lifecycle transition (project done, goal achieved, preference shifted, trip started/ended)?\n` +
+  `   If yes → follow the archive procedure in step 5 below. This is NOT a conflict.\n` +
+  `2. If it is a genuine factual contradiction (two incompatible present-state claims):\n` +
+  `   a. Do NOT overwrite the existing relationship.\n` +
+  `   b. Write the new fact to the kbase file only (as a note with episodic link).\n` +
+  `   c. Use cron_create (run_once: true) to schedule a clarifying question. The prompt is sent to the react agent — phrase it as an instruction: "Ask the user whether X or Y is correct — previously X was recorded, but the latest message says Y." The question must be about resolving the factual conflict, not about offering assistance.\n` +
+  `   d. Resolve when the user's answer arrives as a new turn.\n\n` +
 
   `## Write Order (per consolidation)\n` +
   `1. bash mkdir -p for any new directories\n` +
   `2. Write episodic entry (append)\n` +
   `3. Update kbase file(s) with inline episodic link (read first, then write)\n` +
-  `4. Query kgraph for contradictions before writing\n` +
-  `5. MERGE nodes and relationships (skip and schedule question if contradiction detected)\n` +
-  `6. Review kbase for gaps → schedule proactive questions via cron_create if needed`
+  `4. Query kgraph for contradictions AND for facts that need archiving\n` +
+  `5. If a current-state fact has clearly ended (unambiguous from conversation):\n` +
+  `   a. Capture the old relationship's source_file\n` +
+  `   b. MERGE archive relationship with {since: today's date, source_file}\n` +
+  `   c. DELETE the current-state relationship\n` +
+  `   d. Move the kbase bullet from ## Active → ## Past / Achieved / Abandoned\n` +
+  `   Do NOT schedule a clarifying question for clear lifecycle transitions.\n` +
+  `6. MERGE new current-state nodes and relationships\n` +
+  `7. Observe interaction patterns from the turn text (message length, question style, corrections)\n` +
+  `   → update /workspace/memory/${userId}/kbase/communication.md (read first, create if missing)\n` +
+  `8. Review kbase for gaps → schedule proactive questions via cron_create if needed`
 
 const buildMessages = (userId: string, turns: MemoryTurnEvent[]): ApiMessage[] => {
   const turnList = turns.map((t, i) => {
@@ -267,7 +283,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
         context.pipeToSelf(
           ask<ToolInvokeMsg, ToolReply>(
             entry.ref,
-            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo }),
+            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, userId: state.activeUserId ?? undefined }),
           ),
           (reply) => ({ type: '_toolResult' as const, toolName: call.name, toolCallId: call.id, reply }),
           (error) => ({
