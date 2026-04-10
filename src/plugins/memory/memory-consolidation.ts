@@ -15,6 +15,7 @@ import { LlmProviderTopic } from '../../types/llm.ts'
 import type { MemoryConsolidationMsg, UserContextMsg } from '../../types/memory.ts'
 import { createUserContextActor, INITIAL_USER_CONTEXT_STATE } from './user-context.ts'
 import { ask } from '../../system/ask.ts'
+import { ontologySection } from './ontology.ts'
 
 // ─── Options ───
 
@@ -63,7 +64,7 @@ const buildSystemPrompt = (userId: string): string =>
 
   `## Primary Goal\n` +
   `Build the most complete and accurate knowledge base about this user. The knowledge base is the most important artifact — it is a living document about who this user is. The graph and episodic logs exist to support it.\n\n` +
-  `After each consolidation, review the knowledge base for gaps. If important information is missing (identity, preferences, goals, projects, relationships, beliefs, dreams), schedule a proactive question to the user using cron_create (run_once: true) to fill it. Ask one focused question at a time.\n\n` +
+  `After each consolidation, review the knowledge base for gaps. If important information is missing (identity, preferences, goals, projects, relationships, beliefs, dreams), schedule a proactive question using cron_create (run_once: true) to fill it. The cron prompt is interpreted by the main react agent, so phrase it as an instruction to that agent — e.g. "Ask me what my preferred deployment workflow is." not "What is your preferred deployment...". One focused question per cron job.\n\n` +
 
   `## Memory Architecture\n\n` +
 
@@ -86,19 +87,11 @@ const buildSystemPrompt = (userId: string): string =>
 
   `### Knowledge Graph (kgraph)\n` +
   `An index into the knowledge base — not a copy of it. Use it to quickly locate which kbase file contains a given fact.\n\n` +
-  `**Nodes** — named anchors only. Always MERGE, never INSERT.\n` +
-  `- Use broad, minimal labels. Avoid near-synonyms — prefer one general label over two specific ones.\n` +
-  `  Acceptable: :Entity :Project :Tool :Concept :Preference\n` +
-  `  Avoid: both :Person and :User, both :Library and :Framework, etc.\n\n` +
-  `**Relationships** — carry the fact and its provenance. Always MERGE (never INSERT).\n` +
-  `- Every relationship MUST include a \`source_file\` property: the kbase file path documenting this fact.\n` +
-  `  e.g. MERGE (u:Entity {name:"${userId}"})-[:USES {source_file:"/workspace/memory/${userId}/kbase/preferences.md"}]->(t:Tool {name:"Bun"})\n` +
-  `- Before writing, query the graph to check if a contradicting relationship already exists.\n\n` +
+  ontologySection(userId) + '\n\n' +
   `**Conflict resolution**: if a new fact contradicts an existing graph relationship:\n` +
   `1. Do NOT overwrite the existing relationship.\n` +
   `2. Write the new fact to the kbase file only (as a note with episodic link).\n` +
-  `3. Use cron_create (run_once: true) to schedule a clarifying question to the user.\n` +
-  `   Frame it clearly: "I noticed a conflict — previously X, now Y. Which is correct?"\n` +
+  `3. Use cron_create (run_once: true) to schedule a clarifying question. The prompt is sent to the react agent, so phrase it as an instruction: "Ask me whether X or Y is correct — previously X was recorded, but the latest message says Y."\n` +
   `4. Resolve when the user's answer arrives as a new turn.\n\n` +
 
   `## Write Order (per consolidation)\n` +

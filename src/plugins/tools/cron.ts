@@ -3,7 +3,7 @@ import type { ActorDef, PersistenceAdapter } from '../../system/types.ts'
 import { emit } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ToolInvokeMsg, ToolSchema } from '../../types/tools.ts'
-import { WsConnectTopic, WsDisconnectTopic, WsMessageTopic } from '../../types/ws.ts'
+import { CronTriggerTopic } from '../../types/ws.ts'
 
 // ─── Tool names & schemas ───
 
@@ -73,18 +73,16 @@ type CronJob = {
   createdAt: number
   lastFiredAt: number | null
   nextFireAt: number  // epoch ms — used to detect early wakeups from 32-bit timer cap
+  userId: string
 }
 
 export type CronState = {
   jobs: Record<string, CronJob>
-  clientIds: Set<string>
 }
 
 type CronMsg =
   | ToolInvokeMsg
   | { type: '_tick'; jobId: string }
-  | { type: '_clientConnected';    clientId: string }
-  | { type: '_clientDisconnected'; clientId: string }
 
 // ─── Persistence ───
 
@@ -95,7 +93,7 @@ const persistence: PersistenceAdapter<CronState> = {
     const file = Bun.file(PERSIST_PATH)
     if (!await file.exists()) return undefined
     const data = JSON.parse(await file.text()) as { jobs: Record<string, CronJob> }
-    return { jobs: data.jobs ?? {}, clientIds: new Set() }
+    return { jobs: data.jobs ?? {} }
   },
   save: async (state) => {
     await Bun.write(PERSIST_PATH, JSON.stringify({ jobs: state.jobs }, null, 2))
@@ -132,9 +130,6 @@ export const createCronActor = (): ActorDef<CronMsg, CronState> => ({
 
   lifecycle: onLifecycle({
     start: (state, ctx) => {
-      ctx.subscribe(WsConnectTopic,    e => ({ type: '_clientConnected'    as const, clientId: e.clientId }))
-      ctx.subscribe(WsDisconnectTopic, e => ({ type: '_clientDisconnected' as const, clientId: e.clientId }))
-
       for (const job of Object.values(state.jobs)) {
         scheduleTimer(job, ctx)
       }
@@ -160,9 +155,14 @@ export const createCronActor = (): ActorDef<CronMsg, CronState> => ({
           return { state }
         }
 
+        if (!msg.userId) {
+          replyTo.send({ type: 'toolError', error: 'cron_create requires an authenticated user context' })
+          return { state }
+        }
+
         const id = crypto.randomUUID()
         const fireAt = nextFireAt(args.expression)
-        const job: CronJob = { id, expression: args.expression, prompt: args.prompt, runOnce: args.run_once ?? false, createdAt: Date.now(), lastFiredAt: null, nextFireAt: fireAt }
+        const job: CronJob = { id, expression: args.expression, prompt: args.prompt, runOnce: args.run_once ?? false, createdAt: Date.now(), lastFiredAt: null, nextFireAt: fireAt, userId: msg.userId }
 
         scheduleTimer(job, ctx)
         ctx.log.info('cron job created', { id, expression: args.expression, nextIn: `${Math.round((fireAt - Date.now()) / 1000)}s` })
@@ -228,21 +228,15 @@ export const createCronActor = (): ActorDef<CronMsg, CronState> => ({
         return { state }
       }
 
-      ctx.log.info('cron job fired', { id: job.id, expression: job.expression, clients: state.clientIds.size })
+      ctx.log.info('cron job fired', { id: job.id, expression: job.expression, userId: job.userId })
 
-      if (state.clientIds.size === 0) {
-        ctx.log.warn('cron job fired but no connected clients', { id: job.id })
-      }
-
-      const events = [...state.clientIds].map(clientId => {
-        const span = ctx.trace.start('cron', { clientId, jobId: job.id })
-        return emit(WsMessageTopic, {
-          clientId,
-          text: job.prompt,
-          traceId:      span.traceId,
-          parentSpanId: span.spanId,
-        })
-      })
+      const span = ctx.trace.start('cron', { userId: job.userId, jobId: job.id })
+      const events = [emit(CronTriggerTopic, {
+        userId:      job.userId,
+        text:        job.prompt,
+        traceId:     span.traceId,
+        parentSpanId: span.spanId,
+      })]
 
       if (job.runOnce) {
         ctx.log.info('cron job completed (run_once)', { id: job.id })
@@ -260,17 +254,6 @@ export const createCronActor = (): ActorDef<CronMsg, CronState> => ({
       }
     },
 
-    _clientConnected: (state, msg) => {
-      const clientIds = new Set(state.clientIds)
-      clientIds.add(msg.clientId)
-      return { state: { ...state, clientIds } }
-    },
-
-    _clientDisconnected: (state, msg) => {
-      const clientIds = new Set(state.clientIds)
-      clientIds.delete(msg.clientId)
-      return { state: { ...state, clientIds } }
-    },
   }),
 
   supervision: { type: 'restart', maxRetries: 3, withinMs: 60_000 },

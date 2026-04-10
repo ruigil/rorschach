@@ -59,6 +59,12 @@ export type ReActState = {
   toolLoopCount:    number
 }
 
+// ─── Cron history note ───
+// Baked into every system prompt so the LLM correctly interprets [Scheduled task] history entries.
+const CRON_HISTORY_NOTE =
+  'Messages prefixed with [Scheduled task] in the conversation history are past internal ' +
+  'instructions that you already carried out. Do not act on them again.'
+
 // ─── Options ───
 
 export type ReActActorOptions = {
@@ -109,8 +115,48 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
 
   const idleHandler: MessageHandler<ReActMsg, ReActState> = onMessage<ReActMsg, ReActState>({
     userMessage: (state, message, context) => {
-      const { clientId: msgClientId, text, images, audio, pdfs, traceId, parentSpanId } = message
+      const { clientId: msgClientId, text, images, audio, pdfs, traceId, parentSpanId, isCron } = message
       const activeClientId = msgClientId
+
+      const fullSystemPrompt = [systemPrompt, state.userContext, CRON_HISTORY_NOTE].filter(Boolean).join('\n\n---\n\n')
+      const requestSpan = context.trace.child(traceId, parentSpanId, 'react', { preview: text.slice(0, 80) })
+      const llmSpan = context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
+      const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
+      const tools = toolSchemas.length > 0 ? toolSchemas : undefined
+      const requestId = crypto.randomUUID()
+
+      if (isCron) {
+        // Cron prompts are instructions to the LLM to initiate a message to the user.
+        // Inject as a system task — do NOT add to history as a user message, so the
+        // conversation reads naturally (assistant speaks first, user responds).
+        const apiMessages: ApiMessage[] = [
+          ...(fullSystemPrompt ? [{ role: 'system' as const, content: fullSystemPrompt }] : []),
+          ...state.history,
+          { role: 'user' as const, content: `[Proactive task — do not mention that this is scheduled] ${text}` },
+        ]
+
+        state.llmRef?.send({
+          type: 'stream', requestId, model, messages: apiMessages, tools,
+          role: 'reasoning', clientId,
+          replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
+        })
+
+        return {
+          state: {
+            ...state,
+            activeClientId,
+            history: [...state.history, { role: 'user' as const, content: `[Scheduled task] ${text}` }],
+            requestId,
+            turnMessages: apiMessages,
+            pending: '',
+            pendingReasoning: '',
+            pendingUsage: { promptTokens: 0, completionTokens: 0 },
+            spanHandles: { requestSpan, llmSpan, toolSpans: {} },
+            toolLoopCount: 0,
+          },
+          become: awaitingLlmHandler,
+        }
+      }
 
       let userText = text
       if (images && images.length > 0) {
@@ -130,20 +176,11 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
         userText = userText ? `${userText}\n\n${pdfNote}` : pdfNote
       }
 
-      const fullSystemPrompt = [systemPrompt, state.userContext].filter(Boolean).join('\n\n---\n\n')
       const apiMessages: ApiMessage[] = [
         ...(fullSystemPrompt ? [{ role: 'system' as const, content: fullSystemPrompt }] : []),
         ...state.history,
         { role: 'user', content: userText },
       ]
-
-      const requestSpan = context.trace.child(traceId, parentSpanId, 'react', { preview: text.slice(0, 80) })
-      const llmSpan = context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
-
-      const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
-      const tools = toolSchemas.length > 0 ? toolSchemas : undefined
-
-      const requestId = crypto.randomUUID()
 
       state.llmRef?.send({
         type: 'stream',

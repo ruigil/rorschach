@@ -2,7 +2,7 @@ import { createTopic } from '../system/types.ts'
 
 // ─── Domain event: published when a WebSocket message is received ───
 
-export type WsMessageEvent = { clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string }
+export type WsMessageEvent = { clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string; isCron?: boolean }
 
 /** Topic for WebSocket message domain events. Subscribe to receive browser input. */
 export const WsMessageTopic = createTopic<WsMessageEvent>('http.ws.message')
@@ -34,6 +34,13 @@ export type WsBroadcastEvent = { text: string }
 
 /** Topic for broadcasting a message to all WebSocket clients. Emit to push text to every open connection. */
 export const WsBroadcastTopic = createTopic<WsBroadcastEvent>('http.ws.broadcast')
+
+// ─── Domain event: emitted by cron actor to trigger a user-specific proactive message ───
+
+export type CronTriggerEvent = { userId: string; text: string; traceId: string; parentSpanId: string }
+
+/** Topic emitted when a cron job fires for a specific user. Session manager routes to that user's ReAct actor. */
+export const CronTriggerTopic = createTopic<CronTriggerEvent>('cron.trigger.user')
 
 // ─── Domain event: published when a ReAct turn completes ───
 

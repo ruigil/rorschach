@@ -11,6 +11,7 @@ import type {
 } from '../../types/llm.ts'
 import type { UserContextMsg } from '../../types/memory.ts'
 import { UserContextTopic } from '../../types/memory.ts'
+import { ontologySection } from './ontology.ts'
 
 // ─── Options ───
 
@@ -45,10 +46,11 @@ export type UserContextState = {
 const buildSystemPrompt = (userId: string): string =>
   `You are a user model agent for user "${userId}". Your task is to produce an updated user context summary.\n\n` +
   `This summary will be injected into a chatbot's system prompt before every response. Its purpose is to give the chatbot a complete, up-to-date picture of who this user is.\n\n` +
+  ontologySection(userId) + '\n\n' +
   `## Workflow\n\n` +
   `1. Read the existing summary at /workspace/memory/${userId}/context.md (if it exists) — this is your starting point.\n` +
-  `2. Query the knowledge graph to get the full index of known facts:\n` +
-  `   MATCH (n)-[r]->(m) RETURN n.name, type(r), m.name, r.source_file\n` +
+  `2. Query the knowledge graph anchored on the user root node to get the full index of known facts:\n` +
+  `   MATCH (u:Entity {name:"${userId}"})-[r]->(m) RETURN type(r), m.name, r.source_file\n` +
   `3. For any fact whose source_file you have not yet reflected in the current summary, read that kbase file.\n` +
   `4. Produce an updated summary incorporating the new information.\n\n` +
   `Only read kbase files when the graph points to facts not yet captured in the existing summary. Do not read files speculatively.\n\n` +

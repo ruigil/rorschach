@@ -393,9 +393,8 @@ export const createSignalActor = (
               ():    SignalMsg => ({ type: '_phoneResolved', phone, userId: null }),
             )
           } else {
-            // Auth plugin not loaded — send rejection immediately (fire-and-forget)
-            writeToSocket(rpcLine('send', { ...(account ? { account } : {}), recipient: [phone], message: 'Please register on the web interface to use Signal.' })).catch(() => {})
-            pendingConnect.delete(phone)
+            // Auth plugin not loaded — treat phone as userId directly
+            ctx.timers.startSingleTimer(`resolve-${phone}`, { type: '_phoneResolved' as const, phone, userId: phone }, 0)
           }
         }
 

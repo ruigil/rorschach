@@ -10,6 +10,7 @@ import type {
   ToolCall,
 } from '../../types/llm.ts'
 import type { UserMemoryMsg, MemoryRecallMsg } from '../../types/memory.ts'
+import { ontologySection } from './ontology.ts'
 
 // ─── Options ───
 
@@ -46,11 +47,15 @@ type RecallState = {
 
 const buildSystemPrompt = (userId: string): string =>
   `You are a memory retrieval agent for user "${userId}". Answer the query by searching the knowledge graph and reading referenced knowledge base files.\n\n` +
+  `The knowledge graph is shared across all users. You MUST always anchor queries on the user's root node to avoid returning data belonging to other users.\n\n` +
+  ontologySection(userId) + '\n\n' +
   `Strategy:\n` +
-  `1. Use kgraph_query to find relevant entities and relationships. Relationships carry a source_file property pointing to the kbase file that documents the fact.\n` +
-  `   e.g. MATCH (n)-[r]->(m) WHERE n.name CONTAINS "..." RETURN n.name, type(r), m.name, r.source_file\n` +
+  `1. Use kgraph_query anchored on the user root node. Use relationship types and node labels from the schema above to write precise queries.\n` +
+  `   Broad scan:    MATCH (u:Entity {name:"${userId}"})-[r]->(m) RETURN type(r), m.name, r.source_file\n` +
+  `   Targeted:      MATCH (u:Entity {name:"${userId}"})-[:USES]->(t:Tool) RETURN t.name, r.source_file\n` +
+  `   Multi-hop:     MATCH (u:Entity {name:"${userId}"})-[r*1..2]->(m) RETURN type(r[-1]), m.name, r[-1].source_file\n` +
   `2. Use read to read the source_file paths returned by the graph — these are the knowledge base files at /workspace/memory/${userId}/kbase/.\n` +
-  `3. Run follow-up graph queries if needed to explore related entities.\n` +
+  `3. Run follow-up graph queries if needed, always keeping the user root as the starting point.\n` +
   `4. Synthesize a concise answer from what you found.\n\n` +
   `Only read files the graph points to. If nothing relevant is found, say so plainly.`
 
