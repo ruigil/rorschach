@@ -93,9 +93,12 @@ const buildSystemPrompt = (intervalMs: number): string => {
   `- Do NOT write to graph with confidence:"inferred" if you are not confident — schedule a question instead\n\n` +
 
   `## Scheduling Policy for cron_create\n` +
-  `Always call get_current_time before creating a cron job.\n` +
-  `Schedule the question to fire ${scheduleMin} minutes from now — just before the next reflection run.\n` +
-  `Never schedule a question more than ${intervalMin} minutes in the future. Questions scheduled days ahead are useless because the pattern may already be confirmed or disproved by then.`
+  `1. Call get_current_time to get the current local time.\n` +
+  `2. Add ${scheduleMin} minutes to get the target fire time.\n` +
+  `3. Build a one-shot cron expression pinned to that exact date and time: \`{MM} {HH} {DD} {month} *\`\n` +
+  `   Example: if now is 2026-04-10T14:23+02:00, target = 15:13 on April 10 → expression is \`13 15 10 4 *\`\n` +
+  `   Handle hour/day rollover correctly (e.g. 23:50 + 20min = 00:10 next day).\n` +
+  `4. Never schedule more than ${intervalMin} minutes in the future — questions due days ahead will already be answered by then.`
 }
 
 const buildInitialMessages = (intervalMs: number): ApiMessage[] => [
