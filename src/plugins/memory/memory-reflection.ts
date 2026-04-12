@@ -45,7 +45,7 @@ export type ReflectionState = {
 
 // ─── System prompt ───
 
-const buildSystemPrompt = (intervalMs: number): string => {
+const buildSystemPrompt = (intervalMs: number, now: Date): string => {
   const intervalMin = Math.round(intervalMs / 60_000)
   const scheduleMin = Math.max(1, intervalMin - 10)
 
@@ -93,8 +93,8 @@ const buildSystemPrompt = (intervalMs: number): string => {
   `- Do NOT write to graph with confidence:"inferred" if you are not confident — schedule a question instead\n\n` +
 
   `## Scheduling Policy for cron_create\n` +
-  `1. Call get_current_time to get the current local time.\n` +
-  `2. Add ${scheduleMin} minutes to get the target fire time.\n` +
+  `Current local time: ${now.toISOString()}\n` +
+  `1. Add ${scheduleMin} minutes to the current time above to get the target fire time.\n` +
   `3. Build a one-shot cron expression pinned to that exact date and time: \`{MM} {HH} {DD} {month} *\`\n` +
   `   Example: if now is 2026-04-10T14:23+02:00, target = 15:13 on April 10 → expression is \`13 15 10 4 *\`\n` +
   `   Handle hour/day rollover correctly (e.g. 23:50 + 20min = 00:10 next day).\n` +
@@ -102,7 +102,7 @@ const buildSystemPrompt = (intervalMs: number): string => {
 }
 
 const buildInitialMessages = (intervalMs: number): ApiMessage[] => [
-  { role: 'system', content: buildSystemPrompt(intervalMs) },
+  { role: 'system', content: buildSystemPrompt(intervalMs, new Date()) },
   { role: 'user', content: 'Run the weekly reflection pass for all users.' },
 ]
 

@@ -30,7 +30,6 @@ Current-state (fact is true now):
   :PREFERS     — entity currently prefers something              {source_file}
   :BELIEVES    — entity holds a belief or value                  {source_file}
   :LOCATED_IN  — entity is permanently based in a place          {source_file}
-  :VISITING    — entity is temporarily present in a place        {source_file}
   :ATTENDED    — entity attended an event or place (inherently past) {source_file}
   :OWNS        — entity owns something                           {source_file}
   :PART_OF     — project or concept belongs to a larger context  {source_file}
@@ -46,7 +45,8 @@ Archive (fact is no longer true — carry {since, source_file}):
 
 export const GRAPH_CONVENTIONS = `
 Graph conventions:
-  - Root anchor: every fact about a user hangs off (u:Entity {name:"<userId>"})
+  - Root anchor: every fact about a user hangs off (u:Entity {name:"<userId>"}).
+    The name MUST be the exact userId string "<userId>" — never "User", "the user", or any other generic label.
   - All relationships MUST carry source_file — the kbase file documenting this fact
     e.g. MERGE (u:Entity {name:"<userId>"})-[:PREFERS {source_file:"/workspace/memory/<userId>/kbase/preferences.md"}]->(p:Preference {name:"Bun"})
   - Query and check for contradictions and pending lifecycle transitions before writing

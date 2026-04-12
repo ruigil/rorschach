@@ -62,7 +62,8 @@ const buildSystemPrompt = (userId: string): string =>
   `Only read kbase files when the graph points to facts not yet captured in the existing summary. Do not read files speculatively.\n\n` +
   `## Output\n\n` +
   `Write the most concise description of the user possible — maximum 10 paragraphs, use fewer if the model is small. Each paragraph covers one dimension: identity, current work, projects, goals, preferences, beliefs, relationships, etc. Only include a paragraph if there is meaningful content.\n\n` +
-  `Be specific and concrete — prefer "builds actor systems in TypeScript with Bun" over "is a developer". Do not pad or speculate. Write in third person, present tense. Your final text response (with no trailing tool calls) is the summary.`
+  `Be specific and concrete — prefer "builds actor systems in TypeScript with Bun" over "is a developer". Do not pad or speculate. Write in third person, present tense.\n\n` +
+  `Your response MUST be the summary and nothing else — no preamble, no "here is the summary", no reasoning, no commentary before or after. Start directly with the first sentence about the user.`
 
 const buildInitialMessages = (userId: string): ApiMessage[] => [
   { role: 'system', content: buildSystemPrompt(userId) },
@@ -166,7 +167,7 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
       }
 
       return {
-        state: { ...state, requestId: null, pendingBatch: batch },
+        state: { ...state, requestId: null, accumulated: '', pendingBatch: batch },
         become: toolLoopHandler,
       }
     },
@@ -254,7 +255,7 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
       })
 
       return {
-        state: { ...state, requestId, messages: nextMessages, pendingBatch: null, toolLoopCount: nextLoopCount },
+        state: { ...state, requestId, messages: nextMessages, accumulated: '', pendingBatch: null, toolLoopCount: nextLoopCount },
         become: awaitingLlmHandler,
       }
     },

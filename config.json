@@ -59,6 +59,7 @@
           "deny": [
             "kgraph_query",
             "kgraph_write",
+            "kgraph_upsert",
             "bash",
             "write",
             "read"
@@ -74,7 +75,7 @@
       },
       "memory": {
         "model": "google/gemini-3.1-pro-preview",
-        "consolidationIntervalMs": 1440000,
+        "consolidationIntervalMs": 30000,
         "reflectionIntervalMs": 604800000
       }
     },

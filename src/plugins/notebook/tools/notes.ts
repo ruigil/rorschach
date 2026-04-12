@@ -18,7 +18,7 @@ export const NOTES_CREATE_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: NOTES_CREATE_TOOL_NAME,
-    description: 'Create a new note with a title, markdown content, and optional tags. Wiki-style [[links]] to other notes are supported.',
+    description: 'Create a new note with a title, markdown content, and optional tags. Wiki-style [[links]] to other notes are supported. ',
     parameters: {
       type: 'object',
       properties: {

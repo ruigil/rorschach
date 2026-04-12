@@ -59,7 +59,7 @@ export type ConsolidationState = {
 
 // ─── System prompt ───
 
-const buildSystemPrompt = (userId: string, intervalMs: number): string => {
+const buildSystemPrompt = (userId: string, intervalMs: number, now: Date): string => {
   const intervalMin = Math.round(intervalMs / 60_000)
   const scheduleMin = Math.max(1, intervalMin - 10)
 
@@ -91,7 +91,12 @@ const buildSystemPrompt = (userId: string, intervalMs: number): string => {
 
   `### Episodic  /workspace/memory/${userId}/episodic/YYYY-MM-DD.md\n` +
   `Append-only. Record notable events, decisions, and the reasoning behind them.\n` +
-  `Skip small talk and trivial exchanges.\n\n` +
+  `Skip small talk and trivial exchanges.\n` +
+  `Always append — never overwrite. Use bash to do this:\n` +
+  `  cat >> /workspace/memory/${userId}/episodic/YYYY-MM-DD.md << 'EOF'\n` +
+  `  ## HH:MM — Short title\n` +
+  `  Entry text.\n` +
+  `  EOF\n\n` +
 
   `### Knowledge Graph (kgraph)\n` +
   `An index into the knowledge base — not a copy of it. Use it to quickly locate which kbase file contains a given fact.\n\n` +
@@ -107,7 +112,7 @@ const buildSystemPrompt = (userId: string, intervalMs: number): string => {
 
   `## Write Order (per consolidation)\n` +
   `1. bash mkdir -p for any new directories\n` +
-  `2. Write episodic entry (append)\n` +
+  `2. Append episodic entry via bash cat >> (never use the write tool for episodic files)\n` +
   `3. Update kbase file(s) with inline episodic link (read first, then write)\n` +
   `4. Query kgraph for contradictions AND for facts that need archiving\n` +
   `5. If a current-state fact has clearly ended (unambiguous from conversation):\n` +
@@ -116,16 +121,18 @@ const buildSystemPrompt = (userId: string, intervalMs: number): string => {
   `   c. DELETE the current-state relationship\n` +
   `   d. Move the kbase bullet from ## Active → ## Past / Achieved / Abandoned\n` +
   `   Do NOT schedule a clarifying question for clear lifecycle transitions.\n` +
-  `6. For each new node: call kgraph_upsert {label, name, properties}. Capture canonicalName from\n` +
-  `   the response — use it (not the name you passed) in all relationship MERGE statements below.\n` +
+  `6. Ensure the root anchor exists first: kgraph_upsert { label:"Entity", name:"${userId}" }.\n` +
+  `   Always use the exact string "${userId}" — never a generic label like "User" or "the user".\n` +
+  `   Then for each additional new node: call kgraph_upsert {label, name, properties}. Capture\n` +
+  `   canonicalName from the response — use it (not the name you passed) in all relationship MERGE statements below.\n` +
   `7. Write new relationship MERGEs via kgraph_write using the canonicalName values from step 6.\n` +
   `8. Observe interaction patterns from the turn text (message length, question style, corrections)\n` +
   `   → update /workspace/memory/${userId}/kbase/communication.md (read first, create if missing)\n` +
   `9. Review kbase for gaps → schedule proactive questions via cron_create if needed\n\n` +
 
   `## Scheduling Policy for cron_create\n` +
-  `1. Call get_current_time to get the current local time.\n` +
-  `2. Add ${scheduleMin} minutes to get the target fire time.\n` +
+  `Current local time: ${now.toISOString()}\n` +
+  `1. Add ${scheduleMin} minutes to the current time above to get the target fire time.\n` +
   `3. Build a one-shot cron expression pinned to that exact date and time: \`{MM} {HH} {DD} {month} *\`\n` +
   `   Example: if now is 2026-04-10T14:23+02:00, target = 15:13 on April 10 → expression is \`13 15 10 4 *\`\n` +
   `   Handle hour/day rollover correctly (e.g. 23:50 + 20min = 00:10 next day).\n` +
@@ -133,12 +140,13 @@ const buildSystemPrompt = (userId: string, intervalMs: number): string => {
 }
 
 const buildMessages = (userId: string, intervalMs: number, turns: MemoryTurnEvent[]): ApiMessage[] => {
+  const now = new Date()
   const turnList = turns.map((t, i) => {
     const date = new Date(t.timestamp).toISOString()
     return `Turn ${i + 1} [${date}]\nUser: ${t.userText}\nAssistant: ${t.assistantText}`
   }).join('\n\n')
   return [
-    { role: 'system', content: buildSystemPrompt(userId, intervalMs) },
+    { role: 'system', content: buildSystemPrompt(userId, intervalMs, now) },
     { role: 'user', content: `Please consolidate these conversation turns into memory:\n\n${turnList}` },
   ]
 }

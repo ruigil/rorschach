@@ -25,6 +25,8 @@ export const NOTE_SCHEMA: ToolSchema = {
   function: {
     name: NOTE_TOOL_NAME,
     description: `Interact with your personal notebook via a natural language request. A sub-agent handles the request and returns a summary of what was done.
+  
+This tool is for the user only — only call it when explicitly asked by the user. Never use it to take notes for yourself.
 
 The notebook has four areas — use the request field to describe exactly what you want:
 
