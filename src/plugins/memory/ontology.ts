@@ -49,8 +49,17 @@ Graph conventions:
   - Root anchor: every fact about a user hangs off (u:Entity {name:"<userId>"})
   - All relationships MUST carry source_file — the kbase file documenting this fact
     e.g. MERGE (u:Entity {name:"<userId>"})-[:PREFERS {source_file:"/workspace/memory/<userId>/kbase/preferences.md"}]->(p:Preference {name:"Bun"})
-  - Always MERGE, never INSERT — prevents duplicates
-  - Query and check for contradictions and pending lifecycle transitions before writing`
+  - Query and check for contradictions and pending lifecycle transitions before writing
+
+Three graph tools — use each for exactly one purpose:
+  kgraph_upsert  — create or update a NODE. Always call this before writing relationships.
+                   Returns { canonicalName, nodeId, merged }. Use canonicalName (not the name you
+                   passed in) in all subsequent kgraph_write statements — it may differ if an existing
+                   node was found via semantic similarity.
+                   Extra context goes in properties, not in name:
+                     kgraph_upsert { label:"Place", name:"Amor", properties:{ region:"Leiria" } }
+  kgraph_write   — MERGE/SET/DELETE RELATIONSHIPS only. Never use it to create bare nodes.
+  kgraph_query   — MATCH/RETURN reads only.`
 
 export const LIFECYCLE_RULES = `
 ### Lifecycle Rules

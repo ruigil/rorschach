@@ -253,6 +253,25 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
       }
     },
 
+    embed: async (model, text) => {
+      const res = await fetch('https://openrouter.ai/api/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model, input: text }),
+      })
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`OpenRouter embeddings ${res.status}: ${body}`)
+      }
+      const data = await res.json() as { data: Array<{ embedding: number[] }> }
+      const embedding = data.data[0]?.embedding
+      if (!embedding) throw new Error('No embedding returned')
+      return embedding
+    },
+
     fetchModels: async () => {
       try {
         const res = await fetch('https://openrouter.ai/api/v1/models', {
@@ -361,6 +380,24 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
           }),
         )
 
+        return { state }
+      },
+
+      embed: (state, message, context) => {
+        const { requestId, model, text, replyTo } = message
+        context.log.info('llm embed', { requestId, model })
+
+        context.pipeToSelf(
+          adapter.embed(model, text),
+          (embedding): LlmProviderMsg => ({ type: '_embedDone', result: { type: 'embeddingResult', embedding }, replyTo }),
+          (error):     LlmProviderMsg => ({ type: '_embedDone', result: { type: 'embeddingError', error: String(error) }, replyTo }),
+        )
+
+        return { state }
+      },
+
+      _embedDone: (state, message) => {
+        message.replyTo.send(message.result)
         return { state }
       },
 

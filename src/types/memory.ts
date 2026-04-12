@@ -3,6 +3,8 @@ import type { ActorRef, SpanHandle } from '../system/types.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from './tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from './llm.ts'
 
+export type UpsertResult = { canonicalName: string; nodeId: number; merged: boolean }
+
 // ─── Graph dump types ───
 
 export type KgraphNode = { id: number; labels: string[]; properties: Record<string, unknown> }
@@ -19,12 +21,15 @@ export const KgraphTopic = createTopic<KgraphRefEvent>('memory.kgraph')
 export type KgraphMsg =
   | ToolInvokeMsg
   | { type: 'dump'; replyTo: ActorRef<KgraphGraph> }
-  | { type: '_queryDone'; rows: unknown[]; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_queryErr';  error: string;   replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_writeDone'; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_writeErr';  error: string;   replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_dumpDone';  graph: KgraphGraph; replyTo: ActorRef<KgraphGraph> }
-  | { type: '_dumpErr';   error: string;      replyTo: ActorRef<KgraphGraph> }
+  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_queryDone';  rows: unknown[];    replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_queryErr';   error: string;      replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_writeDone';  replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_writeErr';   error: string;      replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_upsertDone'; result: UpsertResult; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_upsertErr';  error: string;       replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_dumpDone';   graph: KgraphGraph; replyTo: ActorRef<KgraphGraph> }
+  | { type: '_dumpErr';    error: string;      replyTo: ActorRef<KgraphGraph> }
 
 // ─── Memory recall message protocol ───
 

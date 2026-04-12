@@ -116,10 +116,12 @@ const buildSystemPrompt = (userId: string, intervalMs: number): string => {
   `   c. DELETE the current-state relationship\n` +
   `   d. Move the kbase bullet from ## Active → ## Past / Achieved / Abandoned\n` +
   `   Do NOT schedule a clarifying question for clear lifecycle transitions.\n` +
-  `6. MERGE new current-state nodes and relationships\n` +
-  `7. Observe interaction patterns from the turn text (message length, question style, corrections)\n` +
+  `6. For each new node: call kgraph_upsert {label, name, properties}. Capture canonicalName from\n` +
+  `   the response — use it (not the name you passed) in all relationship MERGE statements below.\n` +
+  `7. Write new relationship MERGEs via kgraph_write using the canonicalName values from step 6.\n` +
+  `8. Observe interaction patterns from the turn text (message length, question style, corrections)\n` +
   `   → update /workspace/memory/${userId}/kbase/communication.md (read first, create if missing)\n` +
-  `8. Review kbase for gaps → schedule proactive questions via cron_create if needed\n\n` +
+  `9. Review kbase for gaps → schedule proactive questions via cron_create if needed\n\n` +
 
   `## Scheduling Policy for cron_create\n` +
   `1. Call get_current_time to get the current local time.\n` +
