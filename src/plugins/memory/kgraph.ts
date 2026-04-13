@@ -53,7 +53,8 @@ export const KGRAPH_WRITE_SCHEMA: ToolSchema = {
       'Execute a Cypher write statement to store or update facts in the persistent knowledge graph. ' +
       'Use for relationships (MERGE/SET/DELETE) only — use kgraph_upsert to create or update nodes. ' +
       'Returns "ok" on success. ' +
-      'Example: MERGE (u:Entity {name:"alice"})-[:LOCATED_IN {source_file:"/workspace/memory/alice/kbase/identity.md"}]->(p:Place {name:"Lisbon"})',
+      'Node constraint: when referencing nodes inline, only "name" and "description" properties are allowed. ' +
+      'Example: MERGE (u:Entity {name:"Alice"})-[:LOCATED_IN]->(p:Place {name:"Lisbon"})',
     parameters: {
       type: 'object',
       properties: {
@@ -76,7 +77,8 @@ export const KGRAPH_UPSERT_SCHEMA: ToolSchema = {
     description:
       'Create or update a node in the knowledge graph with semantic deduplication. ' +
       'Uses vector similarity to detect existing nodes that represent the same entity, even if named slightly differently. ' +
-      'Returns { canonicalName, nodeId, merged } — always use canonicalName (not the name you passed) in subsequent kgraph_write calls.',
+      'Returns { canonicalName, nodeId, merged } — always use canonicalName (not the name you passed) in subsequent kgraph_write calls. ' +
+      'Node constraint: nodes only store "name" and "description". Put all detail in the description; any other properties will be ignored.',
     parameters: {
       type: 'object',
       properties: {
@@ -86,11 +88,18 @@ export const KGRAPH_UPSERT_SCHEMA: ToolSchema = {
         },
         name: {
           type: 'string',
-          description: 'The name of the node. Use the shortest unambiguous canonical form (e.g. "Amor", not "Amor, near Leiria").',
+          description: 'The name of the node. Prefer a single word or the shortest unambiguous canonical form (e.g. "Lisbon", not "Lisbon, Portugal").',
         },
         properties: {
           type: 'object',
-          description: 'Additional properties to set on the node (e.g. { region: "Leiria", country: "Portugal" }).',
+          description: 'Only "description" is accepted. Include all relevant detail here as a descriptive sentence (e.g. { description: "City in western Portugal, capital of the country." }). Any other keys are ignored.',
+          properties: {
+            description: {
+              type: 'string',
+              description: 'A descriptive sentence capturing the important details about this node.',
+            },
+          },
+          additionalProperties: false,
         },
       },
       required: ['label', 'name'],
@@ -182,7 +191,10 @@ export const createKgraphActor = (
 
       } else if (toolName === KGRAPH_UPSERT_TOOL_NAME) {
         const args = JSON.parse(rawArgs) as { label: string; name: string; properties?: Record<string, unknown> }
-        const { label, name, properties } = args
+        const { label, name } = args
+        const properties = args.properties
+          ? Object.fromEntries(Object.entries(args.properties).filter(([k]) => k === 'description'))
+          : undefined
         ctx.log.info('kgraph upsert', { label, name })
         const span = parent
           ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_UPSERT_TOOL_NAME, { label, name })

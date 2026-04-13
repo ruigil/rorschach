@@ -24,6 +24,7 @@ import {
   createUserMemoryActor,
   INITIAL_USER_MEMORY_STATE,
   RECALL_MEMORY_TOOL_NAME,
+  STORE_MEMORY_TOOL_NAME,
 } from './user-memory.ts'
 
 // ─── Config ───
@@ -78,7 +79,7 @@ const spawnMemoryActors = (
   )
   const userMemory = ctx.spawn(
     `user-memory-${gen}`,
-    createUserMemoryActor({ model: config.model, toolFilter: { allow: ['kgraph_query', 'read'] } }),
+    createUserMemoryActor({ model: config.model, toolFilter: { allow: ['kgraph_query', 'kgraph_write', 'kgraph_upsert', 'bash', 'read', 'write'] } }),
     INITIAL_USER_MEMORY_STATE,
   )
   return { consolidation, reflection, userMemory }
@@ -95,6 +96,7 @@ const stopMemoryActors = (
   if (userMemory) {
     ctx.stop(userMemory)
     ctx.deleteRetained(ToolRegistrationTopic, RECALL_MEMORY_TOOL_NAME, { name: RECALL_MEMORY_TOOL_NAME, ref: null })
+    ctx.deleteRetained(ToolRegistrationTopic, STORE_MEMORY_TOOL_NAME, { name: STORE_MEMORY_TOOL_NAME, ref: null })
   }
 }
 
@@ -177,6 +179,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       if (state.reflection) ctx.stop(state.reflection)
       if (state.userMemory) {
         ctx.deleteRetained(ToolRegistrationTopic, RECALL_MEMORY_TOOL_NAME, { name: RECALL_MEMORY_TOOL_NAME, ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, STORE_MEMORY_TOOL_NAME, { name: STORE_MEMORY_TOOL_NAME, ref: null })
       }
       ctx.log.info('memory plugin deactivating')
       return { state }

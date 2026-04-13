@@ -53,7 +53,7 @@
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "model": "inception/mercury-2",
+        "model": "qwen/qwen3.6-plus",
         "historyWindow": 40,
         "toolFilter": {
           "deny": [
@@ -75,7 +75,7 @@
       },
       "memory": {
         "model": "google/gemini-3.1-pro-preview",
-        "consolidationIntervalMs": 30000,
+        "consolidationIntervalMs": 300000,
         "reflectionIntervalMs": 604800000
       }
     },

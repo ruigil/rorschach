@@ -37,11 +37,18 @@ export type MemoryRecallMsg =
   | { type: '_toolResult'; toolCallId: string; toolName: string; reply: ToolReply }
   | LlmProviderReply
 
+// ─── Memory store message protocol ───
+
+export type MemoryStoreMsg =
+  | { type: '_toolResult'; toolCallId: string; toolName: string; reply: ToolReply }
+  | LlmProviderReply
+
 // ─── User memory message protocol ───
 
 export type UserMemoryMsg =
   | { type: 'invoke';           toolName: string; arguments: string; replyTo: ActorRef<ToolReply>; userId?: string }
   | { type: '_recallDone';      recallId: string }
+  | { type: '_storeDone';       storeId: string }
   | { type: '_llmProvider';     ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
   | { type: '_toolUnregistered'; name: string }

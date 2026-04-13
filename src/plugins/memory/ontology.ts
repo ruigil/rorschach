@@ -47,8 +47,11 @@ export const GRAPH_CONVENTIONS = `
 Graph conventions:
   - Root anchor: every fact about a user hangs off (u:Entity {name:"<userId>"}).
     The name MUST be the exact userId string "<userId>" — never "User", "the user", or any other generic label.
-  - All relationships MUST carry source_file — the kbase file documenting this fact
-    e.g. MERGE (u:Entity {name:"<userId>"})-[:PREFERS {source_file:"/workspace/memory/<userId>/kbase/preferences.md"}]->(p:Preference {name:"Bun"})
+  - All relationships MUST carry source_file — the kbase file documenting this fact.
+    Both nodes must already exist from kgraph_upsert before calling kgraph_write.
+    e.g. (given canonicalUserId="<userId>" and canonicalName="Bun" from prior upserts)
+         MATCH (u:Entity {name:"<userId>"}), (p:Preference {name:"Bun"})
+         MERGE (u)-[:PREFERS {source_file:"/workspace/memory/<userId>/kbase/preferences.md"}]->(p)
   - Query and check for contradictions and pending lifecycle transitions before writing
 
 Three graph tools — use each for exactly one purpose:
@@ -56,9 +59,12 @@ Three graph tools — use each for exactly one purpose:
                    Returns { canonicalName, nodeId, merged }. Use canonicalName (not the name you
                    passed in) in all subsequent kgraph_write statements — it may differ if an existing
                    node was found via semantic similarity.
-                   Extra context goes in properties, not in name:
-                     kgraph_upsert { label:"Place", name:"Amor", properties:{ region:"Leiria" } }
-  kgraph_write   — MERGE/SET/DELETE RELATIONSHIPS only. Never use it to create bare nodes.
+                   Node names should be a single word where possible. Details go in description:
+                     kgraph_upsert { label:"Place", name:"Amor", properties:{ description:"Village in Leiria municipality, Portugal, where the user's parents live." } }
+  kgraph_write   — MERGE/SET/DELETE RELATIONSHIPS only. Both endpoint nodes MUST already exist
+                   (created via kgraph_upsert) before calling this. Never create nodes inline inside
+                   a relationship MERGE — doing so bypasses deduplication and creates duplicate nodes
+                   with no embedding. Always use canonicalName from upsert, not a literal name.
   kgraph_query   — MATCH/RETURN reads only.`
 
 export const LIFECYCLE_RULES = `

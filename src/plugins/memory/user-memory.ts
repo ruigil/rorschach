@@ -5,7 +5,8 @@ import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import { createMemoryRecallActor, INITIAL_RECALL_STATE } from './memory-recall.ts'
-import type { MemoryRecallMsg } from '../../types/memory.ts'
+import { createMemoryStoreActor, INITIAL_STORE_STATE } from './memory-store.ts'
+import type { MemoryRecallMsg, MemoryStoreMsg } from '../../types/memory.ts'
 import type { UserMemoryMsg } from '../../types/memory.ts'
 
 // ─── Tool schemas ───
@@ -28,6 +29,25 @@ export const RECALL_MEMORY_SCHEMA: ToolSchema = {
   },
 }
 
+export const STORE_MEMORY_TOOL_NAME = 'store_memory'
+
+export const STORE_MEMORY_SCHEMA: ToolSchema = {
+  type: 'function',
+  function: {
+    name: 'store_memory',
+    description:
+      'Explicitly store a piece of information about the user into long-term memory. Use when the user shares a fact, preference, goal, or decision they want remembered.',
+    parameters: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: 'The information to store. Be specific and factual.' },
+        topic:   { type: 'string', description: 'Optional hint for which knowledge base topic to file this under (e.g. "preferences", "projects", "goals").' },
+      },
+      required: ['content'],
+    },
+  },
+}
+
 // ─── Options ───
 
 export type UserMemoryOptions = {
@@ -38,9 +58,10 @@ export type UserMemoryOptions = {
 // ─── State ───
 
 type UserMemoryState = {
-  llmRef:   ActorRef<LlmProviderMsg> | null
-  tools:    ToolCollection
-  sessions: Record<string, ActorRef<MemoryRecallMsg>>
+  llmRef:        ActorRef<LlmProviderMsg> | null
+  tools:         ToolCollection
+  sessions:      Record<string, ActorRef<MemoryRecallMsg>>
+  storeSessions: Record<string, ActorRef<MemoryStoreMsg>>
 }
 
 // ─── Actor definition ───
@@ -66,6 +87,11 @@ export const createUserMemoryActor = (options: UserMemoryOptions): ActorDef<User
           schema: RECALL_MEMORY_SCHEMA,
           ref: context.self as unknown as ActorRef<ToolInvokeMsg>,
         })
+        context.publishRetained(ToolRegistrationTopic, STORE_MEMORY_TOOL_NAME, {
+          name: STORE_MEMORY_TOOL_NAME,
+          schema: STORE_MEMORY_SCHEMA,
+          ref: context.self as unknown as ActorRef<ToolInvokeMsg>,
+        })
         return { state }
       },
 
@@ -74,16 +100,29 @@ export const createUserMemoryActor = (options: UserMemoryOptions): ActorDef<User
           name: RECALL_MEMORY_TOOL_NAME,
           ref: null,
         })
+        context.deleteRetained(ToolRegistrationTopic, STORE_MEMORY_TOOL_NAME, {
+          name: STORE_MEMORY_TOOL_NAME,
+          ref: null,
+        })
         return { state }
       },
 
       terminated: (state, event, context) => {
-        const entry = Object.entries(state.sessions).find(([_, ref]) => ref.name === event.ref.name)
-        if (!entry) return { state }
-        const [recallId] = entry
-        context.log.warn('memory recall child terminated unexpectedly', { recallId })
-        const { [recallId]: _dropped, ...sessions } = state.sessions
-        return { state: { ...state, sessions } }
+        const recallEntry = Object.entries(state.sessions).find(([_, ref]) => ref.name === event.ref.name)
+        if (recallEntry) {
+          const [recallId] = recallEntry
+          context.log.warn('memory recall child terminated unexpectedly', { recallId })
+          const { [recallId]: _dropped, ...sessions } = state.sessions
+          return { state: { ...state, sessions } }
+        }
+        const storeEntry = Object.entries(state.storeSessions).find(([_, ref]) => ref.name === event.ref.name)
+        if (storeEntry) {
+          const [storeId] = storeEntry
+          context.log.warn('memory store child terminated unexpectedly', { storeId })
+          const { [storeId]: _dropped, ...storeSessions } = state.storeSessions
+          return { state: { ...state, storeSessions } }
+        }
+        return { state }
       },
     }),
 
@@ -94,40 +133,85 @@ export const createUserMemoryActor = (options: UserMemoryOptions): ActorDef<User
           return { state }
         }
 
-        let query: string
-        try {
-          const args = JSON.parse(msg.arguments) as { query?: unknown }
-          query = typeof args.query === 'string' ? args.query : ''
-        } catch {
-          msg.replyTo.send({ type: 'toolError', error: 'Invalid arguments' })
-          return { state }
+        if (msg.toolName === RECALL_MEMORY_TOOL_NAME) {
+          let query: string
+          try {
+            const args = JSON.parse(msg.arguments) as { query?: unknown }
+            query = typeof args.query === 'string' ? args.query : ''
+          } catch {
+            msg.replyTo.send({ type: 'toolError', error: 'Invalid arguments' })
+            return { state }
+          }
+
+          if (!query) {
+            msg.replyTo.send({ type: 'toolError', error: 'Missing query argument' })
+            return { state }
+          }
+
+          const recallId = crypto.randomUUID()
+          const childRef = context.spawn(
+            `memory-recall-${recallId}`,
+            createMemoryRecallActor({
+              recallId,
+              query,
+              replyTo: msg.replyTo,
+              parentRef: context.self,
+              llmRef: state.llmRef,
+              model,
+              userId: msg.userId ?? 'default',
+              tools: state.tools,
+            }),
+            INITIAL_RECALL_STATE,
+          )
+          context.watch(childRef as ActorRef<unknown>)
+
+          return {
+            state: { ...state, sessions: { ...state.sessions, [recallId]: childRef } },
+          }
         }
 
-        if (!query) {
-          msg.replyTo.send({ type: 'toolError', error: 'Missing query argument' })
-          return { state }
+        if (msg.toolName === STORE_MEMORY_TOOL_NAME) {
+          let content: string
+          let topic: string | undefined
+          try {
+            const args = JSON.parse(msg.arguments) as { content?: unknown; topic?: unknown }
+            content = typeof args.content === 'string' ? args.content : ''
+            topic   = typeof args.topic   === 'string' ? args.topic   : undefined
+          } catch {
+            msg.replyTo.send({ type: 'toolError', error: 'Invalid arguments' })
+            return { state }
+          }
+
+          if (!content) {
+            msg.replyTo.send({ type: 'toolError', error: 'Missing content argument' })
+            return { state }
+          }
+
+          const storeId = crypto.randomUUID()
+          const childRef = context.spawn(
+            `memory-store-${storeId}`,
+            createMemoryStoreActor({
+              storeId,
+              content,
+              topic,
+              replyTo: msg.replyTo,
+              parentRef: context.self,
+              llmRef: state.llmRef,
+              model,
+              userId: msg.userId ?? 'default',
+              tools: state.tools,
+            }),
+            INITIAL_STORE_STATE,
+          )
+          context.watch(childRef as ActorRef<unknown>)
+
+          return {
+            state: { ...state, storeSessions: { ...state.storeSessions, [storeId]: childRef } },
+          }
         }
 
-        const recallId = crypto.randomUUID()
-        const childRef = context.spawn(
-          `memory-recall-${recallId}`,
-          createMemoryRecallActor({
-            recallId,
-            query,
-            replyTo: msg.replyTo,
-            parentRef: context.self,
-            llmRef: state.llmRef,
-            model,
-            userId: msg.userId ?? 'default',
-            tools: state.tools,
-          }),
-          INITIAL_RECALL_STATE,
-        )
-        context.watch(childRef as ActorRef<unknown>)
-
-        return {
-          state: { ...state, sessions: { ...state.sessions, [recallId]: childRef } },
-        }
+        msg.replyTo.send({ type: 'toolError', error: `Unknown tool: ${msg.toolName}` })
+        return { state }
       },
 
       _recallDone: (state, msg, context) => {
@@ -138,6 +222,16 @@ export const createUserMemoryActor = (options: UserMemoryOptions): ActorDef<User
         }
         const { [msg.recallId]: _dropped, ...sessions } = state.sessions
         return { state: { ...state, sessions } }
+      },
+
+      _storeDone: (state, msg, context) => {
+        const ref = state.storeSessions[msg.storeId]
+        if (ref) {
+          context.stop(ref)
+          context.unwatch(ref as ActorRef<unknown>)
+        }
+        const { [msg.storeId]: _dropped, ...storeSessions } = state.storeSessions
+        return { state: { ...state, storeSessions } }
       },
 
       _llmProvider: (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
@@ -155,7 +249,8 @@ export const createUserMemoryActor = (options: UserMemoryOptions): ActorDef<User
 }
 
 export const INITIAL_USER_MEMORY_STATE: UserMemoryState = {
-  llmRef:   null,
-  tools:    {},
-  sessions: {},
+  llmRef:        null,
+  tools:         {},
+  sessions:      {},
+  storeSessions: {},
 }
