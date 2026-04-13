@@ -7,12 +7,16 @@ import { LlmProviderTopic } from '../../types/llm.ts'
 import type { KgraphGraph, KgraphMsg, KgraphRefEvent, UpsertResult } from '../../types/memory.ts'
 import { KgraphTopic } from '../../types/memory.ts'
 import { ask } from '../../system/ask.ts'
+import { createNoteAgentActor } from '../notebook/note-agent.ts'
 export { KgraphTopic }
 export type { KgraphGraph, KgraphMsg, KgraphRefEvent }
 
 // ─── Constants ───
 
-const UPSERT_SIMILARITY_THRESHOLD = 0.88
+// GrafeoDB vectorSearch returns cosine *distance* (0 = identical, 1 = orthogonal),
+// sorted ascending. We merge when distance is below this threshold, which
+// corresponds to a cosine similarity of (1 - UPSERT_DISTANCE_THRESHOLD) = 0.88.
+const UPSERT_DISTANCE_THRESHOLD = 0.12
 
 // Node labels that get a vector index on startup
 const INDEXED_LABELS = ['Entity', 'Project', 'Concept', 'Preference', 'Goal', 'Place', 'Event', 'Habit'] as const
@@ -29,7 +33,7 @@ export const KGRAPH_QUERY_SCHEMA: ToolSchema = {
       'This knowledge graph is where you store information about your user. ' +
       'Run a read-only Cypher query against the persistent knowledge graph to retrieve stored facts. ' +
       'Use MATCH/RETURN clauses only. Returns a JSON array of row objects. ' +
-      'Example: MATCH (p:User {name: "Default"})-[:KNOWS]->(f) RETURN p.name, f.name',
+      'Example: MATCH (p:Entity {name: "Default"})-[:KNOWS]->(f) RETURN p.name, f.name',
     parameters: {
       type: 'object',
       properties: {
@@ -221,7 +225,7 @@ export const createKgraphActor = (
             for (const pair of candidates) {
               const nodeId = pair[0] as number
               const score  = pair[1] as number
-              if (score < UPSERT_SIMILARITY_THRESHOLD) break  // sorted descending
+              if (score > UPSERT_DISTANCE_THRESHOLD) break  // sorted ascending by distance
               const node = db.getNode(nodeId)
               if (!node) continue
               const canonicalName = node.get('name') as string
@@ -231,8 +235,16 @@ export const createKgraphActor = (
               return { canonicalName, nodeId, merged: true }
             }
 
-            const node = db.createNode([label], { name, ...(properties ?? {}), _embedding: vector })
-            return { canonicalName: name, nodeId: node.id, merged: false }
+            // batchCreateNodes is required (not createNode) so the node is registered
+            // in the HNSW vector index and discoverable by future vectorSearch calls.
+            const ids = await db.batchCreateNodes(label, '_embedding', [vector])
+            const nodeId = ids[0]
+            if (nodeId === undefined) throw new Error('batchCreateNodes returned no id')
+            db.setNodeProperty(nodeId, 'name', name)
+            for (const [k, v] of Object.entries(properties ?? {})) {
+              db.setNodeProperty(nodeId, k, v)
+            }
+            return { canonicalName: name, nodeId, merged: false }
           }),
           (result) => ({ type: '_upsertDone' as const, result, replyTo, span }),
           (error)  => ({ type: '_upsertErr'  as const, error: String(error), replyTo, span }),

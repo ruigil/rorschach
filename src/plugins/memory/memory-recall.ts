@@ -52,7 +52,7 @@ const buildSystemPrompt = (userId: string): string =>
   `Strategy:\n` +
   `1. Use kgraph_query anchored on the user root node. Use relationship types and node labels from the schema above to write precise queries.\n` +
   `   Broad scan:    MATCH (u:Entity {name:"${userId}"})-[r]->(m) RETURN type(r), m.name, r.source_file\n` +
-  `   Targeted:      MATCH (u:Entity {name:"${userId}"})-[:USES]->(t:Tool) RETURN t.name, r.source_file\n` +
+  `   Targeted:      MATCH (u:Entity {name:"${userId}"})-[r:KNOWS]->(t:Entity) RETURN t.name, r.source_file\n` +
   `   Multi-hop:     MATCH (u:Entity {name:"${userId}"})-[r*1..2]->(m) RETURN type(r[-1]), m.name, r[-1].source_file\n` +
   `2. Use read to read the source_file paths returned by the graph — these are the knowledge base files at /workspace/memory/${userId}/kbase/.\n` +
   `3. Run follow-up graph queries if needed, always keeping the user root as the starting point.\n` +

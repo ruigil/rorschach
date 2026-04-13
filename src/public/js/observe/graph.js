@@ -2,11 +2,14 @@ import { state } from '../state.js'
 import { escHtml } from '../utils.js'
 
 const LABEL_COLORS = {
-  Person:     { fill: 'rgba(0,196,212,0.12)',  stroke: '#00c4d4' },
-  User:       { fill: 'rgba(57,232,160,0.12)', stroke: '#39e8a0' },
-  Project:    { fill: 'rgba(196,132,58,0.12)', stroke: '#c4843a' },
-  Event:      { fill: 'rgba(91,160,184,0.12)', stroke: '#5ba0b8' },
-  Preference: { fill: 'rgba(224,96,48,0.12)',  stroke: '#e06030' },
+  Entity:     { fill: 'rgba(0,196,212,0.12)',   stroke: '#00c4d4' },
+  Project:    { fill: 'rgba(196,132,58,0.12)',   stroke: '#c4843a' },
+  Concept:    { fill: 'rgba(160,100,220,0.12)',  stroke: '#a064dc' },
+  Preference: { fill: 'rgba(224,96,48,0.12)',    stroke: '#e06030' },
+  Goal:       { fill: 'rgba(57,232,160,0.12)',   stroke: '#39e8a0' },
+  Place:      { fill: 'rgba(80,180,100,0.12)',   stroke: '#50b464' },
+  Event:      { fill: 'rgba(91,160,184,0.12)',   stroke: '#5ba0b8' },
+  Habit:      { fill: 'rgba(220,180,40,0.12)',   stroke: '#dcb428' },
 }
 const DEFAULT_NODE_COLOR = { fill: 'rgba(10,24,32,0.5)', stroke: '#1a3548' }
 

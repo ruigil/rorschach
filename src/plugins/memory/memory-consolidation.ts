@@ -57,6 +57,18 @@ export type ConsolidationState = {
   userContexts:       Record<string, ActorRef<UserContextMsg>>
 }
 
+// ─── Helpers ───
+
+const localTimeString = (d: Date): string => {
+  const offset = -d.getTimezoneOffset()
+  const sign = offset >= 0 ? '+' : '-'
+  const hh   = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0')
+  const mm   = String(Math.abs(offset) % 60).padStart(2, '0')
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000)
+  const tzName = Intl.DateTimeFormat().resolvedOptions().timeZone
+  return `${local.toISOString().slice(0, 19)}${sign}${hh}:${mm} (${tzName})`
+}
+
 // ─── System prompt ───
 
 const buildSystemPrompt = (userId: string, intervalMs: number, now: Date): string => {
@@ -101,15 +113,6 @@ const buildSystemPrompt = (userId: string, intervalMs: number, now: Date): strin
   `### Knowledge Graph (kgraph)\n` +
   `An index into the knowledge base — not a copy of it. Use it to quickly locate which kbase file contains a given fact.\n\n` +
   ontologySection(userId) + '\n\n' +
-  `**Conflict resolution**: if a new fact contradicts an existing graph relationship:\n` +
-  `1. First check: is this a lifecycle transition (project done, goal achieved, preference shifted, trip started/ended)?\n` +
-  `   If yes → follow the archive procedure in step 5 below. This is NOT a conflict.\n` +
-  `2. If it is a genuine factual contradiction (two incompatible present-state claims):\n` +
-  `   a. Do NOT overwrite the existing relationship.\n` +
-  `   b. Write the new fact to the kbase file only (as a note with episodic link).\n` +
-  `   c. Use cron_create (run_once: true) to schedule a clarifying question. The prompt is sent to the react agent — phrase it as an instruction: "Ask the user whether X or Y is correct — previously X was recorded, but the latest message says Y." The question must be about resolving the factual conflict, not about offering assistance.\n` +
-  `   d. Resolve when the user's answer arrives as a new turn.\n\n` +
-
   `## Write Order (per consolidation)\n` +
   `1. bash mkdir -p for any new directories\n` +
   `2. Append episodic entry via bash cat >> (never use the write tool for episodic files)\n` +
@@ -131,7 +134,7 @@ const buildSystemPrompt = (userId: string, intervalMs: number, now: Date): strin
   `9. Review kbase for gaps → schedule proactive questions via cron_create if needed\n\n` +
 
   `## Scheduling Policy for cron_create\n` +
-  `Current local time: ${now.toISOString()}\n` +
+  `Current local time: ${localTimeString(now)}\n` +
   `1. Add ${scheduleMin} minutes to the current time above to get the target fire time.\n` +
   `3. Build a one-shot cron expression pinned to that exact date and time: \`{MM} {HH} {DD} {month} *\`\n` +
   `   Example: if now is 2026-04-10T14:23+02:00, target = 15:13 on April 10 → expression is \`13 15 10 4 *\`\n` +
