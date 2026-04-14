@@ -88,7 +88,6 @@ type PluginState = {
   notebookDir:             string
   model:                   string
   maxToolLoops:            number
-  consolidationModel:      string | null
   consolidationIntervalMs: number
   journalRef:       ActorRef<ToolInvokeMsg> | null
   notesRef:         ActorRef<ToolInvokeMsg> | null
@@ -143,7 +142,6 @@ const spawnChildren = (
   notebookDir: string,
   model: string,
   maxToolLoops: number,
-  consolidationModel: string | null,
   consolidationIntervalMs: number,
   llmRef: ActorRef<LlmProviderMsg> | null,
   ctx: ActorContext<PluginMsg>,
@@ -179,12 +177,12 @@ const spawnChildren = (
     INITIAL_TODO_REMINDER_STATE(notebookDir),
   ) as ActorRef<TodoReminderMsg>
 
-  // Spawn consolidation only if configured and LLM is ready
+  // Spawn consolidation only if LLM is ready
   let consolidationRef: ActorRef<NotebookConsolidationMsg> | null = null
-  if (consolidationModel && llmRef) {
+  if (llmRef) {
     consolidationRef = ctx.spawn(
       `notebook-consolidation-${gen}`,
-      createNotebookConsolidationActor({ model: consolidationModel, intervalMs: consolidationIntervalMs, notebookDir }),
+      createNotebookConsolidationActor({ model, intervalMs: consolidationIntervalMs, notebookDir }),
       INITIAL_CONSOLIDATION_STATE,
     ) as ActorRef<NotebookConsolidationMsg>
   }
@@ -226,7 +224,6 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
     notebookDir:             'workspace/notebook',
     model:                   '',
     maxToolLoops:            10,
-    consolidationModel:      null,
     consolidationIntervalMs: 604_800_000,
     journalRef:       null,
     notesRef:         null,
@@ -245,12 +242,11 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
       const notebookDir             = config?.notebookDir            ?? 'workspace/notebook'
       const model                   = config?.agentModel             ?? 'google/gemini-3.1-pro-preview'
       const maxToolLoops            = config?.maxToolLoops           ?? 10
-      const consolidationModel      = config?.consolidationModel      ?? null
       const consolidationIntervalMs = config?.consolidationIntervalMs ?? 604_800_000
 
       ctx.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProviderUpdated' as const, ref: e.ref }))
 
-      const children = spawnChildren(0, notebookDir, model, maxToolLoops, consolidationModel, consolidationIntervalMs, null, ctx)
+      const children = spawnChildren(0, notebookDir, model, maxToolLoops, consolidationIntervalMs, null, ctx)
 
       ctx.log.info('notebook plugin activated', { notebookDir })
 
@@ -262,7 +258,6 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
           notebookDir,
           model,
           maxToolLoops,
-          consolidationModel,
           consolidationIntervalMs,
           llmRef: null,
           ...children,
@@ -284,11 +279,10 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
       const notebookDir             = cfg?.notebookDir            ?? 'workspace/notebook'
       const model                   = cfg?.agentModel             ?? 'google/gemini-3.1-pro-preview'
       const maxToolLoops            = cfg?.maxToolLoops           ?? 10
-      const consolidationModel      = cfg?.consolidationModel      ?? null
       const consolidationIntervalMs = cfg?.consolidationIntervalMs ?? 604_800_000
       const gen                     = state.gen + 1
 
-      const children = spawnChildren(gen, notebookDir, model, maxToolLoops, consolidationModel, consolidationIntervalMs, state.llmRef, ctx)
+      const children = spawnChildren(gen, notebookDir, model, maxToolLoops, consolidationIntervalMs, state.llmRef, ctx)
 
       return {
         state: {
@@ -297,7 +291,6 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
           notebookDir,
           model,
           maxToolLoops,
-          consolidationModel,
           consolidationIntervalMs,
           ...children,
         },
@@ -306,11 +299,11 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
 
     _llmProviderUpdated: (state, msg, ctx) => {
       // Lazy-spawn consolidation once we have an LLM ref and it's not yet running
-      if (msg.ref && !state.consolidationRef && state.consolidationModel) {
+      if (msg.ref && !state.consolidationRef) {
         const consolidationRef = ctx.spawn(
           `notebook-consolidation-${state.gen}`,
           createNotebookConsolidationActor({
-            model:       state.consolidationModel,
+            model:       state.model,
             intervalMs:  state.consolidationIntervalMs,
             notebookDir: state.notebookDir,
           }),

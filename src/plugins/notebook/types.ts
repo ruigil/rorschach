@@ -44,7 +44,6 @@ export type Todo = {
 export type NotebookConfig = {
   notebookDir?:             string  // default: workspace/notebook
   agentModel?:              string
-  consolidationModel?:      string
   consolidationIntervalMs?: number  // default: 604_800_000 (7 days)
   maxToolLoops?:            number  // default: 10
 }
