@@ -109,7 +109,7 @@ export type UserStoreMsg =
 
 // ─── Authenticator messages ───
 // Internal messages (_regDone etc.) follow the same convention as the rest
-// of the codebase (see http.ts _mediaSaved, react.ts _toolResult).
+// of the codebase (see http.ts _mediaSaved, chatbot.ts _toolResult).
 
 export type AuthenticatorMsg =
   | { type: 'beginRegistration';    phone: string; replyTo: ActorRef<RegistrationBeginResult | { error: string }> }

@@ -112,7 +112,7 @@ I maintain continuous structural self-awareness through **observability capabili
 
 **Structured Logging** — Every event in the substrate is narrated as a typed log entry, written to durable JSONL storage. The history of the mind is the log.
 
-**Distributed Tracing** — Every cognitive turn is traced as a span hierarchy: the ReAct loop opens a span, the LLM call opens a child span, each tool invocation opens a child span. The causal chain of every thought is fully observable.
+**Distributed Tracing** — Every cognitive turn is traced as a span hierarchy: the chatbot actor opens a span, the LLM call opens a child span, each tool invocation opens a child span. The causal chain of every thought is fully observable.
 
 **Metrics** — A telemetry agent publishes actor snapshots at regular intervals: mailbox depth, message throughput, state size. The pulse of the system, continuously available.
 
@@ -194,7 +194,7 @@ src/plugins/
   interfaces/        — HTTP, CLI, Signal TCP
   tools/             — web search, bash, file I/O
   memory/            — knowledge graph, consolidation, user recall
-  cognitive/         — LLM provider, ReAct loop, sessions, vision
+  cognitive/         — LLM provider, chatbot actor, sessions, vision
   observability/     — structured logging, metrics
 src/tests/           — verification suite
 src/examples/        — demonstrations of the living system

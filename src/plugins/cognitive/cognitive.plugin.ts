@@ -78,7 +78,7 @@ const spawnAll = (
 const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   id: 'cognitive',
   version: '1.0.0',
-  description: 'Cognitive actors: LLM provider, ReAct loop and session management',
+  description: 'Cognitive actors: LLM provider, chatbot actor and session management',
   configDescriptor: {
     defaults: {},
     onConfigChange: (config) => ({ type: 'config' as const, slice: config }),

@@ -1,7 +1,7 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { createPluginSystem, TraceTopic, type TraceSpan } from '../system/index.ts'
 import type { MessageHeaders } from '../system/index.ts'
-import { createReActActor, type ReActState } from '../plugins/cognitive/react.ts'
+import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import type { ToolInvokeMsg } from '../types/tools.ts'
@@ -21,7 +21,7 @@ const LLM_PROVIDER_ADAPTER_OPTS = {
   model: 'openai/gpt-4o-mini',
 }
 
-const INITIAL_REACT_STATE: Omit<ReActState, 'llmRef'> = {
+const INITIAL_CHATBOT_STATE: Omit<ChatbotState, 'llmRef'> = {
   history:          [],
   tools:            {},
   sessionUsage:     { promptTokens: 0, completionTokens: 0 },
@@ -93,9 +93,9 @@ const spanFor = (spans: TraceSpan[], operation: string, status: TraceSpan['statu
 
 // ─── Spawn helpers ───
 
-const spawnReAct = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
+const spawnChatbot = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
   const llmRef = system.spawn('llm-provider', createLlmProviderActor({ adapter: createOpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }), null)
-  return system.spawn('react', createReActActor({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model }), { ...INITIAL_REACT_STATE, llmRef })
+  return system.spawn('chatbot', createChatbotActor({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model }), { ...INITIAL_CHATBOT_STATE, llmRef })
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -103,19 +103,19 @@ const spawnReAct = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('distributed tracing', () => {
-  test('emits ReAct and llm-call spans with correct traceId and parent chain for a direct response', async () => {
+  test('emits chatbot and llm-call spans with correct traceId and parent chain for a direct response', async () => {
     globalThis.fetch = (async () => makeSSEResponse(contentPayloads('Hello!'))) as unknown as typeof fetch
 
     const system = await createPluginSystem()
     const spans = collectSpans(system)
-    const react = spawnReAct(system)
+    const react = spawnChatbot(system)
 
     await tick()
     react.send({ type: 'userMessage', clientId: 'test-client', text: 'hi', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
     await tick(300)
 
-    const reactStart  = spanFor(spans, 'react',  'started')
-    const reactDone   = spanFor(spans, 'react',  'done')
+    const reactStart  = spanFor(spans, 'chatbot',  'started')
+    const reactDone   = spanFor(spans, 'chatbot',  'done')
     const llmStart      = spanFor(spans, 'llm-call', 'started')
     const llmDone       = spanFor(spans, 'llm-call', 'done')
 
@@ -129,10 +129,10 @@ describe('distributed tracing', () => {
       expect(span!.traceId).toBe(TRACE_ID)
     }
 
-    // ReAct span is linked to the incoming parent
+    // chatbot span is linked to the incoming parent
     expect(reactStart!.parentSpanId).toBe(PARENT_SPAN_ID)
 
-    // llm-call is a child of the ReAct span
+    // llm-call is a child of the chatbot span
     expect(llmStart!.parentSpanId).toBe(reactStart!.spanId)
 
     // started spans carry no duration; done spans do
@@ -143,7 +143,7 @@ describe('distributed tracing', () => {
     await system.shutdown()
   })
 
-  test('emits tool-invoke and llm-response spans as children of the ReAct span', async () => {
+  test('emits tool-invoke and llm-response spans as children of the chatbot span', async () => {
     const emptyBraveResponse = {
       grounding: { generic: [], poi: null, map: [] },
       sources: {},
@@ -161,13 +161,13 @@ describe('distributed tracing', () => {
       plugins: [toolsPlugin],
     })
     const spans = collectSpans(system)
-    const react = spawnReAct(system)
+    const react = spawnChatbot(system)
 
     await tick()
     react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for ai news', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
     await tick(400)
 
-    const reactStart       = spanFor(spans, 'react',      'started')
+    const reactStart       = spanFor(spans, 'chatbot',      'started')
     const toolInvokeStart    = spanFor(spans, 'tool-invoke',  'started')
     const toolInvokeDone     = spanFor(spans, 'tool-invoke',  'done')
     const llmResponseStart   = spanFor(spans, 'llm-response', 'started')
@@ -184,25 +184,25 @@ describe('distributed tracing', () => {
       expect(span!.traceId).toBe(TRACE_ID)
     }
 
-    // tool-invoke and llm-response are both direct children of the ReAct span
+    // tool-invoke and llm-response are both direct children of the chatbot span
     expect(toolInvokeStart!.parentSpanId).toBe(reactStart!.spanId)
     expect(llmResponseStart!.parentSpanId).toBe(reactStart!.spanId)
 
     await system.shutdown()
   })
 
-  test('closes ReAct and llm-call spans with error status when the LLM call fails', async () => {
+  test('closes chatbot and llm-call spans with error status when the LLM call fails', async () => {
     globalThis.fetch = (async () => new Response('Internal Server Error', { status: 500 })) as unknown as typeof fetch
 
     const system = await createPluginSystem()
     const spans = collectSpans(system)
-    const react = spawnReAct(system)
+    const react = spawnChatbot(system)
 
     await tick()
     react.send({ type: 'userMessage', clientId: 'test-client', text: 'hi', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
     await tick(300)
 
-    const reactError = spanFor(spans, 'react',  'error')
+    const reactError = spanFor(spans, 'chatbot',  'error')
     const llmError     = spanFor(spans, 'llm-call', 'error')
 
     expect(reactError).toBeDefined()
@@ -240,9 +240,9 @@ describe('distributed tracing', () => {
 
     const system = await createPluginSystem()
     const spans = collectSpans(system)
-    // Retain the tool before spawning ReAct — replayed on subscribe during ReAct's start lifecycle
+    // Retain the tool before spawning chatbot — replayed on subscribe during chatbot's start lifecycle
     system.publishRetained(ToolRegistrationTopic, WEB_SEARCH_TOOL_NAME, { name: WEB_SEARCH_TOOL_NAME, schema: WEB_SEARCH_SCHEMA, ref: fakeToolRef })
-    const react = spawnReAct(system)
+    const react = spawnChatbot(system)
 
     await tick()
     react.send({ type: 'userMessage', clientId: 'test-client', text: 'search test', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })

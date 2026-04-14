@@ -39,10 +39,10 @@ export const WsBroadcastTopic = createTopic<WsBroadcastEvent>('http.ws.broadcast
 
 export type CronTriggerEvent = { userId: string; text: string; traceId: string; parentSpanId: string }
 
-/** Topic emitted when a cron job fires for a specific user. Session manager routes to that user's ReAct actor. */
+/** Topic emitted when a cron job fires for a specific user. Session manager routes to that user's chatbot actor. */
 export const CronTriggerTopic = createTopic<CronTriggerEvent>('cron.trigger.user')
 
-// ─── Domain event: published when a ReAct turn completes ───
+// ─── Domain event: published when a chatbot turn completes ───
 
 export type MemoryTurnEvent = {
   userId:        string
@@ -51,7 +51,7 @@ export type MemoryTurnEvent = {
   timestamp:     number
 }
 
-/** Topic emitted when a ReAct LLM turn completes. Subscribe to persist conversation history. */
+/** Topic emitted when a chatbot LLM turn completes. Subscribe to persist conversation history. */
 export const MemoryStreamTopic = createTopic<MemoryTurnEvent>('memory.turn')
 
 // ─── Domain event: emitted when a POST /config request is received ───

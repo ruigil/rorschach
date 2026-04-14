@@ -14,7 +14,7 @@ import type {
   Tool,
   ToolCall,
 } from '../../types/llm.ts'
-import type { ReActMsg } from '../../types/react.ts'
+import type { ChatbotMsg } from '../../types/chatbot.ts'
 import { UserContextTopic } from '../../types/memory.ts'
 
 // ─── State ───
@@ -37,7 +37,7 @@ type SpanHandles = {
   toolSpans:   Record<string, import('../../system/types.ts').SpanHandle>
 }
 
-export type ReActState = {
+export type ChatbotState = {
   // Permanent
   history:          ConversationMessage[]
   tools:            ToolCollection
@@ -67,7 +67,7 @@ const CRON_HISTORY_NOTE =
 
 // ─── Options ───
 
-export type ReActActorOptions = {
+export type ChatbotActorOptions = {
   clientId:       string
   model:          string
   systemPrompt?:  string
@@ -92,7 +92,7 @@ const trimHistory = (history: ConversationMessage[], maxTurns: number): Conversa
 // Only the durable fields are saved. Ephemeral turn state and ActorRefs are
 // always reset to defaults on load — they are restored via subscriptions at startup.
 
-type PersistedReActState = {
+type PersistedChatbotState = {
   history:     ConversationMessage[]
   userContext: string | null
 }
@@ -107,13 +107,13 @@ const sanitizeHistory = (history: ConversationMessage[]): ConversationMessage[] 
   return []
 }
 
-const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<LlmProviderMsg> | null): PersistenceAdapter<ReActState> => {
+const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<LlmProviderMsg> | null): PersistenceAdapter<ChatbotState> => {
   const path = `workspace/history/${userId}.json`
   return {
     load: async () => {
       const file = Bun.file(path)
       if (!await file.exists()) return undefined
-      const saved = JSON.parse(await file.text()) as PersistedReActState
+      const saved = JSON.parse(await file.text()) as PersistedChatbotState
       return {
         history:          sanitizeHistory(saved.history ?? []),
         sessionUsage:     { promptTokens: 0, completionTokens: 0 },
@@ -133,7 +133,7 @@ const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<Ll
       }
     },
     save: async (state) => {
-      const data: PersistedReActState = { history: state.history, userContext: state.userContext }
+      const data: PersistedChatbotState = { history: state.history, userContext: state.userContext }
       await Bun.write(path, JSON.stringify(data, null, 2))
     },
   }
@@ -141,37 +141,37 @@ const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<Ll
 
 // ─── Actor definition ───
 
-export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg, ReActState> => {
+export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<ChatbotMsg, ChatbotState> => {
   const { clientId, model, systemPrompt, historyWindow, toolFilter, maxToolLoops = 25, userId, llmRef: initialLlmRef = null } = options
 
   // ─── Shared handlers (used across all behaviors) ───
 
-  const toolRegistered = (state: ReActState, msg: Extract<ReActMsg, { type: '_toolRegistered' }>): { state: ReActState } => ({
+  const toolRegistered = (state: ChatbotState, msg: Extract<ChatbotMsg, { type: '_toolRegistered' }>): { state: ChatbotState } => ({
     state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } },
   })
 
-  const toolUnregistered = (state: ReActState, msg: Extract<ReActMsg, { type: '_toolUnregistered' }>): { state: ReActState } => {
+  const toolUnregistered = (state: ChatbotState, msg: Extract<ChatbotMsg, { type: '_toolUnregistered' }>): { state: ChatbotState } => {
     const { [msg.name]: _, ...rest } = state.tools
     return { state: { ...state, tools: rest } }
   }
 
-  const llmProviderUpdated = (state: ReActState, msg: Extract<ReActMsg, { type: '_llmProviderUpdated' }>): { state: ReActState } => ({
+  const llmProviderUpdated = (state: ChatbotState, msg: Extract<ChatbotMsg, { type: '_llmProviderUpdated' }>): { state: ChatbotState } => ({
     state: { ...state, llmRef: msg.ref },
   })
 
   // ─── Forward declarations for circular references ───
 
-  let awaitingLlmHandler: MessageHandler<ReActMsg, ReActState>
-  let toolLoopHandler: MessageHandler<ReActMsg, ReActState>
+  let awaitingLlmHandler: MessageHandler<ChatbotMsg, ChatbotState>
+  let toolLoopHandler: MessageHandler<ChatbotMsg, ChatbotState>
 
   // ─── Handler: idle — waiting for user input ───
 
-  const idleHandler: MessageHandler<ReActMsg, ReActState> = onMessage<ReActMsg, ReActState>({
+  const idleHandler: MessageHandler<ChatbotMsg, ChatbotState> = onMessage<ChatbotMsg, ChatbotState>({
     userMessage: (state, message, context) => {
       const { clientId: msgClientId, text, images, audio, pdfs, traceId, parentSpanId, isCron } = message
       const activeClientId = msgClientId
       const fullSystemPrompt = [systemPrompt, state.userContext, CRON_HISTORY_NOTE].filter(Boolean).join('\n\n---\n\n')
-      const requestSpan = context.trace.child(traceId, parentSpanId, 'react', { preview: text.slice(0, 80) })
+      const requestSpan = context.trace.child(traceId, parentSpanId, 'chatbot', { preview: text.slice(0, 80) })
       const llmSpan = context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
       const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
       const tools = toolSchemas.length > 0 ? toolSchemas : undefined
@@ -270,7 +270,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
 
   // ─── Handler: awaitingLlm — LLM running, will return tool calls or text ───
 
-  awaitingLlmHandler = onMessage<ReActMsg, ReActState>({
+  awaitingLlmHandler = onMessage<ChatbotMsg, ChatbotState>({
     llmToolCalls: (state, message, context) => {
       const { requestId, calls, usage } = message
       if (requestId !== state.requestId) return { state }
@@ -428,7 +428,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
 
   // ─── Handler: toolLoop — tools executing, accumulating results ───
 
-  toolLoopHandler = onMessage<ReActMsg, ReActState>({
+  toolLoopHandler = onMessage<ChatbotMsg, ChatbotState>({
     _toolResult: (state, message, context) => {
       const { toolName, toolCallId, reply } = message
       const batch = state.pendingBatch!

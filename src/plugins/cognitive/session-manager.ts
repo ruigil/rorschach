@@ -1,10 +1,10 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { WsConnectTopic, WsDisconnectTopic, WsMessageTopic, CronTriggerTopic } from '../../types/ws.ts'
-import { createReActActor } from './react.ts'
-import type { ReActState } from './react.ts'
+import { createChatbotActor } from './chatbot.ts'
+import type { ChatbotState } from './chatbot.ts'
 import type { ToolFilter } from '../../types/tools.ts'
-import type { ReActMsg } from '../../types/react.ts'
+import type { ChatbotMsg } from '../../types/chatbot.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 
 // ─── Message protocol ───
@@ -18,8 +18,8 @@ type SessionManagerMsg =
 // ─── State ───
 
 type SessionManagerState = {
-  userSessions:  Record<string, ActorRef<ReActMsg>>  // userId  → actor (authenticated)
-  anonSessions:  Record<string, ActorRef<ReActMsg>>  // clientId → actor (anonymous)
+  userSessions:  Record<string, ActorRef<ChatbotMsg>>  // userId  → actor (authenticated)
+  anonSessions:  Record<string, ActorRef<ChatbotMsg>>  // clientId → actor (anonymous)
   clientIndex:   Record<string, string>               // clientId → userId (for routing & cleanup)
   activeClients: Record<string, number>               // userId → active connection count
 }
@@ -34,9 +34,9 @@ export type SessionManagerOptions = {
   toolFilter?:    ToolFilter
 }
 
-// ─── Initial ReAct state ───
+// ─── Initial chatbot state ───
 
-const initialReActState = (llmRef: ActorRef<LlmProviderMsg>): ReActState => ({
+const initialChatbotState = (llmRef: ActorRef<LlmProviderMsg>): ChatbotState => ({
   history:          [],
   tools:            {},
   sessionUsage:     { promptTokens: 0, completionTokens: 0 },
@@ -106,9 +106,9 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
             }
           }
           const ref = context.spawn(
-            `react-${userId}`,
-            createReActActor({ clientId, model, systemPrompt, historyWindow, toolFilter, userId, roles, llmRef }),
-            initialReActState(llmRef),
+            `chatbot-${userId}`,
+            createChatbotActor({ clientId, model, systemPrompt, historyWindow, toolFilter, userId, roles, llmRef }),
+            initialChatbotState(llmRef),
           )
           return {
             state: {
@@ -122,9 +122,9 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
 
         // Anonymous: one actor per clientId (old behaviour)
         const ref = context.spawn(
-          `react-${clientId}`,
-          createReActActor({ clientId, model, systemPrompt, historyWindow, toolFilter }),
-          initialReActState(llmRef),
+          `chatbot-${clientId}`,
+          createChatbotActor({ clientId, model, systemPrompt, historyWindow, toolFilter }),
+          initialChatbotState(llmRef),
         )
         return { state: { ...state, anonSessions: { ...state.anonSessions, [clientId]: ref } } }
       },

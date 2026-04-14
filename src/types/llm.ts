@@ -35,7 +35,7 @@ export type EmbeddingReply =
   | { type: 'embeddingResult'; embedding: number[] }
   | { type: 'embeddingError';  error: string }
 
-// ─── Reply types sent back to the ReAct loop ───
+// ─── Reply types sent back to the chatbot actor ───
 
 export type LlmProviderReply =
   | { type: 'llmChunk';          requestId: string; text: string }

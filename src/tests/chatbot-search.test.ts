@@ -1,7 +1,7 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { createPluginSystem } from '../system/index.ts'
 import { WsSendTopic } from '../types/ws.ts'
-import { createReActActor, type ReActState } from '../plugins/cognitive/react.ts'
+import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import type { BraveLlmContextResponse } from '../plugins/tools/web-search.ts'
@@ -18,7 +18,7 @@ const LLM_PROVIDER_ADAPTER_OPTS = {
   model: 'openai/gpt-4o-mini',
 }
 
-const INITIAL_REACT_STATE: Omit<ReActState, 'llmRef'> = {
+const INITIAL_CHATBOT_STATE: Omit<ChatbotState, 'llmRef'> = {
   history:          [],
   tools:            {},
   sessionUsage:     { promptTokens: 0, completionTokens: 0 },
@@ -104,16 +104,16 @@ const stubFetchByUrl = (completions: (() => Response)[], braveFactory?: () => Re
 
 // ─── Spawn helpers ───
 
-const spawnReAct = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
+const spawnChatbot = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
   const llmRef = system.spawn('llm-provider', createLlmProviderActor({ adapter: createOpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }), null)
-  return system.spawn('react', createReActActor({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model }), { ...INITIAL_REACT_STATE, llmRef })
+  return system.spawn('chatbot', createChatbotActor({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model }), { ...INITIAL_CHATBOT_STATE, llmRef })
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // Chatbot + search integration
 // ═══════════════════════════════════════════════════════════════════
 
-describe('ReAct search integration', () => {
+describe('chatbot search integration', () => {
   test('emits searching event and tool call flow when LLM returns a tool_call', async () => {
     stubFetchByUrl(
       [
@@ -128,7 +128,7 @@ describe('ReAct search integration', () => {
       plugins: [toolsPlugin],
     })
     const events = collectEvents(system)
-    const react = spawnReAct(system)
+    const react = spawnChatbot(system)
 
     await tick()
     react.send({ type: 'userMessage', clientId: 'test-client', text: 'What is the latest AI news?', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
@@ -158,7 +158,7 @@ describe('ReAct search integration', () => {
       plugins: [toolsPlugin],
     })
     const events = collectEvents(system)
-    const react = spawnReAct(system)
+    const react = spawnChatbot(system)
 
     await tick()
     react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
@@ -187,10 +187,10 @@ describe('ReAct search integration', () => {
       return makeSSEResponse(contentPayloads('Direct answer, no search needed.'))
     }) as unknown as typeof fetch
 
-    // No tools plugin — ReAct has no registered tools, LLM call uses empty tool list
+    // No tools plugin — chatbot actor has no registered tools, LLM call uses empty tool list
     const system = await createPluginSystem()
     const events = collectEvents(system)
-    const react = spawnReAct(system)
+    const react = spawnChatbot(system)
 
     await tick()
     react.send({ type: 'userMessage', clientId: 'test-client', text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
@@ -216,7 +216,7 @@ describe('ReAct search integration', () => {
       plugins: [toolsPlugin],
     })
     const events = collectEvents(system)
-    const react = spawnReAct(system)
+    const react = spawnChatbot(system)
 
     await tick()
     react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
@@ -245,7 +245,7 @@ describe('ReAct search integration', () => {
       config: { tools: { webSearch: { apiKey: 'brave-key' } } },
       plugins: [toolsPlugin],
     })
-    const react = spawnReAct(system)
+    const react = spawnChatbot(system)
 
     await tick()
     react.send({ type: 'userMessage', clientId: 'test-client', text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
