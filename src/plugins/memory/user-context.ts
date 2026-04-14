@@ -33,7 +33,6 @@ type PendingBatch = {
 }
 
 export type UserContextState = {
-  pendingRun:    boolean
   requestId:     string | null
   messages:      ApiMessage[] | null
   accumulated:   string
@@ -101,7 +100,7 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
     context.log.info('user context summary started', { userId })
 
     return {
-      state: { ...state, pendingRun: false, requestId, messages, accumulated: '', pendingBatch: null, toolLoopCount: 0 },
+      state: { ...state, requestId, messages, accumulated: '', pendingBatch: null, toolLoopCount: 0 },
       become: awaitingLlmHandler,
     }
   }
@@ -118,8 +117,6 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
   // ─── Handler: awaitingLlm ───
 
   awaitingLlmHandler = onMessage<UserContextMsg, UserContextState>({
-    _run: (state) => ({ state: { ...state, pendingRun: true } }),
-
     llmChunk: (state, msg) => {
       if (msg.requestId !== state.requestId) return { state }
       return { state: { ...state, accumulated: state.accumulated + msg.text } }
@@ -186,31 +183,20 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
         (error) => ({ type: '_contextSaveFailed' as const, userId, error: String(error) }),
       )
 
-      const next = { ...state, requestId: null, messages: null, accumulated: '', pendingBatch: null }
-      if (state.pendingRun) {
-        const { state: nextState } = startSummary(next, context)
-        return { state: nextState, become: awaitingLlmHandler }
-      }
-      return { state: next, become: idleHandler }
+      return { state: { ...state, requestId: null, messages: null, accumulated: '', pendingBatch: null }, become: idleHandler }
     },
 
     llmError: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
       context.log.error('user context summary LLM error', { userId, error: String(msg.error) })
-      const next = { ...state, requestId: null, messages: null, accumulated: '', pendingBatch: null }
-      if (state.pendingRun) return startSummary(next, context)
-      return { state: next, become: idleHandler }
+      return { state: { ...state, requestId: null, messages: null, accumulated: '', pendingBatch: null }, become: idleHandler }
     },
 
-    _contextSaved:      (state, msg, context) => { context.log.info('user context file saved', { userId: msg.userId }); return { state } },
-    _contextSaveFailed: (state, msg, context) => { context.log.error('user context file save failed', { userId: msg.userId, error: msg.error }); return { state } },
   })
 
   // ─── Handler: toolLoop ───
 
   toolLoopHandler = onMessage<UserContextMsg, UserContextState>({
-    _run: (state) => ({ state: { ...state, pendingRun: true } }),
-
     _toolResult: (state, msg, context) => {
       const batch = state.pendingBatch!
       const content = msg.reply.type === 'toolResult' ? msg.reply.result : `Tool error: ${msg.reply.error}`
@@ -226,9 +212,7 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
 
       if (nextLoopCount >= maxToolLoops) {
         context.log.warn('user context tool loop limit reached', { userId, limit: maxToolLoops })
-        const next = { ...state, requestId: null, messages: null, accumulated: '', pendingBatch: null, toolLoopCount: 0 }
-        if (state.pendingRun) return startSummary(next, context)
-        return { state: next, become: idleHandler }
+        return { state: { ...state, requestId: null, messages: null, accumulated: '', pendingBatch: null, toolLoopCount: 0 }, become: idleHandler }
       }
 
       // Build next LLM request
@@ -260,8 +244,6 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
       }
     },
 
-    _contextSaved:      (state, msg, context) => { context.log.info('user context file saved', { userId: msg.userId }); return { state } },
-    _contextSaveFailed: (state, msg, context) => { context.log.error('user context file save failed', { userId: msg.userId, error: msg.error }); return { state } },
   })
 
   return {
@@ -270,7 +252,6 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
 }
 
 export const INITIAL_USER_CONTEXT_STATE: UserContextState = {
-  pendingRun:    false,
   requestId:     null,
   messages:      null,
   accumulated:   '',
