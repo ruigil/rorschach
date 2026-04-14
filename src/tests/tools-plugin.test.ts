@@ -230,6 +230,7 @@ describe('tools plugin', () => {
       audio:     { config: null, ref: null, gen: 0 },
       cron:      { ref: null },
       pdf:       { ref: null },
+      fetchFile: { ref: null },
       llmRef:    null,
       tools: {},
     }
@@ -249,6 +250,7 @@ describe('tools plugin', () => {
       audio:     { config: null, ref: null, gen: 0 },
       cron:      { ref: null },
       pdf:       { ref: null },
+      fetchFile: { ref: null },
       llmRef:    null,
       tools: {},
     }

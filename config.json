@@ -53,7 +53,7 @@
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "model": "openai/gpt-5.4-nano",
+        "model": "qwen/qwen3.5-397b-a17b",
         "historyWindow": 40,
         "toolFilter": {
           "deny": [
@@ -75,14 +75,13 @@
       },
       "memory": {
         "model": "google/gemini-3.1-pro-preview",
-        "consolidationIntervalMs": 300000,
+        "consolidationIntervalMs": 14400000,
         "reflectionIntervalMs": 604800000
       }
     },
     "notebook": {
       "notebookDir": "workspace/notebook",
-      "agentModel": "google/gemini-3.1-pro-preview",
-      "consolidationModel": "google/gemini-3.1-pro-preview",
+      "agentModel": "minimax/minimax-m2.7",
       "consolidationIntervalMs": 604800000,
       "maxToolLoops": 10
     },

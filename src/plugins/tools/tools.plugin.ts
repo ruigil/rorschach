@@ -4,6 +4,7 @@ import { createVisionActor, ANALYZE_IMAGE_TOOL_NAME, ANALYZE_IMAGE_SCHEMA, GENER
 import { createCronActor, type CronState, CRON_CREATE_TOOL_NAME, CRON_CREATE_SCHEMA, CRON_DELETE_TOOL_NAME, CRON_DELETE_SCHEMA, CRON_LIST_TOOL_NAME, CRON_LIST_SCHEMA, CURRENT_TIME_TOOL_NAME, CURRENT_TIME_SCHEMA } from './cron.ts'
 import { createAudioActor, type AudioState, TRANSCRIBE_AUDIO_TOOL_NAME, TRANSCRIBE_AUDIO_SCHEMA, TEXT_TO_SPEECH_TOOL_NAME, TEXT_TO_SPEECH_SCHEMA } from './audio.ts'
 import { createPdfActor, PDF_TOOL_NAME, PDF_SCHEMA } from './pdf.ts'
+import { createFetchFileActor, FETCH_FILE_TOOL_NAME, FETCH_FILE_SCHEMA } from './fetch-file.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { BashOptions as BashConfig } from 'just-bash'
@@ -45,6 +46,7 @@ type PluginState = {
   audio: PluginActorState<AudioActorConfig>
   cron: { ref: ActorRef<ToolInvokeMsg> | null }
   pdf: { ref: ActorRef<ToolInvokeMsg> | null }
+  fetchFile: { ref: ActorRef<ToolInvokeMsg> | null }
   llmRef: ActorRef<LlmProviderMsg> | null
 }
 
@@ -75,6 +77,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
     audio:     { config: null, ref: null, gen: 0 },
     cron:      { ref: null },
     pdf:       { ref: null },
+    fetchFile: { ref: null },
     llmRef:    null,
   },
 
@@ -105,6 +108,9 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       const pdfRef = ctx.spawn('pdf-0', createPdfActor(), null) as ActorRef<ToolInvokeMsg>
       ctx.publishRetained(ToolRegistrationTopic, PDF_TOOL_NAME, { name: PDF_TOOL_NAME, schema: PDF_SCHEMA, ref: pdfRef })
 
+      const fetchFileRef = ctx.spawn('fetch-file-0', createFetchFileActor(), null) as ActorRef<ToolInvokeMsg>
+      ctx.publishRetained(ToolRegistrationTopic, FETCH_FILE_TOOL_NAME, { name: FETCH_FILE_TOOL_NAME, schema: FETCH_FILE_SCHEMA, ref: fetchFileRef })
+
       // Subscribe to LLM provider — vision and audio actors are spawned when the ref arrives
       ctx.subscribe(LlmProviderTopic, (event) => ({ type: '_llmProviderUpdated' as const, ref: event.ref }))
 
@@ -117,6 +123,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         audio:     { config: slice?.audioActor ?? null, ref: null, gen: 0 },
         cron:      { ref: cronRef },
         pdf:       { ref: pdfRef },
+        fetchFile: { ref: fetchFileRef },
         llmRef:    null,
       } }
     },
@@ -146,6 +153,9 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       }
       if (state.pdf.ref) {
         ctx.deleteRetained(ToolRegistrationTopic, PDF_TOOL_NAME, { name: PDF_TOOL_NAME, ref: null })
+      }
+      if (state.fetchFile.ref) {
+        ctx.deleteRetained(ToolRegistrationTopic, FETCH_FILE_TOOL_NAME, { name: FETCH_FILE_TOOL_NAME, ref: null })
       }
       ctx.log.info('tools plugin deactivating')
       return { state }
@@ -187,6 +197,10 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       if (state.pdf.ref) {
         ctx.stop(state.pdf.ref)
         ctx.deleteRetained(ToolRegistrationTopic, PDF_TOOL_NAME, { name: PDF_TOOL_NAME, ref: null })
+      }
+      if (state.fetchFile.ref) {
+        ctx.stop(state.fetchFile.ref)
+        ctx.deleteRetained(ToolRegistrationTopic, FETCH_FILE_TOOL_NAME, { name: FETCH_FILE_TOOL_NAME, ref: null })
       }
 
       const newWebSearchConfig = msg.slice?.webSearch ?? null
@@ -232,6 +246,10 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       const newPdfRef = ctx.spawn(`pdf-${pdfGen}`, createPdfActor(), null) as ActorRef<ToolInvokeMsg>
       ctx.publishRetained(ToolRegistrationTopic, PDF_TOOL_NAME, { name: PDF_TOOL_NAME, schema: PDF_SCHEMA, ref: newPdfRef })
 
+      const fetchFileGen = (state.fetchFile.ref ? 1 : 0) + 1
+      const newFetchFileRef = ctx.spawn(`fetch-file-${fetchFileGen}`, createFetchFileActor(), null) as ActorRef<ToolInvokeMsg>
+      ctx.publishRetained(ToolRegistrationTopic, FETCH_FILE_TOOL_NAME, { name: FETCH_FILE_TOOL_NAME, schema: FETCH_FILE_SCHEMA, ref: newFetchFileRef })
+
       return { state: {
         ...state,
         webSearch: { config: newWebSearchConfig, ref: webSearchRef, gen: webSearchGen },
@@ -239,6 +257,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         vision:    { config: newVisionConfig, ref: visionRef, gen: visionGen },
         audio:     { config: newAudioConfig,  ref: audioRef,  gen: audioGen  },
         pdf:       { ref: newPdfRef },
+        fetchFile: { ref: newFetchFileRef },
       } }
     },
 
