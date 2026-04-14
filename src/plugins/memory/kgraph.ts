@@ -92,7 +92,7 @@ export const KGRAPH_UPSERT_SCHEMA: ToolSchema = {
         },
         name: {
           type: 'string',
-          description: 'The name of the node. Prefer a single word or the shortest unambiguous canonical form (e.g. "Lisbon", not "Lisbon, Portugal").',
+          description: 'The name of the node. Use Title Case words separated by spaces. No CamelCase, no underscores, no abbreviations. Prefer the shortest unambiguous form (e.g. "Lisbon" not "Lisbon Portugal"; "Complexity Science" not "ComplexityScience" or "complexity science").',
         },
         properties: {
           type: 'object',
@@ -187,10 +187,25 @@ export const createKgraphActor = (
           ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_WRITE_TOOL_NAME, { statement: args.statement })
           : null
 
+        // Strip // line comments — GrafeoDB Cypher doesn't support them and
+        // the LLM occasionally adds them as inline annotations.
+        const cleaned = args.statement.replace(/\/\/[^\n]*/g, '').trim()
+
+        // Append RETURN count(*) if absent so we can detect silent no-ops
+        // (MATCH returns 0 rows when a referenced node doesn't exist yet).
+        const hasReturn = /\bRETURN\b/i.test(cleaned)
+        const query = hasReturn
+          ? cleaned
+          : cleaned + '\nRETURN count(*) AS _n'
+
         ctx.pipeToSelf(
-          state.db.execute(args.statement).then(() => undefined),
-          ()      => ({ type: '_writeDone' as const, replyTo, span }),
-          (error) => ({ type: '_writeErr'  as const, error: String(error), replyTo, span }),
+          state.db.executeCypher(query).then(result => {
+            if (hasReturn) return -1  // unknown — statement has its own RETURN
+            const row = result.toArray()[0] as { _n?: number } | undefined
+            return row?._n ?? 0
+          }),
+          (matched) => ({ type: '_writeDone' as const, matched, replyTo, span }),
+          (error)   => ({ type: '_writeErr'  as const, error: String(error), replyTo, span }),
         )
 
       } else if (toolName === KGRAPH_UPSERT_TOOL_NAME) {
@@ -272,10 +287,18 @@ export const createKgraphActor = (
       return { state }
     },
 
-    _writeDone: (state, message) => {
-      const { replyTo, span } = message
-      span?.done()
-      replyTo.send({ type: 'toolResult', result: 'ok' })
+    _writeDone: (state, message, ctx) => {
+      const { matched, replyTo, span } = message
+      span?.done({ matched })
+      if (matched === 0) {
+        ctx.log.warn('kgraph write matched 0 rows — likely a missing upsert', {})
+        replyTo.send({
+          type: 'toolResult',
+          result: 'Warning: 0 rows matched — no relationships were written. Every node referenced in MATCH must exist via kgraph_upsert before calling kgraph_write. Check that all node names are correct and were previously upserted.',
+        })
+      } else {
+        replyTo.send({ type: 'toolResult', result: matched > 0 ? `ok (${matched} rows matched)` : 'ok' })
+      }
       return { state }
     },
 
@@ -309,10 +332,23 @@ export const createKgraphActor = (
         return { state }
       }
 
+      const { userId } = message
+      // GrafeoDB [*0..] excludes the start node, so we use OPTIONAL MATCH + *1..
+      // to include the root itself, and UNION to collect both root-direct and
+      // descendant edges in one pass.
+      const nodeQuery = userId
+        ? `MATCH (u:Entity {name: ${JSON.stringify(userId)}}) OPTIONAL MATCH (u)-[*1..]->(n) RETURN DISTINCT u, n`
+        : 'MATCH (n) RETURN n'
+      const edgeQuery = userId
+        ? `MATCH (u:Entity {name: ${JSON.stringify(userId)}})-[r]->() RETURN DISTINCT r
+           UNION
+           MATCH (u:Entity {name: ${JSON.stringify(userId)}})-[*1..]->(a)-[r]->(b) RETURN DISTINCT r`
+        : 'MATCH ()-[r]->() RETURN r'
+
       ctx.pipeToSelf(
         Promise.all([
-          state.db.execute('MATCH (n) RETURN n'),
-          state.db.execute('MATCH ()-[r]->() RETURN r'),
+          state.db.execute(nodeQuery),
+          state.db.execute(edgeQuery),
         ]).then(([nodesResult, edgesResult]) => ({
           nodes: nodesResult.nodes().map(n => ({ id: n.id, labels: n.labels, properties: n.properties() as Record<string, unknown> })),
           edges: edgesResult.edges().map(e => ({ id: e.id, type: e.edgeType, source: e.sourceId, target: e.targetId, properties: e.properties() as Record<string, unknown> })),

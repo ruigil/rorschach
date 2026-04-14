@@ -367,8 +367,20 @@ export const createHttpActor = (
 
             // Kgraph dump API
             if (req.method === 'GET' && url.pathname === '/kgraph') {
+              const cookieToken = req.headers.get('cookie')?.split(';')
+                .reduce<string | null>((found, pair) => {
+                  const [k, v] = pair.trim().split('=')
+                  return k === 'session' ? (v ?? null) : found
+                }, null) ?? null
+              if (!cookieToken || !authenticatorRef) {
+                return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
+              }
+              const session = await ask<AuthenticatorMsg, AuthSession | null>(authenticatorRef, (r) => ({ type: 'validateToken' as const, token: cookieToken, replyTo: r }), { timeoutMs: 3_000 })
+              if (!session?.userId) {
+                return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
+              }
               const graph: KgraphGraph = kgraphRef
-                ? await ask(kgraphRef, replyTo => ({ type: 'dump' as const, replyTo }), { timeoutMs: 5_000 })
+                ? await ask(kgraphRef, replyTo => ({ type: 'dump' as const, replyTo, userId: session.userId }), { timeoutMs: 5_000 })
                 : { nodes: [], edges: [] }
               return new Response(JSON.stringify(graph), { headers: { 'Content-Type': 'application/json' } })
             }

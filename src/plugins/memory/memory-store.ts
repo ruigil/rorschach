@@ -74,9 +74,10 @@ const buildSystemPrompt = (userId: string, topic?: string): string => {
     `2. Determine the appropriate kbase topic file for the content\n` +
     `3. Read the file first to check for existing entries and avoid duplication\n` +
     `4. Write the updated kbase file\n` +
-    `5. Ensure the root anchor exists: kgraph_upsert { label:"Entity", name:"${userId}" }\n` +
+    `5. Ensure the root anchor exists:\n` +
+    `   kgraph_upsert { label: "Entity", name: "${userId}" }\n` +
     `   Always use the exact string "${userId}" — never a generic label like "User".\n` +
-    `   Capture canonicalName from each upsert response — use it (not the name you passed) in all kgraph_write statements.\n` +
+    `   Capture canonicalName from the upsert response — use it (not the name you passed) in all kgraph_write statements.\n` +
     `6. Write new relationships via kgraph_write using the canonicalName values from step 5\n` +
     `7. Return a brief confirmation of what was stored and where\n\n` +
     `Only store what was explicitly provided. Do not infer beyond the given content.`

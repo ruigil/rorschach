@@ -20,11 +20,11 @@ export const KgraphTopic = createTopic<KgraphRefEvent>('memory.kgraph')
 
 export type KgraphMsg =
   | ToolInvokeMsg
-  | { type: 'dump'; replyTo: ActorRef<KgraphGraph> }
+  | { type: 'dump'; replyTo: ActorRef<KgraphGraph>; userId?: string }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_queryDone';  rows: unknown[];    replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_queryErr';   error: string;      replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_writeDone';  replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_writeDone';  matched: number; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_writeErr';   error: string;      replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_upsertDone'; result: UpsertResult; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_upsertErr';  error: string;       replyTo: ActorRef<ToolReply>; span: SpanHandle | null }

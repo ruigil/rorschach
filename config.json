@@ -10,10 +10,10 @@
   ],
   "config": {
     "auth": {
-      "rpId": "oceanos.blog",
+      "rpId": "rorschach.bot",
       "rpName": "Rorschach",
-      "origin": "https://oceanos.blog",
-      "baseUrl": "https://oceanos.blog/code/proxy/3000"
+      "origin": "https://rorschach.bot",
+      "baseUrl": "https://rorschach.bot/"
     },
     "interfaces": {
       "http": {
