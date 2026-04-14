@@ -59,8 +59,8 @@ export const JOURNAL_SEARCH_SCHEMA: ToolSchema = {
 
 type JournalMsg =
   | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; result: string }
-  | { type: '_error'; replyTo: ActorRef<ToolReply>; error: string }
+  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string }
+  | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string }
 
 // ─── Helpers ───
 
@@ -119,10 +119,13 @@ export const createJournalActor = (notebookDir: string): ActorDef<JournalMsg, nu
       try {
         const args = JSON.parse(msg.arguments) as Record<string, string>
         if (msg.toolName === JOURNAL_WRITE_TOOL_NAME) {
+          ctx.log.info('journal: write', { date: args.date ?? todayISO() })
           promise = writeEntry(notebookDir, args.entry!, args.date ?? todayISO())
         } else if (msg.toolName === JOURNAL_READ_TOOL_NAME) {
+          ctx.log.info('journal: read', { date: args.date })
           promise = readEntry(notebookDir, args.date!)
         } else if (msg.toolName === JOURNAL_SEARCH_TOOL_NAME) {
+          ctx.log.info('journal: search', { query: args.query })
           promise = searchJournal(notebookDir, args.query!)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
@@ -132,8 +135,8 @@ export const createJournalActor = (notebookDir: string): ActorDef<JournalMsg, nu
       }
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, result }),
-        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, error: String(error) }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result }),
+        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error) }),
       )
       return { state }
     },
@@ -143,7 +146,8 @@ export const createJournalActor = (notebookDir: string): ActorDef<JournalMsg, nu
       return { state }
     },
 
-    _error: (state, msg) => {
+    _error: (state, msg, ctx) => {
+      ctx.log.error('journal error', { tool: msg.toolName, error: msg.error })
       msg.replyTo.send({ type: 'toolError', error: msg.error })
       return { state }
     },

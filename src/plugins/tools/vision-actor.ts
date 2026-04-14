@@ -132,6 +132,7 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
           }
 
           const requestId = crypto.randomUUID()
+          context.log.info('vision: generating image', { requestId, prompt })
           llmRef.send({
             type: 'streamImage',
             requestId,
@@ -165,6 +166,7 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
         }
 
         const requestId = crypto.randomUUID()
+        context.log.info('vision: analyzing image', { requestId, imageUrl, prompt })
         context.pipeToSelf(
           resolveImageUrl(imageUrl),
           (resolved) => ({ type: '_resolved' as const, requestId, imageUrl: resolved, prompt }),
@@ -181,6 +183,7 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
       _resolved: (state, message, context) => {
         const { requestId, imageUrl, prompt } = message
         const req = state.pending[requestId]
+        context.log.info('vision: image URL resolved, sending to LLM', { requestId })
         llmRef.send({
           type: 'stream',
           requestId,
@@ -209,9 +212,10 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
         return { state: { ...state, pending: rest } }
       },
 
-      _imageSaved: (state, message) => {
+      _imageSaved: (state, message, context) => {
         const { [message.requestId]: req, ...rest } = state.pending
         if (!req || req.kind !== 'generation') return { state }
+        context.log.info('vision: image saved', { requestId: message.requestId, publicUrl: message.publicUrl })
         const rawDescription = (req.accumulatedText || 'Image generated successfully.')
           .replace(/generated_image_url_placeholder/g, message.publicUrl)
         const result = `![Generated Image](${message.publicUrl})\n\n${rawDescription}`
@@ -264,6 +268,7 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
         if (!req) return { state }
 
         if (req.kind === 'analysis') {
+          context.log.info('vision: analysis complete', { requestId: message.requestId })
           req.replyTo.send({ type: 'toolResult', result: req.accumulated || 'No description available.' })
           return { state: { ...state, pending: rest } }
         }
@@ -276,6 +281,7 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
         }
 
         // Keep the pending entry alive until the file is saved
+        context.log.info('vision: generation complete, saving image', { requestId: message.requestId })
         context.pipeToSelf(
           saveGeneratedImage(req.accumulatedImage),
           (r) => ({ type: '_imageSaved'  as const, requestId: message.requestId, filePath: r.filePath, publicUrl: r.publicUrl }),

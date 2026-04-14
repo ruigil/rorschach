@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { mkdir } from 'node:fs/promises'
 import type { Server, ServerWebSocket } from 'bun'
 import { emit } from '../../system/types.ts'
 import {
@@ -19,6 +19,7 @@ import type { AuthenticatorMsg, AuthSession, RegistrationBeginResult, Authentica
 
 // ─── Public directory (resolved relative to this module) ───
 const PUBLIC_DIR = join(import.meta.dir, '../..', 'public')
+const INBOUND_DIR = join(PUBLIC_DIR, 'inbound')
 
 // ─── Fallback model list (used when llm-provider is unavailable) ───
 const FALLBACK_MODELS = [
@@ -57,7 +58,8 @@ const saveImagesToTempFiles = (images: string[]): Promise<string[]> =>
     const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/)
     const ext = match?.[1] ?? 'jpeg'
     const data = match?.[2] ?? ''
-    const filePath = join(tmpdir(), `rorschach-${crypto.randomUUID()}.${ext}`)
+    const filePath = join(INBOUND_DIR, `rorschach-${crypto.randomUUID()}.${ext}`)
+    await mkdir(INBOUND_DIR, { recursive: true })
     await Bun.write(filePath, Buffer.from(data, 'base64'))
     return filePath
   }))
@@ -66,7 +68,8 @@ const saveAudioToTempFile = async (dataUrl: string): Promise<string> => {
   const match = dataUrl.match(/^data:audio\/(\w+);base64,(.+)$/)
   const ext  = match?.[1] ?? 'wav'
   const data = match?.[2] ?? ''
-  const filePath = join(tmpdir(), `rorschach-${crypto.randomUUID()}.${ext}`)
+  const filePath = join(INBOUND_DIR, `rorschach-${crypto.randomUUID()}.${ext}`)
+  await mkdir(INBOUND_DIR, { recursive: true })
   await Bun.write(filePath, Buffer.from(data, 'base64'))
   return filePath
 }
@@ -75,7 +78,8 @@ const savePdfsToTempFiles = (pdfs: Array<{ data: string; name: string }>): Promi
   Promise.all(pdfs.map(async ({ data, name }) => {
     const match = data.match(/^data:[^;]+;base64,(.+)$/)
     const b64 = match?.[1] ?? data
-    const filePath = join(tmpdir(), `rorschach-${crypto.randomUUID()}-${name}`)
+    const filePath = join(INBOUND_DIR, `rorschach-${crypto.randomUUID()}-${name}`)
+    await mkdir(INBOUND_DIR, { recursive: true })
     await Bun.write(filePath, Buffer.from(b64, 'base64'))
     return filePath
   }))

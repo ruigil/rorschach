@@ -1,8 +1,10 @@
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+
+const INBOUND_DIR = join(import.meta.dir, '../../public/inbound')
 
 // ─── Tool schema ───
 
@@ -70,9 +72,10 @@ const downloadFile = async (args: FetchFileArgs): Promise<{ filePath: string; co
 
   const contentType = res.headers.get('content-type') ?? ''
   const ext = guessExtension(contentType, args.url)
-  const filePath = join(tmpdir(), `rorschach-${crypto.randomUUID()}.${ext}`)
+  const filePath = join(INBOUND_DIR, `rorschach-${crypto.randomUUID()}.${ext}`)
 
   const buffer = await res.arrayBuffer()
+  await mkdir(INBOUND_DIR, { recursive: true })
   await Bun.write(filePath, buffer)
 
   return { filePath, contentType, bytes: buffer.byteLength }

@@ -100,8 +100,8 @@ export const TODOS_UPDATE_SCHEMA: ToolSchema = {
 
 type TodosMsg =
   | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; result: string }
-  | { type: '_error'; replyTo: ActorRef<ToolReply>; error: string }
+  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string }
+  | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string }
 
 // ─── File helpers ───
 
@@ -239,14 +239,19 @@ export const createTodosActor = (notebookDir: string): ActorDef<TodosMsg, null> 
         const args = JSON.parse(msg.arguments) as Record<string, unknown>
 
         if (msg.toolName === TODOS_CREATE_TOOL_NAME) {
+          ctx.log.info('todos: create', { text: args.text })
           promise = createTodo(notebookDir, args.text as string, args.dueDate as string | undefined, args.recurrence as string | undefined)
         } else if (msg.toolName === TODOS_COMPLETE_TOOL_NAME) {
+          ctx.log.info('todos: complete', { id: args.id })
           promise = completeTodo(notebookDir, args.id as string)
         } else if (msg.toolName === TODOS_LIST_TOOL_NAME) {
+          ctx.log.info('todos: list', { filter: args.filter })
           promise = listTodos(notebookDir, (args.filter as string | undefined) ?? 'pending')
         } else if (msg.toolName === TODOS_DELETE_TOOL_NAME) {
+          ctx.log.info('todos: delete', { id: args.id })
           promise = deleteTodo(notebookDir, args.id as string)
         } else if (msg.toolName === TODOS_UPDATE_TOOL_NAME) {
+          ctx.log.info('todos: update', { id: args.id })
           promise = updateTodo(notebookDir, args.id as string, args.text as string | undefined, args.dueDate as string | undefined, args.recurrence as string | undefined)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
@@ -256,8 +261,8 @@ export const createTodosActor = (notebookDir: string): ActorDef<TodosMsg, null> 
       }
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, result }),
-        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, error: String(error) }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result }),
+        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error) }),
       )
       return { state }
     },
@@ -267,7 +272,8 @@ export const createTodosActor = (notebookDir: string): ActorDef<TodosMsg, null> 
       return { state }
     },
 
-    _error: (state, msg) => {
+    _error: (state, msg, ctx) => {
+      ctx.log.error('todos error', { tool: msg.toolName, error: msg.error })
       msg.replyTo.send({ type: 'toolError', error: msg.error })
       return { state }
     },

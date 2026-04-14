@@ -26,8 +26,8 @@ export const NOTEBOOK_SEARCH_SCHEMA: ToolSchema = {
 
 type SearchMsg =
   | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; result: string }
-  | { type: '_error'; replyTo: ActorRef<ToolReply>; error: string }
+  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string }
+  | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string }
 
 // ─── Search implementation ───
 
@@ -98,6 +98,7 @@ export const createSearchActor = (notebookDir: string): ActorDef<SearchMsg, null
       try {
         const args = JSON.parse(msg.arguments) as Record<string, string>
         if (msg.toolName === NOTEBOOK_SEARCH_TOOL_NAME) {
+          ctx.log.info('notebook-search', { query: args.query })
           promise = searchAll(notebookDir, args.query!)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
@@ -107,8 +108,8 @@ export const createSearchActor = (notebookDir: string): ActorDef<SearchMsg, null
       }
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, result }),
-        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, error: String(error) }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result }),
+        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error) }),
       )
       return { state }
     },
@@ -118,7 +119,8 @@ export const createSearchActor = (notebookDir: string): ActorDef<SearchMsg, null
       return { state }
     },
 
-    _error: (state, msg) => {
+    _error: (state, msg, ctx) => {
+      ctx.log.error('notebook-search error', { tool: msg.toolName, error: msg.error })
       msg.replyTo.send({ type: 'toolError', error: msg.error })
       return { state }
     },

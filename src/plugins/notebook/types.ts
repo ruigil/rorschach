@@ -13,7 +13,7 @@ export type HabitDef = {
 export type Attachment = {
   id:           string
   originalName: string
-  path:         string    // relative to notebookDir: attachments/{uuid}-{filename}
+  path:         string    // 'inbound/{filename}' — public URL is /{path}
   mimeType:     string
   addedAt:      number
 }

@@ -52,10 +52,14 @@ const buildSystemPrompt = (notebookDir: string): string =>
   `You manage a personal notebook stored at "${notebookDir}".\n\n` +
   `Available areas:\n` +
   `- Journal: daily markdown entries (journal_write, journal_read, journal_search)\n` +
-  `- Notes: tagged notes with [[wiki-links]] (notes_create, notes_update, notes_read, notes_list, notes_search, notes_attach_image)\n` +
+  `- Notes: tagged notes with [[wiki-links]] (notes_create, notes_update, notes_read, notes_list, notes_search, notes_attach_file)\n` +
   `- Tracker: habit logging and statistics in CSV (tracker_log, tracker_stats, tracker_define_habit, tracker_list_habits)\n` +
   `- Todos: task list with due dates and recurrence (todos_create, todos_complete, todos_list, todos_delete, todos_update)\n` +
   `- Search: cross-content full-text search (notebook_search)\n\n` +
+  `IMPORTANT — file paths and URLs:\n` +
+  `- Files are passed to you as absolute filesystem paths (e.g. /home/rigel/rorschach/src/public/inbound/file.pdf).\n` +
+  `- Use notes_attach_file to attach them; it handles the path conversion automatically.\n` +
+  `- Never write absolute filesystem paths into note content. If you need to reference a file inline, derive the web URL: strip everything up to and including "/public" and use the remainder (e.g. /inbound/file.pdf).\n\n` +
   `Use the appropriate tools to fulfill the user's request. Reply with a concise summary of what you did.`
 
 const resetTurn = (state: NoteAgentState): NoteAgentState => ({
@@ -102,6 +106,8 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
         { role: 'user',   content: request },
       ]
       const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
+
+      context.log.info('note-agent: request', { request: request.slice(0, 300) })
 
       const parent = context.trace.fromHeaders()
       const activeSpan = parent
@@ -158,6 +164,8 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
         id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments },
       }))
 
+      context.log.info('note-agent: tool calls', { tools: msg.calls.map(c => c.name) })
+
       const unknownCall = msg.calls.find(c => !state.tools[c.name])
       if (unknownCall) {
         context.log.warn('note-agent: unknown tool', { tool: unknownCall.name })
@@ -206,8 +214,9 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
       }
     },
 
-    llmDone: (state, msg) => {
+    llmDone: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
+      context.log.info('note-agent: done', { chars: state.pending.length })
       state.activeSpan?.done()
       state.replyTo?.send({ type: 'toolResult', result: state.pending || '(done)' })
       return { state: resetTurn(state), become: idleHandler, unstashAll: true }
@@ -232,8 +241,13 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
     _toolResult: (state, msg, context) => {
       const batch   = state.pendingBatch!
       const span    = batch.spans[msg.toolCallId]
-      if (msg.reply.type === 'toolResult') span?.done()
-      else span?.error(msg.reply.error)
+      if (msg.reply.type === 'toolResult') {
+        span?.done()
+        context.log.info('note-agent: tool result', { tool: msg.toolName, ok: true })
+      } else {
+        span?.error(msg.reply.error)
+        context.log.warn('note-agent: tool error', { tool: msg.toolName, error: msg.reply.error })
+      }
       const content = msg.reply.type === 'toolResult' ? msg.reply.result : `Tool error: ${msg.reply.error}`
       const updated = [...batch.results, { toolCallId: msg.toolCallId, toolName: msg.toolName, content }]
       const remaining = batch.remaining - 1

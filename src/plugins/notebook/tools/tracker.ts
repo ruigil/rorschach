@@ -74,8 +74,8 @@ export const TRACKER_LIST_HABITS_SCHEMA: ToolSchema = {
 
 type TrackerMsg =
   | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; result: string }
-  | { type: '_error'; replyTo: ActorRef<ToolReply>; error: string }
+  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string }
+  | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string }
 
 // ─── File paths ───
 
@@ -250,12 +250,16 @@ export const createTrackerActor = (notebookDir: string): ActorDef<TrackerMsg, nu
         const args = JSON.parse(msg.arguments) as Record<string, unknown>
 
         if (msg.toolName === TRACKER_LOG_TOOL_NAME) {
+          ctx.log.info('tracker: log', { habit: args.habit, value: args.value })
           promise = logHabit(notebookDir, args.habit as string, args.value as number, (args.date as string | undefined) ?? todayISO(), args.description as string | undefined)
         } else if (msg.toolName === TRACKER_STATS_TOOL_NAME) {
+          ctx.log.info('tracker: stats', { habit: args.habit })
           promise = computeStats(notebookDir, args.habit as string)
         } else if (msg.toolName === TRACKER_DEFINE_HABIT_TOOL_NAME) {
+          ctx.log.info('tracker: define habit', { name: args.name, unit: args.unit })
           promise = defineHabit(notebookDir, args.name as string, args.unit as string, args.dailyTarget as number | undefined)
         } else if (msg.toolName === TRACKER_LIST_HABITS_TOOL_NAME) {
+          ctx.log.info('tracker: list habits')
           promise = listHabits(notebookDir)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
@@ -265,8 +269,8 @@ export const createTrackerActor = (notebookDir: string): ActorDef<TrackerMsg, nu
       }
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, result }),
-        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, error: String(error) }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result }),
+        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error) }),
       )
       return { state }
     },
@@ -276,7 +280,8 @@ export const createTrackerActor = (notebookDir: string): ActorDef<TrackerMsg, nu
       return { state }
     },
 
-    _error: (state, msg) => {
+    _error: (state, msg, ctx) => {
+      ctx.log.error('tracker error', { tool: msg.toolName, error: msg.error })
       msg.replyTo.send({ type: 'toolError', error: msg.error })
       return { state }
     },

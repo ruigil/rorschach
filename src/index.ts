@@ -24,6 +24,7 @@ const buildConfigSnapshot = (c: Record<string, unknown>): Record<string, unknown
   const tls = (c.tools         as any) ?? {}
   const mem = (c.memory        as any) ?? {}
   const obs = (c.observability as any) ?? {}
+  const nb  = (c.notebook      as any) ?? {}
   return {
     model:                         cog.chatbot?.model                     ?? '',
     systemPrompt:                  cog.chatbot?.systemPrompt               ?? '',
@@ -36,13 +37,20 @@ const buildConfigSnapshot = (c: Record<string, unknown>): Record<string, unknown
     bashCwd:                       tls.bash?.cwd                           ?? '/workspace',
     webSearchCount:                tls.webSearch?.count                    ?? 20,
     kgraphDbPath:                  mem.kgraph?.dbPath                      ?? './workspace/memory/kgraph',
+    kgraphEmbeddingModel:          mem.kgraph?.embeddingModel              ?? '',
+    kgraphEmbeddingDimensions:     mem.kgraph?.embeddingDimensions         ?? 1536,
     memoryModel:                   mem.memory?.model                       ?? '',
     memoryConsolidationIntervalMs: mem.memory?.consolidationIntervalMs     ?? 30000,
+    memoryReflectionIntervalMs:    mem.memory?.reflectionIntervalMs        ?? 604800000,
     logPath:                       obs.jsonlLogger?.filePath               ?? './logs/app.jsonl',
     minLevel:                      obs.jsonlLogger?.minLevel               ?? 'debug',
     flushIntervalMs:               obs.jsonlLogger?.flushIntervalMs        ?? 3000,
     metricsIntervalMs:             obs.metrics?.intervalMs                 ?? 5000,
     metricsEnabled:                obs.metrics !== undefined,
+    notebookDir:                   nb.notebookDir                          ?? './workspace/notebook',
+    notebookAgentModel:            nb.agentModel                           ?? '',
+    notebookConsolidationIntervalMs: nb.consolidationIntervalMs            ?? 604800000,
+    notebookMaxToolLoops:          nb.maxToolLoops                         ?? 10,
   }
 }
 
@@ -142,14 +150,25 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
   }
   const memoryPatch = {
     kgraph: {
-      dbPath: String(form.kgraphDbPath ?? (config.memory as any)?.kgraph?.dbPath ?? './workspace/memory/kgraph'),
+      dbPath:               String(form.kgraphDbPath ?? (config.memory as any)?.kgraph?.dbPath ?? './workspace/memory/kgraph'),
+      ...(form.kgraphEmbeddingModel ? {
+        embeddingModel:      String(form.kgraphEmbeddingModel),
+        embeddingDimensions: Number(form.kgraphEmbeddingDimensions ?? 1536),
+      } : {}),
     },
     ...(form.memoryModel ? {
       memory: {
         model:                   String(form.memoryModel),
         consolidationIntervalMs: Number(form.memoryConsolidationIntervalMs ?? 30000),
+        reflectionIntervalMs:    Number(form.memoryReflectionIntervalMs ?? 604800000),
       },
     } : {}),
+  }
+  const notebookPatch = {
+    notebookDir:             String(form.notebookDir ?? (config.notebook as any)?.notebookDir ?? './workspace/notebook'),
+    ...(form.notebookAgentModel ? { agentModel: String(form.notebookAgentModel) } : {}),
+    consolidationIntervalMs: Number(form.notebookConsolidationIntervalMs ?? 604800000),
+    maxToolLoops:            Number(form.notebookMaxToolLoops ?? 10),
   }
   const observabilityPatch = {
     jsonlLogger: {
@@ -181,6 +200,7 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
       webSearch: { ...toolsPatch.webSearch, apiKey: process.env.BRAVESEARCH_API_KEY ?? '' },
     },
     memory:        memoryPatch,
+    notebook:      notebookPatch,
     observability: observabilityPatch,
   })
 
@@ -197,6 +217,7 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
     },
     tools:         toolsPatch,
     memory:        memoryPatch,
+    notebook:      notebookPatch,
     observability: observabilityPatch,
   })
 
@@ -209,6 +230,7 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
       },
       tools:         toolsPatch,
       memory:        memoryPatch,
+      notebook:      notebookPatch,
       observability: observabilityPatch,
     }),
   })

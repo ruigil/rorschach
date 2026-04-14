@@ -1,4 +1,4 @@
-import { mkdir, copyFile } from 'node:fs/promises'
+import { mkdir, unlink } from 'node:fs/promises'
 import { extname, basename } from 'node:path'
 import type { ActorDef, ActorRef } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
@@ -13,6 +13,7 @@ export const NOTES_READ_TOOL_NAME         = 'notes_read'
 export const NOTES_LIST_TOOL_NAME         = 'notes_list'
 export const NOTES_SEARCH_TOOL_NAME       = 'notes_search'
 export const NOTES_ATTACH_FILE_TOOL_NAME = 'notes_attach_file'
+export const NOTES_DELETE_TOOL_NAME      = 'notes_delete'
 
 export const NOTES_CREATE_SCHEMA: ToolSchema = {
   type: 'function',
@@ -92,11 +93,26 @@ export const NOTES_SEARCH_SCHEMA: ToolSchema = {
   },
 }
 
+export const NOTES_DELETE_SCHEMA: ToolSchema = {
+  type: 'function',
+  function: {
+    name: NOTES_DELETE_TOOL_NAME,
+    description: 'Permanently delete a note by id.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Note id.' },
+      },
+      required: ['id'],
+    },
+  },
+}
+
 export const NOTES_ATTACH_FILE_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: NOTES_ATTACH_FILE_TOOL_NAME,
-    description: 'Attach a file (image, PDF, or other) to a note. The file is copied into the notebook attachments directory and a reference is added to the note body.',
+    description: 'Attach a file (image, PDF, or other) to a note. The file must be in the inbound directory. A reference is added to the note body.',
     parameters: {
       type: 'object',
       properties: {
@@ -113,8 +129,8 @@ export const NOTES_ATTACH_FILE_SCHEMA: ToolSchema = {
 
 type NotesMsg =
   | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; result: string }
-  | { type: '_error'; replyTo: ActorRef<ToolReply>; error: string }
+  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string }
+  | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string }
 
 // ─── Index helpers ───
 
@@ -123,7 +139,6 @@ type NotesIndex = { notes: NoteEntry[] }
 const indexPath       = (notebookDir: string) => `${notebookDir}/notes/index.json`
 const notePath        = (notebookDir: string, id: string) => `${notebookDir}/notes/${id}.md`
 const notesDir        = (notebookDir: string) => `${notebookDir}/notes`
-const attachmentsDir  = (notebookDir: string) => `${notebookDir}/attachments`
 
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.avif'])
 
@@ -247,6 +262,18 @@ const searchNotes = async (notebookDir: string, query: string): Promise<string> 
   return results.length > 0 ? results.join('\n') : `No results for "${query}".`
 }
 
+const deleteNote = async (notebookDir: string, id: string): Promise<string> => {
+  const index    = await readIndex(notebookDir)
+  const entryIdx = index.notes.findIndex(n => n.id === id)
+  if (entryIdx === -1) return `Note not found: ${id}`
+
+  index.notes.splice(entryIdx, 1)
+  await writeIndex(notebookDir, index)
+  await unlink(notePath(notebookDir, id)).catch(() => {/* already gone */})
+
+  return `Note deleted: ${id}`
+}
+
 const attachFile = async (
   notebookDir: string,
   id: string,
@@ -260,30 +287,23 @@ const attachFile = async (
   const src      = Bun.file(filePath)
   if (!(await src.exists())) return `File not found: ${filePath}`
 
-  const ext          = extname(filePath).toLowerCase()
-  const origName     = basename(filePath)
-  const attachId     = crypto.randomUUID()
-  const destName     = `${attachId}-${origName}`
-  const destDir      = attachmentsDir(notebookDir)
-  const destAbsolute = `${destDir}/${destName}`
-  const destRelative = `attachments/${destName}`
-
-  await mkdir(destDir, { recursive: true })
-  await copyFile(filePath, destAbsolute)
-
+  const ext      = extname(filePath).toLowerCase()
+  const origName = basename(filePath)
+  const attachId = crypto.randomUUID()
   const label: string = caption ?? origName
-  const ref   = IMAGE_EXTS.has(ext)
-    ? `\n![${label}](../${destRelative})\n`
-    : `\n[${label}](../${destRelative})\n`
+  const attachPath = `inbound/${origName}`
+  const mdRef = IMAGE_EXTS.has(ext)
+    ? `\n![${label}](/inbound/${origName})\n`
+    : `\n[${label}](/inbound/${origName})\n`
 
   const noteMd = notePath(notebookDir, id)
   const existing = await Bun.file(noteMd).text()
-  await Bun.write(noteMd, existing + ref)
+  await Bun.write(noteMd, existing + mdRef)
 
   const attachment: Attachment = {
     id:           attachId,
     originalName: origName,
-    path:         destRelative,
+    path:         attachPath,
     mimeType:     mimeForExt(ext),
     addedAt:      Date.now(),
   }
@@ -295,7 +315,7 @@ const attachFile = async (
   }
   await writeIndex(notebookDir, index)
 
-  return `File attached to note ${id}: ${destRelative}`
+  return `File attached to note ${id}: ${attachPath}`
 }
 
 // ─── Actor ───
@@ -308,17 +328,26 @@ export const createNotesActor = (notebookDir: string): ActorDef<NotesMsg, null> 
         const args = JSON.parse(msg.arguments) as Record<string, unknown>
 
         if (msg.toolName === NOTES_CREATE_TOOL_NAME) {
+          ctx.log.info('notes: create', { title: args.title })
           promise = createNote(notebookDir, args.title as string, args.content as string, (args.tags as string[] | undefined) ?? [])
         } else if (msg.toolName === NOTES_UPDATE_TOOL_NAME) {
+          ctx.log.info('notes: update', { id: args.id })
           promise = updateNote(notebookDir, args.id as string, args.content as string | undefined, args.tags as string[] | undefined)
         } else if (msg.toolName === NOTES_READ_TOOL_NAME) {
+          ctx.log.info('notes: read', { id: args.id, title: args.title })
           promise = readNote(notebookDir, args.id as string | undefined, args.title as string | undefined)
         } else if (msg.toolName === NOTES_LIST_TOOL_NAME) {
+          ctx.log.info('notes: list', { tags: args.tags })
           promise = listNotes(notebookDir, args.tags as string[] | undefined)
         } else if (msg.toolName === NOTES_SEARCH_TOOL_NAME) {
+          ctx.log.info('notes: search', { query: args.query })
           promise = searchNotes(notebookDir, args.query as string)
         } else if (msg.toolName === NOTES_ATTACH_FILE_TOOL_NAME) {
+          ctx.log.info('notes: attach file', { id: args.id, filePath: args.filePath })
           promise = attachFile(notebookDir, args.id as string, args.filePath as string, args.caption as string | undefined)
+        } else if (msg.toolName === NOTES_DELETE_TOOL_NAME) {
+          ctx.log.info('notes: delete', { id: args.id })
+          promise = deleteNote(notebookDir, args.id as string)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }
@@ -327,8 +356,8 @@ export const createNotesActor = (notebookDir: string): ActorDef<NotesMsg, null> 
       }
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, result }),
-        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, error: String(error) }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result }),
+        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error) }),
       )
       return { state }
     },
@@ -338,7 +367,8 @@ export const createNotesActor = (notebookDir: string): ActorDef<NotesMsg, null> 
       return { state }
     },
 
-    _error: (state, msg) => {
+    _error: (state, msg, ctx) => {
+      ctx.log.error('notes error', { tool: msg.toolName, error: msg.error })
       msg.replyTo.send({ type: 'toolError', error: msg.error })
       return { state }
     },

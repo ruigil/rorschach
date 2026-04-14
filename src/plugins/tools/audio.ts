@@ -159,6 +159,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
           }
 
           const requestId = crypto.randomUUID()
+          context.log.info('audio: starting TTS', { requestId, voice: ttsVoice, textLength: text.length })
           const messages: ApiMessage[] = [
             { role: 'system', content: instructions ? `${systemPrompt}\n\n${instructions}` : systemPrompt },
             { role: 'user', content: text },
@@ -194,6 +195,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
         }
 
         const requestId = crypto.randomUUID()
+        context.log.info('audio: loading audio for transcription', { requestId, audioPath, format })
         context.pipeToSelf(
           loadAudioAsWavBase64(audioPath),
           (data): AudioActorMsg => ({ type: '_audioLoaded', requestId, data, format: 'wav', replyTo }),
@@ -212,6 +214,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
         const req = state.pending[requestId]
         if (!req) return { state }
 
+        context.log.info('audio: audio loaded, sending to LLM for transcription', { requestId })
         llmRef.send({
           type: 'stream',
           requestId,
@@ -229,9 +232,10 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
         return { state }
       },
 
-      _audioLoadError: (state, message) => {
+      _audioLoadError: (state, message, context) => {
         const { requestId, error, replyTo } = message
         const { [requestId]: _, ...rest } = state.pending
+        context.log.error('audio: failed to load audio file', { requestId, error })
         replyTo.send({ type: 'toolError', error: `Failed to load audio: ${error}` })
         return { state: { ...state, pending: rest } }
       },
@@ -263,6 +267,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
         if (!req) return { state }
 
         if (req.kind === 'transcription') {
+          context.log.info('audio: transcription complete', { requestId: message.requestId })
           req.replyTo.send({ type: 'toolResult', result: req.accumulated || '(no transcription)' })
           return { state: { ...state, pending: rest } }
         }
@@ -274,6 +279,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
           return { state: { ...state, pending: rest } }
         }
 
+        context.log.info('audio: TTS complete, saving audio', { requestId: message.requestId })
         context.pipeToSelf(
           saveAudio(req.accumulatedPcm),
           (r): AudioActorMsg => ({ type: '_audioSaved',     requestId: message.requestId, filePath: r.filePath, publicUrl: r.publicUrl, replyTo: req.replyTo }),
@@ -290,8 +296,9 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
         return { state: { ...state, pending: rest } }
       },
 
-      _audioSaved: (state, message) => {
+      _audioSaved: (state, message, context) => {
         const { publicUrl, replyTo } = message
+        context.log.info('audio: audio saved', { requestId: message.requestId, publicUrl })
         replyTo.send({ type: 'toolResult', result: `Audio generated. Include this in your reply to the user: ![audio](${publicUrl})` })
         return { state }
       },
