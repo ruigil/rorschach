@@ -1,4 +1,33 @@
 marked.use({
+  extensions: [
+    {
+      name: 'blockMath',
+      level: 'block',
+      start(src) { return src.indexOf('$$') },
+      tokenizer(src) {
+        const match = src.match(/^\$\$([\s\S]+?)\$\$/)
+        if (match) return { type: 'blockMath', raw: match[0], math: match[1].trim() }
+      },
+      renderer(token) {
+        return '<div class="math-block">' + katex.renderToString(token.math, { displayMode: true, throwOnError: false }) + '</div>'
+      }
+    },
+    {
+      name: 'inlineMath',
+      level: 'inline',
+      start(src) { return src.indexOf('$') },
+      tokenizer(src) {
+        const match = src.match(/^\$([^$\n]+?)\$/)
+        if (match) return { type: 'inlineMath', raw: match[0], math: match[1].trim() }
+      },
+      renderer(token) {
+        return '<span class="math-inline">' + katex.renderToString(token.math, { displayMode: false, throwOnError: false }) + '</span>'
+      }
+    }
+  ]
+})
+
+marked.use({
   gfm: true,
   breaks: true,
   renderer: {
