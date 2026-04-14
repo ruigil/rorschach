@@ -76,6 +76,7 @@ export type ReActActorOptions = {
   maxToolLoops?:  number
   userId?:        string | null
   roles?:         string[]
+  llmRef?:        ActorRef<LlmProviderMsg> | null
 }
 
 // ─── Helpers ───
@@ -106,7 +107,7 @@ const sanitizeHistory = (history: ConversationMessage[]): ConversationMessage[] 
   return []
 }
 
-const createPersistence = (userId: string, clientId: string): PersistenceAdapter<ReActState> => {
+const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<LlmProviderMsg> | null): PersistenceAdapter<ReActState> => {
   const path = `workspace/history/${userId}.json`
   return {
     load: async () => {
@@ -119,7 +120,7 @@ const createPersistence = (userId: string, clientId: string): PersistenceAdapter
         userContext:      saved.userContext ?? null,
         // Ephemeral fields — reset to defaults; restored via subscriptions on start
         tools:            {},
-        llmRef:           null,
+        llmRef,
         activeClientId:   clientId,
         requestId:        null,
         turnMessages:     null,
@@ -141,7 +142,7 @@ const createPersistence = (userId: string, clientId: string): PersistenceAdapter
 // ─── Actor definition ───
 
 export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg, ReActState> => {
-  const { clientId, model, systemPrompt, historyWindow, toolFilter, maxToolLoops = 25, userId } = options
+  const { clientId, model, systemPrompt, historyWindow, toolFilter, maxToolLoops = 25, userId, llmRef: initialLlmRef = null } = options
 
   // ─── Shared handlers (used across all behaviors) ───
 
@@ -169,7 +170,6 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
     userMessage: (state, message, context) => {
       const { clientId: msgClientId, text, images, audio, pdfs, traceId, parentSpanId, isCron } = message
       const activeClientId = msgClientId
-
       const fullSystemPrompt = [systemPrompt, state.userContext, CRON_HISTORY_NOTE].filter(Boolean).join('\n\n---\n\n')
       const requestSpan = context.trace.child(traceId, parentSpanId, 'react', { preview: text.slice(0, 80) })
       const llmSpan = context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
@@ -539,7 +539,7 @@ export const createReActActor = (options: ReActActorOptions): ActorDef<ReActMsg,
   })
 
   return {
-    persistence: userId ? createPersistence(userId, clientId) : undefined,
+    persistence: userId ? createPersistence(userId, clientId, initialLlmRef) : undefined,
 
     lifecycle: onLifecycle({
       start: (state, context) => {

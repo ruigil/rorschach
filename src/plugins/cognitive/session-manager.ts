@@ -107,7 +107,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
           }
           const ref = context.spawn(
             `react-${userId}`,
-            createReActActor({ clientId, model, systemPrompt, historyWindow, toolFilter, userId, roles }),
+            createReActActor({ clientId, model, systemPrompt, historyWindow, toolFilter, userId, roles, llmRef }),
             initialReActState(llmRef),
           )
           return {

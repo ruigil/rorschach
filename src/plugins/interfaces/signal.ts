@@ -475,9 +475,10 @@ export const createSignalActor = (
         const pendingConnect = new Map(state.pendingConnect)
         pendingConnect.delete(phone)
 
+
         if (!userId) {
           // Not registered — send rejection
-          writeToSocket(rpcLine('send', { ...(account ? { account } : {}), recipient: [phone], message: 'Please register on the web interface to use Signal.' })).catch(() => {})
+          writeToSocket(rpcLine('send', { ...(account ? { account } : {}), recipient: [phone], message: 'Please register on the web first.' })).catch(() => {})
           return { state: { ...state, pendingConnect } }
         }
 
