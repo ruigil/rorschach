@@ -19,9 +19,16 @@ const configDefaults = {
   audioVoice:                     'alloy',
   bashCwd:                        '/workspace',
   webSearchCount:                 20,
-  kgraphDbPath:                   './workspace/memory/kgraph',
-  memoryModel:                    '',
-  memoryConsolidationIntervalMs:  30000,
+  kgraphDbPath:                    './workspace/memory/kgraph',
+  kgraphEmbeddingModel:            '',
+  kgraphEmbeddingDimensions:       1536,
+  memoryModel:                     '',
+  memoryConsolidationIntervalMs:   30000,
+  memoryReflectionIntervalMs:      604800000,
+  notebookDir:                     './workspace/notebook',
+  notebookAgentModel:              '',
+  notebookConsolidationIntervalMs: 604800000,
+  notebookMaxToolLoops:            10,
 }
 
 export async function fetchServerConfig() {
@@ -48,9 +55,16 @@ export function applyToForm(cfg) {
   configForm.audioVoice.value                    = cfg.audioVoice ?? 'alloy'
   configForm.bashCwd.value                       = cfg.bashCwd ?? '/workspace'
   configForm.webSearchCount.value                = cfg.webSearchCount ?? 20
-  configForm.kgraphDbPath.value                  = cfg.kgraphDbPath ?? './workspace/memory/kgraph'
-  configForm.memoryModel.value                   = cfg.memoryModel ?? ''
-  configForm.memoryConsolidationIntervalMs.value = cfg.memoryConsolidationIntervalMs ?? 30000
+  configForm.kgraphDbPath.value                    = cfg.kgraphDbPath ?? './workspace/memory/kgraph'
+  configForm.kgraphEmbeddingModel.value            = cfg.kgraphEmbeddingModel ?? ''
+  configForm.kgraphEmbeddingDimensions.value       = cfg.kgraphEmbeddingDimensions ?? 1536
+  configForm.memoryModel.value                     = cfg.memoryModel ?? ''
+  configForm.memoryConsolidationIntervalMs.value   = cfg.memoryConsolidationIntervalMs ?? 30000
+  configForm.memoryReflectionIntervalMs.value      = cfg.memoryReflectionIntervalMs ?? 604800000
+  configForm.notebookDir.value                     = cfg.notebookDir ?? './workspace/notebook'
+  configForm.notebookAgentModel.value              = cfg.notebookAgentModel ?? ''
+  configForm.notebookConsolidationIntervalMs.value = cfg.notebookConsolidationIntervalMs ?? 604800000
+  configForm.notebookMaxToolLoops.value            = cfg.notebookMaxToolLoops ?? 10
 }
 
 function readFromForm() {
@@ -70,9 +84,16 @@ function readFromForm() {
     audioVoice:                    configForm.audioVoice.value,
     bashCwd:                       configForm.bashCwd.value.trim(),
     webSearchCount:                Number(configForm.webSearchCount.value),
-    kgraphDbPath:                  configForm.kgraphDbPath.value.trim(),
-    memoryModel:                   configForm.memoryModel.value,
-    memoryConsolidationIntervalMs: Number(configForm.memoryConsolidationIntervalMs.value),
+    kgraphDbPath:                    configForm.kgraphDbPath.value.trim(),
+    kgraphEmbeddingModel:            configForm.kgraphEmbeddingModel.value.trim(),
+    kgraphEmbeddingDimensions:       Number(configForm.kgraphEmbeddingDimensions.value),
+    memoryModel:                     configForm.memoryModel.value,
+    memoryConsolidationIntervalMs:   Number(configForm.memoryConsolidationIntervalMs.value),
+    memoryReflectionIntervalMs:      Number(configForm.memoryReflectionIntervalMs.value),
+    notebookDir:                     configForm.notebookDir.value.trim(),
+    notebookAgentModel:              configForm.notebookAgentModel.value,
+    notebookConsolidationIntervalMs: Number(configForm.notebookConsolidationIntervalMs.value),
+    notebookMaxToolLoops:            Number(configForm.notebookMaxToolLoops.value),
   }
 }
 

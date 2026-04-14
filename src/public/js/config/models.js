@@ -1,10 +1,11 @@
 export async function initModelSelects(cfg) {
-  const chatSel   = document.getElementById('chat-model')
-  const visionSel = document.getElementById('vision-model')
-  const audioSel  = document.getElementById('audio-model')
-  const memorySel = document.getElementById('memory-model')
+  const chatSel     = document.getElementById('chat-model')
+  const visionSel   = document.getElementById('vision-model')
+  const audioSel    = document.getElementById('audio-model')
+  const memorySel   = document.getElementById('memory-model')
+  const notebookSel = document.getElementById('notebook-agent-model')
 
-  for (const sel of [chatSel, visionSel, audioSel, memorySel]) {
+  for (const sel of [chatSel, visionSel, audioSel, memorySel, notebookSel]) {
     sel.innerHTML = '<option value="" disabled>loading models…</option>'
   }
 
@@ -15,10 +16,11 @@ export async function initModelSelects(cfg) {
   } catch {}
 
   for (const [sel, savedVal, allowEmpty] of [
-    [chatSel,   cfg.model,       false],
-    [visionSel, cfg.visionModel, false],
-    [audioSel,  cfg.audioModel,  true],
-    [memorySel, cfg.memoryModel, true],
+    [chatSel,     cfg.model,              false],
+    [visionSel,   cfg.visionModel,        false],
+    [audioSel,    cfg.audioModel,         true],
+    [memorySel,   cfg.memoryModel,        true],
+    [notebookSel, cfg.notebookAgentModel, true],
   ]) {
     const emptyOpt = allowEmpty ? '<option value="">— none —</option>' : ''
     sel.innerHTML = emptyOpt + models.map(m => `<option value="${m}">${m}</option>`).join('')
