@@ -19,7 +19,8 @@ import type { AuthenticatorMsg, AuthSession, RegistrationBeginResult, Authentica
 
 // ─── Public directory (resolved relative to this module) ───
 const PUBLIC_DIR = join(import.meta.dir, '../..', 'public')
-const INBOUND_DIR = join(PUBLIC_DIR, 'inbound')
+const MEDIA_DIR = join(import.meta.dir, '../../..', 'workspace/media')
+const INBOUND_DIR = join(MEDIA_DIR, 'inbound')
 
 // ─── Fallback model list (used when llm-provider is unavailable) ───
 const FALLBACK_MODELS = [
@@ -541,9 +542,12 @@ export const createHttpActor = (
             }
 
             // Static file serving
+            const isMedia = url.pathname.startsWith('/inbound/') || url.pathname.startsWith('/generated/')
             const filePath = url.pathname === '/'
               ? join(PUBLIC_DIR, 'index.html')
-              : join(PUBLIC_DIR, url.pathname)
+              : isMedia
+                ? join(MEDIA_DIR, url.pathname)
+                : join(PUBLIC_DIR, url.pathname)
 
             const file = Bun.file(filePath)
             if (await file.exists()) {

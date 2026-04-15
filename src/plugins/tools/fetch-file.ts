@@ -4,7 +4,7 @@ import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
 
-const INBOUND_DIR = join(import.meta.dir, '../../public/inbound')
+const INBOUND_DIR = join(import.meta.dir, '../../..', 'workspace/media/inbound')
 
 // ─── Tool schema ───
 

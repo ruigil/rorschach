@@ -7,7 +7,7 @@ import type { LlmProviderMsg, LlmProviderReply, VisionProviderReply } from '../.
 
 // ─── Output directory for generated images ───
 
-const GENERATED_DIR = join(import.meta.dir, '../../public/generated')
+const GENERATED_DIR = join(import.meta.dir, '../../..', 'workspace/media/generated')
 const GENERATED_PUBLIC_PREFIX = 'generated'
 
 // ─── Tool schemas ───
