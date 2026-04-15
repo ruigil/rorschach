@@ -1,13 +1,17 @@
 import { createConnection } from 'node:net'
 import type { Socket } from 'node:net'
+import { copyFileSync, mkdirSync } from 'node:fs'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { emit } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { join } from 'node:path'
 import { ask } from '../../system/ask.ts'
+
 import { WsConnectTopic, WsMessageTopic, WsSendTopic } from '../../types/ws.ts'
 import { UserStoreTopic } from '../auth/types.ts'
 import type { UserStoreMsg, User } from '../auth/types.ts'
+
+const INBOUND_DIR = join(import.meta.dir, '../../..', 'workspace/media/inbound')
 
 // ─── Markdown → Signal formatting ───
 //
@@ -274,8 +278,22 @@ export const createSignalActor = (
     activeSocket.write(rpcLine('sendTyping', { ...(account ? { account } : {}), recipient: [recipient], stop }))
   }
 
+  const mimeToExt = (contentType: string): string => {
+    const sub = contentType.split('/')[1] ?? 'bin'
+    const aliases: Record<string, string> = { jpeg: 'jpg', 'x-m4a': 'm4a', mpeg: 'mp3' }
+    return aliases[sub] ?? sub
+  }
+
+  const copyToInbound = (id: string, contentType: string): string => {
+    const ext  = mimeToExt(contentType)
+    const dest = join(INBOUND_DIR, `rorschach-${crypto.randomUUID()}.${ext}`)
+    mkdirSync(INBOUND_DIR, { recursive: true })
+    copyFileSync(`${attachmentsDir}/${id}`, dest)
+    return dest
+  }
+
   const attachmentPaths = (attachments: Attachment[]): string[] =>
-    attachments.map(a => `${attachmentsDir}/${a.id}`)
+    attachments.map(a => copyToInbound(a.id, a.contentType))
 
   return {
     lifecycle: onLifecycle({
@@ -368,7 +386,7 @@ export const createSignalActor = (
               clientId:    phone,
               text,
               ...(imageAttachments.length > 0 ? { images: attachmentPaths(imageAttachments) } : {}),
-              ...(audioAttachment ? { audio: `${attachmentsDir}/${audioAttachment.id}` } : {}),
+              ...(audioAttachment ? { audio: copyToInbound(audioAttachment.id, audioAttachment.contentType) } : {}),
               traceId:      span.traceId,
               parentSpanId: span.spanId,
             })],
@@ -381,7 +399,7 @@ export const createSignalActor = (
         pendingConnect.set(phone, [...existing, {
           text,
           ...(imageAttachments.length > 0 ? { images: attachmentPaths(imageAttachments) } : {}),
-          ...(audioAttachment ? { audio: `${attachmentsDir}/${audioAttachment.id}` } : {}),
+          ...(audioAttachment ? { audio: copyToInbound(audioAttachment.id, audioAttachment.contentType) } : {}),
         }])
 
         if (existing.length === 0) {
