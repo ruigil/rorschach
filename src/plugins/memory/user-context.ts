@@ -1,4 +1,4 @@
-import type { ActorDef, ActorRef, MessageHandler } from '../../system/types.ts'
+import type { ActorDef, ActorRef, MessageHandler, ActorResult } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
 import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { ask } from '../../system/ask.ts'
@@ -12,6 +12,7 @@ import type {
 import type { UserContextMsg } from '../../types/memory.ts'
 import { UserContextTopic } from '../../types/memory.ts'
 import { ontologySection } from './ontology.ts'
+import { CronTriggerTopic } from '../../types/ws.ts'
 
 // ─── Options ───
 
@@ -36,6 +37,7 @@ export type UserContextState = {
   requestId:     string | null
   messages:      ApiMessage[] | null
   accumulated:   string
+  summary:       string | null
   pendingBatch:  PendingBatch | null
   toolLoopCount: number
 }
@@ -69,20 +71,35 @@ const buildInitialMessages = (userId: string): ApiMessage[] => [
   { role: 'user', content: 'Read the memory files and produce the updated user context summary.' },
 ]
 
+const buildGapPrompt = (userId: string, summary: string): string =>
+  `You are a user model analyzer for user "${userId}".\n\n` +
+  `Review the following user context summary:\n\n` +
+  `---\n${summary}\n---\n\n` +
+  `Identify the single most critical information gap that, if filled, would most improve this user model (e.g., a missing goal, an ambiguous preference, or a vague professional background).\n\n` +
+  `Formulate one direct, polite, and concise question to ask the user to fill this gap.\n\n` +
+  `Rules:\n` +
+  `1. Output ONLY the question text.\n` +
+  `2. No preamble, no "Based on the summary...", no reasoning.\n` +
+  `3. If the model is already very complete and there are no critical gaps, respond with an empty message.\n` +
+  `4. Start directly with the question.`
+
 // ─── Actor definition ───
 
 export const createUserContextActor = (options: UserContextOptions): ActorDef<UserContextMsg, UserContextState> => {
   const { model, userId, llmRef, tools, maxToolLoops = 25 } = options
 
-  let awaitingLlmHandler: MessageHandler<UserContextMsg, UserContextState>
-  let toolLoopHandler:    MessageHandler<UserContextMsg, UserContextState>
+  type Result = ActorResult<UserContextMsg, UserContextState>
+
+  let awaitingLlmHandler:         MessageHandler<UserContextMsg, UserContextState>
+  let toolLoopHandler:            MessageHandler<UserContextMsg, UserContextState>
+  let awaitingGapQuestionHandler: MessageHandler<UserContextMsg, UserContextState>
 
   // ─── Start a summary run ───
 
   const startSummary = (
     state: UserContextState,
     context: Parameters<MessageHandler<UserContextMsg, UserContextState>>[2],
-  ): ReturnType<MessageHandler<UserContextMsg, UserContextState>> => {
+  ): Result => {
     const messages = buildInitialMessages(userId)
     const toolSchemas = Object.values(tools).map((e: ToolEntry) => e.schema as Tool)
     const requestId = crypto.randomUUID()
@@ -100,7 +117,7 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
     context.log.info('user context summary started', { userId })
 
     return {
-      state: { ...state, requestId, messages, accumulated: '', pendingBatch: null, toolLoopCount: 0 },
+      state: { ...state, requestId, messages, accumulated: '', summary: null, pendingBatch: null, toolLoopCount: 0 },
       become: awaitingLlmHandler,
     }
   }
@@ -117,14 +134,14 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
   // ─── Handler: awaitingLlm ───
 
   awaitingLlmHandler = onMessage<UserContextMsg, UserContextState>({
-    llmChunk: (state, msg) => {
+    llmChunk: (state, msg): Result => {
       if (msg.requestId !== state.requestId) return { state }
       return { state: { ...state, accumulated: state.accumulated + msg.text } }
     },
 
-    llmReasoningChunk: (state) => ({ state }),
+    llmReasoningChunk: (state): Result => ({ state }),
 
-    llmToolCalls: (state, msg, context) => {
+    llmToolCalls: (state, msg, context): Result => {
       if (msg.requestId !== state.requestId) return { state }
 
       const { calls } = msg
@@ -169,7 +186,7 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
       }
     },
 
-    llmDone: (state, msg, context) => {
+    llmDone: (state, msg, context): Result => {
       if (msg.requestId !== state.requestId) return { state }
 
       const summary = state.accumulated
@@ -183,21 +200,38 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
         (error) => ({ type: '_contextSaveFailed' as const, userId, error: String(error) }),
       )
 
-      return { state: { ...state, requestId: null, messages: null, accumulated: '', pendingBatch: null }, become: idleHandler }
+      // ─── Trigger Pass 2: Gap analysis ───
+      const requestId = crypto.randomUUID()
+      llmRef.send({
+        type: 'stream',
+        requestId,
+        model,
+        messages: [{ role: 'system', content: buildGapPrompt(userId, summary) }],
+        role: 'user-context',
+        replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
+      })
+
+      return {
+        state: { ...state, requestId, messages: null, accumulated: '', summary, pendingBatch: null },
+        become: awaitingGapQuestionHandler,
+      }
     },
 
-    llmError: (state, msg, context) => {
+    llmError: (state, msg, context): Result => {
       if (msg.requestId !== state.requestId) return { state }
       context.log.error('user context summary LLM error', { userId, error: String(msg.error) })
       return { state: { ...state, requestId: null, messages: null, accumulated: '', pendingBatch: null }, become: idleHandler }
     },
+
+    _contextSaved:      (state, msg, context): Result => { context.log.info('user context file saved', { userId: msg.userId }); return { state } },
+    _contextSaveFailed: (state, msg, context): Result => { context.log.error('user context file save failed', { userId: msg.userId, error: msg.error }); return { state } },
 
   })
 
   // ─── Handler: toolLoop ───
 
   toolLoopHandler = onMessage<UserContextMsg, UserContextState>({
-    _toolResult: (state, msg, context) => {
+    _toolResult: (state, msg, context): Result => {
       const batch = state.pendingBatch!
       const content = msg.reply.type === 'toolResult' ? msg.reply.result : `Tool error: ${msg.reply.error}`
       const updatedResults = [...batch.results, { toolCallId: msg.toolCallId, toolName: msg.toolName, content }]
@@ -244,6 +278,54 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
       }
     },
 
+    _contextSaved:      (state, msg, context): Result => { context.log.info('user context file saved', { userId: msg.userId }); return { state } },
+    _contextSaveFailed: (state, msg, context): Result => { context.log.error('user context file save failed', { userId: msg.userId, error: msg.error }); return { state } },
+
+  })
+
+  // ─── Handler: awaitingGapQuestion ───
+
+  awaitingGapQuestionHandler = onMessage<UserContextMsg, UserContextState>({
+    llmChunk: (state, msg): Result => {
+      if (msg.requestId !== state.requestId) return { state }
+      return { state: { ...state, accumulated: state.accumulated + msg.text } }
+    },
+
+    llmReasoningChunk: (state): Result => ({ state }),
+
+    llmDone: (state, msg, context): Result => {
+      if (msg.requestId !== state.requestId) return { state }
+
+      const question = state.accumulated.trim()
+      if (question) {
+        context.log.info('user context gap identified', { userId, question: question.slice(0, 100) })
+        context.publish(CronTriggerTopic, {
+          userId,
+          text:         question,
+          traceId:      crypto.randomUUID(),
+          parentSpanId: crypto.randomUUID(),
+        })
+      } else {
+        context.log.info('user context model complete, no question needed', { userId })
+      }
+
+      return {
+        state: { ...state, requestId: null, messages: null, accumulated: '', summary: null },
+        become: idleHandler,
+      }
+    },
+
+    llmError: (state, msg, context): Result => {
+      if (msg.requestId !== state.requestId) return { state }
+      context.log.error('user context gap analysis LLM error', { userId, error: String(msg.error) })
+      return {
+        state: { ...state, requestId: null, messages: null, accumulated: '', summary: null },
+        become: idleHandler,
+      }
+    },
+
+    _contextSaved:      (state, msg, context): Result => { context.log.info('user context file saved', { userId: msg.userId }); return { state } },
+    _contextSaveFailed: (state, msg, context): Result => { context.log.error('user context file save failed', { userId: msg.userId, error: msg.error }); return { state } },
   })
 
   return {
@@ -255,6 +337,7 @@ export const INITIAL_USER_CONTEXT_STATE: UserContextState = {
   requestId:     null,
   messages:      null,
   accumulated:   '',
+  summary:       null,
   pendingBatch:  null,
   toolLoopCount: 0,
 }
