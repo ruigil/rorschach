@@ -78,10 +78,10 @@ const buildGapPrompt = (userId: string, summary: string): string =>
   `Identify the single most critical information gap that, if filled, would most improve this user model (e.g., a missing goal, an ambiguous preference, or a vague professional background).\n\n` +
   `Formulate one direct, polite, and concise question to ask the user to fill this gap.\n\n` +
   `Rules:\n` +
-  `1. Output ONLY the question text.\n` +
+  `1. Output the question as an instruction for the chatbot, starting with "Ask the user: ".\n` +
   `2. No preamble, no "Based on the summary...", no reasoning.\n` +
   `3. If the model is already very complete and there are no critical gaps, respond with an empty message.\n` +
-  `4. Start directly with the question.`
+  `4. Example: "Ask the user: What are your primary goals for the Rorschach project?"`
 
 // ─── Actor definition ───
 

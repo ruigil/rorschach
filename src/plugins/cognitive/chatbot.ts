@@ -1,5 +1,5 @@
 import { emit } from '../../system/types.ts'
-import type { ActorDef, ActorRef, MessageHandler, PersistenceAdapter, SpanHandle } from '../../system/types.ts'
+import type { ActorDef, ActorRef, MessageHandler, PersistenceAdapter, SpanHandle, ActorResult } from '../../system/types.ts'
 import { ask } from '../../system/ask.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { WsSendTopic, MemoryStreamTopic } from '../../types/ws.ts'
@@ -65,7 +65,7 @@ export type ChatbotState = {
 // ─── History markers note ───
 // Baked into every system prompt so the LLM correctly interprets synthetic history entries.
 const HISTORY_MARKERS_NOTE =
-  'Messages prefixed with [Scheduled task] in the conversation history are past internal ' +
+  'Messages prefixed with [Internal Instruction] in the conversation history are past internal ' +
   'instructions that you already carried out. Do not act on them again.\n' +
   'Messages prefixed with [Planning session completed] mark the end of a past background ' +
   'planning session. They are historical context — do not start a new planning session because ' +
@@ -172,6 +172,8 @@ const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<Ll
 export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<ChatbotMsg, ChatbotState> => {
   const { clientId, model, systemPrompt, historyWindow, toolFilter, plannerConfig, maxToolLoops = 25, userId, llmRef: initialLlmRef = null } = options
 
+  type Result = ActorResult<ChatbotMsg, ChatbotState>
+
   // ─── Shared handlers (used across all behaviors) ───
 
   const toolRegistered = (state: ChatbotState, msg: Extract<ChatbotMsg, { type: '_toolRegistered' }>): { state: ChatbotState } => ({
@@ -195,7 +197,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
   // ─── Handler: idle — waiting for user input ───
 
   const idleHandler: MessageHandler<ChatbotMsg, ChatbotState> = onMessage<ChatbotMsg, ChatbotState>({
-    userMessage: (state, message, context) => {
+    userMessage: (state, message, context): Result => {
       const { clientId: msgClientId, text, images, audio, pdfs, traceId, parentSpanId, isCron } = message
       const activeClientId = msgClientId
       const todayDateNote = `Today's date is ${new Date().toDateString()}.`
@@ -216,7 +218,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         const apiMessages: ApiMessage[] = [
           ...(fullSystemPrompt ? [{ role: 'system' as const, content: fullSystemPrompt }] : []),
           ...state.history,
-          { role: 'user' as const, content: `[Proactive task — do not mention that this is scheduled] ${text}` },
+          { role: 'user' as const, content: `[Internal Instruction — do not mention that this is scheduled] ${text}` },
         ]
 
         state.llmRef?.send({
@@ -229,7 +231,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           state: {
             ...state,
             activeClientId,
-            history: [...state.history, { role: 'user' as const, content: `[Scheduled task] ${text}` }],
+            history: [...state.history, { role: 'user' as const, content: `[Internal Instruction] ${text}` }],
             requestId,
             turnMessages: apiMessages,
             pending: '',
@@ -294,11 +296,11 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       }
     },
 
-    _toolRegistered:     toolRegistered,
-    _toolUnregistered:   toolUnregistered,
-    _llmProviderUpdated: llmProviderUpdated,
-    _userContext:        (state, msg) => ({ state: { ...state, userContext: msg.summary } }),
-    _plannerDone:        (state, _msg, context) => {
+    _toolRegistered:     (state, msg): Result => toolRegistered(state, msg),
+    _toolUnregistered:   (state, msg): Result => toolUnregistered(state, msg),
+    _llmProviderUpdated: (state, msg): Result => llmProviderUpdated(state, msg),
+    _userContext:        (state, msg): Result => ({ state: { ...state, userContext: msg.summary } }),
+    _plannerDone:        (state, _msg, context): Result => {
       if (state.activePlannerRef) context.stop(state.activePlannerRef)
       return { state: { ...state, activePlannerRef: null } }
     },
@@ -307,7 +309,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
   // ─── Handler: awaitingLlm — LLM running, will return tool calls or text ───
 
   awaitingLlmHandler = onMessage<ChatbotMsg, ChatbotState>({
-    llmToolCalls: (state, message, context) => {
+    llmToolCalls: (state, message, context): Result => {
       const { requestId, calls, usage } = message
       if (requestId !== state.requestId) return { state }
 
@@ -431,7 +433,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       }
     },
 
-    llmChunk: (state, message) => {
+    llmChunk: (state, message): Result => {
       if (message.requestId !== state.requestId) return { state }
       const { text } = message
       return {
@@ -440,7 +442,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       }
     },
 
-    llmReasoningChunk: (state, message) => {
+    llmReasoningChunk: (state, message): Result => {
       if (message.requestId !== state.requestId) return { state }
       const { text } = message
       return {
@@ -449,7 +451,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       }
     },
 
-    llmDone: (state, message) => {
+    llmDone: (state, message): Result => {
       const { requestId, usage } = message
       if (requestId !== state.requestId) return { state }
 
@@ -493,7 +495,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       }
     },
 
-    llmError: (state, message, context) => {
+    llmError: (state, message, context): Result => {
       const { requestId, error } = message
       if (requestId !== state.requestId) return { state }
 
@@ -508,16 +510,16 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       }
     },
 
-    _toolRegistered:     toolRegistered,
-    _toolUnregistered:   toolUnregistered,
-    _llmProviderUpdated: llmProviderUpdated,
-    _userContext:        (state, msg) => ({ state: { ...state, userContext: msg.summary } }),
+    _toolRegistered:     (state, msg): Result => toolRegistered(state, msg),
+    _toolUnregistered:   (state, msg): Result => toolUnregistered(state, msg),
+    _llmProviderUpdated: (state, msg): Result => llmProviderUpdated(state, msg),
+    _userContext:        (state, msg): Result => ({ state: { ...state, userContext: msg.summary } }),
   })
 
   // ─── Handler: toolLoop — tools executing, accumulating results ───
 
   toolLoopHandler = onMessage<ChatbotMsg, ChatbotState>({
-    _toolResult: (state, message, context) => {
+    _toolResult: (state, message, context): Result => {
       const { toolName, toolCallId, reply } = message
       const batch = state.pendingBatch!
       const handles = state.spanHandles
@@ -623,10 +625,10 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       }
     },
 
-    _toolRegistered:     toolRegistered,
-    _toolUnregistered:   toolUnregistered,
-    _llmProviderUpdated: llmProviderUpdated,
-    _userContext:        (state, msg) => ({ state: { ...state, userContext: msg.summary } }),
+    _toolRegistered:     (state, msg): Result => toolRegistered(state, msg),
+    _toolUnregistered:   (state, msg): Result => toolUnregistered(state, msg),
+    _llmProviderUpdated: (state, msg): Result => llmProviderUpdated(state, msg),
+    _userContext:        (state, msg): Result => ({ state: { ...state, userContext: msg.summary } }),
   })
 
   return {
@@ -636,9 +638,10 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       start: (state, context) => {
         context.subscribe(ToolRegistrationTopic, (event) => {
           if (!applyToolFilter(event.name, toolFilter)) return null
-          return event.ref === null
-            ? { type: '_toolUnregistered' as const, name: event.name }
-            : { type: '_toolRegistered' as const, name: event.name, schema: event.schema, ref: event.ref }
+          if ('schema' in event) {
+            return { type: '_toolRegistered' as const, name: event.name, schema: event.schema, ref: event.ref }
+          }
+          return { type: '_toolUnregistered' as const, name: event.name }
         })
 
         context.subscribe(LlmProviderTopic, (event) =>

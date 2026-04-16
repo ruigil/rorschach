@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { emit } from '../../system/types.ts'
-import type { ActorDef, ActorRef, MessageHandler } from '../../system/types.ts'
+import type { ActorDef, ActorRef, MessageHandler, ActorResult } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
 import { WsSendTopic } from '../../types/ws.ts'
@@ -179,6 +179,8 @@ const formatPlanMarkdown = (plan: Plan): string => {
 
 export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<PlannerMsg, PlannerAgentState> => {
   const { llmRef, userContext, tools, model, plansDir, maxToolLoops, clientId, goal } = options
+
+  type Result = ActorResult<PlannerMsg, PlannerAgentState>
 
   let awaitingLlmHandler:    MessageHandler<PlannerMsg, PlannerAgentState>
   let toolLoopHandler:       MessageHandler<PlannerMsg, PlannerAgentState>
@@ -363,18 +365,18 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
   // ─── Handler: awaitingLlm ───
 
   awaitingLlmHandler = onMessage<PlannerMsg, PlannerAgentState>({
-    _userInput: (state) => ({ state, stash: true }),
+    _userInput: (state): Result => ({ state, stash: true }),
 
-    llmChunk:          (state, msg) => msg.requestId !== state.requestId ? { state } : { state: { ...state, pending: state.pending + msg.text } },
-    llmReasoningChunk: (state)       => ({ state }),
-    llmImageChunk:     (state)       => ({ state }),
+    llmChunk:          (state, msg): Result => msg.requestId !== state.requestId ? { state } : { state: { ...state, pending: state.pending + msg.text } },
+    llmReasoningChunk: (state): Result       => ({ state }),
+    llmImageChunk:     (state): Result       => ({ state }),
 
-    llmToolCalls: (state, msg, context) => {
+    llmToolCalls: (state, msg, context): Result => {
       if (msg.requestId !== state.requestId) return { state }
-      return handleLlmToolCalls(state, msg, context)
+      return handleLlmToolCalls(state, msg, context) as Result
     },
 
-    llmDone: (state, msg, context) => {
+    llmDone: (state, msg, context): Result => {
       if (msg.requestId !== state.requestId) return { state }
       // LLM finished without calling a tool — forward text and end session
       context.log.warn('planner-agent: LLM responded without tool call, ending session')
@@ -392,19 +394,19 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
       }
     },
 
-    llmError: (state, msg, context) => {
+    llmError: (state, msg, context): Result => {
       if (msg.requestId !== state.requestId) return { state }
       context.log.error('planner-agent: LLM error', { error: String(msg.error) })
-      return abortSession(state, context, 'The planner encountered an error. Please try again.')
+      return abortSession(state, context, 'The planner encountered an error. Please try again.') as Result
     },
   })
 
   // ─── Handler: toolLoop (external research tools in flight) ───
 
   toolLoopHandler = onMessage<PlannerMsg, PlannerAgentState>({
-    _userInput: (state) => ({ state, stash: true }),
+    _userInput: (state): Result => ({ state, stash: true }),
 
-    _toolResult: (state, msg, context) => {
+    _toolResult: (state, msg, context): Result => {
       const batch     = state.pendingBatch!
       const content   = msg.reply.type === 'toolResult' ? msg.reply.result : `Tool error: ${msg.reply.error}`
       const updated   = [...batch.results, { toolCallId: msg.toolCallId, toolName: msg.toolName, content }]
@@ -417,7 +419,7 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
       const nextLoopCount = state.toolLoopCount + 1
       if (nextLoopCount >= maxToolLoops) {
         context.log.warn('planner-agent: tool loop limit reached')
-        return abortSession(state, context, 'Tool loop limit reached in planner. Please try again.')
+        return abortSession(state, context, 'Tool loop limit reached in planner. Please try again.') as Result
       }
 
       const toolResultMsgs: ApiMessage[] = updated.map(r => ({
@@ -448,7 +450,7 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
   // ─── Handler: awaitingUser (waiting for user's answer to ask_user) ───
 
   awaitingUserHandler = onMessage<PlannerMsg, PlannerAgentState>({
-    _userInput: (state, msg, context) => {
+    _userInput: (state, msg, context): Result => {
       if (msg.clientId !== clientId) return { state }
 
       const pendingAsk    = state.pendingAskUser!
@@ -476,7 +478,7 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
   // ─── Handler: refinementLoop (user reviewing proposed plan) ───
 
   refinementLoopHandler = onMessage<PlannerMsg, PlannerAgentState>({
-    _userInput: (state, msg, context) => {
+    _userInput: (state, msg, context): Result => {
       if (msg.clientId !== clientId) return { state }
 
       if (isApproval(msg.text)) {
@@ -527,9 +529,9 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
   // ─── Handler: finalizing (async file write in flight) ───
 
   finalizingHandler = onMessage<PlannerMsg, PlannerAgentState>({
-    _userInput: (state) => ({ state, stash: true }),
+    _userInput: (state): Result => ({ state, stash: true }),
 
-    _planWriteDone: (state, msg, context) => {
+    _planWriteDone: (state, msg, context): Result => {
       const summary = state.pendingSummary ?? `Plan saved to ${msg.filepath}.`
 
       // Deregister — routing returns to chatbot, chatbot will stop this actor
@@ -548,7 +550,7 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
       }
     },
 
-    _planWriteError: (state, msg, context) => {
+    _planWriteError: (state, msg, context): Result => {
       context.log.error('planner-agent: failed to write plan', { error: msg.error })
       context.publishRetained(PlannerActiveTopic, clientId, { clientId, plannerRef: null })
 
