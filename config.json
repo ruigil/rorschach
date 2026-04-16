@@ -80,7 +80,7 @@
       },
       "memory": {
         "model": "google/gemini-3.1-pro-preview",
-        "consolidationIntervalMs": 60000,
+        "consolidationIntervalMs": 3600000,
         "reflectionIntervalMs": 604800000
       }
     },
