@@ -59,27 +59,13 @@ export type ConsolidationState = {
 
 // ─── Helpers ───
 
-const localTimeString = (d: Date): string => {
-  const offset = -d.getTimezoneOffset()
-  const sign = offset >= 0 ? '+' : '-'
-  const hh   = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0')
-  const mm   = String(Math.abs(offset) % 60).padStart(2, '0')
-  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000)
-  const tzName = Intl.DateTimeFormat().resolvedOptions().timeZone
-  return `${local.toISOString().slice(0, 19)}${sign}${hh}:${mm} (${tzName})`
-}
-
 // ─── System prompt ───
 
-const buildSystemPrompt = (userId: string, intervalMs: number, now: Date): string => {
-  const intervalMin = Math.round(intervalMs / 60_000)
-  const scheduleMin = Math.max(1, intervalMin - 10)
-
+const buildSystemPrompt = (userId: string): string => {
   return `You are a user model agent for user "${userId}".\n\n` +
 
   `## Primary Goal\n` +
   `Build the most complete and accurate knowledge base about this user. The knowledge base is the most important artifact — it is a living document about who this user is. The graph and episodic logs exist to support it.\n\n` +
-  `After each consolidation, review the knowledge base for gaps. If important information is missing (identity, preferences, goals, projects, relationships, beliefs, dreams), schedule a proactive question using cron_create (run_once: true) to fill it. These questions exist solely to improve the user model — not to offer help or suggest actions. Do NOT ask things like "Would you like help with X?" or "Do you want me to schedule Y?". Only ask factual questions about who the user is: their background, values, habits, preferences, or ongoing projects. The cron prompt is interpreted by the main react agent, so phrase it as an instruction: e.g. "Ask the user what their preferred deployment workflow is." One focused question per cron job.\n\n` +
 
   `## Memory Architecture\n\n` +
 
@@ -123,33 +109,22 @@ const buildSystemPrompt = (userId: string, intervalMs: number, now: Date): strin
   `   b. MERGE archive relationship with {since: today's date, source_file}\n` +
   `   c. DELETE the current-state relationship\n` +
   `   d. Move the kbase bullet from ## Active → ## Past / Achieved / Abandoned\n` +
-  `   Do NOT schedule a clarifying question for clear lifecycle transitions.\n` +
   `6. Ensure the root anchor exists first: kgraph_upsert { label:"Entity", name:"${userId}" }.\n` +
   `   Always use the exact string "${userId}" — never a generic label like "User" or "the user".\n` +
   `   Then for each additional new node: call kgraph_upsert {label, name, properties}. Capture\n` +
   `   canonicalName from the response — use it (not the name you passed) in all relationship MERGE statements below.\n` +
   `7. Write new relationship MERGEs via kgraph_write using the canonicalName values from step 6.\n` +
   `8. Observe interaction patterns from the turn text (message length, question style, corrections)\n` +
-  `   → update /workspace/memory/${userId}/kbase/communication.md (read first, create if missing)\n` +
-  `9. Review kbase for gaps → schedule proactive questions via cron_create if needed\n\n` +
-
-  `## Scheduling Policy for cron_create\n` +
-  `Current local time: ${localTimeString(now)}\n` +
-  `1. Add ${scheduleMin} minutes to the current time above to get the target fire time.\n` +
-  `3. Build a one-shot cron expression pinned to that exact date and time: \`{MM} {HH} {DD} {month} *\`\n` +
-  `   Example: if now is 2026-04-10T14:23+02:00, target = 15:13 on April 10 → expression is \`13 15 10 4 *\`\n` +
-  `   Handle hour/day rollover correctly (e.g. 23:50 + 20min = 00:10 next day).\n` +
-  `4. Never schedule more than ${intervalMin} minutes in the future — questions due days ahead will already be answered by then.`
+  `   → update /workspace/memory/${userId}/kbase/communication.md (read first, create if missing)`
 }
 
-const buildMessages = (userId: string, intervalMs: number, turns: MemoryTurnEvent[]): ApiMessage[] => {
-  const now = new Date()
+const buildMessages = (userId: string, turns: MemoryTurnEvent[]): ApiMessage[] => {
   const turnList = turns.map((t, i) => {
     const date = new Date(t.timestamp).toISOString()
     return `Turn ${i + 1} [${date}]\nUser: ${t.userText}\nAssistant: ${t.assistantText}`
   }).join('\n\n')
   return [
-    { role: 'system', content: buildSystemPrompt(userId, intervalMs, now) },
+    { role: 'system', content: buildSystemPrompt(userId) },
     { role: 'user', content: `Please consolidate these conversation turns into memory:\n\n${turnList}` },
   ]
 }
@@ -194,7 +169,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
     const { [nextUserId]: _dropped, ...remainingBuffer } = state.buffer
 
     const requestId = crypto.randomUUID()
-    const messages = buildMessages(nextUserId, intervalMs, snapshotTurns)
+    const messages = buildMessages(nextUserId, snapshotTurns)
     const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
 
     state.llmRef.send({

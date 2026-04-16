@@ -45,22 +45,9 @@ export type ReflectionState = {
 
 // ─── Helpers ───
 
-const localTimeString = (d: Date): string => {
-  const offset = -d.getTimezoneOffset()
-  const sign = offset >= 0 ? '+' : '-'
-  const hh   = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0')
-  const mm   = String(Math.abs(offset) % 60).padStart(2, '0')
-  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000)
-  const tzName = Intl.DateTimeFormat().resolvedOptions().timeZone
-  return `${local.toISOString().slice(0, 19)}${sign}${hh}:${mm} (${tzName})`
-}
-
 // ─── System prompt ───
 
-const buildSystemPrompt = (intervalMs: number, now: Date): string => {
-  const intervalMin = Math.round(intervalMs / 60_000)
-  const scheduleMin = Math.max(1, intervalMin - 10)
-
+const buildSystemPrompt = (): string => {
   return `You are a reflection agent for a personal AI assistant. Your task is NOT to transcribe what users said — the consolidation agent already does that. Your task is to identify patterns that users have never explicitly stated but consistently reveal through their behaviour across multiple conversations.\n\n` +
 
   `## Primary Goal\n` +
@@ -87,7 +74,6 @@ const buildSystemPrompt = (intervalMs: number, now: Date): string => {
   `      - Single event or mention → skip (episodic only, no graph write)\n` +
   `      - Same activity across 3+ different days → MERGE :HAS_HABIT {confidence:"inferred"}\n` +
   `      - Consistent implicit preference confirmed multiple times → MERGE :PREFERS {confidence:"inferred"}\n` +
-  `      - Uncertain or borderline signals → schedule clarifying question via cron_create (run_once:true), no graph write\n` +
   `   g. When writing inferred facts to kbase, mark them: [inferred from pattern]\n` +
   `   h. When a previously inferred graph fact is now confirmed explicitly in episodic history:\n` +
   `      MATCH (u:Entity {name:"{userId}"})-[r:HAS_HABIT]->(h) WHERE r.confidence = "inferred"\n` +
@@ -102,19 +88,11 @@ const buildSystemPrompt = (intervalMs: number, now: Date): string => {
   `- Do NOT infer facts already explicit in the kgraph (check first)\n` +
   `- Do NOT write :HAS_HABIT relationships — that is the reflection agent's exclusive domain\n` +
   `- Do NOT infer emotional or psychological states — stick to observable behaviour\n` +
-  `- Do NOT write to graph with confidence:"inferred" if you are not confident — schedule a question instead\n\n` +
-
-  `## Scheduling Policy for cron_create\n` +
-  `Current local time: ${localTimeString(now)}\n` +
-  `1. Add ${scheduleMin} minutes to the current time above to get the target fire time.\n` +
-  `3. Build a one-shot cron expression pinned to that exact date and time: \`{MM} {HH} {DD} {month} *\`\n` +
-  `   Example: if now is 2026-04-10T14:23+02:00, target = 15:13 on April 10 → expression is \`13 15 10 4 *\`\n` +
-  `   Handle hour/day rollover correctly (e.g. 23:50 + 20min = 00:10 next day).\n` +
-  `4. Never schedule more than ${intervalMin} minutes in the future — questions due days ahead will already be answered by then.`
+  `- Do NOT write to graph with confidence:"inferred" if you are not confident`
 }
 
-const buildInitialMessages = (intervalMs: number): ApiMessage[] => [
-  { role: 'system', content: buildSystemPrompt(intervalMs, new Date()) },
+const buildInitialMessages = (): ApiMessage[] => [
+  { role: 'system', content: buildSystemPrompt() },
   { role: 'user', content: 'Run the weekly reflection pass for all users.' },
 ]
 
@@ -145,7 +123,7 @@ export const createMemoryReflectionActor = (options: ReflectionOptions): ActorDe
   ): ReturnType<MessageHandler<MemoryReflectionMsg, ReflectionState>> => {
     if (state.llmRef === null) return { state }
 
-    const messages = buildInitialMessages(intervalMs)
+    const messages = buildInitialMessages()
     const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
     const requestId = crypto.randomUUID()
 

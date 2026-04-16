@@ -69,12 +69,12 @@ const spawnMemoryActors = (
 ): { consolidation: ActorRef<MemoryConsolidationMsg>; reflection: ActorRef<MemoryReflectionMsg>; userMemory: ActorRef<UserMemoryMsg> } => {
   const consolidation = ctx.spawn(
     `memory-consolidation-${gen}`,
-    createMemoryConsolidationActor({ model: config.model, intervalMs: config.consolidationIntervalMs, toolFilter: { allow: ['kgraph_query', 'kgraph_write', 'kgraph_upsert', 'bash', 'write', 'read', 'cron_create', 'get_current_time'] } }),
+    createMemoryConsolidationActor({ model: config.model, intervalMs: config.consolidationIntervalMs, toolFilter: { allow: ['kgraph_query', 'kgraph_write', 'kgraph_upsert', 'bash', 'write', 'read'] } }),
     INITIAL_CONSOLIDATION_STATE,
   )
   const reflection = ctx.spawn(
     `memory-reflection-${gen}`,
-    createMemoryReflectionActor({ model: config.model, intervalMs: config.reflectionIntervalMs ?? REFLECTION_DEFAULT_INTERVAL_MS, toolFilter: { allow: ['kgraph_query', 'kgraph_write', 'kgraph_upsert', 'bash', 'write', 'read', 'cron_create', 'get_current_time'] } }),
+    createMemoryReflectionActor({ model: config.model, intervalMs: config.reflectionIntervalMs ?? REFLECTION_DEFAULT_INTERVAL_MS, toolFilter: { allow: ['kgraph_query', 'kgraph_write', 'kgraph_upsert', 'bash', 'write', 'read'] } }),
     INITIAL_REFLECTION_STATE,
   )
   const userMemory = ctx.spawn(
