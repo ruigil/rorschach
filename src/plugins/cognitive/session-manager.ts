@@ -6,22 +6,26 @@ import type { ChatbotState } from './chatbot.ts'
 import type { ToolFilter } from '../../types/tools.ts'
 import type { ChatbotMsg } from '../../types/chatbot.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
+import type { PlannerInputMsg, PlannerConfig } from '../../types/planner.ts'
+import { PlannerActiveTopic } from '../../types/planner.ts'
 
 // ─── Message protocol ───
 
 type SessionManagerMsg =
-  | { type: '_connected';     clientId: string; userId: string | null; roles: string[] }
-  | { type: '_disconnected';  clientId: string }
-  | { type: '_message';       clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string; isCron?: boolean }
-  | { type: '_cronTrigger';   userId: string; text: string; traceId: string; parentSpanId: string }
+  | { type: '_connected';            clientId: string; userId: string | null; roles: string[] }
+  | { type: '_disconnected';         clientId: string }
+  | { type: '_message';              clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string; isCron?: boolean }
+  | { type: '_cronTrigger';          userId: string; text: string; traceId: string; parentSpanId: string }
+  | { type: '_plannerSessionUpdated'; clientId: string; plannerRef: ActorRef<PlannerInputMsg> | null; summary?: string }
 
 // ─── State ───
 
 type SessionManagerState = {
-  userSessions:  Record<string, ActorRef<ChatbotMsg>>  // userId  → actor (authenticated)
-  anonSessions:  Record<string, ActorRef<ChatbotMsg>>  // clientId → actor (anonymous)
-  clientIndex:   Record<string, string>               // clientId → userId (for routing & cleanup)
-  activeClients: Record<string, number>               // userId → active connection count
+  userSessions:    Record<string, ActorRef<ChatbotMsg>>       // userId   → actor (authenticated)
+  anonSessions:    Record<string, ActorRef<ChatbotMsg>>       // clientId → actor (anonymous)
+  clientIndex:     Record<string, string>                     // clientId → userId (for routing & cleanup)
+  activeClients:   Record<string, number>                     // userId   → active connection count
+  plannerSessions: Record<string, ActorRef<PlannerInputMsg>>  // clientId → planner actor (active planning)
 }
 
 // ─── Options ───
@@ -32,6 +36,7 @@ export type SessionManagerOptions = {
   systemPrompt?:  string
   historyWindow?: number
   toolFilter?:    ToolFilter
+  plannerConfig?: PlannerConfig
 }
 
 // ─── Initial chatbot state ───
@@ -42,6 +47,7 @@ const initialChatbotState = (llmRef: ActorRef<LlmProviderMsg>): ChatbotState => 
   sessionUsage:     { promptTokens: 0, completionTokens: 0 },
   llmRef,
   userContext:      null,
+  activePlannerRef: null,
   requestId:        null,
   turnMessages:     null,
   spanHandles:      null,
@@ -56,7 +62,7 @@ const initialChatbotState = (llmRef: ActorRef<LlmProviderMsg>): ChatbotState => 
 // ─── Actor definition ───
 
 export const createSessionManagerActor = (options: SessionManagerOptions): ActorDef<SessionManagerMsg, SessionManagerState> => {
-  const { llmRef, model, systemPrompt, historyWindow, toolFilter } = options
+  const { llmRef, model, systemPrompt, historyWindow, toolFilter, plannerConfig } = options
 
   return {
     lifecycle: onLifecycle({
@@ -65,6 +71,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
         context.subscribe(WsDisconnectTopic, e => ({ type: '_disconnected' as const, clientId: e.clientId }))
         context.subscribe(WsMessageTopic,    e => ({ type: '_message'      as const, clientId: e.clientId, text: e.text, images: e.images, audio: e.audio, pdfs: e.pdfs, traceId: e.traceId, parentSpanId: e.parentSpanId, isCron: e.isCron }))
         context.subscribe(CronTriggerTopic,  e => ({ type: '_cronTrigger'  as const, userId: e.userId, text: e.text, traceId: e.traceId, parentSpanId: e.parentSpanId }))
+        context.subscribe(PlannerActiveTopic, e => ({ type: '_plannerSessionUpdated' as const, clientId: e.clientId, plannerRef: e.plannerRef ?? null, summary: 'summary' in e ? e.summary : undefined }))
         return { state }
       },
 
@@ -107,7 +114,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
           }
           const ref = context.spawn(
             `chatbot-${userId}`,
-            createChatbotActor({ clientId, model, systemPrompt, historyWindow, toolFilter, userId, roles, llmRef }),
+            createChatbotActor({ clientId, model, systemPrompt, historyWindow, toolFilter, plannerConfig, userId, roles, llmRef }),
             initialChatbotState(llmRef),
           )
           return {
@@ -123,7 +130,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
         // Anonymous: one actor per clientId (old behaviour)
         const ref = context.spawn(
           `chatbot-${clientId}`,
-          createChatbotActor({ clientId, model, systemPrompt, historyWindow, toolFilter }),
+          createChatbotActor({ clientId, model, systemPrompt, historyWindow, toolFilter, plannerConfig }),
           initialChatbotState(llmRef),
         )
         return { state: { ...state, anonSessions: { ...state.anonSessions, [clientId]: ref } } }
@@ -155,10 +162,48 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
 
       _message: (state, message) => {
         const { clientId, text, images, audio, pdfs, traceId, parentSpanId, isCron } = message
+
+        // If a planner session is active for this client, route input to the planner instead
+        const plannerRef = state.plannerSessions[clientId]
+        if (plannerRef) {
+          plannerRef.send({ type: '_userInput', clientId, text })
+          return { state }
+        }
+
         const userId = state.clientIndex[clientId]
         const actor  = userId ? state.userSessions[userId] : state.anonSessions[clientId]
         actor?.send({ type: 'userMessage', clientId, text, images, audio, pdfs, traceId, parentSpanId, isCron })
         return { state }
+      },
+
+      _plannerSessionUpdated: (state, message) => {
+        const { clientId, plannerRef, summary } = message
+
+        if (plannerRef) {
+          // Planner is starting a session for this clientId
+          return { state: { ...state, plannerSessions: { ...state.plannerSessions, [clientId]: plannerRef } } }
+        }
+
+        // Planner is done — restore normal routing
+        const { [clientId]: _, ...plannerSessions } = state.plannerSessions
+
+        const userId     = state.clientIndex[clientId]
+        const chatbotRef = userId ? state.userSessions[userId] : state.anonSessions[clientId]
+        if (summary) {
+          // Inject summary as a synthetic userMessage so the chatbot replies naturally
+          chatbotRef?.send({
+            type:         'userMessage',
+            clientId,
+            text:         `[Planning session completed] ${summary}`,
+            traceId:      crypto.randomUUID(),
+            parentSpanId: crypto.randomUUID(),
+          })
+        } else {
+          // Abort path — no userMessage, but chatbot still needs to stop the planner actor
+          chatbotRef?.send({ type: '_plannerDone' })
+        }
+
+        return { state: { ...state, plannerSessions } }
       },
 
       _cronTrigger: (state, message, context) => {

@@ -16,6 +16,7 @@ let streamRawText         = ''
 let reasoningEl           = null
 let pendingSources        = null
 let sourcesWrap           = null
+let isPlannerMode         = false
 
 // ─── Input state ───
 
@@ -97,7 +98,7 @@ function createMessageWrap() {
   bubble.className = 'bubble'
   const label  = document.createElement('div')
   label.className = 'message-label'
-  label.textContent = 'Rorschach'
+  label.textContent = isPlannerMode ? 'Rorschach — Plan Mode' : 'Rorschach'
   bubble.appendChild(label)
   wrap.appendChild(bubble)
   return { wrap, bubble }
@@ -206,7 +207,9 @@ function appendUserMessage(text, images, audio, pdfs = []) {
 // ─── WebSocket message handler ───
 
 export function handleChatMsg(msg) {
-  if (msg.type === 'searching') {
+  if (msg.type === 'plannerMode') {
+    isPlannerMode = msg.active
+  } else if (msg.type === 'searching') {
     removeThinking()
     const tools = msg.tools ?? []
     const label = tools.length === 1

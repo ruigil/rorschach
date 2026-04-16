@@ -65,7 +65,12 @@
             "read"
           ]
         }
-      }
+      },
+      "planner": {
+        "model": "z-ai/glm-5-turbo",                                                                                                                                 
+        "plansDir": "workspace/plans",                          
+        "toolFilter": { "allow": ["web_search", "fetch_file"] }                                                                                                  
+      } 
     },
     "memory": {
       "kgraph": {
@@ -75,7 +80,7 @@
       },
       "memory": {
         "model": "google/gemini-3.1-pro-preview",
-        "consolidationIntervalMs": 14400000,
+        "consolidationIntervalMs": 60000,
         "reflectionIntervalMs": 604800000
       }
     },

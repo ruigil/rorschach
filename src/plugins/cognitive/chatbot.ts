@@ -16,6 +16,8 @@ import type {
 } from '../../types/llm.ts'
 import type { ChatbotMsg } from '../../types/chatbot.ts'
 import { UserContextTopic } from '../../types/memory.ts'
+import type { PlannerConfig, PlannerInputMsg } from '../../types/planner.ts'
+import { createPlannerAgentActor, createInitialPlannerAgentState } from './planner-agent.ts'
 
 // ─── State ───
 
@@ -44,6 +46,7 @@ export type ChatbotState = {
   sessionUsage:     TokenUsage
   llmRef:           ActorRef<LlmProviderMsg> | null
   userContext:      string | null
+  activePlannerRef: ActorRef<PlannerInputMsg> | null
   activeClientId:   string   // updated per userMessage to route responses to current sender
 
   // Active turn (set on userMessage, cleared on llmDone/llmError)
@@ -59,11 +62,14 @@ export type ChatbotState = {
   toolLoopCount:    number
 }
 
-// ─── Cron history note ───
-// Baked into every system prompt so the LLM correctly interprets [Scheduled task] history entries.
-const CRON_HISTORY_NOTE =
+// ─── History markers note ───
+// Baked into every system prompt so the LLM correctly interprets synthetic history entries.
+const HISTORY_MARKERS_NOTE =
   'Messages prefixed with [Scheduled task] in the conversation history are past internal ' +
-  'instructions that you already carried out. Do not act on them again.'
+  'instructions that you already carried out. Do not act on them again.\n' +
+  'Messages prefixed with [Planning session completed] mark the end of a past background ' +
+  'planning session. They are historical context — do not start a new planning session because ' +
+  'of them. Only plan again if the user explicitly asks you to.'
 
 // ─── Options ───
 
@@ -73,10 +79,28 @@ export type ChatbotActorOptions = {
   systemPrompt?:  string
   historyWindow?: number
   toolFilter?:    ToolFilter
+  plannerConfig?: PlannerConfig
   maxToolLoops?:  number
   userId?:        string | null
   roles?:         string[]
   llmRef?:        ActorRef<LlmProviderMsg> | null
+}
+
+// ─── Plan tool schema ───
+
+const PLAN_TOOL_SCHEMA: Tool = {
+  type: 'function',
+  function: {
+    name: 'plan',
+    description: 'Start a structured planning session for a goal. Use this when the user asks you to create a plan, design a roadmap, or work through a complex multi-step goal.',
+    parameters: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string', description: 'Clear description of what needs to be planned' },
+      },
+      required: ['goal'],
+    },
+  },
 }
 
 // ─── Helpers ───
@@ -86,6 +110,9 @@ const trimHistory = (history: ConversationMessage[], maxTurns: number): Conversa
   if (userIndices.length <= maxTurns) return history
   return history.slice(userIndices[userIndices.length - maxTurns])
 }
+
+const filterTools = (tools: ToolCollection, filter?: ToolFilter): ToolCollection =>
+  filter ? Object.fromEntries(Object.entries(tools).filter(([name]) => applyToolFilter(name, filter))) : tools
 
 // ─── Persistence ───
 //
@@ -121,6 +148,7 @@ const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<Ll
         // Ephemeral fields — reset to defaults; restored via subscriptions on start
         tools:            {},
         llmRef,
+        activePlannerRef: null,
         activeClientId:   clientId,
         requestId:        null,
         turnMessages:     null,
@@ -142,7 +170,7 @@ const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<Ll
 // ─── Actor definition ───
 
 export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<ChatbotMsg, ChatbotState> => {
-  const { clientId, model, systemPrompt, historyWindow, toolFilter, maxToolLoops = 25, userId, llmRef: initialLlmRef = null } = options
+  const { clientId, model, systemPrompt, historyWindow, toolFilter, plannerConfig, maxToolLoops = 25, userId, llmRef: initialLlmRef = null } = options
 
   // ─── Shared handlers (used across all behaviors) ───
 
@@ -170,10 +198,14 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     userMessage: (state, message, context) => {
       const { clientId: msgClientId, text, images, audio, pdfs, traceId, parentSpanId, isCron } = message
       const activeClientId = msgClientId
-      const fullSystemPrompt = [systemPrompt, state.userContext, CRON_HISTORY_NOTE].filter(Boolean).join('\n\n---\n\n')
+      const todayDateNote = `Today's date is ${new Date().toDateString()}.`
+      const fullSystemPrompt = [systemPrompt, todayDateNote, state.userContext, HISTORY_MARKERS_NOTE].filter(Boolean).join('\n\n---\n\n')
       const requestSpan = context.trace.child(traceId, parentSpanId, 'chatbot', { preview: text.slice(0, 80) })
       const llmSpan = context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
-      const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
+      const toolSchemas = [
+        ...Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool),
+        ...(plannerConfig ? [PLAN_TOOL_SCHEMA] : []),
+      ]
       const tools = toolSchemas.length > 0 ? toolSchemas : undefined
       const requestId = crypto.randomUUID()
 
@@ -266,6 +298,10 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     _toolUnregistered:   toolUnregistered,
     _llmProviderUpdated: llmProviderUpdated,
     _userContext:        (state, msg) => ({ state: { ...state, userContext: msg.summary } }),
+    _plannerDone:        (state, _msg, context) => {
+      if (state.activePlannerRef) context.stop(state.activePlannerRef)
+      return { state: { ...state, activePlannerRef: null } }
+    },
   })
 
   // ─── Handler: awaitingLlm — LLM running, will return tool calls or text ───
@@ -281,6 +317,58 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       const mergedPending: TokenUsage = usage
         ? { promptTokens: state.pendingUsage.promptTokens + usage.promptTokens, completionTokens: state.pendingUsage.completionTokens + usage.completionTokens }
         : state.pendingUsage
+
+      // Intercept plan tool call — spawn a per-session planner instead of going through the tool loop
+      const planCall = plannerConfig ? calls.find(c => c.name === 'plan') : undefined
+      if (planCall) {
+        let goal: string
+        try { goal = (JSON.parse(planCall.arguments) as { goal?: string }).goal ?? planCall.arguments }
+        catch { goal = planCall.arguments }
+
+        const plannerRef = context.spawn(
+          `planner-${clientId}-${crypto.randomUUID().slice(0, 8)}`,
+          createPlannerAgentActor({
+            llmRef:       state.llmRef!,
+            userContext:  state.userContext,
+            tools:        filterTools(state.tools, plannerConfig!.toolFilter),
+            model:        plannerConfig!.model        ?? model,
+            plansDir:     plannerConfig!.plansDir     ?? 'workspace/plans',
+            maxToolLoops: plannerConfig!.maxToolLoops ?? 10,
+            clientId:     state.activeClientId,
+            goal,
+          }),
+          createInitialPlannerAgentState(),
+        ) as ActorRef<PlannerInputMsg>
+
+        const handoffText = 'Starting a planning session for you.'
+        const toolCallHistoryMsgs: ConversationMessage[] = [
+          { role: 'assistant', content: null, tool_calls: [{ id: planCall.id, type: 'function', function: { name: 'plan', arguments: planCall.arguments } }] },
+          { role: 'tool', content: 'Planning session started.', tool_call_id: planCall.id },
+          { role: 'assistant', content: handoffText },
+        ]
+        handles?.requestSpan.done()
+        return {
+          state: {
+            ...state,
+            activePlannerRef: plannerRef,
+            history:          [...state.history, ...toolCallHistoryMsgs],
+            requestId:        null,
+            turnMessages:     null,
+            spanHandles:      null,
+            pendingBatch:     null,
+            pending:          '',
+            pendingReasoning: '',
+            pendingUsage:     { promptTokens: 0, completionTokens: 0 },
+            toolLoopCount:    0,
+          },
+          events: [
+            emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'plannerMode', active: true }) }),
+            emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'chunk', text: handoffText }) }),
+            emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) }),
+          ],
+          become: idleHandler,
+        }
+      }
 
       const unknownCall = calls.find(c => !state.tools[c.name])
       if (unknownCall) {
@@ -502,7 +590,10 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         : null
 
       const requestId = crypto.randomUUID()
-      const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
+      const toolSchemas = [
+        ...Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool),
+        ...(plannerConfig ? [PLAN_TOOL_SCHEMA] : []),
+      ]
       const tools = toolSchemas.length > 0 ? toolSchemas : undefined
 
       state.llmRef?.send({

@@ -12,3 +12,4 @@ export type ChatbotMsg =
   | { type: '_toolResult';          toolName: string; toolCallId: string; reply: ToolReply }
   | { type: '_llmProviderUpdated';  ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_userContext';         summary: string }
+  | { type: '_plannerDone' }

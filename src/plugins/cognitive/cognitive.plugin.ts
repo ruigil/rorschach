@@ -2,6 +2,8 @@ import { createSessionManagerActor } from './session-manager.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from './llm-provider.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
+import type { ToolFilter } from '../../types/tools.ts'
+import type { PlannerConfig } from '../../types/planner.ts'
 import type { ActorContext, ActorRef, PluginActorState, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'
@@ -17,12 +19,13 @@ type ChatbotConfig = {
   model:          string
   systemPrompt?:  string
   historyWindow?: number
-  toolFilter?:    { allow: string[] } | { deny: string[] }
+  toolFilter?:    ToolFilter
 }
 
 export type CognitiveConfig = {
   llmProvider?: LlmProviderConfig
-  chatbot?: ChatbotConfig
+  chatbot?:     ChatbotConfig
+  planner?:     PlannerConfig
 }
 
 // ─── Plugin internals ───
@@ -30,13 +33,13 @@ export type CognitiveConfig = {
 type PluginMsg = { type: 'config'; slice: CognitiveConfig | undefined }
 
 type PluginState = {
-  initialized: boolean
-  llmProvider: PluginActorState<LlmProviderConfig>
+  initialized:    boolean
+  llmProvider:    PluginActorState<LlmProviderConfig>
   sessionManager: PluginActorState<ChatbotConfig>
 }
 
 const EMPTY_STATE: PluginState = {
-  initialized: true,
+  initialized:    true,
   llmProvider:    { config: null, ref: null, gen: 0 },
   sessionManager: { config: null, ref: null, gen: 0 },
 }
@@ -45,9 +48,10 @@ const spawnAll = (
   ctx: ActorContext<PluginMsg>,
   llmProviderConfig: LlmProviderConfig,
   chatbotConfig: ChatbotConfig | null,
+  plannerConfig: PlannerConfig | null,
   gen: number,
 ): Pick<PluginState, 'llmProvider' | 'sessionManager'> => {
-  
+
   const llmProviderRef = ctx.spawn(
     `llm-provider-${gen}`,
     createLlmProviderActor({ adapter: createOpenRouterAdapter({ apiKey: llmProviderConfig.apiKey, reasoning: llmProviderConfig.reasoning }) }),
@@ -59,13 +63,14 @@ const spawnAll = (
     ? ctx.spawn(
         `session-manager-${gen}`,
         createSessionManagerActor({
-          llmRef: llmProviderRef,
-          model: chatbotConfig.model,
-          systemPrompt: chatbotConfig.systemPrompt,
+          llmRef:        llmProviderRef,
+          model:         chatbotConfig.model,
+          systemPrompt:  chatbotConfig.systemPrompt,
           historyWindow: chatbotConfig.historyWindow,
-          toolFilter: chatbotConfig.toolFilter,
+          toolFilter:    chatbotConfig.toolFilter,
+          plannerConfig: plannerConfig ?? undefined,
         }),
-        { userSessions: {}, anonSessions: {}, clientIndex: {}, activeClients: {} },
+        { userSessions: {}, anonSessions: {}, clientIndex: {}, activeClients: {}, plannerSessions: {} },
       )
     : null
 
@@ -85,7 +90,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   },
 
   initialState: {
-    initialized: false,
+    initialized:    false,
     llmProvider:    { config: null, ref: null, gen: 0 },
     sessionManager: { config: null, ref: null, gen: 0 },
   },
@@ -94,22 +99,23 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
     start: (_state, ctx) => {
       const slice = ctx.initialConfig() as CognitiveConfig | undefined
       const llmProviderConfig = slice?.llmProvider ?? null
-      const chatbotConfig = slice?.chatbot ?? null
+      const chatbotConfig     = slice?.chatbot     ?? null
+      const plannerConfig     = slice?.planner     ?? null
 
       if (!llmProviderConfig) {
         ctx.log.info('cognitive plugin activated (no llmProvider config)')
         return { state: EMPTY_STATE }
       }
 
-      const children = spawnAll(ctx, llmProviderConfig, chatbotConfig, 0)
+      const children = spawnAll(ctx, llmProviderConfig, chatbotConfig, plannerConfig, 0)
       ctx.log.info('cognitive plugin activated')
       return { state: { initialized: true, ...children } }
     },
 
-    stopped: (state, ctx) => {
+    stopped: (_state, ctx) => {
       ctx.log.info('cognitive plugin deactivating')
       ctx.deleteRetained(LlmProviderTopic, 'ref', { ref: null })
-      return { state }
+      return { state: _state }
     },
   }),
 
@@ -123,7 +129,8 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   handler: onMessage<PluginMsg, PluginState>({
     config: (state, msg, ctx) => {
       const newLlmProviderConfig = msg.slice?.llmProvider ?? null
-      const newChatbotConfig    = msg.slice?.chatbot     ?? null
+      const newChatbotConfig     = msg.slice?.chatbot     ?? null
+      const newPlannerConfig     = msg.slice?.planner     ?? null
 
       const llmProviderChanged = JSON.stringify(newLlmProviderConfig) !== JSON.stringify(state.llmProvider.config)
       const chatbotChanged     = JSON.stringify(newChatbotConfig)     !== JSON.stringify(state.sessionManager.config)
@@ -162,13 +169,14 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
           ? ctx.spawn(
               `session-manager-${gen}`,
               createSessionManagerActor({
-                llmRef: llmProviderRef!,
-                model: newChatbotConfig.model,
-                systemPrompt: newChatbotConfig.systemPrompt,
+                llmRef:        llmProviderRef!,
+                model:         newChatbotConfig.model,
+                systemPrompt:  newChatbotConfig.systemPrompt,
                 historyWindow: newChatbotConfig.historyWindow,
-                toolFilter: newChatbotConfig.toolFilter,
+                toolFilter:    newChatbotConfig.toolFilter,
+                plannerConfig: newPlannerConfig ?? undefined,
               }),
-              { userSessions: {}, anonSessions: {}, clientIndex: {}, activeClients: {} },
+              { userSessions: {}, anonSessions: {}, clientIndex: {}, activeClients: {}, plannerSessions: {} },
             )
           : null
         sessionManagerState = { config: newChatbotConfig, ref: sessionManagerRef, gen }

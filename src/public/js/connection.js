@@ -62,7 +62,7 @@ export async function connect() {
     let msg
     try { msg = JSON.parse(e.data) } catch { return }
 
-    const chatTypes = ['chunk', 'done', 'error', 'searching', 'sources', 'reasoningChunk']
+    const chatTypes = ['chunk', 'done', 'error', 'searching', 'sources', 'reasoningChunk', 'plannerMode']
     if      (chatTypes.includes(msg.type))        handleChatMsg(msg)
     else if (msg.type === 'usage')                onUsageMsg(msg)
     else if (msg.type === 'log')                  appendLog(msg)

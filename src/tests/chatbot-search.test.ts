@@ -30,6 +30,7 @@ const INITIAL_CHATBOT_STATE: Omit<ChatbotState, 'llmRef'> = {
   pendingReasoning: '',
   pendingBatch:     null,
   userContext:      null,
+  activePlannerRef: null,
   toolLoopCount:    0,
   activeClientId:   '',
 }
