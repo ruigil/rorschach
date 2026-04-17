@@ -1,5 +1,6 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { tmpdir } from 'node:os'
+import { mkdirSync } from 'node:fs'
 import { createPluginSystem } from '../system/index.ts'
 import { createSignalActor, renderForSignal } from '../plugins/interfaces/signal.ts'
 import { WsConnectTopic, WsMessageTopic, WsSendTopic } from '../types/ws.ts'
@@ -134,6 +135,8 @@ describe('signal actor: TCP socket', () => {
 
     const attachmentsDir = `${tmpdir()}/rorschach-test-${crypto.randomUUID()}`
     const attachmentId   = 'test-attach-001'
+    mkdirSync(attachmentsDir, { recursive: true })
+    Bun.write(`${attachmentsDir}/${attachmentId}`, 'dummy image data')
 
     daemon = startMockSignalDaemon(17595)
     const system = await createPluginSystem()
@@ -156,7 +159,10 @@ describe('signal actor: TCP socket', () => {
     expect(messageEvents[0]!.clientId).toBe('+5555555555')
     expect(messageEvents[0]!.text).toBe('check this out')
     expect(messageEvents[0]!.images).toHaveLength(1)
-    expect(messageEvents[0]!.images![0]).toBe(`${attachmentsDir}/${attachmentId}`)
+    const inboundPath = messageEvents[0]!.images![0]!
+    expect(inboundPath).toInclude('workspace/media/inbound/rorschach-')
+    expect(inboundPath).toEndWith('.jpg')
+    expect(await Bun.file(inboundPath).exists()).toBe(true)
 
     await system.shutdown()
   })
