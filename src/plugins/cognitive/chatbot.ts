@@ -193,6 +193,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
   let awaitingLlmHandler: MessageHandler<ChatbotMsg, ChatbotState>
   let toolLoopHandler: MessageHandler<ChatbotMsg, ChatbotState>
+  let planningModeHandler: MessageHandler<ChatbotMsg, ChatbotState>
 
   // ─── Handler: idle — waiting for user input ───
 
@@ -300,10 +301,26 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     _toolUnregistered:   (state, msg): Result => toolUnregistered(state, msg),
     _llmProviderUpdated: (state, msg): Result => llmProviderUpdated(state, msg),
     _userContext:        (state, msg): Result => ({ state: { ...state, userContext: msg.summary } }),
-    _plannerDone:        (state, _msg, context): Result => {
+  })
+
+  // ─── Handler: planningMode — stashing messages while planner is active ───
+
+  planningModeHandler = onMessage<ChatbotMsg, ChatbotState>({
+    userMessage: (state): Result => ({ state, stash: true }),
+
+    _plannerDone: (state, _msg, context): Result => {
       if (state.activePlannerRef) context.stop(state.activePlannerRef)
-      return { state: { ...state, activePlannerRef: null } }
+      return {
+        state: { ...state, activePlannerRef: null },
+        become: idleHandler,
+        unstashAll: true,
+      }
     },
+
+    _toolRegistered:     (state, msg): Result => toolRegistered(state, msg),
+    _toolUnregistered:   (state, msg): Result => toolUnregistered(state, msg),
+    _llmProviderUpdated: (state, msg): Result => llmProviderUpdated(state, msg),
+    _userContext:        (state, msg): Result => ({ state: { ...state, userContext: msg.summary } }),
   })
 
   // ─── Handler: awaitingLlm — LLM running, will return tool calls or text ───
@@ -368,7 +385,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
             emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'chunk', text: handoffText }) }),
             emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) }),
           ],
-          become: idleHandler,
+          become: planningModeHandler,
         }
       }
 

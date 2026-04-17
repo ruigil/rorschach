@@ -108,7 +108,30 @@ const PROPOSE_PLAN_TOOL: Tool = {
   },
 }
 
-const CONTROL_TOOL_NAMES = new Set(['ask_user', 'propose_plan'])
+const APPROVE_PLAN_TOOL: Tool = {
+  type: 'function',
+  function: {
+    name: 'approve_plan',
+    description: 'Call this tool when the user explicitly approves the most recently proposed plan.',
+    parameters: { type: 'object', properties: {} },
+  },
+}
+
+const ABORT_PLAN_TOOL: Tool = {
+  type: 'function',
+  function: {
+    name: 'abort_plan',
+    description: 'Call this tool when the user wants to cancel or abort the planning process entirely.',
+    parameters: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string', description: 'The reason for cancellation, if provided' },
+      },
+    },
+  },
+}
+
+const CONTROL_TOOL_NAMES = new Set(['ask_user', 'propose_plan', 'approve_plan', 'abort_plan'])
 
 // ─── System prompt ───
 
@@ -119,13 +142,18 @@ Today's date is ${new Date().toDateString()}.
 You have access to:
 - ask_user: ask the user a clarifying question (one at a time)
 - propose_plan: propose a structured task plan once you have enough context
+- approve_plan: confirm the user's approval and finalize the plan
+- abort_plan: cancel the planning session if the user no longer wishes to proceed
 - Research tools (web_search, fetch_file, etc.) to gather information proactively
 
 Process:
 1. Research the goal using available research tools to understand what is involved — do this silently before asking questions.
 2. Ask the user targeted clarifying questions (one at a time via ask_user) to understand constraints, preferences, and context. Aim for 3–8 questions. Do not ask things you can look up yourself.
 3. Once you have enough context, call propose_plan with a structured list of tasks organised as a DAG.
-4. The user will approve or provide feedback. Incorporate feedback, ask more questions or call propose_plan again if needed.
+4. The user will approve or provide feedback. 
+   - If they approve, call approve_plan.
+   - If they provide feedback, incorporate it, ask more questions or call propose_plan again.
+   - If they want to cancel, call abort_plan.
 
 Task quality guidelines:
 - Each task must have a clear, specific name and description
@@ -142,13 +170,6 @@ const todayISO = (): string => new Date().toISOString().slice(0, 10)
 
 const slugify = (text: string): string =>
   text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50)
-
-const isApproval = (text: string): boolean => {
-  const t = text.trim().toLowerCase().replace(/[.!?]+$/, '')
-  return ['approve', 'approved', 'yes', 'ok', 'okay', 'looks good', 'perfect',
-    'great', 'go ahead', 'proceed', 'save it', 'save', 'done', 'ship it', 'lgtm', 'good',
-  ].some(w => t === w || t.startsWith(w + ' '))
-}
 
 const formatPlanMarkdown = (plan: Plan): string => {
   const lines: string[] = [
@@ -171,7 +192,7 @@ const formatPlanMarkdown = (plan: Plan): string => {
   }
   lines.push(``)
   lines.push(`---`)
-  lines.push(`Reply **"approve"** to save this plan, or tell me what you'd like to change.`)
+  lines.push(`Let me know if this looks good to save, or if you'd like to make any changes or cancel.`)
   return lines.join('\n')
 }
 
@@ -193,6 +214,8 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
   const buildTools = (): Tool[] => [
     ASK_USER_TOOL,
     PROPOSE_PLAN_TOOL,
+    APPROVE_PLAN_TOOL,
+    ABORT_PLAN_TOOL,
     ...Object.values(tools).map((e: ToolEntry) => e.schema as Tool),
   ]
 
@@ -353,6 +376,46 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
       }
     }
 
+    // ── approve_plan ──
+    if (controlCall.name === 'approve_plan') {
+      const plan = state.proposedPlan
+      if (!plan) return abortSession(state, context, 'No plan found to approve.')
+
+      const shortId  = crypto.randomUUID().slice(0, 8)
+      const filename = `${todayISO()}-${slugify(plan.goal)}-${shortId}.json`
+      const filepath = `${plansDir}/${filename}`
+      const summary  = `Goal: ${plan.goal}. ${plan.context} Plan saved to ${filepath} — ${plan.tasks.length} tasks.`
+
+      context.pipeToSelf(
+        (async () => {
+          await mkdir(plansDir, { recursive: true })
+          await Bun.write(filepath, JSON.stringify(plan, null, 2))
+        })(),
+        (): PlannerMsg => ({ type: '_planWriteDone', filepath }),
+        (err): PlannerMsg => ({ type: '_planWriteError', error: String(err) }),
+      )
+
+      context.log.info('planner-agent: plan approved, writing to disk', { filepath })
+
+      return {
+        state: { ...state, history: updatedHistory, proposedPlan: null, pendingSummary: summary },
+        events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: 'Saving your plan…' }) })],
+        become: finalizingHandler,
+      }
+    }
+
+    // ── abort_plan ──
+    if (controlCall.name === 'abort_plan') {
+      let reason: string = 'Planning session cancelled.'
+      try {
+        reason = (JSON.parse(controlCall.arguments) as { reason?: string }).reason ?? reason
+      } catch {
+        reason = controlCall.arguments || reason
+      }
+      context.log.info('planner-agent: session aborted by user', { reason })
+      return abortSession(state, context, reason) as Result
+    }
+
     return abortSession(state, context, 'Unexpected tool call from planner LLM.')
   }
 
@@ -481,32 +544,7 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
     _userInput: (state, msg, context): Result => {
       if (msg.clientId !== clientId) return { state }
 
-      if (isApproval(msg.text)) {
-        const plan     = state.proposedPlan!
-        const shortId  = crypto.randomUUID().slice(0, 8)
-        const filename = `${todayISO()}-${slugify(plan.goal)}-${shortId}.json`
-        const filepath = `${plansDir}/${filename}`
-        const summary  = `Goal: ${plan.goal}. ${plan.context} Plan saved to ${filepath} — ${plan.tasks.length} tasks.`
-
-        context.pipeToSelf(
-          (async () => {
-            await mkdir(plansDir, { recursive: true })
-            await Bun.write(filepath, JSON.stringify(plan, null, 2))
-          })(),
-          (): PlannerMsg => ({ type: '_planWriteDone', filepath }),
-          (err): PlannerMsg => ({ type: '_planWriteError', error: String(err) }),
-        )
-
-        context.log.info('planner-agent: plan approved, writing to disk', { filepath })
-
-        return {
-          state: { ...state, proposedPlan: null, pendingSummary: summary },
-          events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: 'Saving your plan…' }) })],
-          become: finalizingHandler,
-        }
-      }
-
-      // Feedback — loop back to LLM for revision
+      // Forward feedback to LLM for revision, approval (via approve_plan tool), or abortion (via abort_plan tool)
       const feedbackMsg: ApiMessage = { role: 'user', content: `[User feedback on plan]: ${msg.text}` }
       const nextHistory = [...state.history, feedbackMsg]
       const requestId   = sendToLlm(state, context, nextHistory)
@@ -519,7 +557,6 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
           requestId,
           history:      nextHistory,
           pending:      '',
-          proposedPlan: null,
         },
         become: awaitingLlmHandler,
       }

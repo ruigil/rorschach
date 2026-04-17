@@ -189,6 +189,10 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
 
         const userId     = state.clientIndex[clientId]
         const chatbotRef = userId ? state.userSessions[userId] : state.anonSessions[clientId]
+
+        // Always tell the chatbot to clean up the planner actor
+        chatbotRef?.send({ type: '_plannerDone' })
+
         if (summary) {
           // Inject summary as a synthetic userMessage so the chatbot replies naturally
           chatbotRef?.send({
@@ -198,9 +202,6 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
             traceId:      crypto.randomUUID(),
             parentSpanId: crypto.randomUUID(),
           })
-        } else {
-          // Abort path — no userMessage, but chatbot still needs to stop the planner actor
-          chatbotRef?.send({ type: '_plannerDone' })
         }
 
         return { state: { ...state, plannerSessions } }

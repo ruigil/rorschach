@@ -79,7 +79,7 @@
         "embeddingDimensions": 4096
       },
       "memory": {
-        "model": "google/gemini-3.1-pro-preview",
+        "model": "x-ai/grok-4.1-fast",
         "consolidationIntervalMs": 3600000,
         "reflectionIntervalMs": 604800000
       }
