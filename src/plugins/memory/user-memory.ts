@@ -60,7 +60,7 @@ export type UserMemoryOptions = {
 type UserMemoryState = {
   llmRef:        ActorRef<LlmProviderMsg> | null
   tools:         ToolCollection
-  sessions:      Record<string, ActorRef<MemoryRecallMsg>>
+  recallSessions:Record<string, ActorRef<MemoryRecallMsg>>
   storeSessions: Record<string, ActorRef<MemoryStoreMsg>>
 }
 
@@ -108,12 +108,12 @@ export const createUserMemoryActor = (options: UserMemoryOptions): ActorDef<User
       },
 
       terminated: (state, event, context) => {
-        const recallEntry = Object.entries(state.sessions).find(([_, ref]) => ref.name === event.ref.name)
+        const recallEntry = Object.entries(state.recallSessions).find(([_, ref]) => ref.name === event.ref.name)
         if (recallEntry) {
           const [recallId] = recallEntry
           context.log.warn('memory recall child terminated unexpectedly', { recallId })
-          const { [recallId]: _dropped, ...sessions } = state.sessions
-          return { state: { ...state, sessions } }
+          const { [recallId]: _dropped, ...sessions } = state.recallSessions
+          return { state: { ...state, recallSessions: sessions } }
         }
         const storeEntry = Object.entries(state.storeSessions).find(([_, ref]) => ref.name === event.ref.name)
         if (storeEntry) {
@@ -166,7 +166,7 @@ export const createUserMemoryActor = (options: UserMemoryOptions): ActorDef<User
           context.watch(childRef as ActorRef<unknown>)
 
           return {
-            state: { ...state, sessions: { ...state.sessions, [recallId]: childRef } },
+            state: { ...state, recallSessions: { ...state.recallSessions, [recallId]: childRef } },
           }
         }
 
@@ -215,13 +215,13 @@ export const createUserMemoryActor = (options: UserMemoryOptions): ActorDef<User
       },
 
       _recallDone: (state, msg, context) => {
-        const ref = state.sessions[msg.recallId]
+        const ref = state.recallSessions[msg.recallId]
         if (ref) {
           context.stop(ref)
           context.unwatch(ref as ActorRef<unknown>)
         }
-        const { [msg.recallId]: _dropped, ...sessions } = state.sessions
-        return { state: { ...state, sessions } }
+        const { [msg.recallId]: _dropped, ...sessions } = state.recallSessions
+        return { state: { ...state, recallSessions: sessions } }
       },
 
       _storeDone: (state, msg, context) => {
@@ -251,6 +251,6 @@ export const createUserMemoryActor = (options: UserMemoryOptions): ActorDef<User
 export const INITIAL_USER_MEMORY_STATE: UserMemoryState = {
   llmRef:        null,
   tools:         {},
-  sessions:      {},
+  recallSessions:      {},
   storeSessions: {},
 }
