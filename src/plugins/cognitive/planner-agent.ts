@@ -19,6 +19,7 @@ export type PlannerAgentOptions = {
   plansDir:     string
   maxToolLoops: number
   clientId:     string
+  userId?:      string | null
   goal:         string
 }
 
@@ -199,7 +200,7 @@ const formatPlanMarkdown = (plan: Plan): string => {
 // ─── Actor ───
 
 export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<PlannerMsg, PlannerAgentState> => {
-  const { llmRef, userContext, tools, model, plansDir, maxToolLoops, clientId, goal } = options
+  const { llmRef, userContext, tools, model, plansDir, maxToolLoops, clientId, userId, goal } = options
 
   type Result = ActorResult<PlannerMsg, PlannerAgentState>
 
@@ -289,7 +290,7 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
         }
         context.pipeToSelf(
           ask<ToolInvokeMsg, ToolReply>(entry.ref, replyTo => ({
-            type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId,
+            type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId, userId: userId ?? undefined,
           })),
           (reply): PlannerMsg => ({ type: '_toolResult', toolName: call.name, toolCallId: call.id, reply }),
           (error): PlannerMsg => ({ type: '_toolResult', toolName: call.name, toolCallId: call.id, reply: { type: 'toolError', error: String(error) } }),

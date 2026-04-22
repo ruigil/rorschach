@@ -253,23 +253,28 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
       }
     },
 
-    embed: async (model, text) => {
+    embed: async (model, text, dimensions?: number) => {
+      const body: Record<string, unknown> = { model, input: text }
+      if (dimensions !== undefined) body.dimensions = dimensions
       const res = await fetch('https://openrouter.ai/api/v1/embeddings', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ model, input: text }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
         const body = await res.text()
         throw new Error(`OpenRouter embeddings ${res.status}: ${body}`)
       }
-      const data = await res.json() as { data: Array<{ embedding: number[] }> }
+      const data = await res.json() as { data: Array<{ embedding: number[] }>; usage?: { prompt_tokens: number; total_tokens: number } }
       const embedding = data.data[0]?.embedding
       if (!embedding) throw new Error('No embedding returned')
-      return embedding
+      const usage: TokenUsage | null = data.usage
+        ? { promptTokens: data.usage.prompt_tokens, completionTokens: 0 }
+        : null
+      return { embedding, usage }
     },
 
     fetchModels: async () => {
@@ -384,20 +389,29 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
       },
 
       embed: (state, message, context) => {
-        const { requestId, model, text, replyTo } = message
-        context.log.info('llm embed', { requestId, model })
+        const { requestId, model, text, dimensions, replyTo } = message
+        const role     = 'memory-embed'
+        const clientId = message.clientId
+        context.log.info('llm embed', { requestId, model, dimensions })
 
         context.pipeToSelf(
-          adapter.embed(model, text),
-          (embedding): LlmProviderMsg => ({ type: '_embedDone', result: { type: 'embeddingResult', embedding }, replyTo }),
-          (error):     LlmProviderMsg => ({ type: '_embedDone', result: { type: 'embeddingError', error: String(error) }, replyTo }),
+          adapter.embed(model, text, dimensions),
+          ({ embedding, usage }): LlmProviderMsg => ({ type: '_embedDone', result: { type: 'embeddingResult', embedding }, model, role, clientId, usage, replyTo }),
+          (error):                LlmProviderMsg => ({ type: '_embedDone', result: { type: 'embeddingError', error: String(error) }, model, role, clientId, usage: null, replyTo }),
         )
 
         return { state }
       },
 
-      _embedDone: (state, message) => {
+      _embedDone: (state, message, context) => {
         message.replyTo.send(message.result)
+        if (message.usage) {
+          context.pipeToSelf(
+            adapter.fetchModelInfo(message.model),
+            (info): LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: message.usage!, info }),
+            ():    LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: message.usage!, info: null }),
+          )
+        }
         return { state }
       },
 

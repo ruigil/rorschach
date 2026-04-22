@@ -354,6 +354,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
             plansDir:     plannerConfig!.plansDir     ?? 'workspace/plans',
             maxToolLoops: plannerConfig!.maxToolLoops ?? 10,
             clientId:     state.activeClientId,
+            userId,
             goal,
           }),
           createInitialPlannerAgentState(),
