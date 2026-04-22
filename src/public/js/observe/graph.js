@@ -20,39 +20,15 @@ export async function fetchKgraph() {
   const statsEl = document.getElementById('memory-stats')
   statsEl.textContent = 'loading…'
   try {
-    const res    = await fetch(new URL('kgraph', location.href))
-    const graph  = await res.json()
-    const userId = state.currentUserId || 'default'
-    const filtered = filterKgraphFromRoot(graph, userId)
-    renderKgraph(filtered)
-    statsEl.textContent = `${filtered.nodes.length} nodes · ${filtered.edges.length} edges`
+    const res   = await fetch(new URL('kgraph', location.href))
+    const graph = await res.json()
+    renderKgraph(graph)
+    statsEl.textContent = `${graph.nodes.length} nodes · ${graph.edges.length} edges`
   } catch {
     statsEl.textContent = 'error'
   }
 }
 
-function filterKgraphFromRoot(graph, userId) {
-  const { nodes, edges } = graph
-  const rootNode = nodes.find(n => n.properties?.name === userId)
-  if (!rootNode) return graph
-
-  const reachable = new Set([rootNode.id])
-  const queue = [rootNode.id]
-  while (queue.length) {
-    const current = queue.shift()
-    for (const e of edges) {
-      if (e.source === current && !reachable.has(e.target)) {
-        reachable.add(e.target)
-        queue.push(e.target)
-      }
-    }
-  }
-
-  return {
-    nodes: nodes.filter(n => reachable.has(n.id)),
-    edges: edges.filter(e => reachable.has(e.source) && reachable.has(e.target)),
-  }
-}
 
 function renderKgraph(graph) {
   const container = document.getElementById('memory-graph')
@@ -84,13 +60,13 @@ function renderKgraph(graph) {
     .attr('refX', 8).attr('refY', 0)
     .attr('markerWidth', 6).attr('markerHeight', 6)
     .attr('orient', 'auto')
-    .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', '#2a5468')
+    .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', '#00c4d4')
 
   const g = svg.append('g')
   svg.call(d3.zoom().scaleExtent([0.15, 5]).on('zoom', ev => g.attr('transform', ev.transform)))
 
   const edgeLine = g.append('g').selectAll('line').data(simEdges).enter().append('line')
-    .attr('stroke', '#1e3f54').attr('stroke-width', 1.5)
+    .attr('stroke', '#00c4d4').attr('stroke-width', 1.5)
     .attr('marker-end', 'url(#kg-arrow)')
 
   const edgeLabel = g.append('g').selectAll('text').data(simEdges).enter().append('text')
@@ -139,11 +115,16 @@ function renderKgraph(graph) {
     })
     .on('mouseout', () => tooltip.style('display', 'none'))
 
+  const connectedIds = new Set(simEdges.flatMap(e => [e.source.id, e.target.id]))
+  const isOrphan = d => !connectedIds.has(d.id)
+
   const sim = d3.forceSimulation(simNodes)
     .force('link',    d3.forceLink(simEdges).id(d => d.id).distance(130))
     .force('charge',  d3.forceManyBody().strength(-320))
     .force('center',  d3.forceCenter(width / 2, height / 2))
     .force('collide', d3.forceCollide(R + 18))
+    .force('orphan-x', d3.forceX(width / 2).strength(d => isOrphan(d) ? 0.18 : 0))
+    .force('orphan-y', d3.forceY(height / 2).strength(d => isOrphan(d) ? 0.18 : 0))
     .on('tick', () => {
       edgeLine
         .attr('x1', d => d.source.x)
