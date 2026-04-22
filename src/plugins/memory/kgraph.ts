@@ -1,13 +1,13 @@
 import { GrafeoDB } from '@grafeo-db/js'
-import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
+import { dirname } from 'node:path'
+import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import type { ToolSchema } from '../../types/tools.ts'
 import type { EmbeddingReply, LlmProviderMsg } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type { KgraphGraph, KgraphMsg, KgraphRefEvent, UpsertResult } from '../../types/memory.ts'
+import type { KgraphGraph, KgraphMsg, KgraphRefEvent, UpsertResult, VectorSearchMatch } from '../../types/memory.ts'
 import { KgraphTopic } from '../../types/memory.ts'
 import { ask } from '../../system/ask.ts'
-import { createNoteAgentActor } from '../notebook/note-agent.ts'
 export { KgraphTopic }
 export type { KgraphGraph, KgraphMsg, KgraphRefEvent }
 
@@ -19,7 +19,7 @@ export type { KgraphGraph, KgraphMsg, KgraphRefEvent }
 const UPSERT_DISTANCE_THRESHOLD = 0.12
 
 // Node labels that get a vector index on startup
-const INDEXED_LABELS = ['Entity', 'Project', 'Concept', 'Preference', 'Goal', 'Place', 'Event', 'Habit'] as const
+const INDEXED_LABELS = ['Note'] as const
 
 // ─── Tool names & schemas ───
 
@@ -30,16 +30,19 @@ export const KGRAPH_QUERY_SCHEMA: ToolSchema = {
   function: {
     name: KGRAPH_QUERY_TOOL_NAME,
     description:
-      'This knowledge graph is where you store information about your user. ' +
-      'Run a read-only Cypher query against the persistent knowledge graph to retrieve stored facts. ' +
+      'Run a read-only Cypher query against the persistent knowledge graph. ' +
       'Use MATCH/RETURN clauses only. Returns a JSON array of row objects. ' +
-      'Example: MATCH (p:Entity {name: "Default"})-[:KNOWS]->(f) RETURN p.name, f.name',
+      'Example: MATCH (n:Note {name: "Bun Runtime"}) RETURN n.name, n.description',
     parameters: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
           description: 'A Cypher MATCH/RETURN query. Must not contain INSERT, MERGE, SET, or DELETE.',
+        },
+        userId: {
+          type: 'string',
+          description: "If provided, operates on this user's isolated knowledge graph at workspace/memory/<userId>/kgraph.",
         },
       },
       required: ['query'],
@@ -54,17 +57,21 @@ export const KGRAPH_WRITE_SCHEMA: ToolSchema = {
   function: {
     name: KGRAPH_WRITE_TOOL_NAME,
     description:
-      'Execute a Cypher write statement to store or update facts in the persistent knowledge graph. ' +
+      'Execute a Cypher write statement to store or update relationships in the knowledge graph. ' +
       'Use for relationships (MERGE/SET/DELETE) only — use kgraph_upsert to create or update nodes. ' +
       'Returns "ok" on success. ' +
       'Node constraint: when referencing nodes inline, only "name" and "description" properties are allowed. ' +
-      'Example: MERGE (u:Entity {name:"Alice"})-[:LOCATED_IN]->(p:Place {name:"Lisbon"})',
+      'Example: MERGE (a:Note {name:"Bun Runtime"})-[:LINKS_TO]->(b:Note {name:"TypeScript Preferences"})',
     parameters: {
       type: 'object',
       properties: {
         statement: {
           type: 'string',
           description: 'A Cypher write statement using MERGE, SET, or DELETE for relationships.',
+        },
+        userId: {
+          type: 'string',
+          description: "If provided, operates on this user's isolated knowledge graph at workspace/memory/<userId>/kgraph.",
         },
       },
       required: ['statement'],
@@ -88,22 +95,27 @@ export const KGRAPH_UPSERT_SCHEMA: ToolSchema = {
       properties: {
         label: {
           type: 'string',
-          description: 'Node label: Entity | Project | Concept | Preference | Goal | Place | Event | Habit',
+          description: 'Node label. Use "Note" for Zettelkasten notes.',
         },
         name: {
           type: 'string',
-          description: 'The name of the node. Use Title Case words separated by spaces. No CamelCase, no underscores, no abbreviations. Prefer the shortest unambiguous form (e.g. "Lisbon" not "Lisbon Portugal"; "Complexity Science" not "ComplexityScience" or "complexity science").',
+          description: 'Short node name in Title Case (e.g. "Bun Runtime"). Used as the display name.',
         },
         properties: {
           type: 'object',
-          description: 'Only "description" is accepted. Include all relevant detail here as a descriptive sentence (e.g. { description: "City in western Portugal, capital of the country." }). Any other keys are ignored.',
+          description: 'Only "description" is accepted. For notes, use format "noteId:{uuid}\\n{synopsis}".',
           properties: {
-            description: {
-              type: 'string',
-              description: 'A descriptive sentence capturing the important details about this node.',
-            },
+            description: { type: 'string' },
           },
           additionalProperties: false,
+        },
+        embeddingText: {
+          type: 'string',
+          description: 'Optional. If provided, this text is embedded instead of name. Use for richer semantic search (e.g. "{name} {tags} {synopsis}").',
+        },
+        userId: {
+          type: 'string',
+          description: "If provided, operates on this user's isolated knowledge graph at workspace/memory/<userId>/kgraph.",
         },
       },
       required: ['label', 'name'],
@@ -113,40 +125,45 @@ export const KGRAPH_UPSERT_SCHEMA: ToolSchema = {
 
 // ─── State ───
 
-export type KgraphState = { db: GrafeoDB; llmRef: ActorRef<LlmProviderMsg> | null } | null
+export type KgraphState = {
+  userDbs: Map<string, GrafeoDB>
+  llmRef: ActorRef<LlmProviderMsg> | null
+} | null
+
+// ─── Helpers ───
+
+const resolveDb = (state: NonNullable<KgraphState>, userId: string | undefined, basePath: string): GrafeoDB => {
+  const id = userId || 'default'
+  const existing = state.userDbs.get(id)
+  if (existing) return existing
+  const userDbPath = `${basePath}/${id}/kgraph`
+  const db = GrafeoDB.create(userDbPath)
+  state.userDbs.set(id, db)
+  return db
+}
 
 // ─── Actor definition ───
 
 export const createKgraphActor = (
-  dbPath: string,
+  basePath: string,
   embedding?: { model: string; dimensions: number },
 ): ActorDef<KgraphMsg, KgraphState> => ({
 
   lifecycle: onLifecycle({
     start: async (_state, ctx) => {
-      ctx.log.info('kgraph opening database', { path: dbPath })
-      const db = GrafeoDB.create(dbPath)
-
       if (embedding) {
-        for (const label of INDEXED_LABELS) {
-          try {
-            await db.createVectorIndex(label, '_embedding', embedding.dimensions)
-            ctx.log.debug('kgraph vector index created', { label })
-          } catch {
-            ctx.log.debug('kgraph vector index already exists', { label })
-          }
-        }
         ctx.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
       }
 
-      ctx.log.info('kgraph database ready')
-      return { state: { db, llmRef: null } }
+      ctx.log.info('kgraph ready (user-isolated mode)', { basePath })
+      return { state: { userDbs: new Map(), llmRef: null } }
     },
 
     stopped: async (state, ctx) => {
-      if (state?.db) {
-        ctx.log.info('kgraph closing database')
-        state.db.close()
+      if (state) {
+        ctx.log.info('kgraph closing databases')
+        const dbs = Array.from(state.userDbs.values())
+        for (const db of dbs) db.close()
       }
       return { state }
     },
@@ -160,7 +177,7 @@ export const createKgraphActor = (
     invoke: (state, message, ctx) => {
       const { toolName, arguments: rawArgs, replyTo } = message
 
-      if (!state?.db) {
+      if (!state) {
         replyTo.send({ type: 'toolError', error: 'kgraph database not ready' })
         return { state }
       }
@@ -168,24 +185,26 @@ export const createKgraphActor = (
       const parent = ctx.trace.fromHeaders()
 
       if (toolName === KGRAPH_QUERY_TOOL_NAME) {
-        const args = JSON.parse(rawArgs) as { query: string }
-        ctx.log.info('kgraph query', { query: args.query })
+        const args = JSON.parse(rawArgs) as { query: string; userId?: string }
+        ctx.log.info('kgraph query', { query: args.query, userId: args.userId })
         const span = parent
           ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_QUERY_TOOL_NAME, { query: args.query })
           : null
+        const db = resolveDb(state, args.userId, basePath)
 
         ctx.pipeToSelf(
-          state.db.execute(args.query).then(r => r.rows() as unknown[]),
+          db.execute(args.query).then(r => r.rows() as unknown[]),
           (rows)  => ({ type: '_queryDone' as const, rows, replyTo, span }),
           (error) => ({ type: '_queryErr'  as const, error: String(error), replyTo, span }),
         )
 
       } else if (toolName === KGRAPH_WRITE_TOOL_NAME) {
-        const args = JSON.parse(rawArgs) as { statement: string }
-        ctx.log.info('kgraph write', { statement: args.statement })
+        const args = JSON.parse(rawArgs) as { statement: string; userId?: string }
+        ctx.log.info('kgraph write', { statement: args.statement, userId: args.userId })
         const span = parent
           ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_WRITE_TOOL_NAME, { statement: args.statement })
           : null
+        const db = resolveDb(state, args.userId, basePath)
 
         // Strip // line comments — GrafeoDB Cypher doesn't support them and
         // the LLM occasionally adds them as inline annotations.
@@ -199,7 +218,7 @@ export const createKgraphActor = (
           : cleaned + '\nRETURN count(*) AS _n'
 
         ctx.pipeToSelf(
-          state.db.executeCypher(query).then(result => {
+          db.executeCypher(query).then(result => {
             if (hasReturn) return -1  // unknown — statement has its own RETURN
             const row = result.toArray()[0] as { _n?: number } | undefined
             return row?._n ?? 0
@@ -209,12 +228,12 @@ export const createKgraphActor = (
         )
 
       } else if (toolName === KGRAPH_UPSERT_TOOL_NAME) {
-        const args = JSON.parse(rawArgs) as { label: string; name: string; properties?: Record<string, unknown> }
-        const { label, name } = args
+        const args = JSON.parse(rawArgs) as { label: string; name: string; properties?: Record<string, unknown>; embeddingText?: string; userId?: string }
+        const { label, name, embeddingText } = args
         const properties = args.properties
           ? Object.fromEntries(Object.entries(args.properties).filter(([k]) => k === 'description'))
           : undefined
-        ctx.log.info('kgraph upsert', { label, name })
+        ctx.log.info('kgraph upsert', { label, name, userId: args.userId })
         const span = parent
           ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_UPSERT_TOOL_NAME, { label, name })
           : null
@@ -225,12 +244,14 @@ export const createKgraphActor = (
         }
 
         const llmRef = state.llmRef
-        const db = state.db
+        const db = resolveDb(state, args.userId, basePath)
 
         ctx.pipeToSelf(
-          ask<LlmProviderMsg, EmbeddingReply>(
+          Promise.all(INDEXED_LABELS.map(lbl =>
+            db.createVectorIndex(lbl, '_embedding', embedding.dimensions).catch(() => {}),
+          )).then(() => ask<LlmProviderMsg, EmbeddingReply>(
             llmRef,
-            (replyToEmbed) => ({ type: 'embed', requestId: crypto.randomUUID(), model: embedding.model, text: name, replyTo: replyToEmbed }),
+            (replyToEmbed) => ({ type: 'embed', requestId: crypto.randomUUID(), model: embedding.model, text: embeddingText ?? name, dimensions: embedding.dimensions, replyTo: replyToEmbed }),
           ).then(async (reply): Promise<UpsertResult> => {
             if (reply.type === 'embeddingError') throw new Error(reply.error)
             const vector = reply.embedding
@@ -260,7 +281,7 @@ export const createKgraphActor = (
               db.setNodeProperty(nodeId, k, v)
             }
             return { canonicalName: name, nodeId, merged: false }
-          }),
+          })),
           (result) => ({ type: '_upsertDone' as const, result, replyTo, span }),
           (error)  => ({ type: '_upsertErr'  as const, error: String(error), replyTo, span }),
         )
@@ -268,6 +289,46 @@ export const createKgraphActor = (
       } else {
         replyTo.send({ type: 'toolError', error: `Unknown tool: ${toolName}` })
       }
+
+      return { state }
+    },
+
+    vectorSearch: (state, message, ctx) => {
+      const { label, text, topN = 5, userId, replyTo } = message
+
+      if (!embedding || !state?.llmRef) {
+        replyTo.send({ type: 'vectorSearchError', error: 'vectorSearch requires embedding to be configured' })
+        return { state }
+      }
+
+      const llmRef = state.llmRef
+      const db = resolveDb(state, userId, basePath)
+
+      ctx.pipeToSelf(
+        Promise.all(INDEXED_LABELS.map(lbl =>
+          db.createVectorIndex(lbl, '_embedding', embedding.dimensions).catch(() => {}),
+        )).then(() => ask<LlmProviderMsg, EmbeddingReply>(
+          llmRef,
+          (replyToEmbed) => ({ type: 'embed', requestId: crypto.randomUUID(), model: embedding.model, text, dimensions: embedding.dimensions, replyTo: replyToEmbed }),
+        ).then(async (reply): Promise<VectorSearchMatch[]> => {
+          if (reply.type === 'embeddingError') throw new Error(reply.error)
+          const vector = reply.embedding
+          const candidates = await db.vectorSearch(label, '_embedding', vector, topN)
+          return candidates.map((pair) => {
+            const nodeId = pair[0] as number
+            const distance = pair[1] as number
+            const node = db.getNode(nodeId)
+            return {
+              nodeId,
+              distance,
+              name:        (node?.get('name')        as string) ?? '',
+              description: (node?.get('description') as string) ?? '',
+            }
+          })
+        })),
+        (matches) => ({ type: '_vectorSearchDone' as const, matches, replyTo }),
+        (error)   => ({ type: '_vectorSearchErr'  as const, error: String(error), replyTo }),
+      )
 
       return { state }
     },
@@ -326,29 +387,33 @@ export const createKgraphActor = (
       return { state }
     },
 
+    _vectorSearchDone: (state, message) => {
+      message.replyTo.send({ type: 'vectorSearchResult', matches: message.matches })
+      return { state }
+    },
+
+    _vectorSearchErr: (state, message, ctx) => {
+      ctx.log.error('kgraph vectorSearch failed', { error: message.error })
+      message.replyTo.send({ type: 'vectorSearchError', error: message.error })
+      return { state }
+    },
+
     dump: (state, message, ctx) => {
-      if (!state?.db) {
+      if (!state) {
         message.replyTo.send({ nodes: [], edges: [] })
         return { state }
       }
 
       const { userId } = message
-      // GrafeoDB [*0..] excludes the start node, so we use OPTIONAL MATCH + *1..
-      // to include the root itself, and UNION to collect both root-direct and
-      // descendant edges in one pass.
-      const nodeQuery = userId
-        ? `MATCH (u:Entity {name: ${JSON.stringify(userId)}}) OPTIONAL MATCH (u)-[*1..]->(n) RETURN DISTINCT u, n`
-        : 'MATCH (n) RETURN n'
-      const edgeQuery = userId
-        ? `MATCH (u:Entity {name: ${JSON.stringify(userId)}})-[r]->() RETURN DISTINCT r
-           UNION
-           MATCH (u:Entity {name: ${JSON.stringify(userId)}})-[*1..]->(a)-[r]->(b) RETURN DISTINCT r`
-        : 'MATCH ()-[r]->() RETURN r'
+      const db = resolveDb(state, userId, basePath)
+
+      const nodeQuery = 'MATCH (n) RETURN n'
+      const edgeQuery = 'MATCH ()-[r]->() RETURN r'
 
       ctx.pipeToSelf(
         Promise.all([
-          state.db.execute(nodeQuery),
-          state.db.execute(edgeQuery),
+          db.execute(nodeQuery),
+          db.execute(edgeQuery),
         ]).then(([nodesResult, edgesResult]) => ({
           nodes: nodesResult.nodes().map(n => ({ id: n.id, labels: n.labels, properties: n.properties() as Record<string, unknown> })),
           edges: edgesResult.edges().map(e => ({ id: e.id, type: e.edgeType, source: e.sourceId, target: e.targetId, properties: e.properties() as Record<string, unknown> })),

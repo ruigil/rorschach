@@ -11,7 +11,7 @@ import type {
 } from '../../types/llm.ts'
 import type { UserContextMsg } from '../../types/memory.ts'
 import { UserContextTopic } from '../../types/memory.ts'
-import { ontologySection } from './ontology.ts'
+import { zettelSection } from './ontology.ts'
 import { CronTriggerTopic } from '../../types/ws.ts'
 
 // ─── Options ───
@@ -47,20 +47,15 @@ export type UserContextState = {
 const buildSystemPrompt = (userId: string): string =>
   `You are a user model agent for user "${userId}". Your task is to produce an updated user context summary.\n\n` +
   `This summary will be injected into a chatbot's system prompt before every response. Its purpose is to give the chatbot a complete, up-to-date picture of who this user is.\n\n` +
-  ontologySection(userId) + '\n\n' +
+  zettelSection(userId) + '\n\n' +
   `## Workflow\n\n` +
   `1. Read the existing summary at /workspace/memory/${userId}/context.md (if it exists) — this is your starting point.\n` +
-  `2. Query the knowledge graph anchored on the user root node to get the full index of known facts:\n` +
-  `   MATCH (u:Entity {name:"${userId}"})-[r]->(m) RETURN type(r), m.name, r.source_file, r.since, r.confidence\n` +
-  `   Interpret the results:\n` +
-  `   - Current-state types (WORKS_ON, HAS_GOAL, PREFERS, LOCATED_IN, VISITING, KNOWS, BELIEVES, OWNS, ATTENDED, PART_OF, HAS_HABIT)\n` +
-  `     → include in the active profile; read source_file to get detail\n` +
-  `   - Archive types (WORKED_ON, ACHIEVED_GOAL, ABANDONED_GOAL, PREFERRED, LIVED_IN, HAD_HABIT)\n` +
-  `     → include only in a brief History section at the end; do NOT read source_file for these\n` +
-  `   - confidence:"inferred" → soften the language: "appears to", "tends to", "likely prefers"\n` +
-  `3. For any current-state fact whose source_file you have not yet reflected in the existing summary, read that kbase file.\n` +
-  `4. Produce an updated summary incorporating the new information.\n\n` +
-  `Only read kbase files when the graph points to facts not yet captured in the existing summary. Do not read files speculatively.\n\n` +
+  `2. List all notes to get the full inventory:\n` +
+  `   zettel_list { userId: "${userId}" }\n` +
+  `3. For notes not yet reflected in the existing summary, read them:\n` +
+  `   zettel_read { id: "<id>", userId: "${userId}" }\n` +
+  `4. Produce an updated summary incorporating all note content.\n\n` +
+  `Only read notes whose synopsis suggests content not yet captured in the existing summary. Do not read notes speculatively.\n\n` +
   `## Output\n\n` +
   `Write the most concise description of the user possible — maximum 10 paragraphs, use fewer if the model is small. Each paragraph covers one dimension: identity, current work, projects, goals, preferences, beliefs, relationships, etc. Only include a paragraph if there is meaningful content.\n\n` +
   `Be specific and concrete — prefer "builds actor systems in TypeScript with Bun" over "is a developer". Do not pad or speculate. Write in third person, present tense.\n\n` +
@@ -168,7 +163,7 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
         context.pipeToSelf(
           ask<ToolInvokeMsg, ToolReply>(
             entry.ref,
-            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo }),
+            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, userId }),
           ),
           (reply) => ({ type: '_toolResult' as const, toolName: call.name, toolCallId: call.id, reply }),
           (error) => ({

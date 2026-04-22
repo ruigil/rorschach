@@ -42,10 +42,9 @@ export type Todo = {
 // ─── Config ───
 
 export type NotebookConfig = {
-  notebookDir?:             string  // default: workspace/notebook
-  agentModel?:              string
-  consolidationIntervalMs?: number  // default: 604_800_000 (7 days)
-  maxToolLoops?:            number  // default: 10
+  notebookDir?:  string  // default: workspace/notebook
+  agentModel?:   string
+  maxToolLoops?: number  // default: 10
 }
 
 // ─── Shared internal types ───
@@ -65,17 +64,6 @@ export type NoteAgentMsg =
   | LlmProviderReply
   | { type: '_toolResult'; toolCallId: string; toolName: string; reply: ToolReply }
   | { type: '_llmProviderUpdated'; ref: ActorRef<LlmProviderMsg> | null }
-
-// ─── Notebook consolidation message protocol ───
-
-export type NotebookConsolidationMsg =
-  | { type: '_consolidate' }
-  | { type: '_ready'; requestId: string; messages: import('../../types/llm.ts').ApiMessage[] }
-  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
-  | { type: '_toolUnregistered'; name: string }
-  | { type: '_toolResult'; toolCallId: string; toolName: string; reply: ToolReply }
-  | LlmProviderReply
 
 // ─── Todo reminder message protocol ───
 

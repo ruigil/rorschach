@@ -92,7 +92,7 @@ describe('kgraph upsert: node deduplication via vector embeddings', () => {
 
     await tick()
 
-    const reply = await upsert(kgraphRef, 'Place', 'Lisbon', 'Capital of Portugal')
+    const reply = await upsert(kgraphRef, 'Note', 'Lisbon', 'Capital of Portugal')
     expect(reply.type).toBe('toolResult')
 
     const result: UpsertResult = JSON.parse((reply as { type: 'toolResult'; result: string }).result)
@@ -116,11 +116,11 @@ describe('kgraph upsert: node deduplication via vector embeddings', () => {
 
     await tick()
 
-    const first = await upsert(kgraphRef, 'Place', 'Lisbon', 'Capital of Portugal')
+    const first = await upsert(kgraphRef, 'Note', 'Lisbon', 'Capital of Portugal')
     const firstResult: UpsertResult = JSON.parse((first as { type: 'toolResult'; result: string }).result)
     expect(firstResult.merged).toBe(false)
 
-    const second = await upsert(kgraphRef, 'Place', 'Lisbon', 'Lisbon, western Portugal')
+    const second = await upsert(kgraphRef, 'Note', 'Lisbon', 'Lisbon, western Portugal')
     expect(second.type).toBe('toolResult')
     const secondResult: UpsertResult = JSON.parse((second as { type: 'toolResult'; result: string }).result)
 
@@ -145,12 +145,12 @@ describe('kgraph upsert: node deduplication via vector embeddings', () => {
     await tick()
 
     // Insert the canonical node first
-    const first = await upsert(kgraphRef, 'Place', 'Lisbon', 'Capital of Portugal')
+    const first = await upsert(kgraphRef, 'Note', 'Lisbon', 'Capital of Portugal')
     const firstResult: UpsertResult = JSON.parse((first as { type: 'toolResult'; result: string }).result)
     expect(firstResult.merged).toBe(false)
 
     // Insert the near-duplicate — "Lisboa" embedding is very close to "Lisbon"
-    const second = await upsert(kgraphRef, 'Place', 'Lisboa', 'Lisbon in Portuguese')
+    const second = await upsert(kgraphRef, 'Note', 'Lisboa', 'Lisbon in Portuguese')
     expect(second.type).toBe('toolResult')
     const secondResult: UpsertResult = JSON.parse((second as { type: 'toolResult'; result: string }).result)
 
@@ -175,11 +175,11 @@ describe('kgraph upsert: node deduplication via vector embeddings', () => {
 
     await tick()
 
-    const lisbon = await upsert(kgraphRef, 'Place', 'Lisbon', 'Capital of Portugal')
+    const lisbon = await upsert(kgraphRef, 'Note', 'Lisbon', 'Capital of Portugal')
     const lisbonResult: UpsertResult = JSON.parse((lisbon as { type: 'toolResult'; result: string }).result)
     expect(lisbonResult.merged).toBe(false)
 
-    const paris = await upsert(kgraphRef, 'Place', 'Paris', 'Capital of France')
+    const paris = await upsert(kgraphRef, 'Note', 'Paris', 'Capital of France')
     expect(paris.type).toBe('toolResult')
     const parisResult: UpsertResult = JSON.parse((paris as { type: 'toolResult'; result: string }).result)
 
@@ -208,7 +208,7 @@ describe('kgraph upsert: node deduplication via vector embeddings', () => {
     const results: UpsertResult[] = []
 
     for (const name of nodes) {
-      const reply = await upsert(kgraphRef, 'Place', name)
+      const reply = await upsert(kgraphRef, 'Note', name)
       expect(reply.type).toBe('toolResult')
       const result: UpsertResult = JSON.parse((reply as { type: 'toolResult'; result: string }).result)
       expect(result.merged).toBe(false)
@@ -234,7 +234,7 @@ describe('kgraph upsert: node deduplication via vector embeddings', () => {
 
     await tick()
 
-    const reply = await upsert(kgraphRef, 'Place', 'Lisbon')
+    const reply = await upsert(kgraphRef, 'Note', 'Lisbon')
     expect(reply.type).toBe('toolError')
     expect((reply as { type: 'toolError'; error: string }).error).toMatch(/embedding/)
 

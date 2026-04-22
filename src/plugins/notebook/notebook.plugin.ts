@@ -1,11 +1,9 @@
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import type { LlmProviderMsg } from '../../types/llm.ts'
-import { LlmProviderTopic } from '../../types/llm.ts'
 import type { ToolCollection, ToolInvokeMsg, ToolSchema } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 
-import type { NotebookConfig, NoteAgentMsg, NotebookConsolidationMsg, TodoReminderMsg } from './types.ts'
+import type { NotebookConfig, NoteAgentMsg, TodoReminderMsg } from './types.ts'
 
 import { createJournalActor, JOURNAL_WRITE_TOOL_NAME, JOURNAL_WRITE_SCHEMA, JOURNAL_READ_TOOL_NAME, JOURNAL_READ_SCHEMA, JOURNAL_SEARCH_TOOL_NAME, JOURNAL_SEARCH_SCHEMA } from './tools/journal.ts'
 import { createNotesActor, NOTES_CREATE_TOOL_NAME, NOTES_CREATE_SCHEMA, NOTES_UPDATE_TOOL_NAME, NOTES_UPDATE_SCHEMA, NOTES_READ_TOOL_NAME, NOTES_READ_SCHEMA, NOTES_LIST_TOOL_NAME, NOTES_LIST_SCHEMA, NOTES_SEARCH_TOOL_NAME, NOTES_SEARCH_SCHEMA, NOTES_ATTACH_FILE_TOOL_NAME, NOTES_ATTACH_FILE_SCHEMA, NOTES_DELETE_TOOL_NAME, NOTES_DELETE_SCHEMA } from './tools/notes.ts'
@@ -13,7 +11,6 @@ import { createTrackerActor, TRACKER_LOG_TOOL_NAME, TRACKER_LOG_SCHEMA, TRACKER_
 import { createTodosActor, TODOS_CREATE_TOOL_NAME, TODOS_CREATE_SCHEMA, TODOS_COMPLETE_TOOL_NAME, TODOS_COMPLETE_SCHEMA, TODOS_LIST_TOOL_NAME, TODOS_LIST_SCHEMA, TODOS_DELETE_TOOL_NAME, TODOS_DELETE_SCHEMA, TODOS_UPDATE_TOOL_NAME, TODOS_UPDATE_SCHEMA } from './tools/todos.ts'
 import { createSearchActor, NOTEBOOK_SEARCH_TOOL_NAME, NOTEBOOK_SEARCH_SCHEMA } from './tools/search.ts'
 import { createNoteAgentActor, createInitialNoteAgentState } from './note-agent.ts'
-import { createNotebookConsolidationActor, INITIAL_CONSOLIDATION_STATE } from './consolidation.ts'
 import { createTodoReminderActor, INITIAL_TODO_REMINDER_STATE } from './todo-reminder.ts'
 
 // ─── Public tool schema ───
@@ -81,24 +78,20 @@ Always include enough detail in the request so the sub-agent can act without amb
 
 type PluginMsg =
   | { type: 'config'; slice: NotebookConfig | undefined }
-  | { type: '_llmProviderUpdated'; ref: ActorRef<LlmProviderMsg> | null }
 
 type PluginState = {
-  initialized:             boolean
-  gen:                     number
-  notebookDir:             string
-  model:                   string
-  maxToolLoops:            number
-  consolidationIntervalMs: number
-  journalRef:       ActorRef<ToolInvokeMsg> | null
-  notesRef:         ActorRef<ToolInvokeMsg> | null
-  trackerRef:       ActorRef<ToolInvokeMsg> | null
-  todosRef:         ActorRef<ToolInvokeMsg> | null
-  searchRef:        ActorRef<ToolInvokeMsg> | null
-  noteAgentRef:     ActorRef<NoteAgentMsg>  | null
-  consolidationRef: ActorRef<NotebookConsolidationMsg> | null
-  reminderRef:      ActorRef<TodoReminderMsg> | null
-  llmRef:           ActorRef<LlmProviderMsg> | null
+  initialized:  boolean
+  gen:          number
+  notebookDir:  string
+  model:        string
+  maxToolLoops: number
+  journalRef:   ActorRef<ToolInvokeMsg> | null
+  notesRef:     ActorRef<ToolInvokeMsg> | null
+  trackerRef:   ActorRef<ToolInvokeMsg> | null
+  todosRef:     ActorRef<ToolInvokeMsg> | null
+  searchRef:    ActorRef<ToolInvokeMsg> | null
+  noteAgentRef: ActorRef<NoteAgentMsg>  | null
+  reminderRef:  ActorRef<TodoReminderMsg> | null
 }
 
 // ─── Tool collection builder ───
@@ -136,7 +129,7 @@ const buildToolCollection = (
 
 type SpawnResult = Pick<PluginState,
   'journalRef' | 'notesRef' | 'trackerRef' | 'todosRef' | 'searchRef' |
-  'noteAgentRef' | 'consolidationRef' | 'reminderRef'
+  'noteAgentRef' | 'reminderRef'
 >
 
 const spawnChildren = (
@@ -144,8 +137,6 @@ const spawnChildren = (
   notebookDir: string,
   model: string,
   maxToolLoops: number,
-  consolidationIntervalMs: number,
-  llmRef: ActorRef<LlmProviderMsg> | null,
   ctx: ActorContext<PluginMsg>,
 ): SpawnResult => {
   // Spawn internal tool actors — NOT registered on ToolRegistrationTopic
@@ -179,28 +170,17 @@ const spawnChildren = (
     INITIAL_TODO_REMINDER_STATE(notebookDir),
   ) as ActorRef<TodoReminderMsg>
 
-  // Spawn consolidation only if LLM is ready
-  let consolidationRef: ActorRef<NotebookConsolidationMsg> | null = null
-  if (llmRef) {
-    consolidationRef = ctx.spawn(
-      `notebook-consolidation-${gen}`,
-      createNotebookConsolidationActor({ model, intervalMs: consolidationIntervalMs, notebookDir }),
-      INITIAL_CONSOLIDATION_STATE,
-    ) as ActorRef<NotebookConsolidationMsg>
-  }
-
-  return { journalRef, notesRef, trackerRef, todosRef, searchRef, noteAgentRef, consolidationRef, reminderRef }
+  return { journalRef, notesRef, trackerRef, todosRef, searchRef, noteAgentRef, reminderRef }
 }
 
 const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void => {
-  if (state.journalRef)       ctx.stop(state.journalRef)
-  if (state.notesRef)         ctx.stop(state.notesRef)
-  if (state.trackerRef)       ctx.stop(state.trackerRef)
-  if (state.todosRef)         ctx.stop(state.todosRef)
-  if (state.searchRef)        ctx.stop(state.searchRef)
-  if (state.noteAgentRef)     ctx.stop(state.noteAgentRef)
-  if (state.consolidationRef) ctx.stop(state.consolidationRef)
-  if (state.reminderRef)      ctx.stop(state.reminderRef)
+  if (state.journalRef)   ctx.stop(state.journalRef)
+  if (state.notesRef)     ctx.stop(state.notesRef)
+  if (state.trackerRef)   ctx.stop(state.trackerRef)
+  if (state.todosRef)     ctx.stop(state.todosRef)
+  if (state.searchRef)    ctx.stop(state.searchRef)
+  if (state.noteAgentRef) ctx.stop(state.noteAgentRef)
+  if (state.reminderRef)  ctx.stop(state.reminderRef)
   ctx.deleteRetained(ToolRegistrationTopic, NOTE_TOOL_NAME, { name: NOTE_TOOL_NAME, ref: null })
 }
 
@@ -213,42 +193,35 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
 
   configDescriptor: {
     defaults: {
-      notebookDir:             'workspace/notebook',
-      maxToolLoops:            10,
-      consolidationIntervalMs: 604_800_000,
+      notebookDir:  'workspace/notebook',
+      maxToolLoops: 10,
     },
     onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
   },
 
   initialState: {
-    initialized:             false,
-    gen:                     0,
-    notebookDir:             'workspace/notebook',
-    model:                   '',
-    maxToolLoops:            10,
-    consolidationIntervalMs: 604_800_000,
-    journalRef:       null,
-    notesRef:         null,
-    trackerRef:       null,
-    todosRef:         null,
-    searchRef:        null,
-    noteAgentRef:     null,
-    consolidationRef: null,
-    reminderRef:      null,
-    llmRef:           null,
+    initialized:  false,
+    gen:          0,
+    notebookDir:  'workspace/notebook',
+    model:        '',
+    maxToolLoops: 10,
+    journalRef:   null,
+    notesRef:     null,
+    trackerRef:   null,
+    todosRef:     null,
+    searchRef:    null,
+    noteAgentRef: null,
+    reminderRef:  null,
   },
 
   lifecycle: onLifecycle({
     start: (state, ctx) => {
-      const config                  = ctx.initialConfig() as NotebookConfig | undefined
-      const notebookDir             = config?.notebookDir            ?? 'workspace/notebook'
-      const model                   = config?.agentModel             ?? 'google/gemini-3.1-pro-preview'
-      const maxToolLoops            = config?.maxToolLoops           ?? 10
-      const consolidationIntervalMs = config?.consolidationIntervalMs ?? 604_800_000
+      const config      = ctx.initialConfig() as NotebookConfig | undefined
+      const notebookDir = config?.notebookDir  ?? 'workspace/notebook'
+      const model       = config?.agentModel   ?? 'google/gemini-3.1-pro-preview'
+      const maxToolLoops = config?.maxToolLoops ?? 10
 
-      ctx.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProviderUpdated' as const, ref: e.ref }))
-
-      const children = spawnChildren(0, notebookDir, model, maxToolLoops, consolidationIntervalMs, null, ctx)
+      const children = spawnChildren(0, notebookDir, model, maxToolLoops, ctx)
 
       ctx.log.info('notebook plugin activated', { notebookDir })
 
@@ -260,8 +233,6 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
           notebookDir,
           model,
           maxToolLoops,
-          consolidationIntervalMs,
-          llmRef: null,
           ...children,
         },
       }
@@ -277,14 +248,13 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
   handler: onMessage<PluginMsg, PluginState>({
     config: (state, msg, ctx) => {
       stopChildren(state, ctx)
-      const cfg                     = msg.slice
-      const notebookDir             = cfg?.notebookDir            ?? 'workspace/notebook'
-      const model                   = cfg?.agentModel             ?? 'google/gemini-3.1-pro-preview'
-      const maxToolLoops            = cfg?.maxToolLoops           ?? 10
-      const consolidationIntervalMs = cfg?.consolidationIntervalMs ?? 604_800_000
-      const gen                     = state.gen + 1
+      const cfg          = msg.slice
+      const notebookDir  = cfg?.notebookDir  ?? 'workspace/notebook'
+      const model        = cfg?.agentModel   ?? 'google/gemini-3.1-pro-preview'
+      const maxToolLoops = cfg?.maxToolLoops ?? 10
+      const gen          = state.gen + 1
 
-      const children = spawnChildren(gen, notebookDir, model, maxToolLoops, consolidationIntervalMs, state.llmRef, ctx)
+      const children = spawnChildren(gen, notebookDir, model, maxToolLoops, ctx)
 
       return {
         state: {
@@ -293,28 +263,9 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
           notebookDir,
           model,
           maxToolLoops,
-          consolidationIntervalMs,
           ...children,
         },
       }
-    },
-
-    _llmProviderUpdated: (state, msg, ctx) => {
-      // Lazy-spawn consolidation once we have an LLM ref and it's not yet running
-      if (msg.ref && !state.consolidationRef) {
-        const consolidationRef = ctx.spawn(
-          `notebook-consolidation-${state.gen}`,
-          createNotebookConsolidationActor({
-            model:       state.model,
-            intervalMs:  state.consolidationIntervalMs,
-            notebookDir: state.notebookDir,
-          }),
-          INITIAL_CONSOLIDATION_STATE,
-        ) as ActorRef<NotebookConsolidationMsg>
-        return { state: { ...state, llmRef: msg.ref, consolidationRef } }
-      }
-
-      return { state: { ...state, llmRef: msg.ref } }
     },
   }),
 }

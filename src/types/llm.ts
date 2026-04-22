@@ -67,13 +67,13 @@ export type LlmProviderMsg =
   | { type: 'stream';            requestId: string; model: string; messages: ApiMessage[]; tools?: Tool[]; role: string; clientId?: string; replyTo: ActorRef<LlmProviderReply> }
   | { type: 'streamImage';       requestId: string; model: string; messages: ApiMessage[]; role: string; clientId?: string; replyTo: ActorRef<VisionProviderReply> }
   | { type: 'streamAudio';       requestId: string; model: string; messages: ApiMessage[]; voice?: string; role: string; clientId?: string; replyTo: ActorRef<AudioProviderReply> }
-  | { type: 'embed';             requestId: string; model: string; text: string; replyTo: ActorRef<EmbeddingReply> }
+  | { type: 'embed';             requestId: string; model: string; text: string; dimensions?: number; clientId?: string; replyTo: ActorRef<EmbeddingReply> }
   | { type: 'fetchModelInfo';    model: string; replyTo: ActorRef<ModelInfo | null> }
   | { type: 'fetchModels';       replyTo: ActorRef<string[]> }
   | { type: '_streamDone';       result: LlmProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<LlmProviderReply> }
   | { type: '_streamImageDone';  result: VisionProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<VisionProviderReply> }
   | { type: '_streamAudioDone';  result: AudioProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<AudioProviderReply> }
-  | { type: '_embedDone';        result: EmbeddingReply; replyTo: ActorRef<EmbeddingReply> }
+  | { type: '_embedDone';        result: EmbeddingReply; model: string; role: string; clientId?: string; usage: TokenUsage | null; replyTo: ActorRef<EmbeddingReply> }
   | { type: '_modelInfoDone';    info: ModelInfo | null; replyTo: ActorRef<ModelInfo | null> }
   | { type: '_modelsDone';       models: string[]; replyTo: ActorRef<string[]> }
   | { type: '_costReady';        model: string; role: string; clientId?: string; usage: TokenUsage; info: ModelInfo | null }
@@ -126,7 +126,7 @@ export type LlmProviderAdapter = {
     onChunk: (text: string) => void,
     onAudioChunk: (data: string) => void,
   ): Promise<AdapterStreamResult>
-  embed(model: string, text: string): Promise<number[]>
+  embed(model: string, text: string, dimensions?: number): Promise<{ embedding: number[]; usage: TokenUsage | null }>
   fetchModelInfo(model: string): Promise<ModelInfo | null>
   fetchModels(): Promise<string[]>
 }

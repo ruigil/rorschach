@@ -15,7 +15,7 @@ import { LlmProviderTopic } from '../../types/llm.ts'
 import type { MemoryConsolidationMsg, UserContextMsg } from '../../types/memory.ts'
 import { createUserContextActor, INITIAL_USER_CONTEXT_STATE } from './user-context.ts'
 import { ask } from '../../system/ask.ts'
-import { ontologySection } from './ontology.ts'
+import { zettelSection } from './ontology.ts'
 
 // ─── Options ───
 
@@ -61,62 +61,40 @@ export type ConsolidationState = {
 
 // ─── System prompt ───
 
-const buildSystemPrompt = (userId: string): string => {
-  return `You are a user model agent for user "${userId}".\n\n` +
+const buildSystemPrompt = (userId: string): string =>
+  `You are a user model agent for user "${userId}".\n\n` +
 
   `## Primary Goal\n` +
-  `Build the most complete and accurate knowledge base about this user. The knowledge base is the most important artifact — it is a living document about who this user is. The graph and episodic logs exist to support it.\n\n` +
+  `Build a network of atomic notes about this user. Each note captures one self-contained unit of knowledge.\n\n` +
 
-  `## Memory Architecture\n\n` +
+  zettelSection(userId) + '\n\n' +
 
-  `### Knowledge Base  /workspace/memory/${userId}/kbase/{topic}.md\n` +
-  `The primary store. One file per topic. Update in-place. Keep entries concise and current.\n` +
-  `Suggested topics (create as needed):\n` +
-  `- identity.md — name, location, background, profession, life stage\n` +
-  `- preferences.md — tools, languages, workflows, communication style\n` +
-  `- projects.md — active and past projects, their status and goals\n` +
-  `- goals.md — short and long-term goals, aspirations, dreams\n` +
-  `- beliefs.md — values, principles, opinions\n` +
-  `- relationships.md — people the user mentions and their relevance\n` +
-  `- communication.md — how the user communicates (message length, question style, corrections)\n\n` +
-  `When recording a fact, link inline to the episodic entry it came from:\n` +
-  `  e.g. \`uses Bun as runtime ([2026-03-12](../episodic/2026-03-12.md))\`\n` +
-  `Read the file before writing to avoid duplication.\n\n` +
-  `Mutable-fact files (projects.md, goals.md, preferences.md) use two sections:\n` +
-  `  ## Active   ← present-state facts\n` +
-  `  ## Past / Achieved / Abandoned   ← archived facts with date and episodic link\n` +
-  `Immutable files (identity.md, beliefs.md, relationships.md) have no past section.\n\n` +
+  `## Consolidation Workflow\n\n` +
+  `For each conversation turn, identify 1-3 key topics, then for each topic:\n\n` +
 
-  `### Episodic  /workspace/memory/${userId}/episodic/YYYY-MM-DD.md\n` +
-  `Append-only. Record notable events, decisions, and the reasoning behind them.\n` +
-  `Skip small talk and trivial exchanges.\n` +
-  `Always append — never overwrite. Use bash to do this:\n` +
-  `  cat >> /workspace/memory/${userId}/episodic/YYYY-MM-DD.md << 'EOF'\n` +
-  `  ## HH:MM — Short title\n` +
-  `  Entry text.\n` +
-  `  EOF\n\n` +
+  `1. **Activate** — find semantically similar notes:\n` +
+  `   zettel_activate { text: "<topic summary>", userId: "${userId}" }\n\n` +
 
-  `### Knowledge Graph (kgraph)\n` +
-  `An index into the knowledge base — not a copy of it. Use it to quickly locate which kbase file contains a given fact.\n\n` +
-  ontologySection(userId) + '\n\n' +
-  `## Write Order (per consolidation)\n` +
-  `1. bash mkdir -p for any new directories\n` +
-  `2. Append episodic entry via bash cat >> (never use the write tool for episodic files)\n` +
-  `3. Update kbase file(s) with inline episodic link (read first, then write)\n` +
-  `4. Query kgraph for contradictions AND for facts that need archiving\n` +
-  `5. If a current-state fact has clearly ended (unambiguous from conversation):\n` +
-  `   a. Capture the old relationship's source_file\n` +
-  `   b. MERGE archive relationship with {since: today's date, source_file}\n` +
-  `   c. DELETE the current-state relationship\n` +
-  `   d. Move the kbase bullet from ## Active → ## Past / Achieved / Abandoned\n` +
-  `6. Ensure the root anchor exists first: kgraph_upsert { label:"Entity", name:"${userId}" }.\n` +
-  `   Always use the exact string "${userId}" — never a generic label like "User" or "the user".\n` +
-  `   Then for each additional new node: call kgraph_upsert {label, name, properties}. Capture\n` +
-  `   canonicalName from the response — use it (not the name you passed) in all relationship MERGE statements below.\n` +
-  `7. Write new relationship MERGEs via kgraph_write using the canonicalName values from step 6.\n` +
-  `8. Observe interaction patterns from the turn text (message length, question style, corrections)\n` +
-  `   → update /workspace/memory/${userId}/kbase/communication.md (read first, create if missing)`
-}
+  `2. **Read** — for each candidate returned, read the full note:\n` +
+  `   zettel_read { id: "<id>", userId: "${userId}" }\n\n` +
+
+  `3. **Update or Create**:\n` +
+  `   - If an existing note covers this topic → update it with new information:\n` +
+  `     zettel_update { id: "<id>", content: "<merged content>", synopsis: "<updated synopsis>", userId: "${userId}" }\n` +
+  `   - If no relevant note exists → create a new atomic note:\n` +
+  `     zettel_create { name: "<title>", synopsis: "<one sentence>", content: "<content>", tags: ["<tag>"], userId: "${userId}" }\n\n` +
+
+  `4. **Link** — add [[wiki-links]] in content to connect related notes. Every wiki-link MUST reference the exact title of an existing note or a note you are creating. To read a linked note use:\n` +
+  `   zettel_read { name: "Note Title", userId: "${userId}" }\n\n` +
+
+  `5. **Episodic log** — append a brief entry for notable events or decisions:\n` +
+  `   Use bash: cat >> /workspace/memory/${userId}/episodic/YYYY-MM-DD.md << 'EOF'\n` +
+  `   ## HH:MM — Short title\n` +
+  `   Entry text.\n` +
+  `   EOF\n\n` +
+
+  `Skip trivial exchanges (small talk, simple factual questions with no personal signal).\n` +
+  `Do not duplicate facts — update the canonical note instead of creating a new one.`
 
 const buildMessages = (userId: string, turns: MemoryTurnEvent[]): ApiMessage[] => {
   const turnList = turns.map((t, i) => {
@@ -309,7 +287,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       let ucRef = state.userContexts[doneUserId]
       if (!ucRef) {
         const userContextTools = Object.fromEntries(
-          Object.entries(state.tools).filter(([n]) => n === 'read' || n === 'kgraph_query'),
+          Object.entries(state.tools).filter(([n]) => n === 'read' || n === 'kgraph_query' || n.startsWith('zettel_')),
         ) as ToolCollection
         ucRef = context.spawn(
           `user-context-${doneUserId}`,

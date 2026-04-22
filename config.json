@@ -53,7 +53,7 @@
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "model": "qwen/qwen3.5-397b-a17b",
+        "model": "google/gemini-3-flash-preview",
         "historyWindow": 40,
         "toolFilter": {
           "deny": [
@@ -74,20 +74,18 @@
     },
     "memory": {
       "kgraph": {
-        "dbPath": "workspace/memory/kgraph",
+        "dbPath": "workspace/memory",
         "embeddingModel": "qwen/qwen3-embedding-8b",
         "embeddingDimensions": 4096
       },
       "memory": {
-        "model": "x-ai/grok-4.1-fast",
-        "consolidationIntervalMs": 3600000,
-        "reflectionIntervalMs": 604800000
+        "model": "google/gemini-3-flash-preview",
+        "consolidationIntervalMs": 3600000
       }
     },
     "notebook": {
       "notebookDir": "workspace/notebook",
       "agentModel": "minimax/minimax-m2.7",
-      "consolidationIntervalMs": 604800000,
       "maxToolLoops": 10
     },
     "observability": {

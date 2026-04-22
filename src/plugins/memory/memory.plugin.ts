@@ -1,10 +1,8 @@
 import type { ActorRef, PluginActorState, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg } from '../../types/tools.ts'
+import type { ToolCollection, ToolInvokeMsg } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
-import type { KgraphMsg } from '../../types/memory.ts'
-import type { MemoryConsolidationMsg, MemoryReflectionMsg } from '../../types/memory.ts'
-import type { UserMemoryMsg } from '../../types/memory.ts'
+import type { KgraphMsg, MemoryConsolidationMsg, MemoryRecallMsg, MemoryStoreMsg } from '../../types/memory.ts'
 import {
   createKgraphActor,
   KgraphTopic,
@@ -17,28 +15,35 @@ import {
   INITIAL_CONSOLIDATION_STATE,
 } from './memory-consolidation.ts'
 import {
-  createMemoryReflectionActor,
-  INITIAL_REFLECTION_STATE,
-} from './memory-reflection.ts'
+  createMemoryRecallActor,
+  INITIAL_RECALL_STATE,
+} from './memory-recall.ts'
 import {
-  createUserMemoryActor,
-  INITIAL_USER_MEMORY_STATE,
-  RECALL_MEMORY_TOOL_NAME,
-  STORE_MEMORY_TOOL_NAME,
-} from './user-memory.ts'
+  createMemoryStoreActor,
+  INITIAL_STORE_STATE,
+} from './memory-store.ts'
+import {
+  createZettelNotesActor,
+  type ZettelNoteMsg,
+  ZETTEL_CREATE_TOOL,  ZETTEL_CREATE_SCHEMA,
+  ZETTEL_UPDATE_TOOL,  ZETTEL_UPDATE_SCHEMA,
+  ZETTEL_READ_TOOL,    ZETTEL_READ_SCHEMA,
+  ZETTEL_LIST_TOOL,    ZETTEL_LIST_SCHEMA,
+  ZETTEL_SEARCH_TOOL,  ZETTEL_SEARCH_SCHEMA,
+  ZETTEL_ACTIVATE_TOOL, ZETTEL_ACTIVATE_SCHEMA,
+} from './zettel-notes.ts'
 
 // ─── Config ───
 
 export type MemoryActorConfig = {
   model:                   string
   consolidationIntervalMs: number
-  reflectionIntervalMs?:   number
 }
 
 export type MemoryConfig = {
   kgraph?: {
-    dbPath?:             string
-    embeddingModel?:     string
+    dbPath?:              string
+    embeddingModel?:      string
     embeddingDimensions?: number
   }
   memory?: MemoryActorConfig
@@ -46,12 +51,25 @@ export type MemoryConfig = {
 
 // ─── Internal types ───
 
+// Consolidation writes episodic logs directly via bash/write, so it needs those tools
+const CONSOLIDATION_TOOL_FILTER = { allow: ['kgraph_query', 'kgraph_write', 'kgraph_upsert', 'bash', 'read', 'write'] }
+// Recall and store only use zettel tools (injected as initial state) — no system tools needed
+const RECALL_STORE_TOOL_FILTER  = { allow: [] as string[] }
+
+type MemoryActors = {
+  consolidation: ActorRef<MemoryConsolidationMsg>
+  recall:        ActorRef<MemoryRecallMsg>
+  store:         ActorRef<MemoryStoreMsg>
+  zettel:        ActorRef<ZettelNoteMsg>
+}
+
 type MemoryPluginState = {
   initialized:   boolean
   kgraph:        PluginActorState<MemoryConfig['kgraph']>
   consolidation: ActorRef<MemoryConsolidationMsg> | null
-  reflection:    ActorRef<MemoryReflectionMsg> | null
-  userMemory:    ActorRef<UserMemoryMsg> | null
+  recall:        ActorRef<MemoryRecallMsg>         | null
+  store:         ActorRef<MemoryStoreMsg>          | null
+  zettel:        ActorRef<ZettelNoteMsg>           | null
   memoryGen:     number
 }
 
@@ -60,44 +78,53 @@ type MemoryPluginMsg =
 
 // ─── Helpers ───
 
-const REFLECTION_DEFAULT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000 // 1 week
-
 const spawnMemoryActors = (
   ctx: Parameters<NonNullable<PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig>['lifecycle']>>[2],
   config: MemoryActorConfig,
   gen: number,
-): { consolidation: ActorRef<MemoryConsolidationMsg>; reflection: ActorRef<MemoryReflectionMsg>; userMemory: ActorRef<UserMemoryMsg> } => {
+  kgraphRef: ActorRef<KgraphMsg>,
+): MemoryActors => {
+  const zettel = ctx.spawn(
+    `zettel-notes-${gen}`,
+    createZettelNotesActor(kgraphRef),
+    null,
+  )
+
+  const zettelTools: ToolCollection = {
+    [ZETTEL_CREATE_TOOL]:   { schema: ZETTEL_CREATE_SCHEMA,   ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
+    [ZETTEL_UPDATE_TOOL]:   { schema: ZETTEL_UPDATE_SCHEMA,   ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
+    [ZETTEL_READ_TOOL]:     { schema: ZETTEL_READ_SCHEMA,     ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
+    [ZETTEL_LIST_TOOL]:     { schema: ZETTEL_LIST_SCHEMA,     ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
+    [ZETTEL_SEARCH_TOOL]:   { schema: ZETTEL_SEARCH_SCHEMA,   ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
+    [ZETTEL_ACTIVATE_TOOL]: { schema: ZETTEL_ACTIVATE_SCHEMA, ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
+  }
+
   const consolidation = ctx.spawn(
     `memory-consolidation-${gen}`,
-    createMemoryConsolidationActor({ model: config.model, intervalMs: config.consolidationIntervalMs, toolFilter: { allow: ['kgraph_query', 'kgraph_write', 'kgraph_upsert', 'bash', 'write', 'read'] } }),
-    INITIAL_CONSOLIDATION_STATE,
+    createMemoryConsolidationActor({ model: config.model, intervalMs: config.consolidationIntervalMs, toolFilter: CONSOLIDATION_TOOL_FILTER }),
+    { ...INITIAL_CONSOLIDATION_STATE, tools: zettelTools },
   )
-  const reflection = ctx.spawn(
-    `memory-reflection-${gen}`,
-    createMemoryReflectionActor({ model: config.model, intervalMs: config.reflectionIntervalMs ?? REFLECTION_DEFAULT_INTERVAL_MS, toolFilter: { allow: ['kgraph_query', 'kgraph_write', 'kgraph_upsert', 'bash', 'write', 'read'] } }),
-    INITIAL_REFLECTION_STATE,
-  )
-  const userMemory = ctx.spawn(
-    `user-memory-${gen}`,
-    createUserMemoryActor({ model: config.model, toolFilter: { allow: ['kgraph_query', 'kgraph_write', 'kgraph_upsert', 'bash', 'read', 'write'] } }),
-    INITIAL_USER_MEMORY_STATE,
-  )
-  return { consolidation, reflection, userMemory }
+  const recall = ctx.spawn(
+    `memory-recall-${gen}`,
+    createMemoryRecallActor({ model: config.model, toolFilter: RECALL_STORE_TOOL_FILTER }),
+    { ...INITIAL_RECALL_STATE, tools: zettelTools },
+  ) as ActorRef<MemoryRecallMsg>
+  const store = ctx.spawn(
+    `memory-store-${gen}`,
+    createMemoryStoreActor({ model: config.model, toolFilter: RECALL_STORE_TOOL_FILTER }),
+    { ...INITIAL_STORE_STATE, tools: zettelTools },
+  ) as ActorRef<MemoryStoreMsg>
+  return { consolidation, recall, store, zettel }
 }
 
 const stopMemoryActors = (
   ctx: Parameters<NonNullable<PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig>['lifecycle']>>[2],
-  consolidation: ActorRef<MemoryConsolidationMsg> | null,
-  reflection: ActorRef<MemoryReflectionMsg> | null,
-  userMemory: ActorRef<UserMemoryMsg> | null,
+  state: Pick<MemoryPluginState, 'consolidation' | 'recall' | 'store' | 'zettel'>,
 ): void => {
-  if (consolidation) ctx.stop(consolidation)
-  if (reflection) ctx.stop(reflection)
-  if (userMemory) {
-    ctx.stop(userMemory)
-    ctx.deleteRetained(ToolRegistrationTopic, RECALL_MEMORY_TOOL_NAME, { name: RECALL_MEMORY_TOOL_NAME, ref: null })
-    ctx.deleteRetained(ToolRegistrationTopic, STORE_MEMORY_TOOL_NAME, { name: STORE_MEMORY_TOOL_NAME, ref: null })
-  }
+  if (state.consolidation) ctx.stop(state.consolidation)
+  if (state.recall)        ctx.stop(state.recall)
+  if (state.store)         ctx.stop(state.store)
+  if (state.zettel)        ctx.stop(state.zettel)
 }
 
 // ─── Plugin definition ───
@@ -105,7 +132,7 @@ const stopMemoryActors = (
 const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> = {
   id: 'memory',
   version: '1.0.0',
-  description: 'Persistent knowledge graph tools via GrafeoDB Cypher',
+  description: 'Persistent knowledge graph and user memory tools',
 
   configDescriptor: {
     defaults: {
@@ -120,22 +147,23 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
     initialized:   false,
     kgraph:        { config: null, ref: null, gen: 0 },
     consolidation: null,
-    reflection:    null,
-    userMemory:    null,
+    recall:        null,
+    store:         null,
+    zettel:        null,
     memoryGen:     0,
   },
 
   lifecycle: onLifecycle({
     start: (state, ctx) => {
-      const slice = ctx.initialConfig() as MemoryConfig | undefined
+      const slice       = ctx.initialConfig() as MemoryConfig | undefined
       const kgraphConfig = slice?.kgraph ?? {}
-      const dbPath = kgraphConfig.dbPath ?? './kgraph'
+      const basePath    = kgraphConfig.dbPath ?? '/workspace/memory'
 
       const embeddingCfg = kgraphConfig.embeddingModel && kgraphConfig.embeddingDimensions
         ? { model: kgraphConfig.embeddingModel, dimensions: kgraphConfig.embeddingDimensions }
         : undefined
 
-      const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath, embeddingCfg), null) as ActorRef<KgraphMsg>
+      const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(basePath, embeddingCfg), null) as ActorRef<KgraphMsg>
 
       ctx.publishRetained(ToolRegistrationTopic, KGRAPH_QUERY_TOOL_NAME, { name: KGRAPH_QUERY_TOOL_NAME, schema: KGRAPH_QUERY_SCHEMA, ref: kgraphRef as ActorRef<ToolInvokeMsg> })
       ctx.publishRetained(ToolRegistrationTopic, KGRAPH_WRITE_TOOL_NAME, { name: KGRAPH_WRITE_TOOL_NAME, schema: KGRAPH_WRITE_SCHEMA, ref: kgraphRef as ActorRef<ToolInvokeMsg> })
@@ -145,25 +173,28 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       ctx.publishRetained(KgraphTopic, 'ref', { ref: kgraphRef })
 
       let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
-      let reflection:    ActorRef<MemoryReflectionMsg> | null = null
-      let userMemory:    ActorRef<UserMemoryMsg> | null = null
+      let recall:        ActorRef<MemoryRecallMsg>         | null = null
+      let store:         ActorRef<MemoryStoreMsg>          | null = null
+      let zettel:        ActorRef<ZettelNoteMsg>           | null = null
 
       if (slice?.memory) {
-        const actors = spawnMemoryActors(ctx, slice.memory, 0)
+        const actors = spawnMemoryActors(ctx, slice.memory, 0, kgraphRef)
         consolidation = actors.consolidation
-        reflection    = actors.reflection
-        userMemory    = actors.userMemory
+        recall        = actors.recall
+        store         = actors.store
+        zettel        = actors.zettel
         ctx.log.info('memory actors activated', { model: slice.memory.model })
       }
 
-      ctx.log.info('memory plugin activated', { dbPath })
+      ctx.log.info('memory plugin activated', { basePath })
       return {
         state: {
           initialized: true,
           kgraph: { config: kgraphConfig, ref: kgraphRef, gen: 0 },
           consolidation,
-          reflection,
-          userMemory,
+          recall,
+          store,
+          zettel,
           memoryGen: 0,
         },
       }
@@ -176,11 +207,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         ctx.deleteRetained(ToolRegistrationTopic, KGRAPH_UPSERT_TOOL_NAME, { name: KGRAPH_UPSERT_TOOL_NAME, ref: null })
         ctx.deleteRetained(KgraphTopic, 'ref', { ref: null })
       }
-      if (state.reflection) ctx.stop(state.reflection)
-      if (state.userMemory) {
-        ctx.deleteRetained(ToolRegistrationTopic, RECALL_MEMORY_TOOL_NAME, { name: RECALL_MEMORY_TOOL_NAME, ref: null })
-        ctx.deleteRetained(ToolRegistrationTopic, STORE_MEMORY_TOOL_NAME, { name: STORE_MEMORY_TOOL_NAME, ref: null })
-      }
+      stopMemoryActors(ctx, state)
       ctx.log.info('memory plugin deactivating')
       return { state }
     },
@@ -197,8 +224,8 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       }
 
       const newKgraphConfig = msg.slice?.kgraph ?? {}
-      const dbPath = newKgraphConfig.dbPath ?? './kgraph'
-      const kgraphGen = state.kgraph.gen + 1
+      const dbPath          = newKgraphConfig.dbPath ?? './kgraph'
+      const kgraphGen       = state.kgraph.gen + 1
 
       const newEmbeddingCfg = newKgraphConfig.embeddingModel && newKgraphConfig.embeddingDimensions
         ? { model: newKgraphConfig.embeddingModel, dimensions: newKgraphConfig.embeddingDimensions }
@@ -214,18 +241,20 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       ctx.publishRetained(KgraphTopic, 'ref', { ref: kgraphRef })
 
       // ─── Reconfigure memory actors ───
-      stopMemoryActors(ctx, state.consolidation, state.reflection, state.userMemory)
+      stopMemoryActors(ctx, state)
 
       let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
-      let reflection:    ActorRef<MemoryReflectionMsg> | null = null
-      let userMemory:    ActorRef<UserMemoryMsg> | null = null
+      let recall:        ActorRef<MemoryRecallMsg>         | null = null
+      let store:         ActorRef<MemoryStoreMsg>          | null = null
+      let zettel:        ActorRef<ZettelNoteMsg>           | null = null
       const memoryGen = state.memoryGen + 1
 
       if (msg.slice?.memory) {
-        const actors = spawnMemoryActors(ctx, msg.slice.memory, memoryGen)
+        const actors = spawnMemoryActors(ctx, msg.slice.memory, memoryGen, kgraphRef)
         consolidation = actors.consolidation
-        reflection    = actors.reflection
-        userMemory    = actors.userMemory
+        recall        = actors.recall
+        store         = actors.store
+        zettel        = actors.zettel
         ctx.log.info('memory actors reconfigured', { gen: memoryGen })
       }
 
@@ -236,8 +265,9 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           ...state,
           kgraph: { config: newKgraphConfig, ref: kgraphRef, gen: kgraphGen },
           consolidation,
-          reflection,
-          userMemory,
+          recall,
+          store,
+          zettel,
           memoryGen,
         },
       }

@@ -5,6 +5,29 @@ import type { LlmProviderMsg, LlmProviderReply } from './llm.ts'
 
 export type UpsertResult = { canonicalName: string; nodeId: number; merged: boolean }
 
+// ─── Zettelkasten note types ───
+
+export type ZettelNote = {
+  id:        string
+  name:      string
+  synopsis:  string
+  tags:      string[]
+  createdAt: string
+  updatedAt: string
+  path:      string
+  links:     string[]
+}
+
+export type ZettelIndex = { notes: ZettelNote[] }
+
+// ─── kgraph vector search types ───
+
+export type VectorSearchMatch = { nodeId: number; distance: number; name: string; description: string }
+
+export type VectorSearchReply =
+  | { type: 'vectorSearchResult'; matches: VectorSearchMatch[] }
+  | { type: 'vectorSearchError';  error: string }
+
 // ─── Graph dump types ───
 
 export type KgraphNode = { id: number; labels: string[]; properties: Record<string, unknown> }
@@ -21,37 +44,47 @@ export const KgraphTopic = createTopic<KgraphRefEvent>('memory.kgraph')
 export type KgraphMsg =
   | ToolInvokeMsg
   | { type: 'dump'; replyTo: ActorRef<KgraphGraph>; userId?: string }
+  | { type: 'vectorSearch'; label: string; text: string; topN?: number; userId?: string; replyTo: ActorRef<VectorSearchReply> }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_queryDone';  rows: unknown[];    replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_queryErr';   error: string;      replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_writeDone';  matched: number; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_writeErr';   error: string;      replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_upsertDone'; result: UpsertResult; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_upsertErr';  error: string;       replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_dumpDone';   graph: KgraphGraph; replyTo: ActorRef<KgraphGraph> }
-  | { type: '_dumpErr';    error: string;      replyTo: ActorRef<KgraphGraph> }
+  | { type: '_queryDone';         rows: unknown[];              replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
+  | { type: '_queryErr';          error: string;               replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
+  | { type: '_writeDone';         matched: number;             replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
+  | { type: '_writeErr';          error: string;               replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
+  | { type: '_upsertDone';        result: UpsertResult;        replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
+  | { type: '_upsertErr';         error: string;               replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
+  | { type: '_vectorSearchDone';  matches: VectorSearchMatch[]; replyTo: ActorRef<VectorSearchReply> }
+  | { type: '_vectorSearchErr';   error: string;               replyTo: ActorRef<VectorSearchReply> }
+  | { type: '_dumpDone';          graph: KgraphGraph;          replyTo: ActorRef<KgraphGraph> }
+  | { type: '_dumpErr';           error: string;               replyTo: ActorRef<KgraphGraph> }
 
 // ─── Memory recall message protocol ───
 
 export type MemoryRecallMsg =
-  | { type: '_toolResult'; toolCallId: string; toolName: string; reply: ToolReply }
+  | ToolInvokeMsg
+  | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolReply }
+  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
+  | { type: '_toolUnregistered'; name: string }
   | LlmProviderReply
 
 // ─── Memory store message protocol ───
 
 export type MemoryStoreMsg =
-  | { type: '_toolResult'; toolCallId: string; toolName: string; reply: ToolReply }
+  | ToolInvokeMsg
+  | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolReply }
+  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
+  | { type: '_toolUnregistered'; name: string }
+  | { type: '_workerDone';       worker: ActorRef<MemoryStoreMsg> }
   | LlmProviderReply
 
 // ─── User memory message protocol ───
 
 export type UserMemoryMsg =
-  | { type: 'invoke';           toolName: string; arguments: string; replyTo: ActorRef<ToolReply>; userId?: string }
-  | { type: '_recallDone';      recallId: string }
-  | { type: '_storeDone';       storeId: string }
-  | { type: '_llmProvider';     ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
-  | { type: '_toolUnregistered'; name: string }
+  | { type: 'invoke';        toolName: string; arguments: string; replyTo: ActorRef<ToolReply>; userId?: string }
+  | { type: '_toolResult';   sessionId: string; toolCallId: string; toolName: string; reply: ToolReply }
+  | { type: '_llmProvider';  ref: ActorRef<LlmProviderMsg> | null }
+  | LlmProviderReply
 
 // ─── Topic: published (retained) after each context summary generation ───
 
@@ -78,12 +111,3 @@ export type UserContextMsg =
   | { type: '_contextSaveFailed'; userId: string; error: string }
   | LlmProviderReply
 
-// ─── Memory reflection message protocol ───
-
-export type MemoryReflectionMsg =
-  | { type: '_reflect' }
-  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
-  | { type: '_toolUnregistered'; name: string }
-  | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolReply }
-  | LlmProviderReply

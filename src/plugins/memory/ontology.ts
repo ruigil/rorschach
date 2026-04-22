@@ -1,134 +1,63 @@
-// ─── Shared knowledge graph ontology ─────────────────────────────────────────
+// ─── Zettelkasten note schema ─────────────────────────────────────────────────
 //
-// Single source of truth for node labels, relationship types, and conventions.
-// Injected into every agent that reads or writes the kgraph so that consolidation
-// and recall operate on the same schema.
+// Single source of truth for the note format and tool usage pattern.
+// Injected into every memory agent prompt.
 
-export const NODE_LABELS = `
-Node labels (use exactly these — do not invent new ones):
-  :Entity      — the user themselves, or any named person
-  :Project     — named initiatives, products, codebases, side projects
-  :Concept     — ideas, domains, methodologies, fields of knowledge
-  :Preference  — stated likes, dislikes, habits, workflows
-  :Goal        — short or long-term aspirations, dreams, targets
-  :Place       — locations, cities, countries, venues
-  :Event       — notable occurrences, decisions, milestones
-  :Habit       — recurring behaviours and routines
+export const zettelSection = (userId: string): string =>
+  `### Zettelkasten Note System\n\n` +
 
-Use the broadest applicable label. Avoid synonyms:
-  prefer :Tool over :Library, :Framework, :Runtime, :Platform
-  prefer :Entity over :Person, :User, :Contact
-  prefer :Project over :Product, :Codebase, :Repo`
+  `Notes are stored at /workspace/memory/${userId}/notes/\n` +
+  `  index.json — metadata array (id, name, synopsis, tags, createdAt, updatedAt, links)\n` +
+  `  {uuid}.md  — individual note files with YAML frontmatter\n\n` +
 
-export const RELATIONSHIP_TYPES = `
-Relationship types (use exactly these — do not invent new ones):
+  `### Note format\n` +
+  `\`\`\`\n` +
+  `---\n` +
+  `id: {uuid}\n` +
+  `name: Short Title\n` +
+  `synopsis: One sentence summary of this note's content.\n` +
+  `tags: [tag1, tag2]\n` +
+  `createdAt: ISO timestamp\n` +
+  `updatedAt: ISO timestamp\n` +
+  `links: [Linked Note Title]\n` +
+  `---\n\n` +
+  `Content here. Use [[Note Title]] wiki-links to reference related notes.\n` +
+  `\`\`\`\n\n` +
 
-Current-state (fact is true now):
-  :WORKS_ON    — entity is actively working on a project          {source_file}
-  :HAS_GOAL    — entity has an active goal or aspiration          {source_file}
-  :KNOWS       — entity knows a person                           {source_file}
-  :PREFERS     — entity currently prefers something              {source_file}
-  :BELIEVES    — entity holds a belief or value                  {source_file}
-  :LOCATED_IN  — entity is permanently based in a place          {source_file}
-  :ATTENDED    — entity attended an event or place (inherently past) {source_file}
-  :OWNS        — entity owns something                           {source_file}
-  :PART_OF     — project or concept belongs to a larger context  {source_file}
-  :HAS_HABIT   — entity does something regularly                 {source_file, confidence}
+  `### Available tools\n\n` +
 
-Archive (fact is no longer true — carry {since, source_file}):
-  :WORKED_ON      — entity previously worked on a project
-  :ACHIEVED_GOAL  — entity achieved this goal
-  :ABANDONED_GOAL — entity abandoned this goal
-  :PREFERRED      — entity used to prefer this (preference has shifted)
-  :LIVED_IN       — entity previously lived in this place
-  :HAD_HABIT      — entity previously did this regularly`
+  `**zettel_activate** { text, userId }\n` +
+  `  Semantic search via vector embeddings — find notes most similar to the given text.\n` +
+  `  Returns array of { id, name, synopsis, tags }. Use this first to find relevant notes.\n\n` +
 
-export const GRAPH_CONVENTIONS = `
-Graph conventions:
-  - Root anchor: every fact about a user hangs off (u:Entity {name:"<userId>"}).
-    The name MUST be the exact userId string "<userId>" — never "User", "the user", or any other generic label.
-  - All relationships MUST carry source_file — the kbase file documenting this fact.
-    Both nodes must already exist from kgraph_upsert before calling kgraph_write.
-    e.g. (given canonicalUserId="<userId>" and canonicalName="Bun" from prior upserts)
-         MATCH (u:Entity {name:"<userId>"}), (p:Preference {name:"Bun"})
-         MERGE (u)-[:PREFERS {source_file:"/workspace/memory/<userId>/kbase/preferences.md"}]->(p)
-  - Query and check for contradictions and pending lifecycle transitions before writing
+  `**zettel_create** { name, synopsis, content, tags[], userId }\n` +
+  `  Create a new atomic note. name: 2-5 words, Title Case. synopsis: one sentence.\n\n` +
 
-Three graph tools — use each for exactly one purpose:
-  kgraph_upsert  — create or update a NODE. Always call this before writing relationships.
-                   Returns { canonicalName, nodeId, merged }. Use canonicalName (not the name you
-                   passed in) in all subsequent kgraph_write statements — it may differ if an existing
-                   node was found via semantic similarity.
-                   Node names should be a single word where possible. Details go in description:
-                     kgraph_upsert { label:"Place", name:"Amor", properties:{ description:"Village in Leiria municipality, Portugal, where the user's parents live." } }
-  kgraph_write   — MERGE/SET/DELETE RELATIONSHIPS only. Both endpoint nodes MUST already exist
-                   (created via kgraph_upsert) before calling this. Never create nodes inline inside
-                   a relationship MERGE — doing so bypasses deduplication and creates duplicate nodes
-                   with no embedding. Always use canonicalName from upsert, not a literal name.
-  kgraph_query   — MATCH/RETURN reads only.`
+  `**zettel_update** { id, content?, name?, synopsis?, tags?, userId }\n` +
+  `  Update an existing note. Only pass fields that should change.\n\n` +
 
-export const LIFECYCLE_RULES = `
-### Lifecycle Rules
+  `**zettel_read** { id?, name?, userId }\n` +
+  `  Read full note content by id or name.\n\n` +
 
-The graph is a state machine — a snapshot of current state. Transitions are destructive:
-DELETE the old relationship, MERGE the new one. History lives in episodic logs and the
-\`since\` property on archive relationships, not in the graph itself.
+  `**zettel_list** { tags[]?, userId }\n` +
+  `  List note metadata. Optionally filter by tags (must match ALL provided tags).\n\n` +
 
-**confidence property** — only on :HAS_HABIT relationships:
-  "inferred"  — derived from behavioral pattern by the reflection agent
-  "explicit"  — user confirmed it directly (SET r.confidence = "explicit")
+  `**zettel_search** { query, userId }\n` +
+  `  Full-text search across note names, synopses, tags, and content.\n\n` +
 
-**Travel (three-phase)**
-  Planning:   (u)-[:HAS_GOAL]->(g:Goal {name:"Trip to X"})
-  Travelling: DELETE :HAS_GOAL → MERGE (u)-[:VISITING]->(p:Place {name:"X"})
-  Past:       DELETE :VISITING → MERGE :ACHIEVED_GOAL on Goal node
-                               + MERGE :ATTENDED on new Event node
+  `### A-Mem workflow (one topic at a time)\n` +
+  `1. zettel_activate { text: "<topic summary>", userId } → candidate notes\n` +
+  `2. zettel_read each candidate to see full content\n` +
+  `3. If a candidate already covers this topic → zettel_update (merge new information)\n` +
+  `4. If no relevant note exists → zettel_create (new atomic note)\n` +
+  `5. Add [[wiki-links]] in content to connect related notes. Every [[wiki-link]] MUST reference an existing note title or a note being created in the same turn.\n\n` +
 
-**Projects**
-  Planning:   (u)-[:HAS_GOAL]->(g:Goal)
-  Active:     MERGE :WORKS_ON — :HAS_GOAL stays (goal not yet achieved)
-  Completed:  DELETE :WORKS_ON + :HAS_GOAL → MERGE :WORKED_ON + :ACHIEVED_GOAL
-  Abandoned:  DELETE :WORKS_ON + :HAS_GOAL → MERGE :WORKED_ON + :ABANDONED_GOAL
-
-**Preferences**
-  Exploring:  kbase note only — no graph write until confirmed across multiple sessions
-  Active:     MERGE :PREFERS
-  Shifted:    DELETE :PREFERS → MERGE :PREFERRED + MERGE new :PREFERS
-  Dropped:    DELETE :PREFERS → MERGE :PREFERRED (no replacement)
-
-**Habits (written by the reflection agent only — never by consolidation)**
-  Pattern confirmed: MERGE :HAS_HABIT {confidence:"inferred"}
-  User confirms:     SET r.confidence = "explicit", remove [inferred] marker in kbase
-  Habit ends:        DELETE :HAS_HABIT → MERGE :HAD_HABIT {since}
-
-**Coexistence rule**
-  :HAS_GOAL and :WORKS_ON may coexist — they describe different things (aspiration vs. activity).
-  All other current-state relationships to the same target node should not coexist.
-
-**Archive immediately (no clarifying question) when transition is unambiguous:**
-  - project done, shipped, or cancelled → :WORKED_ON
-  - goal achieved or dropped → :ACHIEVED_GOAL / :ABANDONED_GOAL
-  - "I moved to X" (explicit relocation) → :LIVED_IN + new :LOCATED_IN
-  - "I switched from X to Y" (explicit preference change) → :PREFERRED + new :PREFERS
-  - user departs on a planned trip → DELETE :HAS_GOAL, MERGE :VISITING
-  - user returns from a trip → DELETE :VISITING, MERGE :ACHIEVED_GOAL + :ATTENDED
-
-**Ask a clarifying question (never archive) when ambiguous:**
-  - past-tense mention without a confirmed end
-  - new tool mentioned without saying they dropped the old one
-  - location mentioned in passing (visiting vs. moving)
-  - exploring something without committing ("trying out", "experimenting with")
-
-**Archive Cypher pattern:**
-  MATCH (u:Entity {name:"<userId>"})-[r:WORKS_ON]->(p)
-  MERGE (u)-[:WORKED_ON {since:"YYYY-MM-DD", source_file:r.source_file}]->(p)
-  DELETE r`
-
-// ─── Formatted section for prompt injection ───────────────────────────────────
-
-export const ontologySection = (userId: string): string =>
-  `### Knowledge Graph Schema\n\n` +
-  NODE_LABELS + '\n\n' +
-  RELATIONSHIP_TYPES + '\n\n' +
-  GRAPH_CONVENTIONS.replace(/<userId>/g, userId) + '\n\n' +
-  LIFECYCLE_RULES.replace(/<userId>/g, userId)
+  `### Note writing rules\n` +
+  `- One note per concept or fact cluster. Keep notes atomic and self-contained.\n` +
+  `- synopsis must accurately summarize the note content — it drives semantic search.\n` +
+  `- Tags are lowercase, single-word or hyphenated: ["typescript", "work", "preference"].\n` +
+  `- Do not duplicate facts across notes — update the canonical note instead.\n` +
+  `- **Strict Link Validation**: NEVER speculate on note titles. Only use [[wiki-links]] for:\n` +
+  `  1. The exact 'name' returned by zettel_activate, zettel_read, or zettel_list.\n` +
+  `  2. The exact 'name' of a new note you are calling zettel_create for in this same turn.\n` +
+  `- If you want to link to a concept but don't know if a note exists, use zettel_search or zettel_activate to discover it first.`
