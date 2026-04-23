@@ -79,8 +79,8 @@ const buildSystemPrompt = (userId: string): string =>
   `   zettel_activate { text: "<query rephrased as a topic>", userId: "${userId}" }\n\n` +
   `2. **Read candidates** — for each result returned:\n` +
   `   zettel_read { id: "<id>", userId: "${userId}" }\n\n` +
-  `3. **Follow links** — if a note contains [[wiki-links]] relevant to the query, strip the brackets and read by name:\n` +
-  `   zettel_read { name: "Note Title", userId: "${userId}" }\n\n` +
+  `3. **Follow links** — explore notes linked from a candidate note:\n` +
+  `   zettel_links { id: "<id>", userId: "${userId}" }\n\n` +
   `4. **Tag search** — if the query is tag-oriented:\n` +
   `   zettel_list { tags: ["<tag>"], userId: "${userId}" }\n\n` +
   `5. **Full-text fallback** — if semantic search returns nothing:\n` +

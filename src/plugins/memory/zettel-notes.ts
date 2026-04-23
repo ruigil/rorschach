@@ -13,6 +13,7 @@ export const ZETTEL_READ_TOOL     = 'zettel_read'
 export const ZETTEL_LIST_TOOL     = 'zettel_list'
 export const ZETTEL_SEARCH_TOOL   = 'zettel_search'
 export const ZETTEL_ACTIVATE_TOOL = 'zettel_activate'
+export const ZETTEL_LINKS_TOOL   = 'zettel_links'
 
 // ─── Tool schemas ───
 
@@ -114,6 +115,22 @@ export const ZETTEL_ACTIVATE_SCHEMA: ToolSchema = {
         userId: { type: 'string' },
       },
       required: ['text'],
+    },
+  },
+}
+
+export const ZETTEL_LINKS_SCHEMA: ToolSchema = {
+  type: 'function',
+  function: {
+    name: ZETTEL_LINKS_TOOL,
+    description: 'Return the notes linked from a given note (via [[wiki-links]] in its content). Returns id, name, synopsis, tags for each linked note that exists.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id:     { type: 'string', description: 'Note UUID.' },
+        name:   { type: 'string', description: 'Note title (used if id is not provided).' },
+        userId: { type: 'string' },
+      },
     },
   },
 }
@@ -456,6 +473,27 @@ const handleActivate = async (
   return JSON.stringify(results)
 }
 
+const handleLinks = async (
+  userId: string,
+  args: Record<string, unknown>,
+  queue: IndexQueue,
+  log: any,
+): Promise<string> => {
+  const index = await queue.current(userId)
+  const note = typeof args.id === 'string'
+    ? index.notes.find(n => n.id === args.id)
+    : index.notes.find(n => n.name === args.name)
+
+  log.debug('zettel-notes: links', { userId, id: args.id, name: args.name })
+  if (!note) return JSON.stringify({ error: 'Note not found' })
+
+  const linked = note.links.flatMap(linkName => {
+    const target = index.notes.find(n => n.name === linkName)
+    return target ? [{ id: target.id, name: target.name, synopsis: target.synopsis, tags: target.tags }] : []
+  })
+  return JSON.stringify(linked)
+}
+
 // ─── Actor definition ───
 
 export const createZettelNotesActor = (kgraphRef: ActorRef<KgraphMsg>): ActorDef<ZettelNoteMsg, ZettelState> => {
@@ -487,6 +525,7 @@ export const createZettelNotesActor = (kgraphRef: ActorRef<KgraphMsg>): ActorDef
             case ZETTEL_LIST_TOOL:     return handleList(effectiveUserId, args, queue, ctx.log)
             case ZETTEL_SEARCH_TOOL:   return handleSearch(effectiveUserId, args, queue, ctx.log)
             case ZETTEL_ACTIVATE_TOOL: return handleActivate(state.kgraphRef, effectiveUserId, args, queue, ctx.log)
+            case ZETTEL_LINKS_TOOL:   return handleLinks(effectiveUserId, args, queue, ctx.log)
             default: throw new Error(`Unknown tool: ${toolName}`)
           }
         })(),
