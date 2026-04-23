@@ -73,12 +73,12 @@
       } 
     },
     "memory": {
+      "dbPath": "workspace/memory",
       "kgraph": {
-        "dbPath": "workspace/memory",
         "embeddingModel": "qwen/qwen3-embedding-8b",
         "embeddingDimensions": 4096
       },
-      "memory": {
+      "system": {
         "model": "google/gemini-3-flash-preview",
         "consolidationIntervalMs": 3600000
       }

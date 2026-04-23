@@ -41,12 +41,12 @@ export type MemoryActorConfig = {
 }
 
 export type MemoryConfig = {
+  dbPath?: string
   kgraph?: {
-    dbPath?:              string
     embeddingModel?:      string
     embeddingDimensions?: number
   }
-  memory?: MemoryActorConfig
+  system?: MemoryActorConfig
 }
 
 // ─── Internal types ───
@@ -65,7 +65,7 @@ type MemoryActors = {
 
 type MemoryPluginState = {
   initialized:   boolean
-  kgraph:        PluginActorState<MemoryConfig['kgraph']>
+  kgraph:        PluginActorState<Exclude<MemoryConfig['kgraph'], undefined>>
   consolidation: ActorRef<MemoryConsolidationMsg> | null
   recall:        ActorRef<MemoryRecallMsg>         | null
   store:         ActorRef<MemoryStoreMsg>          | null
@@ -136,9 +136,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
 
   configDescriptor: {
     defaults: {
-      kgraph: {
-        dbPath: './workspace/memory/kgraph',
-      },
+      dbPath: './workspace/memory/kgraph',
     },
     onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
   },
@@ -156,14 +154,14 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
   lifecycle: onLifecycle({
     start: (state, ctx) => {
       const slice       = ctx.initialConfig() as MemoryConfig | undefined
+      const dbPath      = slice?.dbPath ?? './workspace/memory/kgraph'
       const kgraphConfig = slice?.kgraph ?? {}
-      const basePath    = kgraphConfig.dbPath ?? '/workspace/memory'
 
       const embeddingCfg = kgraphConfig.embeddingModel && kgraphConfig.embeddingDimensions
         ? { model: kgraphConfig.embeddingModel, dimensions: kgraphConfig.embeddingDimensions }
         : undefined
 
-      const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(basePath, embeddingCfg), null) as ActorRef<KgraphMsg>
+      const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath, embeddingCfg), null) as ActorRef<KgraphMsg>
 
       ctx.publishRetained(ToolRegistrationTopic, KGRAPH_QUERY_TOOL_NAME, { name: KGRAPH_QUERY_TOOL_NAME, schema: KGRAPH_QUERY_SCHEMA, ref: kgraphRef as ActorRef<ToolInvokeMsg> })
       ctx.publishRetained(ToolRegistrationTopic, KGRAPH_WRITE_TOOL_NAME, { name: KGRAPH_WRITE_TOOL_NAME, schema: KGRAPH_WRITE_SCHEMA, ref: kgraphRef as ActorRef<ToolInvokeMsg> })
@@ -177,16 +175,16 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       let store:         ActorRef<MemoryStoreMsg>          | null = null
       let zettel:        ActorRef<ZettelNoteMsg>           | null = null
 
-      if (slice?.memory) {
-        const actors = spawnMemoryActors(ctx, slice.memory, 0, kgraphRef)
+      if (slice?.system) {
+        const actors = spawnMemoryActors(ctx, slice.system, 0, kgraphRef)
         consolidation = actors.consolidation
         recall        = actors.recall
         store         = actors.store
         zettel        = actors.zettel
-        ctx.log.info('memory actors activated', { model: slice.memory.model })
+        ctx.log.info('memory actors activated', { model: slice.system.model })
       }
 
-      ctx.log.info('memory plugin activated', { basePath })
+      ctx.log.info('memory plugin activated', { dbPath })
       return {
         state: {
           initialized: true,
@@ -223,8 +221,8 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         ctx.deleteRetained(ToolRegistrationTopic, KGRAPH_UPSERT_TOOL_NAME, { name: KGRAPH_UPSERT_TOOL_NAME, ref: null })
       }
 
+      const dbPath          = msg.slice?.dbPath ?? './workspace/memory/kgraph'
       const newKgraphConfig = msg.slice?.kgraph ?? {}
-      const dbPath          = newKgraphConfig.dbPath ?? './kgraph'
       const kgraphGen       = state.kgraph.gen + 1
 
       const newEmbeddingCfg = newKgraphConfig.embeddingModel && newKgraphConfig.embeddingDimensions
@@ -249,8 +247,8 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       let zettel:        ActorRef<ZettelNoteMsg>           | null = null
       const memoryGen = state.memoryGen + 1
 
-      if (msg.slice?.memory) {
-        const actors = spawnMemoryActors(ctx, msg.slice.memory, memoryGen, kgraphRef)
+      if (msg.slice?.system) {
+        const actors = spawnMemoryActors(ctx, msg.slice.system, memoryGen, kgraphRef)
         consolidation = actors.consolidation
         recall        = actors.recall
         store         = actors.store

@@ -36,12 +36,12 @@ const buildConfigSnapshot = (c: Record<string, unknown>): Record<string, unknown
     audioVoice:                    tls.audioActor?.voice                   ?? 'alloy',
     bashCwd:                       tls.bash?.cwd                           ?? '/workspace',
     webSearchCount:                tls.webSearch?.count                    ?? 20,
-    kgraphDbPath:                  mem.kgraph?.dbPath                      ?? './workspace/memory/kgraph',
+    kgraphDbPath:                  mem.dbPath                              ?? './workspace/memory/kgraph',
     kgraphEmbeddingModel:          mem.kgraph?.embeddingModel              ?? '',
     kgraphEmbeddingDimensions:     mem.kgraph?.embeddingDimensions         ?? 1536,
-    memoryModel:                   mem.memory?.model                       ?? '',
-    memoryConsolidationIntervalMs: mem.memory?.consolidationIntervalMs     ?? 30000,
-    memoryReflectionIntervalMs:    mem.memory?.reflectionIntervalMs        ?? 604800000,
+    memoryModel:                   mem.system?.model                       ?? '',
+    memoryConsolidationIntervalMs: mem.system?.consolidationIntervalMs     ?? 30000,
+    memoryReflectionIntervalMs:    mem.system?.reflectionIntervalMs        ?? 604800000,
     logPath:                       obs.jsonlLogger?.filePath               ?? './logs/app.jsonl',
     minLevel:                      obs.jsonlLogger?.minLevel               ?? 'debug',
     flushIntervalMs:               obs.jsonlLogger?.flushIntervalMs        ?? 3000,
@@ -149,15 +149,15 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
     },
   }
   const memoryPatch = {
+    dbPath:               String(form.kgraphDbPath ?? (config.memory as any)?.dbPath ?? './workspace/memory/kgraph'),
     kgraph: {
-      dbPath:               String(form.kgraphDbPath ?? (config.memory as any)?.kgraph?.dbPath ?? './workspace/memory/kgraph'),
       ...(form.kgraphEmbeddingModel ? {
         embeddingModel:      String(form.kgraphEmbeddingModel),
         embeddingDimensions: Number(form.kgraphEmbeddingDimensions ?? 1536),
       } : {}),
     },
     ...(form.memoryModel ? {
-      memory: {
+      system: {
         model:                   String(form.memoryModel),
         consolidationIntervalMs: Number(form.memoryConsolidationIntervalMs ?? 30000),
         reflectionIntervalMs:    Number(form.memoryReflectionIntervalMs ?? 604800000),
