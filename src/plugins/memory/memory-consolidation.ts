@@ -287,7 +287,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       let ucRef = state.userContexts[doneUserId]
       if (!ucRef) {
         const userContextTools = Object.fromEntries(
-          Object.entries(state.tools).filter(([n]) => n === 'read' || n === 'kgraph_query' || n.startsWith('zettel_')),
+          Object.entries(state.tools).filter(([n]) => n === 'read' || n.startsWith('zettel_')),
         ) as ToolCollection
         ucRef = context.spawn(
           `user-context-${doneUserId}`,

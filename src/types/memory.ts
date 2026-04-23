@@ -65,6 +65,7 @@ export type MemoryRecallMsg =
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
   | { type: '_toolUnregistered'; name: string }
+  | { type: '_workerDone';       worker: ActorRef<MemoryRecallMsg> }
   | LlmProviderReply
 
 // ─── Memory store message protocol ───

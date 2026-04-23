@@ -1,14 +1,10 @@
 import type { ActorRef, PluginActorState, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ToolCollection, ToolInvokeMsg } from '../../types/tools.ts'
-import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { KgraphMsg, MemoryConsolidationMsg, MemoryRecallMsg, MemoryStoreMsg } from '../../types/memory.ts'
 import {
   createKgraphActor,
   KgraphTopic,
-  KGRAPH_QUERY_TOOL_NAME,  KGRAPH_QUERY_SCHEMA,
-  KGRAPH_WRITE_TOOL_NAME,  KGRAPH_WRITE_SCHEMA,
-  KGRAPH_UPSERT_TOOL_NAME, KGRAPH_UPSERT_SCHEMA,
 } from './kgraph.ts'
 import {
   createMemoryConsolidationActor,
@@ -52,7 +48,7 @@ export type MemoryConfig = {
 // ─── Internal types ───
 
 // Consolidation writes episodic logs directly via bash/write, so it needs those tools
-const CONSOLIDATION_TOOL_FILTER = { allow: ['kgraph_query', 'kgraph_write', 'kgraph_upsert', 'bash', 'read', 'write'] }
+const CONSOLIDATION_TOOL_FILTER = { allow: ['bash', 'read', 'write'] }
 // Recall and store only use zettel tools (injected as initial state) — no system tools needed
 const RECALL_STORE_TOOL_FILTER  = { allow: [] as string[] }
 
@@ -163,11 +159,6 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
 
       const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath, embeddingCfg), null) as ActorRef<KgraphMsg>
 
-      ctx.publishRetained(ToolRegistrationTopic, KGRAPH_QUERY_TOOL_NAME, { name: KGRAPH_QUERY_TOOL_NAME, schema: KGRAPH_QUERY_SCHEMA, ref: kgraphRef as ActorRef<ToolInvokeMsg> })
-      ctx.publishRetained(ToolRegistrationTopic, KGRAPH_WRITE_TOOL_NAME, { name: KGRAPH_WRITE_TOOL_NAME, schema: KGRAPH_WRITE_SCHEMA, ref: kgraphRef as ActorRef<ToolInvokeMsg> })
-      if (embeddingCfg) {
-        ctx.publishRetained(ToolRegistrationTopic, KGRAPH_UPSERT_TOOL_NAME, { name: KGRAPH_UPSERT_TOOL_NAME, schema: KGRAPH_UPSERT_SCHEMA, ref: kgraphRef as ActorRef<ToolInvokeMsg> })
-      }
       ctx.publishRetained(KgraphTopic, 'ref', { ref: kgraphRef })
 
       let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
@@ -200,9 +191,6 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
 
     stopped: (state, ctx) => {
       if (state.kgraph.ref) {
-        ctx.deleteRetained(ToolRegistrationTopic, KGRAPH_QUERY_TOOL_NAME,  { name: KGRAPH_QUERY_TOOL_NAME,  ref: null })
-        ctx.deleteRetained(ToolRegistrationTopic, KGRAPH_WRITE_TOOL_NAME,  { name: KGRAPH_WRITE_TOOL_NAME,  ref: null })
-        ctx.deleteRetained(ToolRegistrationTopic, KGRAPH_UPSERT_TOOL_NAME, { name: KGRAPH_UPSERT_TOOL_NAME, ref: null })
         ctx.deleteRetained(KgraphTopic, 'ref', { ref: null })
       }
       stopMemoryActors(ctx, state)
@@ -216,9 +204,6 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       // ─── Reconfigure kgraph ───
       if (state.kgraph.ref) {
         ctx.stop(state.kgraph.ref)
-        ctx.deleteRetained(ToolRegistrationTopic, KGRAPH_QUERY_TOOL_NAME,  { name: KGRAPH_QUERY_TOOL_NAME,  ref: null })
-        ctx.deleteRetained(ToolRegistrationTopic, KGRAPH_WRITE_TOOL_NAME,  { name: KGRAPH_WRITE_TOOL_NAME,  ref: null })
-        ctx.deleteRetained(ToolRegistrationTopic, KGRAPH_UPSERT_TOOL_NAME, { name: KGRAPH_UPSERT_TOOL_NAME, ref: null })
       }
 
       const dbPath          = msg.slice?.dbPath ?? './workspace/memory/kgraph'
@@ -231,11 +216,6 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
 
       const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, createKgraphActor(dbPath, newEmbeddingCfg), null) as ActorRef<KgraphMsg>
 
-      ctx.publishRetained(ToolRegistrationTopic, KGRAPH_QUERY_TOOL_NAME, { name: KGRAPH_QUERY_TOOL_NAME, schema: KGRAPH_QUERY_SCHEMA, ref: kgraphRef as ActorRef<ToolInvokeMsg> })
-      ctx.publishRetained(ToolRegistrationTopic, KGRAPH_WRITE_TOOL_NAME, { name: KGRAPH_WRITE_TOOL_NAME, schema: KGRAPH_WRITE_SCHEMA, ref: kgraphRef as ActorRef<ToolInvokeMsg> })
-      if (newEmbeddingCfg) {
-        ctx.publishRetained(ToolRegistrationTopic, KGRAPH_UPSERT_TOOL_NAME, { name: KGRAPH_UPSERT_TOOL_NAME, schema: KGRAPH_UPSERT_SCHEMA, ref: kgraphRef as ActorRef<ToolInvokeMsg> })
-      }
       ctx.publishRetained(KgraphTopic, 'ref', { ref: kgraphRef })
 
       // ─── Reconfigure memory actors ───

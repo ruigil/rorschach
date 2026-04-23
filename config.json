@@ -57,9 +57,6 @@
         "historyWindow": 40,
         "toolFilter": {
           "deny": [
-            "kgraph_query",
-            "kgraph_write",
-            "kgraph_upsert",
             "bash",
             "write",
             "read"
@@ -80,7 +77,7 @@
       },
       "system": {
         "model": "google/gemini-3-flash-preview",
-        "consolidationIntervalMs": 3600000
+        "consolidationIntervalMs": 60000
       }
     },
     "notebook": {
