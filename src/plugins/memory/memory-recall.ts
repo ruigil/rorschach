@@ -51,8 +51,14 @@ type PendingBatch = {
   assistantToolCalls: ToolCall[]
 }
 
-type RecallState = {
-  llmRef:        ActorRef<LlmProviderMsg> | null
+export type SupervisorState = {
+  llmRef:      ActorRef<LlmProviderMsg> | null
+  tools:       ToolCollection
+  workerIdSeq: number
+}
+
+type WorkerState = {
+  llmRef:        ActorRef<LlmProviderMsg>
   tools:         ToolCollection
   requestId:     string | null
   turnMessages:  ApiMessage[] | null
@@ -81,65 +87,44 @@ const buildSystemPrompt = (userId: string): string =>
   `   zettel_search { query: "<keyword>", userId: "${userId}" }\n\n` +
   `Synthesize a concise answer from the note content found. If nothing relevant is found, say so plainly.`
 
-// ─── Shared infrastructure handlers ───
+// ─── Worker Actor Definition ───
 
-const onLlmProvider = (state: RecallState, msg: Extract<MemoryRecallMsg, { type: '_llmProvider' }>): { state: RecallState } =>
-  ({ state: { ...state, llmRef: msg.ref } })
+const createMemoryRecallWorkerActor = (
+  options: MemoryRecallOptions,
+  parent:  ActorRef<MemoryRecallMsg>,
+): ActorDef<MemoryRecallMsg, WorkerState> => {
+  const { model, maxToolLoops = 25 } = options
 
-const onToolRegistered = (state: RecallState, msg: Extract<MemoryRecallMsg, { type: '_toolRegistered' }>): { state: RecallState } =>
-  ({ state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } } })
-
-const onToolUnregistered = (state: RecallState, msg: Extract<MemoryRecallMsg, { type: '_toolUnregistered' }>): { state: RecallState } => {
-  const { [msg.name]: _dropped, ...rest } = state.tools
-  return { state: { ...state, tools: rest } }
-}
-
-// ─── Actor definition ───
-
-export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<MemoryRecallMsg, RecallState> => {
-  const { model, toolFilter, maxToolLoops = 25 } = options
-
-  let awaitingLlmHandler: MessageHandler<MemoryRecallMsg, RecallState>
-  let toolLoopHandler:    MessageHandler<MemoryRecallMsg, RecallState>
+  let awaitingLlmHandler: MessageHandler<MemoryRecallMsg, WorkerState>
+  let toolLoopHandler:    MessageHandler<MemoryRecallMsg, WorkerState>
 
   const finish = (
-    state: RecallState,
-    reply: ToolReply,
-  ): ReturnType<MessageHandler<MemoryRecallMsg, RecallState>> => {
+    state:   WorkerState,
+    reply:   ToolReply,
+    context: any,
+  ): any => {
     state.replyTo!.send(reply)
-    const idle: RecallState = {
-      ...state,
-      requestId:     null,
-      turnMessages:  null,
-      accumulated:   '',
-      pendingBatch:  null,
-      toolLoopCount: 0,
-      replyTo:       null,
-      userId:        null,
-    }
-    return { state: idle, become: idleHandler, unstashAll: true }
+    parent.send({ type: '_workerDone', worker: context.self as ActorRef<MemoryRecallMsg> })
+    return { state }
   }
 
-  // ─── Handler: idle ───
+  // ─── Handler: idle (Worker) ───
 
-  const idleHandler: MessageHandler<MemoryRecallMsg, RecallState> = onMessage<MemoryRecallMsg, RecallState>({
+  const idleHandler: MessageHandler<MemoryRecallMsg, WorkerState> = onMessage<MemoryRecallMsg, WorkerState>({
     invoke: (state, msg, context) => {
-      if (state.llmRef === null) {
-        msg.replyTo.send({ type: 'toolError', error: 'Memory not ready' })
-        return { state }
-      }
-
       let query: string
       try {
         const args = JSON.parse(msg.arguments) as { query?: unknown }
         query = typeof args.query === 'string' ? args.query : ''
       } catch {
         msg.replyTo.send({ type: 'toolError', error: 'Invalid arguments' })
+        parent.send({ type: '_workerDone', worker: context.self as ActorRef<MemoryRecallMsg> })
         return { state }
       }
 
       if (!query) {
         msg.replyTo.send({ type: 'toolError', error: 'Missing query argument' })
+        parent.send({ type: '_workerDone', worker: context.self as ActorRef<MemoryRecallMsg> })
         return { state }
       }
 
@@ -164,21 +149,19 @@ export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<
       context.log.info('memory recall started', { userId, query: query.slice(0, 120) })
 
       return {
-        state: { ...state, requestId, turnMessages: messages, accumulated: '', replyTo: msg.replyTo, userId },
+        state:  { ...state, requestId, turnMessages: messages, accumulated: '', replyTo: msg.replyTo, userId },
         become: awaitingLlmHandler,
       }
     },
 
-    _llmProvider:      onLlmProvider,
-    _toolRegistered:   onToolRegistered,
-    _toolUnregistered: onToolUnregistered,
+    _llmProvider:      (state, msg) => ({ state: { ...state, llmRef: msg.ref ?? state.llmRef } }),
+    _toolRegistered:   (state, msg) => ({ state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } } }),
+    _toolUnregistered: (state, msg) => { const { [msg.name]: _d, ...rest } = state.tools; return { state: { ...state, tools: rest } } },
   })
 
   // ─── Handler: awaitingLlm ───
 
-  awaitingLlmHandler = onMessage<MemoryRecallMsg, RecallState>({
-    invoke: (state) => ({ state, stash: true }),
-
+  awaitingLlmHandler = onMessage<MemoryRecallMsg, WorkerState>({
     llmChunk: (state, msg) => {
       if (msg.requestId !== state.requestId) return { state }
       return { state: { ...state, accumulated: state.accumulated + msg.text } }
@@ -230,25 +213,23 @@ export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<
     llmDone: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
       context.log.info('memory recall done', { userId: state.userId })
-      return finish(state, { type: 'toolResult', result: state.accumulated || '(no result)' })
+      return finish(state, { type: 'toolResult', result: state.accumulated || '(no result)' }, context)
     },
 
     llmError: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
       context.log.error('memory recall LLM error', { userId: state.userId, error: String(msg.error) })
-      return finish(state, { type: 'toolError', error: String(msg.error) })
+      return finish(state, { type: 'toolError', error: String(msg.error) }, context)
     },
 
-    _llmProvider:      onLlmProvider,
-    _toolRegistered:   onToolRegistered,
-    _toolUnregistered: onToolUnregistered,
+    _llmProvider:      (state, msg) => ({ state: { ...state, llmRef: msg.ref ?? state.llmRef } }),
+    _toolRegistered:   (state, msg) => ({ state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } } }),
+    _toolUnregistered: (state, msg) => { const { [msg.name]: _d, ...rest } = state.tools; return { state: { ...state, tools: rest } } },
   })
 
   // ─── Handler: toolLoop ───
 
-  toolLoopHandler = onMessage<MemoryRecallMsg, RecallState>({
-    invoke: (state) => ({ state, stash: true }),
-
+  toolLoopHandler = onMessage<MemoryRecallMsg, WorkerState>({
     _toolResult: (state, msg, context) => {
       const batch   = state.pendingBatch!
       const content = msg.reply.type === 'toolResult' ? msg.reply.result : `Tool error: ${msg.reply.error}`
@@ -268,6 +249,7 @@ export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<
           state.accumulated
             ? { type: 'toolResult', result: state.accumulated }
             : { type: 'toolError',  error:  'Tool loop limit reached' },
+          context,
         )
       }
 
@@ -282,7 +264,7 @@ export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<
       const requestId   = crypto.randomUUID()
       const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
 
-      state.llmRef!.send({
+      state.llmRef.send({
         type:    'stream',
         requestId,
         model,
@@ -298,10 +280,20 @@ export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<
       }
     },
 
-    _llmProvider:      onLlmProvider,
-    _toolRegistered:   onToolRegistered,
-    _toolUnregistered: onToolUnregistered,
+    _llmProvider:      (state, msg) => ({ state: { ...state, llmRef: msg.ref ?? state.llmRef } }),
+    _toolRegistered:   (state, msg) => ({ state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } } }),
+    _toolUnregistered: (state, msg) => { const { [msg.name]: _d, ...rest } = state.tools; return { state: { ...state, tools: rest } } },
   })
+
+  return {
+    handler: idleHandler,
+  }
+}
+
+// ─── Supervisor Actor Definition ───
+
+export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<MemoryRecallMsg, SupervisorState> => {
+  const { toolFilter } = options
 
   return {
     lifecycle: onLifecycle({
@@ -309,9 +301,10 @@ export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<
         context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
         context.subscribe(ToolRegistrationTopic, (e) => {
           if (!applyToolFilter(e.name, toolFilter)) return null
-          return e.ref === null
-            ? { type: '_toolUnregistered' as const, name: e.name }
-            : { type: '_toolRegistered' as const, name: e.name, schema: e.schema, ref: e.ref }
+          if (e.ref === null) {
+            return { type: '_toolUnregistered' as const, name: e.name }
+          }
+          return { type: '_toolRegistered' as const, name: e.name, schema: e.schema, ref: e.ref }
         })
         context.publishRetained(ToolRegistrationTopic, MEMORY_RECALL_TOOL_NAME, {
           name:   MEMORY_RECALL_TOOL_NAME,
@@ -330,18 +323,58 @@ export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<
       },
     }),
 
-    handler: idleHandler,
+    handler: onMessage<MemoryRecallMsg, SupervisorState>({
+      invoke: (state, msg, context) => {
+        if (state.llmRef === null) {
+          msg.replyTo.send({ type: 'toolError', error: 'Memory not ready' })
+          return { state }
+        }
+
+        const nextSeq  = state.workerIdSeq + 1
+        const workerId = `memory-recall-worker-${nextSeq}`
+
+        const worker = context.spawn(
+          workerId,
+          createMemoryRecallWorkerActor(options, context.self as ActorRef<MemoryRecallMsg>),
+          {
+            llmRef:        state.llmRef,
+            tools:         state.tools,
+            requestId:     null,
+            turnMessages:  null,
+            accumulated:   '',
+            pendingBatch:  null,
+            toolLoopCount: 0,
+            replyTo:       null,
+            userId:        null,
+          },
+        )
+
+        worker.send(msg)
+
+        return { state: { ...state, workerIdSeq: nextSeq } }
+      },
+
+      _workerDone: (state, msg, context) => {
+        context.stop(msg.worker)
+        return { state }
+      },
+
+      _llmProvider: (state, msg) =>
+        ({ state: { ...state, llmRef: msg.ref } }),
+
+      _toolRegistered: (state, msg) =>
+        ({ state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } } }),
+
+      _toolUnregistered: (state, msg) => {
+        const { [msg.name]: _dropped, ...rest } = state.tools
+        return { state: { ...state, tools: rest } }
+      },
+    }),
   }
 }
 
-export const INITIAL_RECALL_STATE: RecallState = {
-  llmRef:        null,
-  tools:         {},
-  requestId:     null,
-  turnMessages:  null,
-  accumulated:   '',
-  pendingBatch:  null,
-  toolLoopCount: 0,
-  replyTo:       null,
-  userId:        null,
+export const INITIAL_RECALL_STATE: SupervisorState = {
+  llmRef:      null,
+  tools:       {},
+  workerIdSeq: 0,
 }
