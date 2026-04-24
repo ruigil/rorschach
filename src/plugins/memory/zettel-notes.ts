@@ -123,13 +123,33 @@ export const ZETTEL_LINKS_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: ZETTEL_LINKS_TOOL,
-    description: 'Return the notes linked from a given note (via [[wiki-links]] in its content). Returns id, name, synopsis, tags for each linked note that exists.',
+    description: 'Return the notes linked from a given note. Returns id, name, synopsis, tags for each linked note that exists.',
     parameters: {
       type: 'object',
       properties: {
         id:     { type: 'string', description: 'Note UUID.' },
         name:   { type: 'string', description: 'Note title (used if id is not provided).' },
         userId: { type: 'string' },
+      },
+    },
+  },
+}
+
+export const ZETTEL_LINK_TOOL   = 'zettel_link'
+
+export const ZETTEL_LINK_SCHEMA: ToolSchema = {
+  type: 'function',
+  function: {
+    name: ZETTEL_LINK_TOOL,
+    description: 'Create a directional link from one Zettelkasten note to another. Updates the source note links metadata and the knowledge graph. Both notes must already exist.',
+    parameters: {
+      type: 'object',
+      properties: {
+        sourceId:   { type: 'string', description: 'UUID of the source note.' },
+        sourceName: { type: 'string', description: 'Title of the source note (used if sourceId not provided).' },
+        targetId:   { type: 'string', description: 'UUID of the target note.' },
+        targetName: { type: 'string', description: 'Title of the target note (used if targetId not provided).' },
+        userId:     { type: 'string' },
       },
     },
   },
@@ -146,8 +166,12 @@ export type ZettelNoteMsg =
 
 // ─── File helpers ───
 
-const indexPath = (userId: string) => `workspace/memory/${userId}/notes/index.json`
-const notePath  = (userId: string, id: string) => `workspace/memory/${userId}/notes/${id}.md`
+const slugify = (name: string): string =>
+  name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+const indexPath    = (userId: string) => `workspace/memory/${userId}/notes/index.json`
+const noteFilePath = (userId: string, meta: Pick<ZettelNote, 'path'>) =>
+  `workspace/memory/${userId}/${meta.path}`
 
 // ─── Serialized index mutation queue ───
 //
@@ -191,7 +215,8 @@ const writeIndex = async (userId: string, index: ZettelIndex): Promise<void> => 
 const serializeNote = (meta: ZettelNote, body: string): string => {
   const tags  = meta.tags.length  > 0 ? `[${meta.tags.join(', ')}]`  : '[]'
   const links = meta.links.length > 0 ? `[${meta.links.join(', ')}]` : '[]'
-  return `---\nid: ${meta.id}\nname: ${meta.name}\nsynopsis: ${meta.synopsis}\ntags: ${tags}\ncreatedAt: ${meta.createdAt}\nupdatedAt: ${meta.updatedAt}\nlinks: ${links}\n---\n\n${body}`
+  const nodeId = meta.kgraphNodeId !== undefined ? `\nkgraphNodeId: ${meta.kgraphNodeId}` : ''
+  return `---\nid: ${meta.id}\nname: ${meta.name}\nsynopsis: ${meta.synopsis}\ntags: ${tags}\ncreatedAt: ${meta.createdAt}\nupdatedAt: ${meta.updatedAt}\nlinks: ${links}${nodeId}\n---\n\n${body}`
 }
 
 const parseNote = (raw: string): { meta: ZettelNote; body: string } => {
@@ -211,28 +236,21 @@ const parseNote = (raw: string): { meta: ZettelNote; body: string } => {
   }
 
   const id = get('id')
+  const rawNodeId = get('kgraphNodeId')
   return {
     meta: {
       id,
-      name:      get('name'),
-      synopsis:  get('synopsis'),
-      tags:      getArr('tags'),
-      createdAt: get('createdAt'),
-      updatedAt: get('updatedAt'),
-      path:      `notes/${id}.md`,
-      links:     getArr('links'),
+      name:          get('name'),
+      synopsis:      get('synopsis'),
+      tags:          getArr('tags'),
+      createdAt:     get('createdAt'),
+      updatedAt:     get('updatedAt'),
+      path:          `notes/${id}.md`,
+      links:         getArr('links'),
+      kgraphNodeId:  rawNodeId ? Number(rawNodeId) : undefined,
     },
     body,
   }
-}
-
-const extractLinks = (content: string): string[] => {
-  const matches = content.matchAll(/\[\[([^\]]+)\]\]/g)
-  const links: string[] = []
-  for (const m of matches) {
-    links.push(m[1]!)
-  }
-  return links
 }
 
 // ─── kgraph helper ───
@@ -240,28 +258,46 @@ const extractLinks = (content: string): string[] => {
 const upsertInKgraph = async (
   kgraphRef: ActorRef<KgraphMsg>,
   userId: string,
-  id: string,
+  kgraphNodeId: number | undefined,
   name: string,
   synopsis: string,
   tags: string[],
   log: any,
-): Promise<string> => {
+): Promise<number | undefined> => {
   const embeddingText = `${name} ${tags.join(' ')} ${synopsis}`
-  const description   = `noteId:${id}\n${synopsis}`
 
-  log.debug('zettel-notes: upserting into kgraph', { userId, name })
+  if (kgraphNodeId !== undefined) {
+    log.debug('zettel-notes: updating existing kgraph node', { userId, kgraphNodeId, name })
+    await ask<KgraphMsg, ToolReply>(
+      kgraphRef,
+      (replyTo) => ({
+        type: 'updateNode',
+        nodeId: kgraphNodeId,
+        properties: { name, description: synopsis },
+        embeddingText,
+        userId,
+        replyTo,
+      }),
+    )
+    return kgraphNodeId
+  }
+
+  log.debug('zettel-notes: creating new kgraph node', { userId, name })
   const reply = await ask<KgraphMsg, ToolReply>(
     kgraphRef,
     (replyTo) => ({
       type: 'invoke',
-      toolName: 'kgraph_upsert',
-      arguments: JSON.stringify({ label: 'Note', name, properties: { description }, embeddingText, userId }),
+      toolName: 'kgraph_create_node',
+      arguments: JSON.stringify({ label: 'Note', name, properties: { description: synopsis }, embeddingText, userId }),
       replyTo,
     }),
   )
 
-  if (reply.type === 'toolError') throw new Error(`kgraph upsert failed: ${reply.error}`)
-  return (JSON.parse(reply.result) as { canonicalName: string }).canonicalName
+  if (reply.type === 'toolError') {
+    log.warn('zettel-notes: kgraph create_node failed', { userId, name, error: reply.error })
+    return undefined
+  }
+  return (JSON.parse(reply.result) as { nodeId: number }).nodeId
 }
 
 const linkNotesInKgraph = async (
@@ -286,7 +322,7 @@ const linkNotesInKgraph = async (
       kgraphRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'kgraph_write',
+        toolName: 'kgraph_create_link',
         arguments: JSON.stringify({ statement, userId }),
         replyTo,
       }),
@@ -311,20 +347,23 @@ const handleCreate = async (
   const tags     = Array.isArray(args.tags) ? (args.tags as string[]) : []
 
   log.info('zettel-notes: creating note', { userId, name, tags })
-  const id  = crypto.randomUUID()
-  const now = new Date().toISOString()
+  const id   = crypto.randomUUID()
+  const now  = new Date().toISOString()
+  const slug = slugify(name)
+
+  const kgraphNodeId = await upsertInKgraph(kgraphRef, userId, undefined, name, synopsis, tags, log)
+
   const meta: ZettelNote = {
     id, name, synopsis, tags,
     createdAt: now, updatedAt: now,
-    path: `notes/${id}.md`,
-    links: extractLinks(content),
+    path: `notes/${slug}-${id}.md`,
+    links: [],
+    kgraphNodeId,
   }
 
   await mkdir(`workspace/memory/${userId}/notes`, { recursive: true })
-  await Bun.write(notePath(userId, id), serializeNote(meta, content))
-  const index = await queue.mutate(userId, (idx) => ({ notes: [...idx.notes, meta] }))
-  const canonical = await upsertInKgraph(kgraphRef, userId, id, name, synopsis, tags, log)
-  await linkNotesInKgraph(kgraphRef, userId, canonical, meta.links, index, log)
+  await Bun.write(noteFilePath(userId, meta), serializeNote(meta, content))
+  await queue.mutate(userId, (idx) => ({ notes: [...idx.notes, meta] }))
 
   return JSON.stringify({ id, name, synopsis, tags, createdAt: now })
 }
@@ -338,21 +377,25 @@ const handleUpdate = async (
 ): Promise<string> => {
   const id  = args.id as string
   log.info('zettel-notes: updating note', { userId, id })
-  const raw = await Bun.file(notePath(userId, id)).text()
-  const { meta: existing, body: existingBody } = parseNote(raw)
 
-  const name     = typeof args.name     === 'string' ? args.name     : existing.name
-  const synopsis = typeof args.synopsis === 'string' ? args.synopsis : existing.synopsis
+  const currentIndex = await queue.current(userId)
+  const existingMeta = currentIndex.notes.find(n => n.id === id)
+  if (!existingMeta) return JSON.stringify({ error: 'Note not found' })
+
+  const raw = await Bun.file(noteFilePath(userId, existingMeta)).text()
+  const { body: existingBody } = parseNote(raw)
+
+  const name     = typeof args.name     === 'string' ? args.name     : existingMeta.name
+  const synopsis = typeof args.synopsis === 'string' ? args.synopsis : existingMeta.synopsis
   const content  = typeof args.content  === 'string' ? args.content  : existingBody
-  const tags     = Array.isArray(args.tags) ? (args.tags as string[]) : existing.tags
+  const tags     = Array.isArray(args.tags) ? (args.tags as string[]) : existingMeta.tags
   const now      = new Date().toISOString()
 
-  const updated: ZettelNote = { ...existing, name, synopsis, tags, updatedAt: now, links: extractLinks(content) }
+  const updated: ZettelNote = { ...existingMeta, name, synopsis, tags, updatedAt: now }
 
-  await Bun.write(notePath(userId, id), serializeNote(updated, content))
-  const index = await queue.mutate(userId, (idx) => ({ notes: idx.notes.map(n => n.id === id ? updated : n) }))
-  const canonical = await upsertInKgraph(kgraphRef, userId, id, name, synopsis, tags, log)
-  await linkNotesInKgraph(kgraphRef, userId, canonical, updated.links, index, log)
+  await Bun.write(noteFilePath(userId, existingMeta), serializeNote(updated, content))
+  await queue.mutate(userId, (idx) => ({ notes: idx.notes.map(n => n.id === id ? updated : n) }))
+  await upsertInKgraph(kgraphRef, userId, existingMeta.kgraphNodeId, name, synopsis, tags, log)
 
   return JSON.stringify({ id, name, synopsis, tags, updatedAt: now })
 }
@@ -373,10 +416,14 @@ const handleRead = async (
   log.debug('zettel-notes: reading note', { userId, id: noteId, name: args.name })
   if (!noteId) return JSON.stringify({ error: 'Note not found' })
 
+  const index    = await queue.current(userId)
+  const noteMeta = index.notes.find(n => n.id === noteId)
+  if (!noteMeta) return JSON.stringify({ error: `Note ${noteId} not found` })
+
   try {
-    const raw = await Bun.file(notePath(userId, noteId)).text()
-    const { meta, body } = parseNote(raw)
-    return JSON.stringify({ ...meta, content: body })
+    const raw    = await Bun.file(noteFilePath(userId, noteMeta)).text()
+    const { body } = parseNote(raw)
+    return JSON.stringify({ ...noteMeta, content: body })
   } catch {
     return JSON.stringify({ error: `Note ${noteId} not found` })
   }
@@ -421,7 +468,7 @@ const handleSearch = async (
       continue
     }
     try {
-      const raw = await Bun.file(notePath(userId, note.id)).text()
+      const raw = await Bun.file(noteFilePath(userId, note)).text()
       if (raw.toLowerCase().includes(query)) {
         results.push({ id: note.id, name: note.name, synopsis: note.synopsis, tags: note.tags })
       }
@@ -461,11 +508,7 @@ const handleActivate = async (
   const results = reply.matches
     .filter(m => m.distance <= ACTIVATE_DISTANCE_THRESHOLD)
     .flatMap(m => {
-      const noteIdMatch = m.description?.match(/^noteId:([a-f0-9-]{36})/)
-      const noteId = noteIdMatch?.[1]
-      const note = noteId
-        ? index.notes.find(n => n.id === noteId)
-        : index.notes.find(n => n.name === m.name)
+      const note = index.notes.find(n => n.kgraphNodeId === m.nodeId)
       return note ? [{ id: note.id, name: note.name, synopsis: note.synopsis, tags: note.tags }] : []
     })
 
@@ -492,6 +535,51 @@ const handleLinks = async (
     return target ? [{ id: target.id, name: target.name, synopsis: target.synopsis, tags: target.tags }] : []
   })
   return JSON.stringify(linked)
+}
+
+const handleLink = async (
+  kgraphRef: ActorRef<KgraphMsg>,
+  userId: string,
+  args: Record<string, unknown>,
+  queue: IndexQueue,
+  log: any,
+): Promise<string> => {
+  const index = await queue.current(userId)
+
+  const source = typeof args.sourceId === 'string'
+    ? index.notes.find(n => n.id === args.sourceId)
+    : index.notes.find(n => n.name === args.sourceName)
+  if (!source) return JSON.stringify({ error: 'Source note not found' })
+
+  const target = typeof args.targetId === 'string'
+    ? index.notes.find(n => n.id === args.targetId)
+    : index.notes.find(n => n.name === args.targetName)
+  if (!target) return JSON.stringify({ error: 'Target note not found' })
+
+  if (source.links.includes(target.name)) {
+    return JSON.stringify({ ok: true, message: 'Link already exists' })
+  }
+
+  const updatedLinks = [...source.links, target.name]
+  const now = new Date().toISOString()
+  const updated: ZettelNote = { ...source, links: updatedLinks, updatedAt: now }
+
+  const raw = await Bun.file(noteFilePath(userId, source)).text()
+  const { body } = parseNote(raw)
+  await Bun.write(noteFilePath(userId, source), serializeNote(updated, body))
+  await queue.mutate(userId, (idx) => ({ notes: idx.notes.map(n => n.id === source.id ? updated : n) }))
+
+  const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const statement =
+    `MATCH (a:Note {name:"${esc(source.name)}"}), (b:Note {name:"${esc(target.name)}"}) ` +
+    `MERGE (a)-[:LINKS_TO]->(b)`
+  await ask<KgraphMsg, ToolReply>(
+    kgraphRef,
+    (replyTo) => ({ type: 'invoke', toolName: 'kgraph_create_link', arguments: JSON.stringify({ statement, userId }), replyTo }),
+  ).catch(() => {})
+
+  log.info('zettel-notes: linked notes', { userId, source: source.name, target: target.name })
+  return JSON.stringify({ ok: true, source: source.name, target: target.name })
 }
 
 // ─── Actor definition ───
@@ -526,6 +614,7 @@ export const createZettelNotesActor = (kgraphRef: ActorRef<KgraphMsg>): ActorDef
             case ZETTEL_SEARCH_TOOL:   return handleSearch(effectiveUserId, args, queue, ctx.log)
             case ZETTEL_ACTIVATE_TOOL: return handleActivate(state.kgraphRef, effectiveUserId, args, queue, ctx.log)
             case ZETTEL_LINKS_TOOL:   return handleLinks(effectiveUserId, args, queue, ctx.log)
+            case ZETTEL_LINK_TOOL:    return handleLink(state.kgraphRef, effectiveUserId, args, queue, ctx.log)
             default: throw new Error(`Unknown tool: ${toolName}`)
           }
         })(),
