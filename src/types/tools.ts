@@ -34,7 +34,7 @@ export type ToolRegistrationEvent =
   | { name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
   | { name: string; ref: null }
 
-export const ToolRegistrationTopic = createTopic<ToolRegistrationEvent>('tools/registration')
+export const ToolRegistrationTopic = createTopic<ToolRegistrationEvent>('tools.registration')
 
 // ─── Tool filter ───
 
