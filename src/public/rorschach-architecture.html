@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rorschach — Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@300;400;500;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:            #03070a;
+    --surface:       #060e14;
+    --surface-2:     #0a1820;
+    --border:        #0d1f2d;
+    --border-mid:    #1a3548;
+    --text:          #e8f6fa;
+    --text-dim:      #3d6878;
+    --text-mid:      #8abccc;
+    --accent:        #00c4d4;
+    --accent-bright: #22e8f8;
+    --accent-glow:   rgba(0, 196, 212, 0.25);
+    --accent-dim:    rgba(0, 196, 212, 0.06);
+    --indigo:        #00c4d4; /* Aligning indigo to accent for coherence */
+    --indigo-dim:    #215060;
+    --indigo-glow:   rgba(0, 196, 212, 0.2);
+    --amber:         #c4843a;
+    --amber-dim:     rgba(196, 132, 58, 0.15);
+    --red:           #e06030;
+    --green:         #39e8a0;
+    --cyan:          #00c4d4;
+    --neon-pink:     #e06030; /* Using the app's error/orange for contrast */
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Grotesk', sans-serif;
+    cursor: default;
+  }
+
+  /* Space / Void Background */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background:
+      /* Heat blooms matching the main app */
+      radial-gradient(ellipse 85% 50% at 50% 108%, rgba(220,80,20,0.12)  0%, rgba(180,40,10,0.04) 45%, transparent 70%),
+      radial-gradient(ellipse 50% 28% at 50% -8%,  rgba(0,80,100,0.08)   0%, transparent 60%),
+      /* Starfield simulation */
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.05'/%3E%3C/svg%3E");
+    pointer-events: none;
+    opacity: 0.8;
+  }
+
+  body::after {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background: radial-gradient(circle at 50% 50%, transparent 0%, var(--bg) 90%);
+    pointer-events: none;
+  }
+
+  /* Animated Stars */
+  @keyframes stars-float {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(-100px); }
+  }
+  #grid-anim {
+    position: fixed; inset: -100px; z-index: 0;
+    background-image: 
+      radial-gradient(1px 1px at 20px 30px, #fff, rgba(0,0,0,0)),
+      radial-gradient(1px 1px at 40px 70px, #fff, rgba(0,0,0,0)),
+      radial-gradient(2px 2px at 50% 160px, #fff, rgba(0,0,0,0)),
+      radial-gradient(2px 2px at 90% 40px, #fff, rgba(0,0,0,0)),
+      radial-gradient(1px 1px at 130px 230px, #fff, rgba(0,0,0,0)),
+      radial-gradient(1px 1px at 160px 120px, #fff, rgba(0,0,0,0));
+    background-size: 200px 200px;
+    animation: stars-float 60s linear infinite;
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  @keyframes grid-scroll {
+    from { background-position: 0 0; }
+    to { background-position: 0 600px; }
+  }
+
+  /* ---- SLIDES ---- */
+  #deck {
+    position: fixed; inset: 0; z-index: 1;
+  }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 60px 80px;
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    pointer-events: none;
+  }
+  .slide.active {
+    opacity: 1; transform: translateY(0);
+    pointer-events: auto;
+  }
+  .slide.exit-left {
+    opacity: 0; transform: translateY(-24px);
+  }
+
+  /* ---- TYPOGRAPHY ---- */
+  .slide-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 3px;
+    color: var(--accent); text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+
+  h1.hero {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(80px, 12vw, 150px);
+    letter-spacing: 12px;
+    line-height: 0.85;
+    color: var(--accent-bright);
+    text-shadow: 0 0 20px var(--accent-glow), 0 0 40px rgba(0, 196, 212, 0.1);
+    text-transform: uppercase;
+  }
+
+  h2.section-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(36px, 6vw, 72px);
+    letter-spacing: 6px;
+    color: var(--text);
+    margin-bottom: 8px;
+    text-shadow: 0 0 10px var(--accent-glow);
+  }
+
+  .tagline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px; letter-spacing: 7px;
+    color: var(--accent); text-transform: uppercase;
+    margin-top: 16px;
+    font-weight: 600;
+  }
+
+  p.body {
+    font-size: 18px; line-height: 1.8;
+    color: var(--text-mid);
+    max-width: 720px;
+  }
+  p.body b { color: var(--text); font-weight: 700; }
+  p.body em { color: var(--accent-bright); font-style: normal; text-shadow: 0 0 8px var(--accent-glow); }
+
+  /* ---- LAYOUT HELPERS ---- */
+  .cols { display: flex; gap: 60px; width: 100%; max-width: 1200px; align-items: flex-start; }
+  .col { flex: 1; }
+  .center { text-align: center; align-items: center; }
+  .vstack { display: flex; flex-direction: column; gap: 20px; }
+
+  /* ---- CARDS ---- */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border-mid);
+    border-radius: 4px;
+    padding: 24px 28px;
+    position: relative;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  .card::before {
+    content: '';
+    position: absolute; top: -1px; left: -1px; right: -1px; bottom: -1px;
+    border: 1px solid var(--accent);
+    opacity: 0.15;
+    pointer-events: none;
+    border-radius: 4px;
+  }
+  .card-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; letter-spacing: 3px;
+    color: var(--accent); text-transform: uppercase;
+    margin-bottom: 12px;
+    font-weight: 700;
+  }
+  .card p { font-size: 15px; color: var(--text-dim); line-height: 1.65; }
+  .card p b { color: var(--text); }
+
+  /* ---- CODE ---- */
+  .code-block {
+    background: var(--surface-2);
+    border: 1px solid var(--border-mid);
+    border-radius: 4px;
+    padding: 16px 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; line-height: 1.7;
+    color: var(--text-mid);
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .code-block .kw { color: var(--accent-bright); }
+  .code-block .ty { color: var(--green); }
+  .code-block .st { color: var(--amber); }
+  .code-block .cm { color: var(--text-dim); font-style: italic; }
+  .code-block .am { color: var(--red); }
+
+  /* ---- PILL LIST ---- */
+  .pill-list { display: flex; flex-wrap: wrap; gap: 10px; }
+  .pill {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 1px;
+    padding: 6px 14px;
+    border-radius: 2px;
+    border: 1px solid var(--border-mid);
+    background: var(--surface-2);
+    color: var(--text-mid);
+  }
+  .pill.hi { border-color: var(--accent); color: var(--accent-bright); background: var(--accent-dim); }
+  .pill.amber { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
+
+  /* ---- TABLE ---- */
+  table.compare {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    font-size: 14px;
+  }
+  table.compare th {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--accent); padding: 10px 16px;
+    border-bottom: 1px solid var(--border-mid);
+    text-align: left;
+  }
+  table.compare td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-mid);
+  }
+  table.compare td:first-child { color: var(--text); font-weight: 600; white-space: nowrap; }
+  table.compare td .yes { color: var(--green); }
+  table.compare td .no { color: var(--red); }
+  table.compare tr:last-child td { border-bottom: none; }
+
+  /* ---- DIVIDER ---- */
+  .divider {
+    width: 60px; height: 2px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+    margin: 16px 0;
+  }
+
+  /* ---- PROGRESS BAR ---- */
+  #progress {
+    position: fixed; bottom: 0; left: 0;
+    height: 2px; background: var(--accent-bright);
+    transition: width 0.4s ease;
+    z-index: 100;
+    box-shadow: 0 0 10px var(--accent-glow);
+  }
+
+  /* ---- SLIDE COUNTER ---- */
+  #counter {
+    position: fixed; bottom: 20px; right: 28px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 2px;
+    color: var(--text-dim);
+    z-index: 100;
+  }
+
+  /* ---- NAV HINT ---- */
+  #nav-hint {
+    position: fixed; bottom: 20px; left: 28px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 1px;
+    color: var(--text-dim);
+    z-index: 100;
+  }
+
+  /* ---- INKBLOT DECO ---- */
+  .inkblot {
+    position: absolute;
+    opacity: 0.1;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* ---- GLOW DOT ---- */
+  .glow-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent), 0 0 24px var(--accent-glow);
+    display: inline-block;
+  }
+
+  /* ---- BULLET LIST ---- */
+  ul.bullets { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+  ul.bullets li {
+    display: flex; gap: 12px; align-items: flex-start;
+    font-size: 16px; line-height: 1.6; color: var(--text-mid);
+  }
+  ul.bullets li::before {
+    content: '▸'; color: var(--accent); flex-shrink: 0; margin-top: 1px;
+  }
+  ul.bullets li b { color: var(--text); }
+  ul.bullets li em { color: var(--accent-bright); font-style: normal; }
+
+  /* ---- ANIMATED FLOW ---- */
+  @keyframes flow-dot {
+    0% { stroke-dashoffset: 600; }
+    100% { stroke-dashoffset: 0; }
+  }
+  .flow-path {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    stroke-dasharray: 6 6;
+    opacity: 0.6;
+    animation: flow-dot 8s linear infinite;
+  }
+  .flow-path.amber {
+    stroke: var(--amber);
+    animation-delay: 2s;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { r: 5; opacity: 1; }
+    50% { r: 8; opacity: 0.6; }
+  }
+  .pulse-node { animation: pulse-dot 2s ease-in-out infinite; }
+
+  /* ---- TOPIC BADGE ---- */
+  .topic-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 1px;
+    padding: 3px 9px;
+    border-radius: 4px;
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    display: inline-block;
+  }
+
+  /* ---- FUTURE CARD ---- */
+  .future-card {
+    background: var(--surface);
+    border: 1px solid var(--border-mid);
+    border-radius: 4px;
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .future-card::after {
+    content: '';
+    position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  }
+  .future-card h4 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px; letter-spacing: 2px;
+    color: var(--accent-bright); margin-bottom: 6px;
+  }
+  .future-card p {
+    font-size: 13px; line-height: 1.6;
+    color: var(--text-mid);
+  }
+
+  /* ---- TITLE SLIDE ---- */
+  #slide-1 { background: transparent; }
+  #slide-1 .subtitle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; letter-spacing: 4px;
+    color: var(--text-mid); margin-top: 28px;
+    text-transform: uppercase;
+  }
+
+  /* ---- SECTION HEADER ACCENT ---- */
+  .accent-bar {
+    width: 40px; height: 3px;
+    background: var(--accent);
+    border-radius: 2px;
+    margin-bottom: 20px;
+    box-shadow: 0 0 8px var(--accent-glow);
+  }
+
+  /* ---- GRID ---- */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; width: 100%; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; width: 100%; }
+
+  /* responsive */
+  @media (max-width: 900px) {
+    .slide { padding: 40px 30px; }
+    .cols { flex-direction: column; }
+    .grid-3 { grid-template-columns: 1fr 1fr; }
+    h1.hero { font-size: 60px; }
+    h2.section-title { font-size: 32px; }
+  }
+</style>
+</head>
+<body>
+<div id="grid-anim"></div>
+
+<div id="deck">
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 1: TITLE -->
+  <div class="slide active" id="slide-1">
+    <!-- Inkblot deco -->
+    <svg class="inkblot" style="top:-80px;right:-100px;width:520px" viewBox="0 0 400 400" fill="none">
+      <ellipse cx="200" cy="200" rx="160" ry="100" fill="var(--accent)" transform="rotate(-30 200 200)"/>
+      <ellipse cx="200" cy="200" rx="100" ry="160" fill="var(--accent)" transform="rotate(15 200 200)"/>
+      <ellipse cx="160" cy="180" rx="70" ry="45" fill="var(--accent)" transform="rotate(50 160 180)"/>
+      <ellipse cx="240" cy="220" rx="60" ry="40" fill="var(--accent)" transform="rotate(-20 240 220)"/>
+    </svg>
+    <svg class="inkblot" style="bottom:-60px;left:-80px;width:360px" viewBox="0 0 400 400" fill="none">
+      <ellipse cx="200" cy="200" rx="140" ry="90" fill="var(--amber)" transform="rotate(20 200 200)"/>
+      <ellipse cx="200" cy="200" rx="80" ry="130" fill="var(--amber)" transform="rotate(-10 200 200)"/>
+      <ellipse cx="180" cy="210" rx="50" ry="35" fill="var(--amber)" transform="rotate(40 180 210)"/>
+    </svg>
+
+    <div class="center vstack" style="align-items:center; gap:0">
+      <div class="slide-label">Architecture Système</div>
+      <h1 class="hero">RORSCHACH</h1>
+      <div class="tagline">Un substrat pour une échelle cognitive infinie</div>
+      <div style="margin-top:48px; display:flex; gap:20px; flex-wrap:wrap; justify-content:center">
+        <span class="pill hi">TypeScript + Bun</span>
+        <span class="pill hi">Actor Model</span>
+        <span class="pill hi">Typed Pub/Sub</span>
+        <span class="pill hi">Plugin Architecture</span>
+      </div>
+      <div class="subtitle" style="margin-top:40px">Assistant Personnel Général &nbsp;·&nbsp; Substrat d'IA Agentique</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 2: WHAT IS AN ACTOR SYSTEM -->
+  <div class="slide" id="slide-2">
+    <div style="width:100%;max-width:1100px">
+      <div class="slide-label">01 — Fondations</div>
+      <h2 class="section-title">Qu'est-ce qu'un Actor System ?</h2>
+      <div class="accent-bar"></div>
+      <div class="cols" style="margin-top:8px">
+        <div class="col vstack">
+          <p class="body">Le <b>actor model</b> est un modèle mathématique de calcul concurrent où l'unité fondamentale est un <em>actor</em> : une entité isolée qui traite les messages un par un.</p>
+          <p class="body" style="margin-top:4px">Chaque actor possède un <b>état privé</b> auquel rien d'autre ne peut accéder. Les actors ne partagent jamais de mémoire — ils communiquent exclusivement par <em>passage de messages asynchrones</em>.</p>
+          <div style="margin-top:8px">
+            <ul class="bullets">
+              <li><b>Recevoir</b> des messages d'une mailbox privée</li>
+              <li><b>Envoyer</b> des messages à d'autres actors par adresse</li>
+              <li><b>Créer</b> de nouveaux actors enfants dynamiquement</li>
+              <li><b>Mettre à jour</b> son propre état local</li>
+              <li><b>Réagir</b> à la mort des actors surveillés</li>
+            </ul>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <div class="card-title">Origine</div>
+            <p>Proposé par Carl Hewitt en 1973. Popularisé par Erlang/OTP et plus tard Akka. Rorschach apporte ce modèle au TypeScript moderne avec une sécurité de type complète.</p>
+          </div>
+        </div>
+        <div class="col" style="display:flex;align-items:center;justify-content:center">
+          <!-- Redesigned Actor Principle SVG (Fixed Viewbox) -->
+          <svg viewBox="0 0 540 420" width="520" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arr-a" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6" fill="none" stroke="var(--accent)" stroke-width="1"/>
+              </marker>
+              <marker id="arr-g" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6" fill="none" stroke="var(--green)" stroke-width="1"/>
+              </marker>
+            </defs>
+
+            <!-- Actor Boundary -->
+            <rect x="110" y="50" width="300" height="320" rx="12" fill="var(--surface)" stroke="var(--accent)" stroke-width="2" stroke-dasharray="8 4" opacity="0.4"/>
+            <text x="260" y="35" fill="var(--accent-bright)" font-family="JetBrains Mono" font-size="12" font-weight="bold" text-anchor="middle" letter-spacing="2">L'ACTOR : UNITÉ D'ISOLATION</text>
+
+            <!-- 1. Mailbox (Asynch Input) -->
+            <rect x="10" y="160" width="110" height="80" rx="4" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="65" y="150" fill="var(--accent)" font-family="JetBrains Mono" font-size="9" text-anchor="middle">MAILBOX (FIFO)</text>
+            <rect x="25" y="175" width="80" height="10" rx="1" fill="var(--accent-glow)"/>
+            <rect x="25" y="190" width="80" height="10" rx="1" fill="var(--accent-glow)"/>
+            <rect x="25" y="205" width="80" height="10" rx="1" fill="var(--accent)"/>
+            
+            <!-- Flow to Handler -->
+            <path d="M120 200 L190 200" stroke="var(--accent)" stroke-width="2" marker-end="url(#arr-a)" class="flow-path"/>
+
+            <!-- 2. Processing (Sequential Handler) -->
+            <circle cx="260" cy="200" r="60" fill="var(--surface-2)" stroke="var(--green)" stroke-width="2.5" style="filter: drop-shadow(0 0 8px var(--green-glow))"/>
+            <text x="260" y="190" fill="var(--green)" font-family="JetBrains Mono" font-size="11" text-anchor="middle" font-weight="bold">HANDLER</text>
+            <text x="260" y="210" fill="var(--text-mid)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">Traitement séquentiel</text>
+            <text x="260" y="225" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">Un message à la fois</text>
+
+            <!-- 2.5 Internal Capability: BECOME -->
+            <rect x="200" y="70" width="120" height="45" rx="4" fill="var(--surface-2)" stroke="var(--red)" stroke-width="1.5"/>
+            <text x="260" y="90" fill="var(--red)" font-family="JetBrains Mono" font-size="9" font-weight="bold" text-anchor="middle">BECOME / CHANGER</text>
+            <text x="260" y="103" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">Mutation de logique</text>
+            <!-- Link from become to handler -->
+            <path d="M260 115 L260 140" stroke="var(--red)" stroke-width="1.2" stroke-dasharray="3 3"/>
+
+            <!-- 3. Private State (Locked) -->
+            <rect x="200" y="300" width="120" height="50" rx="4" fill="var(--surface-2)" stroke="var(--amber)" stroke-width="1.5"/>
+            <text x="260" y="322" fill="var(--amber)" font-family="JetBrains Mono" font-size="9" font-weight="bold" text-anchor="middle">ÉTAT PRIVÉ</text>
+            <text x="260" y="338" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">Encapsulation totale</text>
+            <!-- Link from handler to state -->
+            <path d="M260 260 L260 300" stroke="var(--amber)" stroke-width="1.2" stroke-dasharray="3 3"/>
+
+            <!-- 4. Capabilities (Outbound Actions) -->
+            <g transform="translate(430, 150)">
+              <text x="0" y="-15" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="8" font-weight="bold">ACTIONS EXTERNES :</text>
+              
+              <!-- Send -->
+              <rect x="0" y="0" width="100" height="35" rx="2" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1"/>
+              <text x="50" y="22" fill="var(--accent)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">ENVOYER</text>
+              <path d="M-110 50 L0 17" stroke="var(--accent)" stroke-width="1.5" class="flow-path" marker-end="url(#arr-a)"/>
+
+              <!-- Spawn / Watch -->
+              <rect x="0" y="45" width="100" height="35" rx="2" fill="var(--surface-2)" stroke="var(--cyan)" stroke-width="1"/>
+              <text x="50" y="67" fill="var(--cyan)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">CRÉER / SURVEILLER</text>
+              <path d="M-110 50 L0 62" stroke="var(--cyan)" stroke-width="1.5" class="flow-path" marker-end="url(#arr-a)"/>
+            </g>
+
+            <!-- Bottom Note -->
+            <text x="260" y="400" fill="var(--text-dim)" font-family="Space Grotesk" font-size="10" font-style="italic" text-anchor="middle">Pas de mémoire partagée · Communication par messages</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 3: WHY ACTORS -->
+  <div class="slide" id="slide-3">
+    <div style="width:100%;max-width:1200px">
+      <div class="slide-label">02 — Avantages</div>
+      <h2 class="section-title">Pourquoi le Actor Model ?</h2>
+      <div class="accent-bar"></div>
+      <div class="cols">
+        <div class="col vstack">
+          <p class="body">La concurrence traditionnelle repose sur la mémoire partagée et les verrous — une recette pour les race conditions, les deadlocks et les défaillances en cascade. Les actors éliminent ces problèmes au niveau architectural.</p>
+          <div style="margin-top:12px">
+            <table class="compare">
+              <tr>
+                <th>Propriété</th>
+                <th>État Partagé</th>
+                <th>Actor Model</th>
+              </tr>
+              <tr>
+                <td>Isolation des données</td>
+                <td><span class="no">✗ Partagé</span></td>
+                <td><span class="yes">✓ Privé</span></td>
+              </tr>
+              <tr>
+                <td>Race conditions</td>
+                <td><span class="no">✗ Possible</span></td>
+                <td><span class="yes">✓ Impossible</span></td>
+              </tr>
+              <tr>
+                <td>Portée des défaillances</td>
+                <td><span class="no">✗ Crash Global</span></td>
+                <td><span class="yes">✓ Isolé</span></td>
+              </tr>
+              <tr>
+                <td>Composition</td>
+                <td><span class="no">✗ Fragile</span></td>
+                <td><span class="yes">✓ Fractale</span></td>
+              </tr>
+              <tr>
+                <td>Remplacement à chaud</td>
+                <td><span class="no">✗ Redémarrage requis</span></td>
+                <td><span class="yes">✓ Par actor</span></td>
+              </tr>
+              <tr>
+                <td>Observabilité</td>
+                <td><span class="no">✗ Ad-hoc</span></td>
+                <td><span class="yes">✓ Native</span></td>
+              </tr>
+            </table>
+          </div>
+        </div>
+        <div class="col vstack">
+          <div class="card">
+            <div class="card-title">L'isolation prévient les catastrophes</div>
+            <p>Chaque actor est une unité scellée. Un crash dans un actor déclenche un événement de supervision — son parent décide : redémarrer, arrêter ou escalader. Le reste du système continue de fonctionner.</p>
+          </div>
+          <div class="card">
+            <div class="card-title">La composabilité est fractale</div>
+            <p>Un groupe d'actors résolvant un sous-problème est identique de l'extérieur à un seul actor. Les systèmes se composent en connectant des actors, pas en réécrivant les composants internes.</p>
+          </div>
+          <div class="card">
+            <div class="card-title">La scalabilité est structurelle</div>
+            <p>Ajouter plus d'actors revient à ajouter plus d'unités isolées. Pas d'état global à synchroniser. Pas de contention de verrou. L'architecture scale horizontalement par conception.</p>
+          </div>
+          <div class="card">
+            <div class="card-title">La Backpressure est de premier ordre</div>
+            <p>Chaque mailbox peut être limitée. Lorsqu'un producteur dépasse un consommateur, le système abandonne ou signale — il n'accumule jamais silencieusement de mémoire illimitée.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 4: ACTOR ANATOMY -->
+  <div class="slide" id="slide-4">
+    <div style="width:100%;max-width:1100px">
+      <div class="slide-label">03 — Abstractions Fondamentales</div>
+      <h2 class="section-title">Anatomie d'un Actor dans Rorschach</h2>
+      <div class="accent-bar"></div>
+      <div class="cols">
+        <div class="col vstack">
+          <div class="code-block"><span class="kw">type</span> <span class="ty">ActorDef</span>&lt;M, S&gt; = {
+  <span class="cm">// Gestionnaire de messages pur</span>
+  handler: (state: S, msg: M, ctx: <span class="ty">ActorContext</span>&lt;M&gt;)
+    =&gt; <span class="ty">ActorResult</span>&lt;M, S&gt;
+
+  <span class="cm">// Hooks de cycle de vie</span>
+  lifecycle?: (state, event, ctx) =&gt; <span class="ty">LifecycleResult</span>
+
+  <span class="cm">// Récupération sur erreur</span>
+  supervision?: <span class="am">'stop'</span> | { <span class="kw">type</span>: <span class="am">'restart'</span>, maxRetries?: <span class="ty">number</span> }
+
+  <span class="cm">// Queue bornée</span>
+  mailbox?: { capacity?: <span class="ty">number</span>; overflow?: <span class="am">'drop-newest'</span> }
+
+  <span class="cm">// Snapshots d'état</span>
+  persistence?: <span class="ty">PersistenceAdapter</span>&lt;S&gt;
+
+  <span class="cm">// Intercepteurs</span>
+  interceptors?: <span class="ty">Interceptor</span>&lt;M, S&gt;[]
+}</div>
+          <div class="code-block" style="margin-top:12px"><span class="cm">// ActorResult: ce qu'un gestionnaire retourne</span>
+<span class="kw">type</span> <span class="ty">ActorResult</span>&lt;M, S&gt; =
+  | { state: S }                           <span class="cm">// mise à jour d'état</span>
+  | { state: S; become: <span class="ty">Handler</span>&lt;M,S&gt; }   <span class="cm">// changement de comportement</span>
+  | { state: S; stash: <span class="kw">true</span> }            <span class="cm">// différer le message</span></div>
+        </div>
+        <div class="col vstack">
+          <div class="card">
+            <div class="card-title">ActorRef — Le Handle opaque</div>
+            <p><b>La seule façon d'interagir avec un actor.</b> Contient un nom, une fonction <code>send(msg)</code> et une vérification <code>isAlive()</code>. Vous ne touchez jamais directement à l'état d'un actor — jamais.</p>
+          </div>
+          <div class="card">
+            <div class="card-title">Les Handlers sont des fonctions pures</div>
+            <p>État donné + message → retourne un nouvel état + effets. Pas de globales ambiantes. Pas de références mutables partagées. La même entrée produit toujours la même sortie — testable en isolation.</p>
+          </div>
+          <div class="card">
+            <div class="card-title">Changement de comportement</div>
+            <p>Un actor peut retourner <code>become(newHandler)</code> pour changer son comportement pour les futurs messages. Utile pour implémenter des machines à états — ex : <em>idle → active → draining</em>.</p>
+          </div>
+          <div class="card">
+            <div class="card-title">Stashing</div>
+            <p>Les messages peuvent être mis de côté (stashed) jusqu'à ce que l'actor soit prêt à les traiter — ex : mettre en attente les messages utilisateur en attendant le retour d'un outil.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 5: RORSCHACH SYSTEM -->
+  <div class="slide" id="slide-5">
+    <div style="width:100%;max-width:1200px">
+      <div class="slide-label">04 — Le Système</div>
+      <h2 class="section-title">Rorschach : Vue d'ensemble</h2>
+      <div class="accent-bar"></div>
+      <div class="cols">
+        <div class="col vstack" style="max-width:380px">
+          <p class="body">Rorschach est un <em>assistant personnel général</em> construit comme un système d'actors. Son but : un substrat où chaque capacité — raisonnement, mémoire, outils, communication — est un actor isolé et supervisé.</p>
+          <p class="body" style="margin-top:8px">Le système n'a pas de cœur monolithique. Tout est un <b>plugin</b>. Les plugins sont chargés dynamiquement et supervisés indépendamment.</p>
+          <div style="margin-top:16px">
+            <div class="pill-list">
+              <span class="pill amber">Hot Reload</span>
+              <span class="pill amber">Plugin-first</span>
+              <span class="pill amber">Config-driven</span>
+              <span class="pill amber">Type-safe</span>
+            </div>
+          </div>
+          <div class="card" style="margin-top:20px">
+            <div class="card-title">Philosophie de conception</div>
+            <p><em>"L'isolation prévient les défaillances catastrophiques. La sécurité de type prévient la corruption sémantique. Le passage de messages permet une composition illimitée."</em></p>
+          </div>
+        </div>
+        <div class="col" style="display:flex;align-items:center;justify-content:center">
+          <!-- Plugin tree SVG -->
+          <svg viewBox="0 0 740 380" width="740" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Root node -->
+            <circle cx="370" cy="40" r="30" fill="var(--surface)" stroke="var(--accent)" stroke-width="2"/>
+            <text x="370" y="38" fill="var(--accent)" font-family="Bebas Neue" font-size="12" letter-spacing="1" text-anchor="middle">SYSTEM</text>
+            <text x="370" y="52" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">root actor</text>
+
+            <!-- Plugin nodes spread horizontally -->
+            
+            <!-- cognitive -->
+            <path d="M370 70 L60 130" stroke="var(--border-mid)" stroke-width="1"/>
+            <rect x="15" y="130" width="90" height="45" rx="4" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="60" y="150" fill="var(--accent)" font-family="JetBrains Mono" font-size="9" letter-spacing="1" text-anchor="middle">cognitive</text>
+            <text x="60" y="162" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">LLM · chatbot</text>
+
+            <!-- interfaces -->
+            <path d="M370 70 L185 130" stroke="var(--border-mid)" stroke-width="1"/>
+            <rect x="140" y="130" width="90" height="45" rx="4" fill="var(--surface-2)" stroke="var(--cyan)" stroke-width="1.5"/>
+            <text x="185" y="150" fill="var(--cyan)" font-family="JetBrains Mono" font-size="9" letter-spacing="1" text-anchor="middle">interfaces</text>
+            <text x="185" y="162" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">HTTP · CLI</text>
+
+            <!-- tools -->
+            <path d="M370 70 L310 130" stroke="var(--border-mid)" stroke-width="1"/>
+            <rect x="265" y="130" width="90" height="45" rx="4" fill="var(--surface-2)" stroke="var(--green)" stroke-width="1.5"/>
+            <text x="310" y="150" fill="var(--green)" font-family="JetBrains Mono" font-size="9" letter-spacing="1" text-anchor="middle">tools</text>
+            <text x="310" y="162" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">bash · search</text>
+
+            <!-- memory -->
+            <path d="M370 70 L435 130" stroke="var(--border-mid)" stroke-width="1"/>
+            <rect x="390" y="130" width="90" height="45" rx="4" fill="var(--surface-2)" stroke="var(--amber)" stroke-width="1.5"/>
+            <text x="435" y="150" fill="var(--amber)" font-family="JetBrains Mono" font-size="9" letter-spacing="1" text-anchor="middle">memory</text>
+            <text x="435" y="162" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">KGraph</text>
+
+            <!-- notebook -->
+            <path d="M370 70 L560 130" stroke="var(--border-mid)" stroke-width="1"/>
+            <rect x="515" y="130" width="90" height="45" rx="4" fill="var(--surface-2)" stroke="var(--cyan)" stroke-width="1.5"/>
+            <text x="560" y="150" fill="var(--cyan)" font-family="JetBrains Mono" font-size="9" letter-spacing="1" text-anchor="middle">notebook</text>
+            <text x="560" y="162" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">notes · agent</text>
+
+            <!-- observe -->
+            <path d="M370 70 L685 130" stroke="var(--border-mid)" stroke-width="1"/>
+            <rect x="640" y="130" width="90" height="45" rx="4" fill="var(--surface-2)" stroke="var(--red)" stroke-width="1.5"/>
+            <text x="685" y="150" fill="var(--red)" font-family="JetBrains Mono" font-size="9" letter-spacing="1" text-anchor="middle">observe</text>
+            <text x="685" y="162" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">logs · trace</text>
+
+            <!-- EventStream bus -->
+            <rect x="50" y="280" width="640" height="40" rx="4" fill="var(--surface)" stroke="var(--border-mid)" stroke-width="2" stroke-dasharray="8 4"/>
+            <text x="370" y="305" fill="var(--text-mid)" font-family="JetBrains Mono" font-size="10" letter-spacing="3" text-anchor="middle">EVENT STREAM BUS</text>
+
+            <!-- Dynamic flow arrows to bus -->
+            <path d="M60 175 L60 280" stroke="var(--accent)" stroke-width="1" stroke-dasharray="4 4" class="flow-path"/>
+            <path d="M185 175 L185 280" stroke="var(--cyan)" stroke-width="1" stroke-dasharray="4 4" class="flow-path"/>
+            <path d="M310 175 L310 280" stroke="var(--green)" stroke-width="1" stroke-dasharray="4 4" class="flow-path"/>
+            <path d="M435 175 L435 280" stroke="var(--amber)" stroke-width="1" stroke-dasharray="4 4" class="flow-path amber"/>
+            <path d="M560 175 L560 280" stroke="var(--cyan)" stroke-width="1" stroke-dasharray="4 4" class="flow-path"/>
+            <path d="M685 175 L685 280" stroke="var(--red)" stroke-width="1" stroke-dasharray="4 4" class="flow-path"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 6: PLUGIN ARCHITECTURE -->
+  <div class="slide" id="slide-6">
+    <div style="width:100%;max-width:1100px">
+      <div class="slide-label">05 — Architecture des Plugins</div>
+      <h2 class="section-title">Écosystème de Plugins</h2>
+      <div class="accent-bar"></div>
+      <p class="body" style="margin-bottom:24px">Chaque capacité est un <b>PluginDef</b> — un sous-arbre d'actors autonome avec sa propre configuration, son cycle de vie et son protocole de messages. Les plugins sont chargés depuis <code>config.json</code> et rechargeables à chaud.</p>
+      <div class="grid-3" style="margin-top:4px">
+        <div class="card">
+          <div class="card-title" style="color:var(--accent)">cognitive</div>
+          <p>Fournisseur LLM, boucle ReAct du chatbot, gestionnaire de session, planificateur. Le cœur de raisonnement du système.</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color:var(--cyan)">interfaces</div>
+          <p>Serveur HTTP/WebSocket, CLI, Signal TCP. Traduit les protocoles externes en messages d'actors typés.</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color:var(--green)">tools</div>
+          <p>Exécution Bash, recherche web, E/S de fichiers, vision (analyse d'images), transcription audio, analyse PDF.</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color:var(--amber)">memory</div>
+          <p>Knowledge Graph (Grafeo DB), consolidation épisodique, rappel sémantique, notes Zettelkasten.</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color:var(--red)">observability</div>
+          <p>Journalisation structurée JSONL, traçage distribué (W3C), métriques, suivi des coûts LLM.</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color:var(--cyan)">notebook</div>
+          <p>Notes Zettelkasten, agents de synthèse, rappels contextuels et journalisation automatisée. Transforme la connaissance en entités actives.</p>
+        </div>
+      </div>
+      <div class="code-block" style="margin-top:20px; font-size:11px"><span class="kw">type</span> <span class="ty">PluginDef</span>&lt;M, S, C&gt; = {
+  id: <span class="ty">string</span>;  version: <span class="ty">string</span>
+  initialState: S
+  configDescriptor: { defaults: C; onConfigChange: (cfg: C) =&gt; <span class="ty">Partial</span>&lt;M&gt; }
+  lifecycle: (state: S, event: <span class="ty">LifecycleEvent</span>, ctx: <span class="ty">ActorContext</span>&lt;M&gt;) =&gt; <span class="ty">LifecycleResult</span>
+  handler: <span class="ty">MessageHandler</span>&lt;M, S&gt;
+}</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 7: COGNITIVE CORE -->
+  <div class="slide" id="slide-7">
+    <div style="width:100%;max-width:1100px">
+      <div class="slide-label">06 — Moteur de Raisonnement</div>
+      <h2 class="section-title">Cœur Cognitif : Boucle ReAct</h2>
+      <div class="accent-bar"></div>
+      <p class="body" style="margin-bottom:20px">L'actor chatbot implémente le <b>pattern ReAct</b> (Reason + Act). Chaque tour de l'utilisateur déclenche une boucle : appeler le LLM, analyser sa réponse, invoquer des outils, renvoyer les résultats, répéter jusqu'à la fin.</p>
+
+      <!-- Simplified Horizontal ReAct flow diagram -->
+      <svg viewBox="0 0 800 200" width="100%" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-bottom:20px">
+        <defs>
+          <marker id="fa" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0,0 L7,3.5 L0,7" fill="none" stroke="var(--accent)" stroke-width="1.2"/>
+          </marker>
+          <marker id="fa2" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0,0 L7,3.5 L0,7" fill="none" stroke="var(--amber)" stroke-width="1.2"/>
+          </marker>
+          <marker id="fa3" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0,0 L7,3.5 L0,7" fill="none" stroke="var(--green)" stroke-width="1.2"/>
+          </marker>
+        </defs>
+
+        <!-- Left LLM PROVIDER -->
+        <rect x="10" y="70" width="160" height="60" rx="4" fill="var(--surface-2)" stroke="var(--green)" stroke-width="1.5"/>
+        <text x="90" y="105" fill="var(--green)" font-family="JetBrains Mono" font-size="10" letter-spacing="1" text-anchor="middle">LLM PROVIDER</text>
+
+        <!-- Central CHATBOT -->
+        <rect x="320" y="50" width="160" height="100" rx="6" fill="var(--surface)" stroke="var(--accent)" stroke-width="2.5"/>
+        <text x="400" y="95" fill="var(--accent)" font-family="Bebas Neue" font-size="20" letter-spacing="2" text-anchor="middle">CHATBOT</text>
+        <text x="400" y="120" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="10" text-anchor="middle">Boucle ReAct</text>
+
+        <!-- Right OUTILS -->
+        <rect x="630" y="70" width="160" height="60" rx="4" fill="var(--surface-2)" stroke="var(--amber)" stroke-width="1.5"/>
+        <text x="710" y="105" fill="var(--amber)" font-family="JetBrains Mono" font-size="10" letter-spacing="1" text-anchor="middle">OUTILS</text>
+
+        <!-- Animated Loop Paths -->
+        
+        <!-- Chatbot -> LLM (Reasoning: sending prompt) -->
+        <path d="M320 115 Q245 135 170 115" stroke="var(--green)" stroke-width="2" marker-end="url(#fa3)" class="flow-path"/>
+        <text x="245" y="145" fill="var(--green)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">Prompt</text>
+
+        <!-- LLM -> Chatbot (Decision: answer or tool call) -->
+        <path d="M170 85 Q245 65 320 85" stroke="var(--green)" stroke-width="1.5" stroke-dasharray="4 2" marker-end="url(#fa3)" class="flow-path"/>
+        <text x="245" y="65" fill="var(--green)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">Réponse / Tool Call</text>
+
+        <!-- Chatbot -> Outils (Act: invocation) -->
+        <path d="M480 85 Q555 65 630 85" stroke="var(--amber)" stroke-width="2" marker-end="url(#fa2)" class="flow-path amber"/>
+        <text x="555" y="65" fill="var(--amber)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">Appel Outil</text>
+
+        <!-- Outils -> Chatbot (Observation: result) -->
+        <path d="M630 115 Q555 135 480 115" stroke="var(--amber)" stroke-width="1.5" stroke-dasharray="4 2" marker-end="url(#fa2)" class="flow-path amber"/>
+        <text x="555" y="145" fill="var(--amber)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">Résultat</text>
+
+      </svg>
+
+      <div class="cols">
+        <div class="col">
+          <div class="card">
+            <div class="card-title">Invocation d'Outils</div>
+            <p>Le LLM émet <code>tool_call</code> → le chatbot invoque l'actor de l'outil via <code>ActorRef.send()</code> → le résultat revient via <code>replyTo</code> → prochain tour LLM.</p>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <div class="card-title">Raisonnement Itératif</div>
+            <p>Le système ne répond pas "à l'aveugle". Il évalue les résultats des outils (Observation), ajuste sa réflexion (Reason) et décide si un nouveau cycle est nécessaire pour remplir l'objectif.</p>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <div class="card-title">Streaming</div>
+            <p>Les fragments de tokens LLM reviennent via des messages <code>llmChunk</code> — le chatbot les accumule et les transmet au topic de sortie, que l'interface streame au navigateur.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 8: EVENT BUS -->
+  <div class="slide" id="slide-8">
+    <div style="width:100%;max-width:1200px">
+      <div class="slide-label">07 — Communication</div>
+      <h2 class="section-title">Event Bus Pub/Sub Typé</h2>
+      <div class="accent-bar"></div>
+      <div class="cols">
+        <div class="col vstack">
+          <p class="body">Les actors se découplent via l'<b>EventStream</b> — un bus pub/sub typé. Les topics portent un type fantôme <code>T</code> que le compilateur impose : les éditeurs doivent émettre <code>T</code>, les abonnés reçoivent <code>T</code>. Coût nul à l'exécution.</p>
+
+          <div class="code-block" style="margin-top:12px"><span class="cm">// Type fantôme — zéro coût à l'exécution</span>
+<span class="kw">type</span> <span class="ty">EventTopic</span>&lt;T&gt; = <span class="ty">string</span> &amp; { <span class="ty">__eventType</span>?: T }
+<span class="kw">const</span> createTopic = &lt;T&gt;(name: <span class="ty">string</span>) =&gt; name <span class="kw">as</span> <span class="ty">EventTopic</span>&lt;T&gt;
+
+<span class="cm">// Exemple de topics de domaine</span>
+<span class="kw">const</span> <span class="ty">InboundTopic</span> = createTopic&lt;<span class="ty">InboundMessageEvent</span>&gt;(<span class="st">'client.inbound'</span>)
+<span class="kw">const</span> <span class="ty">OutboundTopic</span> = createTopic&lt;<span class="ty">OutboundMessageEvent</span>&gt;(<span class="st">'client.outbound'</span>)</div>
+
+          <div style="margin-top:16px">
+            <table class="compare" style="font-size:11px">
+              <tr><th>Topic</th><th>Éditeur</th><th>Abonné(s)</th></tr>
+              <tr><td>client.inbound</td><td>Interfaces</td><td>Session Manager</td></tr>
+              <tr><td>client.outbound</td><td>Chatbot</td><td>Interfaces → clients</td></tr>
+              <tr><td>cognitive.llm-provider</td><td>Plugin LLM</td><td>Chatbot, Outils</td></tr>
+              <tr><td>memory.turn</td><td>Chatbot</td><td>Actor de consolidation</td></tr>
+              <tr><td>tools.registration</td><td>Actors outils</td><td>Chatbot (registre)</td></tr>
+              <tr><td>system.log / trace</td><td>Tous les actors</td><td>Plugin Observability</td></tr>
+            </table>
+          </div>
+        </div>
+        <div class="col" style="display:flex;align-items:center;justify-content:center">
+          <svg viewBox="0 0 360 360" width="340" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="180" cy="180" r="46" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="2"/>
+            <text x="180" y="176" fill="var(--accent)" font-family="Bebas Neue" font-size="13" letter-spacing="2" text-anchor="middle">EVENT</text>
+            <text x="180" y="192" fill="var(--accent)" font-family="Bebas Neue" font-size="13" letter-spacing="2" text-anchor="middle">STREAM</text>
+
+            <line x1="180" y1="134" x2="180" y2="70" stroke="var(--green)" stroke-width="1.5"/>
+            <rect x="138" y="36" width="84" height="34" rx="4" fill="var(--surface-2)" stroke="var(--green)" stroke-width="1.5"/>
+            <text x="180" y="58" fill="var(--green)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">llm-provider</text>
+
+            <line x1="212" y1="147" x2="272" y2="80" stroke="var(--accent)" stroke-width="1.5"/>
+            <rect x="260" y="44" width="90" height="34" rx="4" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="305" y="66" fill="var(--accent)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">chatbot</text>
+
+            <line x1="226" y1="180" x2="296" y2="160" stroke="var(--accent)" stroke-width="1.5"/>
+            <rect x="296" y="140" width="60" height="40" rx="4" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="326" y="165" fill="var(--accent)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">session</text>
+
+            <line x1="212" y1="213" x2="272" y2="268" stroke="var(--cyan)" stroke-width="1.5"/>
+            <rect x="256" y="268" width="94" height="34" rx="4" fill="var(--surface-2)" stroke="var(--cyan)" stroke-width="1.5"/>
+            <text x="303" y="290" fill="var(--cyan)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">interfaces</text>
+
+            <line x1="180" y1="226" x2="180" y2="292" stroke="var(--amber)" stroke-width="1.5"/>
+            <rect x="138" y="292" width="84" height="34" rx="4" fill="var(--surface-2)" stroke="var(--amber)" stroke-width="1.5"/>
+            <text x="180" y="314" fill="var(--amber)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">memory</text>
+
+            <line x1="148" y1="213" x2="92" y2="268" stroke="var(--red)" stroke-width="1.5"/>
+            <rect x="8" y="268" width="84" height="34" rx="4" fill="var(--surface-2)" stroke="var(--red)" stroke-width="1.5"/>
+            <text x="50" y="290" fill="var(--red)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">observability</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 9: MEMORY -->
+  <div class="slide" id="slide-9">
+    <div style="width:100%;max-width:1200px">
+      <div class="slide-label">08 — Connaissance</div>
+      <h2 class="section-title">Mémoire &amp; Knowledge Graph</h2>
+      <div class="accent-bar"></div>
+      <div class="cols">
+        <div class="col vstack">
+          <p class="body">La mémoire n'est pas une base de données greffée — c'est un <b>sous-système d'actors de premier ordre</b>. Chaque tour de conversation passe par la mémoire épisodique, se consolide dans un graphe de connaissances structuré et est rappelé sémantiquement avant le prochain appel LLM.</p>
+          <div style="margin-top:16px">
+            <ul class="bullets">
+              <li><b>Mémoire Épisodique :</b> Tours bruts enregistrés dans <em>episodic.jsonl</em></li>
+              <li><b>Consolidation :</b> Le LLM extrait les entités et relations toutes les ~30s</li>
+              <li><b>Knowledge Graph :</b> Grafeo DB — nœuds, arêtes, segmenté par utilisateur</li>
+              <li><b>Embeddings Vectoriels :</b> Recherche sémantique via modèle OpenAI</li>
+              <li><b>Rappel :</b> Requête du graphe → top-N faits → injection dans le prompt</li>
+              <li><b>Zettelkasten :</b> Notes markdown atomiques liées aux nœuds du graphe</li>
+            </ul>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <div class="card-title">Pourquoi un Knowledge Graph ?</div>
+            <p>La recherche vectorielle plate perd la structure. Un graphe préserve les <em>relations</em> : "Alice travaille avec Bob chez Acme, qui utilise l'outil X." Cela permet un raisonnement multi-sauts.</p>
+          </div>
+        </div>
+        <div class="col" style="display:flex;align-items:center;justify-content:center">
+          <!-- Complete Memory Subsystem SVG -->
+          <svg viewBox="0 0 440 460" width="420" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="m-arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6" fill="none" stroke="var(--text-dim)" stroke-width="1"/>
+              </marker>
+            </defs>
+
+            <!-- 1. Conversation Turn -->
+            <rect x="130" y="10" width="180" height="40" rx="4" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="220" y="34" fill="var(--accent)" font-family="JetBrains Mono" font-size="8" letter-spacing="1" text-anchor="middle">TOUR DE CONVERSATION</text>
+            <path d="M220 50 L220 75" stroke="var(--accent)" stroke-width="1.2" stroke-dasharray="4 2" marker-end="url(#m-arr)"/>
+
+            <!-- 2. Episodic Log -->
+            <rect x="130" y="75" width="180" height="40" rx="2" fill="var(--surface-2)" stroke="var(--text-dim)" stroke-width="1"/>
+            <text x="220" y="93" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">MÉMOIRE ÉPISODIQUE</text>
+            <text x="220" y="103" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="7" opacity="0.6" text-anchor="middle">episodic.jsonl</text>
+            
+            <!-- Path to Consolidation -->
+            <path d="M220 115 L220 145" stroke="var(--amber)" stroke-width="1.2" marker-end="url(#m-arr)"/>
+            <text x="230" y="132" fill="var(--amber)" font-family="JetBrains Mono" font-size="7">Consolidation (30s)</text>
+
+            <!-- 3. LLM Consolidation Actor -->
+            <rect x="110" y="145" width="220" height="45" rx="4" fill="var(--surface-2)" stroke="var(--amber)" stroke-width="1.5"/>
+            <text x="220" y="165" fill="var(--amber)" font-family="JetBrains Mono" font-size="8" font-weight="bold" text-anchor="middle">ACTOR CONSOLIDATION</text>
+            <text x="220" y="177" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">Extraction entités &amp; relations</text>
+
+            <!-- 4. Core Knowledge Store -->
+            <path d="M220 190 L220 220" stroke="var(--amber)" stroke-width="1.2" marker-end="url(#m-arr)"/>
+            
+            <!-- Graph Visualization -->
+            <g transform="translate(130, 220)">
+              <rect x="0" y="0" width="180" height="150" rx="8" fill="var(--surface)" stroke="var(--amber)" stroke-width="1" stroke-dasharray="4 4"/>
+              <text x="90" y="20" fill="var(--amber)" font-family="JetBrains Mono" font-size="9" font-weight="bold" text-anchor="middle">KNOWLEDGE GRAPH</text>
+              <text x="90" y="32" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">Grafeo DB</text>
+
+              <!-- Nodes & Edges -->
+              <circle cx="50" cy="70" r="12" fill="var(--surface-2)" stroke="var(--amber)" stroke-width="1"/>
+              <circle cx="130" cy="70" r="12" fill="var(--surface-2)" stroke="var(--amber)" stroke-width="1"/>
+              <circle cx="90" cy="110" r="12" fill="var(--surface-2)" stroke="var(--amber)" stroke-width="1"/>
+              <line x1="62" y1="70" x2="118" y2="70" stroke="var(--amber)" stroke-width="1" opacity="0.4"/>
+              <line x1="58" y1="80" x2="82" y2="102" stroke="var(--amber)" stroke-width="1" opacity="0.4"/>
+              <line x1="122" y1="80" x2="98" y2="102" stroke="var(--amber)" stroke-width="1" opacity="0.4"/>
+            </g>
+
+            <!-- 5. Vector Embeddings (Satellite) -->
+            <rect x="330" y="245" width="90" height="50" rx="4" fill="var(--surface-2)" stroke="var(--green)" stroke-width="1"/>
+            <text x="375" y="265" fill="var(--green)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">EMBEDDINGS</text>
+            <text x="375" y="275" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="6" text-anchor="middle">Recherche Sémantique</text>
+            <path d="M310 270 L330 270" stroke="var(--green)" stroke-width="1" stroke-dasharray="2 2"/>
+
+            <!-- 6. Zettelkasten (Satellite) -->
+            <rect x="20" y="245" width="90" height="50" rx="4" fill="var(--surface-2)" stroke="var(--cyan)" stroke-width="1"/>
+            <text x="65" y="265" fill="var(--cyan)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">ZETTELKASTEN</text>
+            <text x="65" y="275" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="6" text-anchor="middle">Notes Markdown</text>
+            <path d="M130 270 L110 270" stroke="var(--cyan)" stroke-width="1" stroke-dasharray="2 2"/>
+
+            <!-- 7. Recall Loop back to Prompt -->
+            <path d="M130 310 Q60 310 60 40 L130 30" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#m-arr)" class="flow-path"/>
+            <text x="40" y="190" fill="var(--accent)" font-family="JetBrains Mono" font-size="8" transform="rotate(-90 40 190)" text-anchor="middle">RAPPEL SÉMANTIQUE</text>
+            <text x="75" y="420" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="7" text-anchor="middle">Injection de Faits dans le Prompt</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 10: INTERFACES & OBS -->
+  <div class="slide" id="slide-10">
+    <div style="width:100%;max-width:1100px">
+      <div class="slide-label">09 — Interfaces &amp; Observabilité</div>
+      <h2 class="section-title">Interfaces &amp; Observabilité</h2>
+      <div class="accent-bar"></div>
+      <div class="cols">
+        <div class="col vstack">
+          <div class="card-title" style="color:var(--cyan);font-family:'JetBrains Mono';font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">Interfaces Client</div>
+          <ul class="bullets">
+            <li><b>HTTP/WebSocket</b> — Serveur Bun sur port 3000, upgrade <code>/ws</code>, fichiers statiques</li>
+            <li><b>CLI</b> — interface terminal locale, streaming vers la console</li>
+            <li><b>Signal TCP</b> — socket persistant basse latence pour clients mobiles</li>
+          </ul>
+          <div class="code-block" style="margin-top:14px; font-size:11px"><span class="cm">// Toutes les interfaces publient sur le MÊME topic</span>
+<span class="kw">ctx</span>.publish(<span class="ty">InboundMessageTopic</span>, {
+  clientId, userId, text,
+  traceId, parentSpanId
+})
+<span class="cm">// Le Session Manager route vers le bon chatbot</span></div>
+        </div>
+        <div class="col vstack">
+          <div class="card-title" style="color:var(--red);font-family:'JetBrains Mono';font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">Pile d'Observabilité</div>
+          <div class="grid-2" style="gap:12px">
+            <div class="card" style="padding:14px 16px">
+              <div class="card-title" style="color:var(--red)">Journalisation Structurée</div>
+              <p style="font-size:13px">Format JSONL. Écriture asynchrone bufferisée. S'abonne au topic <code>system.log</code>.</p>
+            </div>
+            <div class="card" style="padding:14px 16px">
+              <div class="card-title" style="color:var(--red)">Traçage Distribué</div>
+              <p style="font-size:13px">Headers W3C traceparent. Arborescence de spans. Flamegraph dans l'UI.</p>
+            </div>
+            <div class="card" style="padding:14px 16px">
+              <div class="card-title" style="color:var(--red)">Métriques</div>
+              <p style="font-size:13px">Messages, échecs, redémarrages, taille de mailbox, temps de traitement par actor.</p>
+            </div>
+            <div class="card" style="padding:14px 16px">
+              <div class="card-title" style="color:var(--red)">Suivi des Coûts</div>
+              <p style="font-size:13px">Coût LLM par requête. Breakdown par utilisateur. Rapports quotidiens.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 11: AUTH & MULTI-TENANCY -->
+  <div class="slide" id="slide-11">
+    <div style="width:100%;max-width:1100px">
+      <div class="slide-label">10 — Sécurité &amp; Isolation</div>
+      <h2 class="section-title">Auth &amp; Multi-Tenancy</h2>
+      <div class="accent-bar"></div>
+      <div class="cols">
+        <div class="col vstack">
+          <p class="body">Rorschach est nativement <b>multi-utilisateur</b>. L'isolation n'est pas une surcouche, mais une propriété fondamentale du Session Manager et du système d'actors.</p>
+          <div class="card">
+            <div class="card-title">Authentification par QR Code</div>
+            <p>Flux sécurisé pour terminaux mobiles : le serveur génère un secret temporaire, le client scanne et s'enregistre. Pas de mots de passe stockés en clair.</p>
+          </div>
+          <div class="card">
+            <div class="card-title">User Store &amp; Profils</div>
+            <p>Gestion persistante des identités, préférences et clés API par utilisateur. Chaque utilisateur a son propre espace de stockage isolé.</p>
+          </div>
+        </div>
+        <div class="col vstack">
+          <div class="card">
+            <div class="card-title">Isolation des Sessions</div>
+            <p>Le <b>Session Manager</b> agit comme un gardien. Pour chaque <code>userId</code>, il maintient un actor Chatbot dédié. Les messages sont routés strictement par ID, garantissant qu'aucune donnée ne fuite entre les sessions.</p>
+          </div>
+          <div class="card">
+            <div class="card-title">Sandboxing des Ressources</div>
+            <p>La mémoire (KGraph) et les logs sont préfixés par <code>userId</code>. Un actor dans la session A ne peut physiquement pas adresser ou lire l'état d'un actor dans la session B.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 12: AGENTIC NOTEBOOK -->
+  <div class="slide" id="slide-12">
+    <div style="width:100%;max-width:1100px">
+      <div class="slide-label">11 — Capacités Avancées</div>
+      <h2 class="section-title">Agentic Notebook</h2>
+      <div class="accent-bar"></div>
+      <div class="cols">
+        <div class="col vstack">
+          <p class="body">Le plugin <b>notebook</b> transforme Rorschach d'un simple chat en un système de gestion de connaissances actif. Les notes ne sont pas passives ; elles sont des entités avec lesquelles les agents interagissent.</p>
+          <ul class="bullets">
+            <li><b>Note Agent :</b> Actor spécialisé dans l'organisation et la synthèse de notes.</li>
+            <li><b>Todo &amp; Rappels :</b> Gestionnaire de tâches intégré avec rappels proactifs basés sur le contexte.</li>
+            <li><b>Journaling :</b> Journal de bord quotidien automatisé capturant les insights clés.</li>
+          </ul>
+        </div>
+        <div class="col vstack">
+          <div class="card" style="border-color:var(--cyan)">
+            <div class="card-title" style="color:var(--cyan)">Outils de Productivité</div>
+            <p>Les agents disposent d'outils dédiés (<code>notes.ts</code>, <code>todos.ts</code>) pour lire, écrire et lier des informations dans le Zettelkasten de l'utilisateur.</p>
+          </div>
+          <div class="card" style="border-color:var(--amber)">
+            <div class="card-title" style="color:var(--amber)">Lien avec la Mémoire</div>
+            <p>Chaque note est un nœud dans le Knowledge Graph. La création d'une note déclenche automatiquement des liens vers les entités liées, enrichissant le contexte futur de l'assistant.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 13: SCALABILITY -->
+  <div class="slide" id="slide-13">
+    <div style="width:100%;max-width:1200px">
+      <div class="slide-label">12 — Échelle</div>
+      <h2 class="section-title">Principes de Scalabilité</h2>
+      <div class="accent-bar"></div>
+      <p class="body" style="margin-bottom:24px">Rorschach est conçu pour que <em>l'architecture ne change pas à mesure que le système grandit</em>. Ajouter un million d'agents est la même opération qu'en ajouter un. L'arbre de supervision est fractal.</p>
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-title">Handlers sans état</div>
+          <p>Les gestionnaires sont des fonctions pures de (état, message). Pas de globales ambiantes. L'état vit dans la boucle de la mailbox, pas dans des closures. Facile à raisonner, impossible à corrompre.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Mailboxes Bornées</div>
+          <p>Chaque actor a une capacité configurable et une stratégie de débordement (<code>drop-newest</code>). La Backpressure est architecturale, pas applicative.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">E/S Asynchrones via pipeToSelf</div>
+          <p>Les actors ne bloquent jamais. <code>ctx.pipeToSelf(promise, onSuccess, onFailure)</code> résout la promesse dans la mailbox — libérant la boucle d'événements.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Recharge à chaud</div>
+          <p>Un plugin peut être remplacé sans arrêter le reste du système. Ses enfants s'arrêtent, le nouveau code est importé, un nouvel actor est lancé. Zéro temps d'arrêt.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Arrêt Gracieux</div>
+          <p>Le mode <code>drain()</code> de la mailbox traite les messages en attente avant de quitter. Pas de messages perdus sur un SIGTERM.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Arbres de Supervision</div>
+          <p>Les défaillances sont contenues à l'origine. Un crash d'outil n'affecte pas la mémoire. Un crash de chatbot n'affecte pas le fournisseur LLM.</p>
+        </div>
+      </div>
+      <div class="card" style="margin-top:20px; border-color:var(--amber)">
+        <div class="card-title" style="color:var(--amber)">L'Invariant Fractal</div>
+        <p style="font-size:15px; color:var(--text-dim)">Une sous-arborescence d'actors est indiscernable d'un seul actor — elle a un nom, accepte des messages, produit des sorties. C'est pourquoi l'architecture scale sans refonte.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 14: LIVE DATA FLOW -->
+  <div class="slide" id="slide-14">
+    <div style="width:100%;max-width:1100px">
+      <div class="slide-label">13 — Round-Trip Complet</div>
+      <h2 class="section-title">Flux de Données en Direct</h2>
+      <div class="accent-bar"></div>
+      <p class="body" style="margin-bottom:20px">Un seul message utilisateur traverse tout le système. Chaque saut est un message d'actor typé. Chaque frontière est observable.</p>
+
+      <!-- Animated flow SVG -->
+      <svg viewBox="0 0 940 220" width="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="af" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6" fill="none" stroke="var(--accent)" stroke-width="1.2"/>
+          </marker>
+          <marker id="af2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6" fill="none" stroke="var(--amber)" stroke-width="1.2"/>
+          </marker>
+          <marker id="af3" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6" fill="none" stroke="var(--green)" stroke-width="1.2"/>
+          </marker>
+        </defs>
+
+        <!-- Input Row (Left) -->
+        <rect x="10" y="70" width="80" height="50" rx="4" fill="var(--surface-2)" stroke="var(--cyan)" stroke-width="1.5"/>
+        <text x="50" y="93" fill="var(--cyan)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">USER (IN)</text>
+        <path d="M90 95 L110 95" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#af)" class="flow-path"/>
+
+        <rect x="110" y="70" width="80" height="50" rx="4" fill="var(--surface-2)" stroke="var(--cyan)" stroke-width="1.5"/>
+        <text x="150" y="93" fill="var(--cyan)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">INTERFACE</text>
+        <path d="M190 95 L210 95" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#af)" class="flow-path"/>
+
+        <!-- Middle Process -->
+        <rect x="210" y="70" width="90" height="50" rx="4" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1.5"/>
+        <text x="255" y="90" fill="var(--accent)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">SESSION</text>
+        <text x="255" y="102" fill="var(--accent)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">MANAGER</text>
+        <path d="M300 95 L320 95" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#af)" class="flow-path"/>
+
+        <!-- Central Hub -->
+        <rect x="320" y="55" width="110" height="80" rx="4" fill="var(--surface)" stroke="var(--accent)" stroke-width="2.5"/>
+        <text x="375" y="93" fill="var(--accent)" font-family="Bebas Neue" font-size="14" letter-spacing="2" text-anchor="middle">CHATBOT</text>
+
+        <!-- LLM provider (Top) -->
+        <path d="M375 55 Q400 20 460 20" stroke="var(--green)" stroke-width="1.5" marker-end="url(#af3)" class="flow-path"/>
+        <rect x="460" y="10" width="100" height="50" rx="4" fill="var(--surface-2)" stroke="var(--green)" stroke-width="1.5"/>
+        <text x="510" y="38" fill="var(--green)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">LLM PROVIDER</text>
+        <path d="M460 35 Q400 45 385 55" stroke="var(--green)" stroke-width="1.2" marker-end="url(#af3)" class="flow-path" stroke-dasharray="4 3"/>
+
+        <!-- Outils (Bottom) -->
+        <path d="M375 135 Q400 170 460 170" stroke="var(--amber)" stroke-width="1.5" marker-end="url(#af2)" class="flow-path amber"/>
+        <rect x="460" y="150" width="100" height="50" rx="4" fill="var(--surface-2)" stroke="var(--amber)" stroke-width="1.5"/>
+        <text x="510" y="178" fill="var(--amber)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">OUTILS</text>
+        <path d="M460 185 Q400 200 375 135" stroke="var(--amber)" stroke-width="1.2" marker-end="url(#af2)" class="flow-path amber" stroke-dasharray="4 3"/>
+
+        <!-- Event Stream -->
+        <path d="M430 95 L590 95" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#af)" class="flow-path"/>
+        <rect x="590" y="70" width="130" height="50" rx="4" fill="var(--surface-2)" stroke="var(--border-mid)" stroke-width="1.5" stroke-dasharray="5 3"/>
+        <text x="655" y="93" fill="var(--text-dim)" font-family="JetBrains Mono" font-size="8" letter-spacing="1" text-anchor="middle">EVENT STREAM</text>
+
+        <!-- Memory from Event Stream -->
+        <path d="M655 120 L655 150" stroke="var(--amber)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#af2)" class="flow-path amber"/>
+        <rect x="590" y="150" width="130" height="50" rx="4" fill="var(--surface-2)" stroke="var(--amber)" stroke-width="1.5"/>
+        <text x="655" y="178" fill="var(--amber)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">MÉMOIRE</text>
+
+        <!-- Output Row (Right) -->
+        <path d="M720 95 L750 95" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#af)" class="flow-path"/>
+        <rect x="750" y="70" width="80" height="50" rx="4" fill="var(--surface-2)" stroke="var(--cyan)" stroke-width="1.5"/>
+        <text x="790" y="93" fill="var(--cyan)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">INTERFACE</text>
+
+        <path d="M830 95 L850 95" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#af)" class="flow-path"/>
+        <rect x="850" y="70" width="80" height="50" rx="4" fill="var(--surface-2)" stroke="var(--cyan)" stroke-width="1.5"/>
+        <text x="890" y="93" fill="var(--cyan)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">USER (OUT)</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 15: FUTURE DIRECTIONS -->
+  <div class="slide" id="slide-15">
+    <div style="width:100%;max-width:1100px">
+      <div class="slide-label">14 — Évolution</div>
+      <h2 class="section-title">Directions Futures</h2>
+      <div class="accent-bar"></div>
+      <p class="body" style="margin-bottom:24px">Le substrat d'actors permet des capacités qui nécessiteraient des refontes architecturales dans des systèmes monolithiques. Ce sont des extensions naturelles, pas des refontes.</p>
+      <div class="grid-2" style="gap:18px">
+        <div class="future-card">
+          <h4>Essaims Multi-Agents</h4>
+          <p>Lancement de centaines d'agents spécialisés par tâche — chercheur, critique, exécuteur — coordonnés par messagerie. Le chatbot devient un orchestrateur de haut niveau.</p>
+        </div>
+        <div class="future-card">
+          <h4>Déploiement Distribué</h4>
+          <p>Remplacement du <code>send()</code> local par un transport réseau (gRPC, WebSocket). Les actors migrent vers des nœuds distants sans changer leur logique métier.</p>
+        </div>
+        <div class="future-card">
+          <h4>Mémoire Auto-Améliorée</h4>
+          <p>Un actor dédié surveille la qualité du KGraph, identifie les lacunes et planifie des tâches de synthèse ou de recherche ciblée en autonomie.</p>
+        </div>
+        <div class="future-card">
+          <h4>Hiérarchies d'Objectifs</h4>
+          <p>Le planificateur décompose les objectifs complexes en arbres de tâches. L'arbre de supervision EST le plan — l'échec et la replanification sont structurels.</p>
+        </div>
+        <div class="future-card">
+          <h4>Clusters Cognitifs</h4>
+          <p>Sous-arbres optimisés pour différentes tâches : agents réactifs rapides (Haiku), raisonnement profond (Opus), exécution de code, pipelines de vision — tous composables.</p>
+        </div>
+        <div class="future-card">
+          <h4>Apprentissage Continu</h4>
+          <p>Enregistrement des résultats → comparaison aux prédictions → feedback pour le fine-tuning. Le système apprend de son propre déploiement via la consolidation.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ SLIDE 16: CLOSING -->
+  <div class="slide" id="slide-16">
+    <div class="center vstack" style="align-items:center; max-width:700px; gap:28px">
+      <div class="slide-label">Philosophie de l'Architecture</div>
+      <h1 class="hero" style="font-size:clamp(50px,7vw,90px); letter-spacing:6px">RORSCHACH</h1>
+
+      <div style="border-left:3px solid var(--accent);padding-left:24px;text-align:left;margin:8px 0">
+        <p style="font-size:19px;line-height:1.8;color:var(--text-dim);font-style:italic;font-family:'Lora',serif">
+          "L'isolation prévient les défaillances catastrophiques.<br>
+          La sécurité de type prévient la corruption sémantique.<br>
+          Le passage de messages permet une composition illimitée."
+        </p>
+      </div>
+
+      <div class="pill-list" style="justify-content:center; margin-top:8px">
+        <span class="pill hi">Actor Model</span>
+        <span class="pill hi">Typed Pub/Sub</span>
+        <span class="pill hi">Arbres de Supervision</span>
+        <span class="pill hi">Plugin-First</span>
+        <span class="pill hi">TypeScript + Bun</span>
+        <span class="pill amber">Hot Reload</span>
+        <span class="pill amber">Mémoire KGraph</span>
+        <span class="pill amber">Boucle ReAct</span>
+      </div>
+
+      <div style="margin-top:8px; display:flex; gap:40px; text-align:center">
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:36px;color:var(--accent);letter-spacing:2px">8</div>
+          <div style="font-family:'JetBrains Mono';font-size:10px;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase">Plugins</div>
+        </div>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:36px;color:var(--accent);letter-spacing:2px">∞</div>
+          <div style="font-family:'JetBrains Mono';font-size:10px;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase">Profondeur</div>
+        </div>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:36px;color:var(--amber);letter-spacing:2px">0</div>
+          <div style="font-family:'JetBrains Mono';font-size:10px;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase">État Partagé</div>
+        </div>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:36px;color:var(--amber);letter-spacing:2px">1</div>
+          <div style="font-family:'JetBrains Mono';font-size:10px;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase">Substrat</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /#deck -->
+
+<!-- UI chrome -->
+<div id="progress" style="width:6.25%"></div>
+<div id="counter">01 / 16</div>
+<div id="nav-hint">← → pour naviguer</div>
+
+<script>
+  const TOTAL = 16;
+  let current = 1;
+  let animating = false;
+
+  function goTo(n) {
+    if (n < 1 || n > TOTAL || n === current || animating) return;
+    animating = true;
+
+    const prev = document.getElementById('slide-' + current);
+    const next = document.getElementById('slide-' + n);
+
+    if (!prev || !next) {
+      animating = false;
+      return;
+    }
+
+    prev.classList.remove('active');
+    prev.classList.add('exit-left');
+    
+    next.style.transform = 'translateY(24px)';
+    next.style.opacity = '0';
+    next.classList.add('active');
+    
+    // Trigger reflow
+    void next.offsetWidth;
+    
+    next.style.transform = '';
+    next.style.opacity = '';
+
+    current = n;
+    
+    const counter = document.getElementById('counter');
+    if (counter) {
+      counter.textContent = String(current).padStart(2,'0') + ' / ' + String(TOTAL).padStart(2,'0');
+    }
+    
+    const progress = document.getElementById('progress');
+    if (progress) {
+      progress.style.width = (current / TOTAL * 100).toFixed(2) + '%';
+    }
+
+    setTimeout(() => { 
+      prev.classList.remove('exit-left');
+      animating = false; 
+    }, 520);
+  }
+
+  document.addEventListener('keydown', e => {
+    // ArrowRight, Space, PageDown, Enter
+    if (['ArrowRight', 'Space', 'PageDown', 'Enter'].includes(e.code) || e.key === ' ') {
+      e.preventDefault();
+      goTo(current + 1);
+    }
+    // ArrowLeft, PageUp, Backspace
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.code)) {
+      e.preventDefault();
+      goTo(current - 1);
+    }
+    else if (e.code === 'Home') {
+      e.preventDefault();
+      goTo(1);
+    }
+    else if (e.code === 'End') {
+      e.preventDefault();
+      goTo(TOTAL);
+    }
+  });
+
+  // Click right half = next, left half = prev
+  const deck = document.getElementById('deck');
+  if (deck) {
+    deck.addEventListener('click', e => {
+      const half = window.innerWidth / 2;
+      if (e.clientX > half) goTo(current + 1);
+      else goTo(current - 1);
+    });
+  }
+
+  // Touch swipe
+  let touchX = 0;
+  document.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; }, {passive: true});
+  document.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) > 50) goTo(current + (dx < 0 ? 1 : -1));
+  }, {passive: true});
+</script>
+
+</body>
+</html>
