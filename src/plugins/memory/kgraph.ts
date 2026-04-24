@@ -1,22 +1,16 @@
 import { GrafeoDB } from '@grafeo-db/js'
-import { dirname } from 'node:path'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ToolSchema } from '../../types/tools.ts'
 import type { EmbeddingReply, LlmProviderMsg } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type { KgraphGraph, KgraphMsg, KgraphRefEvent, UpsertResult, VectorSearchMatch } from '../../types/memory.ts'
+import type { KgraphGraph, KgraphMsg, KgraphRefEvent, CreateNodeResult, VectorSearchMatch } from '../../types/memory.ts'
 import { KgraphTopic } from '../../types/memory.ts'
 import { ask } from '../../system/ask.ts'
 export { KgraphTopic }
 export type { KgraphGraph, KgraphMsg, KgraphRefEvent }
 
 // ─── Constants ───
-
-// GrafeoDB vectorSearch returns cosine *distance* (0 = identical, 1 = orthogonal),
-// sorted ascending. We merge when distance is below this threshold, which
-// corresponds to a cosine similarity of (1 - UPSERT_DISTANCE_THRESHOLD) = 0.88.
-const UPSERT_DISTANCE_THRESHOLD = 0.12
 
 // Node labels that get a vector index on startup
 const INDEXED_LABELS = ['Note'] as const
@@ -50,15 +44,15 @@ export const KGRAPH_QUERY_SCHEMA: ToolSchema = {
   },
 }
 
-export const KGRAPH_WRITE_TOOL_NAME = 'kgraph_write'
+export const KGRAPH_CREATE_LINK_TOOL_NAME = 'kgraph_create_link'
 
-export const KGRAPH_WRITE_SCHEMA: ToolSchema = {
+export const KGRAPH_CREATE_LINK_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
-    name: KGRAPH_WRITE_TOOL_NAME,
+    name: KGRAPH_CREATE_LINK_TOOL_NAME,
     description:
       'Execute a Cypher write statement to store or update relationships in the knowledge graph. ' +
-      'Use for relationships (MERGE/SET/DELETE) only — use kgraph_upsert to create or update nodes. ' +
+      'Use for relationships (MERGE/SET/DELETE) only — use kgraph_create_node to create nodes. ' +
       'Returns "ok" on success. ' +
       'Node constraint: when referencing nodes inline, only "name" and "description" properties are allowed. ' +
       'Example: MERGE (a:Note {name:"Bun Runtime"})-[:LINKS_TO]->(b:Note {name:"TypeScript Preferences"})',
@@ -79,16 +73,15 @@ export const KGRAPH_WRITE_SCHEMA: ToolSchema = {
   },
 }
 
-export const KGRAPH_UPSERT_TOOL_NAME = 'kgraph_upsert'
+export const KGRAPH_CREATE_NODE_TOOL_NAME = 'kgraph_create_node'
 
-export const KGRAPH_UPSERT_SCHEMA: ToolSchema = {
+export const KGRAPH_CREATE_NODE_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
-    name: KGRAPH_UPSERT_TOOL_NAME,
+    name: KGRAPH_CREATE_NODE_TOOL_NAME,
     description:
-      'Create or update a node in the knowledge graph with semantic deduplication. ' +
-      'Uses vector similarity to detect existing nodes that represent the same entity, even if named slightly differently. ' +
-      'Returns { canonicalName, nodeId, merged } — always use canonicalName (not the name you passed) in subsequent kgraph_write calls. ' +
+      'Create a new node in the knowledge graph. ' +
+      'Returns { name, nodeId }. Use nodeId in subsequent kgraph_create_link calls. ' +
       'Node constraint: nodes only store "name" and "description". Put all detail in the description; any other properties will be ignored.',
     parameters: {
       type: 'object',
@@ -198,11 +191,11 @@ export const createKgraphActor = (
           (error) => ({ type: '_queryErr'  as const, error: String(error), replyTo, span }),
         )
 
-      } else if (toolName === KGRAPH_WRITE_TOOL_NAME) {
+      } else if (toolName === KGRAPH_CREATE_LINK_TOOL_NAME) {
         const args = JSON.parse(rawArgs) as { statement: string; userId?: string }
-        ctx.log.info('kgraph write', { statement: args.statement, userId: args.userId })
+        ctx.log.info('kgraph create_link', { statement: args.statement, userId: args.userId })
         const span = parent
-          ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_WRITE_TOOL_NAME, { statement: args.statement })
+          ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_CREATE_LINK_TOOL_NAME, { statement: args.statement })
           : null
         const db = resolveDb(state, args.userId, basePath)
 
@@ -227,19 +220,19 @@ export const createKgraphActor = (
           (error)   => ({ type: '_writeErr'  as const, error: String(error), replyTo, span }),
         )
 
-      } else if (toolName === KGRAPH_UPSERT_TOOL_NAME) {
+      } else if (toolName === KGRAPH_CREATE_NODE_TOOL_NAME) {
         const args = JSON.parse(rawArgs) as { label: string; name: string; properties?: Record<string, unknown>; embeddingText?: string; userId?: string }
         const { label, name, embeddingText } = args
         const properties = args.properties
           ? Object.fromEntries(Object.entries(args.properties).filter(([k]) => k === 'description'))
           : undefined
-        ctx.log.info('kgraph upsert', { label, name, userId: args.userId })
+        ctx.log.info('kgraph create_node', { label, name, userId: args.userId })
         const span = parent
-          ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_UPSERT_TOOL_NAME, { label, name })
+          ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_CREATE_NODE_TOOL_NAME, { label, name })
           : null
 
         if (!embedding || !state.llmRef) {
-          replyTo.send({ type: 'toolError', error: 'kgraph_upsert requires embedding to be configured' })
+          replyTo.send({ type: 'toolError', error: 'kgraph_create_node requires embedding to be configured' })
           return { state }
         }
 
@@ -252,27 +245,9 @@ export const createKgraphActor = (
           )).then(() => ask<LlmProviderMsg, EmbeddingReply>(
             llmRef,
             (replyToEmbed) => ({ type: 'embed', requestId: crypto.randomUUID(), model: embedding.model, text: embeddingText ?? name, dimensions: embedding.dimensions, replyTo: replyToEmbed }),
-          ).then(async (reply): Promise<UpsertResult> => {
+          )).then(async (reply): Promise<CreateNodeResult> => {
             if (reply.type === 'embeddingError') throw new Error(reply.error)
             const vector = reply.embedding
-            
-            const candidates = await db.vectorSearch(label, '_embedding', vector, 5)
-
-            for (const pair of candidates) {
-              const nodeId = pair[0] as number
-              const score  = pair[1] as number
-              if (score > UPSERT_DISTANCE_THRESHOLD) break  // sorted ascending by distance
-              const node = db.getNode(nodeId)
-              if (!node) continue
-              const canonicalName = node.get('name') as string
-              for (const [k, v] of Object.entries(properties ?? {})) {
-                db.setNodeProperty(nodeId, k, v)
-              }
-              return { canonicalName, nodeId, merged: true }
-            }
-
-            // batchCreateNodes is required (not createNode) so the node is registered
-            // in the HNSW vector index and discoverable by future vectorSearch calls.
             const ids = await db.batchCreateNodes(label, '_embedding', [vector])
             const nodeId = ids[0]
             if (nodeId === undefined) throw new Error('batchCreateNodes returned no id')
@@ -280,10 +255,10 @@ export const createKgraphActor = (
             for (const [k, v] of Object.entries(properties ?? {})) {
               db.setNodeProperty(nodeId, k, v)
             }
-            return { canonicalName: name, nodeId, merged: false }
-          })),
-          (result) => ({ type: '_upsertDone' as const, result, replyTo, span }),
-          (error)  => ({ type: '_upsertErr'  as const, error: String(error), replyTo, span }),
+            return { name, nodeId }
+          }),
+          (result) => ({ type: '_createNodeDone' as const, result, replyTo, span }),
+          (error)  => ({ type: '_createNodeErr'  as const, error: String(error), replyTo, span }),
         )
 
       } else {
@@ -352,10 +327,10 @@ export const createKgraphActor = (
       const { matched, replyTo, span } = message
       span?.done({ matched })
       if (matched === 0) {
-        ctx.log.warn('kgraph write matched 0 rows — likely a missing upsert', {})
+        ctx.log.warn('kgraph create_link matched 0 rows — likely a missing create_node', {})
         replyTo.send({
           type: 'toolResult',
-          result: 'Warning: 0 rows matched — no relationships were written. Every node referenced in MATCH must exist via kgraph_upsert before calling kgraph_write. Check that all node names are correct and were previously upserted.',
+          result: 'Warning: 0 rows matched — no relationships were written. Every node referenced in MATCH must exist via kgraph_create_node before calling kgraph_create_link. Check that all node names are correct and were previously created.',
         })
       } else {
         replyTo.send({ type: 'toolResult', result: matched > 0 ? `ok (${matched} rows matched)` : 'ok' })
@@ -371,19 +346,73 @@ export const createKgraphActor = (
       return { state }
     },
 
-    _upsertDone: (state, message, ctx) => {
+    _createNodeDone: (state, message, ctx) => {
       const { result, replyTo, span } = message
-      ctx.log.info('kgraph upsert done', { canonicalName: result.canonicalName, merged: result.merged })
-      span?.done({ merged: result.merged })
+      ctx.log.info('kgraph create_node done', { name: result.name, nodeId: result.nodeId })
+      span?.done({ nodeId: result.nodeId })
       replyTo.send({ type: 'toolResult', result: JSON.stringify(result) })
       return { state }
     },
 
-    _upsertErr: (state, message, ctx) => {
+    _createNodeErr: (state, message, ctx) => {
       const { error, replyTo, span } = message
-      ctx.log.error('kgraph upsert failed', { error })
+      ctx.log.error('kgraph create_node failed', { error })
       span?.error(error)
       replyTo.send({ type: 'toolError', error })
+      return { state }
+    },
+
+    updateNode: (state, message, ctx) => {
+      const { nodeId, properties, embeddingText, userId, replyTo } = message
+
+      if (!state) {
+        replyTo.send({ type: 'toolError', error: 'kgraph database not ready' })
+        return { state }
+      }
+
+      const db = resolveDb(state, userId, basePath)
+
+      const applyProperties = (vec?: number[]) => {
+        if (vec) db.setNodeProperty(nodeId, '_embedding', vec)
+        for (const [k, v] of Object.entries(properties)) {
+          db.setNodeProperty(nodeId, k, v)
+        }
+      }
+
+      if (embeddingText && embedding && state.llmRef) {
+        const llmRef = state.llmRef
+        ctx.pipeToSelf(
+          ask<LlmProviderMsg, EmbeddingReply>(
+            llmRef,
+            (replyToEmbed) => ({ type: 'embed', requestId: crypto.randomUUID(), model: embedding.model, text: embeddingText, dimensions: embedding.dimensions, replyTo: replyToEmbed }),
+          ).then((reply) => {
+            if (reply.type === 'embeddingError') throw new Error(reply.error)
+            applyProperties(reply.embedding)
+          }),
+          () => ({ type: '_updateNodeDone' as const, replyTo }),
+          (error) => ({ type: '_updateNodeErr' as const, error: String(error), replyTo }),
+        )
+      } else {
+        try {
+          applyProperties()
+          replyTo.send({ type: 'toolResult', result: 'ok' })
+        } catch (e) {
+          replyTo.send({ type: 'toolError', error: String(e) })
+        }
+      }
+
+      return { state }
+    },
+
+    _updateNodeDone: (state, message, ctx) => {
+      ctx.log.info('kgraph update_node done', {})
+      message.replyTo.send({ type: 'toolResult', result: 'ok' })
+      return { state }
+    },
+
+    _updateNodeErr: (state, message, ctx) => {
+      ctx.log.error('kgraph update_node failed', { error: message.error })
+      message.replyTo.send({ type: 'toolError', error: message.error })
       return { state }
     },
 
