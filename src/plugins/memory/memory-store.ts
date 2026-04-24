@@ -81,7 +81,10 @@ const buildSystemPrompt = (userId: string, topic?: string): string => {
     `1. zettel_activate { text: "<summary of what to store>", userId: "${userId}" } — check if a note already covers this topic.\n` +
     `2. If a matching note is found → zettel_read it, then zettel_update with the merged information.\n` +
     `3. If no matching note exists → zettel_create a new atomic note.\n` +
-    `4. Return a brief confirmation of what was stored.\n\n` +
+    `4. After storing the note, use zettel_link to connect it to related notes if relevant:\n` +
+    `   zettel_link { sourceName: "Note Title", targetName: "Related Note", userId: "${userId}" }\n` +
+    `   Only link to notes confirmed to exist via zettel_activate or zettel_read.\n` +
+    `5. Return a brief confirmation of what was stored.\n\n` +
     `Only store what was explicitly provided. Do not infer beyond the given content.`
   )
 }
@@ -152,7 +155,7 @@ const createMemoryStoreWorkerActor = (
       return {
         state: { ...state, requestId, turnMessages: messages, accumulated: '', replyTo: msg.replyTo, userId },
         become: awaitingLlmHandler,
-      } as any
+      } 
     },
   })
 
@@ -204,7 +207,7 @@ const createMemoryStoreWorkerActor = (
       return {
         state:  { ...state, requestId: null, pendingBatch: batch },
         become: toolLoopHandler,
-      } as any
+      } 
     },
 
     llmDone: (state, msg, context) => {
@@ -270,7 +273,7 @@ const createMemoryStoreWorkerActor = (
       return {
         state:  { ...state, requestId, turnMessages: nextMessages, pendingBatch: null, toolLoopCount: nextLoopCount },
         become: awaitingLlmHandler,
-      } as any
+      } 
     },
   })
 

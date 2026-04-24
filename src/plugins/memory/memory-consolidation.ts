@@ -82,10 +82,12 @@ const buildSystemPrompt = (userId: string): string =>
   `   - If an existing note covers this topic → update it with new information:\n` +
   `     zettel_update { id: "<id>", content: "<merged content>", synopsis: "<updated synopsis>", userId: "${userId}" }\n` +
   `   - If no relevant note exists → create a new atomic note:\n` +
-  `     zettel_create { name: "<title>", synopsis: "<one sentence>", content: "<content>", tags: ["<tag>"], userId: "${userId}" }\n\n` +
+  `     zettel_create { name: "<title>", synopsis: "<one sentence>", content: "<content>", tags: ["<tag>"], userId: "${userId}" }\n` +
+  `   Repeat steps 1–3 for all topics. Create ALL notes before creating any links.\n\n` +
 
-  `4. **Link** — add [[wiki-links]] in content to connect related notes. Every wiki-link MUST reference the exact title of an existing note or a note you are creating. To read a linked note use:\n` +
-  `   zettel_read { name: "Note Title", userId: "${userId}" }\n\n` +
+  `4. **Link** — after ALL notes have been created or updated, use zettel_link to connect related notes:\n` +
+  `   zettel_link { sourceName: "Note A", targetName: "Note B", userId: "${userId}" }\n` +
+  `   Only call zettel_link after both notes are confirmed to exist.\n\n` +
 
   `5. **Episodic log** — append a brief entry for notable events or decisions:\n` +
   `   Use bash: cat >> /workspace/memory/${userId}/episodic/YYYY-MM-DD.md << 'EOF'\n` +

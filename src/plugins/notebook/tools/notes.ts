@@ -19,7 +19,7 @@ export const NOTES_CREATE_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: NOTES_CREATE_TOOL_NAME,
-    description: 'Create a new note with a title, markdown content, and optional tags. Wiki-style [[links]] to other notes are supported. ',
+    description: 'Create a new note with a title, markdown content, and optional tags. Wiki-style [[links]] to other notes are supported. IMPORTANT: Only use this tool when the user explicitly requests to create or manage a note. Do NOT use this tool to remember random facts or general user context; rely on the memory store instead.',
     parameters: {
       type: 'object',
       properties: {
@@ -36,7 +36,7 @@ export const NOTES_UPDATE_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: NOTES_UPDATE_TOOL_NAME,
-    description: 'Update an existing note by id.',
+    description: 'Update an existing note by id. IMPORTANT: Only use this tool for explicit user notes. Do not use for general facts or memory context.',
     parameters: {
       type: 'object',
       properties: {

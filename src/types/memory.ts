@@ -3,19 +3,20 @@ import type { ActorRef, SpanHandle } from '../system/types.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from './tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from './llm.ts'
 
-export type UpsertResult = { canonicalName: string; nodeId: number; merged: boolean }
+export type CreateNodeResult = { name: string; nodeId: number }
 
 // ─── Zettelkasten note types ───
 
 export type ZettelNote = {
-  id:        string
-  name:      string
-  synopsis:  string
-  tags:      string[]
-  createdAt: string
-  updatedAt: string
-  path:      string
-  links:     string[]
+  id:            string
+  name:          string
+  synopsis:      string
+  tags:          string[]
+  createdAt:     string
+  updatedAt:     string
+  path:          string
+  links:         string[]
+  kgraphNodeId?: number
 }
 
 export type ZettelIndex = { notes: ZettelNote[] }
@@ -50,8 +51,11 @@ export type KgraphMsg =
   | { type: '_queryErr';          error: string;               replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
   | { type: '_writeDone';         matched: number;             replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
   | { type: '_writeErr';          error: string;               replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
-  | { type: '_upsertDone';        result: UpsertResult;        replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
-  | { type: '_upsertErr';         error: string;               replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
+  | { type: '_createNodeDone';    result: CreateNodeResult;    replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
+  | { type: '_createNodeErr';     error: string;               replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
+  | { type: 'updateNode';         nodeId: number; properties: Record<string, unknown>; embeddingText?: string; userId?: string; replyTo: ActorRef<ToolReply> }
+  | { type: '_updateNodeDone';    replyTo: ActorRef<ToolReply> }
+  | { type: '_updateNodeErr';     error: string;               replyTo: ActorRef<ToolReply> }
   | { type: '_vectorSearchDone';  matches: VectorSearchMatch[]; replyTo: ActorRef<VectorSearchReply> }
   | { type: '_vectorSearchErr';   error: string;               replyTo: ActorRef<VectorSearchReply> }
   | { type: '_dumpDone';          graph: KgraphGraph;          replyTo: ActorRef<KgraphGraph> }

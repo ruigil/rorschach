@@ -28,6 +28,7 @@ import {
   ZETTEL_SEARCH_TOOL,  ZETTEL_SEARCH_SCHEMA,
   ZETTEL_ACTIVATE_TOOL, ZETTEL_ACTIVATE_SCHEMA,
   ZETTEL_LINKS_TOOL,    ZETTEL_LINKS_SCHEMA,
+  ZETTEL_LINK_TOOL,     ZETTEL_LINK_SCHEMA,
 } from './zettel-notes.ts'
 
 // ─── Config ───
@@ -95,6 +96,7 @@ const spawnMemoryActors = (
     [ZETTEL_SEARCH_TOOL]:   { schema: ZETTEL_SEARCH_SCHEMA,   ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
     [ZETTEL_ACTIVATE_TOOL]: { schema: ZETTEL_ACTIVATE_SCHEMA, ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
     [ZETTEL_LINKS_TOOL]:    { schema: ZETTEL_LINKS_SCHEMA,    ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
+    [ZETTEL_LINK_TOOL]:     { schema: ZETTEL_LINK_SCHEMA,     ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
   }
 
   const consolidation = ctx.spawn(

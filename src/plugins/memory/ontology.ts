@@ -21,7 +21,7 @@ export const zettelSection = (userId: string): string =>
   `updatedAt: ISO timestamp\n` +
   `links: [Linked Note Title]\n` +
   `---\n\n` +
-  `Content here. Use [[Note Title]] wiki-links to reference related notes.\n` +
+  `Content here.\n` +
   `\`\`\`\n\n` +
 
   `### Available tools\n\n` +
@@ -45,19 +45,25 @@ export const zettelSection = (userId: string): string =>
   `**zettel_search** { query, userId }\n` +
   `  Full-text search across note names, synopses, tags, and content.\n\n` +
 
+  `**zettel_link** { sourceId?, sourceName?, targetId?, targetName?, userId }\n` +
+  `  Create a directional link between two notes. Updates metadata and the knowledge graph.\n` +
+  `  Both notes must already exist. Call this only after all notes have been created/updated.\n\n` +
+
   `### A-Mem workflow (one topic at a time)\n` +
   `1. zettel_activate { text: "<topic summary>", userId } → candidate notes\n` +
   `2. zettel_read each candidate to see full content\n` +
   `3. If a candidate already covers this topic → zettel_update (merge new information)\n` +
   `4. If no relevant note exists → zettel_create (new atomic note)\n` +
-  `5. Add [[wiki-links]] in content to connect related notes. Every [[wiki-link]] MUST reference an existing note title or a note being created in the same turn.\n\n` +
+  `   Repeat steps 1–4 for all topics. Create ALL notes before creating any links.\n` +
+  `5. zettel_link { sourceName, targetName, userId } for each relationship between notes.\n` +
+  `   Only call zettel_link after both notes are confirmed to exist.\n\n` +
 
   `### Note writing rules\n` +
   `- One note per concept or fact cluster. Keep notes atomic and self-contained.\n` +
   `- synopsis must accurately summarize the note content — it drives semantic search.\n` +
   `- Tags are lowercase, single-word or hyphenated: ["typescript", "work", "preference"].\n` +
   `- Do not duplicate facts across notes — update the canonical note instead.\n` +
-  `- **Strict Link Validation**: NEVER speculate on note titles. Only use [[wiki-links]] for:\n` +
+  `- **Strict Link Validation**: NEVER speculate on note titles. Only create links via zettel_link using:\n` +
   `  1. The exact 'name' returned by zettel_activate, zettel_read, or zettel_list.\n` +
-  `  2. The exact 'name' of a new note you are calling zettel_create for in this same turn.\n` +
+  `  2. The exact 'name' of a note you just created with zettel_create in this same turn.\n` +
   `- If you want to link to a concept but don't know if a note exists, use zettel_search or zettel_activate to discover it first.`
