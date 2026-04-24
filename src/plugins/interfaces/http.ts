@@ -3,10 +3,10 @@ import { mkdir } from 'node:fs/promises'
 import type { Server, ServerWebSocket } from 'bun'
 import { emit } from '../../system/types.ts'
 import {
-  WsMessageTopic, WsConnectTopic, WsDisconnectTopic,
-  WsSendTopic, WsBroadcastTopic, HttpConfigTopic, ConfigSnapshotTopic,
-} from '../../types/ws.ts'
-import type { HttpConfigPayload, ConfigSnapshotEvent } from '../../types/ws.ts'
+  InboundMessageTopic, ClientConnectTopic, ClientDisconnectTopic,
+  OutboundMessageTopic, OutboundBroadcastTopic, HttpConfigTopic, ConfigSnapshotTopic,
+} from '../../types/events.ts'
+import type { HttpConfigPayload, ConfigSnapshotEvent } from '../../types/events.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
@@ -158,7 +158,7 @@ export const createHttpActor = (
         context.log.info(`client connected: ${message.clientId} userId=${message.userId ?? 'anon'} (${connections} total)`)
         return {
           state: { ...state, connections },
-          events: [emit(WsConnectTopic, { clientId: message.clientId, userId: message.userId, roles: message.roles })],
+          events: [emit(ClientConnectTopic, { clientId: message.clientId, userId: message.userId, roles: message.roles })],
         }
       },
 
@@ -182,7 +182,7 @@ export const createHttpActor = (
 
         return {
           state: newState,
-          events: [emit(WsMessageTopic, {
+          events: [emit(InboundMessageTopic, {
             clientId: message.clientId,
             text: message.text,
             traceId: span.traceId,
@@ -197,7 +197,7 @@ export const createHttpActor = (
         if (!span) return { state }
         return {
           state,
-          events: [emit(WsMessageTopic, {
+          events: [emit(InboundMessageTopic, {
             clientId,
             text,
             images: imagePaths.length > 0 ? imagePaths : undefined,
@@ -218,12 +218,12 @@ export const createHttpActor = (
           const { [message.clientId]: _, ...rest } = state.activeSpans
           return {
             state: { ...state, connections, activeSpans: rest },
-            events: [emit(WsDisconnectTopic, { clientId: message.clientId })],
+            events: [emit(ClientDisconnectTopic, { clientId: message.clientId })],
           }
         }
         return {
           state: { ...state, connections },
-          events: [emit(WsDisconnectTopic, { clientId: message.clientId })],
+          events: [emit(ClientDisconnectTopic, { clientId: message.clientId })],
         }
       },
 
@@ -301,13 +301,13 @@ export const createHttpActor = (
       start: (state, context) => {
         selfRef = context.self
 
-        context.subscribe(WsSendTopic, (e) => ({
+        context.subscribe(OutboundMessageTopic, (e) => ({
           type: 'send' as const,
           clientId: e.clientId,
           text: e.text,
         }))
 
-        context.subscribe(WsBroadcastTopic, (e) => ({
+        context.subscribe(OutboundBroadcastTopic, (e) => ({
           type: 'broadcast' as const,
           text: e.text,
         }))

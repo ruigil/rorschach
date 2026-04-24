@@ -3,7 +3,7 @@ import type { ActorDef, PersistenceAdapter } from '../../system/types.ts'
 import { emit } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ToolInvokeMsg, ToolSchema } from '../../types/tools.ts'
-import { CronTriggerTopic } from '../../types/ws.ts'
+import { CronTriggerTopic } from '../../types/events.ts'
 
 // ─── Tool names & schemas ───
 

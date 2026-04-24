@@ -5,8 +5,8 @@ import {
   SystemLifecycleTopic,
   TraceTopic,
 } from './system/index.ts'
-import { WsBroadcastTopic, WsConnectTopic, WsSendTopic, HttpConfigTopic, ConfigSnapshotTopic } from './types/ws.ts'
-import type { HttpConfigPayload } from './types/ws.ts'
+import { OutboundBroadcastTopic, ClientConnectTopic, OutboundMessageTopic, HttpConfigTopic, ConfigSnapshotTopic } from './types/events.ts'
+import type { HttpConfigPayload } from './types/events.ts'
 import { loadConfig, saveConfig } from './config.ts'
 import type { LogEvent, MetricsEvent, LifecycleEvent, TraceSpan } from './system/index.ts'
 import { ToolRegistrationTopic } from './types/tools.ts'
@@ -72,7 +72,7 @@ system.publish(ConfigSnapshotTopic, { config: buildConfigSnapshot(config) })
 // ─── Forward logs to the observability page via WebSocket broadcast ───
 
 system.subscribe(LogTopic, (event: LogEvent) => {
-  system.publish(WsBroadcastTopic, {
+  system.publish(OutboundBroadcastTopic, {
     text: JSON.stringify({ type: 'log', ...event }),
   })
 })
@@ -80,7 +80,7 @@ system.subscribe(LogTopic, (event: LogEvent) => {
 // ─── Forward metrics snapshots to the observability page ───
 
 system.subscribe(MetricsTopic, (event: MetricsEvent) => {
-  system.publish(WsBroadcastTopic, {
+  system.publish(OutboundBroadcastTopic, {
     text: JSON.stringify({ type: 'metrics', ...event }),
   })
 })
@@ -93,12 +93,12 @@ const toolsSnapshot: Record<string, Extract<ToolRegistrationEvent, { schema: unk
 system.subscribe(ToolRegistrationTopic, (event: ToolRegistrationEvent) => {
   if (event.ref === null) {
     delete toolsSnapshot[event.name]
-    system.publish(WsBroadcastTopic, {
+    system.publish(OutboundBroadcastTopic, {
       text: JSON.stringify({ type: 'tool_unregistered', name: event.name }),
     })
   } else {
     toolsSnapshot[event.name] = event
-    system.publish(WsBroadcastTopic, {
+    system.publish(OutboundBroadcastTopic, {
       text: JSON.stringify({ type: 'tool_registered', name: event.name, schema: event.schema }),
     })
   }
@@ -106,9 +106,9 @@ system.subscribe(ToolRegistrationTopic, (event: ToolRegistrationEvent) => {
 
 // ─── Replay current tools to each newly connected client ───
 
-system.subscribe(WsConnectTopic, ({ clientId }) => {
+system.subscribe(ClientConnectTopic, ({ clientId }) => {
   for (const event of Object.values(toolsSnapshot)) {
-    system.publish(WsSendTopic, {
+    system.publish(OutboundMessageTopic, {
       clientId,
       text: JSON.stringify({ type: 'tool_registered', name: event.name, schema: event.schema }),
     })
@@ -118,7 +118,7 @@ system.subscribe(WsConnectTopic, ({ clientId }) => {
 // ─── Forward trace spans to the observability page ───
 
 system.subscribe(TraceTopic, (span: TraceSpan) => {
-  system.publish(WsBroadcastTopic, {
+  system.publish(OutboundBroadcastTopic, {
     text: JSON.stringify({ type: 'trace', ...span }),
   })
 })

@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { mkdirSync } from 'node:fs'
 import { createPluginSystem } from '../system/index.ts'
 import { createSignalActor, renderForSignal } from '../plugins/interfaces/signal.ts'
-import { WsConnectTopic, WsMessageTopic, WsSendTopic } from '../types/ws.ts'
-import type { WsConnectEvent, WsMessageEvent } from '../types/ws.ts'
+import { ClientConnectTopic, InboundMessageTopic, OutboundMessageTopic } from '../types/events.ts'
+import type { ClientConnectEvent, InboundMessageEvent } from '../types/events.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -59,13 +59,13 @@ describe('signal actor: TCP socket', () => {
   })
 
   test('emits WsConnect + WsMessage when the daemon pushes an envelope', async () => {
-    const connectEvents: WsConnectEvent[] = []
-    const messageEvents: WsMessageEvent[] = []
+    const connectEvents: ClientConnectEvent[] = []
+    const messageEvents: InboundMessageEvent[] = []
 
     daemon = startMockSignalDaemon(17590)
     const system = await createPluginSystem()
-    system.subscribe(WsConnectTopic,  e => connectEvents.push(e))
-    system.subscribe(WsMessageTopic,  e => messageEvents.push(e))
+    system.subscribe(ClientConnectTopic,  e => connectEvents.push(e))
+    system.subscribe(InboundMessageTopic,  e => messageEvents.push(e))
 
     system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17590 }),
       { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {}, userStoreRef: null, pendingConnect: new Map() })
@@ -83,11 +83,11 @@ describe('signal actor: TCP socket', () => {
   })
 
   test('does not re-emit WsConnect for the same sender on a second message', async () => {
-    const connectEvents: WsConnectEvent[] = []
+    const connectEvents: ClientConnectEvent[] = []
 
     daemon = startMockSignalDaemon(17591)
     const system = await createPluginSystem()
-    system.subscribe(WsConnectTopic, e => connectEvents.push(e))
+    system.subscribe(ClientConnectTopic, e => connectEvents.push(e))
 
     system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17591 }),
       { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {}, userStoreRef: null, pendingConnect: new Map() })
@@ -112,8 +112,8 @@ describe('signal actor: TCP socket', () => {
     await tick(100)
 
     const md = '**hello** _world_'
-    system.publish(WsSendTopic, { clientId: '+3333333333', text: JSON.stringify({ type: 'chunk', text: md }) })
-    system.publish(WsSendTopic, { clientId: '+3333333333', text: JSON.stringify({ type: 'done' }) })
+    system.publish(OutboundMessageTopic, { clientId: '+3333333333', text: JSON.stringify({ type: 'chunk', text: md }) })
+    system.publish(OutboundMessageTopic, { clientId: '+3333333333', text: JSON.stringify({ type: 'done' }) })
     await tick(200)
 
     const sendLine = daemon.receivedLines.find(l => {
@@ -131,7 +131,7 @@ describe('signal actor: TCP socket', () => {
   })
 
   test('emits WsMessage with images when an envelope contains attachments', async () => {
-    const messageEvents: WsMessageEvent[] = []
+    const messageEvents: InboundMessageEvent[] = []
 
     const attachmentsDir = `${tmpdir()}/rorschach-test-${crypto.randomUUID()}`
     const attachmentId   = 'test-attach-001'
@@ -140,7 +140,7 @@ describe('signal actor: TCP socket', () => {
 
     daemon = startMockSignalDaemon(17595)
     const system = await createPluginSystem()
-    system.subscribe(WsMessageTopic, e => messageEvents.push(e))
+    system.subscribe(InboundMessageTopic, e => messageEvents.push(e))
 
     system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17595, attachmentsDir }),
       { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {}, userStoreRef: null, pendingConnect: new Map() })
@@ -168,11 +168,11 @@ describe('signal actor: TCP socket', () => {
   })
 
   test('reconnects after the daemon drops the connection', async () => {
-    const messageEvents: WsMessageEvent[] = []
+    const messageEvents: InboundMessageEvent[] = []
 
     daemon = startMockSignalDaemon(17593)
     const system = await createPluginSystem()
-    system.subscribe(WsMessageTopic, e => messageEvents.push(e))
+    system.subscribe(InboundMessageTopic, e => messageEvents.push(e))
 
     system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17593, reconnectMs: 200 }),
       { seenIds: new Set<string>(), pending: new Map<string, string>(), activeSpans: {}, userStoreRef: null, pendingConnect: new Map() })
@@ -230,12 +230,12 @@ describe('signal actor: TCP socket', () => {
   })
 
   test('integration: receives messages and attachments from signal-cli TCP at 127.0.0.1:7583', async () => {
-    const connectEvents: WsConnectEvent[] = []
-    const messageEvents: WsMessageEvent[] = []
+    const connectEvents: ClientConnectEvent[] = []
+    const messageEvents: InboundMessageEvent[] = []
 
     const system = await createPluginSystem()
-    system.subscribe(WsConnectTopic, e => connectEvents.push(e))
-    system.subscribe(WsMessageTopic, e => messageEvents.push(e))
+    system.subscribe(ClientConnectTopic, e => connectEvents.push(e))
+    system.subscribe(InboundMessageTopic, e => messageEvents.push(e))
 
     const ref = system.spawn('signal', createSignalActor({
       host: '127.0.0.1',
@@ -271,8 +271,8 @@ describe('signal actor: TCP socket', () => {
 
     await tick(200)  // wait for connection
 
-    system.publish(WsSendTopic, { clientId: '+41762189620', text: JSON.stringify({ type: 'chunk', text: 'test from rorschach TCP actor' }) })
-    system.publish(WsSendTopic, { clientId: '+41762189620', text: JSON.stringify({ type: 'done' }) })
+    system.publish(OutboundMessageTopic, { clientId: '+41762189620', text: JSON.stringify({ type: 'chunk', text: 'test from rorschach TCP actor' }) })
+    system.publish(OutboundMessageTopic, { clientId: '+41762189620', text: JSON.stringify({ type: 'done' }) })
 
     await tick(500)
 

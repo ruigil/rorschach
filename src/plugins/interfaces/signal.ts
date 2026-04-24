@@ -7,7 +7,7 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { join } from 'node:path'
 import { ask } from '../../system/ask.ts'
 
-import { WsConnectTopic, WsMessageTopic, WsSendTopic } from '../../types/ws.ts'
+import { ClientConnectTopic, InboundMessageTopic, OutboundMessageTopic } from '../../types/events.ts'
 import { UserStoreTopic } from '../auth/types.ts'
 import type { UserStoreMsg, User } from '../auth/types.ts'
 
@@ -298,7 +298,7 @@ export const createSignalActor = (
   return {
     lifecycle: onLifecycle({
       start: (state, ctx) => {
-        ctx.subscribe(WsSendTopic,    e => ({ type: '_send'             as const, clientId: e.clientId, text: e.text }))
+        ctx.subscribe(OutboundMessageTopic,    e => ({ type: '_send'             as const, clientId: e.clientId, text: e.text }))
         ctx.subscribe(UserStoreTopic, e => ({ type: '_userStoreChanged' as const, ref: e.ref }))
         ctx.timers.startSingleTimer('reconnect', { type: '_reconnect' }, 0)
         ctx.log.info(`signal actor: connecting to ${host}:${port}`)
@@ -382,7 +382,7 @@ export const createSignalActor = (
           const activeSpans = { ...state.activeSpans, [phone]: span }
           return {
             state: { ...state, activeSpans },
-            events: [emit(WsMessageTopic, {
+            events: [emit(InboundMessageTopic, {
               clientId:    phone,
               text,
               ...(imageAttachments.length > 0 ? { images: attachmentPaths(imageAttachments) } : {}),
@@ -504,13 +504,13 @@ export const createSignalActor = (
         const seenIds = new Set(state.seenIds)
         seenIds.add(phone)
         const events: ReturnType<typeof emit>[] = [
-          emit(WsConnectTopic, { clientId: phone, userId, roles: [] }),
+          emit(ClientConnectTopic, { clientId: phone, userId, roles: [] }),
         ]
         let activeSpans = { ...state.activeSpans }
         for (const buf of buffered) {
           const span = ctx.trace.start('request', { clientId: phone })
           activeSpans = { ...activeSpans, [phone]: span }
-          events.push(emit(WsMessageTopic, {
+          events.push(emit(InboundMessageTopic, {
             clientId:    phone,
             text:        buf.text,
             ...(buf.images ? { images: buf.images } : {}),

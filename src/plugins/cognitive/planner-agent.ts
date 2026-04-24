@@ -3,7 +3,7 @@ import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, MessageHandler, ActorResult } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
-import { WsSendTopic } from '../../types/ws.ts'
+import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { ApiMessage, LlmProviderMsg, LlmProviderReply, Tool, ToolCall } from '../../types/llm.ts'
 import type { Plan, PlannerInputMsg, PlanTask } from '../../types/planner.ts'
@@ -252,8 +252,8 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
     return {
       state: { ...state },
       events: [
-        emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) }),
-        emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'error', text: errorText }) }),
+        emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) }),
+        emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'error', text: errorText }) }),
       ],
       become: doneHandler,
     }
@@ -332,8 +332,8 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
           pendingAskUser: { toolCallId: controlCall.id, messagesAtCall: updatedHistory },
         },
         events: [
-          emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: question }) }),
-          emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
+          emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: question }) }),
+          emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
         ],
         become: awaitingUserHandler,
       }
@@ -370,8 +370,8 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
           proposedPlan: plan,
         },
         events: [
-          emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: formatPlanMarkdown(plan) }) }),
-          emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
+          emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: formatPlanMarkdown(plan) }) }),
+          emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
         ],
         become: refinementLoopHandler,
       }
@@ -400,7 +400,7 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
 
       return {
         state: { ...state, history: updatedHistory, proposedPlan: null, pendingSummary: summary },
-        events: [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: 'Saving your plan…' }) })],
+        events: [emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: 'Saving your plan…' }) })],
         become: finalizingHandler,
       }
     }
@@ -449,11 +449,11 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
         state,
         events: state.pending
           ? [
-              emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) }),
-              emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: state.pending }) }),
-              emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
+              emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) }),
+              emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: state.pending }) }),
+              emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
             ]
-          : [emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) })],
+          : [emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) })],
         become: doneHandler,
       }
     },
@@ -579,9 +579,9 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
       return {
         state,
         events: [
-          emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) }),
-          emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: `\nPlan saved to \`${msg.filepath}\`` }) }),
-          emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
+          emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) }),
+          emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: `\nPlan saved to \`${msg.filepath}\`` }) }),
+          emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
         ],
         become: doneHandler,
         unstashAll: true,
@@ -595,8 +595,8 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
       return {
         state,
         events: [
-          emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) }),
-          emit(WsSendTopic, { clientId, text: JSON.stringify({ type: 'error', text: `Failed to save plan: ${msg.error}` }) }),
+          emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) }),
+          emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'error', text: `Failed to save plan: ${msg.error}` }) }),
         ],
         become: doneHandler,
       }

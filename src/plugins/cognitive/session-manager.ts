@@ -1,6 +1,6 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { WsConnectTopic, WsDisconnectTopic, WsMessageTopic, CronTriggerTopic } from '../../types/ws.ts'
+import { ClientConnectTopic, ClientDisconnectTopic, InboundMessageTopic, CronTriggerTopic } from '../../types/events.ts'
 import { createChatbotActor } from './chatbot.ts'
 import type { ChatbotState } from './chatbot.ts'
 import type { ToolFilter } from '../../types/tools.ts'
@@ -67,9 +67,9 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
   return {
     lifecycle: onLifecycle({
       start: (state, context) => {
-        context.subscribe(WsConnectTopic,    e => ({ type: '_connected'    as const, clientId: e.clientId, userId: e.userId, roles: e.roles }))
-        context.subscribe(WsDisconnectTopic, e => ({ type: '_disconnected' as const, clientId: e.clientId }))
-        context.subscribe(WsMessageTopic,    e => ({ type: '_message'      as const, clientId: e.clientId, text: e.text, images: e.images, audio: e.audio, pdfs: e.pdfs, traceId: e.traceId, parentSpanId: e.parentSpanId, isCron: e.isCron }))
+        context.subscribe(ClientConnectTopic,    e => ({ type: '_connected'    as const, clientId: e.clientId, userId: e.userId, roles: e.roles }))
+        context.subscribe(ClientDisconnectTopic, e => ({ type: '_disconnected' as const, clientId: e.clientId }))
+        context.subscribe(InboundMessageTopic,    e => ({ type: '_message'      as const, clientId: e.clientId, text: e.text, images: e.images, audio: e.audio, pdfs: e.pdfs, traceId: e.traceId, parentSpanId: e.parentSpanId, isCron: e.isCron }))
         context.subscribe(CronTriggerTopic,  e => ({ type: '_cronTrigger'  as const, userId: e.userId, text: e.text, traceId: e.traceId, parentSpanId: e.parentSpanId }))
         context.subscribe(PlannerActiveTopic, e => ({ type: '_plannerSessionUpdated' as const, clientId: e.clientId, plannerRef: e.plannerRef ?? null, summary: 'summary' in e ? e.summary : undefined }))
         return { state }

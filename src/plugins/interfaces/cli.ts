@@ -1,11 +1,11 @@
 import type { ActorDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import {
-  WsConnectTopic,
-  WsDisconnectTopic,
-  WsMessageTopic,
-  WsSendTopic,
-} from '../../types/ws.ts'
+  ClientConnectTopic,
+  ClientDisconnectTopic,
+  InboundMessageTopic,
+  OutboundMessageTopic,
+} from '../../types/events.ts'
 
 // ─── ANSI codes ───
 const C = {
@@ -246,7 +246,7 @@ export const createCliActor = (): ActorDef<CliMsg, CliState> => {
       start: (state, ctx) => {
         currentState = state
 
-        ctx.subscribe(WsSendTopic, e => ({ type: '_send' as const, clientId: e.clientId, text: e.text }))
+        ctx.subscribe(OutboundMessageTopic, e => ({ type: '_send' as const, clientId: e.clientId, text: e.text }))
 
         // ─── Raw-mode stdin ───
         if (process.stdin.isTTY) process.stdin.setRawMode(true)
@@ -304,7 +304,7 @@ export const createCliActor = (): ActorDef<CliMsg, CliState> => {
       },
 
       stopped: (state, ctx) => {
-        if (state.connected) ctx.publish(WsDisconnectTopic, { clientId: CLI_CLIENT_ID })
+        if (state.connected) ctx.publish(ClientDisconnectTopic, { clientId: CLI_CLIENT_ID })
         process.stdout.write('\x1b[r\x1b[2J\x1b[H')  // reset scroll region, clear, home
         if (process.stdin.isTTY) process.stdin.setRawMode(false)
         return { state }
@@ -315,9 +315,9 @@ export const createCliActor = (): ActorDef<CliMsg, CliState> => {
       _userInput: (state, message, ctx) => {
         if (state.status === 'waiting') return { state }
 
-        if (!state.connected) ctx.publish(WsConnectTopic, { clientId: CLI_CLIENT_ID, userId: null, roles: [] })
+        if (!state.connected) ctx.publish(ClientConnectTopic, { clientId: CLI_CLIENT_ID, userId: null, roles: [] })
 
-        ctx.publish(WsMessageTopic, {
+        ctx.publish(InboundMessageTopic, {
           clientId: CLI_CLIENT_ID,
           text:     message.text,
           traceId:  crypto.randomUUID(),

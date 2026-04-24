@@ -2,7 +2,7 @@ import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, MessageHandler, PersistenceAdapter, SpanHandle, ActorResult } from '../../system/types.ts'
 import { ask } from '../../system/ask.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { WsSendTopic, MemoryStreamTopic } from '../../types/ws.ts'
+import { OutboundMessageTopic, MemoryStreamTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
@@ -382,9 +382,9 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
             toolLoopCount:    0,
           },
           events: [
-            emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'plannerMode', active: true }) }),
-            emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'chunk', text: handoffText }) }),
-            emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) }),
+            emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'plannerMode', active: true }) }),
+            emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'chunk', text: handoffText }) }),
+            emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) }),
           ],
           become: planningModeHandler,
         }
@@ -395,7 +395,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         handles?.requestSpan.error('tool unavailable')
         return {
           state: { ...state, requestId: null, turnMessages: null, spanHandles: null, pendingUsage: { promptTokens: 0, completionTokens: 0 } },
-          events: [emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool unavailable. Please try again.' }) })],
+          events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool unavailable. Please try again.' }) })],
           become: idleHandler,
         }
       }
@@ -446,7 +446,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           pendingBatch: batch,
           ...(handles ? { spanHandles: { ...handles, llmSpan: undefined, toolSpans: newToolSpans } } : {}),
         },
-        events: [emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'searching', tools: calls.map(c => c.name) }) })],
+        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'searching', tools: calls.map(c => c.name) }) })],
         become: toolLoopHandler,
       }
     },
@@ -456,7 +456,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       const { text } = message
       return {
         state: { ...state, pending: state.pending + text },
-        events: [emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'chunk', text }) })],
+        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'chunk', text }) })],
       }
     },
 
@@ -465,7 +465,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       const { text } = message
       return {
         state: { ...state, pendingReasoning: state.pendingReasoning + text },
-        events: [emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'reasoningChunk', text }) })],
+        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'reasoningChunk', text }) })],
       }
     },
 
@@ -507,7 +507,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         },
         events: [
           emit(MemoryStreamTopic, { userId: userId ?? 'default', userText, assistantText: state.pending, timestamp: Date.now() }),
-          emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) }),
+          emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) }),
         ],
         become: idleHandler,
       }
@@ -523,7 +523,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
       return {
         state: { ...state, requestId: null, turnMessages: null, spanHandles: null, pending: '', pendingReasoning: '', pendingUsage: { promptTokens: 0, completionTokens: 0 } },
-        events: [emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }) })],
+        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }) })],
         become: idleHandler,
       }
     },
@@ -553,7 +553,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       const remaining = batch.remaining - 1
 
       const sourceEvents = sources
-        ? [emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'sources', sources }) })]
+        ? [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'sources', sources }) })]
         : []
 
       if (remaining > 0) {
@@ -589,7 +589,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           },
           events: [
             ...sourceEvents,
-            emit(WsSendTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool loop limit reached. Please try again.' }) }),
+            emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool loop limit reached. Please try again.' }) }),
           ],
           become: idleHandler,
         }

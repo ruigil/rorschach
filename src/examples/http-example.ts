@@ -1,5 +1,5 @@
 import { createPluginSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
-import { WsMessageTopic } from '../types/ws.ts'
+import { InboundMessageTopic } from '../types/events.ts'
 import interfacesPlugin from '../plugins/interfaces/interfaces.plugin.ts'
 import type { LifecycleEvent, LogEvent } from '../system/types.ts'
 
@@ -25,7 +25,7 @@ system.subscribe(LogTopic, (event) => {
 })
 
 // ─── Subscribe to domain events published by the HTTP actor ───
-system.subscribe(WsMessageTopic, ({ clientId, text }) => {
+system.subscribe(InboundMessageTopic, ({ clientId, text }) => {
   console.log(`\n📨 Received from browser [${clientId.slice(0, 8)}…]: "${text}"\n`)
 })
 

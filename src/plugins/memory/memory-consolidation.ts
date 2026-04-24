@@ -1,7 +1,7 @@
 import type { ActorDef, ActorRef, ActorResult, MessageHandler } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { MemoryStreamTopic } from '../../types/ws.ts'
-import type { MemoryTurnEvent } from '../../types/ws.ts'
+import { MemoryStreamTopic } from '../../types/events.ts'
+import type { MemoryTurnEvent } from '../../types/events.ts'
 import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import type {

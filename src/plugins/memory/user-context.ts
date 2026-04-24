@@ -12,7 +12,7 @@ import type {
 import type { UserContextMsg } from '../../types/memory.ts'
 import { UserContextTopic } from '../../types/memory.ts'
 import { zettelSection } from './ontology.ts'
-import { CronTriggerTopic } from '../../types/ws.ts'
+import { CronTriggerTopic } from '../../types/events.ts'
 
 // ─── Options ───
 

@@ -1,6 +1,6 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { createPluginSystem } from '../system/index.ts'
-import { WsSendTopic } from '../types/ws.ts'
+import { OutboundMessageTopic } from '../types/events.ts'
 import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
@@ -79,13 +79,13 @@ afterEach(() => {
   globalThis.fetch = originalFetch
 })
 
-// ─── Collect WsSendTopic events ───
+// ─── Collect OutboundMessageTopic events ───
 
 type ParsedEvent = Record<string, unknown> & { type: string }
 
 const collectEvents = (system: Awaited<ReturnType<typeof createPluginSystem>>): ParsedEvent[] => {
   const events: ParsedEvent[] = []
-  system.subscribe(WsSendTopic, ({ text }) => {
+  system.subscribe(OutboundMessageTopic, ({ text }) => {
     try { events.push(JSON.parse(text) as ParsedEvent) } catch { /* ignore */ }
   })
   return events

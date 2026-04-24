@@ -1,7 +1,7 @@
 import type { ActorDef } from '../../system/types.ts'
 import { emit } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { WsBroadcastTopic } from '../../types/ws.ts'
+import { OutboundBroadcastTopic } from '../../types/events.ts'
 import type { Todo, TodoReminderMsg } from './types.ts'
 
 // ─── State ───
@@ -55,7 +55,7 @@ export const createTodoReminderActor = (notebookDir: string): ActorDef<TodoRemin
   handler: onMessage<TodoReminderMsg, TodoReminderState>({
     _tick: (state, msg) => ({
       state,
-      events: [emit(WsBroadcastTopic, { text: JSON.stringify({ type: 'notification', text: `Reminder: ${msg.text}` }) })],
+      events: [emit(OutboundBroadcastTopic, { text: JSON.stringify({ type: 'notification', text: `Reminder: ${msg.text}` }) })],
     }),
 
     _scan: (state, _msg, ctx) => {
