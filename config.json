@@ -53,7 +53,7 @@
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "model": "google/gemini-3-flash-preview",
+        "model": "google/gemini-3.1-flash-lite-preview",
         "historyWindow": 40,
         "toolFilter": {
           "deny": [
@@ -76,8 +76,8 @@
         "embeddingDimensions": 4096
       },
       "system": {
-        "model": "google/gemini-3-flash-preview",
-        "consolidationIntervalMs": 60000
+        "model": "moonshotai/kimi-k2.6",
+        "consolidationIntervalMs": 3600000
       }
     },
     "notebook": {
