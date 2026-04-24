@@ -1,7 +1,7 @@
 import { createWebSearchActor, type WebSearchActorOptions as WebSearchActorConfig, WEB_SEARCH_SCHEMA, WEB_SEARCH_TOOL_NAME } from './web-search.ts'
 import { createBashActor, BASH_TOOL_NAME, BASH_SCHEMA, WRITE_TOOL_NAME, WRITE_SCHEMA, READ_TOOL_NAME, READ_SCHEMA } from './bash.ts'
 import { createVisionActor, ANALYZE_IMAGE_TOOL_NAME, ANALYZE_IMAGE_SCHEMA, GENERATE_IMAGE_TOOL_NAME, GENERATE_IMAGE_SCHEMA } from './vision-actor.ts'
-import { createCronActor, type CronState, CRON_CREATE_TOOL_NAME, CRON_CREATE_SCHEMA, CRON_DELETE_TOOL_NAME, CRON_DELETE_SCHEMA, CRON_LIST_TOOL_NAME, CRON_LIST_SCHEMA, CURRENT_TIME_TOOL_NAME, CURRENT_TIME_SCHEMA } from './cron.ts'
+import { createCronActor, type CronState, CRON_CREATE_TOOL_NAME, CRON_CREATE_SCHEMA, CRON_DELETE_TOOL_NAME, CRON_DELETE_SCHEMA, CRON_LIST_TOOL_NAME, CRON_LIST_SCHEMA } from './cron.ts'
 import { createAudioActor, type AudioState, TRANSCRIBE_AUDIO_TOOL_NAME, TRANSCRIBE_AUDIO_SCHEMA, TEXT_TO_SPEECH_TOOL_NAME, TEXT_TO_SPEECH_SCHEMA } from './audio.ts'
 import { createPdfActor, PDF_TOOL_NAME, PDF_SCHEMA } from './pdf.ts'
 import { createFetchFileActor, FETCH_FILE_TOOL_NAME, FETCH_FILE_SCHEMA } from './fetch-file.ts'
@@ -103,7 +103,6 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       ctx.publishRetained(ToolRegistrationTopic, CRON_CREATE_TOOL_NAME,   { name: CRON_CREATE_TOOL_NAME,   schema: CRON_CREATE_SCHEMA,   ref: cronRef })
       ctx.publishRetained(ToolRegistrationTopic, CRON_DELETE_TOOL_NAME,   { name: CRON_DELETE_TOOL_NAME,   schema: CRON_DELETE_SCHEMA,   ref: cronRef })
       ctx.publishRetained(ToolRegistrationTopic, CRON_LIST_TOOL_NAME,     { name: CRON_LIST_TOOL_NAME,     schema: CRON_LIST_SCHEMA,     ref: cronRef })
-      ctx.publishRetained(ToolRegistrationTopic, CURRENT_TIME_TOOL_NAME,  { name: CURRENT_TIME_TOOL_NAME,  schema: CURRENT_TIME_SCHEMA,  ref: cronRef })
 
       const pdfRef = ctx.spawn('pdf-0', createPdfActor(), null) as ActorRef<ToolInvokeMsg>
       ctx.publishRetained(ToolRegistrationTopic, PDF_TOOL_NAME, { name: PDF_TOOL_NAME, schema: PDF_SCHEMA, ref: pdfRef })
@@ -149,7 +148,6 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         ctx.deleteRetained(ToolRegistrationTopic, CRON_CREATE_TOOL_NAME,  { name: CRON_CREATE_TOOL_NAME,  ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, CRON_DELETE_TOOL_NAME,  { name: CRON_DELETE_TOOL_NAME,  ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, CRON_LIST_TOOL_NAME,    { name: CRON_LIST_TOOL_NAME,    ref: null })
-        ctx.deleteRetained(ToolRegistrationTopic, CURRENT_TIME_TOOL_NAME, { name: CURRENT_TIME_TOOL_NAME, ref: null })
       }
       if (state.pdf.ref) {
         ctx.deleteRetained(ToolRegistrationTopic, PDF_TOOL_NAME, { name: PDF_TOOL_NAME, ref: null })

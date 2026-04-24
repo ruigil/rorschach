@@ -52,17 +52,6 @@ export const CRON_LIST_SCHEMA: ToolSchema = {
   },
 }
 
-export const CURRENT_TIME_TOOL_NAME = 'get_current_time'
-
-export const CURRENT_TIME_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: CURRENT_TIME_TOOL_NAME,
-    description: 'Returns the current local date and time with timezone offset. Use this before scheduling cron jobs.',
-    parameters: { type: 'object', properties: {} },
-  },
-}
-
 // ─── Types ───
 
 type CronJob = {
@@ -204,13 +193,6 @@ export const createCronActor = (): ActorDef<CronMsg, CronState> => ({
           return `- ${j.id}: "${j.expression}" → ${preview}\n  Next: ${formatLocalDate(j.nextFireAt)}  Last fired: ${lastFired}`
         })
         replyTo.send({ type: 'toolResult', result: lines.join('\n') })
-        return { state }
-      }
-
-      if (toolName === CURRENT_TIME_TOOL_NAME) {
-        const now = Date.now()
-        const tzName = Intl.DateTimeFormat().resolvedOptions().timeZone
-        replyTo.send({ type: 'toolResult', result: `${formatLocalDate(now)} (${tzName})` })
         return { state }
       }
 
