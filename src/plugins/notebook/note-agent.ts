@@ -36,6 +36,7 @@ export type NoteAgentState = {
   requestId:     string | null
   replyTo:       ActorRef<ToolReply> | null
   clientId:      string | undefined
+  userId:        string
   turnMessages:  ApiMessage[] | null
   pending:       string
   pendingBatch:  PendingBatch | null
@@ -67,6 +68,7 @@ const resetTurn = (state: NoteAgentState): NoteAgentState => ({
   requestId:     null,
   replyTo:       null,
   clientId:      undefined,
+  userId:        '',
   turnMessages:  null,
   pending:       '',
   pendingBatch:  null,
@@ -131,6 +133,7 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
           requestId,
           replyTo:      msg.replyTo,
           clientId:     msg.clientId,
+          userId:       msg.userId,
           turnMessages: messages,
           pending:      '',
           pendingBatch: null,
@@ -198,7 +201,7 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
         context.pipeToSelf(
           ask<ToolInvokeMsg, ToolReply>(
             entry.ref,
-            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId: state.clientId }),
+            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId: state.clientId, userId: state.userId }),
           ),
           (reply): NoteAgentMsg => ({ type: '_toolResult', toolName: call.name, toolCallId: call.id, reply }),
           (error): NoteAgentMsg => ({
@@ -329,6 +332,7 @@ export const createInitialNoteAgentState = (options: NoteAgentOptions): NoteAgen
   requestId:     null,
   replyTo:       null,
   clientId:      undefined,
+  userId:        '',
   turnMessages:  null,
   pending:       '',
   pendingBatch:  null,

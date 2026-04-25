@@ -32,7 +32,8 @@ describe('fetch-file actor', () => {
         type: 'invoke',
         toolName: 'fetch_file',
         arguments: JSON.stringify({ url: 'https://example.com/test.txt' }),
-        replyTo
+        replyTo,
+        userId: 'test-user',
       }),
       { timeoutMs: 1000 },
     )
@@ -71,7 +72,8 @@ describe('fetch-file actor', () => {
         type: 'invoke',
         toolName: 'fetch_file',
         arguments: JSON.stringify({ url: 'https://example.com/missing' }),
-        replyTo
+        replyTo,
+        userId: 'test-user',
       }),
       { timeoutMs: 1000 },
     )
@@ -99,7 +101,8 @@ describe('fetch-file actor', () => {
         type: 'invoke',
         toolName: 'fetch_file',
         arguments: JSON.stringify({ url: 'https://example.com/fail' }),
-        replyTo
+        replyTo,
+        userId: 'test-user',
       }),
       { timeoutMs: 1000 },
     )

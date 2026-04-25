@@ -40,7 +40,8 @@ describe('audio actor', () => {
         type: 'invoke',
         toolName: 'text_to_speech',
         arguments: JSON.stringify({ text: 'hello world' }),
-        replyTo
+        replyTo,
+        userId: 'test-user',
       }),
       { timeoutMs: 1000 }
     )
@@ -104,7 +105,8 @@ describe('audio actor', () => {
         type: 'invoke',
         toolName: 'transcribe_audio',
         arguments: JSON.stringify({ audio: testFile, format: 'wav' }),
-        replyTo
+        replyTo,
+        userId: 'test-user',
       }),
       { timeoutMs: 2000 }
     )

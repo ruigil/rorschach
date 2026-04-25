@@ -290,6 +290,7 @@ const upsertInKgraph = async (
       toolName: 'kgraph_create_node',
       arguments: JSON.stringify({ label: 'Note', name, properties: { description: synopsis }, embeddingText, userId }),
       replyTo,
+      userId,
     }),
   )
 
@@ -325,6 +326,7 @@ const linkNotesInKgraph = async (
         toolName: 'kgraph_create_link',
         arguments: JSON.stringify({ statement, userId }),
         replyTo,
+        userId,
       }),
     ).catch(() => {})  // best-effort: link may fail if canonical names diverged
   }
@@ -575,7 +577,7 @@ const handleLink = async (
     `MERGE (a)-[:LINKS_TO]->(b)`
   await ask<KgraphMsg, ToolReply>(
     kgraphRef,
-    (replyTo) => ({ type: 'invoke', toolName: 'kgraph_create_link', arguments: JSON.stringify({ statement, userId }), replyTo }),
+    (replyTo) => ({ type: 'invoke', toolName: 'kgraph_create_link', arguments: JSON.stringify({ statement, userId }), replyTo, userId }),
   ).catch(() => {})
 
   log.info('zettel-notes: linked notes', { userId, source: source.name, target: target.name })
@@ -600,7 +602,7 @@ export const createZettelNotesActor = (kgraphRef: ActorRef<KgraphMsg>): ActorDef
       }
 
       const { toolName, arguments: rawArgs, replyTo } = msg
-      const userId = msg.userId ?? 'default'
+      const userId = msg.userId
 
       ctx.pipeToSelf(
         (async () => {

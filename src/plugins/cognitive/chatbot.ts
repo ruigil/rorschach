@@ -81,7 +81,7 @@ export type ChatbotActorOptions = {
   toolFilter?:    ToolFilter
   plannerConfig?: PlannerConfig
   maxToolLoops?:  number
-  userId?:        string | null
+  userId:         string
   roles?:         string[]
   llmRef?:        ActorRef<LlmProviderMsg> | null
 }
@@ -424,7 +424,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         context.pipeToSelf(
           ask<ToolInvokeMsg, ToolReply>(
             entry.ref,
-            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId, userId: userId ?? undefined }),
+            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId, userId }),
             undefined,
             toolSpan ? context.trace.injectHeaders(toolSpan) : undefined,
           ),
@@ -506,7 +506,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           sessionUsage: newSession,
         },
         events: [
-          emit(MemoryStreamTopic, { userId: userId ?? 'default', userText, assistantText: state.pending, timestamp: Date.now() }),
+          emit(MemoryStreamTopic, { userId, userText, assistantText: state.pending, timestamp: Date.now() }),
           emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) }),
         ],
         become: idleHandler,
@@ -650,7 +650,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
   })
 
   return {
-    persistence: userId ? createPersistence(userId, clientId, initialLlmRef) : undefined,
+    persistence: createPersistence(userId, clientId, initialLlmRef),
 
     lifecycle: onLifecycle({
       start: (state, context) => {

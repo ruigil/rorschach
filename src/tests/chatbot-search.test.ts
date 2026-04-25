@@ -107,7 +107,7 @@ const stubFetchByUrl = (completions: (() => Response)[], braveFactory?: () => Re
 
 const spawnChatbot = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
   const llmRef = system.spawn('llm-provider', createLlmProviderActor({ adapter: createOpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }), null)
-  return system.spawn('chatbot', createChatbotActor({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model }), { ...INITIAL_CHATBOT_STATE, llmRef })
+  return system.spawn('chatbot', createChatbotActor({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model, userId: `test-user-${crypto.randomUUID()}` }), { ...INITIAL_CHATBOT_STATE, llmRef })
 }
 
 // ═══════════════════════════════════════════════════════════════════

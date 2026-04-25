@@ -6,6 +6,7 @@ import {
   InboundMessageTopic,
   OutboundMessageTopic,
 } from '../../types/events.ts'
+import { ANONYMOUS_USER_ID } from '../../types/identity.ts'
 
 // ─── ANSI codes ───
 const C = {
@@ -315,7 +316,7 @@ export const createCliActor = (): ActorDef<CliMsg, CliState> => {
       _userInput: (state, message, ctx) => {
         if (state.status === 'waiting') return { state }
 
-        if (!state.connected) ctx.publish(ClientConnectTopic, { clientId: CLI_CLIENT_ID, userId: null, roles: [] })
+        if (!state.connected) ctx.publish(ClientConnectTopic, { clientId: CLI_CLIENT_ID, userId: ANONYMOUS_USER_ID, roles: [] })
 
         ctx.publish(InboundMessageTopic, {
           clientId: CLI_CLIENT_ID,

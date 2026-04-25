@@ -125,13 +125,12 @@ export type KgraphState = {
 
 // ─── Helpers ───
 
-const resolveDb = (state: NonNullable<KgraphState>, userId: string | undefined, basePath: string): GrafeoDB => {
-  const id = userId || 'default'
-  const existing = state.userDbs.get(id)
+const resolveDb = (state: NonNullable<KgraphState>, userId: string, basePath: string): GrafeoDB => {
+  const existing = state.userDbs.get(userId)
   if (existing) return existing
-  const userDbPath = `${basePath}/${id}/kgraph`
+  const userDbPath = `${basePath}/${userId}/kgraph`
   const db = GrafeoDB.create(userDbPath)
-  state.userDbs.set(id, db)
+  state.userDbs.set(userId, db)
   return db
 }
 
@@ -179,11 +178,12 @@ export const createKgraphActor = (
 
       if (toolName === KGRAPH_QUERY_TOOL_NAME) {
         const args = JSON.parse(rawArgs) as { query: string; userId?: string }
-        ctx.log.info('kgraph query', { query: args.query, userId: args.userId })
+        const effectiveUserId = args.userId ?? message.userId
+        ctx.log.info('kgraph query', { query: args.query, userId: effectiveUserId })
         const span = parent
           ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_QUERY_TOOL_NAME, { query: args.query })
           : null
-        const db = resolveDb(state, args.userId, basePath)
+        const db = resolveDb(state, effectiveUserId, basePath)
 
         ctx.pipeToSelf(
           db.execute(args.query).then(r => r.rows() as unknown[]),
@@ -193,11 +193,12 @@ export const createKgraphActor = (
 
       } else if (toolName === KGRAPH_CREATE_LINK_TOOL_NAME) {
         const args = JSON.parse(rawArgs) as { statement: string; userId?: string }
-        ctx.log.info('kgraph create_link', { statement: args.statement, userId: args.userId })
+        const effectiveUserId = args.userId ?? message.userId
+        ctx.log.info('kgraph create_link', { statement: args.statement, userId: effectiveUserId })
         const span = parent
           ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_CREATE_LINK_TOOL_NAME, { statement: args.statement })
           : null
-        const db = resolveDb(state, args.userId, basePath)
+        const db = resolveDb(state, effectiveUserId, basePath)
 
         // Strip // line comments — GrafeoDB Cypher doesn't support them and
         // the LLM occasionally adds them as inline annotations.
@@ -223,10 +224,11 @@ export const createKgraphActor = (
       } else if (toolName === KGRAPH_CREATE_NODE_TOOL_NAME) {
         const args = JSON.parse(rawArgs) as { label: string; name: string; properties?: Record<string, unknown>; embeddingText?: string; userId?: string }
         const { label, name, embeddingText } = args
+        const effectiveUserId = args.userId ?? message.userId
         const properties = args.properties
           ? Object.fromEntries(Object.entries(args.properties).filter(([k]) => k === 'description'))
           : undefined
-        ctx.log.info('kgraph create_node', { label, name, userId: args.userId })
+        ctx.log.info('kgraph create_node', { label, name, userId: effectiveUserId })
         const span = parent
           ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_CREATE_NODE_TOOL_NAME, { label, name })
           : null
@@ -237,7 +239,7 @@ export const createKgraphActor = (
         }
 
         const llmRef = state.llmRef
-        const db = resolveDb(state, args.userId, basePath)
+        const db = resolveDb(state, effectiveUserId, basePath)
 
         ctx.pipeToSelf(
           Promise.all(INDEXED_LABELS.map(lbl =>

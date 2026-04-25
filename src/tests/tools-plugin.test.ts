@@ -64,7 +64,7 @@ describe('web-search actor', () => {
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'bun runtime' }), replyTo }),
+      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'bun runtime' }), replyTo, userId: 'test-user' }),
       { timeoutMs: 500 },
     )
 
@@ -87,7 +87,7 @@ describe('web-search actor', () => {
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'anything' }), replyTo }),
+      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'anything' }), replyTo, userId: 'test-user' }),
       { timeoutMs: 500 },
     )
 
@@ -108,7 +108,7 @@ describe('web-search actor', () => {
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'anything' }), replyTo }),
+      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'anything' }), replyTo, userId: 'test-user' }),
       { timeoutMs: 500 },
     )
 
@@ -134,7 +134,7 @@ describe('web-search actor', () => {
 
     await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'test' }), replyTo }),
+      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'test' }), replyTo, userId: 'test-user' }),
       { timeoutMs: 500 },
     )
 
@@ -158,7 +158,7 @@ describe('web-search actor', () => {
 
     await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'test' }), replyTo }),
+      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'test' }), replyTo, userId: 'test-user' }),
       { timeoutMs: 500 },
     )
 
@@ -203,6 +203,7 @@ describe('tools plugin', () => {
             toolName: 'web_search',
             arguments: JSON.stringify({ query: 'probe' }),
             replyTo: ctx.self as unknown as import('../system/types.ts').ActorRef<ToolReply>,
+            userId: 'test-user',
           })
         }
         if (msg.type === 'toolResult' || msg.type === 'toolError') {

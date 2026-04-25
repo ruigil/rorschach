@@ -66,7 +66,7 @@ type WorkerState = {
   pendingBatch:  PendingBatch | null
   toolLoopCount: number
   replyTo:       ActorRef<ToolReply> | null
-  userId:        string | null
+  userId:        string
 }
 
 // ─── System prompt ───
@@ -128,7 +128,7 @@ const createMemoryRecallWorkerActor = (
         return { state }
       }
 
-      const userId    = msg.userId ?? 'default'
+      const userId    = msg.userId
       const requestId = crypto.randomUUID()
       const messages: ApiMessage[] = [
         { role: 'system', content: buildSystemPrompt(userId) },
@@ -192,7 +192,7 @@ const createMemoryRecallWorkerActor = (
         context.pipeToSelf(
           ask<ToolInvokeMsg, ToolReply>(
             entry.ref,
-            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, userId: state.userId ?? undefined }),
+            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, userId: state.userId }),
           ),
           (reply) => ({ type: '_toolResult' as const, toolName: call.name, toolCallId: call.id, reply }),
           (error)  => ({
@@ -345,7 +345,7 @@ export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<
             pendingBatch:  null,
             toolLoopCount: 0,
             replyTo:       null,
-            userId:        null,
+            userId:        '',
           },
         )
 

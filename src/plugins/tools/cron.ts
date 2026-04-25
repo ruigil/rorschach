@@ -144,11 +144,6 @@ export const createCronActor = (): ActorDef<CronMsg, CronState> => ({
           return { state }
         }
 
-        if (!msg.userId) {
-          replyTo.send({ type: 'toolError', error: 'cron_create requires an authenticated user context' })
-          return { state }
-        }
-
         const id = crypto.randomUUID()
         const fireAt = nextFireAt(args.expression)
         const job: CronJob = { id, expression: args.expression, prompt: args.prompt, runOnce: args.run_once ?? false, createdAt: Date.now(), lastFiredAt: null, nextFireAt: fireAt, userId: msg.userId }

@@ -132,8 +132,9 @@ export type AuthenticatorMsg =
   | { type: '_authFailed'; error: string; replyTo: ActorRef<{ token: string } | { error: string }> }
 
 // ─── Topics ───
+//
+// AuthLoginTopic / AuthLogoutTopic are emitted by the authenticator on session
+// state changes. Consumers can subscribe to track who's logged in/out.
 
-export const AuthenticatorTopic = createTopic<{ ref: ActorRef<AuthenticatorMsg> | null }>('auth.authenticator')
-export const UserStoreTopic     = createTopic<{ ref: ActorRef<UserStoreMsg>     | null }>('auth.user-store')
 export const AuthLoginTopic     = createTopic<AuthLoginEvent>('auth.login')
 export const AuthLogoutTopic    = createTopic<AuthLogoutEvent>('auth.logout')

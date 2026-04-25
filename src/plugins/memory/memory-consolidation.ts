@@ -1,4 +1,4 @@
-import type { ActorDef, ActorRef, ActorResult, MessageHandler } from '../../system/types.ts'
+import type { ActorContext, ActorDef, ActorRef, ActorResult, MessageHandler } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { MemoryStreamTopic } from '../../types/events.ts'
 import type { MemoryTurnEvent } from '../../types/events.ts'
@@ -12,7 +12,7 @@ import type {
   ToolCall,
 } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type { MemoryConsolidationMsg, UserContextMsg } from '../../types/memory.ts'
+import type { MemoryConsolidationMsg, UserConsolidationWorkerMsg, UserContextMsg } from '../../types/memory.ts'
 import { createUserContextActor, INITIAL_USER_CONTEXT_STATE } from './user-context.ts'
 import { ask } from '../../system/ask.ts'
 import { zettelSection } from './ontology.ts'
@@ -26,6 +26,14 @@ export type MemoryConsolidationOptions = {
   maxToolLoops?: number
 }
 
+type WorkerOptions = {
+  model:         string
+  userId:        string
+  llmRef:        ActorRef<LlmProviderMsg>
+  tools:         ToolCollection
+  maxToolLoops?: number
+}
+
 // ─── Internal types ───
 
 type PendingBatch = {
@@ -35,29 +43,25 @@ type PendingBatch = {
   assistantToolCalls: ToolCall[]
 }
 
-export type ConsolidationState = {
-  llmRef:             ActorRef<LlmProviderMsg> | null
-  tools:              ToolCollection
-
-  // Per-user turn buffer
-  buffer:             Record<string, MemoryTurnEvent[]>
-
-  // Active consolidation session
-  activeUserId:       string | null
-  consolidationQueue: string[]
-
-  // Active LLM agent loop
-  requestId:          string | null
-  turnMessages:       ApiMessage[] | null
-  accumulated:        string
-  pendingBatch:       PendingBatch | null
-  toolLoopCount:      number
-
-  // Spawned user-context actors keyed by userId
-  userContexts:       Record<string, ActorRef<UserContextMsg>>
+type WorkerState = {
+  buffer:         MemoryTurnEvent[]
+  requestId:      string | null
+  turnMessages:   ApiMessage[] | null
+  accumulated:    string
+  pendingBatch:   PendingBatch | null
+  toolLoopCount:  number
+  userContextRef: ActorRef<UserContextMsg> | null
 }
 
-// ─── Helpers ───
+const INITIAL_WORKER_STATE: WorkerState = {
+  buffer:         [],
+  requestId:      null,
+  turnMessages:   null,
+  accumulated:    '',
+  pendingBatch:   null,
+  toolLoopCount:  0,
+  userContextRef: null,
+}
 
 // ─── System prompt ───
 
@@ -109,50 +113,36 @@ const buildMessages = (userId: string, turns: MemoryTurnEvent[]): ApiMessage[] =
   ]
 }
 
-// ─── Shared tool handlers ───
+// ─── Worker actor: one per user, persistent, owns its UserContext child ───
 
-const toolRegistered = (state: ConsolidationState, msg: Extract<MemoryConsolidationMsg, { type: '_toolRegistered' }>): { state: ConsolidationState } => ({
-  state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } },
-})
+const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserConsolidationWorkerMsg, WorkerState> => {
+  const { model, userId, llmRef, tools, maxToolLoops = 25 } = options
 
-const toolUnregistered = (state: ConsolidationState, msg: Extract<MemoryConsolidationMsg, { type: '_toolUnregistered' }>): { state: ConsolidationState } => {
-  const { [msg.name]: _, ...rest } = state.tools
-  return { state: { ...state, tools: rest } }
-}
+  type Ctx = ActorContext<UserConsolidationWorkerMsg>
+  type Result = ActorResult<UserConsolidationWorkerMsg, WorkerState>
 
-// ─── Actor definition ───
+  let awaitingLlmHandler: MessageHandler<UserConsolidationWorkerMsg, WorkerState>
+  let toolLoopHandler:    MessageHandler<UserConsolidationWorkerMsg, WorkerState>
 
-export const createMemoryConsolidationActor = (options: MemoryConsolidationOptions): ActorDef<MemoryConsolidationMsg, ConsolidationState> => {
-  const { model, intervalMs, toolFilter, maxToolLoops = 25 } = options
+  const bufferTurn = (state: WorkerState, msg: Extract<UserConsolidationWorkerMsg, { type: '_turn' }>): { state: WorkerState } => ({
+    state: {
+      ...state,
+      buffer: [
+        ...state.buffer,
+        { userId, userText: msg.userText, assistantText: msg.assistantText, timestamp: msg.timestamp },
+      ],
+    },
+  })
 
-  let awaitingLlmHandler: MessageHandler<MemoryConsolidationMsg, ConsolidationState>
-  let toolLoopHandler:    MessageHandler<MemoryConsolidationMsg, ConsolidationState>
+  const startConsolidation = (state: WorkerState, context: Ctx): Result => {
+    if (state.buffer.length === 0) return { state }
 
-  // ─── Start next consolidation from queue ───
+    const snapshotTurns = state.buffer
+    const requestId     = crypto.randomUUID()
+    const messages      = buildMessages(userId, snapshotTurns)
+    const toolSchemas   = Object.values(tools).map((e: ToolEntry) => e.schema as Tool)
 
-  const startNextConsolidation = (
-    state: ConsolidationState,
-    context: Parameters<MessageHandler<MemoryConsolidationMsg, ConsolidationState>>[2],
-  ): ReturnType<MessageHandler<MemoryConsolidationMsg, ConsolidationState>> => {
-    if (state.llmRef === null || state.consolidationQueue.length === 0) {
-      return { state: { ...state, activeUserId: null }, become: idleHandler }
-    }
-
-    const nextUserId = state.consolidationQueue[0]!
-    const remainingQueue = state.consolidationQueue.slice(1)
-    const snapshotTurns = state.buffer[nextUserId] ?? []
-
-    if (snapshotTurns.length === 0) {
-      return startNextConsolidation({ ...state, consolidationQueue: remainingQueue }, context)
-    }
-
-    const { [nextUserId]: _dropped, ...remainingBuffer } = state.buffer
-
-    const requestId = crypto.randomUUID()
-    const messages = buildMessages(nextUserId, snapshotTurns)
-    const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
-
-    state.llmRef.send({
+    llmRef.send({
       type: 'stream',
       requestId,
       model,
@@ -162,72 +152,34 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
     })
 
-    context.log.info('memory consolidation started', { userId: nextUserId, turns: snapshotTurns.length })
+    context.log.info('memory consolidation started', { userId, turns: snapshotTurns.length })
 
     return {
       state: {
         ...state,
-        buffer: remainingBuffer,
-        activeUserId: nextUserId,
-        consolidationQueue: remainingQueue,
+        buffer:        [],
         requestId,
-        turnMessages: messages,
-        accumulated: '',
-        pendingBatch: null,
+        turnMessages:  messages,
+        accumulated:   '',
+        pendingBatch:  null,
         toolLoopCount: 0,
       },
       become: awaitingLlmHandler,
     }
   }
 
-  // ─── Enqueue users with pending turns ───
-
-  const enqueueNewUsers = (state: ConsolidationState): ConsolidationState => {
-    const newUserIds = Object.keys(state.buffer).filter(
-      uid =>
-        (state.buffer[uid]?.length ?? 0) > 0 &&
-        uid !== state.activeUserId &&
-        !state.consolidationQueue.includes(uid),
-    )
-    if (newUserIds.length === 0) return state
-    return { ...state, consolidationQueue: [...state.consolidationQueue, ...newUserIds] }
-  }
-
-  // ─── Shared buffer handler ───
-
-  const bufferTurn = (state: ConsolidationState, msg: Extract<MemoryConsolidationMsg, { type: '_turn' }>): { state: ConsolidationState } => ({
-    state: {
-      ...state,
-      buffer: {
-        ...state.buffer,
-        [msg.userId]: [...(state.buffer[msg.userId] ?? []), { userId: msg.userId, userText: msg.userText, assistantText: msg.assistantText, timestamp: msg.timestamp }],
-      },
-    },
-  })
-
   // ─── Handler: idle ───
 
-  const idleHandler: MessageHandler<MemoryConsolidationMsg, ConsolidationState> = onMessage<MemoryConsolidationMsg, ConsolidationState>({
-    _turn: bufferTurn,
-
-    _consolidate: (state, _, context) => {
-      if (state.llmRef === null) return { state }
-      const updated = enqueueNewUsers(state)
-      if (updated.consolidationQueue.length === 0) return { state }
-      return startNextConsolidation(updated, context)
-    },
-
-    _llmProvider:      (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
-    _toolRegistered:   toolRegistered,
-    _toolUnregistered: toolUnregistered,
+  const idleHandler: MessageHandler<UserConsolidationWorkerMsg, WorkerState> = onMessage<UserConsolidationWorkerMsg, WorkerState>({
+    _turn:        bufferTurn,
+    _consolidate: (state, _, context) => startConsolidation(state, context),
   })
 
   // ─── Handler: awaitingLlm ───
 
-  awaitingLlmHandler = onMessage<MemoryConsolidationMsg, ConsolidationState>({
-    _turn: bufferTurn,
-
-    _consolidate: (state) => ({ state: enqueueNewUsers(state) }),
+  awaitingLlmHandler = onMessage<UserConsolidationWorkerMsg, WorkerState>({
+    _turn:        bufferTurn,
+    _consolidate: (state) => ({ state }),
 
     llmChunk: (state, msg) => {
       if (msg.requestId !== state.requestId) return { state }
@@ -255,7 +207,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       }
 
       for (const call of calls) {
-        const entry = state.tools[call.name]
+        const entry = tools[call.name]
         if (!entry) {
           context.log.warn('memory consolidation: unknown tool', { tool: call.name })
           continue
@@ -263,7 +215,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
         context.pipeToSelf(
           ask<ToolInvokeMsg, ToolReply>(
             entry.ref,
-            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, userId: state.activeUserId ?? undefined }),
+            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, userId }),
           ),
           (reply) => ({ type: '_toolResult' as const, toolName: call.name, toolCallId: call.id, reply }),
           (error) => ({
@@ -281,74 +233,65 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       }
     },
 
-    llmDone: (state, msg, context) => {
+    llmDone: (state, msg, context): Result => {
       if (msg.requestId !== state.requestId) return { state }
-      const doneUserId = state.activeUserId!
-      context.log.info('memory consolidation done', { userId: doneUserId })
+      context.log.info('memory consolidation done', { userId })
 
-      let ucRef = state.userContexts[doneUserId]
+      let ucRef = state.userContextRef
       if (!ucRef) {
         const userContextTools = Object.fromEntries(
-          Object.entries(state.tools).filter(([n]) => n === 'read' || n.startsWith('zettel_')),
+          Object.entries(tools).filter(([n]) => n === 'read' || n.startsWith('zettel_')),
         ) as ToolCollection
         ucRef = context.spawn(
-          `user-context-${doneUserId}`,
-          createUserContextActor({ model, userId: doneUserId, llmRef: state.llmRef!, tools: userContextTools }),
+          'user-context',
+          createUserContextActor({ model, userId, llmRef, tools: userContextTools }),
           INITIAL_USER_CONTEXT_STATE,
         )
       }
       ucRef.send({ type: '_run' })
-      const userContexts = { ...state.userContexts, [doneUserId]: ucRef }
 
-      return startNextConsolidation(
-        { ...state, requestId: null, turnMessages: null, accumulated: '', activeUserId: null, userContexts },
-        context,
-      ) as ActorResult<MemoryConsolidationMsg, ConsolidationState>
+      return {
+        state:  { ...state, requestId: null, turnMessages: null, accumulated: '', userContextRef: ucRef },
+        become: idleHandler,
+      }
     },
 
     llmError: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
-      context.log.error('memory consolidation LLM error', { userId: state.activeUserId, error: String(msg.error) })
-      return startNextConsolidation(
-        { ...state, requestId: null, turnMessages: null, accumulated: '', activeUserId: null },
-        context,
-      )
+      context.log.error('memory consolidation LLM error', { userId, error: String(msg.error) })
+      return {
+        state:  { ...state, requestId: null, turnMessages: null, accumulated: '' },
+        become: idleHandler,
+      }
     },
-
-    _llmProvider:      (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
-    _toolRegistered:   toolRegistered,
-    _toolUnregistered: toolUnregistered,
   })
 
   // ─── Handler: toolLoop ───
 
-  toolLoopHandler = onMessage<MemoryConsolidationMsg, ConsolidationState>({
-    _turn: bufferTurn,
-
-    _consolidate: (state) => ({ state: enqueueNewUsers(state) }),
+  toolLoopHandler = onMessage<UserConsolidationWorkerMsg, WorkerState>({
+    _turn:        bufferTurn,
+    _consolidate: (state) => ({ state }),
 
     _toolResult: (state, msg, context) => {
-      const batch = state.pendingBatch!
-      const content = msg.reply.type === 'toolResult' ? msg.reply.result : `Tool error: ${msg.reply.error}`
+      const batch          = state.pendingBatch!
+      const content        = msg.reply.type === 'toolResult' ? msg.reply.result : `Tool error: ${msg.reply.error}`
       const updatedResults = [...batch.results, { toolCallId: msg.toolCallId, toolName: msg.toolName, content }]
-      const remaining = batch.remaining - 1
+      const remaining      = batch.remaining - 1
 
       if (remaining > 0) {
         return { state: { ...state, pendingBatch: { ...batch, remaining, results: updatedResults } } }
       }
 
-      // All tools done — check loop limit before looping back
       const nextLoopCount = state.toolLoopCount + 1
 
       if (nextLoopCount >= maxToolLoops) {
-        context.log.warn('memory consolidation tool loop limit reached', { userId: state.activeUserId, limit: maxToolLoops })
-        return startNextConsolidation(
-          { ...state, requestId: null, turnMessages: null, accumulated: '', pendingBatch: null, activeUserId: null, toolLoopCount: 0 },
-          context,
-        )
+        context.log.warn('memory consolidation tool loop limit reached', { userId, limit: maxToolLoops })
+        return {
+          state:  { ...state, requestId: null, turnMessages: null, accumulated: '', pendingBatch: null, toolLoopCount: 0 },
+          become: idleHandler,
+        }
       }
 
-      // Build next LLM request
       const toolResultMsgs: ApiMessage[] = updatedResults.map(r => ({
         role: 'tool', content: r.content, tool_call_id: r.toolCallId,
       }))
@@ -360,10 +303,10 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
 
       context.log.debug(JSON.stringify(toolResultMsgs))
 
-      const requestId = crypto.randomUUID()
-      const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
+      const requestId   = crypto.randomUUID()
+      const toolSchemas = Object.values(tools).map((e: ToolEntry) => e.schema as Tool)
 
-      state.llmRef!.send({
+      llmRef.send({
         type: 'stream',
         requestId,
         model,
@@ -374,19 +317,40 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
       })
 
       return {
-        state: { ...state, requestId, turnMessages: nextMessages, pendingBatch: null, toolLoopCount: nextLoopCount },
+        state:  { ...state, requestId, turnMessages: nextMessages, pendingBatch: null, toolLoopCount: nextLoopCount },
         become: awaitingLlmHandler,
       }
     },
-
-    _llmProvider:      (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
-    _toolRegistered:   toolRegistered,
-    _toolUnregistered: toolUnregistered,
   })
 
   return {
+    handler: idleHandler,
+  }
+}
+
+// ─── Supervisor actor: routes turns to per-user workers ───
+
+export type ConsolidationState = {
+  llmRef:    ActorRef<LlmProviderMsg> | null
+  tools:     ToolCollection
+  workers:   Record<string, ActorRef<UserConsolidationWorkerMsg>>
+  workerSeq: number
+}
+
+export const createMemoryConsolidationActor = (options: MemoryConsolidationOptions): ActorDef<MemoryConsolidationMsg, ConsolidationState> => {
+  const { model, intervalMs, toolFilter, maxToolLoops } = options
+
+  const stopAllWorkers = (
+    state:   ConsolidationState,
+    context: ActorContext<MemoryConsolidationMsg>,
+  ): ConsolidationState => {
+    for (const ref of Object.values(state.workers)) context.stop(ref)
+    return { ...state, workers: {} }
+  }
+
+  return {
     lifecycle: onLifecycle({
-      start: (_state, context) => {
+      start: (state, context) => {
         context.subscribe(MemoryStreamTopic, (e) => ({
           type: '_turn' as const,
           userId: e.userId,
@@ -405,24 +369,80 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
             : { type: '_toolRegistered' as const, name: e.name, schema: e.schema, ref: e.ref }
         })
         context.timers.startPeriodicTimer('consolidation', { type: '_consolidate' }, intervalMs)
-        return { state: _state }
+        return { state }
+      },
+
+      terminated: (state, event) => {
+        const entry = Object.entries(state.workers).find(([, ref]) => ref.name === event.ref.name)
+        if (!entry) return { state }
+        const [userId] = entry
+        const { [userId]: _, ...workers } = state.workers
+        return { state: { ...state, workers } }
       },
     }),
 
-    handler: idleHandler,
+    handler: onMessage<MemoryConsolidationMsg, ConsolidationState>({
+      _turn: (state, msg, context) => {
+        let worker    = state.workers[msg.userId]
+        let workers   = state.workers
+        let workerSeq = state.workerSeq
+
+        if (!worker) {
+          if (state.llmRef === null) return { state }
+          workerSeq = workerSeq + 1
+          worker = context.spawn(
+            `consolidation-user-${msg.userId}-${workerSeq}`,
+            createUserConsolidationWorker({
+              model,
+              userId: msg.userId,
+              llmRef: state.llmRef,
+              tools:  state.tools,
+              maxToolLoops,
+            }),
+            INITIAL_WORKER_STATE,
+          )
+          workers = { ...workers, [msg.userId]: worker }
+        }
+
+        worker.send({
+          type:          '_turn',
+          userText:      msg.userText,
+          assistantText: msg.assistantText,
+          timestamp:     msg.timestamp,
+        })
+
+        return { state: { ...state, workers, workerSeq } }
+      },
+
+      _consolidate: (state) => {
+        for (const ref of Object.values(state.workers)) {
+          ref.send({ type: '_consolidate' })
+        }
+        return { state }
+      },
+
+      _llmProvider: (state, msg, context) => {
+        const updated = { ...state, llmRef: msg.ref }
+        return { state: stopAllWorkers(updated, context) }
+      },
+
+      _toolRegistered: (state, msg, context) => {
+        const updated = { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } }
+        return { state: stopAllWorkers(updated, context) }
+      },
+
+      _toolUnregistered: (state, msg, context) => {
+        const { [msg.name]: _, ...rest } = state.tools
+        const updated = { ...state, tools: rest }
+        return { state: stopAllWorkers(updated, context) }
+      },
+    }),
   }
 }
 
 export const INITIAL_CONSOLIDATION_STATE: ConsolidationState = {
-  llmRef:             null,
-  tools:              {},
-  buffer:             {},
-  activeUserId:       null,
-  consolidationQueue: [],
-  requestId:          null,
-  turnMessages:       null,
-  accumulated:        '',
-  pendingBatch:       null,
-  toolLoopCount:      0,
-  userContexts:       {},
+  llmRef:    null,
+  tools:     {},
+  workers:   {},
+  workerSeq: 0,
 }

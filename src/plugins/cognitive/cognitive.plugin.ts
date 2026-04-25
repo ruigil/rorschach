@@ -70,7 +70,7 @@ const spawnAll = (
           toolFilter:    chatbotConfig.toolFilter,
           plannerConfig: plannerConfig ?? undefined,
         }),
-        { userSessions: {}, anonSessions: {}, clientIndex: {}, activeClients: {}, plannerSessions: {} },
+        { userSessions: {}, clientIndex: {}, activeClients: {}, plannerSessions: {} },
       )
     : null
 
@@ -176,7 +176,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
                 toolFilter:    newChatbotConfig.toolFilter,
                 plannerConfig: newPlannerConfig ?? undefined,
               }),
-              { userSessions: {}, anonSessions: {}, clientIndex: {}, activeClients: {}, plannerSessions: {} },
+              { userSessions: {}, clientIndex: {}, activeClients: {}, plannerSessions: {} },
             )
           : null
         sessionManagerState = { config: newChatbotConfig, ref: sessionManagerRef, gen }

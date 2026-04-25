@@ -9,7 +9,7 @@ export const InboundMessageTopic = createTopic<InboundMessageEvent>('client.inbo
 
 // ─── Domain event: published when a client connects (any interface) ───
 
-export type ClientConnectEvent = { clientId: string; userId: string | null; roles: string[] }
+export type ClientConnectEvent = { clientId: string; userId: string; roles: string[] }
 
 /** Topic published when a client connects via any interface. */
 export const ClientConnectTopic = createTopic<ClientConnectEvent>('client.connect')

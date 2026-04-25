@@ -54,7 +54,8 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
         type: 'invoke',
         toolName: 'store_memory',
         arguments: JSON.stringify({ content: 'I like apples' }),
-        replyTo
+        replyTo,
+        userId: 'test-user',
       })
     )
 
@@ -64,7 +65,8 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
         type: 'invoke',
         toolName: 'store_memory',
         arguments: JSON.stringify({ content: 'I like oranges' }),
-        replyTo
+        replyTo,
+        userId: 'test-user',
       })
     )
 
@@ -100,7 +102,8 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
         type: 'invoke',
         toolName: 'store_memory',
         arguments: JSON.stringify({ content: 'test' }),
-        replyTo
+        replyTo,
+        userId: 'test-user',
       })
     )
 

@@ -51,7 +51,7 @@ function createNode(
   const args = JSON.stringify({ label, name, ...(description ? { properties: { description } } : {}) })
   return ask<KgraphMsg, ToolReply>(
     kgraphRef,
-    (replyTo) => ({ type: 'invoke', toolName: KGRAPH_CREATE_NODE_TOOL_NAME, arguments: args, replyTo }),
+    (replyTo) => ({ type: 'invoke', toolName: KGRAPH_CREATE_NODE_TOOL_NAME, arguments: args, replyTo, userId: 'test-user' }),
     { timeoutMs: 5_000 },
   )
 }

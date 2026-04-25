@@ -12,18 +12,21 @@ import { PlannerActiveTopic } from '../../types/planner.ts'
 // ─── Message protocol ───
 
 type SessionManagerMsg =
-  | { type: '_connected';            clientId: string; userId: string | null; roles: string[] }
+  | { type: '_connected';            clientId: string; userId: string; roles: string[] }
   | { type: '_disconnected';         clientId: string }
   | { type: '_message';              clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string; isCron?: boolean }
   | { type: '_cronTrigger';          userId: string; text: string; traceId: string; parentSpanId: string }
   | { type: '_plannerSessionUpdated'; clientId: string; plannerRef: ActorRef<PlannerInputMsg> | null; summary?: string }
 
 // ─── State ───
+//
+// One actor per userId (`chatbot-${userId}`). Multiple clients (web + Signal +
+// CLI) sharing a userId share the actor. Anonymous clients share the
+// `chatbot-anonymous` actor (intentional).
 
 type SessionManagerState = {
-  userSessions:    Record<string, ActorRef<ChatbotMsg>>       // userId   → actor (authenticated)
-  anonSessions:    Record<string, ActorRef<ChatbotMsg>>       // clientId → actor (anonymous)
-  clientIndex:     Record<string, string>                     // clientId → userId (for routing & cleanup)
+  userSessions:    Record<string, ActorRef<ChatbotMsg>>       // userId   → actor
+  clientIndex:     Record<string, string>                     // clientId → userId
   activeClients:   Record<string, number>                     // userId   → active connection count
   plannerSessions: Record<string, ActorRef<PlannerInputMsg>>  // clientId → planner actor (active planning)
 }
@@ -76,23 +79,13 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
       },
 
       terminated: (state, event) => {
-        // Check userSessions
         const userEntry = Object.entries(state.userSessions).find(([, ref]) => ref.name === event.ref.name)
-        if (userEntry) {
-          const [userId] = userEntry
-          const { [userId]: _, ...userSessions } = state.userSessions
-          const clientIndex = Object.fromEntries(Object.entries(state.clientIndex).filter(([, uid]) => uid !== userId))
-          const { [userId]: __, ...activeClients } = state.activeClients
-          return { state: { ...state, userSessions, clientIndex, activeClients } }
-        }
-        // Check anonSessions
-        const anonEntry = Object.entries(state.anonSessions).find(([, ref]) => ref.name === event.ref.name)
-        if (anonEntry) {
-          const [clientId] = anonEntry
-          const { [clientId]: _, ...anonSessions } = state.anonSessions
-          return { state: { ...state, anonSessions } }
-        }
-        return { state }
+        if (!userEntry) return { state }
+        const [userId] = userEntry
+        const { [userId]: _, ...userSessions } = state.userSessions
+        const clientIndex = Object.fromEntries(Object.entries(state.clientIndex).filter(([, uid]) => uid !== userId))
+        const { [userId]: __, ...activeClients } = state.activeClients
+        return { state: { ...state, userSessions, clientIndex, activeClients } }
       },
     }),
 
@@ -100,64 +93,47 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
       _connected: (state, message, context) => {
         const { clientId, userId, roles } = message
 
-        if (userId) {
-          // Authenticated: key by userId, share actor across reconnects and channels
-          const existing = state.userSessions[userId]
-          if (existing) {
-            return {
-              state: {
-                ...state,
-                clientIndex:   { ...state.clientIndex,   [clientId]: userId },
-                activeClients: { ...state.activeClients, [userId]: (state.activeClients[userId] ?? 0) + 1 },
-              },
-            }
-          }
-          const ref = context.spawn(
-            `chatbot-${userId}`,
-            createChatbotActor({ clientId, model, systemPrompt, historyWindow, toolFilter, plannerConfig, userId, roles, llmRef }),
-            initialChatbotState(llmRef),
-          )
+        // Reuse existing actor if this userId already has one (multi-client / reconnect).
+        const existing = state.userSessions[userId]
+        if (existing) {
           return {
             state: {
               ...state,
-              userSessions:  { ...state.userSessions,  [userId]: ref },
               clientIndex:   { ...state.clientIndex,   [clientId]: userId },
-              activeClients: { ...state.activeClients, [userId]: 1 },
+              activeClients: { ...state.activeClients, [userId]: (state.activeClients[userId] ?? 0) + 1 },
             },
           }
         }
-
-        // Anonymous: one actor per clientId (old behaviour)
         const ref = context.spawn(
-          `chatbot-${clientId}`,
-          createChatbotActor({ clientId, model, systemPrompt, historyWindow, toolFilter, plannerConfig }),
+          `chatbot-${userId}`,
+          createChatbotActor({ clientId, model, systemPrompt, historyWindow, toolFilter, plannerConfig, userId, roles, llmRef }),
           initialChatbotState(llmRef),
         )
-        return { state: { ...state, anonSessions: { ...state.anonSessions, [clientId]: ref } } }
+        return {
+          state: {
+            ...state,
+            userSessions:  { ...state.userSessions,  [userId]: ref },
+            clientIndex:   { ...state.clientIndex,   [clientId]: userId },
+            activeClients: { ...state.activeClients, [userId]: 1 },
+          },
+        }
       },
 
       _disconnected: (state, message, context) => {
         const { clientId } = message
         const userId = state.clientIndex[clientId]
+        if (!userId) return { state }
 
-        if (userId) {
-          const count = (state.activeClients[userId] ?? 1) - 1
-          const { [clientId]: _, ...clientIndex } = state.clientIndex
-          if (count <= 0) {
-            const ref = state.userSessions[userId]
-            if (ref) context.stop(ref)
-            const { [userId]: __, ...userSessions } = state.userSessions
-            const { [userId]: ___, ...activeClients } = state.activeClients
-            return { state: { ...state, userSessions, clientIndex, activeClients } }
-          }
-          return { state: { ...state, clientIndex, activeClients: { ...state.activeClients, [userId]: count } } }
+        const count = (state.activeClients[userId] ?? 1) - 1
+        const { [clientId]: _, ...clientIndex } = state.clientIndex
+        if (count <= 0) {
+          const ref = state.userSessions[userId]
+          if (ref) context.stop(ref)
+          const { [userId]: __, ...userSessions } = state.userSessions
+          const { [userId]: ___, ...activeClients } = state.activeClients
+          return { state: { ...state, userSessions, clientIndex, activeClients } }
         }
-
-        // Anonymous
-        const ref = state.anonSessions[clientId]
-        if (ref) context.stop(ref)
-        const { [clientId]: _, ...anonSessions } = state.anonSessions
-        return { state: { ...state, anonSessions } }
+        return { state: { ...state, clientIndex, activeClients: { ...state.activeClients, [userId]: count } } }
       },
 
       _message: (state, message) => {
@@ -171,7 +147,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
         }
 
         const userId = state.clientIndex[clientId]
-        const actor  = userId ? state.userSessions[userId] : state.anonSessions[clientId]
+        const actor  = userId ? state.userSessions[userId] : undefined
         actor?.send({ type: 'userMessage', clientId, text, images, audio, pdfs, traceId, parentSpanId, isCron })
         return { state }
       },
@@ -188,7 +164,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
         const { [clientId]: _, ...plannerSessions } = state.plannerSessions
 
         const userId     = state.clientIndex[clientId]
-        const chatbotRef = userId ? state.userSessions[userId] : state.anonSessions[clientId]
+        const chatbotRef = userId ? state.userSessions[userId] : undefined
 
         // Always tell the chatbot to clean up the planner actor
         chatbotRef?.send({ type: '_plannerDone' })

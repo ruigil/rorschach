@@ -1,4 +1,4 @@
-export * from './ws.ts'
+export * from './events.ts'
 export * from './tools.ts'
 export * from './trace.ts'
 export * from './llm.ts'

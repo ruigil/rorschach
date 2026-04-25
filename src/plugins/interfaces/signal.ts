@@ -8,8 +8,8 @@ import { join } from 'node:path'
 import { ask } from '../../system/ask.ts'
 
 import { ClientConnectTopic, InboundMessageTopic, OutboundMessageTopic } from '../../types/events.ts'
-import { UserStoreTopic } from '../auth/types.ts'
-import type { UserStoreMsg, User } from '../auth/types.ts'
+import { IdentityProviderTopic, resolveIdentity } from '../../types/identity.ts'
+import type { IdentityProviderMsg, Identity } from '../../types/identity.ts'
 
 const INBOUND_DIR = join(import.meta.dir, '../../..', 'workspace/media/inbound')
 
@@ -217,22 +217,23 @@ type BufferedMsg = { text: string; images?: string[]; audio?: string }
 type SignalMsg =
   | { type: '_reconnect' }
   | { type: '_socketClosed' }
-  | { type: '_line';             line: string }
-  | { type: '_send';             clientId: string; text: string }
+  | { type: '_line';                  line: string }
+  | { type: '_send';                  clientId: string; text: string }
   | { type: '_sendOk' }
-  | { type: '_sendErr';          error: string }
+  | { type: '_sendErr';               error: string }
   | { type: '_refreshTyping' }
-  | { type: '_userStoreChanged'; ref: ActorRef<UserStoreMsg> | null }
-  | { type: '_phoneResolved';    phone: string; userId: string | null }
+  | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
+  | { type: '_phoneResolved';         phone: string; userId: string }
+  | { type: '_phoneRejected';         phone: string }
 
 // ─── State ───
 
 export type SignalState = {
-  seenIds:        Set<string>
-  pending:        Map<string, string>                    // clientId → buffered chunks waiting for 'done'
-  activeSpans:    Record<string, SpanHandle>
-  userStoreRef:   ActorRef<UserStoreMsg> | null
-  pendingConnect: Map<string, BufferedMsg[]>             // phone → buffered messages while resolving userId
+  seenIds:             Set<string>
+  pending:             Map<string, string>                       // clientId → buffered chunks waiting for 'done'
+  activeSpans:         Record<string, SpanHandle>
+  identityProviderRef: ActorRef<IdentityProviderMsg> | null
+  pendingConnect:      Map<string, BufferedMsg[]>                // phone → buffered messages while resolving userId
 }
 
 // ─── Actor factory ───
@@ -299,7 +300,7 @@ export const createSignalActor = (
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(OutboundMessageTopic,    e => ({ type: '_send'             as const, clientId: e.clientId, text: e.text }))
-        ctx.subscribe(UserStoreTopic, e => ({ type: '_userStoreChanged' as const, ref: e.ref }))
+        ctx.subscribe(IdentityProviderTopic, e => ({ type: '_identityProviderChanged' as const, ref: e.ref }))
         ctx.timers.startSingleTimer('reconnect', { type: '_reconnect' }, 0)
         ctx.log.info(`signal actor: connecting to ${host}:${port}`)
         return { state }
@@ -403,17 +404,18 @@ export const createSignalActor = (
         }])
 
         if (existing.length === 0) {
-          // First message from this phone — trigger lookup
-          if (state.userStoreRef) {
-            ctx.pipeToSelf(
-              ask<UserStoreMsg, User | null>(state.userStoreRef, (r) => ({ type: 'getUserByPhone' as const, phone, replyTo: r }), { timeoutMs: 3_000 }),
-              (user): SignalMsg => ({ type: '_phoneResolved', phone, userId: user?.id ?? null }),
-              ():    SignalMsg => ({ type: '_phoneResolved', phone, userId: null }),
-            )
-          } else {
-            // Auth plugin not loaded — treat phone as userId directly
-            ctx.timers.startSingleTimer(`resolve-${phone}`, { type: '_phoneResolved' as const, phone, userId: phone }, 0)
-          }
+          // First message from this phone — resolve identity.
+          // No provider ⇒ ANONYMOUS_IDENTITY (everyone collapses to one identity).
+          // Provider returns Identity ⇒ real userId.
+          // Provider returns null ⇒ unknown phone, reject.
+          ctx.pipeToSelf(
+            resolveIdentity(state.identityProviderRef,
+              r => ({ type: 'resolvePhone' as const, phone, replyTo: r })),
+            (id: Identity | null): SignalMsg => id
+              ? { type: '_phoneResolved', phone, userId: id.userId }
+              : { type: '_phoneRejected', phone },
+            (): SignalMsg => ({ type: '_phoneRejected', phone }),
+          )
         }
 
         return { state: { ...state, pendingConnect } }
@@ -483,8 +485,8 @@ export const createSignalActor = (
         }
       },
 
-      _userStoreChanged: (state, msg) => ({
-        state: { ...state, userStoreRef: msg.ref },
+      _identityProviderChanged: (state, msg) => ({
+        state: { ...state, identityProviderRef: msg.ref },
       }),
 
       _phoneResolved: (state, msg, ctx) => {
@@ -493,14 +495,7 @@ export const createSignalActor = (
         const pendingConnect = new Map(state.pendingConnect)
         pendingConnect.delete(phone)
 
-
-        if (!userId) {
-          // Not registered — send rejection
-          writeToSocket(rpcLine('send', { ...(account ? { account } : {}), recipient: [phone], message: 'Please register on the web first.' })).catch(() => {})
-          return { state: { ...state, pendingConnect } }
-        }
-
-        // Registered user — mark seen, emit connect then flush messages
+        // Mark seen, emit connect, then flush buffered messages.
         const seenIds = new Set(state.seenIds)
         seenIds.add(phone)
         const events: ReturnType<typeof emit>[] = [
@@ -520,6 +515,14 @@ export const createSignalActor = (
           }))
         }
         return { state: { ...state, seenIds, pendingConnect, activeSpans }, events }
+      },
+
+      _phoneRejected: (state, msg) => {
+        const { phone } = msg
+        const pendingConnect = new Map(state.pendingConnect)
+        pendingConnect.delete(phone)
+        writeToSocket(rpcLine('send', { ...(account ? { account } : {}), recipient: [phone], message: 'Please register on the web first.' })).catch(() => {})
+        return { state: { ...state, pendingConnect } }
       },
 
       _sendOk: (state) => ({ state }),

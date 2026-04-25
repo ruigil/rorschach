@@ -19,7 +19,7 @@ export type PlannerAgentOptions = {
   plansDir:     string
   maxToolLoops: number
   clientId:     string
-  userId?:      string | null
+  userId:       string
   goal:         string
 }
 
@@ -290,7 +290,7 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
         }
         context.pipeToSelf(
           ask<ToolInvokeMsg, ToolReply>(entry.ref, replyTo => ({
-            type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId, userId: userId ?? undefined,
+            type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId, userId,
           })),
           (reply): PlannerMsg => ({ type: '_toolResult', toolName: call.name, toolCallId: call.id, reply }),
           (error): PlannerMsg => ({ type: '_toolResult', toolName: call.name, toolCallId: call.id, reply: { type: 'toolError', error: String(error) } }),

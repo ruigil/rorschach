@@ -44,8 +44,8 @@ export const KgraphTopic = createTopic<KgraphRefEvent>('memory.kgraph')
 
 export type KgraphMsg =
   | ToolInvokeMsg
-  | { type: 'dump'; replyTo: ActorRef<KgraphGraph>; userId?: string }
-  | { type: 'vectorSearch'; label: string; text: string; topN?: number; userId?: string; replyTo: ActorRef<VectorSearchReply> }
+  | { type: 'dump'; replyTo: ActorRef<KgraphGraph>; userId: string }
+  | { type: 'vectorSearch'; label: string; text: string; topN?: number; userId: string; replyTo: ActorRef<VectorSearchReply> }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_queryDone';         rows: unknown[];              replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
   | { type: '_queryErr';          error: string;               replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
@@ -53,7 +53,7 @@ export type KgraphMsg =
   | { type: '_writeErr';          error: string;               replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
   | { type: '_createNodeDone';    result: CreateNodeResult;    replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
   | { type: '_createNodeErr';     error: string;               replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
-  | { type: 'updateNode';         nodeId: number; properties: Record<string, unknown>; embeddingText?: string; userId?: string; replyTo: ActorRef<ToolReply> }
+  | { type: 'updateNode';         nodeId: number; properties: Record<string, unknown>; embeddingText?: string; userId: string; replyTo: ActorRef<ToolReply> }
   | { type: '_updateNodeDone';    replyTo: ActorRef<ToolReply> }
   | { type: '_updateNodeErr';     error: string;               replyTo: ActorRef<ToolReply> }
   | { type: '_vectorSearchDone';  matches: VectorSearchMatch[]; replyTo: ActorRef<VectorSearchReply> }
@@ -86,7 +86,7 @@ export type MemoryStoreMsg =
 // ─── User memory message protocol ───
 
 export type UserMemoryMsg =
-  | { type: 'invoke';        toolName: string; arguments: string; replyTo: ActorRef<ToolReply>; userId?: string }
+  | { type: 'invoke';        toolName: string; arguments: string; replyTo: ActorRef<ToolReply>; userId: string }
   | { type: '_toolResult';   sessionId: string; toolCallId: string; toolName: string; reply: ToolReply }
   | { type: '_llmProvider';  ref: ActorRef<LlmProviderMsg> | null }
   | LlmProviderReply
@@ -98,13 +98,19 @@ export const UserContextTopic = createTopic<UserContextEvent>('memory.user-conte
 
 // ─── Memory consolidation message protocol ───
 
+// Supervisor: subscribes to topics + timer, routes turns to per-user workers.
 export type MemoryConsolidationMsg =
   | { type: '_turn';             userId: string; userText: string; assistantText: string; timestamp: number }
   | { type: '_consolidate' }
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
   | { type: '_toolUnregistered'; name: string }
-  | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolReply }
+
+// Worker: one per user, runs the agentic loop over a local buffer.
+export type UserConsolidationWorkerMsg =
+  | { type: '_turn';        userText: string; assistantText: string; timestamp: number }
+  | { type: '_consolidate' }
+  | { type: '_toolResult';  toolCallId: string; toolName: string; reply: ToolReply }
   | LlmProviderReply
 
 // ─── User context message protocol ───
