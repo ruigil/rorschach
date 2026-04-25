@@ -139,6 +139,7 @@ type NotesIndex = { notes: NoteEntry[] }
 const indexPath       = (notebookDir: string) => `${notebookDir}/notes/index.json`
 const notePath        = (notebookDir: string, id: string) => `${notebookDir}/notes/${id}.md`
 const notesDir        = (notebookDir: string) => `${notebookDir}/notes`
+const attachmentUrl   = (id: string) => `/notebook/attachments/${encodeURIComponent(id)}`
 
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.avif'])
 
@@ -230,7 +231,15 @@ const readNote = async (notebookDir: string, id?: string, title?: string): Promi
 
   if (!entry) return `Note not found.`
   const content = await Bun.file(notePath(notebookDir, entry.id)).text().catch(() => '(content missing)')
-  return `Tags: ${entry.tags.join(', ') || 'none'}\nCreated: ${new Date(entry.createdAt).toISOString()}\n\n${content}`
+  const attachments = (entry.attachments ?? [])
+    .map(a => `- [${a.originalName}](${attachmentUrl(a.id)}) (${a.mimeType})`)
+    .join('\n')
+  return [
+    `Tags: ${entry.tags.join(', ') || 'none'}`,
+    `Created: ${new Date(entry.createdAt).toISOString()}`,
+    attachments ? `Attachments:\n${attachments}` : '',
+    content,
+  ].filter(Boolean).join('\n\n')
 }
 
 const listNotes = async (notebookDir: string, tags?: string[]): Promise<string> => {
@@ -292,9 +301,10 @@ const attachFile = async (
   const attachId = crypto.randomUUID()
   const label: string = caption ?? origName
   const attachPath = `inbound/${origName}`
+  const attachUrl = attachmentUrl(attachId)
   const mdRef = IMAGE_EXTS.has(ext)
-    ? `\n![${label}](/inbound/${origName})\n`
-    : `\n[${label}](/inbound/${origName})\n`
+    ? `\n![${label}](${attachUrl})\n`
+    : `\n[${label}](${attachUrl})\n`
 
   const noteMd = notePath(notebookDir, id)
   const existing = await Bun.file(noteMd).text()

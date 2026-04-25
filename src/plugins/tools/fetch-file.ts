@@ -6,8 +6,6 @@ import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
 
 const INBOUND_DIR = join(import.meta.dir, '../../..', 'workspace/media/inbound')
 
-// ─── Tool schema ───
-
 export const FETCH_FILE_TOOL_NAME = 'fetch_file'
 
 export const FETCH_FILE_SCHEMA: ToolSchema = {
@@ -28,18 +26,13 @@ export const FETCH_FILE_SCHEMA: ToolSchema = {
   },
 }
 
-// ─── Internal message protocol ───
-
 export type FetchFileMsg =
   | ToolInvokeMsg
   | { type: '_done'; url: string; filePath: string; contentType: string; bytes: number; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_err'; url: string; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
 
-// ─── Download logic ───
-
 type FetchFileArgs = { url: string }
 
-// Derive a file extension from Content-Type or the URL path as a fallback.
 const guessExtension = (contentType: string, url: string): string => {
   const ct = (contentType.split(';')[0] ?? '').trim().toLowerCase()
   const extMap: Record<string, string> = {
@@ -59,9 +52,50 @@ const guessExtension = (contentType: string, url: string): string => {
     'application/zip':       'zip',
   }
   if (extMap[ct]) return extMap[ct]
-  // Fall back to URL path extension
   const urlExt = url.split('?')[0]?.split('#')[0]?.split('.').pop()
-  return urlExt && urlExt.length <= 5 ? urlExt : 'bin'
+  return urlExt && urlExt.length <= 5 && /^[a-zA-Z0-9]+$/.test(urlExt) ? urlExt : 'bin'
+}
+
+const sanitizeBasename = (name: string): string => {
+  return name
+    .replace(/[/\\:*?\"<>|]/g, '_')
+    .replace(/\r?\n/g, '')
+    .replace(/\t/g, '_')
+    .replace(/^\u002e+|\u002e+$/g, '')
+    .replace(/\u002e{2,}/g, '.')
+}
+
+const extractBasenameFromUrl = (urlStr: string): string => {
+  try {
+    const url = new URL(urlStr)
+    const segments = url.pathname.split('/').filter(Boolean)
+    const last = segments[segments.length - 1] ?? ''
+    const decoded = decodeURIComponent(last)
+    if (!decoded || decoded === '.' || decoded === '..' || /[/\\]/.test(decoded)) return ''
+    const sanitized = sanitizeBasename(decoded)
+    return sanitized.length > 0 ? sanitized : ''
+  } catch {
+    return ''
+  }
+}
+
+const resolveUniquePath = async (dir: string, basename: string): Promise<string> => {
+  const { stat } = await import('node:fs/promises')
+  let candidate = join(dir, basename)
+  try { await stat(candidate); } catch { return candidate }
+
+  const dotIdx = basename.lastIndexOf('.')
+  const hasExt = dotIdx > 0 && dotIdx < basename.length - 1
+  const name = hasExt ? basename.slice(0, dotIdx) : basename
+  const ext   = hasExt ? basename.slice(dotIdx) : ''
+
+  for (let i = 1; i < 1000; i++) {
+    candidate = join(dir, `${name}-${i}${ext}`)
+    try { await stat(candidate); } catch { return candidate }
+  }
+
+  candidate = join(dir, `${name}-${crypto.randomUUID()}${ext}`)
+  return candidate
 }
 
 const downloadFile = async (args: FetchFileArgs): Promise<{ filePath: string; contentType: string; bytes: number }> => {
@@ -71,11 +105,24 @@ const downloadFile = async (args: FetchFileArgs): Promise<{ filePath: string; co
   }
 
   const contentType = res.headers.get('content-type') ?? ''
-  const ext = guessExtension(contentType, args.url)
-  const filePath = join(INBOUND_DIR, `rorschach-${crypto.randomUUID()}.${ext}`)
+  const urlExt      = guessExtension(contentType, args.url)
+
+  const originalName = extractBasenameFromUrl(args.url)
+  let baseName: string
+  if (originalName) {
+    const dotIdx    = originalName.lastIndexOf('.')
+    const hasDotExt = dotIdx > 0 && dotIdx < originalName.length - 1
+    const guessedExt = guessExtension(contentType, args.url)
+    const sameExt  = hasDotExt && originalName.slice(dotIdx + 1) === guessedExt
+    baseName = sameExt ? originalName : `${originalName}.${guessedExt}`
+  } else {
+    baseName = `rorschach-${crypto.randomUUID()}.${urlExt}`
+  }
+
+  await mkdir(INBOUND_DIR, { recursive: true })
+  const filePath = await resolveUniquePath(INBOUND_DIR, baseName)
 
   const buffer = await res.arrayBuffer()
-  await mkdir(INBOUND_DIR, { recursive: true })
   await Bun.write(filePath, buffer)
 
   return { filePath, contentType, bytes: buffer.byteLength }

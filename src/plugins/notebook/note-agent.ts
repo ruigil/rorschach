@@ -58,9 +58,12 @@ const buildSystemPrompt = (notebookDir: string): string =>
   `- Todos: task list with due dates and recurrence (todos_create, todos_complete, todos_list, todos_delete, todos_update)\n` +
   `- Search: cross-content full-text search (notebook_search)\n\n` +
   `IMPORTANT — file paths and URLs:\n` +
-  `- Files are passed to you as absolute filesystem paths (e.g. /home/rigel/rorschach/src/public/inbound/file.pdf).\n` +
-  `- Use notes_attach_file to attach them; it handles the path conversion automatically.\n` +
-  `- Never write absolute filesystem paths into note content. If you need to reference a file inline, derive the web URL: strip everything up to and including "/public" and use the remainder (e.g. /inbound/file.pdf).\n\n` +
+  `- Files are passed to you as absolute filesystem paths.\n` +
+  `- Use notes_attach_file to attach them; it creates stable /notebook/attachments/<id> URLs automatically.\n` +
+  `- Never write absolute filesystem paths into note content or replies. Preserve /notebook/attachments/<id> links returned by notes_read.\n\n` +
+  `IMPORTANT — reading notes:\n` +
+  `- When the user's request is to read, show, or open a note, reply only with the note content and attachment links for that note.\n` +
+  `- Do not summarize, preface, confirm, mention tool use, or add commentary. Omit administrative metadata like Tags and Created unless it is part of the note body.\n\n` +
   `Use the appropriate tools to fulfill the user's request. Reply with a concise summary of what you did.`
 
 const resetTurn = (state: NoteAgentState): NoteAgentState => ({

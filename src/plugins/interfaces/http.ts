@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import type { Server, ServerWebSocket } from 'bun'
 import { emit } from '../../system/types.ts'
@@ -13,7 +13,7 @@ import { ask } from '../../system/ask.ts'
 import { LlmProviderTopic, CostTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg, CostEvent } from '../../types/llm.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import type { RouteHandler, RouteRegistration } from '../../types/routes.ts'
+import type { RouteHandler, RouteMatch, RouteRegistration } from '../../types/routes.ts'
 import { IdentityProviderTopic, resolveIdentity, ANONYMOUS_USER_ID } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 
@@ -117,7 +117,24 @@ const mimeType = (path: string): string => {
   if (path.endsWith('.ico')) return 'image/x-icon'
   if (path.endsWith('.wav')) return 'audio/wav'
   if (path.endsWith('.mp3')) return 'audio/mpeg'
+  if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg'
+  if (path.endsWith('.gif')) return 'image/gif'
+  if (path.endsWith('.webp')) return 'image/webp'
+  if (path.endsWith('.pdf')) return 'application/pdf'
   return 'application/octet-stream'
+}
+
+const safeJoinUrlPath = (baseDir: string, pathname: string): string | null => {
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(pathname)
+  } catch {
+    return null
+  }
+
+  const base = resolve(baseDir)
+  const filePath = resolve(base, `.${decoded}`)
+  return filePath === base || filePath.startsWith(base + sep) ? filePath : null
 }
 
 /**
@@ -147,8 +164,24 @@ export const createHttpActor = (
   let llmProviderRef:      ActorRef<LlmProviderMsg>      | null = null
   let identityProviderRef: ActorRef<IdentityProviderMsg> | null = null
   let configSnapshot:      Record<string, unknown>       | null = null
-  const routes = new Map<string, RouteHandler>()
-  const routeKey = (method: string, path: string) => `${method.toUpperCase()} ${path}`
+  type RouteRecord = { method: string; path: string; match: RouteMatch; handler: RouteHandler }
+
+  const routes = new Map<string, RouteRecord>()
+  const routeKey = (method: string, path: string, match: RouteMatch = 'exact') => `${method.toUpperCase()} ${match} ${path}`
+
+  const resolveRegisteredRoute = (method: string, pathname: string): RouteHandler | undefined => {
+    const upperMethod = method.toUpperCase()
+    const exact = routes.get(routeKey(upperMethod, pathname, 'exact'))
+    if (exact) return exact.handler
+
+    let best: RouteRecord | undefined
+    for (const route of routes.values()) {
+      if (route.method !== upperMethod || route.match !== 'prefix') continue
+      if (!pathname.startsWith(route.path)) continue
+      if (!best || route.path.length > best.path.length) best = route
+    }
+    return best?.handler
+  }
 
   return {
     handler: onMessage({
@@ -291,9 +324,11 @@ export const createHttpActor = (
 
       _routeChanged: (state, message) => {
         const { reg } = message
-        const key = routeKey(reg.method, reg.path)
+        const match = reg.match ?? 'exact'
+        const method = reg.method.toUpperCase()
+        const key = routeKey(method, reg.path, match)
         if (reg.handler === null) routes.delete(key)
-        else                       routes.set(key, reg.handler)
+        else routes.set(key, { method, path: reg.path, match, handler: reg.handler })
         return { state }
       },
 
@@ -349,7 +384,7 @@ export const createHttpActor = (
             const url = new URL(req.url)
 
             // Plugin-registered routes (auth, etc.) win over inline handlers.
-            const registered = routes.get(routeKey(req.method, url.pathname))
+            const registered = resolveRegisteredRoute(req.method, url.pathname)
             if (registered) return await registered(req, url)
 
             // Models API
@@ -413,8 +448,10 @@ export const createHttpActor = (
             const filePath = url.pathname === '/'
               ? join(PUBLIC_DIR, 'index.html')
               : isMedia
-                ? join(MEDIA_DIR, url.pathname)
-                : join(PUBLIC_DIR, url.pathname)
+                ? safeJoinUrlPath(MEDIA_DIR, url.pathname)
+                : safeJoinUrlPath(PUBLIC_DIR, url.pathname)
+
+            if (!filePath) return new Response('Not Found', { status: 404 })
 
             const file = Bun.file(filePath)
             if (await file.exists()) {

@@ -12,8 +12,10 @@ import { createTopic } from '../system/types.ts'
 
 export type RouteHandler = (req: Request, url: URL) => Promise<Response> | Response
 
+export type RouteMatch = 'exact' | 'prefix'
+
 export type RouteRegistration =
-  | { id: string; method: string; path: string; handler: RouteHandler }
-  | { id: string; method: string; path: string; handler: null }   // unregister
+  | { id: string; method: string; path: string; match?: RouteMatch; handler: RouteHandler }
+  | { id: string; method: string; path: string; match?: RouteMatch; handler: null }   // unregister
 
 export const RouteRegistrationTopic = createTopic<RouteRegistration>('http.route')
