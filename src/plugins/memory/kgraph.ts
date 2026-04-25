@@ -4,11 +4,9 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ToolSchema } from '../../types/tools.ts'
 import type { EmbeddingReply, LlmProviderMsg } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type { KgraphGraph, KgraphMsg, KgraphRefEvent, CreateNodeResult, VectorSearchMatch } from '../../types/memory.ts'
-import { KgraphTopic } from '../../types/memory.ts'
+import type { KgraphGraph, KgraphMsg, CreateNodeResult, VectorSearchMatch } from './types.ts'
 import { ask } from '../../system/ask.ts'
-export { KgraphTopic }
-export type { KgraphGraph, KgraphMsg, KgraphRefEvent }
+export type { KgraphGraph, KgraphMsg }
 
 // ─── Constants ───
 

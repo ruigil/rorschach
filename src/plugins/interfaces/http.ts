@@ -12,8 +12,6 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
 import { LlmProviderTopic, CostTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg, CostEvent } from '../../types/llm.ts'
-import { KgraphTopic } from '../../types/memory.ts'
-import type { KgraphMsg, KgraphGraph } from '../../types/memory.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { RouteHandler, RouteRegistration } from '../../types/routes.ts'
 import { IdentityProviderTopic, resolveIdentity, ANONYMOUS_USER_ID } from '../../types/identity.ts'
@@ -48,7 +46,6 @@ export type HttpMessage =
   | { type: 'config'; data: unknown }
   | { type: '_configSnapshot'; data: Record<string, unknown> }
   | { type: '_llmProviderChanged'; ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_kgraphChanged'; ref: ActorRef<KgraphMsg> | null }
   | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
   | { type: '_routeChanged'; reg: RouteRegistration }
   | { type: '_imageGenerated'; publicUrl: string }
@@ -95,7 +92,6 @@ export type HttpState = {
   connections:         number
   activeSpans:         Record<string, SpanHandle>
   llmProviderRef:      ActorRef<LlmProviderMsg>      | null
-  kgraphRef:           ActorRef<KgraphMsg>           | null
   identityProviderRef: ActorRef<IdentityProviderMsg> | null
 }
 
@@ -149,7 +145,6 @@ export const createHttpActor = (
   // Mutable refs captured by Bun's server callbacks (which run outside the actor message loop)
   let selfRef:             ActorRef<HttpMessage>         | null = null
   let llmProviderRef:      ActorRef<LlmProviderMsg>      | null = null
-  let kgraphRef:           ActorRef<KgraphMsg>           | null = null
   let identityProviderRef: ActorRef<IdentityProviderMsg> | null = null
   let configSnapshot:      Record<string, unknown>       | null = null
   const routes = new Map<string, RouteHandler>()
@@ -289,11 +284,6 @@ export const createHttpActor = (
         return { state: { ...state, llmProviderRef: message.ref } }
       },
 
-      _kgraphChanged: (state, message) => {
-        kgraphRef = message.ref
-        return { state: { ...state, kgraphRef: message.ref } }
-      },
-
       _identityProviderChanged: (state, message) => {
         identityProviderRef = message.ref
         return { state: { ...state, identityProviderRef: message.ref } }
@@ -335,11 +325,6 @@ export const createHttpActor = (
           ref: e.ref,
         }))
 
-        context.subscribe(KgraphTopic, (e) => ({
-          type: '_kgraphChanged' as const,
-          ref: e.ref,
-        }))
-
         context.subscribe(ConfigSnapshotTopic, (e: ConfigSnapshotEvent) => ({
           type: '_configSnapshot' as const,
           data: e.config,
@@ -378,7 +363,7 @@ export const createHttpActor = (
               return new Response(JSON.stringify(FALLBACK_MODELS), { headers: { 'Content-Type': 'application/json' } })
             }
 
-            // Cookie reader (used by /me and /kgraph)
+            // Cookie reader (used by /me)
             const readCookieToken = (r: Request): string =>
               r.headers.get('cookie')?.split(';').reduce<string>((found, pair) => {
                 const [k, v] = pair.trim().split('=')
@@ -391,21 +376,6 @@ export const createHttpActor = (
               const session = await resolveIdentity(identityProviderRef,
                 r => ({ type: 'resolveCookie', cookie, replyTo: r }))
               return new Response(JSON.stringify({ userId: session?.userId ?? null }), { headers: { 'Content-Type': 'application/json' } })
-            }
-
-            // Kgraph dump API
-            // No provider ⇒ anonymous graph. Provider says null ⇒ 401 (auth loaded + bad cookie).
-            if (req.method === 'GET' && url.pathname === '/kgraph') {
-              const cookie = readCookieToken(req)
-              const session = await resolveIdentity(identityProviderRef,
-                r => ({ type: 'resolveCookie', cookie, replyTo: r }))
-              if (!session) {
-                return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
-              }
-              const graph: KgraphGraph = kgraphRef
-                ? await ask(kgraphRef, replyTo => ({ type: 'dump' as const, replyTo, userId: session.userId }), { timeoutMs: 5_000 })
-                : { nodes: [], edges: [] }
-              return new Response(JSON.stringify(graph), { headers: { 'Content-Type': 'application/json' } })
             }
 
             // Config API — GET returns current server config, POST applies changes

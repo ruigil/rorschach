@@ -6,7 +6,7 @@ import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import type { ToolReply } from '../types/tools.ts'
-import type { CreateNodeResult } from '../types/memory.ts'
+import type { CreateNodeResult } from '../plugins/memory/types.ts'
 
 // ─── Helpers ───
 

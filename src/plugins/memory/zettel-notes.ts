@@ -3,7 +3,7 @@ import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
-import type { KgraphMsg, ZettelNote, ZettelIndex, VectorSearchReply } from '../../types/memory.ts'
+import type { KgraphMsg, ZettelNote, ZettelIndex, VectorSearchReply } from './types.ts'
 
 // ─── Tool names ───
 

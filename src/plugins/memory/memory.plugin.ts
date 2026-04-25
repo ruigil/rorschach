@@ -1,10 +1,13 @@
 import type { ActorRef, PluginActorState, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
+import { ask } from '../../system/ask.ts'
 import type { ToolCollection, ToolInvokeMsg } from '../../types/tools.ts'
-import type { KgraphMsg, MemoryConsolidationMsg, MemoryRecallMsg, MemoryStoreMsg } from '../../types/memory.ts'
+import { RouteRegistrationTopic } from '../../types/routes.ts'
+import { IdentityProviderTopic, resolveIdentity } from '../../types/identity.ts'
+import type { IdentityProviderMsg } from '../../types/identity.ts'
+import type { KgraphGraph, KgraphMsg, MemoryConsolidationMsg, MemoryRecallMsg, MemoryStoreMsg } from './types.ts'
 import {
   createKgraphActor,
-  KgraphTopic,
 } from './kgraph.ts'
 import {
   createMemoryConsolidationActor,
@@ -54,6 +57,8 @@ const CONSOLIDATION_TOOL_FILTER = { allow: ['bash', 'read', 'write'] }
 // Recall and store only use zettel tools (injected as initial state) — no system tools needed
 const RECALL_STORE_TOOL_FILTER  = { allow: [] as string[] }
 
+const KGRAPH_ROUTE_ID = 'memory.kgraph.api'
+
 type MemoryActors = {
   consolidation: ActorRef<MemoryConsolidationMsg>
   recall:        ActorRef<MemoryRecallMsg>
@@ -62,19 +67,27 @@ type MemoryActors = {
 }
 
 type MemoryPluginState = {
-  initialized:   boolean
-  kgraph:        PluginActorState<Exclude<MemoryConfig['kgraph'], undefined>>
-  consolidation: ActorRef<MemoryConsolidationMsg> | null
-  recall:        ActorRef<MemoryRecallMsg>         | null
-  store:         ActorRef<MemoryStoreMsg>          | null
-  zettel:        ActorRef<ZettelNoteMsg>           | null
-  memoryGen:     number
+  initialized:         boolean
+  kgraph:              PluginActorState<Exclude<MemoryConfig['kgraph'], undefined>>
+  consolidation:       ActorRef<MemoryConsolidationMsg> | null
+  recall:              ActorRef<MemoryRecallMsg>         | null
+  store:               ActorRef<MemoryStoreMsg>          | null
+  zettel:              ActorRef<ZettelNoteMsg>           | null
+  memoryGen:           number
+  identityProviderRef: ActorRef<IdentityProviderMsg>     | null
 }
 
 type MemoryPluginMsg =
   | { type: 'config'; slice: MemoryConfig | undefined }
+  | { type: '_identityProvider'; ref: ActorRef<IdentityProviderMsg> | null }
 
 // ─── Helpers ───
+
+const readCookieToken = (r: Request): string =>
+  r.headers.get('cookie')?.split(';').reduce<string>((found, pair) => {
+    const [k, v] = pair.trim().split('=')
+    return k === 'session' ? (v ?? '') : found
+  }, '') ?? ''
 
 const spawnMemoryActors = (
   ctx: Parameters<NonNullable<PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig>['lifecycle']>>[2],
@@ -127,61 +140,104 @@ const stopMemoryActors = (
   if (state.zettel)        ctx.stop(state.zettel)
 }
 
-// ─── Plugin definition ───
+/**
+ * Shared references used by the route handler to avoid stale closures.
+ */
+type SharedRefs = {
+  identityProviderRef: ActorRef<IdentityProviderMsg> | null
+  kgraphRef:           ActorRef<KgraphMsg>           | null
+}
 
-const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> = {
-  id: 'memory',
-  version: '1.0.0',
-  description: 'Persistent knowledge graph and user memory tools',
-
-  configDescriptor: {
-    defaults: {
-      dbPath: './workspace/memory/kgraph',
-    },
-    onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
-  },
-
-  initialState: {
-    initialized:   false,
-    kgraph:        { config: null, ref: null, gen: 0 },
-    consolidation: null,
-    recall:        null,
-    store:         null,
-    zettel:        null,
-    memoryGen:     0,
-  },
-
-  lifecycle: onLifecycle({
-    start: (state, ctx) => {
-      const slice       = ctx.initialConfig() as MemoryConfig | undefined
-      const dbPath      = slice?.dbPath ?? './workspace/memory/kgraph'
-      const kgraphConfig = slice?.kgraph ?? {}
-
-      const embeddingCfg = kgraphConfig.embeddingModel && kgraphConfig.embeddingDimensions
-        ? { model: kgraphConfig.embeddingModel, dimensions: kgraphConfig.embeddingDimensions }
-        : undefined
-
-      const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath, embeddingCfg), null) as ActorRef<KgraphMsg>
-
-      ctx.publishRetained(KgraphTopic, 'ref', { ref: kgraphRef })
-
-      let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
-      let recall:        ActorRef<MemoryRecallMsg>         | null = null
-      let store:         ActorRef<MemoryStoreMsg>          | null = null
-      let zettel:        ActorRef<ZettelNoteMsg>           | null = null
-
-      if (slice?.system) {
-        const actors = spawnMemoryActors(ctx, slice.system, 0, kgraphRef)
-        consolidation = actors.consolidation
-        recall        = actors.recall
-        store         = actors.store
-        zettel        = actors.zettel
-        ctx.log.info('memory actors activated', { model: slice.system.model })
+const registerRoutes = (
+  ctx: Parameters<NonNullable<PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig>['lifecycle']>>[2],
+  refs: SharedRefs,
+): void => {
+  ctx.publishRetained(RouteRegistrationTopic, KGRAPH_ROUTE_ID, {
+    id: KGRAPH_ROUTE_ID,
+    method: 'GET',
+    path: '/kgraph',
+    handler: async (req: Request) => {
+      const cookie = readCookieToken(req)
+      const session = await resolveIdentity(refs.identityProviderRef,
+        r => ({ type: 'resolveCookie', cookie, replyTo: r }))
+      
+      if (!session) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
       }
 
-      ctx.log.info('memory plugin activated', { dbPath })
-      return {
-        state: {
+      const kgraphRef = refs.kgraphRef
+      if (!kgraphRef) {
+        return new Response(JSON.stringify({ nodes: [], edges: [] }), { headers: { 'Content-Type': 'application/json' } })
+      }
+
+      const graph: KgraphGraph = await ask(kgraphRef, replyTo => ({ type: 'dump' as const, replyTo, userId: session.userId }), { timeoutMs: 5_000 })
+      return new Response(JSON.stringify(graph), { headers: { 'Content-Type': 'application/json' } })
+    }
+  })
+}
+
+// ─── Plugin definition ───
+
+/**
+ * The memory plugin manages persistent knowledge graph (KGraph) and Zettelkasten tools.
+ * It dynamically registers the /kgraph HTTP route to expose the graph visualization.
+ */
+const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> = (() => {
+  const refs: SharedRefs = { identityProviderRef: null, kgraphRef: null }
+
+  return {
+    id: 'memory',
+    version: '1.0.0',
+    description: 'Persistent knowledge graph and user memory tools',
+
+    configDescriptor: {
+      defaults: {
+        dbPath: './workspace/memory/kgraph',
+      },
+      onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
+    },
+
+    initialState: {
+      initialized:         false,
+      kgraph:              { config: null, ref: null, gen: 0 },
+      consolidation:       null,
+      recall:              null,
+      store:               null,
+      zettel:              null,
+      memoryGen:           0,
+      identityProviderRef: null,
+    },
+
+    lifecycle: onLifecycle({
+      start: (state, ctx) => {
+        const slice       = ctx.initialConfig() as MemoryConfig | undefined
+        const dbPath      = slice?.dbPath ?? './workspace/memory/kgraph'
+        const kgraphConfig = slice?.kgraph ?? {}
+
+        const embeddingCfg = kgraphConfig.embeddingModel && kgraphConfig.embeddingDimensions
+          ? { model: kgraphConfig.embeddingModel, dimensions: kgraphConfig.embeddingDimensions }
+          : undefined
+
+        const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath, embeddingCfg), null) as ActorRef<KgraphMsg>
+        refs.kgraphRef = kgraphRef
+
+        ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
+
+        let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
+        let recall:        ActorRef<MemoryRecallMsg>         | null = null
+        let store:         ActorRef<MemoryStoreMsg>          | null = null
+        let zettel:        ActorRef<ZettelNoteMsg>           | null = null
+
+        if (slice?.system) {
+          const actors = spawnMemoryActors(ctx, slice.system, 0, kgraphRef)
+          consolidation = actors.consolidation
+          recall        = actors.recall
+          store         = actors.store
+          zettel        = actors.zettel
+          ctx.log.info('memory actors activated', { model: slice.system.model })
+        }
+
+        const nextState: MemoryPluginState = {
           initialized: true,
           kgraph: { config: kgraphConfig, ref: kgraphRef, gen: 0 },
           consolidation,
@@ -189,61 +245,69 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           store,
           zettel,
           memoryGen: 0,
-        },
-      }
-    },
+          identityProviderRef: null,
+        }
 
-    stopped: (state, ctx) => {
-      if (state.kgraph.ref) {
-        ctx.deleteRetained(KgraphTopic, 'ref', { ref: null })
-      }
-      stopMemoryActors(ctx, state)
-      ctx.log.info('memory plugin deactivating')
-      return { state }
-    },
-  }),
+        registerRoutes(ctx, refs)
 
-  handler: onMessage<MemoryPluginMsg, MemoryPluginState>({
-    config: (state, msg, ctx) => {
-      // ─── Reconfigure kgraph ───
-      if (state.kgraph.ref) {
-        ctx.stop(state.kgraph.ref)
-      }
+        ctx.log.info('memory plugin activated', { dbPath })
+        return { state: nextState }
+      },
 
-      const dbPath          = msg.slice?.dbPath ?? './workspace/memory/kgraph'
-      const newKgraphConfig = msg.slice?.kgraph ?? {}
-      const kgraphGen       = state.kgraph.gen + 1
+      stopped: (state, ctx) => {
+        ctx.deleteRetained(RouteRegistrationTopic, KGRAPH_ROUTE_ID, { id: KGRAPH_ROUTE_ID, method: 'GET', path: '/kgraph', handler: null })
+        stopMemoryActors(ctx, state)
+        refs.kgraphRef = null
+        refs.identityProviderRef = null
+        ctx.log.info('memory plugin deactivating')
+        return { state }
+      },
+    }),
 
-      const newEmbeddingCfg = newKgraphConfig.embeddingModel && newKgraphConfig.embeddingDimensions
-        ? { model: newKgraphConfig.embeddingModel, dimensions: newKgraphConfig.embeddingDimensions }
-        : undefined
+    handler: onMessage<MemoryPluginMsg, MemoryPluginState>({
+      _identityProvider: (state, msg) => {
+        refs.identityProviderRef = msg.ref
+        return {
+          state: { ...state, identityProviderRef: msg.ref }
+        }
+      },
 
-      const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, createKgraphActor(dbPath, newEmbeddingCfg), null) as ActorRef<KgraphMsg>
+      config: (state, msg, ctx) => {
+        // ─── Reconfigure kgraph ───
+        if (state.kgraph.ref) {
+          ctx.stop(state.kgraph.ref)
+        }
 
-      ctx.publishRetained(KgraphTopic, 'ref', { ref: kgraphRef })
+        const dbPath          = msg.slice?.dbPath ?? './workspace/memory/kgraph'
+        const newKgraphConfig = msg.slice?.kgraph ?? {}
+        const kgraphGen       = state.kgraph.gen + 1
 
-      // ─── Reconfigure memory actors ───
-      stopMemoryActors(ctx, state)
+        const newEmbeddingCfg = newKgraphConfig.embeddingModel && newKgraphConfig.embeddingDimensions
+          ? { model: newKgraphConfig.embeddingModel, dimensions: newKgraphConfig.embeddingDimensions }
+          : undefined
 
-      let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
-      let recall:        ActorRef<MemoryRecallMsg>         | null = null
-      let store:         ActorRef<MemoryStoreMsg>          | null = null
-      let zettel:        ActorRef<ZettelNoteMsg>           | null = null
-      const memoryGen = state.memoryGen + 1
+        const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, createKgraphActor(dbPath, newEmbeddingCfg), null) as ActorRef<KgraphMsg>
+        refs.kgraphRef = kgraphRef
 
-      if (msg.slice?.system) {
-        const actors = spawnMemoryActors(ctx, msg.slice.system, memoryGen, kgraphRef)
-        consolidation = actors.consolidation
-        recall        = actors.recall
-        store         = actors.store
-        zettel        = actors.zettel
-        ctx.log.info('memory actors reconfigured', { gen: memoryGen })
-      }
+        // ─── Reconfigure memory actors ───
+        stopMemoryActors(ctx, state)
 
-      ctx.log.info('memory plugin reconfigured', { dbPath, kgraphGen })
+        let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
+        let recall:        ActorRef<MemoryRecallMsg>         | null = null
+        let store:         ActorRef<MemoryStoreMsg>          | null = null
+        let zettel:        ActorRef<ZettelNoteMsg>           | null = null
+        const memoryGen = state.memoryGen + 1
 
-      return {
-        state: {
+        if (msg.slice?.system) {
+          const actors = spawnMemoryActors(ctx, msg.slice.system, memoryGen, kgraphRef)
+          consolidation = actors.consolidation
+          recall        = actors.recall
+          store         = actors.store
+          zettel        = actors.zettel
+          ctx.log.info('memory actors reconfigured', { gen: memoryGen })
+        }
+
+        const nextState: MemoryPluginState = {
           ...state,
           kgraph: { config: newKgraphConfig, ref: kgraphRef, gen: kgraphGen },
           consolidation,
@@ -251,10 +315,18 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           store,
           zettel,
           memoryGen,
-        },
-      }
-    },
-  }),
-}
+        }
+
+        // Re-registration isn't strictly necessary as the path and refs object are stable,
+        // but it doesn't hurt and ensures the handler captures the intent.
+        registerRoutes(ctx, refs)
+
+        ctx.log.info('memory plugin reconfigured', { dbPath, kgraphGen })
+
+        return { state: nextState }
+      },
+    }),
+  }
+})()
 
 export default memoryPlugin

@@ -2,7 +2,7 @@ import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, MessageHandler, PersistenceAdapter, SpanHandle, ActorResult } from '../../system/types.ts'
 import { ask } from '../../system/ask.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { OutboundMessageTopic, MemoryStreamTopic } from '../../types/events.ts'
+import { OutboundMessageTopic, UserStreamTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
@@ -506,7 +506,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           sessionUsage: newSession,
         },
         events: [
-          emit(MemoryStreamTopic, { userId, userText, assistantText: state.pending, timestamp: Date.now() }),
+          emit(UserStreamTopic, { userId, userText, assistantText: state.pending, timestamp: Date.now() }),
           emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) }),
         ],
         become: idleHandler,

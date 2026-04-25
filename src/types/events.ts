@@ -52,7 +52,7 @@ export type MemoryTurnEvent = {
 }
 
 /** Topic emitted when a chatbot LLM turn completes. Subscribe to persist conversation history. */
-export const MemoryStreamTopic = createTopic<MemoryTurnEvent>('memory.turn')
+export const UserStreamTopic = createTopic<MemoryTurnEvent>('user.stream')
 
 // ─── Domain event: emitted when a POST /config request is received ───
 

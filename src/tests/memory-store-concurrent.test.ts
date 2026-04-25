@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createPluginSystem, ask } from '../system/index.ts'
 import { createMemoryStoreActor, INITIAL_STORE_STATE } from '../plugins/memory/memory-store.ts'
-import type { MemoryStoreMsg } from '../types/memory.ts'
+import type { MemoryStoreMsg } from '../plugins/memory/types.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../types/llm.ts'

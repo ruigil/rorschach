@@ -43,7 +43,7 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
       const signalConfig = slice?.signal ?? null
 
       const httpRef = httpConfig
-        ? ctx.spawn('http-0', createHttpActor(httpConfig), { server: null, connections: 0, activeSpans: {}, llmProviderRef: null, kgraphRef: null, identityProviderRef: null } as HttpState)
+        ? ctx.spawn('http-0', createHttpActor(httpConfig), { server: null, connections: 0, activeSpans: {}, llmProviderRef: null, identityProviderRef: null } as HttpState)
         : null
       const cliRef = cliConfig
         ? ctx.spawn('cli-0', createCliActor(), { ...CLI_INITIAL_STATE })
@@ -80,7 +80,7 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
       const signalGen = state.signal.gen + 1
 
       const httpRef = newHttpConfig
-        ? ctx.spawn(`http-${httpGen}`, createHttpActor(newHttpConfig), { server: null, connections: 0, activeSpans: {}, llmProviderRef: null, kgraphRef: null, identityProviderRef: null } as HttpState)
+        ? ctx.spawn(`http-${httpGen}`, createHttpActor(newHttpConfig), { server: null, connections: 0, activeSpans: {}, llmProviderRef: null, identityProviderRef: null } as HttpState)
         : null
       const cliRef = newCliConfig
         ? ctx.spawn(`cli-${cliGen}`, createCliActor(), { ...CLI_INITIAL_STATE })

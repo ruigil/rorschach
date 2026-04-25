@@ -9,7 +9,7 @@ import type {
   Tool,
   ToolCall,
 } from '../../types/llm.ts'
-import type { UserContextMsg } from '../../types/memory.ts'
+import type { UserContextMsg } from './types.ts'
 import { UserContextTopic } from '../../types/memory.ts'
 import { zettelSection } from './ontology.ts'
 import { CronTriggerTopic } from '../../types/events.ts'

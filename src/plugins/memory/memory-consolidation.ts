@@ -1,6 +1,6 @@
 import type { ActorContext, ActorDef, ActorRef, ActorResult, MessageHandler } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { MemoryStreamTopic } from '../../types/events.ts'
+import { UserStreamTopic } from '../../types/events.ts'
 import type { MemoryTurnEvent } from '../../types/events.ts'
 import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
@@ -12,7 +12,7 @@ import type {
   ToolCall,
 } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type { MemoryConsolidationMsg, UserConsolidationWorkerMsg, UserContextMsg } from '../../types/memory.ts'
+import type { MemoryConsolidationMsg, UserConsolidationWorkerMsg, UserContextMsg } from './types.ts'
 import { createUserContextActor, INITIAL_USER_CONTEXT_STATE } from './user-context.ts'
 import { ask } from '../../system/ask.ts'
 import { zettelSection } from './ontology.ts'
@@ -351,7 +351,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
   return {
     lifecycle: onLifecycle({
       start: (state, context) => {
-        context.subscribe(MemoryStreamTopic, (e) => ({
+        context.subscribe(UserStreamTopic, (e) => ({
           type: '_turn' as const,
           userId: e.userId,
           userText: e.userText,

@@ -11,7 +11,7 @@ import type {
   ToolCall,
 } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type { MemoryStoreMsg } from '../../types/memory.ts'
+import type { MemoryStoreMsg } from './types.ts'
 import { zettelSection } from './ontology.ts'
 
 // ─── Tool registration ───
