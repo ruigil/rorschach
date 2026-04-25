@@ -18,7 +18,7 @@ type LlmProviderConfig = {
 type ChatbotConfig = {
   model:          string
   systemPrompt?:  string
-  historyWindow?: number
+  maxTokens?: number
   toolFilter?:    ToolFilter
 }
 
@@ -66,7 +66,7 @@ const spawnAll = (
           llmRef:        llmProviderRef,
           model:         chatbotConfig.model,
           systemPrompt:  chatbotConfig.systemPrompt,
-          historyWindow: chatbotConfig.historyWindow,
+          maxTokens: chatbotConfig.maxTokens,
           toolFilter:    chatbotConfig.toolFilter,
           plannerConfig: plannerConfig ?? undefined,
         }),
@@ -172,7 +172,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
                 llmRef:        llmProviderRef!,
                 model:         newChatbotConfig.model,
                 systemPrompt:  newChatbotConfig.systemPrompt,
-                historyWindow: newChatbotConfig.historyWindow,
+                maxTokens: newChatbotConfig.maxTokens,
                 toolFilter:    newChatbotConfig.toolFilter,
                 plannerConfig: newPlannerConfig ?? undefined,
               }),

@@ -76,7 +76,7 @@ export type ChatbotActorOptions = {
   clientId:       string
   model:          string
   systemPrompt?:  string
-  historyWindow?: number
+  maxTokens?:     number
   toolFilter?:    ToolFilter
   plannerConfig?: PlannerConfig
   maxToolLoops?:  number
@@ -104,10 +104,56 @@ const PLAN_TOOL_SCHEMA: Tool = {
 
 // ─── Helpers ───
 
-const trimHistory = (history: ConversationMessage[], maxTurns: number): ConversationMessage[] => {
-  const userIndices = history.reduce<number[]>((acc, m, i) => { if (m.role === 'user') acc.push(i); return acc }, [])
-  if (userIndices.length <= maxTurns) return history
-  return history.slice(userIndices[userIndices.length - maxTurns])
+/**
+ * Estimates the token count of a message.
+ * Roughly 1 token per 4 characters, plus a small overhead per message.
+ */
+function estimateMessageTokens(msg: ConversationMessage): number {
+  let chars = 0
+
+  if (typeof msg.content === 'string') {
+    chars += msg.content.length
+  } else if (Array.isArray(msg.content)) {
+    for (const part of msg.content) {
+      if (part.type === 'text') chars += part.text.length
+    }
+  }
+
+  if (msg.role === 'assistant' && msg.tool_calls) {
+    for (const call of msg.tool_calls) {
+      chars += call.function.name.length
+      chars += call.function.arguments.length
+    }
+  }
+
+  // Add overhead for message framing
+  chars += 20
+
+  return Math.ceil(chars / 4)
+}
+
+/**
+ * Trims the conversation history to fit within a specific token budget.
+ * Always cuts at a 'user' message to ensure complete turns are preserved.
+ */
+const trimHistory = (history: ConversationMessage[], maxTokens: number): ConversationMessage[] => {
+  let currentTokens = 0
+  let earliestValidIndex = history.length
+
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msg = history[i]!
+    currentTokens += estimateMessageTokens(msg)
+
+    if (currentTokens > maxTokens) {
+      break
+    }
+
+    if (msg.role === 'user') {
+      earliestValidIndex = i
+    }
+  }
+
+  return history.slice(earliestValidIndex)
 }
 
 const filterTools = (tools: ToolCollection, filter?: ToolFilter): ToolCollection =>
@@ -133,15 +179,16 @@ const sanitizeHistory = (history: ConversationMessage[]): ConversationMessage[] 
   return []
 }
 
-const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<LlmProviderMsg> | null): PersistenceAdapter<ChatbotState> => {
+const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<LlmProviderMsg> | null, maxTokens?: number): PersistenceAdapter<ChatbotState> => {
   const path = `workspace/history/${userId}.json`
   return {
     load: async () => {
       const file = Bun.file(path)
       if (!await file.exists()) return undefined
       const saved = JSON.parse(await file.text()) as PersistedChatbotState
+      const history = sanitizeHistory(saved.history ?? [])
       return {
-        history:          sanitizeHistory(saved.history ?? []),
+        history:          maxTokens ? trimHistory(history, maxTokens) : history,
         sessionUsage:     { promptTokens: 0, completionTokens: 0 },
         userContext:      saved.userContext ?? null,
         // Ephemeral fields — reset to defaults; restored via subscriptions on start
@@ -169,7 +216,7 @@ const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<Ll
 // ─── Actor definition ───
 
 export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<ChatbotMsg, ChatbotState> => {
-  const { clientId, model, systemPrompt, historyWindow, toolFilter, plannerConfig, maxToolLoops = 25, userId, llmRef: initialLlmRef = null } = options
+  const { clientId, model, systemPrompt, maxTokens, toolFilter, plannerConfig, maxToolLoops = 25, userId, llmRef: initialLlmRef = null } = options
 
   type Result = ActorResult<ChatbotMsg, ChatbotState>
 
@@ -487,7 +534,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         : prevSession
 
       const rawHistory: ConversationMessage[] = [...state.history, { role: 'assistant', content: state.pending }]
-      const newHistory = historyWindow ? trimHistory(rawHistory, historyWindow) : rawHistory
+      const newHistory = maxTokens ? trimHistory(rawHistory, maxTokens) : rawHistory
 
       const userMsg = state.turnMessages?.findLast(m => m.role === 'user')
       const userText = typeof userMsg?.content === 'string' ? userMsg.content : ''
@@ -649,7 +696,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
   })
 
   return {
-    persistence: createPersistence(userId, clientId, initialLlmRef),
+    persistence: createPersistence(userId, clientId, initialLlmRef, maxTokens),
 
     lifecycle: onLifecycle({
       start: (state, context) => {
