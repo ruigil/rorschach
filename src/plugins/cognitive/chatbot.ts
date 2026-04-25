@@ -113,10 +113,6 @@ function estimateMessageTokens(msg: ConversationMessage): number {
 
   if (typeof msg.content === 'string') {
     chars += msg.content.length
-  } else if (Array.isArray(msg.content)) {
-    for (const part of msg.content) {
-      if (part.type === 'text') chars += part.text.length
-    }
   }
 
   if (msg.role === 'assistant' && msg.tool_calls) {
