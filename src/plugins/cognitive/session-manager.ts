@@ -4,10 +4,9 @@ import { ClientConnectTopic, ClientDisconnectTopic, InboundMessageTopic, CronTri
 import { createChatbotActor } from './chatbot.ts'
 import type { ChatbotState } from './chatbot.ts'
 import type { ToolFilter } from '../../types/tools.ts'
-import type { ChatbotMsg } from '../../types/chatbot.ts'
+import type { ChatbotMsg, PlannerInputMsg, PlannerConfig } from './types.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
-import type { PlannerInputMsg, PlannerConfig } from '../../types/planner.ts'
-import { PlannerActiveTopic } from '../../types/planner.ts'
+import { PlannerActiveTopic } from './types.ts'
 
 // ─── Message protocol ───
 

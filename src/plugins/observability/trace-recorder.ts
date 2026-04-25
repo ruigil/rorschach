@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ActorDef } from '../../system/types.ts'
 import { TraceTopic } from '../../types/trace.ts'
-import type { TraceRecorderMsg } from '../../types/observability.ts'
+import type { TraceRecorderMsg } from './types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 
 // ─── Helpers ───

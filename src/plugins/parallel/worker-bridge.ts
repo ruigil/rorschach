@@ -2,8 +2,8 @@ import type { ActorDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type {
   TaskEvent, WorkerBridge, WorkerBridgeMsg, WorkerBridgeOptions, WorkerBridgeState,
-} from '../../types/parallel.ts'
-import { taskTopic } from '../../types/parallel.ts'
+} from './types.ts'
+import { taskTopic } from './types.ts'
 
 /**
  * Creates a worker thread bridge actor.

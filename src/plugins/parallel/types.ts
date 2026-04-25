@@ -1,5 +1,5 @@
-import { createTopic } from '../system/types.ts'
-import type { ActorDef, EventTopic } from '../system/types.ts'
+import { createTopic } from '../../system/types.ts'
+import type { ActorDef, EventTopic } from '../../system/types.ts'
 
 // ─── Task event types ───
 

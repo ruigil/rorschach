@@ -6,8 +6,8 @@ import { ask } from '../../system/ask.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { ApiMessage, LlmProviderMsg, LlmProviderReply, Tool, ToolCall } from '../../types/llm.ts'
-import type { Plan, PlannerInputMsg, PlanTask } from '../../types/planner.ts'
-import { PlannerActiveTopic } from '../../types/planner.ts'
+import type { Plan, PlannerInputMsg, PlanTask } from './types.ts'
+import { PlannerActiveTopic } from './types.ts'
 
 // ─── Options ───
 

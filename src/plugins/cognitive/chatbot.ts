@@ -14,9 +14,8 @@ import type {
   Tool,
   ToolCall,
 } from '../../types/llm.ts'
-import type { ChatbotMsg } from '../../types/chatbot.ts'
+import type { ChatbotMsg, PlannerConfig, PlannerInputMsg } from './types.ts'
 import { UserContextTopic } from '../../types/memory.ts'
-import type { PlannerConfig, PlannerInputMsg } from '../../types/planner.ts'
 import { createPlannerAgentActor, createInitialPlannerAgentState } from './planner-agent.ts'
 
 // ─── State ───

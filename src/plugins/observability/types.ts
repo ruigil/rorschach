@@ -1,6 +1,6 @@
-import type { LogEvent } from '../system/types.ts'
-import type { TraceSpan } from './trace.ts'
-import type { CostEvent } from './llm.ts'
+import type { LogEvent } from '../../system/types.ts'
+import type { TraceSpan } from '../../types/trace.ts'
+import type { CostEvent } from '../../types/llm.ts'
 
 // ─── JSONL logger message protocol ───
 

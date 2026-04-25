@@ -3,7 +3,7 @@ import { createLlmProviderActor, createOpenRouterAdapter } from './llm-provider.
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { ToolFilter } from '../../types/tools.ts'
-import type { PlannerConfig } from '../../types/planner.ts'
+import type { PlannerConfig } from './types.ts'
 import type { ActorContext, ActorRef, PluginActorState, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'

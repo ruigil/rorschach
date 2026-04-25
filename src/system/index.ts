@@ -1,8 +1,8 @@
 // ─── Public API ───
 export { createPluginSystem, type PluginSystemOptions } from './system.ts'
 export { createWorkerBridge } from '../plugins/parallel/worker-bridge.ts'
-export { taskTopic } from '../types/parallel.ts'
-export type { TaskEvent, WorkerBridge, WorkerBridgeMsg, WorkerBridgeOptions, WorkerBridgeState } from '../types/parallel.ts'
+export { taskTopic } from '../plugins/parallel/types.ts'
+export type { TaskEvent, WorkerBridge, WorkerBridgeMsg, WorkerBridgeOptions, WorkerBridgeState } from '../plugins/parallel/types.ts'
 export { ask } from './ask.ts'
 export { onLifecycle, onMessage } from './match.ts'
 export { watchTopic } from './services.ts'

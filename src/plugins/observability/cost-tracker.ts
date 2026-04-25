@@ -2,7 +2,7 @@ import { appendFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ActorDef } from '../../system/types.ts'
 import { CostTopic } from '../../types/llm.ts'
-import type { CostTrackerMsg } from '../../types/observability.ts'
+import type { CostTrackerMsg } from './types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 
 // ─── Actor state ───
