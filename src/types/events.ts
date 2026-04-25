@@ -44,7 +44,7 @@ export const CronTriggerTopic = createTopic<CronTriggerEvent>('cron.trigger.user
 
 // ─── Domain event: published when a chatbot turn completes ───
 
-export type MemoryTurnEvent = {
+export type UserStreamEvent = {
   userId:        string
   userText:      string
   assistantText: string
@@ -52,7 +52,7 @@ export type MemoryTurnEvent = {
 }
 
 /** Topic emitted when a chatbot LLM turn completes. Subscribe to persist conversation history. */
-export const UserStreamTopic = createTopic<MemoryTurnEvent>('user.stream')
+export const UserStreamTopic = createTopic<UserStreamEvent>('user.stream')
 
 // ─── Domain event: emitted when a POST /config request is received ───
 

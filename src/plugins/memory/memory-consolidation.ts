@@ -1,7 +1,7 @@
 import type { ActorContext, ActorDef, ActorRef, ActorResult, MessageHandler } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { UserStreamTopic } from '../../types/events.ts'
-import type { MemoryTurnEvent } from '../../types/events.ts'
+import type { UserStreamEvent } from '../../types/events.ts'
 import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import type {
@@ -44,7 +44,7 @@ type PendingBatch = {
 }
 
 type WorkerState = {
-  buffer:         MemoryTurnEvent[]
+  buffer:         UserStreamEvent[]
   requestId:      string | null
   turnMessages:   ApiMessage[] | null
   accumulated:    string
@@ -102,7 +102,7 @@ const buildSystemPrompt = (userId: string): string =>
   `Skip trivial exchanges (small talk, simple factual questions with no personal signal).\n` +
   `Do not duplicate facts — update the canonical note instead of creating a new one.`
 
-const buildMessages = (userId: string, turns: MemoryTurnEvent[]): ApiMessage[] => {
+const buildMessages = (userId: string, turns: UserStreamEvent[]): ApiMessage[] => {
   const turnList = turns.map((t, i) => {
     const date = new Date(t.timestamp).toISOString()
     return `Turn ${i + 1} [${date}]\nUser: ${t.userText}\nAssistant: ${t.assistantText}`
