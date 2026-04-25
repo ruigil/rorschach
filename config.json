@@ -54,7 +54,7 @@
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
         "model": "google/gemini-3.1-flash-lite-preview",
-        "maxTokens": 64000,
+        "historyWindowHours": 4,
         "toolFilter": {
           "deny": [
             "bash",

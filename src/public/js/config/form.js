@@ -11,7 +11,7 @@ const configDefaults = {
   metricsEnabled:                 true,
   model:                          'openai/gpt-4o-mini',
   systemPrompt:                   '',
-  maxTokens:                      64000,
+  historyWindowHours:                      4,
   reasoningEnabled:               false,
   reasoningEffort:                'medium',
   visionModel:                    'google/gemini-flash-1.5',
@@ -47,7 +47,7 @@ export function applyToForm(cfg) {
   configForm.metricsEnabled.checked              = cfg.metricsEnabled
   configForm.model.value                         = cfg.model
   configForm.systemPrompt.value                  = cfg.systemPrompt ?? ''
-  configForm.maxTokens.value                 = cfg.maxTokens ?? 64000
+  configForm.historyWindowHours.value                 = cfg.historyWindowHours ?? 4
   configForm.reasoningEnabled.checked            = cfg.reasoningEnabled
   configForm.reasoningEffort.value               = cfg.reasoningEffort
   configForm.visionModel.value                   = cfg.visionModel
@@ -76,7 +76,7 @@ function readFromForm() {
     metricsEnabled:                configForm.metricsEnabled.checked,
     model:                         configForm.model.value,
     systemPrompt:                  configForm.systemPrompt.value,
-    maxTokens:                     Number(configForm.maxTokens.value),
+    historyWindowHours:                     Number(configForm.historyWindowHours.value),
     reasoningEnabled:              String(configForm.reasoningEnabled.checked),
     reasoningEffort:               configForm.reasoningEffort.value,
     visionModel:                   configForm.visionModel.value,

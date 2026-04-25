@@ -28,7 +28,7 @@ const buildConfigSnapshot = (c: Record<string, unknown>): Record<string, unknown
   return {
     model:                         cog.chatbot?.model                     ?? '',
     systemPrompt:                  cog.chatbot?.systemPrompt               ?? '',
-    maxTokens:                     cog.chatbot?.maxTokens                  ?? 64000,
+    historyWindowHours: cog.chatbot?.historyWindowHours ?? 4,
     reasoningEnabled:              String(cog.llmProvider?.reasoning?.enabled ?? false),
     reasoningEffort:               cog.llmProvider?.reasoning?.effort      ?? 'medium',
     visionModel:                   tls.visionActor?.model                  ?? '',
@@ -129,7 +129,7 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
   const chatbotPatch = {
     model:         String(form.model ?? 'openai/gpt-4o-mini'),
     systemPrompt:  form.systemPrompt ? String(form.systemPrompt) : SYSTEM_PROMPT,
-    maxTokens: form.maxTokens ? Number(form.maxTokens) : undefined,
+    historyWindowHours: form.historyWindowHours ? Number(form.historyWindowHours) : undefined,
   }
   const toolsPatch = {
     visionActor: {

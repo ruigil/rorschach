@@ -20,10 +20,13 @@ import { createPlannerAgentActor, createInitialPlannerAgentState } from './plann
 
 // ─── State ───
 
-type ConversationMessage =
+type ConversationMessage = {
+  timestamp?: number
+} & (
   | { role: 'user';      content: string }
   | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
   | { role: 'tool';      content: string; tool_call_id: string }
+)
 
 type PendingBatch = {
   remaining:          number
@@ -76,7 +79,7 @@ export type ChatbotActorOptions = {
   clientId:       string
   model:          string
   systemPrompt?:  string
-  maxTokens?:     number
+  historyWindowHours?:     number
   toolFilter?:    ToolFilter
   plannerConfig?: PlannerConfig
   maxToolLoops?:  number
@@ -105,42 +108,18 @@ const PLAN_TOOL_SCHEMA: Tool = {
 // ─── Helpers ───
 
 /**
- * Estimates the token count of a message.
- * Roughly 1 token per 4 characters, plus a small overhead per message.
- */
-function estimateMessageTokens(msg: ConversationMessage): number {
-  let chars = 0
-
-  if (typeof msg.content === 'string') {
-    chars += msg.content.length
-  }
-
-  if (msg.role === 'assistant' && msg.tool_calls) {
-    for (const call of msg.tool_calls) {
-      chars += call.function.name.length
-      chars += call.function.arguments.length
-    }
-  }
-
-  // Add overhead for message framing
-  chars += 20
-
-  return Math.ceil(chars / 4)
-}
-
-/**
- * Trims the conversation history to fit within a specific token budget.
+ * Trims the conversation history to fit within a specific time window (in hours).
  * Always cuts at a 'user' message to ensure complete turns are preserved.
  */
-const trimHistory = (history: ConversationMessage[], maxTokens: number): ConversationMessage[] => {
-  let currentTokens = 0
+const trimHistory = (history: ConversationMessage[], historyWindowHours: number): ConversationMessage[] => {
+  const cutoffTime = Date.now() - historyWindowHours * 60 * 60 * 1000
   let earliestValidIndex = history.length
 
   for (let i = history.length - 1; i >= 0; i--) {
     const msg = history[i]!
-    currentTokens += estimateMessageTokens(msg)
+    const msgTime = msg.timestamp ?? Date.now()
 
-    if (currentTokens > maxTokens) {
+    if (msgTime < cutoffTime) {
       break
     }
 
@@ -175,7 +154,7 @@ const sanitizeHistory = (history: ConversationMessage[]): ConversationMessage[] 
   return []
 }
 
-const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<LlmProviderMsg> | null, maxTokens?: number): PersistenceAdapter<ChatbotState> => {
+const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<LlmProviderMsg> | null, historyWindowHours?: number): PersistenceAdapter<ChatbotState> => {
   const path = `workspace/history/${userId}.json`
   return {
     load: async () => {
@@ -184,7 +163,7 @@ const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<Ll
       const saved = JSON.parse(await file.text()) as PersistedChatbotState
       const history = sanitizeHistory(saved.history ?? [])
       return {
-        history:          maxTokens ? trimHistory(history, maxTokens) : history,
+        history:          historyWindowHours ? trimHistory(history, historyWindowHours) : history,
         sessionUsage:     { promptTokens: 0, completionTokens: 0 },
         userContext:      saved.userContext ?? null,
         // Ephemeral fields — reset to defaults; restored via subscriptions on start
@@ -212,7 +191,7 @@ const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<Ll
 // ─── Actor definition ───
 
 export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<ChatbotMsg, ChatbotState> => {
-  const { clientId, model, systemPrompt, maxTokens, toolFilter, plannerConfig, maxToolLoops = 25, userId, llmRef: initialLlmRef = null } = options
+  const { clientId, model, systemPrompt, historyWindowHours, toolFilter, plannerConfig, maxToolLoops = 25, userId, llmRef: initialLlmRef = null } = options
 
   type Result = ActorResult<ChatbotMsg, ChatbotState>
 
@@ -274,7 +253,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           state: {
             ...state,
             activeClientId,
-            history: [...state.history, { role: 'user' as const, content: `[Internal Instruction] ${text}` }],
+            history: [...state.history, { role: 'user' as const, content: `[Internal Instruction] ${text}`, timestamp: Date.now() }],
             requestId,
             turnMessages: apiMessages,
             pending: '',
@@ -326,7 +305,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         state: {
           ...state,
           activeClientId,
-          history: [...state.history, { role: 'user', content: userText }],
+          history: [...state.history, { role: 'user', content: userText, timestamp: Date.now() }],
           requestId,
           turnMessages: apiMessages,
           pending: '',
@@ -404,9 +383,9 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
         const handoffText = 'Starting a planning session for you.'
         const toolCallHistoryMsgs: ConversationMessage[] = [
-          { role: 'assistant', content: null, tool_calls: [{ id: planCall.id, type: 'function', function: { name: 'plan', arguments: planCall.arguments } }] },
-          { role: 'tool', content: 'Planning session started.', tool_call_id: planCall.id },
-          { role: 'assistant', content: handoffText },
+          { role: 'assistant', content: null, tool_calls: [{ id: planCall.id, type: 'function', function: { name: 'plan', arguments: planCall.arguments } }], timestamp: Date.now() },
+          { role: 'tool', content: 'Planning session started.', tool_call_id: planCall.id, timestamp: Date.now() },
+          { role: 'assistant', content: handoffText, timestamp: Date.now() },
         ]
         handles?.requestSpan.done()
         return {
@@ -529,8 +508,8 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         ? { promptTokens: prevSession.promptTokens + totalUsage.promptTokens, completionTokens: prevSession.completionTokens + totalUsage.completionTokens }
         : prevSession
 
-      const rawHistory: ConversationMessage[] = [...state.history, { role: 'assistant', content: state.pending }]
-      const newHistory = maxTokens ? trimHistory(rawHistory, maxTokens) : rawHistory
+      const rawHistory: ConversationMessage[] = [...state.history, { role: 'assistant', content: state.pending, timestamp: Date.now() }]
+      const newHistory = historyWindowHours ? trimHistory(rawHistory, historyWindowHours) : rawHistory
 
       const userMsg = state.turnMessages?.findLast(m => m.role === 'user')
       const userText = typeof userMsg?.content === 'string' ? userMsg.content : ''
@@ -609,8 +588,8 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       const nextLoopCount = state.toolLoopCount + 1
 
       const toolCallHistoryMsgs: Array<ConversationMessage> = [
-        { role: 'assistant', content: null, tool_calls: batch.assistantToolCalls },
-        ...updatedResults.map(r => ({ role: 'tool' as const, content: r.content, tool_call_id: r.toolCallId })),
+        { role: 'assistant', content: null, tool_calls: batch.assistantToolCalls, timestamp: Date.now() },
+        ...updatedResults.map(r => ({ role: 'tool' as const, content: r.content, tool_call_id: r.toolCallId, timestamp: Date.now() })),
       ]
 
       if (nextLoopCount >= maxToolLoops) {
@@ -692,7 +671,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
   })
 
   return {
-    persistence: createPersistence(userId, clientId, initialLlmRef, maxTokens),
+    persistence: createPersistence(userId, clientId, initialLlmRef, historyWindowHours),
 
     lifecycle: onLifecycle({
       start: (state, context) => {
