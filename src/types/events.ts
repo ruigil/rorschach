@@ -49,6 +49,7 @@ export type UserStreamEvent = {
   userText:      string
   assistantText: string
   timestamp:     number
+  injected?:     boolean
 }
 
 /** Topic emitted when a chatbot LLM turn completes. Subscribe to persist conversation history. */

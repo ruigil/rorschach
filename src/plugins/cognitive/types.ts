@@ -6,7 +6,7 @@ import type { ToolInvokeMsg, ToolReply, ToolSchema, ToolFilter } from '../../typ
 // ─── Chatbot actor message protocol ───
 
 export type ChatbotMsg =
-  | { type: 'userMessage'; clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string; isCron?: boolean }
+  | { type: 'userMessage'; clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string; isCron?: boolean; isInjected?: boolean }
   | LlmProviderReply
   | { type: '_toolRegistered';      name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
   | { type: '_toolUnregistered';    name: string }

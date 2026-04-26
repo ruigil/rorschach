@@ -58,6 +58,7 @@ export type ChatbotState = {
   pendingUsage:     TokenUsage
   pending:          string
   pendingReasoning: string
+  isInjected?:      boolean
 
   // Active tool batch (set on llmToolCalls, cleared when all results arrive)
   pendingBatch:     PendingBatch | null
@@ -220,7 +221,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
   const idleHandler: MessageHandler<ChatbotMsg, ChatbotState> = onMessage<ChatbotMsg, ChatbotState>({
     userMessage: (state, message, context): Result => {
-      const { clientId: msgClientId, text, images, audio, pdfs, traceId, parentSpanId, isCron } = message
+      const { clientId: msgClientId, text, images, audio, pdfs, traceId, parentSpanId, isCron, isInjected } = message
       const activeClientId = msgClientId
       const todayDateNote = `Today's date is ${new Date().toDateString()}.`
       const fullSystemPrompt = [systemPrompt, todayDateNote, state.userContext, HISTORY_MARKERS_NOTE].filter(Boolean).join('\n\n---\n\n')
@@ -261,6 +262,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
             pendingUsage: { promptTokens: 0, completionTokens: 0 },
             spanHandles: { requestSpan, llmSpan, toolSpans: {} },
             toolLoopCount: 0,
+            isInjected: true,
           },
           become: awaitingLlmHandler,
         }
@@ -313,6 +315,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           pendingUsage: { promptTokens: 0, completionTokens: 0 },
           spanHandles: { requestSpan, llmSpan, toolSpans: {} },
           toolLoopCount: 0,
+          isInjected: isInjected || false,
         },
         become: awaitingLlmHandler,
       }
@@ -525,9 +528,10 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           spanHandles: null,
           pendingUsage: { promptTokens: 0, completionTokens: 0 },
           sessionUsage: newSession,
+          isInjected: undefined,
         },
         events: [
-          emit(UserStreamTopic, { userId, userText, assistantText: state.pending, timestamp: Date.now() }),
+          emit(UserStreamTopic, { userId, userText, assistantText: state.pending, timestamp: Date.now(), injected: state.isInjected }),
           emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) }),
         ],
         become: idleHandler,
@@ -543,7 +547,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       state.spanHandles?.requestSpan?.error(error)
 
       return {
-        state: { ...state, requestId: null, turnMessages: null, spanHandles: null, pending: '', pendingReasoning: '', pendingUsage: { promptTokens: 0, completionTokens: 0 } },
+        state: { ...state, requestId: null, turnMessages: null, spanHandles: null, pending: '', pendingReasoning: '', pendingUsage: { promptTokens: 0, completionTokens: 0 }, isInjected: undefined },
         events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }) })],
         become: idleHandler,
       }

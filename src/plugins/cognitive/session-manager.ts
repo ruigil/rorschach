@@ -147,7 +147,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
 
         const userId = state.clientIndex[clientId]
         const actor  = userId ? state.userSessions[userId] : undefined
-        actor?.send({ type: 'userMessage', clientId, text, images, audio, pdfs, traceId, parentSpanId, isCron })
+        actor?.send({ type: 'userMessage', clientId, text, images, audio, pdfs, traceId, parentSpanId, isCron, isInjected: isCron })
         return { state }
       },
 
@@ -176,6 +176,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
             text:         `[Planning session completed] ${summary}`,
             traceId:      crypto.randomUUID(),
             parentSpanId: crypto.randomUUID(),
+            isInjected:   true,
           })
         }
 
@@ -195,7 +196,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
           context.log.warn('cron job fired but no clientId found for user', { userId })
           return { state }
         }
-        actor.send({ type: 'userMessage', clientId, text, traceId, parentSpanId, isCron: true })
+        actor.send({ type: 'userMessage', clientId, text, traceId, parentSpanId, isCron: true, isInjected: true })
         return { state }
       },
     }),
