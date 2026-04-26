@@ -37,7 +37,8 @@ export type GoogleAgentState = {
   pending:       string
   pendingBatch:  PendingBatch | null
   toolLoopCount: number
-  activeSpan:    SpanHandle | null
+  requestSpan:   SpanHandle | null
+  llmSpan:       SpanHandle | null
 }
 
 // ─── Helpers ───
@@ -66,7 +67,8 @@ const resetTurn = (state: GoogleAgentState): GoogleAgentState => ({
   pending:       '',
   pendingBatch:  null,
   toolLoopCount: 0,
-  activeSpan:    null,
+  requestSpan:   null,
+  llmSpan:       null,
 })
 
 // ─── Actor ───
@@ -105,8 +107,11 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
       context.log.info('google-agent: request', { request: request.slice(0, 300) })
 
       const parent     = context.trace.fromHeaders()
-      const activeSpan = parent
+      const requestSpan = parent
         ? context.trace.child(parent.traceId, parent.spanId, 'google-agent', { request })
+        : null
+      const llmSpan = requestSpan
+        ? context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model: state.model })
         : null
 
       state.llmRef.send({
@@ -131,7 +136,8 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
           pending:       '',
           pendingBatch:  null,
           toolLoopCount: 0,
-          activeSpan,
+          requestSpan,
+          llmSpan,
         },
         become: awaitingLlmHandler,
       }
@@ -155,6 +161,8 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
     llmToolCalls: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
 
+      state.llmSpan?.done({ toolCalls: msg.calls.map(c => c.name) })
+
       const assistantToolCalls: ToolCall[] = msg.calls.map(c => ({
         id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments },
       }))
@@ -164,17 +172,18 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
       const unknownCall = msg.calls.find(c => !state.tools[c.name])
       if (unknownCall) {
         context.log.warn('google-agent: unknown tool', { tool: unknownCall.name })
+        state.requestSpan?.error(`Tool not available: ${unknownCall.name}`)
         state.replyTo?.send({ type: 'toolError', error: `Tool not available: ${unknownCall.name}` })
         return { state: resetTurn(state), become: idleHandler, unstashAll: true }
       }
 
       const spans: Record<string, SpanHandle> = {}
       for (const call of msg.calls) {
-        if (state.activeSpan) {
+        if (state.requestSpan) {
           spans[call.id] = context.trace.child(
-            state.activeSpan.traceId,
-            state.activeSpan.spanId,
-            call.name,
+            state.requestSpan.traceId,
+            state.requestSpan.spanId,
+            'tool-invoke',
             { toolName: call.name, arguments: call.arguments },
           )
         }
@@ -190,10 +199,13 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
 
       for (const call of msg.calls) {
         const entry = state.tools[call.name]!
+        const toolSpan = spans[call.id]
         context.pipeToSelf(
           ask<ToolInvokeMsg, ToolReply>(
             entry.ref,
             (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId: state.clientId, userId: state.userId }),
+            undefined,
+            toolSpan ? context.trace.injectHeaders(toolSpan) : undefined,
           ),
           (reply): GoogleAgentMsg => ({ type: '_toolResult', toolName: call.name, toolCallId: call.id, reply }),
           (error): GoogleAgentMsg => ({
@@ -204,7 +216,7 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
       }
 
       return {
-        state: { ...state, requestId: null, pendingBatch: batch },
+        state: { ...state, requestId: null, llmSpan: null, pendingBatch: batch },
         become: toolLoopHandler,
       }
     },
@@ -212,7 +224,8 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
     llmDone: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
       context.log.info('google-agent: done', { chars: state.pending.length })
-      state.activeSpan?.done()
+      state.llmSpan?.done()
+      state.requestSpan?.done()
       state.replyTo?.send({ type: 'toolResult', result: state.pending || '(done)' })
       return { state: resetTurn(state), become: idleHandler, unstashAll: true }
     },
@@ -220,7 +233,8 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
     llmError: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
       context.log.error('google-agent LLM error', { error: String(msg.error) })
-      state.activeSpan?.error(msg.error)
+      state.llmSpan?.error(msg.error)
+      state.requestSpan?.error(msg.error)
       state.replyTo?.send({ type: 'toolError', error: 'Google agent encountered an LLM error.' })
       return { state: resetTurn(state), become: idleHandler, unstashAll: true }
     },
@@ -270,6 +284,10 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
       const requestId   = crypto.randomUUID()
       const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
 
+      const llmSpan = state.requestSpan
+        ? context.trace.child(state.requestSpan.traceId, state.requestSpan.spanId, 'llm-response', { model: state.model })
+        : null
+
       state.llmRef!.send({
         type: 'stream',
         requestId,
@@ -289,6 +307,7 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
           pending:       '',
           pendingBatch:  null,
           toolLoopCount: nextLoopCount,
+          llmSpan,
         },
         become: awaitingLlmHandler,
       }
@@ -325,5 +344,6 @@ export const createInitialGoogleAgentState = (options: GoogleAgentOptions): Goog
   pending:       '',
   pendingBatch:  null,
   toolLoopCount: 0,
-  activeSpan:    null,
+  requestSpan:   null,
+  llmSpan:       null,
 })
