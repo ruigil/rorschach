@@ -351,13 +351,16 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
   return {
     lifecycle: onLifecycle({
       start: (state, context) => {
-        context.subscribe(UserStreamTopic, (e) => ({
-          type: '_turn' as const,
-          userId: e.userId,
-          userText: e.userText,
-          assistantText: e.assistantText,
-          timestamp: e.timestamp,
-        }))
+        context.subscribe(UserStreamTopic, (e) => {
+          if (e.injected) return null
+          return {
+            type: '_turn' as const,
+            userId: e.userId,
+            userText: e.userText,
+            assistantText: e.assistantText,
+            timestamp: e.timestamp,
+          }
+        })
         context.subscribe(LlmProviderTopic, (e) => ({
           type: '_llmProvider' as const,
           ref: e.ref,
