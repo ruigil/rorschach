@@ -1,4 +1,4 @@
-import type { ActorDef, ActorRef, MessageHandler } from '../../system/types.ts'
+import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
 import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
@@ -50,6 +50,7 @@ type PendingBatch = {
   results:            Array<{ toolCallId: string; toolName: string; content: string }>
   messagesAtCall:     ApiMessage[]
   assistantToolCalls: ToolCall[]
+  toolSpans:          Record<string, SpanHandle>
 }
 
 export type SupervisorState = {
@@ -68,6 +69,8 @@ type WorkerState = {
   toolLoopCount: number
   replyTo:       ActorRef<ToolReply> | null
   userId:        string
+  requestSpan:   SpanHandle | null
+  llmSpan:       SpanHandle | null
 }
 
 // ─── System prompt ───
@@ -114,6 +117,11 @@ const createMemoryStoreWorkerActor = (
 
   const idleHandler: MessageHandler<MemoryStoreMsg, WorkerState> = onMessage<MemoryStoreMsg, WorkerState>({
     invoke: (state, msg, context) => {
+      const traceParent = context.trace.fromHeaders()
+      const requestSpan = traceParent
+        ? context.trace.child(traceParent.traceId, traceParent.spanId, 'memory-store', {})
+        : null
+
       let content: string
       let topic: string | undefined
       try {
@@ -121,12 +129,14 @@ const createMemoryStoreWorkerActor = (
         content = typeof args.content === 'string' ? args.content : ''
         topic   = typeof args.topic   === 'string' ? args.topic   : undefined
       } catch {
+        requestSpan?.error('Invalid arguments')
         msg.replyTo.send({ type: 'toolError', error: 'Invalid arguments' })
         parent.send({ type: '_workerDone', worker: context.self as ActorRef<MemoryStoreMsg> })
         return { state }
       }
 
       if (!content) {
+        requestSpan?.error('Missing content argument')
         msg.replyTo.send({ type: 'toolError', error: 'Missing content argument' })
         parent.send({ type: '_workerDone', worker: context.self as ActorRef<MemoryStoreMsg> })
         return { state }
@@ -139,6 +149,10 @@ const createMemoryStoreWorkerActor = (
         { role: 'user',   content },
       ]
       const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
+
+      const llmSpan = requestSpan
+        ? context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
+        : null
 
       state.llmRef.send({
         type:    'stream',
@@ -153,9 +167,9 @@ const createMemoryStoreWorkerActor = (
       context.log.info('memory store worker started', { userId, topic })
 
       return {
-        state: { ...state, requestId, turnMessages: messages, accumulated: '', replyTo: msg.replyTo, userId },
+        state: { ...state, requestId, turnMessages: messages, accumulated: '', replyTo: msg.replyTo, userId, requestSpan, llmSpan },
         become: awaitingLlmHandler,
-      } 
+      }
     },
   })
 
@@ -172,6 +186,8 @@ const createMemoryStoreWorkerActor = (
     llmToolCalls: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
 
+      state.llmSpan?.done({ toolCalls: msg.calls.map(c => c.name) })
+
       const assistantToolCalls: ToolCall[] = msg.calls.map(c => ({
         id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments },
       }))
@@ -181,6 +197,7 @@ const createMemoryStoreWorkerActor = (
         results:            [],
         messagesAtCall:     state.turnMessages!,
         assistantToolCalls,
+        toolSpans:          {},
       }
 
       for (const call of msg.calls) {
@@ -189,10 +206,23 @@ const createMemoryStoreWorkerActor = (
           context.log.warn('memory store worker: unknown tool', { tool: call.name })
           continue
         }
+        const toolSpan = state.requestSpan
+          ? context.trace.child(
+              state.requestSpan.traceId,
+              state.requestSpan.spanId,
+              'tool-invoke',
+              { toolName: call.name },
+            )
+          : null
+        if (toolSpan) {
+          batch.toolSpans[call.id] = toolSpan
+        }
         context.pipeToSelf(
           ask<ToolInvokeMsg, ToolReply>(
             entry.ref,
             (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, userId: state.userId }),
+            undefined,
+            toolSpan ? context.trace.injectHeaders(toolSpan) : undefined,
           ),
           (reply) => ({ type: '_toolResult' as const, toolName: call.name, toolCallId: call.id, reply }),
           (error)  => ({
@@ -205,19 +235,23 @@ const createMemoryStoreWorkerActor = (
       }
 
       return {
-        state:  { ...state, requestId: null, pendingBatch: batch },
+        state:  { ...state, requestId: null, pendingBatch: batch, llmSpan: null },
         become: toolLoopHandler,
-      } 
+      }
     },
 
     llmDone: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
+      state.llmSpan?.done()
+      state.requestSpan?.done()
       context.log.info('memory store worker done', { userId: state.userId })
       return finish(state, { type: 'toolResult', result: state.accumulated || 'Memory stored.' }, context)
     },
 
     llmError: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
+      state.llmSpan?.error(String(msg.error))
+      state.requestSpan?.error(String(msg.error))
       context.log.error('memory store worker LLM error', { userId: state.userId, error: String(msg.error) })
       return finish(state, { type: 'toolError', error: String(msg.error) }, context)
     },
@@ -232,6 +266,11 @@ const createMemoryStoreWorkerActor = (
       const updated = [...batch.results, { toolCallId: msg.toolCallId, toolName: msg.toolName, content }]
       const remaining = batch.remaining - 1
 
+      const toolSpan = batch.toolSpans[msg.toolCallId]
+      if (toolSpan) {
+        msg.reply.type === 'toolResult' ? toolSpan.done() : toolSpan.error(msg.reply.error)
+      }
+
       if (remaining > 0) {
         return { state: { ...state, pendingBatch: { ...batch, remaining, results: updated } } }
       }
@@ -239,9 +278,10 @@ const createMemoryStoreWorkerActor = (
       const nextLoopCount = state.toolLoopCount + 1
 
       if (nextLoopCount >= maxToolLoops) {
+        state.requestSpan?.error('tool loop limit reached')
         context.log.warn('memory store worker tool loop limit reached', { userId: state.userId, limit: maxToolLoops })
         return finish(
-          { ...state, pendingBatch: null, toolLoopCount: 0 },
+          { ...state, pendingBatch: null, toolLoopCount: 0, requestSpan: null, llmSpan: null },
           state.accumulated
             ? { type: 'toolResult', result: state.accumulated }
             : { type: 'toolError',  error:  'Tool loop limit reached' },
@@ -260,6 +300,10 @@ const createMemoryStoreWorkerActor = (
       const requestId   = crypto.randomUUID()
       const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
 
+      const llmSpan = state.requestSpan
+        ? context.trace.child(state.requestSpan.traceId, state.requestSpan.spanId, 'llm-call', { model })
+        : null
+
       state.llmRef.send({
         type:    'stream',
         requestId,
@@ -271,9 +315,9 @@ const createMemoryStoreWorkerActor = (
       })
 
       return {
-        state:  { ...state, requestId, turnMessages: nextMessages, pendingBatch: null, toolLoopCount: nextLoopCount },
+        state:  { ...state, requestId, turnMessages: nextMessages, pendingBatch: null, toolLoopCount: nextLoopCount, llmSpan },
         become: awaitingLlmHandler,
-      } 
+      }
     },
   })
 
@@ -338,10 +382,12 @@ export const createMemoryStoreActor = (options: MemoryStoreOptions): ActorDef<Me
             toolLoopCount: 0,
             replyTo:       null,
             userId:        '',
+            requestSpan:   null,
+            llmSpan:       null,
           },
         )
 
-        worker.send(msg)
+        worker.send(msg, context.messageHeaders())
 
         return { state: { ...state, workerIdSeq: nextSeq } }
       },
