@@ -1,5 +1,5 @@
 import { mkdir } from 'node:fs/promises'
-import type { ActorDef, ActorRef } from '../../../system/types.ts'
+import type { ActorDef, ActorRef, SpanHandle } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../../types/tools.ts'
 import type { HabitDef } from '../types.ts'
@@ -74,8 +74,8 @@ export const TRACKER_LIST_HABITS_SCHEMA: ToolSchema = {
 
 type TrackerMsg =
   | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string }
-  | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string }
+  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string; span: SpanHandle | null }
+  | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string; span: SpanHandle | null }
 
 // ─── File paths ───
 
@@ -267,21 +267,27 @@ export const createTrackerActor = (notebookDir: string): ActorDef<TrackerMsg, nu
       } catch (e) {
         promise = Promise.reject(e)
       }
+      const parent = ctx.trace.fromHeaders()
+      const span: SpanHandle | null = parent
+        ? ctx.trace.child(parent.traceId, parent.spanId, msg.toolName, { toolName: msg.toolName })
+        : null
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result }),
-        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error) }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span }),
+        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error), span }),
       )
       return { state }
     },
 
     _done: (state, msg) => {
+      msg.span?.done()
       msg.replyTo.send({ type: 'toolResult', result: msg.result })
       return { state }
     },
 
     _error: (state, msg, ctx) => {
       ctx.log.error('tracker error', { tool: msg.toolName, error: msg.error })
+      msg.span?.error(msg.error)
       msg.replyTo.send({ type: 'toolError', error: msg.error })
       return { state }
     },
