@@ -76,7 +76,7 @@ const buildGapPrompt = (userId: string, summary: string): string =>
   `1. Output the question as an instruction for the chatbot, starting with "Ask the user: ".\n` +
   `2. No preamble, no "Based on the summary...", no reasoning.\n` +
   `3. If the model is already very complete and there are no critical gaps, respond with an empty message.\n` +
-  `4. Example: "Ask the user: What are your primary goals for the Rorschach project?"`
+  `4. Example: "Ask the user: What are your primary goals ?"`
 
 // ─── Actor definition ───
 
