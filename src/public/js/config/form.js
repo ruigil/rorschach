@@ -29,6 +29,8 @@ const configDefaults = {
   notebookAgentModel:              '',
   notebookConsolidationIntervalMs: 604800000,
   notebookMaxToolLoops:            10,
+  googleApisAgentModel:            '',
+  googleApisMaxToolLoops:          10,
 }
 
 export async function fetchServerConfig() {
@@ -65,6 +67,9 @@ export function applyToForm(cfg) {
   configForm.notebookAgentModel.value              = cfg.notebookAgentModel ?? ''
   configForm.notebookConsolidationIntervalMs.value = cfg.notebookConsolidationIntervalMs ?? 604800000
   configForm.notebookMaxToolLoops.value            = cfg.notebookMaxToolLoops ?? 10
+  configForm.googleApisAgentModel.value            = cfg.googleApisAgentModel ?? ''
+  configForm.googleApisMaxToolLoops.value          = cfg.googleApisMaxToolLoops ?? 10
+  updateGoogleConnectionStatus()
 }
 
 function readFromForm() {
@@ -94,8 +99,47 @@ function readFromForm() {
     notebookAgentModel:              configForm.notebookAgentModel.value,
     notebookConsolidationIntervalMs: Number(configForm.notebookConsolidationIntervalMs.value),
     notebookMaxToolLoops:            Number(configForm.notebookMaxToolLoops.value),
+    googleApisAgentModel:            configForm.googleApisAgentModel.value,
+    googleApisMaxToolLoops:          Number(configForm.googleApisMaxToolLoops.value),
   }
 }
+
+async function updateGoogleConnectionStatus() {
+  const statusEl     = document.getElementById('google-connection-status')
+  const connectBtn   = document.getElementById('google-connect-btn')
+  const disconnectBtn = document.getElementById('google-disconnect-btn')
+  if (!statusEl) return
+  try {
+    const res  = await fetch(new URL('googleapis/auth/status', location.href))
+    const data = res.ok ? await res.json() : { connected: false }
+    if (data.connected) {
+      statusEl.textContent = 'Connected'
+      connectBtn.style.display    = 'none'
+      disconnectBtn.style.display = ''
+    } else {
+      statusEl.textContent = 'Not connected'
+      connectBtn.style.display    = ''
+      disconnectBtn.style.display = 'none'
+    }
+  } catch {
+    statusEl.textContent = 'Status unavailable'
+  }
+}
+
+document.getElementById('google-connect-btn')?.addEventListener('click', () => {
+  const popup = window.open(new URL('googleapis/auth/start', location.href), '_blank', 'width=520,height=640')
+  const poll  = setInterval(() => {
+    if (popup?.closed) {
+      clearInterval(poll)
+      updateGoogleConnectionStatus()
+    }
+  }, 500)
+})
+
+document.getElementById('google-disconnect-btn')?.addEventListener('click', async () => {
+  await fetch(new URL('googleapis/auth/revoke', location.href), { method: 'POST' })
+  updateGoogleConnectionStatus()
+})
 
 let saveTimer  = null
 let errorTimer = null

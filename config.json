@@ -6,7 +6,8 @@
     "./src/plugins/memory/memory.plugin.ts",
     "./src/plugins/cognitive/cognitive.plugin.ts",
     "./src/plugins/observability/observability.plugin.ts",
-    "./src/plugins/notebook/notebook.plugin.ts"
+    "./src/plugins/notebook/notebook.plugin.ts",
+    "./src/plugins/googleapis/googleapis.plugin.ts"
   ],
   "config": {
     "auth": {
@@ -64,10 +65,15 @@
         }
       },
       "planner": {
-        "model": "z-ai/glm-5-turbo",                                                                                                                                 
-        "plansDir": "workspace/plans",                          
-        "toolFilter": { "allow": ["web_search", "fetch_file"] }                                                                                                  
-      } 
+        "model": "z-ai/glm-5-turbo",
+        "plansDir": "workspace/plans",
+        "toolFilter": {
+          "allow": [
+            "web_search",
+            "fetch_file"
+          ]
+        }
+      }
     },
     "memory": {
       "dbPath": "workspace/memory",
@@ -77,12 +83,21 @@
       },
       "system": {
         "model": "moonshotai/kimi-k2.6",
-        "consolidationIntervalMs": 3600000
+        "consolidationIntervalMs": 3600000,
+        "reflectionIntervalMs": 604800000
       }
     },
     "notebook": {
       "notebookDir": "workspace/notebook",
       "agentModel": "minimax/minimax-m2.7",
+      "maxToolLoops": 10,
+      "consolidationIntervalMs": 604800000
+    },
+    "googleapis": {
+      "clientId": "${GOOGLE_CLIENT_ID}",
+      "clientSecret": "${GOOGLE_CLIENT_SECRET}",
+      "baseUrl": "https://rorschach.bot",
+      "agentModel": "google/gemini-3-flash-preview",
       "maxToolLoops": 10
     },
     "observability": {

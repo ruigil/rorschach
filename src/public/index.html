@@ -101,6 +101,7 @@
         <button class="config-subtab" data-config-tab="tools">tools</button>
         <button class="config-subtab" data-config-tab="memory">memory</button>
         <button class="config-subtab" data-config-tab="notebook">notebook</button>
+        <button class="config-subtab" data-config-tab="googleapis">googleapis</button>
       </nav>
     </div>
 
@@ -341,6 +342,38 @@
               <label class="field-label" for="notebook-max-tool-loops">Max tool loops</label>
               <input type="number" id="notebook-max-tool-loops" name="notebookMaxToolLoops" placeholder="10" value="10" min="1" max="50" step="1">
               <span class="field-hint">Maximum tool call iterations per notebook agent request</span>
+            </div>
+          </div>
+
+          <div class="config-pane" data-config-pane="googleapis">
+            <div class="pane-header">
+              <span class="pane-title">Google APIs</span>
+              <span class="pane-sub">googleapis · Gmail, Calendar, and Drive</span>
+            </div>
+
+            <div class="field">
+              <label class="field-label" for="google-apis-agent-model">Agent model</label>
+              <select id="google-apis-agent-model" name="googleApisAgentModel"></select>
+              <span class="field-hint">Model used by the Google Workspace sub-agent</span>
+            </div>
+
+            <div class="field">
+              <label class="field-label" for="google-apis-max-tool-loops">Max tool loops</label>
+              <input type="number" id="google-apis-max-tool-loops" name="googleApisMaxToolLoops" placeholder="10" value="10" min="1" max="50" step="1">
+              <span class="field-hint">Maximum tool call iterations per Google agent request</span>
+            </div>
+
+            <div class="field">
+              <div class="field-row">
+                <div>
+                  <div class="field-label">Google account</div>
+                  <div class="field-hint" id="google-connection-status">checking…</div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <button type="button" class="btn-save" id="google-connect-btn" style="display:none">Connect</button>
+                  <button type="button" class="btn-reset" id="google-disconnect-btn" style="display:none">Disconnect</button>
+                </div>
+              </div>
             </div>
           </div>
 

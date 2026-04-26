@@ -25,6 +25,7 @@ const buildConfigSnapshot = (c: Record<string, unknown>): Record<string, unknown
   const mem = (c.memory        as any) ?? {}
   const obs = (c.observability as any) ?? {}
   const nb  = (c.notebook      as any) ?? {}
+  const ga  = (c.googleapis    as any) ?? {}
   return {
     model:                         cog.chatbot?.model                     ?? '',
     systemPrompt:                  cog.chatbot?.systemPrompt               ?? '',
@@ -51,6 +52,8 @@ const buildConfigSnapshot = (c: Record<string, unknown>): Record<string, unknown
     notebookAgentModel:            nb.agentModel                           ?? '',
     notebookConsolidationIntervalMs: nb.consolidationIntervalMs            ?? 604800000,
     notebookMaxToolLoops:          nb.maxToolLoops                         ?? 10,
+    googleApisAgentModel:          ga.agentModel                           ?? '',
+    googleApisMaxToolLoops:        ga.maxToolLoops                         ?? 10,
   }
 }
 
@@ -170,6 +173,13 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
     consolidationIntervalMs: Number(form.notebookConsolidationIntervalMs ?? 604800000),
     maxToolLoops:            Number(form.notebookMaxToolLoops ?? 10),
   }
+  const googleApisPatch = {
+    clientId:     process.env.GOOGLE_CLIENT_ID     ?? '',
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+    baseUrl:      (config.googleapis as any)?.baseUrl ?? '',
+    agentModel:   String(form.googleApisAgentModel    ?? (config.googleapis as any)?.agentModel    ?? ''),
+    maxToolLoops: Number(form.googleApisMaxToolLoops  ?? (config.googleapis as any)?.maxToolLoops  ?? 10),
+  }
   const observabilityPatch = {
     jsonlLogger: {
       filePath:        String(form.logPath ?? (config.observability as any)?.jsonlLogger?.filePath ?? './logs/app.jsonl'),
@@ -201,6 +211,7 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
     },
     memory:        memoryPatch,
     notebook:      notebookPatch,
+    googleapis:    googleApisPatch,
     observability: observabilityPatch,
   })
 
@@ -218,6 +229,7 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
     tools:         toolsPatch,
     memory:        memoryPatch,
     notebook:      notebookPatch,
+    googleapis:    { agentModel: googleApisPatch.agentModel, maxToolLoops: googleApisPatch.maxToolLoops },
     observability: observabilityPatch,
   })
 
@@ -231,6 +243,7 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
       tools:         toolsPatch,
       memory:        memoryPatch,
       notebook:      notebookPatch,
+      googleapis:    googleApisPatch,
       observability: observabilityPatch,
     }),
   })

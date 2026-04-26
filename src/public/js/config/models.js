@@ -4,8 +4,9 @@ export async function initModelSelects(cfg) {
   const audioSel    = document.getElementById('audio-model')
   const memorySel   = document.getElementById('memory-model')
   const notebookSel = document.getElementById('notebook-agent-model')
+  const googleSel   = document.getElementById('google-apis-agent-model')
 
-  for (const sel of [chatSel, visionSel, audioSel, memorySel, notebookSel]) {
+  for (const sel of [chatSel, visionSel, audioSel, memorySel, notebookSel, googleSel]) {
     sel.innerHTML = '<option value="" disabled>loading models…</option>'
   }
 
@@ -20,7 +21,8 @@ export async function initModelSelects(cfg) {
     [visionSel,   cfg.visionModel,        false],
     [audioSel,    cfg.audioModel,         true],
     [memorySel,   cfg.memoryModel,        true],
-    [notebookSel, cfg.notebookAgentModel, true],
+    [notebookSel, cfg.notebookAgentModel,     true],
+    [googleSel,   cfg.googleApisAgentModel,   true],
   ]) {
     const emptyOpt = allowEmpty ? '<option value="">— none —</option>' : ''
     sel.innerHTML = emptyOpt + models.map(m => `<option value="${m}">${m}</option>`).join('')

@@ -12,7 +12,7 @@
     "rorschach": "bun run src/index.ts",
     "dev": "bun run src/index.ts",
     "test": "bun test",
-    "typecheck": "bun tsc --noEmit" ,
+    "typecheck": "bun tsc --noEmit",
     "test:watch": "bun test --watch",
     "test:coverage": "bun test --coverage",
     "build": "bun build src/index.ts --outfile dist/index.js"
@@ -21,6 +21,7 @@
   "dependencies": {
     "@grafeo-db/js": "^0.5.23",
     "cron-parser": "^5.5.0",
+    "googleapis": "^171.4.0",
     "just-bash": "^2.14.0",
     "unpdf": "^1.4.0"
   }
