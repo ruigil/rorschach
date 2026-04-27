@@ -1,4 +1,6 @@
 import { google } from 'googleapis'
+import { join } from 'node:path'
+import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
 import { ask } from '../../../system/ask.ts'
@@ -63,11 +65,20 @@ export const DRIVE_DOWNLOAD_FILE_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: DRIVE_DOWNLOAD_FILE_TOOL_NAME,
-    description: 'Download and return the text content of a Google Drive file (Google Docs exported as plain text; other text files returned as-is).',
+    description:
+      'Download a Google Drive file to workspace/media/inbound/ and return its absolute path. ' +
+      'Google Docs → text (default) or pdf. Sheets → csv (default) or pdf. Slides → always pdf. ' +
+      'Binary files (PDF, images, etc.) are downloaded as-is. ' +
+      'Use the returned path with extract_pdf_text or analyze_image.',
     parameters: {
       type: 'object',
       properties: {
         fileId: { type: 'string', description: 'File id from drive_list_files or drive_search_files.' },
+        exportFormat: {
+          type: 'string',
+          enum: ['text', 'pdf', 'csv'],
+          description: 'For Google Workspace files only: "text" (default for Docs), "pdf", "csv" (Sheets only).',
+        },
       },
       required: ['fileId'],
     },
@@ -78,15 +89,17 @@ export const DRIVE_UPLOAD_FILE_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: DRIVE_UPLOAD_FILE_TOOL_NAME,
-    description: 'Create a new plain-text file in Google Drive.',
+    description:
+      'Upload a file to Google Drive. Provide either inline text content or the absolute path to a local file ' +
+      '(from workspace/media/inbound/ or workspace/media/generated/). MIME type is inferred from file extension.',
     parameters: {
       type: 'object',
       properties: {
-        name:     { type: 'string', description: 'File name (including extension).' },
-        content:  { type: 'string', description: 'Text content to write.' },
+        name:     { type: 'string', description: 'Drive file name. When filePath is given, defaults to the local filename.' },
+        content:  { type: 'string', description: 'Inline text content. Use this OR filePath, not both.' },
+        filePath: { type: 'string', description: 'Absolute path to a local file to upload. Use this OR content.' },
         folderId: { type: 'string', description: 'Parent folder id (optional; defaults to Drive root).' },
       },
-      required: ['name', 'content'],
     },
   },
 }
@@ -101,6 +114,38 @@ type DriveMsg =
 // ─── Helpers ───
 
 const FILE_FIELDS = 'id, name, mimeType, size, modifiedTime, webViewLink'
+
+const INBOUND_DIR = join(import.meta.dir, '../../../..', 'workspace/media/inbound')
+
+const MIME_BY_EXT: Record<string, string> = {
+  txt: 'text/plain', md: 'text/markdown', html: 'text/html', csv: 'text/csv',
+  json: 'application/json', pdf: 'application/pdf',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+  mp3: 'audio/mpeg', wav: 'audio/wav', mp4: 'video/mp4', zip: 'application/zip',
+}
+
+const mimeFromPath = (p: string): string =>
+  MIME_BY_EXT[p.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream'
+
+const sanitizeBasename = (name: string): string =>
+  name.replace(/[/\\:*?"<>|]/g, '_').replace(/\r?\n|\t/g, '_')
+      .replace(/^\.+|\.+$/g, '').replace(/\.{2,}/g, '.')
+
+const resolveUniquePath = async (dir: string, basename: string): Promise<string> => {
+  const { stat } = await import('node:fs/promises')
+  let candidate = join(dir, basename)
+  try { await stat(candidate) } catch { return candidate }
+  const dotIdx = basename.lastIndexOf('.')
+  const hasExt = dotIdx > 0 && dotIdx < basename.length - 1
+  const stem = hasExt ? basename.slice(0, dotIdx) : basename
+  const ext  = hasExt ? basename.slice(dotIdx) : ''
+  for (let i = 1; i < 1000; i++) {
+    candidate = join(dir, `${stem}-${i}${ext}`)
+    try { await stat(candidate) } catch { return candidate }
+  }
+  return join(dir, `${stem}-${crypto.randomUUID()}${ext}`)
+}
 
 // ─── Actor ───
 
@@ -146,32 +191,70 @@ export const createDriveActor = (
           if (msg.toolName === DRIVE_DOWNLOAD_FILE_TOOL_NAME) {
             const meta = await drive.files.get({ fileId: args.fileId, fields: 'mimeType, name' })
             const mime = meta.data.mimeType ?? ''
+            const originalName = meta.data.name ?? `drive-file-${args.fileId}`
+            const exportFormat: string = args.exportFormat ?? 'text'
 
-            if (mime === 'application/vnd.google-apps.document') {
-              const res = await drive.files.export({ fileId: args.fileId, mimeType: 'text/plain' }, { responseType: 'text' })
-              return String(res.data)
+            await mkdir(INBOUND_DIR, { recursive: true })
+
+            if (mime.startsWith('application/vnd.google-apps.')) {
+              let exportMime: string, fileExt: string
+              if (mime === 'application/vnd.google-apps.spreadsheet') {
+                exportMime = exportFormat === 'pdf' ? 'application/pdf' : 'text/csv'
+                fileExt    = exportFormat === 'pdf' ? 'pdf' : 'csv'
+              } else if (mime === 'application/vnd.google-apps.presentation') {
+                exportMime = 'application/pdf'; fileExt = 'pdf'
+              } else {
+                exportMime = exportFormat === 'pdf' ? 'application/pdf' : 'text/plain'
+                fileExt    = exportFormat === 'pdf' ? 'pdf' : 'txt'
+              }
+              const sanitized = sanitizeBasename(originalName)
+              const basename  = sanitized.endsWith(`.${fileExt}`) ? sanitized : `${sanitized}.${fileExt}`
+              const filePath  = await resolveUniquePath(INBOUND_DIR, basename)
+              const res = await drive.files.export(
+                { fileId: args.fileId, mimeType: exportMime },
+                { responseType: 'arraybuffer' },
+              )
+              await Bun.write(filePath, res.data as ArrayBuffer)
+              return `Downloaded to: ${filePath}`
             }
 
-            if (mime.startsWith('text/')) {
-              const res = await drive.files.get({ fileId: args.fileId, alt: 'media' } as any, { responseType: 'text' })
-              return String(res.data)
-            }
-
-            return `File "${meta.data.name}" (${mime}) is not a text file and cannot be downloaded as text.`
+            const sanitized = sanitizeBasename(originalName)
+            const filePath  = await resolveUniquePath(INBOUND_DIR, sanitized || `drive-${args.fileId}.bin`)
+            const res = await drive.files.get(
+              { fileId: args.fileId, alt: 'media' } as any,
+              { responseType: 'arraybuffer' },
+            )
+            await Bun.write(filePath, res.data as ArrayBuffer)
+            return `Downloaded to: ${filePath}`
           }
 
           if (msg.toolName === DRIVE_UPLOAD_FILE_TOOL_NAME) {
             const { Readable } = await import('node:stream')
-            const stream = Readable.from([args.content])
+            let uploadName: string, uploadMime: string, body: NodeJS.ReadableStream
+
+            if (args.filePath) {
+              const bunFile = Bun.file(args.filePath as string)
+              if (!(await bunFile.exists())) throw new Error(`File not found: ${args.filePath}`)
+              const buffer = await bunFile.arrayBuffer()
+              uploadMime = mimeFromPath(args.filePath as string)
+              const pathName = (args.filePath as string).split('/').pop() ?? 'upload'
+              uploadName = (args.name as string | undefined) ?? pathName
+              body = Readable.from([Buffer.from(buffer)])
+            } else if (args.content !== undefined) {
+              if (!args.name) throw new Error('name is required when uploading inline content')
+              uploadName = args.name as string
+              uploadMime = 'text/plain'
+              body = Readable.from([args.content as string])
+            } else {
+              throw new Error('Provide either content (inline text) or filePath (local file path)')
+            }
+
             const res = await drive.files.create({
-              requestBody: {
-                name:    args.name,
-                parents: args.folderId ? [args.folderId] : undefined,
-              },
-              media: { mimeType: 'text/plain', body: stream },
+              requestBody: { name: uploadName, parents: args.folderId ? [args.folderId as string] : undefined },
+              media: { mimeType: uploadMime, body },
               fields: 'id, name, webViewLink',
             })
-            return `File uploaded: ${res.data.name} (id: ${res.data.id})`
+            return `File uploaded: ${res.data.name} (id: ${res.data.id}) — ${res.data.webViewLink}`
           }
 
           throw new Error(`Unknown Drive tool: ${msg.toolName}`)

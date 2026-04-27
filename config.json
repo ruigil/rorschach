@@ -59,8 +59,7 @@
         "toolFilter": {
           "deny": [
             "bash",
-            "write",
-            "read"
+            "write"
           ]
         }
       },

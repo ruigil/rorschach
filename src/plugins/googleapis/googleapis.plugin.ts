@@ -62,10 +62,11 @@ This tool is for the user only — only call it when explicitly asked by the use
 **Drive**:
 - "List my recent Drive files"
 - "Search Drive for files named 'budget'"
-- "Download the content of file id abc..."
+- "Download file id abc... to local storage"
 - "Upload a text file named 'notes.txt' with content '...'"
+- "Upload the local file at /absolute/path/to/file.pdf to Drive"
 
-Always include enough detail so the sub-agent can act without ambiguity.`,
+When uploading a local file, always include its full absolute path in the request (e.g. a path returned by fetch_file or drive_download_file). Never pass just a filename — the sub-agent needs the absolute path to read the file.`,
     parameters: {
       type: 'object',
       properties: {

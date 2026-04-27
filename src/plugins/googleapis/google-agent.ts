@@ -52,6 +52,14 @@ const buildSystemPrompt = (): string =>
   `- Gmail: gmail_list_messages, gmail_get_message, gmail_send_message, gmail_search\n` +
   `- Calendar: calendar_list_events, calendar_create_event, calendar_update_event, calendar_delete_event\n` +
   `- Drive: drive_list_files, drive_search_files, drive_get_file, drive_download_file, drive_upload_file\n\n` +
+  `IMPORTANT — Drive downloads:\n` +
+  `drive_download_file saves files to workspace/media/inbound/ and returns an absolute path.\n` +
+  `Docs: exportFormat "text" (default) or "pdf". Sheets: "csv" (default) or "pdf". Slides: always pdf.\n` +
+  `Chain the returned path with extract_pdf_text (PDFs) or analyze_image (images).\n\n` +
+  `IMPORTANT — Drive uploads:\n` +
+  `drive_upload_file accepts inline text content OR a filePath to a local file.\n` +
+  `When the request contains an absolute path (starts with /), pass it as filePath — do NOT pass it as content or name.\n` +
+  `When using filePath, the name parameter is optional (inferred from the filename).\n\n` +
   `IMPORTANT — calendar times:\n` +
   `Always pass datetimes as naive local time with NO UTC offset (e.g. "2025-05-06T14:00:00").\n` +
   `The system automatically applies the user's Google Calendar timezone. Never add +HH:MM or Z.\n\n` +
