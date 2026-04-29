@@ -141,30 +141,18 @@ const filterTools = (tools: ToolCollection, filter?: ToolFilter): ToolCollection
 // always reset to defaults on load — they are restored via subscriptions at startup.
 
 type PersistedChatbotState = {
-  history:     ConversationMessage[]
   userContext: string | null
 }
 
-// Drop any incomplete turn at the tail (e.g. a user message without a reply,
-// or a mid-tool-loop assistant turn) so the history is always clean on restart.
-const sanitizeHistory = (history: ConversationMessage[]): ConversationMessage[] => {
-  for (let i = history.length - 1; i >= 0; i--) {
-    const m = history[i]!
-    if (m.role === 'assistant' && typeof m.content === 'string') return history.slice(0, i + 1)
-  }
-  return []
-}
-
-const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<LlmProviderMsg> | null, historyWindowHours?: number): PersistenceAdapter<ChatbotState> => {
+const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<LlmProviderMsg> | null): PersistenceAdapter<ChatbotState> => {
   const path = `workspace/history/${userId}.json`
   return {
     load: async () => {
       const file = Bun.file(path)
       if (!await file.exists()) return undefined
       const saved = JSON.parse(await file.text()) as PersistedChatbotState
-      const history = sanitizeHistory(saved.history ?? [])
       return {
-        history:          historyWindowHours ? trimHistory(history, historyWindowHours) : history,
+        history:          [],
         sessionUsage:     { promptTokens: 0, completionTokens: 0 },
         userContext:      saved.userContext ?? null,
         // Ephemeral fields — reset to defaults; restored via subscriptions on start
@@ -183,7 +171,8 @@ const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<Ll
       }
     },
     save: async (state) => {
-      const data: PersistedChatbotState = { history: state.history, userContext: state.userContext }
+      //const data: PersistedChatbotState = { userContext: state.userContext }
+      const data: PersistedChatbotState = { userContext: "" }
       await Bun.write(path, JSON.stringify(data, null, 2))
     },
   }
@@ -675,7 +664,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
   })
 
   return {
-    persistence: createPersistence(userId, clientId, initialLlmRef, historyWindowHours),
+    persistence: createPersistence(userId, clientId, initialLlmRef),
 
     lifecycle: onLifecycle({
       start: (state, context) => {
