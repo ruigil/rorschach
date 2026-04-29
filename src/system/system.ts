@@ -80,6 +80,7 @@ export const createPluginSystem = async (
 ): Promise<PluginSystem> => {
   const { shutdownTimeoutMs, plugins: initialPlugins, config: initialConfig } = options ?? {}
   let shuttingDown = false
+  let sub = 0;
 
   // ─── Global config tree (keyed by plugin id / configDescriptor.key) ───
   const globalConfig: Record<string, unknown> = { ...(initialConfig ?? {}) }
@@ -251,8 +252,9 @@ export const createPluginSystem = async (
     topic: EventTopic<T>,
     callback: (event: T) => void,
   ): (() => void) => {
-    services.eventStream.subscribe("system", topic, callback)
-    return () => services.eventStream.unsubscribe("system", topic)
+    const subscriberName = `system-${sub++}`
+    services.eventStream.subscribe(subscriberName, topic, callback)
+    return () => services.eventStream.unsubscribe(subscriberName, topic)
   }
 
   return {
