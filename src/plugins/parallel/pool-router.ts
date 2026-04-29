@@ -71,7 +71,7 @@ export const createPoolRouter = <WM, WS>(
         return { state }
       }
 
-      state.workers[state.index % state.workers.length]!.send(message)
+      state.workers[state.index % state.workers.length]!.send(message, ctx.messageHeaders())
       return { state: { ...state, index: state.index + 1 } }
     },
 
