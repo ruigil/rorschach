@@ -294,12 +294,14 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
       const question = state.accumulated.trim()
       if (question) {
         context.log.info('user context gap identified', { userId, question: question.slice(0, 100) })
+        const span = context.trace.start('gap-analysis-trigger', { userId })
         context.publish(CronTriggerTopic, {
           userId,
           text:         question,
-          traceId:      crypto.randomUUID(),
-          parentSpanId: crypto.randomUUID(),
+          traceId:      span.traceId,
+          parentSpanId: span.spanId,
         })
+        span.done()
       } else {
         context.log.info('user context model complete, no question needed', { userId })
       }
