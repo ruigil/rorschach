@@ -1,4 +1,4 @@
-import type { ActorDef } from '../../system/types.ts'
+import type { ActorDef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import {
   ClientConnectTopic,
@@ -51,6 +51,7 @@ export type CliState = {
   connected:        boolean
   status:           'idle' | 'waiting'
   pendingText:      string
+  activeSpans:      Record<string, SpanHandle>
   streamedRows:     number   // rows used by current streaming response
   streamingCol:     number   // current column during streaming (0-indexed)
   responseStartSEnd: number  // value of sEnd() when the current response started
@@ -62,7 +63,8 @@ export type CliState = {
 }
 
 export const CLI_INITIAL_STATE: CliState = {
-  connected: false, status: 'idle', pendingText: '', streamedRows: 0, streamingCol: 0, responseStartSEnd: 0,
+  connected: false, status: 'idle', pendingText: '', activeSpans: {},
+  streamedRows: 0, streamingCol: 0, responseStartSEnd: 0,
   model: null, inputTokens: 0, outputTokens: 0, contextPercent: null, sessionCost: null,
 }
 
@@ -318,11 +320,14 @@ export const createCliActor = (): ActorDef<CliMsg, CliState> => {
 
         if (!state.connected) ctx.publish(ClientConnectTopic, { clientId: CLI_CLIENT_ID, userId: ANONYMOUS_USER_ID, roles: [] })
 
+        const span = ctx.trace.start('request', { clientId: CLI_CLIENT_ID })
+        const activeSpans = { ...state.activeSpans, [CLI_CLIENT_ID]: span }
+
         ctx.publish(InboundMessageTopic, {
           clientId: CLI_CLIENT_ID,
           text:     message.text,
-          traceId:  crypto.randomUUID(),
-          parentSpanId: crypto.randomUUID(),
+          traceId:  span.traceId,
+          parentSpanId: span.spanId,
         })
 
         // Show user message (reversed bg) then thinking indicator in scroll area
@@ -334,7 +339,7 @@ export const createCliActor = (): ActorDef<CliMsg, CliState> => {
         ])
 
         inputBuf = ''
-        const next: CliState = { ...state, connected: true, status: 'waiting', pendingText: '', streamedRows: 1, streamingCol: 0, responseStartSEnd: sEnd() }
+        const next: CliState = { ...state, connected: true, status: 'waiting', pendingText: '', streamedRows: 1, streamingCol: 0, responseStartSEnd: sEnd(), activeSpans }
         currentState = next
         drawFixed(next, inputBuf)
         // Leave cursor at the thinking line — chunks will overwrite it directly
@@ -389,10 +394,14 @@ export const createCliActor = (): ActorDef<CliMsg, CliState> => {
 
           // ─── LLM done — overwrite raw stream with markdown-rendered version ───
           case 'done': {
+            const span = state.activeSpans[CLI_CLIENT_ID]
+            span?.done()
+            const { [CLI_CLIENT_ID]: _, ...activeSpans } = state.activeSpans
+
             if (!state.pendingText) {
               process.stdout.write(`\x1b[${sEnd()};1H\x1b[2K`)
               cursorToPrompt(inputBuf)
-              return { state }
+              return { state: { ...state, activeSpans } }
             }
 
             const rendered = renderMarkdown(state.pendingText)
@@ -412,7 +421,7 @@ export const createCliActor = (): ActorDef<CliMsg, CliState> => {
             process.stdout.write(out)
 
             cursorToPrompt(inputBuf)
-            return { state }
+            return { state: { ...state, activeSpans } }
           }
 
           // ─── Usage — update token counts in the status bar only ───
@@ -431,8 +440,12 @@ export const createCliActor = (): ActorDef<CliMsg, CliState> => {
 
           // ─── Error ───
           case 'error': {
+            const span = state.activeSpans[CLI_CLIENT_ID]
+            span?.error(String(ev.text ?? 'Unknown error'))
+            const { [CLI_CLIENT_ID]: _, ...activeSpans } = state.activeSpans
+
             setScrollEnd(`${C.red}✗ ${String(ev.text ?? 'Unknown error')}${C.reset}`)
-            const next: CliState = { ...state, status: 'idle', pendingText: '' }
+            const next: CliState = { ...state, status: 'idle', pendingText: '', activeSpans }
             currentState = next
             drawFixed(next, inputBuf)
             cursorToPrompt(inputBuf)
