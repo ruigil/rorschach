@@ -1,0 +1,28 @@
+{
+  "name": "Personal Facts",
+  "description": "Standard identity and preference facts for memory testing.",
+  "statements": [
+    "I am a software engineer specializing in distributed systems and actor-based concurrency.",
+    "I live in a small town in the Italian Alps called Aosta.",
+    "My favorite programming language is TypeScript, but I also enjoy Rust for performance-critical tasks.",
+    "I have a golden retriever named 'Baco' who is 3 years old.",
+    "I recently started a project called 'Rorschach', which is an autonomous agent framework.",
+    "I am allergic to peanuts and shellfish.",
+    "I enjoy mountain biking during the summer and skiing in the winter.",
+    "I am currently learning to play the piano, specifically focusing on jazz improvisation.",
+    "My preferred setup for development is a 14-inch MacBook Pro with a mechanical keyboard (Keychron K2).",
+    "I usually drink double espresso in the morning and herbal tea in the evening."
+  ],
+  "questions": [
+    { "q": "Where do I live?", "a": ["Aosta"] },
+    { "q": "What is my dog's name and age?", "a": ["Baco", "3"] },
+    { "q": "What is the name of my autonomous agent framework?", "a": ["Rorschach"] },
+    { "q": "What am I allergic to?", "a": ["peanuts"] },
+    { "q": "What musical instrument am I learning?", "a": ["piano"] },
+    { "q": "What is my favorite programming language?", "a": ["TypeScript"] },
+    { "q": "What kind of coffee do I drink in the morning?", "a": ["espresso"] },
+    { "q": "What sports do I enjoy in the winter?", "a": ["skiing"] },
+    { "q": "What is my specialization as a software engineer?", "a": ["distributed systems"] },
+    { "q": "What kind of keyboard do I use?", "a": ["Keychron"] }
+  ]
+}

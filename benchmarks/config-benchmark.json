@@ -1,0 +1,49 @@
+{
+  "runs": 1,
+  "plugins": [
+    "./src/plugins/interfaces/interfaces.plugin.ts",
+    "./src/plugins/memory/memory.plugin.ts",
+    "./src/plugins/cognitive/cognitive.plugin.ts",
+    "./src/plugins/observability/observability.plugin.ts"
+  ],
+  "config": {
+    "observability": {
+      "traceRecorder": {
+        "tracesDir": "workspace/benchmark/observability/traces"
+      },
+      "metrics": {
+        "intervalMs": 5000
+      }
+    },
+    "interfaces": {
+      "http": {
+        "port": 3001
+      }
+    },
+    "cognitive": {
+      "llmProvider": {
+        "apiKey": "${OPENROUTER_API_KEY}"
+      },
+      "chatbot": {
+        "model": "openai/gpt-4o-mini",
+        "systemPrompt": "You are a helpful assistant with access to a long-term memory system. Whenever the user shares a personal fact, preference, or piece of information about themselves, you MUST use the 'store_memory' tool to record it. Conversely, whenever the user asks a question about themselves, their past, their preferences, or any information that is not in the current conversation context, you MUST use the 'recall_memory' tool to retrieve the relevant information. Do not assume you know the answer if it is not in the immediate context; always check your memory first. This is critical for the user's experience."
+      }
+    },
+    "memory": {
+      "dbPath": "workspace/benchmark",
+      "kgraph": {
+        "embeddingModel": "openai/text-embedding-3-small",
+        "embeddingDimensions": 1536
+      },
+      "system": {
+        "model": "openai/gpt-4o-mini",
+        "consolidationIntervalMs": 30000
+      }
+    }
+  },
+  "dataset": "benchmarks/datasets/personal-facts.json",
+  "judge": {
+    "model": "openai/gpt-4o-mini",
+    "systemPrompt": "You are an impartial judge. Compare the GROUND TRUTH with the ASSISTANT REPLY for the given QUESTION. If the assistant reply contains the factual information from the ground truth, score it 1. If it is partially correct but misses key details, score 0.5. If it is wrong or says I do not know, score 0. Output ONLY JSON: { \"score\": number, \"reason\": \"string\" }"
+  }
+}
