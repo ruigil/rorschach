@@ -11,7 +11,6 @@ export const ZETTEL_CREATE_TOOL   = 'zettel_create'
 export const ZETTEL_UPDATE_TOOL   = 'zettel_update'
 export const ZETTEL_READ_TOOL     = 'zettel_read'
 export const ZETTEL_LIST_TOOL     = 'zettel_list'
-export const ZETTEL_SEARCH_TOOL   = 'zettel_search'
 export const ZETTEL_ACTIVATE_TOOL = 'zettel_activate'
 export const ZETTEL_LINKS_TOOL   = 'zettel_links'
 
@@ -83,22 +82,6 @@ export const ZETTEL_LIST_SCHEMA: ToolSchema = {
         tags:   { type: 'array', items: { type: 'string' }, description: 'Filter notes that have ALL of these tags.' },
         userId: { type: 'string' },
       },
-    },
-  },
-}
-
-export const ZETTEL_SEARCH_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: ZETTEL_SEARCH_TOOL,
-    description: 'Full-text search across all Zettelkasten note names, synopses, tags, and content.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query:  { type: 'string', description: 'Search string.' },
-        userId: { type: 'string' },
-      },
-      required: ['query'],
     },
   },
 }
@@ -455,37 +438,6 @@ const handleList = async (
     ({ id, name, synopsis, tags, createdAt, updatedAt })))
 }
 
-const handleSearch = async (
-  userId: string,
-  args: Record<string, unknown>,
-  queue: IndexQueue,
-  log: any,
-): Promise<string> => {
-  const query = (args.query as string).toLowerCase()
-  log.debug('zettel-notes: full-text search', { userId, query })
-  const index = await queue.current(userId)
-  const results: Array<{ id: string; name: string; synopsis: string; tags: string[] }> = []
-
-  for (const note of index.notes) {
-    if (
-      note.name.toLowerCase().includes(query) ||
-      note.synopsis.toLowerCase().includes(query) ||
-      note.tags.some(t => t.includes(query))
-    ) {
-      results.push({ id: note.id, name: note.name, synopsis: note.synopsis, tags: note.tags })
-      continue
-    }
-    try {
-      const raw = await Bun.file(noteFilePath(userId, note)).text()
-      if (raw.toLowerCase().includes(query)) {
-        results.push({ id: note.id, name: note.name, synopsis: note.synopsis, tags: note.tags })
-      }
-    } catch { /* skip unreadable notes */ }
-  }
-
-  return JSON.stringify(results)
-}
-
 const ACTIVATE_DISTANCE_THRESHOLD = 0.4
 
 const handleActivate = async (
@@ -619,7 +571,6 @@ export const createZettelNotesActor = (kgraphRef: ActorRef<KgraphMsg>): ActorDef
             case ZETTEL_UPDATE_TOOL:   return handleUpdate(state.kgraphRef, effectiveUserId, args, queue, ctx.log)
             case ZETTEL_READ_TOOL:     return handleRead(effectiveUserId, args, queue, ctx.log)
             case ZETTEL_LIST_TOOL:     return handleList(effectiveUserId, args, queue, ctx.log)
-            case ZETTEL_SEARCH_TOOL:   return handleSearch(effectiveUserId, args, queue, ctx.log)
             case ZETTEL_ACTIVATE_TOOL: return handleActivate(state.kgraphRef, effectiveUserId, args, queue, ctx.log)
             case ZETTEL_LINKS_TOOL:   return handleLinks(effectiveUserId, args, queue, ctx.log)
             case ZETTEL_LINK_TOOL:    return handleLink(state.kgraphRef, effectiveUserId, args, queue, ctx.log)

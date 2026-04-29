@@ -42,9 +42,6 @@ export const zettelSection = (userId: string): string =>
   `**zettel_list** { tags[]?, userId }\n` +
   `  List note metadata. Optionally filter by tags (must match ALL provided tags).\n\n` +
 
-  `**zettel_search** { query, userId }\n` +
-  `  Full-text search across note names, synopses, tags, and content.\n\n` +
-
   `**zettel_link** { sourceId?, sourceName?, targetId?, targetName?, userId }\n` +
   `  Create a directional link between two notes. Updates metadata and the knowledge graph.\n` +
   `  Both notes must already exist. Call this only after all notes have been created/updated.\n\n` +
@@ -66,4 +63,4 @@ export const zettelSection = (userId: string): string =>
   `- **Strict Link Validation**: NEVER speculate on note titles. Only create links via zettel_link using:\n` +
   `  1. The exact 'name' returned by zettel_activate, zettel_read, or zettel_list.\n` +
   `  2. The exact 'name' of a note you just created with zettel_create in this same turn.\n` +
-  `- If you want to link to a concept but don't know if a note exists, use zettel_search or zettel_activate to discover it first.`
+  `- If you want to link to a concept but don't know if a note exists, use zettel_activate to discover it first.`

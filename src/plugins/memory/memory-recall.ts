@@ -86,8 +86,6 @@ const buildSystemPrompt = (userId: string): string =>
   `   zettel_links { id: "<id>", userId: "${userId}" }\n\n` +
   `4. **Tag search** — if the query is tag-oriented:\n` +
   `   zettel_list { tags: ["<tag>"], userId: "${userId}" }\n\n` +
-  `5. **Full-text fallback** — if semantic search returns nothing:\n` +
-  `   zettel_search { query: "<keyword>", userId: "${userId}" }\n\n` +
   `Synthesize a concise answer from the note content found. If nothing relevant is found, say so plainly.`
 
 // ─── Worker Actor Definition ───
