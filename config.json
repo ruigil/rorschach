@@ -11,10 +11,10 @@
   ],
   "config": {
     "auth": {
-      "rpId": "rorschach.bot",
+      "rpId": "${AUTH_RPID:-localhost}",
       "rpName": "Rorschach",
-      "origin": "https://rorschach.bot",
-      "baseUrl": "https://rorschach.bot/"
+      "origin": "${AUTH_ORIGIN:-http://localhost:3000}",
+      "baseUrl": "${AUTH_ORIGIN:-http://localhost:3000}"
     },
     "interfaces": {
       "http": {
@@ -22,10 +22,7 @@
       },
       "signal": {
         "host": "127.0.0.1",
-        "port": "7583",
-        "allowList": [
-          "+41762189620"
-        ]
+        "port": "7583"
       }
     },
     "tools": {
