@@ -140,7 +140,7 @@ export const ZETTEL_LINK_SCHEMA: ToolSchema = {
 
 // ─── State & messages ───
 
-type ZettelState = { kgraphRef: ActorRef<KgraphMsg> } | null
+type ZettelState = { kgraphRef: ActorRef<KgraphMsg>; dbPath: string } | null
 
 export type ZettelNoteMsg =
   | ToolInvokeMsg
@@ -152,15 +152,11 @@ export type ZettelNoteMsg =
 const slugify = (name: string): string =>
   name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
-const getBasePath = (userId: string) => {
-  const pluginConfig = (globalThis as any)._memoryPluginConfig
-  const dbPath = pluginConfig?.dbPath || 'workspace/memory'
-  return `${dbPath}/${userId}`
-}
+const getBasePath = (userId: string, dbPath: string) => `${dbPath}/${userId}`
 
-const indexPath    = (userId: string) => `${getBasePath(userId)}/notes/index.json`
-const noteFilePath = (userId: string, meta: Pick<ZettelNote, 'path'>) =>
-  `${getBasePath(userId)}/${meta.path}`
+const indexPath    = (userId: string, dbPath: string) => `${getBasePath(userId, dbPath)}/notes/index.json`
+const noteFilePath = (userId: string, meta: Pick<ZettelNote, 'path'>, dbPath: string) =>
+  `${getBasePath(userId, dbPath)}/${meta.path}`
 
 // ─── Serialized index mutation queue ───
 //
@@ -168,37 +164,37 @@ const noteFilePath = (userId: string, meta: Pick<ZettelNote, 'path'>) =>
 // and overwrite each other. Chaining mutations through a per-userId promise queue
 // ensures each operation sees the result of the previous one without re-reading disk.
 
-const makeIndexQueue = () => {
+const makeIndexQueue = (dbPath: string) => {
   const queues = new Map<string, Promise<ZettelIndex>>()
 
   const current = (userId: string): Promise<ZettelIndex> =>
-    (queues.get(userId) ?? readIndex(userId)).catch(() => readIndex(userId))
+    (queues.get(userId) ?? readIndex(userId, dbPath)).catch(() => readIndex(userId, dbPath))
 
   const mutate = (userId: string, fn: (idx: ZettelIndex) => ZettelIndex): Promise<ZettelIndex> => {
     const next = current(userId).then(async (idx) => {
       const updated = fn(idx)
-      await writeIndex(userId, updated)
+      await writeIndex(userId, updated, dbPath)
       return updated
     })
-    queues.set(userId, next.catch(() => readIndex(userId)))
+    queues.set(userId, next.catch(() => readIndex(userId, dbPath)))
     return next
   }
 
   return { current, mutate }
 }
 
-const readIndex = async (userId: string): Promise<ZettelIndex> => {
+const readIndex = async (userId: string, dbPath: string): Promise<ZettelIndex> => {
   try {
-    const text = await Bun.file(indexPath(userId)).text()
+    const text = await Bun.file(indexPath(userId, dbPath)).text()
     return JSON.parse(text) as ZettelIndex
   } catch {
     return { notes: [] }
   }
 }
 
-const writeIndex = async (userId: string, index: ZettelIndex): Promise<void> => {
-  await mkdir(`${getBasePath(userId)}/notes`, { recursive: true })
-  await Bun.write(indexPath(userId), JSON.stringify(index, null, 2))
+const writeIndex = async (userId: string, index: ZettelIndex, dbPath: string): Promise<void> => {
+  await mkdir(`${getBasePath(userId, dbPath)}/notes`, { recursive: true })
+  await Bun.write(indexPath(userId, dbPath), JSON.stringify(index, null, 2))
 }
 
 const serializeNote = (meta: ZettelNote, body: string): string => {
@@ -330,6 +326,7 @@ const handleCreate = async (
   userId: string,
   args: Record<string, unknown>,
   queue: IndexQueue,
+  dbPath: string,
   log: any,
 ): Promise<string> => {
   const name     = args.name as string
@@ -352,8 +349,8 @@ const handleCreate = async (
     kgraphNodeId,
   }
 
-  await mkdir(`${getBasePath(userId)}/notes`, { recursive: true })
-  await Bun.write(noteFilePath(userId, meta), serializeNote(meta, content))
+  await mkdir(`${getBasePath(userId, dbPath)}/notes`, { recursive: true })
+  await Bun.write(noteFilePath(userId, meta, dbPath), serializeNote(meta, content))
   await queue.mutate(userId, (idx) => ({ notes: [...idx.notes, meta] }))
 
   return JSON.stringify({ id, name, synopsis, tags, createdAt: now })
@@ -364,6 +361,7 @@ const handleUpdate = async (
   userId: string,
   args: Record<string, unknown>,
   queue: IndexQueue,
+  dbPath: string,
   log: any,
 ): Promise<string> => {
   const id  = args.id as string
@@ -373,7 +371,7 @@ const handleUpdate = async (
   const existingMeta = currentIndex.notes.find(n => n.id === id)
   if (!existingMeta) return JSON.stringify({ error: 'Note not found' })
 
-  const raw = await Bun.file(noteFilePath(userId, existingMeta)).text()
+  const raw = await Bun.file(noteFilePath(userId, existingMeta, dbPath)).text()
   const { body: existingBody } = parseNote(raw)
 
   const name     = typeof args.name     === 'string' ? args.name     : existingMeta.name
@@ -384,7 +382,7 @@ const handleUpdate = async (
 
   const updated: ZettelNote = { ...existingMeta, name, synopsis, tags, updatedAt: now }
 
-  await Bun.write(noteFilePath(userId, existingMeta), serializeNote(updated, content))
+  await Bun.write(noteFilePath(userId, existingMeta, dbPath), serializeNote(updated, content))
   await queue.mutate(userId, (idx) => ({ notes: idx.notes.map(n => n.id === id ? updated : n) }))
   await upsertInKgraph(kgraphRef, userId, existingMeta.kgraphNodeId, name, synopsis, tags, log)
 
@@ -395,6 +393,7 @@ const handleRead = async (
   userId: string,
   args: Record<string, unknown>,
   queue: IndexQueue,
+  dbPath: string,
   log: any,
 ): Promise<string> => {
   let noteId = typeof args.id === 'string' ? args.id : undefined
@@ -412,7 +411,7 @@ const handleRead = async (
   if (!noteMeta) return JSON.stringify({ error: `Note ${noteId} not found` })
 
   try {
-    const raw    = await Bun.file(noteFilePath(userId, noteMeta)).text()
+    const raw    = await Bun.file(noteFilePath(userId, noteMeta, dbPath)).text()
     const { body } = parseNote(raw)
     return JSON.stringify({ ...noteMeta, content: body })
   } catch {
@@ -502,6 +501,7 @@ const handleLink = async (
   userId: string,
   args: Record<string, unknown>,
   queue: IndexQueue,
+  dbPath: string,
   log: any,
 ): Promise<string> => {
   const index = await queue.current(userId)
@@ -524,9 +524,9 @@ const handleLink = async (
   const now = new Date().toISOString()
   const updated: ZettelNote = { ...source, links: updatedLinks, updatedAt: now }
 
-  const raw = await Bun.file(noteFilePath(userId, source)).text()
+  const raw = await Bun.file(noteFilePath(userId, source, dbPath)).text()
   const { body } = parseNote(raw)
-  await Bun.write(noteFilePath(userId, source), serializeNote(updated, body))
+  await Bun.write(noteFilePath(userId, source, dbPath), serializeNote(updated, body))
   await queue.mutate(userId, (idx) => ({ notes: idx.notes.map(n => n.id === source.id ? updated : n) }))
 
   const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
@@ -544,12 +544,12 @@ const handleLink = async (
 
 // ─── Actor definition ───
 
-export const createZettelNotesActor = (kgraphRef: ActorRef<KgraphMsg>): ActorDef<ZettelNoteMsg, ZettelState> => {
-  const queue = makeIndexQueue()
+export const createZettelNotesActor = (kgraphRef: ActorRef<KgraphMsg>, dbPath: string): ActorDef<ZettelNoteMsg, ZettelState> => {
+  const queue = makeIndexQueue(dbPath)
 
   return {
   lifecycle: onLifecycle({
-    start: (_state) => ({ state: { kgraphRef } }),
+    start: (_state) => ({ state: { kgraphRef, dbPath } }),
   }),
 
   handler: onMessage<ZettelNoteMsg, ZettelState>({
@@ -567,13 +567,13 @@ export const createZettelNotesActor = (kgraphRef: ActorRef<KgraphMsg>): ActorDef
           const args = JSON.parse(rawArgs) as Record<string, unknown>
           const effectiveUserId = (args.userId as string | undefined) ?? userId
           switch (toolName) {
-            case ZETTEL_CREATE_TOOL:   return handleCreate(state.kgraphRef, effectiveUserId, args, queue, ctx.log)
-            case ZETTEL_UPDATE_TOOL:   return handleUpdate(state.kgraphRef, effectiveUserId, args, queue, ctx.log)
-            case ZETTEL_READ_TOOL:     return handleRead(effectiveUserId, args, queue, ctx.log)
+            case ZETTEL_CREATE_TOOL:   return handleCreate(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case ZETTEL_UPDATE_TOOL:   return handleUpdate(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case ZETTEL_READ_TOOL:     return handleRead(effectiveUserId, args, queue, state.dbPath, ctx.log)
             case ZETTEL_LIST_TOOL:     return handleList(effectiveUserId, args, queue, ctx.log)
             case ZETTEL_ACTIVATE_TOOL: return handleActivate(state.kgraphRef, effectiveUserId, args, queue, ctx.log)
             case ZETTEL_LINKS_TOOL:   return handleLinks(effectiveUserId, args, queue, ctx.log)
-            case ZETTEL_LINK_TOOL:    return handleLink(state.kgraphRef, effectiveUserId, args, queue, ctx.log)
+            case ZETTEL_LINK_TOOL:    return handleLink(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
             default: throw new Error(`Unknown tool: ${toolName}`)
           }
         })(),

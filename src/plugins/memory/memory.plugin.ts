@@ -93,10 +93,11 @@ const spawnMemoryActors = (
   config: MemoryActorConfig,
   gen: number,
   kgraphRef: ActorRef<KgraphMsg>,
+  dbPath: string,
 ): MemoryActors => {
   const zettel = ctx.spawn(
     `zettel-notes-${gen}`,
-    createZettelNotesActor(kgraphRef),
+    createZettelNotesActor(kgraphRef, dbPath),
     null,
   )
 
@@ -234,7 +235,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         let zettel:        ActorRef<ZettelNoteMsg>           | null = null
 
         if (slice?.system) {
-          const actors = spawnMemoryActors(ctx, slice.system, 0, kgraphRef)
+          const actors = spawnMemoryActors(ctx, slice.system, 0, kgraphRef, dbPath)
           consolidation = actors.consolidation
           recall        = actors.recall
           store         = actors.store
@@ -304,7 +305,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         const memoryGen = state.memoryGen + 1
 
         if (msg.slice?.system) {
-          const actors = spawnMemoryActors(ctx, msg.slice.system, memoryGen, kgraphRef)
+          const actors = spawnMemoryActors(ctx, msg.slice.system, memoryGen, kgraphRef, dbPath)
           consolidation = actors.consolidation
           recall        = actors.recall
           store         = actors.store
