@@ -169,9 +169,15 @@ export type ZettelNoteMsg =
 const slugify = (name: string): string =>
   name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
-const indexPath    = (userId: string) => `workspace/memory/${userId}/notes/index.json`
+const getBasePath = (userId: string) => {
+  const pluginConfig = (globalThis as any)._memoryPluginConfig
+  const dbPath = pluginConfig?.dbPath || 'workspace/memory'
+  return `${dbPath}/${userId}`
+}
+
+const indexPath    = (userId: string) => `${getBasePath(userId)}/notes/index.json`
 const noteFilePath = (userId: string, meta: Pick<ZettelNote, 'path'>) =>
-  `workspace/memory/${userId}/${meta.path}`
+  `${getBasePath(userId)}/${meta.path}`
 
 // ─── Serialized index mutation queue ───
 //
@@ -208,7 +214,7 @@ const readIndex = async (userId: string): Promise<ZettelIndex> => {
 }
 
 const writeIndex = async (userId: string, index: ZettelIndex): Promise<void> => {
-  await mkdir(`workspace/memory/${userId}/notes`, { recursive: true })
+  await mkdir(`${getBasePath(userId)}/notes`, { recursive: true })
   await Bun.write(indexPath(userId), JSON.stringify(index, null, 2))
 }
 
@@ -363,7 +369,7 @@ const handleCreate = async (
     kgraphNodeId,
   }
 
-  await mkdir(`workspace/memory/${userId}/notes`, { recursive: true })
+  await mkdir(`${getBasePath(userId)}/notes`, { recursive: true })
   await Bun.write(noteFilePath(userId, meta), serializeNote(meta, content))
   await queue.mutate(userId, (idx) => ({ notes: [...idx.notes, meta] }))
 
