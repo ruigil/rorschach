@@ -203,4 +203,8 @@ console.log(`store_memory calls:  ${storeMemoryCount}/${injectionResults.length}
 console.log(`Total Cost:          $${totalCost.toFixed(4)}`)
 console.log('\nInjection phase complete. Database is ready for recall.\n')
 
-process.exit(0)
+console.log('✅ Injection phase complete. HTTP server remains active for inspection.')
+console.log('🔗 URL: http://localhost:3001')
+console.log('Press Ctrl+C to terminate.')
+
+// We do NOT call process.exit(0) to keep the system and HTTP server alive.
