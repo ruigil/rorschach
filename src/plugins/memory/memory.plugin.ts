@@ -211,7 +211,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         const slice       = ctx.initialConfig() as MemoryConfig | undefined
-        const dbPath      = slice?.dbPath ?? './workspace/memory/kgraph'
+        const dbPath      = slice?.dbPath ?? './workspace/memory'
         const kgraphConfig = slice?.kgraph ?? {}
 
         const embeddingCfg = kgraphConfig.embeddingModel && kgraphConfig.embeddingDimensions
@@ -278,7 +278,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           ctx.stop(state.kgraph.ref)
         }
 
-        const dbPath          = msg.slice?.dbPath ?? './workspace/memory/kgraph'
+        const dbPath          = msg.slice?.dbPath ?? './workspace/memory'
         const newKgraphConfig = msg.slice?.kgraph ?? {}
         const kgraphGen       = state.kgraph.gen + 1
 
