@@ -1,4 +1,4 @@
-import type { ActorContext, ActorDef, ActorRef, ActorResult, MessageHandler } from '../../system/types.ts'
+import type { ActorContext, ActorDef, ActorRef, ActorResult, MessageHandler, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { UserStreamTopic } from '../../types/events.ts'
 import type { UserStreamEvent } from '../../types/events.ts'
@@ -41,6 +41,7 @@ type PendingBatch = {
   results:            Array<{ toolCallId: string; toolName: string; content: string }>
   messagesAtCall:     ApiMessage[]
   assistantToolCalls: ToolCall[]
+  toolSpans:          Record<string, SpanHandle>
 }
 
 type WorkerState = {
@@ -51,6 +52,8 @@ type WorkerState = {
   pendingBatch:   PendingBatch | null
   toolLoopCount:  number
   userContextRef: ActorRef<UserContextMsg> | null
+  requestSpan:    SpanHandle | null
+  llmSpan:        SpanHandle | null
 }
 
 const INITIAL_WORKER_STATE: WorkerState = {
@@ -61,6 +64,8 @@ const INITIAL_WORKER_STATE: WorkerState = {
   pendingBatch:   null,
   toolLoopCount:  0,
   userContextRef: null,
+  requestSpan:    null,
+  llmSpan:        null,
 }
 
 // ─── System prompt ───
@@ -142,6 +147,9 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
     const messages      = buildMessages(userId, snapshotTurns)
     const toolSchemas   = Object.values(tools).map((e: ToolEntry) => e.schema as Tool)
 
+    const requestSpan = context.trace.start('memory-consolidation', { userId, turns: snapshotTurns.length })
+    const llmSpan     = context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
+
     llmRef.send({
       type: 'stream',
       requestId,
@@ -163,6 +171,8 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
         accumulated:   '',
         pendingBatch:  null,
         toolLoopCount: 0,
+        requestSpan,
+        llmSpan,
       },
       become: awaitingLlmHandler,
     }
@@ -191,6 +201,8 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
     llmToolCalls: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
 
+      state.llmSpan?.done({ toolCalls: msg.calls.map(c => c.name) })
+
       const { calls } = msg
 
       const assistantToolCalls: ToolCall[] = calls.map(c => ({
@@ -204,6 +216,7 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
         results: [],
         messagesAtCall: state.turnMessages!,
         assistantToolCalls,
+        toolSpans: {},
       }
 
       for (const call of calls) {
@@ -212,10 +225,18 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
           context.log.warn('memory consolidation: unknown tool', { tool: call.name })
           continue
         }
+        const toolSpan = state.requestSpan
+          ? context.trace.child(state.requestSpan.traceId, state.requestSpan.spanId, 'tool-invoke', { toolName: call.name })
+          : null
+        if (toolSpan) {
+          batch.toolSpans[call.id] = toolSpan
+        }
         context.pipeToSelf(
           ask<ToolInvokeMsg, ToolReply>(
             entry.ref,
             (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, userId }),
+            undefined,
+            toolSpan ? context.trace.injectHeaders(toolSpan) : undefined,
           ),
           (reply) => ({ type: '_toolResult' as const, toolName: call.name, toolCallId: call.id, reply }),
           (error) => ({
@@ -228,13 +249,15 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
       }
 
       return {
-        state: { ...state, requestId: null, pendingBatch: batch },
+        state: { ...state, requestId: null, pendingBatch: batch, llmSpan: null },
         become: toolLoopHandler,
       }
     },
 
     llmDone: (state, msg, context): Result => {
       if (msg.requestId !== state.requestId) return { state }
+      state.llmSpan?.done()
+      state.requestSpan?.done()
       context.log.info('memory consolidation done', { userId })
 
       let ucRef = state.userContextRef
@@ -251,16 +274,18 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
       ucRef.send({ type: '_run' })
 
       return {
-        state:  { ...state, requestId: null, turnMessages: null, accumulated: '', userContextRef: ucRef },
+        state:  { ...state, requestId: null, turnMessages: null, accumulated: '', userContextRef: ucRef, requestSpan: null, llmSpan: null },
         become: idleHandler,
       }
     },
 
     llmError: (state, msg, context) => {
       if (msg.requestId !== state.requestId) return { state }
+      state.llmSpan?.error(String(msg.error))
+      state.requestSpan?.error(String(msg.error))
       context.log.error('memory consolidation LLM error', { userId, error: String(msg.error) })
       return {
-        state:  { ...state, requestId: null, turnMessages: null, accumulated: '' },
+        state:  { ...state, requestId: null, turnMessages: null, accumulated: '', requestSpan: null, llmSpan: null },
         become: idleHandler,
       }
     },
@@ -278,6 +303,11 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
       const updatedResults = [...batch.results, { toolCallId: msg.toolCallId, toolName: msg.toolName, content }]
       const remaining      = batch.remaining - 1
 
+      const toolSpan = batch.toolSpans[msg.toolCallId]
+      if (toolSpan) {
+        msg.reply.type === 'toolResult' ? toolSpan.done() : toolSpan.error(msg.reply.error)
+      }
+
       if (remaining > 0) {
         return { state: { ...state, pendingBatch: { ...batch, remaining, results: updatedResults } } }
       }
@@ -285,9 +315,10 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
       const nextLoopCount = state.toolLoopCount + 1
 
       if (nextLoopCount >= maxToolLoops) {
+        state.requestSpan?.error('tool loop limit reached')
         context.log.warn('memory consolidation tool loop limit reached', { userId, limit: maxToolLoops })
         return {
-          state:  { ...state, requestId: null, turnMessages: null, accumulated: '', pendingBatch: null, toolLoopCount: 0 },
+          state:  { ...state, requestId: null, turnMessages: null, accumulated: '', pendingBatch: null, toolLoopCount: 0, requestSpan: null, llmSpan: null },
           become: idleHandler,
         }
       }
@@ -306,6 +337,10 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
       const requestId   = crypto.randomUUID()
       const toolSchemas = Object.values(tools).map((e: ToolEntry) => e.schema as Tool)
 
+      const llmSpan = state.requestSpan
+        ? context.trace.child(state.requestSpan.traceId, state.requestSpan.spanId, 'llm-call', { model })
+        : null
+
       llmRef.send({
         type: 'stream',
         requestId,
@@ -317,7 +352,7 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
       })
 
       return {
-        state:  { ...state, requestId, turnMessages: nextMessages, pendingBatch: null, toolLoopCount: nextLoopCount },
+        state:  { ...state, requestId, turnMessages: nextMessages, pendingBatch: null, toolLoopCount: nextLoopCount, llmSpan },
         become: awaitingLlmHandler,
       }
     },
