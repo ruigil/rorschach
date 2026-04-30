@@ -171,8 +171,7 @@ const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<Ll
       }
     },
     save: async (state) => {
-      //const data: PersistedChatbotState = { userContext: state.userContext }
-      const data: PersistedChatbotState = { userContext: "" }
+      const data: PersistedChatbotState = { userContext: state.userContext }
       await Bun.write(path, JSON.stringify(data, null, 2))
     },
   }
