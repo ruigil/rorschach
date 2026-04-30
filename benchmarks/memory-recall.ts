@@ -210,6 +210,9 @@ for (let run = 0; run < RUNS; run++) {
   const RECALL_CLIENT_ID = `benchmark-recall-${run}`
   system.publish(ClientConnectTopic, { clientId: RECALL_CLIENT_ID, userId: USER_ID, roles: ['user'] })
 
+  // Wait for the chatbot actor to fully initialize and register its tools
+  await new Promise(resolve => setTimeout(resolve, 500))
+
   const runResults: RecallResult[] = []
   for (const { q, a } of recallQuestions) {
     const traceId = newId()

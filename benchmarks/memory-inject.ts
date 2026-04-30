@@ -31,7 +31,6 @@ if (!apiKey || apiKey.includes('${')) {
 benchmarkConfig.config.cognitive.llmProvider.apiKey = apiKey
 
 const DB_DIR = join(process.cwd(), benchmarkConfig.config.memory.dbPath)
-const CONSOLIDATION_TIMEOUT: number = benchmarkConfig.config.memory.system.consolidationIntervalMs * 2
 const TURN_TIMEOUT_MS = 120_000
 const USER_ID = 'anonymous'
 
@@ -149,28 +148,13 @@ const sendTurn = async (text: string, clientId: string, traceId: string): Promis
   })
 }
 
-// ─── waitForConsolidation ───
-
-const waitForConsolidation = () => new Promise<void>(resolve => {
-  let done = false
-  let unsub: (() => void) | undefined
-  const finish = () => {
-    if (done) return
-    done = true
-    clearTimeout(timer)
-    if (unsub) unsub()
-    resolve()
-  }
-  const timer = setTimeout(finish, CONSOLIDATION_TIMEOUT)
-  unsub = system.subscribe(TraceTopic, (span: TraceSpan) => {
-    if (span.operation === 'memory-consolidation' && (span.status === 'done' || span.status === 'error')) finish()
-  })
-})
-
 console.log('\n🚀 Starting Injection Phase\n')
 
 const INJECT_CLIENT_ID = 'benchmark-inject'
 system.publish(ClientConnectTopic, { clientId: INJECT_CLIENT_ID, userId: USER_ID, roles: ['user'] })
+
+// Wait for the chatbot actor to fully initialize and register its tools
+await new Promise(resolve => setTimeout(resolve, 500))
 
 const injectionResults: Array<{ latency: number; storedMemory: boolean; toolCalls: number }> = []
 
@@ -187,10 +171,6 @@ for (const statement of factualStatements) {
 
 const storeMemoryCount = injectionResults.filter(r => r.storedMemory).length
 console.log(`store_memory called: ${storeMemoryCount}/${injectionResults.length} turns\n`)
-
-console.log('--- Waiting for Memory Consolidation ---\n')
-await waitForConsolidation()
-console.log('Consolidation complete.\n')
 
 // ─── Reporting ───
 
