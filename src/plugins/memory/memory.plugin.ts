@@ -28,8 +28,8 @@ import {
   ZETTEL_UPDATE_TOOL,  ZETTEL_UPDATE_SCHEMA,
   ZETTEL_READ_TOOL,    ZETTEL_READ_SCHEMA,
   ZETTEL_LIST_TOOL,    ZETTEL_LIST_SCHEMA,
-  ZETTEL_ACTIVATE_TOOL, ZETTEL_ACTIVATE_SCHEMA,
-  ZETTEL_LINKS_TOOL,    ZETTEL_LINKS_SCHEMA,
+  ZETTEL_SEARCH_TOOL,  ZETTEL_SEARCH_SCHEMA,
+  ZETTEL_LINKS_TOOL,   ZETTEL_LINKS_SCHEMA,
   ZETTEL_LINK_TOOL,     ZETTEL_LINK_SCHEMA,
 } from './zettel-notes.ts'
 
@@ -51,10 +51,7 @@ export type MemoryConfig = {
 
 // ─── Internal types ───
 
-// Consolidation writes episodic logs directly via bash/write, so it needs those tools
-const CONSOLIDATION_TOOL_FILTER = { allow: ['bash', 'read', 'write'] }
-// Recall and store only use zettel tools (injected as initial state) — no system tools needed
-const RECALL_STORE_TOOL_FILTER  = { allow: [] as string[] }
+const EMPTY_TOOL_FILTER = { allow: [] as string[] }
 
 const KGRAPH_ROUTE_ID = 'memory.kgraph.api'
 
@@ -101,37 +98,46 @@ const spawnMemoryActors = (
     null,
   )
 
-  const zettelTools: ToolCollection = {
-    [ZETTEL_CREATE_TOOL]:   { schema: ZETTEL_CREATE_SCHEMA,   ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
-    [ZETTEL_UPDATE_TOOL]:   { schema: ZETTEL_UPDATE_SCHEMA,   ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
-    [ZETTEL_READ_TOOL]:     { schema: ZETTEL_READ_SCHEMA,     ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
-    [ZETTEL_LIST_TOOL]:     { schema: ZETTEL_LIST_SCHEMA,     ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
-    [ZETTEL_ACTIVATE_TOOL]: { schema: ZETTEL_ACTIVATE_SCHEMA, ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
-    [ZETTEL_LINKS_TOOL]:    { schema: ZETTEL_LINKS_SCHEMA,    ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
-    [ZETTEL_LINK_TOOL]:     { schema: ZETTEL_LINK_SCHEMA,     ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
+  const ref = zettel as unknown as ActorRef<ToolInvokeMsg>
+
+  const storeTools: ToolCollection = {
+    [ZETTEL_SEARCH_TOOL]: { schema: ZETTEL_SEARCH_SCHEMA, ref },
+    [ZETTEL_CREATE_TOOL]: { schema: ZETTEL_CREATE_SCHEMA, ref },
+    [ZETTEL_UPDATE_TOOL]: { schema: ZETTEL_UPDATE_SCHEMA, ref },
+    [ZETTEL_LINK_TOOL]:   { schema: ZETTEL_LINK_SCHEMA,   ref },
+  }
+
+  const consolidationTools: ToolCollection = {
+    [ZETTEL_SEARCH_TOOL]: { schema: ZETTEL_SEARCH_SCHEMA, ref },
+    [ZETTEL_CREATE_TOOL]: { schema: ZETTEL_CREATE_SCHEMA, ref },
+    [ZETTEL_UPDATE_TOOL]: { schema: ZETTEL_UPDATE_SCHEMA, ref },
+    [ZETTEL_LINK_TOOL]:   { schema: ZETTEL_LINK_SCHEMA,   ref },
+  }
+
+  const userContextTools: ToolCollection = {
+    [ZETTEL_LIST_TOOL]: { schema: ZETTEL_LIST_SCHEMA, ref },
+    [ZETTEL_READ_TOOL]: { schema: ZETTEL_READ_SCHEMA, ref },
   }
 
   const recallTools: ToolCollection = {
-    [ZETTEL_READ_TOOL]:     { schema: ZETTEL_READ_SCHEMA,     ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
-    [ZETTEL_LIST_TOOL]:     { schema: ZETTEL_LIST_SCHEMA,     ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
-    [ZETTEL_ACTIVATE_TOOL]: { schema: ZETTEL_ACTIVATE_SCHEMA, ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
-    [ZETTEL_LINKS_TOOL]:    { schema: ZETTEL_LINKS_SCHEMA,    ref: zettel as unknown as ActorRef<ToolInvokeMsg> },
+    [ZETTEL_SEARCH_TOOL]: { schema: ZETTEL_SEARCH_SCHEMA, ref },
+    [ZETTEL_LINKS_TOOL]:  { schema: ZETTEL_LINKS_SCHEMA,  ref },
   }
 
   const consolidation = ctx.spawn(
     `memory-consolidation-${gen}`,
-    createMemoryConsolidationActor({ model: config.model, intervalMs: config.consolidationIntervalMs, toolFilter: CONSOLIDATION_TOOL_FILTER }),
-    { ...INITIAL_CONSOLIDATION_STATE, tools: zettelTools },
+    createMemoryConsolidationActor({ model: config.model, intervalMs: config.consolidationIntervalMs, toolFilter: EMPTY_TOOL_FILTER }),
+    { ...INITIAL_CONSOLIDATION_STATE, tools: consolidationTools, userContextTools },
   )
   const recall = ctx.spawn(
     `memory-recall-${gen}`,
-    createMemoryRecallActor({ model: config.model, toolFilter: RECALL_STORE_TOOL_FILTER }),
+    createMemoryRecallActor({ model: config.model, toolFilter: EMPTY_TOOL_FILTER }),
     { ...INITIAL_RECALL_STATE, tools: recallTools },
   ) as ActorRef<MemoryRecallMsg>
   const store = ctx.spawn(
     `memory-store-${gen}`,
-    createMemoryStoreActor({ model: config.model, toolFilter: RECALL_STORE_TOOL_FILTER }),
-    { ...INITIAL_STORE_STATE, tools: zettelTools },
+    createMemoryStoreActor({ model: config.model, toolFilter: EMPTY_TOOL_FILTER }),
+    { ...INITIAL_STORE_STATE, tools: storeTools },
   ) as ActorRef<MemoryStoreMsg>
   return { consolidation, recall, store, zettel }
 }

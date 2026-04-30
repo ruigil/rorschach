@@ -12,7 +12,7 @@ import type {
 } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { MemoryRecallMsg } from './types.ts'
-import { zettelSection } from './ontology.ts'
+import { zettelRecallSection } from './ontology.ts'
 
 // ─── Tool registration ───
 
@@ -76,16 +76,14 @@ type WorkerState = {
 
 const buildSystemPrompt = (userId: string): string =>
   `You are a memory retrieval agent for user "${userId}". Answer the query by searching the note network.\n\n` +
-  zettelSection(userId) + '\n\n' +
+  zettelRecallSection(userId) + '\n\n' +
   `## Retrieval Strategy\n\n` +
-  `1. **Semantic search** — find relevant notes using:\n` +
-  `   zettel_activate { text: "<query rephrased as a topic>", userId: "${userId}" }\n\n` +
-  `2. **Read candidates** — for each result returned:\n` +
-  `   zettel_read { id: "<id>", userId: "${userId}" }\n\n` +
-  `3. **Follow links** — explore notes linked from a candidate note:\n` +
+  `1. **Semantic search** — find relevant notes with full content using:\n` +
+  `   zettel_search { text: "<one-sentence synopsis of the topic>", userId: "${userId}" }\n` +
+  `   The text must be a concise synopsis (one sentence), not a question — this aligns with how note embeddings are stored.\n` +
+  `   Optionally add tags to enrich the query: zettel_search { text: "...", tags: ["<tag>"], userId: "${userId}" }\n\n` +
+  `2. **Follow links** — explore notes linked from a candidate note if needed:\n` +
   `   zettel_links { id: "<id>", userId: "${userId}" }\n\n` +
-  `4. **Tag search** — if the query is tag-oriented:\n` +
-  `   zettel_list { tags: ["<tag>"], userId: "${userId}" }\n\n` +
   `Synthesize a concise answer from the note content found. If nothing relevant is found, say so plainly.`
 
 // ─── Worker Actor Definition ───

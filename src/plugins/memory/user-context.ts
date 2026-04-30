@@ -11,7 +11,7 @@ import type {
 } from '../../types/llm.ts'
 import type { UserContextMsg } from './types.ts'
 import { UserContextTopic } from '../../types/memory.ts'
-import { zettelSection } from './ontology.ts'
+import { zettelStoreSection } from './ontology.ts'
 import { CronTriggerTopic } from '../../types/events.ts'
 
 // ─── Options ───
@@ -47,7 +47,7 @@ export type UserContextState = {
 const buildSystemPrompt = (userId: string): string =>
   `You are a user model agent for user "${userId}". Your task is to produce an updated user context summary.\n\n` +
   `This summary will be injected into a chatbot's system prompt before every response. Its purpose is to give the chatbot a complete, up-to-date picture of who this user is.\n\n` +
-  zettelSection(userId) + '\n\n' +
+  zettelStoreSection(userId) + '\n\n' +
   `## Workflow\n\n` +
   `1. Read the existing summary at /workspace/memory/${userId}/context.md (if it exists) — this is your starting point.\n` +
   `2. List all notes to get the full inventory:\n` +

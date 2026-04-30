@@ -15,7 +15,7 @@ import { LlmProviderTopic } from '../../types/llm.ts'
 import type { MemoryConsolidationMsg, UserConsolidationWorkerMsg, UserContextMsg } from './types.ts'
 import { createUserContextActor, INITIAL_USER_CONTEXT_STATE } from './user-context.ts'
 import { ask } from '../../system/ask.ts'
-import { zettelSection } from './ontology.ts'
+import { zettelStoreSection } from './ontology.ts'
 
 // ─── Options ───
 
@@ -27,11 +27,12 @@ export type MemoryConsolidationOptions = {
 }
 
 type WorkerOptions = {
-  model:         string
-  userId:        string
-  llmRef:        ActorRef<LlmProviderMsg>
-  tools:         ToolCollection
-  maxToolLoops?: number
+  model:            string
+  userId:           string
+  llmRef:           ActorRef<LlmProviderMsg>
+  tools:            ToolCollection
+  userContextTools: ToolCollection
+  maxToolLoops?:    number
 }
 
 // ─── Internal types ───
@@ -76,18 +77,15 @@ const buildSystemPrompt = (userId: string): string =>
   `## Primary Goal\n` +
   `Build a network of atomic notes about this user. Each note captures one self-contained unit of knowledge.\n\n` +
 
-  zettelSection(userId) + '\n\n' +
+  zettelStoreSection(userId) + '\n\n' +
 
   `## Consolidation Workflow\n\n` +
   `For each conversation turn, identify 1-3 key topics, then for each topic:\n\n` +
 
-  `1. **Activate** — find semantically similar notes:\n` +
-  `   zettel_activate { text: "<topic summary>", userId: "${userId}" }\n\n` +
+  `1. **Search** — find semantically similar notes with full content:\n` +
+  `   zettel_search { text: "<one-sentence synopsis of the topic>", userId: "${userId}" }\n\n` +
 
-  `2. **Read** — for each candidate returned, read the full note:\n` +
-  `   zettel_read { id: "<id>", userId: "${userId}" }\n\n` +
-
-  `3. **Update or Create**:\n` +
+  `2. **Update or Create**:\n` +
   `   - If an existing note covers this topic → update it with new information:\n` +
   `     zettel_update { id: "<id>", content: "<merged content>", synopsis: "<updated synopsis>", userId: "${userId}" }\n` +
   `   - If no relevant note exists → create a new atomic note:\n` +
@@ -121,7 +119,7 @@ const buildMessages = (userId: string, turns: UserStreamEvent[]): ApiMessage[] =
 // ─── Worker actor: one per user, persistent, owns its UserContext child ───
 
 const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserConsolidationWorkerMsg, WorkerState> => {
-  const { model, userId, llmRef, tools, maxToolLoops = 25 } = options
+  const { model, userId, llmRef, tools, userContextTools, maxToolLoops = 25 } = options
 
   type Ctx = ActorContext<UserConsolidationWorkerMsg>
   type Result = ActorResult<UserConsolidationWorkerMsg, WorkerState>
@@ -262,9 +260,6 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
 
       let ucRef = state.userContextRef
       if (!ucRef) {
-        const userContextTools = Object.fromEntries(
-          Object.entries(tools).filter(([n]) => n === 'read' || n.startsWith('zettel_')),
-        ) as ToolCollection
         ucRef = context.spawn(
           'user-context',
           createUserContextActor({ model, userId, llmRef, tools: userContextTools }),
@@ -366,10 +361,11 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
 // ─── Supervisor actor: routes turns to per-user workers ───
 
 export type ConsolidationState = {
-  llmRef:    ActorRef<LlmProviderMsg> | null
-  tools:     ToolCollection
-  workers:   Record<string, ActorRef<UserConsolidationWorkerMsg>>
-  workerSeq: number
+  llmRef:           ActorRef<LlmProviderMsg> | null
+  tools:            ToolCollection
+  userContextTools: ToolCollection
+  workers:          Record<string, ActorRef<UserConsolidationWorkerMsg>>
+  workerSeq:        number
 }
 
 export const createMemoryConsolidationActor = (options: MemoryConsolidationOptions): ActorDef<MemoryConsolidationMsg, ConsolidationState> => {
@@ -432,9 +428,10 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
             `consolidation-user-${msg.userId}-${workerSeq}`,
             createUserConsolidationWorker({
               model,
-              userId: msg.userId,
-              llmRef: state.llmRef,
-              tools:  state.tools,
+              userId:           msg.userId,
+              llmRef:           state.llmRef,
+              tools:            state.tools,
+              userContextTools: state.userContextTools,
               maxToolLoops,
             }),
             INITIAL_WORKER_STATE,
@@ -479,8 +476,9 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
 }
 
 export const INITIAL_CONSOLIDATION_STATE: ConsolidationState = {
-  llmRef:    null,
-  tools:     {},
-  workers:   {},
-  workerSeq: 0,
+  llmRef:           null,
+  tools:            {},
+  userContextTools: {},
+  workers:          {},
+  workerSeq:        0,
 }

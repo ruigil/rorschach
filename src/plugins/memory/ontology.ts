@@ -1,14 +1,10 @@
 // ─── Zettelkasten note schema ─────────────────────────────────────────────────
 //
-// Single source of truth for the note format and tool usage pattern.
-// Injected into every memory agent prompt.
+// zettelStoreSection  — full tool list + A-Mem write workflow (store, consolidation)
+// zettelRecallSection — read-only tools only (recall)
 
-export const zettelSection = (userId: string): string =>
+const noteFormatBlock = (): string =>
   `### Zettelkasten Note System\n\n` +
-
-  `Notes are stored at /workspace/memory/${userId}/notes/\n` +
-  `  index.json — metadata array (id, name, synopsis, tags, createdAt, updatedAt, links)\n` +
-  `  {uuid}.md  — individual note files with YAML frontmatter\n\n` +
 
   `### Note format\n` +
   `\`\`\`\n` +
@@ -22,37 +18,35 @@ export const zettelSection = (userId: string): string =>
   `links: [Linked Note Title]\n` +
   `---\n\n` +
   `Content here.\n` +
-  `\`\`\`\n\n` +
+  `\`\`\`\n\n`
+
+export const zettelStoreSection = (userId: string): string =>
+  noteFormatBlock() +
 
   `### Available tools\n\n` +
 
-  `**zettel_activate** { text, userId }\n` +
-  `  Semantic search via vector embeddings — find notes most similar to the given text.\n` +
-  `  Returns array of { id, name, synopsis, tags }. Use this first to find relevant notes.\n\n` +
+  `**zettel_search** { text, tags[]?, userId }\n` +
+  `  Semantic search via vector embeddings with graph expansion and re-ranking.\n` +
+  `  text must be a one-sentence synopsis — this aligns with how embeddings are stored.\n` +
+  `  Optional tags enrich the query and serve as fallback filter if no results found.\n` +
+  `  Returns array of { id, name, synopsis, tags, links, content, score }.\n\n` +
 
   `**zettel_create** { name, synopsis, content, tags[], userId }\n` +
   `  Create a new atomic note. name: 2-5 words, Title Case. synopsis: one sentence.\n\n` +
 
   `**zettel_update** { id, content?, name?, synopsis?, tags?, userId }\n` +
-  `  Update an existing note. Only pass fields that should change.\n\n` +
-
-  `**zettel_read** { id?, name?, userId }\n` +
-  `  Read full note content by id or name.\n\n` +
-
-  `**zettel_list** { tags[]?, userId }\n` +
-  `  List note metadata. Optionally filter by tags (must match ALL provided tags).\n\n` +
+  `  Update an existing note. Only pass fields that should change. Re-embeds with fresh synopsis.\n\n` +
 
   `**zettel_link** { sourceId?, sourceName?, targetId?, targetName?, userId }\n` +
   `  Create a directional link between two notes. Updates metadata and the knowledge graph.\n` +
   `  Both notes must already exist. Call this only after all notes have been created/updated.\n\n` +
 
   `### A-Mem workflow (one topic at a time)\n` +
-  `1. zettel_activate { text: "<topic summary>", userId } → candidate notes\n` +
-  `2. zettel_read each candidate to see full content\n` +
-  `3. If a candidate already covers this topic → zettel_update (merge new information)\n` +
-  `4. If no relevant note exists → zettel_create (new atomic note)\n` +
-  `   Repeat steps 1–4 for all topics. Create ALL notes before creating any links.\n` +
-  `5. zettel_link { sourceName, targetName, userId } for each relationship between notes.\n` +
+  `1. zettel_search { text: "<one-sentence synopsis of the topic>", userId } → candidate notes with full content\n` +
+  `2. If a candidate already covers this topic → zettel_update (merge new information)\n` +
+  `3. If no relevant note exists → zettel_create (new atomic note)\n` +
+  `   Repeat steps 1–3 for all topics. Create ALL notes before creating any links.\n` +
+  `4. zettel_link { sourceName, targetName, userId } for each relationship between notes.\n` +
   `   Only call zettel_link after both notes are confirmed to exist.\n\n` +
 
   `### Note writing rules\n` +
@@ -61,6 +55,20 @@ export const zettelSection = (userId: string): string =>
   `- Tags are lowercase, single-word or hyphenated: ["typescript", "work", "preference"].\n` +
   `- Do not duplicate facts across notes — update the canonical note instead.\n` +
   `- **Strict Link Validation**: NEVER speculate on note titles. Only create links via zettel_link using:\n` +
-  `  1. The exact 'name' returned by zettel_activate, zettel_read, or zettel_list.\n` +
+  `  1. The exact 'name' returned by zettel_search.\n` +
   `  2. The exact 'name' of a note you just created with zettel_create in this same turn.\n` +
-  `- If you want to link to a concept but don't know if a note exists, use zettel_activate to discover it first.`
+  `- If you want to link to a concept but don't know if a note exists, use zettel_search to discover it first.`
+
+export const zettelRecallSection = (userId: string): string =>
+  noteFormatBlock() +
+
+  `### Available tools\n\n` +
+
+  `**zettel_search** { text, tags[]?, userId }\n` +
+  `  Semantic search via vector embeddings with graph expansion and re-ranking.\n` +
+  `  text must be a one-sentence synopsis — this aligns with how embeddings are stored.\n` +
+  `  Optional tags enrich the query and serve as fallback filter if no results found.\n` +
+  `  Returns array of { id, name, synopsis, tags, links, content, score } — full content included.\n\n` +
+
+  `**zettel_links** { id?, name?, userId }\n` +
+  `  Return notes linked from a given note, with full content. Use to explore the note graph.`
