@@ -32,8 +32,9 @@
     "memory": {
       "dbPath": "workspace/benchmark",
       "kgraph": {
-        "embeddingModel": "google/gemini-embedding-2-preview",
-        "embeddingDimensions": 768
+        "embeddingModel": "qwen/qwen3-embedding-8b",
+        "embeddingDimensions": 4096,
+        "cosineSimilarityThreshold": 0.7
       },
       "system": {
         "model": "google/gemini-3.1-flash-lite-preview",

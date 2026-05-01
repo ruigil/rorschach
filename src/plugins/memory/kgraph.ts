@@ -137,6 +137,7 @@ const resolveDb = (state: NonNullable<KgraphState>, userId: string, basePath: st
 export const createKgraphActor = (
   basePath: string,
   embedding?: { model: string; dimensions: number },
+  cosineSimilarityThreshold = 0.0,
 ): ActorDef<KgraphMsg, KgraphState> => ({
 
   lifecycle: onLifecycle({
@@ -210,7 +211,7 @@ export const createKgraphActor = (
           : cleaned + '\nRETURN count(*) AS _n'
 
         ctx.pipeToSelf(
-          db.executeCypher(query).then(result => {
+          db.execute(query).then(result => {
             if (hasReturn) return -1  // unknown — statement has its own RETURN
             const row = result.toArray()[0] as { _n?: number } | undefined
             return row?._n ?? 0
@@ -241,19 +242,28 @@ export const createKgraphActor = (
 
         ctx.pipeToSelf(
           Promise.all(INDEXED_LABELS.map(lbl =>
-            db.createVectorIndex(lbl, '_embedding', embedding.dimensions).catch(() => {}),
+            db.execute(`CREATE VECTOR INDEX idx_${lbl.toLowerCase()}_embedding ON :${lbl}(_embedding) DIMENSION ${embedding.dimensions} METRIC 'cosine'`).catch(() => {}),
           )).then(() => ask<LlmProviderMsg, EmbeddingReply>(
             llmRef,
             (replyToEmbed) => ({ type: 'embed', requestId: crypto.randomUUID(), model: embedding.model, text: embeddingText ?? name, dimensions: embedding.dimensions, replyTo: replyToEmbed }),
           )).then(async (reply): Promise<CreateNodeResult> => {
             if (reply.type === 'embeddingError') throw new Error(reply.error)
             const vector = reply.embedding
-            const ids = await db.batchCreateNodes(label, '_embedding', [vector])
-            const nodeId = ids[0]
-            if (nodeId === undefined) throw new Error('batchCreateNodes returned no id')
-            db.setNodeProperty(nodeId, 'name', name)
+
+            // Build INSERT query with vector() syntax
+            const vectorStr = `vector([${vector.join(',')}])`
+            let insertQuery = `INSERT (n:${label} { name: ${JSON.stringify(name)}, _embedding: ${vectorStr}`
             for (const [k, v] of Object.entries(properties ?? {})) {
-              db.setNodeProperty(nodeId, k, v)
+              insertQuery += `, ${k}: ${JSON.stringify(v)}`
+            }
+            insertQuery += ` }) RETURN n`
+
+            const result = await db.execute(insertQuery)
+            const nodes = result.nodes()
+            const nodeId = nodes[0]?.id
+            if (nodeId === undefined) {
+              console.log('INSERT result rows:', result.toArray())
+              throw new Error('INSERT returned no node')
             }
             return { name, nodeId }
           }),
@@ -281,25 +291,27 @@ export const createKgraphActor = (
 
       ctx.pipeToSelf(
         Promise.all(INDEXED_LABELS.map(lbl =>
-          db.createVectorIndex(lbl, '_embedding', embedding.dimensions).catch(() => {}),
+          db.execute(`CREATE VECTOR INDEX idx_${lbl.toLowerCase()}_embedding ON :${lbl}(_embedding) DIMENSION ${embedding.dimensions} METRIC 'cosine'`).catch(() => {}),
         )).then(() => ask<LlmProviderMsg, EmbeddingReply>(
           llmRef,
           (replyToEmbed) => ({ type: 'embed', requestId: crypto.randomUUID(), model: embedding.model, text, dimensions: embedding.dimensions, replyTo: replyToEmbed }),
         ).then(async (reply): Promise<VectorSearchMatch[]> => {
           if (reply.type === 'embeddingError') throw new Error(reply.error)
           const vector = reply.embedding
-          const candidates = await db.vectorSearch(label, '_embedding', vector, topN)
-          return candidates.map((pair) => {
-            const nodeId = pair[0] as number
-            const distance = pair[1] as number
-            const node = db.getNode(nodeId)
-            return {
-              nodeId,
-              distance,
-              name:        (node?.get('name')        as string) ?? '',
-              description: (node?.get('description') as string) ?? '',
-            }
-          })
+          const vectorStr = `vector([${vector.join(',')}])`
+          const result = await db.execute(`
+            MATCH (n:${label})
+            WHERE cosine_similarity(n._embedding, ${vectorStr}) > ${cosineSimilarityThreshold}
+            RETURN id(n) AS nodeId, n.name AS name, n.description AS description, cosine_similarity(n._embedding, ${vectorStr}) AS score
+            ORDER BY score DESC
+            LIMIT ${topN}
+          `)
+          return result.toArray().map((row: any) => ({
+            nodeId:      row.nodeId ?? row['id(n)'],
+            score:       row.score ?? row['cosine_similarity(n._embedding, ' + vectorStr + ')'],
+            name:        row.name ?? '',
+            description: row.description ?? '',
+          }))
         })),
         (matches) => ({ type: '_vectorSearchDone' as const, matches, replyTo }),
         (error)   => ({ type: '_vectorSearchErr'  as const, error: String(error), replyTo }),
@@ -372,10 +384,16 @@ export const createKgraphActor = (
 
       const db = resolveDb(state, userId, basePath)
 
-      const applyProperties = (vec?: number[]) => {
-        if (vec) db.setNodeProperty(nodeId, '_embedding', vec)
+      const applyProperties = async (vec?: number[]) => {
+        const setClauses: string[] = []
+        if (vec) {
+          setClauses.push(`n._embedding = vector([${vec.join(',')}])`)
+        }
         for (const [k, v] of Object.entries(properties)) {
-          db.setNodeProperty(nodeId, k, v)
+          setClauses.push(`n.${k} = ${JSON.stringify(v)}`)
+        }
+        if (setClauses.length > 0) {
+          await db.execute(`MATCH (n) WHERE id(n) = ${nodeId} SET ${setClauses.join(', ')}`)
         }
       }
 
@@ -387,18 +405,17 @@ export const createKgraphActor = (
             (replyToEmbed) => ({ type: 'embed', requestId: crypto.randomUUID(), model: embedding.model, text: embeddingText, dimensions: embedding.dimensions, replyTo: replyToEmbed }),
           ).then((reply) => {
             if (reply.type === 'embeddingError') throw new Error(reply.error)
-            applyProperties(reply.embedding)
+            return applyProperties(reply.embedding)
           }),
           () => ({ type: '_updateNodeDone' as const, replyTo }),
           (error) => ({ type: '_updateNodeErr' as const, error: String(error), replyTo }),
         )
       } else {
-        try {
-          applyProperties()
-          replyTo.send({ type: 'toolResult', result: 'ok' })
-        } catch (e) {
-          replyTo.send({ type: 'toolError', error: String(e) })
-        }
+        ctx.pipeToSelf(
+          applyProperties(),
+          () => ({ type: '_updateNodeDone' as const, replyTo }),
+          (error) => ({ type: '_updateNodeErr' as const, error: String(error), replyTo }),
+        )
       }
 
       return { state }

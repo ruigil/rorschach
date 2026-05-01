@@ -75,7 +75,8 @@
       "dbPath": "workspace/memory",
       "kgraph": {
         "embeddingModel": "qwen/qwen3-embedding-8b",
-        "embeddingDimensions": 4096
+        "embeddingDimensions": 4096,
+        "cosineSimilarityThreshold": 0.7
       },
       "system": {
         "model": "moonshotai/kimi-k2.6",

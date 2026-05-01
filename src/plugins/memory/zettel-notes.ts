@@ -250,7 +250,7 @@ const upsertInKgraph = async (
   tags: string[],
   log: any,
 ): Promise<number | undefined> => {
-  const embeddingText = `${name} ${tags.join(' ')} ${synopsis}`
+  const embeddingText = `${synopsis} ${tags.join(' ')}`
 
   if (kgraphNodeId !== undefined) {
     log.debug('zettel-notes: updating existing kgraph node', { userId, kgraphNodeId, name })
@@ -438,11 +438,10 @@ const handleList = async (
     ({ id, name, synopsis, tags, createdAt, updatedAt })))
 }
 
-const SEARCH_DISTANCE_THRESHOLD = 0.4
-const SEARCH_TOP_N              = 5
-const SEARCH_MAX_RESULTS        = 8
-const SEARCH_VECTOR_WEIGHT      = 0.7
-const SEARCH_GRAPH_WEIGHT       = 0.3
+const SEARCH_TOP_N         = 5
+const SEARCH_MAX_RESULTS   = 8
+const SEARCH_VECTOR_WEIGHT = 0.7
+const SEARCH_GRAPH_WEIGHT  = 0.3
 
 const handleSearch = async (
   kgraphRef: ActorRef<KgraphMsg>,
@@ -484,21 +483,20 @@ const handleSearch = async (
     return JSON.stringify(await Promise.all(pool.map(noteToResult)))
   }
 
-  // Step 1: seed notes from vector search, filtered by threshold
-  const seedMatches = reply.matches.filter(m => m.distance <= SEARCH_DISTANCE_THRESHOLD)
+  // Step 1: seed notes from vector search
   const seedNoteIds = new Set<string>()
 
-  type Candidate = { note: ZettelNote; distance: number; graphProximity: number }
+  type Candidate = { note: ZettelNote; score: number; graphProximity: number }
   const candidates = new Map<string, Candidate>()
 
-  for (const m of seedMatches) {
+  for (const m of reply.matches) {
     const note = index.notes.find(n => n.kgraphNodeId === m.nodeId)
     if (!note) continue
     seedNoteIds.add(note.id)
-    candidates.set(note.id, { note, distance: m.distance, graphProximity: 1.0 })
+    candidates.set(note.id, { note, score: m.score, graphProximity: 1.0 })
   }
 
-  // Tag fallback: vector search found nothing above threshold
+  // Tag fallback: vector search found nothing
   if (candidates.size === 0 && filterTags.length > 0) {
     const tagMatches = index.notes.filter(n => filterTags.every(t => n.tags.includes(t)))
     log.debug('zettel-notes: tag fallback results', { userId, count: tagMatches.length })
@@ -511,7 +509,7 @@ const handleSearch = async (
     for (const linkName of seed.links) {
       const neighbour = index.notes.find(n => n.name === linkName)
       if (!neighbour || candidates.has(neighbour.id)) continue
-      candidates.set(neighbour.id, { note: neighbour, distance: 1.0, graphProximity: 0.5 })
+      candidates.set(neighbour.id, { note: neighbour, score: 1.0, graphProximity: 0.5 })
     }
   }
 
@@ -519,7 +517,7 @@ const handleSearch = async (
   const ranked = [...candidates.values()]
     .map(c => ({
       note:  c.note,
-      score: Math.round((SEARCH_VECTOR_WEIGHT * (1 - c.distance) + SEARCH_GRAPH_WEIGHT * c.graphProximity) * 1000) / 1000,
+      score: Math.round((SEARCH_VECTOR_WEIGHT * c.score + SEARCH_GRAPH_WEIGHT * c.graphProximity) * 1000) / 1000,
     }))
     .sort((a, b) => b.score - a.score)
     .slice(0, SEARCH_MAX_RESULTS)

@@ -78,10 +78,10 @@ const buildSystemPrompt = (userId: string): string =>
   `You are a memory retrieval agent for user "${userId}". Answer the query by searching the note network.\n\n` +
   zettelRecallSection(userId) + '\n\n' +
   `## Retrieval Strategy\n\n` +
-  `1. **Semantic search** — find relevant notes with full content using:\n` +
-  `   zettel_search { text: "<one-sentence synopsis of the topic>", userId: "${userId}" }\n` +
-  `   The text must be a concise synopsis (one sentence), not a question — this aligns with how note embeddings are stored.\n` +
-  `   Optionally add tags to enrich the query: zettel_search { text: "...", tags: ["<tag>"], userId: "${userId}" }\n\n` +
+  `1. **Semantic search**:\n` +
+  `   zettel_search { text: "<natural query phrase>", tags: ["<domain>", "<subtopic>"], userId: "${userId}" }\n` +
+  `   text: a short phrase describing what you're looking for.\n` +
+  `   tags: derive from the query domain — use the same lowercase vocabulary notes use.\n\n` +
   `2. **Follow links** — explore notes linked from a candidate note if needed:\n` +
   `   zettel_links { id: "<id>", userId: "${userId}" }\n\n` +
   `Synthesize a concise answer from the note content found. If nothing relevant is found, say so plainly.`

@@ -81,7 +81,7 @@ const buildSystemPrompt = (userId: string, topic?: string): string => {
     `You are a memory storage agent for user "${userId}". Store the given information as Zettelkasten notes.${topicHint}\n\n` +
     zettelStoreSection(userId) + '\n\n' +
     `## Storage Workflow\n\n` +
-    `1. zettel_search { text: "<one-sentence synopsis of what to store>", userId: "${userId}" } — check if a note already covers this topic (returns full content).\n` +
+    `1. zettel_search { text: "<query phrase describing the topic>", userId: "${userId}" } — check if a note already covers this topic (returns full content).\n` +
     `2. If a matching note is found → zettel_update it with the merged information.\n` +
     `3. If no matching note exists → zettel_create a new atomic note.\n` +
     `4. After storing the note, use zettel_link to connect it to related notes if relevant:\n` +

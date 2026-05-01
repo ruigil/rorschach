@@ -28,7 +28,7 @@ export type ZettelIndex = { notes: ZettelNote[] }
 
 // ─── kgraph vector search types ───
 
-export type VectorSearchMatch = { nodeId: number; distance: number; name: string; description: string }
+export type VectorSearchMatch = { nodeId: number; score: number; name: string; description: string }
 
 export type VectorSearchReply =
   | { type: 'vectorSearchResult'; matches: VectorSearchMatch[] }
