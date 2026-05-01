@@ -11,7 +11,11 @@
     "I enjoy mountain biking during the summer and skiing in the winter.",
     "I am currently learning to play the piano, specifically focusing on jazz improvisation.",
     "My preferred setup for development is a 14-inch MacBook Pro with a mechanical keyboard (Keychron K2).",
-    "I usually drink double espresso in the morning and herbal tea in the evening."
+    "I usually drink double espresso in the morning and herbal tea in the evening.",
+    "I visited Lisbon for a tech conference from April 15 to April 20, 2026.",
+    "I watched 'Interstellar' with friends on the evening of May 4, 2026.",
+    "I finished reading 'Dune' on March 12, 2026.",
+    "I bought my Keychron keyboard on February 1, 2026."
   ],
   "questions": [
     { "q": "Where do I live?", "a": ["Aosta"] },
@@ -23,6 +27,10 @@
     { "q": "What kind of coffee do I drink in the morning?", "a": ["espresso"] },
     { "q": "What sports do I enjoy in the winter?", "a": ["skiing"] },
     { "q": "What is my specialization as a software engineer?", "a": ["distributed systems"] },
-    { "q": "What kind of keyboard do I use?", "a": ["Keychron"] }
+    { "q": "What kind of keyboard do I use?", "a": ["Keychron"] },
+    { "q": "When did I visit Lisbon?", "a": ["April 2026"] },
+    { "q": "What movie did I watch in early May 2026?", "a": ["Interstellar"] },
+    { "q": "What book did I finish in March?", "a": ["Dune"] },
+    { "q": "When did I buy my keyboard?", "a": ["February 1"] }
   ]
 }

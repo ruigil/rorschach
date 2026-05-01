@@ -24,11 +24,12 @@ export const ZETTEL_CREATE_SCHEMA: ToolSchema = {
     parameters: {
       type: 'object',
       properties: {
-        name:     { type: 'string', description: 'Short note title (2-5 words, Title Case).' },
-        synopsis: { type: 'string', description: "One sentence summary of this note's content. Used for semantic search." },
-        content:  { type: 'string', description: 'Full markdown content. Use [[Note Title]] wiki-links to reference related notes.' },
-        tags:     { type: 'array', items: { type: 'string' }, description: 'Lowercase tags e.g. ["typescript", "work", "preference"].' },
-        userId:   { type: 'string' },
+        name:      { type: 'string', description: 'Short note title (2-5 words, Title Case).' },
+        synopsis:  { type: 'string', description: "One sentence summary of this note's content. Used for semantic search." },
+        content:   { type: 'string', description: 'Full markdown content. Use [[Note Title]] wiki-links to reference related notes.' },
+        tags:      { type: 'array', items: { type: 'string' }, description: 'Lowercase tags e.g. ["typescript", "work", "preference"].' },
+        eventTime: { type: 'string', description: 'Optional ISO 8601 timestamp for when the event occurred (if different from now).' },
+        userId:    { type: 'string' },
       },
       required: ['name', 'synopsis', 'content', 'tags'],
     },
@@ -43,12 +44,13 @@ export const ZETTEL_UPDATE_SCHEMA: ToolSchema = {
     parameters: {
       type: 'object',
       properties: {
-        id:       { type: 'string', description: 'Note UUID.' },
-        name:     { type: 'string', description: 'Updated title (optional).' },
-        synopsis: { type: 'string', description: 'Updated one-sentence summary (optional).' },
-        content:  { type: 'string', description: 'Full updated markdown content (optional).' },
-        tags:     { type: 'array', items: { type: 'string' }, description: 'Updated tags (optional).' },
-        userId:   { type: 'string' },
+        id:        { type: 'string', description: 'Note UUID.' },
+        name:      { type: 'string', description: 'Updated title (optional).' },
+        synopsis:  { type: 'string', description: 'Updated one-sentence summary (optional).' },
+        content:   { type: 'string', description: 'Full updated markdown content (optional).' },
+        tags:      { type: 'array', items: { type: 'string' }, description: 'Updated tags (optional).' },
+        eventTime: { type: 'string', description: 'Updated ISO 8601 timestamp (optional).' },
+        userId:    { type: 'string' },
       },
       required: ['id'],
     },
@@ -96,6 +98,14 @@ export const ZETTEL_SEARCH_SCHEMA: ToolSchema = {
       properties: {
         text:   { type: 'string', description: 'One-sentence synopsis of the topic to search for. Must be a declarative summary, not a question — this aligns with how note embeddings are stored.' },
         tags:   { type: 'array', items: { type: 'string' }, description: 'Optional tags to enrich the vector query and filter results when vector search finds nothing. Must match ALL provided tags.' },
+        after:  { type: 'string', description: 'Optional. Filter results to notes on or after this ISO 8601 timestamp.' },
+        before: { type: 'string', description: 'Optional. Filter results to notes on or before this ISO 8601 timestamp.' },
+        timeProperty: {
+          type: 'string',
+          enum: ['eventTime', 'createdAt', 'updatedAt'],
+          default: 'eventTime',
+          description: 'Which timestamp to use for the before/after filter.',
+        },
         userId: { type: 'string' },
       },
       required: ['text'],
@@ -201,8 +211,9 @@ const writeIndex = async (userId: string, index: ZettelIndex, dbPath: string): P
 const serializeNote = (meta: ZettelNote, body: string): string => {
   const tags  = meta.tags.length  > 0 ? `[${meta.tags.join(', ')}]`  : '[]'
   const links = meta.links.length > 0 ? `[${meta.links.join(', ')}]` : '[]'
+  const eventTime = meta.eventTime ? `\neventTime: ${meta.eventTime}` : ''
   const nodeId = meta.kgraphNodeId !== undefined ? `\nkgraphNodeId: ${meta.kgraphNodeId}` : ''
-  return `---\nid: ${meta.id}\nname: ${meta.name}\nsynopsis: ${meta.synopsis}\ntags: ${tags}\ncreatedAt: ${meta.createdAt}\nupdatedAt: ${meta.updatedAt}\nlinks: ${links}${nodeId}\n---\n\n${body}`
+  return `---\nid: ${meta.id}\nname: ${meta.name}\nsynopsis: ${meta.synopsis}\ntags: ${tags}\ncreatedAt: ${meta.createdAt}\nupdatedAt: ${meta.updatedAt}${eventTime}\nlinks: ${links}${nodeId}\n---\n\n${body}`
 }
 
 const parseNote = (raw: string): { meta: ZettelNote; body: string } => {
@@ -231,6 +242,7 @@ const parseNote = (raw: string): { meta: ZettelNote; body: string } => {
       tags:          getArr('tags'),
       createdAt:     get('createdAt'),
       updatedAt:     get('updatedAt'),
+      eventTime:     get('eventTime') || undefined,
       path:          `notes/${id}.md`,
       links:         getArr('links'),
       kgraphNodeId:  rawNodeId ? Number(rawNodeId) : undefined,
@@ -249,6 +261,7 @@ const upsertInKgraph = async (
   synopsis: string,
   tags: string[],
   log: any,
+  eventTime?: string,
 ): Promise<number | undefined> => {
   const embeddingText = `${synopsis} ${tags.join(' ')}`
 
@@ -259,7 +272,7 @@ const upsertInKgraph = async (
       (replyTo) => ({
         type: 'updateNode',
         nodeId: kgraphNodeId,
-        properties: { name, description: synopsis },
+        properties: { name, description: synopsis, eventTime },
         embeddingText,
         userId,
         replyTo,
@@ -274,7 +287,7 @@ const upsertInKgraph = async (
     (replyTo) => ({
       type: 'invoke',
       toolName: 'kgraph_create_node',
-      arguments: JSON.stringify({ label: 'Note', name, properties: { description: synopsis }, embeddingText, userId }),
+      arguments: JSON.stringify({ label: 'Note', name, properties: { description: synopsis, eventTime }, embeddingText, userId }),
       replyTo,
       userId,
     }),
@@ -330,21 +343,23 @@ const handleCreate = async (
   dbPath: string,
   log: any,
 ): Promise<string> => {
-  const name     = args.name as string
-  const synopsis = args.synopsis as string
-  const content  = args.content as string
-  const tags     = Array.isArray(args.tags) ? (args.tags as string[]) : []
+  const name      = args.name as string
+  const synopsis  = args.synopsis as string
+  const content   = args.content as string
+  const tags      = Array.isArray(args.tags) ? (args.tags as string[]) : []
+  const eventTime = typeof args.eventTime === 'string' ? args.eventTime : undefined
 
   log.info('zettel-notes: creating note', { userId, name, tags })
   const id   = crypto.randomUUID()
   const now  = new Date().toISOString()
   const slug = slugify(name)
 
-  const kgraphNodeId = await upsertInKgraph(kgraphRef, userId, undefined, name, synopsis, tags, log)
+  const kgraphNodeId = await upsertInKgraph(kgraphRef, userId, undefined, name, synopsis, tags, log, eventTime)
 
   const meta: ZettelNote = {
     id, name, synopsis, tags,
     createdAt: now, updatedAt: now,
+    eventTime,
     path: `notes/${slug}-${id}.md`,
     links: [],
     kgraphNodeId,
@@ -354,7 +369,7 @@ const handleCreate = async (
   await Bun.write(noteFilePath(userId, meta, dbPath), serializeNote(meta, content))
   await queue.mutate(userId, (idx) => ({ notes: [...idx.notes, meta] }))
 
-  return JSON.stringify({ id, name, synopsis, tags, createdAt: now })
+  return JSON.stringify({ id, name, synopsis, tags, createdAt: now, eventTime })
 }
 
 const handleUpdate = async (
@@ -375,19 +390,20 @@ const handleUpdate = async (
   const raw = await Bun.file(noteFilePath(userId, existingMeta, dbPath)).text()
   const { body: existingBody } = parseNote(raw)
 
-  const name     = typeof args.name     === 'string' ? args.name     : existingMeta.name
-  const synopsis = typeof args.synopsis === 'string' ? args.synopsis : existingMeta.synopsis
-  const content  = typeof args.content  === 'string' ? args.content  : existingBody
-  const tags     = Array.isArray(args.tags) ? (args.tags as string[]) : existingMeta.tags
-  const now      = new Date().toISOString()
+  const name      = typeof args.name      === 'string' ? args.name      : existingMeta.name
+  const synopsis  = typeof args.synopsis  === 'string' ? args.synopsis  : existingMeta.synopsis
+  const content   = typeof args.content   === 'string' ? args.content   : existingBody
+  const tags      = Array.isArray(args.tags) ? (args.tags as string[]) : existingMeta.tags
+  const eventTime = typeof args.eventTime === 'string' ? args.eventTime : existingMeta.eventTime
+  const now       = new Date().toISOString()
 
-  const updated: ZettelNote = { ...existingMeta, name, synopsis, tags, updatedAt: now }
+  const updated: ZettelNote = { ...existingMeta, name, synopsis, tags, eventTime, updatedAt: now }
 
   await Bun.write(noteFilePath(userId, existingMeta, dbPath), serializeNote(updated, content))
   await queue.mutate(userId, (idx) => ({ notes: idx.notes.map(n => n.id === id ? updated : n) }))
-  await upsertInKgraph(kgraphRef, userId, existingMeta.kgraphNodeId, name, synopsis, tags, log)
+  await upsertInKgraph(kgraphRef, userId, existingMeta.kgraphNodeId, name, synopsis, tags, log, eventTime)
 
-  return JSON.stringify({ id, name, synopsis, tags, updatedAt: now })
+  return JSON.stringify({ id, name, synopsis, tags, updatedAt: now, eventTime })
 }
 
 const handleRead = async (
@@ -453,12 +469,17 @@ const handleSearch = async (
 ): Promise<string> => {
   const text       = args.text as string
   const filterTags = Array.isArray(args.tags) ? (args.tags as string[]) : []
+  const before     = typeof args.before === 'string' ? args.before : undefined
+  const after      = typeof args.after  === 'string' ? args.after  : undefined
+  const timeProperty = (typeof args.timeProperty === 'string' ? args.timeProperty : 'eventTime') as string
   const queryText  = filterTags.length > 0 ? `${text} ${filterTags.join(' ')}` : text
   log.info('zettel-notes: semantic search', { userId, text: text.slice(0, 50) + '...' })
 
+  const filter = (before || after) ? { before, after, property: timeProperty } : undefined
+
   const reply = await ask<KgraphMsg, VectorSearchReply>(
     kgraphRef,
-    (replyTo) => ({ type: 'vectorSearch', label: 'Note', text: queryText, topN: SEARCH_TOP_N, userId, replyTo }),
+    (replyTo) => ({ type: 'vectorSearch', label: 'Note', text: queryText, topN: SEARCH_TOP_N, userId, replyTo, filter }),
   )
 
   const index = await queue.current(userId)
