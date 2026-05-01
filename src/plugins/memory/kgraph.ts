@@ -2,7 +2,7 @@ import { GrafeoDB } from '@grafeo-db/js'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ToolSchema } from '../../types/tools.ts'
-import type { EmbeddingReply, LlmProviderMsg } from '../../types/llm.ts'
+import type { EmbeddingReply, LlmProviderMsg, RerankReply } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { KgraphGraph, KgraphMsg, CreateNodeResult, VectorSearchMatch } from './types.ts'
 import { ask } from '../../system/ask.ts'
@@ -78,29 +78,29 @@ export const KGRAPH_CREATE_NODE_SCHEMA: ToolSchema = {
   function: {
     name: KGRAPH_CREATE_NODE_TOOL_NAME,
     description:
-      'Create a new node in the knowledge graph. ' +
-      'Returns { name, nodeId }. Use nodeId in subsequent kgraph_create_link calls. ' +
-      'Node constraint: nodes only store "name" and "description". Put all detail in the description; any other properties will be ignored.',
+    'Create a new node in the knowledge graph. ' +
+    'Returns { name, nodeId }. Use nodeId in subsequent kgraph_create_link calls. ' +
+    'Node constraint: nodes store "name", "description", and optional "eventTime" (ISO 8601). Put all other detail in the description.',
     parameters: {
-      type: 'object',
+    type: 'object',
+    properties: {
+      label: {
+        type: 'string',
+        description: 'Node label. Use "Note" for Zettelkasten notes.',
+      },
+      name: {
+        type: 'string',
+        description: 'Short node name in Title Case (e.g. "Bun Runtime"). Used as the display name.',
+      },
       properties: {
-        label: {
-          type: 'string',
-          description: 'Node label. Use "Note" for Zettelkasten notes.',
-        },
-        name: {
-          type: 'string',
-          description: 'Short node name in Title Case (e.g. "Bun Runtime"). Used as the display name.',
-        },
+        type: 'object',
+        description: 'Pass "description" and optional "eventTime" (ISO 8601). For notes, description format is "noteId:{uuid}\\n{synopsis}".',
         properties: {
-          type: 'object',
-          description: 'Only "description" is accepted. For notes, use format "noteId:{uuid}\\n{synopsis}".',
-          properties: {
-            description: { type: 'string' },
-          },
-          additionalProperties: false,
+          description: { type: 'string' },
+          eventTime: { type: 'string', format: 'date-time' },
         },
-        embeddingText: {
+        additionalProperties: false,
+      },        embeddingText: {
           type: 'string',
           description: 'Optional. If provided, this text is embedded instead of name. Use for richer semantic search (e.g. "{name} {tags} {synopsis}").',
         },
@@ -138,6 +138,7 @@ export const createKgraphActor = (
   basePath: string,
   embedding?: { model: string; dimensions: number },
   cosineSimilarityThreshold = 0.0,
+  reranker?: { model: string; topK?: number },
 ): ActorDef<KgraphMsg, KgraphState> => ({
 
   lifecycle: onLifecycle({
@@ -224,9 +225,14 @@ export const createKgraphActor = (
         const args = JSON.parse(rawArgs) as { label: string; name: string; properties?: Record<string, unknown>; embeddingText?: string; userId?: string }
         const { label, name, embeddingText } = args
         const effectiveUserId = args.userId ?? message.userId
-        const properties = args.properties
-          ? Object.fromEntries(Object.entries(args.properties).filter(([k]) => k === 'description'))
-          : undefined
+        const now = new Date().toISOString()
+        const properties = {
+          ...(args.properties
+            ? Object.fromEntries(Object.entries(args.properties).filter(([k]) => k === 'description' || k === 'eventTime'))
+            : {}),
+          createdAt: now,
+          updatedAt: now,
+        }
         ctx.log.info('kgraph create_node', { label, name, userId: effectiveUserId })
         const span = parent
           ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_CREATE_NODE_TOOL_NAME, { label, name })
@@ -262,7 +268,7 @@ export const createKgraphActor = (
             const nodes = result.nodes()
             const nodeId = nodes[0]?.id
             if (nodeId === undefined) {
-              console.log('INSERT result rows:', result.toArray())
+              ctx.log.error('INSERT result rows:', result.toArray())
               throw new Error('INSERT returned no node')
             }
             return { name, nodeId }
@@ -279,7 +285,7 @@ export const createKgraphActor = (
     },
 
     vectorSearch: (state, message, ctx) => {
-      const { label, text, topN = 5, userId, replyTo } = message
+      const { label, text, topN = 5, userId, replyTo, filter } = message
 
       if (!embedding || !state?.llmRef) {
         replyTo.send({ type: 'vectorSearchError', error: 'vectorSearch requires embedding to be configured' })
@@ -288,6 +294,10 @@ export const createKgraphActor = (
 
       const llmRef = state.llmRef
       const db = resolveDb(state, userId, basePath)
+
+      const fetchLimit = reranker
+        ? (reranker.topK ?? Math.max(topN * 3, 10))
+        : topN
 
       ctx.pipeToSelf(
         Promise.all(INDEXED_LABELS.map(lbl =>
@@ -299,19 +309,67 @@ export const createKgraphActor = (
           if (reply.type === 'embeddingError') throw new Error(reply.error)
           const vector = reply.embedding
           const vectorStr = `vector([${vector.join(',')}])`
+          
+          let whereClause = `WHERE cosine_similarity(n._embedding, ${vectorStr}) > ${cosineSimilarityThreshold}`
+          if (filter) {
+            if (filter.after) {
+              whereClause += ` AND n.${filter.property} >= ${JSON.stringify(filter.after)}`
+            }
+            if (filter.before) {
+              whereClause += ` AND n.${filter.property} <= ${JSON.stringify(filter.before)}`
+            }
+          }
+
           const result = await db.execute(`
             MATCH (n:${label})
-            WHERE cosine_similarity(n._embedding, ${vectorStr}) > ${cosineSimilarityThreshold}
+            ${whereClause}
             RETURN id(n) AS nodeId, n.name AS name, n.description AS description, cosine_similarity(n._embedding, ${vectorStr}) AS score
             ORDER BY score DESC
-            LIMIT ${topN}
+            LIMIT ${fetchLimit}
           `)
-          return result.toArray().map((row: any) => ({
+          const matches: VectorSearchMatch[] = result.toArray().map((row: any) => ({
             nodeId:      row.nodeId ?? row['id(n)'],
             score:       row.score ?? row['cosine_similarity(n._embedding, ' + vectorStr + ')'],
             name:        row.name ?? '',
             description: row.description ?? '',
           }))
+
+          if (!reranker || matches.length === 0) {
+            return matches.slice(0, topN)
+          }
+
+          const rerankReply = await ask<LlmProviderMsg, RerankReply>(
+            llmRef,
+            (replyToRerank) => ({
+              type: 'rerank',
+              requestId: crypto.randomUUID(),
+              model: reranker.model,
+              query: text,
+              documents: matches.map(m => `${m.name}. ${m.description}`),
+              topN,
+              replyTo: replyToRerank,
+            }),
+          )
+
+          if (rerankReply.type === 'rerankError') {
+            ctx.log.warn('kgraph rerank failed, returning vector scores', { error: rerankReply.error })
+            return matches.slice(0, topN)
+          }
+
+          const scoreMap = new Map<number, number>()
+          for (const r of rerankReply.scores) {
+            scoreMap.set(r.index, r.score)
+          }
+
+          const reranked = matches
+            .map((m, idx) => ({
+              ...m,
+              score: scoreMap.get(idx) ?? m.score,
+            }))
+            .sort((a, b) => b.score - a.score)
+            .slice(0, topN)
+
+          return reranked
         })),
         (matches) => ({ type: '_vectorSearchDone' as const, matches, replyTo }),
         (error)   => ({ type: '_vectorSearchErr'  as const, error: String(error), replyTo }),
@@ -392,6 +450,7 @@ export const createKgraphActor = (
         for (const [k, v] of Object.entries(properties)) {
           setClauses.push(`n.${k} = ${JSON.stringify(v)}`)
         }
+        setClauses.push(`n.updatedAt = ${JSON.stringify(new Date().toISOString())}`)
         if (setClauses.length > 0) {
           await db.execute(`MATCH (n) WHERE id(n) = ${nodeId} SET ${setClauses.join(', ')}`)
         }

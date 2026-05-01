@@ -19,6 +19,7 @@ export type ZettelNote = {
   tags:          string[]
   createdAt:     string
   updatedAt:     string
+  eventTime?:    string
   path:          string
   links:         string[]
   kgraphNodeId?: number
@@ -39,7 +40,15 @@ export type VectorSearchReply =
 export type KgraphMsg =
   | ToolInvokeMsg
   | { type: 'dump'; replyTo: ActorRef<KgraphGraph>; userId: string }
-  | { type: 'vectorSearch'; label: string; text: string; topN?: number; userId: string; replyTo: ActorRef<VectorSearchReply> }
+  | {
+      type: 'vectorSearch'
+      label: string
+      text: string
+      topN?: number
+      userId: string
+      replyTo: ActorRef<VectorSearchReply>
+      filter?: { before?: string; after?: string; property: string }
+    }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_queryDone';         rows: unknown[];              replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }
   | { type: '_queryErr';          error: string;               replyTo: ActorRef<ToolReply>;          span: SpanHandle | null }

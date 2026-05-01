@@ -76,7 +76,9 @@
       "kgraph": {
         "embeddingModel": "qwen/qwen3-embedding-8b",
         "embeddingDimensions": 4096,
-        "cosineSimilarityThreshold": 0.7
+        "cosineSimilarityThreshold": 0.6,
+        "rerankerModel": "cohere/rerank-4-pro",
+        "rerankerTopK": 15
       },
       "system": {
         "model": "moonshotai/kimi-k2.6",

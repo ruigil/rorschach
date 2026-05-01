@@ -289,6 +289,32 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
         return []
       }
     },
+
+    rerank: async (model, query, documents, topN) => {
+      const body: Record<string, unknown> = { model, query, documents }
+      if (topN !== undefined) body.top_n = topN
+      const res = await fetch('https://openrouter.ai/api/v1/rerank', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(`OpenRouter rerank ${res.status}: ${text}`)
+      }
+      const data = await res.json() as {
+        results: Array<{ index: number; relevance_score: number }>
+        usage?: { prompt_tokens: number; completion_tokens: number }
+      }
+      const scores = data.results.map(r => ({ index: r.index, score: r.relevance_score }))
+      const usage: TokenUsage | null = data.usage
+        ? { promptTokens: data.usage.prompt_tokens, completionTokens: data.usage.completion_tokens }
+        : null
+      return { scores, usage }
+    },
   }
 }
 
@@ -436,6 +462,34 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
           (): LlmProviderMsg => ({ type: '_modelsDone', models: [], replyTo }),
         )
 
+        return { state }
+      },
+
+      rerank: (state, message, context) => {
+        const { requestId, model, query, documents, topN, replyTo } = message
+        const role     = 'memory-rerank'
+        const clientId = message.clientId
+        context.log.info('llm rerank', { requestId, model, documents: documents.length })
+
+        context.pipeToSelf(
+          adapter.rerank(model, query, documents, topN),
+          ({ scores, usage }): LlmProviderMsg => ({ type: '_rerankDone', result: { type: 'rerankResult', requestId, scores, usage }, model, role, clientId, usage, replyTo }),
+          (error):                LlmProviderMsg => ({ type: '_rerankDone', result: { type: 'rerankError', requestId, error: String(error) }, model, role, clientId, usage: null, replyTo }),
+        )
+
+        return { state }
+      },
+
+      _rerankDone: (state, message, context) => {
+        message.replyTo.send(message.result)
+        const usage = message.result.type === 'rerankResult' ? message.result.usage : null
+        if (usage) {
+          context.pipeToSelf(
+            adapter.fetchModelInfo(message.model),
+            (info): LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info }),
+            ():    LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info: null }),
+          )
+        }
         return { state }
       },
 

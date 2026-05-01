@@ -61,6 +61,12 @@ export type AudioProviderReply =
   | { type: 'llmDone';       requestId: string; usage: TokenUsage | null }
   | { type: 'llmError';      requestId: string; error: unknown }
 
+// ─── Rerank reply ───
+
+export type RerankReply =
+  | { type: 'rerankResult'; requestId: string; scores: Array<{ index: number; score: number }>; usage: TokenUsage | null }
+  | { type: 'rerankError';  requestId: string; error: string }
+
 // ─── Incoming messages ───
 
 export type LlmProviderMsg =
@@ -70,12 +76,14 @@ export type LlmProviderMsg =
   | { type: 'embed';             requestId: string; model: string; text: string; dimensions?: number; clientId?: string; replyTo: ActorRef<EmbeddingReply> }
   | { type: 'fetchModelInfo';    model: string; replyTo: ActorRef<ModelInfo | null> }
   | { type: 'fetchModels';       replyTo: ActorRef<string[]> }
+  | { type: 'rerank';            requestId: string; model: string; query: string; documents: string[]; topN?: number; clientId?: string; replyTo: ActorRef<RerankReply> }
   | { type: '_streamDone';       result: LlmProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<LlmProviderReply> }
   | { type: '_streamImageDone';  result: VisionProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<VisionProviderReply> }
   | { type: '_streamAudioDone';  result: AudioProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<AudioProviderReply> }
   | { type: '_embedDone';        result: EmbeddingReply; model: string; role: string; clientId?: string; usage: TokenUsage | null; replyTo: ActorRef<EmbeddingReply> }
   | { type: '_modelInfoDone';    info: ModelInfo | null; replyTo: ActorRef<ModelInfo | null> }
   | { type: '_modelsDone';       models: string[]; replyTo: ActorRef<string[]> }
+  | { type: '_rerankDone';       result: RerankReply; model: string; role: string; clientId?: string; usage: TokenUsage | null; replyTo: ActorRef<RerankReply> }
   | { type: '_costReady';        model: string; role: string; clientId?: string; usage: TokenUsage; info: ModelInfo | null }
 
 // ─── Retained topic: announces the live llm-provider ref to subscribers ───
@@ -129,6 +137,7 @@ export type LlmProviderAdapter = {
   embed(model: string, text: string, dimensions?: number): Promise<{ embedding: number[]; usage: TokenUsage | null }>
   fetchModelInfo(model: string): Promise<ModelInfo | null>
   fetchModels(): Promise<string[]>
+  rerank(model: string, query: string, documents: string[], topN?: number): Promise<{ scores: Array<{ index: number; score: number }>; usage: TokenUsage | null }>
 }
 
 // ─── OpenRouter adapter options ───

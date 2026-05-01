@@ -46,6 +46,8 @@ export type MemoryConfig = {
     embeddingModel?:            string
     embeddingDimensions?:       number
     cosineSimilarityThreshold?: number
+    rerankerModel?:             string
+    rerankerTopK?:              number
   }
   system?: MemoryActorConfig
 }
@@ -231,7 +233,11 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           ? { model: kgraphConfig.embeddingModel, dimensions: kgraphConfig.embeddingDimensions }
           : undefined
 
-        const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold), null) as ActorRef<KgraphMsg>
+        const rerankerCfg = kgraphConfig.rerankerModel
+          ? { model: kgraphConfig.rerankerModel, topK: kgraphConfig.rerankerTopK }
+          : undefined
+
+        const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg), null) as ActorRef<KgraphMsg>
         refs.kgraphRef = kgraphRef
 
         ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
@@ -299,7 +305,11 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           ? { model: newKgraphConfig.embeddingModel, dimensions: newKgraphConfig.embeddingDimensions }
           : undefined
 
-        const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, createKgraphActor(dbPath, newEmbeddingCfg, newKgraphConfig.cosineSimilarityThreshold), null) as ActorRef<KgraphMsg>
+        const newRerankerCfg = newKgraphConfig.rerankerModel
+          ? { model: newKgraphConfig.rerankerModel, topK: newKgraphConfig.rerankerTopK }
+          : undefined
+
+        const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, createKgraphActor(dbPath, newEmbeddingCfg, newKgraphConfig.cosineSimilarityThreshold, newRerankerCfg), null) as ActorRef<KgraphMsg>
         refs.kgraphRef = kgraphRef
 
         // ─── Reconfigure memory actors ───
