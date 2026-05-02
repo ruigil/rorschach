@@ -42,6 +42,7 @@ const buildConfigSnapshot = (c: Record<string, unknown>): Record<string, unknown
     kgraphEmbeddingDimensions:     mem.kgraph?.embeddingDimensions         ?? 1536,
     memoryModel:                   mem.system?.model                       ?? '',
     memoryConsolidationIntervalMs: mem.system?.consolidationIntervalMs     ?? 30000,
+    memoryContextIntervalMs:       mem.system?.contextIntervalMs           ?? 60000,
     memoryReflectionIntervalMs:    mem.system?.reflectionIntervalMs        ?? 604800000,
     logPath:                       obs.jsonlLogger?.filePath               ?? './logs/app.jsonl',
     minLevel:                      obs.jsonlLogger?.minLevel               ?? 'debug',
@@ -163,7 +164,8 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
       system: {
         model:                   String(form.memoryModel),
         consolidationIntervalMs: Number(form.memoryConsolidationIntervalMs ?? 30000),
-        reflectionIntervalMs:    Number(form.memoryReflectionIntervalMs ?? 604800000),
+        contextIntervalMs:       Number(form.memoryContextIntervalMs       ?? 60000),
+        reflectionIntervalMs:    Number(form.memoryReflectionIntervalMs    ?? 604800000),
       },
     } : {}),
   }
