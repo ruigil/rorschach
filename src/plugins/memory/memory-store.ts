@@ -86,7 +86,7 @@ const buildSystemPrompt = (userId: string, topic?: string): string => {
     `3. If no matching note exists → zettel_create a new atomic note.\n` +
     `4. After storing the note, use zettel_link to connect it to related notes if relevant:\n` +
     `   zettel_link { sourceName: "Note Title", targetName: "Related Note", userId: "${userId}" }\n` +
-    `   Only link to notes confirmed to exist via zettel_search or zettel_read.\n` +
+    `   Only link to notes confirmed to exist via zettel_search.` +
     `5. Return a brief confirmation of what was stored.\n\n` +
     `Only store what was explicitly provided. Do not infer beyond the given content.`
   )

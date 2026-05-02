@@ -29,7 +29,17 @@ export const zettelStoreSection = (userId: string): string =>
   `  Semantic search via vector embeddings with graph expansion and re-ranking.\n` +
   `  text: a short natural-language phrase describing what you're looking for — matches against query topics stored in note synopses.\n` +
   `  Optional tags enrich the query and serve as fallback filter if no results found.\n` +
-  `  Returns array of { id, name, synopsis, tags, links, content, score }.\n\n` +
+  `  Returns array of { id, name, synopsis, tags, links, content, score, scoreSources }.\n` +
+  `  scoreSources: { vector: <number>, graph?: <number> }\n` +
+  `    - vector: cosine similarity to your query (0-1). High = semantically close.\n` +
+  `    - graph: graph proximity (1.0 for direct matches, <1.0 for notes linked from results).\n` +
+  `      Notes with high graph but low vector were pulled in via wiki-links — use them\n` +
+  `      as supporting context, not primary answers.\n` +
+  `  How to use scores:\n` +
+  `  - Prioritize notes with high vector scores for direct answers.\n` +
+  `  - Notes with high graph scores are contextually relevant (linked from strong results)\n` +
+  `    but may not directly answer your query. Use them for background or related concepts.\n` +
+  `  - Use zettel_links { id } to explore connections from any result.\n\n` +
 
   `**zettel_create** { name, synopsis, content, tags[], userId }\n` +
   `  Create a new atomic note. name: 2-5 words, Title Case. synopsis: one sentence.\n\n` +
@@ -75,7 +85,17 @@ export const zettelRecallSection = (userId: string): string =>
   `  tags: include 1-3 tags matching the query domain (lowercase, same vocabulary as notes).\n` +
   `    e.g., ["preference", "typescript"] for tool preferences; ["work", "project"] for work context.\n` +
   `    Tags enrich the vector query and serve as fallback if no semantic match is found.\n` +
-  `  Returns array of { id, name, synopsis, tags, links, content, score } — full content included.\n\n` +
+  `  Returns array of { id, name, synopsis, tags, links, content, score, scoreSources } — full content included.\n` +
+  `  scoreSources: { vector: <number>, graph?: <number> }\n` +
+  `    - vector: cosine similarity to your query (0-1). High = semantically close.\n` +
+  `    - graph: graph proximity (1.0 for direct matches, <1.0 for notes linked from results).\n` +
+  `      Notes with high graph but low vector were pulled in via wiki-links — use them\n` +
+  `      as supporting context, not primary answers.\n` +
+  `  How to use scores:\n` +
+  `  - Prioritize notes with high vector scores for direct answers.\n` +
+  `  - Notes with high graph scores are contextually relevant (linked from strong results)\n` +
+  `    but may not directly answer your query. Use them for background or related concepts.\n` +
+  `  - Use zettel_links { id } to explore connections from any result.\n\n` +
 
   `**zettel_links** { id?, name?, userId }\n` +
   `  Return notes linked from a given note, with full content. Use to explore the note graph.`

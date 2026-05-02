@@ -119,11 +119,11 @@ export const KGRAPH_CREATE_NODE_SCHEMA: ToolSchema = {
 export type KgraphState = {
   userDbs: Map<string, GrafeoDB>
   llmRef: ActorRef<LlmProviderMsg> | null
-} | null
+}
 
 // ─── Helpers ───
 
-const resolveDb = (state: NonNullable<KgraphState>, userId: string, basePath: string): GrafeoDB => {
+const resolveDb = (state: KgraphState, userId: string, basePath: string): GrafeoDB => {
   const existing = state.userDbs.get(userId)
   if (existing) return existing
   const userDbPath = `${basePath}/${userId}/kgraph`
@@ -139,6 +139,7 @@ export const createKgraphActor = (
   embedding?: { model: string; dimensions: number },
   cosineSimilarityThreshold = 0.0,
   reranker?: { model: string; topK?: number },
+  graphBlend?: { weight: number },
 ): ActorDef<KgraphMsg, KgraphState> => ({
 
   lifecycle: onLifecycle({
@@ -152,28 +153,20 @@ export const createKgraphActor = (
     },
 
     stopped: async (state, ctx) => {
-      if (state) {
-        ctx.log.info('kgraph closing databases')
-        const dbs = Array.from(state.userDbs.values())
-        for (const db of dbs) db.close()
-      }
+      ctx.log.info('kgraph closing databases')
+      const dbs = Array.from(state.userDbs.values())
+      for (const db of dbs) db.close()
       return { state }
     },
   }),
 
   handler: onMessage<KgraphMsg, KgraphState>({
     _llmProvider: (state, msg) => ({
-      state: state ? { ...state, llmRef: msg.ref } : null,
+      state: { ...state, llmRef: msg.ref },
     }),
 
     invoke: (state, message, ctx) => {
       const { toolName, arguments: rawArgs, replyTo } = message
-
-      if (!state) {
-        replyTo.send({ type: 'toolError', error: 'kgraph database not ready' })
-        return { state }
-      }
-
       const parent = ctx.trace.fromHeaders()
 
       if (toolName === KGRAPH_QUERY_TOOL_NAME) {
@@ -285,7 +278,7 @@ export const createKgraphActor = (
     },
 
     vectorSearch: (state, message, ctx) => {
-      const { label, text, topN = 5, userId, replyTo, filter } = message
+      const { label, text, topN = 3, userId, replyTo, filter } = message
 
       if (!embedding || !state?.llmRef) {
         replyTo.send({ type: 'vectorSearchError', error: 'vectorSearch requires embedding to be configured' })
@@ -295,9 +288,12 @@ export const createKgraphActor = (
       const llmRef = state.llmRef
       const db = resolveDb(state, userId, basePath)
 
-      const fetchLimit = reranker
-        ? (reranker.topK ?? Math.max(topN * 3, 10))
+      const baseFetchLimit = graphBlend
+        ? Math.max(topN * 3, 10)
         : topN
+      const fetchLimit = reranker
+        ? (reranker.topK ?? Math.max(baseFetchLimit, 10))
+        : baseFetchLimit
 
       ctx.pipeToSelf(
         Promise.all(INDEXED_LABELS.map(lbl =>
@@ -320,56 +316,123 @@ export const createKgraphActor = (
             }
           }
 
-          const result = await db.execute(`
+          // Step 1: Vector search for seeds
+          const seedResult = await db.execute(`
             MATCH (n:${label})
             ${whereClause}
             RETURN id(n) AS nodeId, n.name AS name, n.description AS description, cosine_similarity(n._embedding, ${vectorStr}) AS score
             ORDER BY score DESC
             LIMIT ${fetchLimit}
           `)
-          const matches: VectorSearchMatch[] = result.toArray().map((row: any) => ({
+          const seeds: VectorSearchMatch[] = seedResult.toArray().map((row: any) => ({
             nodeId:      row.nodeId ?? row['id(n)'],
-            score:       row.score ?? row['cosine_similarity(n._embedding, ' + vectorStr + ')'],
+            score:       0,
+            sources:     { vector: row.score ?? row['cosine_similarity(n._embedding, ' + vectorStr + ')'] },
             name:        row.name ?? '',
             description: row.description ?? '',
           }))
 
-          if (!reranker || matches.length === 0) {
-            return matches.slice(0, topN)
+          if (seeds.length === 0) {
+            return []
           }
 
-          const rerankReply = await ask<LlmProviderMsg, RerankReply>(
-            llmRef,
-            (replyToRerank) => ({
-              type: 'rerank',
-              requestId: crypto.randomUUID(),
-              model: reranker.model,
-              query: text,
-              documents: matches.map(m => `${m.name}. ${m.description}`),
-              topN,
-              replyTo: replyToRerank,
-            }),
-          )
+          // Step 2: Graph expansion (if graphBlend active)
+          let allMatches = [...seeds]
+          const neighborLinkMap = new Map<number, number[]>() // neighbor nodeId -> linking seed nodeIds
 
-          if (rerankReply.type === 'rerankError') {
-            ctx.log.warn('kgraph rerank failed, returning vector scores', { error: rerankReply.error })
-            return matches.slice(0, topN)
+          if (graphBlend) {
+            const seedNodeIds = seeds.map(s => s.nodeId)
+            const seedIdsStr = seedNodeIds.join(',')
+
+            const neighborResult = await db.execute(`
+              MATCH (seed:Note)-[:LINKS_TO]->(neighbor:Note)
+              WHERE id(seed) IN [${seedIdsStr}]
+              RETURN id(neighbor) AS nodeId, neighbor.name AS name, neighbor.description AS description, cosine_similarity(neighbor._embedding, ${vectorStr}) AS score, id(seed) AS seedId
+            `)
+
+            const neighborMap = new Map<number, VectorSearchMatch>()
+            for (const row of neighborResult.toArray() as any[]) {
+              const nodeId = row.nodeId ?? row['id(neighbor)']
+              const seedId = row.seedId ?? row['id(seed)']
+
+              if (seeds.some(s => s.nodeId === nodeId)) continue
+
+              if (!neighborMap.has(nodeId)) {
+                const score = row.score ?? row['cosine_similarity(neighbor._embedding, ' + vectorStr + ')']
+                neighborMap.set(nodeId, {
+                  nodeId,
+                  score: 0,
+                  sources: { vector: score },
+                  name: row.name ?? row['neighbor.name'] ?? '',
+                  description: row.description ?? row['neighbor.description'] ?? '',
+                })
+                neighborLinkMap.set(nodeId, [])
+              }
+              neighborLinkMap.get(nodeId)!.push(seedId)
+            }
+
+            allMatches = [...seeds, ...Array.from(neighborMap.values())]
           }
 
-          const scoreMap = new Map<number, number>()
-          for (const r of rerankReply.scores) {
-            scoreMap.set(r.index, r.score)
+          // Step 3: Rerank (if configured)
+          if (reranker && allMatches.length > 0) {
+            const rerankReply = await ask<LlmProviderMsg, RerankReply>(
+              llmRef,
+              (replyToRerank) => ({
+                type: 'rerank',
+                requestId: crypto.randomUUID(),
+                model: reranker.model,
+                query: text,
+                documents: allMatches.map(m => `${m.name}. ${m.description}`),
+                topN: allMatches.length,
+                replyTo: replyToRerank,
+              }),
+            )
+
+            if (rerankReply.type === 'rerankError') {
+              ctx.log.warn('kgraph rerank failed, using vector scores', { error: rerankReply.error })
+            } else {
+              const scoreMap = new Map<number, number>()
+              for (const r of rerankReply.scores) {
+                scoreMap.set(r.index, r.score)
+              }
+              for (let i = 0; i < allMatches.length; i++) {
+                const match = allMatches[i]!
+                match.sources.vector = scoreMap.get(i) ?? match.sources.vector
+              }
+            }
           }
 
-          const reranked = matches
-            .map((m, idx) => ({
-              ...m,
-              score: scoreMap.get(idx) ?? m.score,
-            }))
+          // Step 4: Compute unified scores
+          const seedNodeIds = new Set(seeds.map(s => s.nodeId))
+
+          for (const match of allMatches) {
+            if (seedNodeIds.has(match.nodeId)) {
+              // Seed: graph proximity = 1.0
+              match.sources.graph = 1.0
+              match.score = graphBlend
+                ? (1 - graphBlend.weight) * match.sources.vector + graphBlend.weight * 1.0
+                : match.sources.vector
+            } else {
+              // Neighbor: graph proximity = max(linking seed final) * 0.5
+              const linkingSeedIds = neighborLinkMap.get(match.nodeId) ?? []
+              const linkingSeedScores = linkingSeedIds
+                .map(seedId => allMatches.find(m => m.nodeId === seedId)?.score ?? 0)
+                .filter(s => s > 0)
+              const maxSeedScore = linkingSeedScores.length > 0 ? Math.max(...linkingSeedScores) : 0
+              match.sources.graph = maxSeedScore * 0.5
+              match.score = graphBlend
+                ? (1 - graphBlend.weight) * match.sources.vector + graphBlend.weight * match.sources.graph
+                : match.sources.vector
+            }
+          }
+
+          // Step 5: Sort and slice
+          const ranked = allMatches
             .sort((a, b) => b.score - a.score)
             .slice(0, topN)
 
-          return reranked
+          return ranked
         })),
         (matches) => ({ type: '_vectorSearchDone' as const, matches, replyTo }),
         (error)   => ({ type: '_vectorSearchErr'  as const, error: String(error), replyTo }),
@@ -434,12 +497,6 @@ export const createKgraphActor = (
 
     updateNode: (state, message, ctx) => {
       const { nodeId, properties, embeddingText, userId, replyTo } = message
-
-      if (!state) {
-        replyTo.send({ type: 'toolError', error: 'kgraph database not ready' })
-        return { state }
-      }
-
       const db = resolveDb(state, userId, basePath)
 
       const applyProperties = async (vec?: number[]) => {
@@ -504,11 +561,6 @@ export const createKgraphActor = (
     },
 
     dump: (state, message, ctx) => {
-      if (!state) {
-        message.replyTo.send({ nodes: [], edges: [] })
-        return { state }
-      }
-
       const { userId } = message
       const db = resolveDb(state, userId, basePath)
 

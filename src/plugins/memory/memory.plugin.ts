@@ -5,7 +5,7 @@ import type { ToolCollection, ToolInvokeMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { IdentityProviderTopic, resolveIdentity } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
-import type { KgraphGraph, KgraphMsg, MemoryConsolidationMsg, MemoryRecallMsg, MemoryStoreMsg } from './types.ts'
+import type { KgraphGraph, KgraphMsg, MemoryConsolidationMsg, MemoryRecallMsg, MemoryStoreMsg, UserContextMsg } from './types.ts'
 import {
   createKgraphActor,
 } from './kgraph.ts'
@@ -22,12 +22,14 @@ import {
   INITIAL_STORE_STATE,
 } from './memory-store.ts'
 import {
+  createUserContextActor,
+  INITIAL_USER_CONTEXT_STATE,
+} from './user-context.ts'
+import {
   createZettelNotesActor,
   type ZettelNoteMsg,
   ZETTEL_CREATE_TOOL,  ZETTEL_CREATE_SCHEMA,
   ZETTEL_UPDATE_TOOL,  ZETTEL_UPDATE_SCHEMA,
-  ZETTEL_READ_TOOL,    ZETTEL_READ_SCHEMA,
-  ZETTEL_LIST_TOOL,    ZETTEL_LIST_SCHEMA,
   ZETTEL_SEARCH_TOOL,  ZETTEL_SEARCH_SCHEMA,
   ZETTEL_LINKS_TOOL,   ZETTEL_LINKS_SCHEMA,
   ZETTEL_LINK_TOOL,     ZETTEL_LINK_SCHEMA,
@@ -38,6 +40,7 @@ import {
 export type MemoryActorConfig = {
   model:                   string
   consolidationIntervalMs: number
+  contextIntervalMs:       number
 }
 
 export type MemoryConfig = {
@@ -48,6 +51,7 @@ export type MemoryConfig = {
     cosineSimilarityThreshold?: number
     rerankerModel?:             string
     rerankerTopK?:              number
+    graphBlendWeight?:          number
   }
   system?: MemoryActorConfig
 }
@@ -63,6 +67,7 @@ type MemoryActors = {
   recall:        ActorRef<MemoryRecallMsg>
   store:         ActorRef<MemoryStoreMsg>
   zettel:        ActorRef<ZettelNoteMsg>
+  userContext:   ActorRef<UserContextMsg>
 }
 
 type MemoryPluginState = {
@@ -72,6 +77,7 @@ type MemoryPluginState = {
   recall:              ActorRef<MemoryRecallMsg>         | null
   store:               ActorRef<MemoryStoreMsg>          | null
   zettel:              ActorRef<ZettelNoteMsg>           | null
+  userContext:         ActorRef<UserContextMsg>          | null
   memoryGen:           number
   identityProviderRef: ActorRef<IdentityProviderMsg>     | null
 }
@@ -98,7 +104,7 @@ const spawnMemoryActors = (
   const zettel = ctx.spawn(
     `zettel-notes-${gen}`,
     createZettelNotesActor(kgraphRef, dbPath),
-    null,
+    { kgraphRef, dbPath },
   )
 
   const ref = zettel as unknown as ActorRef<ToolInvokeMsg>
@@ -117,11 +123,6 @@ const spawnMemoryActors = (
     [ZETTEL_LINK_TOOL]:   { schema: ZETTEL_LINK_SCHEMA,   ref },
   }
 
-  const userContextTools: ToolCollection = {
-    [ZETTEL_LIST_TOOL]: { schema: ZETTEL_LIST_SCHEMA, ref },
-    [ZETTEL_READ_TOOL]: { schema: ZETTEL_READ_SCHEMA, ref },
-  }
-
   const recallTools: ToolCollection = {
     [ZETTEL_SEARCH_TOOL]: { schema: ZETTEL_SEARCH_SCHEMA, ref },
     [ZETTEL_LINKS_TOOL]:  { schema: ZETTEL_LINKS_SCHEMA,  ref },
@@ -130,7 +131,12 @@ const spawnMemoryActors = (
   const consolidation = ctx.spawn(
     `memory-consolidation-${gen}`,
     createMemoryConsolidationActor({ model: config.model, intervalMs: config.consolidationIntervalMs, toolFilter: EMPTY_TOOL_FILTER }),
-    { ...INITIAL_CONSOLIDATION_STATE, tools: consolidationTools, userContextTools },
+    { ...INITIAL_CONSOLIDATION_STATE, tools: consolidationTools },
+  )
+  const userContext = ctx.spawn(
+    `user-context-${gen}`,
+    createUserContextActor({ model: config.model, intervalMs: config.contextIntervalMs }),
+    INITIAL_USER_CONTEXT_STATE,
   )
   const recall = ctx.spawn(
     `memory-recall-${gen}`,
@@ -142,17 +148,18 @@ const spawnMemoryActors = (
     createMemoryStoreActor({ model: config.model, toolFilter: EMPTY_TOOL_FILTER }),
     { ...INITIAL_STORE_STATE, tools: storeTools },
   ) as ActorRef<MemoryStoreMsg>
-  return { consolidation, recall, store, zettel }
+  return { consolidation, recall, store, zettel, userContext }
 }
 
 const stopMemoryActors = (
   ctx: Parameters<NonNullable<PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig>['lifecycle']>>[2],
-  state: Pick<MemoryPluginState, 'consolidation' | 'recall' | 'store' | 'zettel'>,
+  state: Pick<MemoryPluginState, 'consolidation' | 'recall' | 'store' | 'zettel' | 'userContext'>,
 ): void => {
   if (state.consolidation) ctx.stop(state.consolidation)
   if (state.recall)        ctx.stop(state.recall)
   if (state.store)         ctx.stop(state.store)
   if (state.zettel)        ctx.stop(state.zettel)
+  if (state.userContext)   ctx.stop(state.userContext)
 }
 
 /**
@@ -219,6 +226,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       recall:              null,
       store:               null,
       zettel:              null,
+      userContext:         null,
       memoryGen:           0,
       identityProviderRef: null,
     },
@@ -237,7 +245,11 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           ? { model: kgraphConfig.rerankerModel, topK: kgraphConfig.rerankerTopK }
           : undefined
 
-        const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg), null) as ActorRef<KgraphMsg>
+        const graphBlendCfg = typeof kgraphConfig.graphBlendWeight === 'number'
+          ? { weight: kgraphConfig.graphBlendWeight }
+          : undefined
+
+        const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg, graphBlendCfg), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
         refs.kgraphRef = kgraphRef
 
         ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
@@ -246,6 +258,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         let recall:        ActorRef<MemoryRecallMsg>         | null = null
         let store:         ActorRef<MemoryStoreMsg>          | null = null
         let zettel:        ActorRef<ZettelNoteMsg>           | null = null
+        let userContext:   ActorRef<UserContextMsg>          | null = null
 
         if (slice?.system) {
           const actors = spawnMemoryActors(ctx, slice.system, 0, kgraphRef, dbPath)
@@ -253,6 +266,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           recall        = actors.recall
           store         = actors.store
           zettel        = actors.zettel
+          userContext   = actors.userContext
           ctx.log.info('memory actors activated', { model: slice.system.model })
         }
 
@@ -263,6 +277,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           recall,
           store,
           zettel,
+          userContext,
           memoryGen: 0,
           identityProviderRef: null,
         }
@@ -309,7 +324,11 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           ? { model: newKgraphConfig.rerankerModel, topK: newKgraphConfig.rerankerTopK }
           : undefined
 
-        const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, createKgraphActor(dbPath, newEmbeddingCfg, newKgraphConfig.cosineSimilarityThreshold, newRerankerCfg), null) as ActorRef<KgraphMsg>
+        const newGraphBlendCfg = typeof newKgraphConfig.graphBlendWeight === 'number'
+          ? { weight: newKgraphConfig.graphBlendWeight }
+          : undefined
+
+        const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, createKgraphActor(dbPath, newEmbeddingCfg, newKgraphConfig.cosineSimilarityThreshold, newRerankerCfg, newGraphBlendCfg), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
         refs.kgraphRef = kgraphRef
 
         // ─── Reconfigure memory actors ───
@@ -319,6 +338,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         let recall:        ActorRef<MemoryRecallMsg>         | null = null
         let store:         ActorRef<MemoryStoreMsg>          | null = null
         let zettel:        ActorRef<ZettelNoteMsg>           | null = null
+        let userContext:   ActorRef<UserContextMsg>          | null = null
         const memoryGen = state.memoryGen + 1
 
         if (msg.slice?.system) {
@@ -327,6 +347,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           recall        = actors.recall
           store         = actors.store
           zettel        = actors.zettel
+          userContext   = actors.userContext
           ctx.log.info('memory actors reconfigured', { gen: memoryGen })
         }
 
@@ -337,6 +358,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           recall,
           store,
           zettel,
+          userContext,
           memoryGen,
         }
 
