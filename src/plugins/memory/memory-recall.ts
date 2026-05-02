@@ -82,8 +82,16 @@ const buildSystemPrompt = (userId: string): string =>
   `   zettel_search { text: "<natural query phrase>", tags: ["<domain>", "<subtopic>"], userId: "${userId}" }\n` +
   `   text: a short phrase describing what you're looking for.\n` +
   `   tags: derive from the query domain — use the same lowercase vocabulary notes use.\n\n` +
-  `2. **Follow links** — explore notes linked from a candidate note if needed:\n` +
-  `   zettel_links { id: "<id>", userId: "${userId}" }\n\n` +
+  `2. **Decide whether to follow links** — after search, inspect each result's \`links: [{ name, type }]\` array.\n` +
+  `   Follow a link when its type is directly relevant to the query:\n` +
+  `   - Query about causes/effects → follow \`causes\` / \`caused_by\` links\n` +
+  `   - Query about prerequisites or how something works → follow \`depends_on\` / \`requires\` links\n` +
+  `   - Query about composition or membership → follow \`contains\` / \`part_of\` links\n` +
+  `   - Query asking for evidence or counter-evidence → follow \`supports\` / \`contradicts\` links\n` +
+  `   - Query about timeline or sequence → follow \`precedes\` / \`follows\` links\n` +
+  `   To fetch linked content: zettel_links { id: "<id>", userId: "${userId}" }\n` +
+  `   Each result includes \`linkType\` so you know why the linked note was included.\n\n` +
+  `3. **Stop when you have enough** — do not follow links speculatively. Only traverse when the query clearly requires it and the link type matches.\n\n` +
   `Synthesize a concise answer from the note content found. If nothing relevant is found, say so plainly.`
 
 // ─── Worker Actor Definition ───

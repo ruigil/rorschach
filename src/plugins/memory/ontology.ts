@@ -47,17 +47,31 @@ export const zettelStoreSection = (userId: string): string =>
   `**zettel_update** { id, content?, name?, synopsis?, tags?, userId }\n` +
   `  Update an existing note. Only pass fields that should change. Re-embeds with fresh synopsis.\n\n` +
 
-  `**zettel_link** { sourceId?, sourceName?, targetId?, targetName?, userId }\n` +
-  `  Create a directional link between two notes. Updates metadata and the knowledge graph.\n` +
+  `**zettel_link** { sourceId?, sourceName?, targetId?, targetName?, linkType, userId }\n` +
+  `  Create a typed directional link between two notes. Updates metadata and the knowledge graph.\n` +
   `  Both notes must already exist. Call this only after all notes have been created/updated.\n\n` +
+
+  `### Link type ontology\n` +
+  `| type | meaning |\n` +
+  `|---|---|\n` +
+  `| causes | source directly causes target |\n` +
+  `| caused_by | source is caused by target |\n` +
+  `| depends_on | source requires target to function |\n` +
+  `| requires | source explicitly requires target as a precondition |\n` +
+  `| contains | source contains target as a component |\n` +
+  `| part_of | source is a component of target |\n` +
+  `| supports | source provides evidence or support for target |\n` +
+  `| contradicts | source conflicts with or refutes target |\n` +
+  `| precedes | source comes before target in time or sequence |\n` +
+  `| follows | source comes after target in time or sequence |\n\n` +
 
   `### A-Mem workflow (one topic at a time)\n` +
   `1. zettel_search { text: "<query phrase describing the topic>", userId } → candidate notes with full content\n` +
   `2. If a candidate already covers this topic → zettel_update (merge new information)\n` +
   `3. If no relevant note exists → zettel_create (new atomic note)\n` +
   `   Repeat steps 1–3 for all topics. Create ALL notes before creating any links.\n` +
-  `4. zettel_link { sourceName, targetName, userId } for each relationship between notes.\n` +
-  `   Only call zettel_link after both notes are confirmed to exist.\n\n` +
+  `4. zettel_link { sourceName, targetName, linkType, userId } for each relationship between notes.\n` +
+  `   Choose linkType from the ontology above. Only call zettel_link after both notes are confirmed to exist.\n\n` +
 
   `### Note writing rules\n` +
   `- One note per concept or fact cluster. Keep notes atomic and self-contained.\n` +
@@ -98,4 +112,15 @@ export const zettelRecallSection = (userId: string): string =>
   `  - Use zettel_links { id } to explore connections from any result.\n\n` +
 
   `**zettel_links** { id?, name?, userId }\n` +
-  `  Return notes linked from a given note, with full content. Use to explore the note graph.`
+  `  Return notes linked from a given note, with full content and linkType for each result.\n` +
+  `  Use to follow promising typed edges when the query needs deeper context.\n\n` +
+
+  `### Link types in search results\n` +
+  `Each note's \`links\` field is an array of \`{ name, type }\` objects. Use the type to decide whether following a link is relevant to the query:\n\n` +
+  `| type | follow when query is about… |\n` +
+  `|---|---|\n` +
+  `| causes / caused_by | cause-and-effect, why something happened, root causes |\n` +
+  `| depends_on / requires | prerequisites, what something needs to work |\n` +
+  `| contains / part_of | composition, what something is made of or belongs to |\n` +
+  `| supports / contradicts | evidence, arguments for or against |\n` +
+  `| precedes / follows | sequence, timeline, what came before or after |`

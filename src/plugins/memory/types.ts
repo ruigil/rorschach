@@ -12,6 +12,15 @@ export type KgraphGraph = { nodes: KgraphNode[]; edges: KgraphEdge[] }
 
 // ─── Zettelkasten note types ───
 
+export const ZETTEL_LINK_TYPES = [
+  'causes', 'caused_by', 'depends_on', 'requires',
+  'contains', 'part_of', 'supports', 'contradicts',
+  'precedes', 'follows',
+] as const
+export type ZettelLinkType = typeof ZETTEL_LINK_TYPES[number]
+
+export type ZettelLink = { name: string; type: ZettelLinkType }
+
 export type ZettelNote = {
   id:            string
   name:          string
@@ -21,7 +30,7 @@ export type ZettelNote = {
   updatedAt:     string
   eventTime?:    string
   path:          string
-  links:         string[]
+  links:         ZettelLink[]
   kgraphNodeId?: number
 }
 

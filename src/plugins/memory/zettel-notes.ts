@@ -3,7 +3,8 @@ import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
-import type { KgraphMsg, ZettelNote, ZettelIndex, VectorSearchReply } from './types.ts'
+import { ZETTEL_LINK_TYPES } from './types.ts'
+import type { KgraphMsg, ZettelLink, ZettelLinkType, ZettelNote, ZettelIndex, VectorSearchReply } from './types.ts'
 
 // ─── Tool names ───
 
@@ -102,16 +103,22 @@ export const ZETTEL_LINK_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: ZETTEL_LINK_TOOL,
-    description: 'Create a directional link from one Zettelkasten note to another. Updates the source note links metadata and the knowledge graph. Both notes must already exist.',
+    description: 'Create a typed directional link from one Zettelkasten note to another. Updates the source note links metadata and the knowledge graph. Both notes must already exist.',
     parameters: {
       type: 'object',
       properties: {
-        sourceId: { type: 'string', description: 'UUID of the source note.' },
+        sourceId:   { type: 'string', description: 'UUID of the source note.' },
         sourceName: { type: 'string', description: 'Title of the source note (used if sourceId not provided).' },
-        targetId: { type: 'string', description: 'UUID of the target note.' },
+        targetId:   { type: 'string', description: 'UUID of the target note.' },
         targetName: { type: 'string', description: 'Title of the target note (used if targetId not provided).' },
+        linkType: {
+          type: 'string',
+          enum: ZETTEL_LINK_TYPES as unknown as string[],
+          description: 'Semantic relationship type. causes/caused_by=causal, depends_on/requires=dependency, contains/part_of=composition, supports/contradicts=evidential, precedes/follows=temporal.',
+        },
         userId: { type: 'string' },
       },
+      required: ['linkType'],
     },
   },
 }
@@ -177,7 +184,7 @@ const writeIndex = async (userId: string, index: ZettelIndex, dbPath: string): P
 
 const serializeNote = (meta: ZettelNote, body: string): string => {
   const tags = meta.tags.length > 0 ? `[${meta.tags.join(', ')}]` : '[]'
-  const links = meta.links.length > 0 ? `[${meta.links.join(', ')}]` : '[]'
+  const links = meta.links.length > 0 ? `[${meta.links.map(l => `${l.type}:${l.name}`).join(', ')}]` : '[]'
   const eventTime = meta.eventTime ? `\neventTime: ${meta.eventTime}` : ''
   const nodeId = meta.kgraphNodeId !== undefined ? `\nkgraphNodeId: ${meta.kgraphNodeId}` : ''
   return `---\nid: ${meta.id}\nname: ${meta.name}\nsynopsis: ${meta.synopsis}\ntags: ${tags}\ncreatedAt: ${meta.createdAt}\nupdatedAt: ${meta.updatedAt}${eventTime}\nlinks: ${links}${nodeId}\n---\n\n${body}`
@@ -199,6 +206,18 @@ const parseNote = (raw: string): { meta: ZettelNote; body: string } => {
     return m[1].split(',').map(s => s.trim()).filter(Boolean)
   }
 
+  const parseLinks = (): ZettelLink[] =>
+    getArr('links').map(entry => {
+      const colon = entry.indexOf(':')
+      if (colon > 0) {
+        const type = entry.slice(0, colon) as ZettelLinkType
+        const name = entry.slice(colon + 1)
+        return { name, type: ZETTEL_LINK_TYPES.includes(type) ? type : 'supports' }
+      }
+      // Legacy: untyped entry — default to 'supports'
+      return { name: entry, type: 'supports' as ZettelLinkType }
+    })
+
   const id = get('id')
   const rawNodeId = get('kgraphNodeId')
   return {
@@ -211,7 +230,7 @@ const parseNote = (raw: string): { meta: ZettelNote; body: string } => {
       updatedAt: get('updatedAt'),
       eventTime: get('eventTime') || undefined,
       path: `notes/${id}.md`,
-      links: getArr('links'),
+      links: parseLinks(),
       kgraphNodeId: rawNodeId ? Number(rawNodeId) : undefined,
     },
     body,
@@ -428,17 +447,17 @@ const handleLinks = async (
   if (!note) return JSON.stringify({ error: 'Note not found' })
 
   const linked = await Promise.all(
-    note.links.flatMap(linkName => {
-      const target = index.notes.find(n => n.name === linkName)
+    note.links.flatMap(link => {
+      const target = index.notes.find(n => n.name === link.name)
       if (!target) return []
       return [
         (async () => {
           try {
             const raw = await Bun.file(noteFilePath(userId, target, dbPath)).text()
             const { body } = parseNote(raw)
-            return { id: target.id, name: target.name, synopsis: target.synopsis, tags: target.tags, links: target.links, content: body }
+            return { id: target.id, name: target.name, linkType: link.type, synopsis: target.synopsis, tags: target.tags, links: target.links, content: body }
           } catch {
-            return { id: target.id, name: target.name, synopsis: target.synopsis, tags: target.tags, links: target.links, content: '' }
+            return { id: target.id, name: target.name, linkType: link.type, synopsis: target.synopsis, tags: target.tags, links: target.links, content: '' }
           }
         })(),
       ]
@@ -467,11 +486,16 @@ const handleLink = async (
     : index.notes.find(n => n.name === args.targetName)
   if (!target) return JSON.stringify({ error: 'Target note not found' })
 
-  if (source.links.includes(target.name)) {
+  const rawLinkType = typeof args.linkType === 'string' ? args.linkType : 'supports'
+  const linkType: ZettelLinkType = ZETTEL_LINK_TYPES.includes(rawLinkType as ZettelLinkType)
+    ? (rawLinkType as ZettelLinkType)
+    : 'supports'
+
+  if (source.links.some(l => l.name === target.name && l.type === linkType)) {
     return JSON.stringify({ ok: true, message: 'Link already exists' })
   }
 
-  const updatedLinks = [...source.links, target.name]
+  const updatedLinks: ZettelLink[] = [...source.links, { name: target.name, type: linkType }]
   const now = new Date().toISOString()
   const updated: ZettelNote = { ...source, links: updatedLinks, updatedAt: now }
 
@@ -481,16 +505,17 @@ const handleLink = async (
   await queue.mutate(userId, (idx) => ({ notes: idx.notes.map(n => n.id === source.id ? updated : n) }))
 
   const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const rel = linkType.toUpperCase()
   const statement =
     `MATCH (a:Note {name:"${esc(source.name)}"}), (b:Note {name:"${esc(target.name)}"}) ` +
-    `MERGE (a)-[:LINKS_TO]->(b)`
+    `MERGE (a)-[:${rel}]->(b)`
   await ask<KgraphMsg, ToolReply>(
     kgraphRef,
     (replyTo) => ({ type: 'invoke', toolName: 'kgraph_create_link', arguments: JSON.stringify({ statement, userId }), replyTo, userId }),
   ).catch(() => { })
 
-  log.info('zettel-notes: linked notes', { userId, source: source.name, target: target.name })
-  return JSON.stringify({ ok: true, source: source.name, target: target.name })
+  log.info('zettel-notes: linked notes', { userId, source: source.name, target: target.name, type: linkType })
+  return JSON.stringify({ ok: true, source: source.name, target: target.name, type: linkType })
 }
 
 // ─── Actor definition ───
