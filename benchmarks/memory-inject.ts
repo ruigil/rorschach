@@ -83,13 +83,15 @@ system.subscribe(CostTopic, (event) => {
 // ─── store_memory call tracking ───
 
 const storeMemoryCalls  = new Set<string>()
-const toolCallsPerTrace = new Map<string, number>()
+const toolCallsPerTrace = new Map<string, string[]>()
 system.subscribe(TraceTopic, (span: TraceSpan) => {
   if (span.operation === 'tool-invoke' && span.data?.toolName === 'store_memory') {
     storeMemoryCalls.add(span.traceId)
   }
-  if (span.operation === 'tool-invoke' && span.status === 'started') {
-    toolCallsPerTrace.set(span.traceId, (toolCallsPerTrace.get(span.traceId) ?? 0) + 1)
+  if (span.operation === 'tool-invoke' && span.status === 'started' && span.data?.toolName) {
+    const names = toolCallsPerTrace.get(span.traceId) ?? []
+    names.push(span.data.toolName as string)
+    toolCallsPerTrace.set(span.traceId, names)
   }
   system.publish(OutboundBroadcastTopic, { text: JSON.stringify({ type: 'trace', ...span }) })
 })
@@ -156,7 +158,7 @@ system.publish(ClientConnectTopic, { clientId: INJECT_CLIENT_ID, userId: USER_ID
 // Wait for the chatbot actor to fully initialize and register its tools
 await new Promise(resolve => setTimeout(resolve, 500))
 
-const injectionResults: Array<{ latency: number; storedMemory: boolean; toolCalls: number }> = []
+const injectionResults: Array<{ latency: number; storedMemory: boolean; toolCalls: string[] }> = []
 
 for (const statement of factualStatements) {
   const traceId = newId()
@@ -164,9 +166,9 @@ for (const statement of factualStatements) {
   process.stdout.write('Assistant: ')
   const result     = await sendTurn(statement, INJECT_CLIENT_ID, traceId)
   const storedMemory = storeMemoryCalls.has(traceId)
-  const toolCalls    = toolCallsPerTrace.get(traceId) ?? 0
+  const toolCalls    = toolCallsPerTrace.get(traceId) ?? []
   injectionResults.push({ latency: result.latency, storedMemory, toolCalls })
-  console.log(`(Latency: ${result.latency}ms, store_memory: ${storedMemory}, tools: ${toolCalls})\n`)
+  console.log(`(Latency: ${result.latency}ms, store_memory: ${storedMemory}, tools: [${toolCalls.join(', ')}])\n`)
 }
 
 const storeMemoryCount = injectionResults.filter(r => r.storedMemory).length
@@ -177,9 +179,21 @@ console.log(`store_memory called: ${storeMemoryCount}/${injectionResults.length}
 const injStats = computeStats(injectionResults.map(r => r.latency))
 const totalCost = Object.values(costByRole).reduce((s, r) => s + r.cost, 0)
 
+const toolFreq: Record<string, number> = {}
+for (const r of injectionResults) {
+  for (const name of r.toolCalls) {
+    toolFreq[name] = (toolFreq[name] ?? 0) + 1
+  }
+}
+const toolFreqStr = Object.entries(toolFreq)
+  .sort((a, b) => b[1] - a[1])
+  .map(([name, count]) => `${name}×${count}`)
+  .join('  ')
+
 console.log('--- Injection Report ---\n')
 console.log(`Latency:   avg=${injStats.mean.toFixed(0)}ms  median=${injStats.median}ms  p95=${injStats.p95}ms`)
 console.log(`store_memory calls:  ${storeMemoryCount}/${injectionResults.length}`)
+console.log(`Tool usage:          ${toolFreqStr || '(none)'}`)
 console.log(`Total Cost:          $${totalCost.toFixed(4)}`)
 console.log('\nInjection phase complete. Database is ready for recall.\n')
 

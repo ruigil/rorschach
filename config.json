@@ -82,7 +82,7 @@
       "system": {
         "model": "moonshotai/kimi-k2.6",
         "consolidationIntervalMs": 3600000,
-        "contextIntervalMs": 60000
+        "contextIntervalMs": 3600000
       }
     },
     "notebook": {

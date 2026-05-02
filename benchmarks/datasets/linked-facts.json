@@ -1,0 +1,41 @@
+{
+  "name": "Linked Facts",
+  "description": "Facts with explicit relationships between concepts, designed to provoke typed link creation across the full ontology: causes, caused_by, depends_on, requires, contains, part_of, supports, contradicts, precedes, follows.",
+  "statements": [
+    "My peanut allergy caused me to always carry an EpiPen whenever I go out.",
+    "The cold, snowy winters in Aosta are what caused me to take up skiing.",
+    "My frustration with monolithic architectures early in my career caused me to specialise in distributed systems.",
+    "My interest in actor-based concurrency was caused by repeated failures I experienced with shared-state threading models.",
+    "The Rorschach framework depends on the Bun runtime for its execution environment and module system.",
+    "Mountain biking in Aosta depends on good trail conditions, which are only available from May to October.",
+    "Jazz piano improvisation requires a solid foundation in music theory and knowledge of scales and chord voicings.",
+    "Running the Rorschach development setup requires macOS because of specific native tooling I rely on.",
+    "The Rorschach framework contains three main subsystems: an actor model runtime, a plugin system, and a persistent memory module.",
+    "The memory module is part of the Rorschach framework and handles long-term knowledge storage.",
+    "The actor model runtime is part of the Rorschach framework and manages message passing between actors.",
+    "My positive experience building Rorschach entirely in TypeScript supports my preference for static typing in large projects.",
+    "My enjoyment of spontaneous jazz improvisation somewhat contradicts my preference for strict type systems and formal structure in programming.",
+    "I finished reading Dune on March 12 2026, which preceded my trip to the Lisbon tech conference in April 2026.",
+    "I bought my Keychron K2 keyboard on February 1 2026, which preceded the start of the Rorschach project.",
+    "My evening herbal tea routine follows my morning double espresso as part of a deliberate caffeine tapering strategy.",
+    "My specialisation in distributed systems follows from over a decade of working on large-scale backend infrastructure."
+  ],
+  "questions": [
+    { "q": "What caused me to always carry an EpiPen?", "a": ["peanut allergy"] },
+    { "q": "What caused me to take up skiing?", "a": ["Aosta", "winter"] },
+    { "q": "What caused my interest in distributed systems?", "a": ["monolithic", "frustration"] },
+    { "q": "What caused my interest in actor-based concurrency?", "a": ["threading", "shared-state", "failures"] },
+    { "q": "What runtime does Rorschach depend on?", "a": ["Bun"] },
+    { "q": "When can I go mountain biking in Aosta?", "a": ["May", "October"] },
+    { "q": "What does jazz piano improvisation require?", "a": ["music theory", "scales"] },
+    { "q": "What does my development setup require?", "a": ["macOS"] },
+    { "q": "What subsystems does the Rorschach framework contain?", "a": ["actor", "plugin", "memory"] },
+    { "q": "What is the memory module part of?", "a": ["Rorschach"] },
+    { "q": "What supports my preference for static typing?", "a": ["TypeScript", "Rorschach"] },
+    { "q": "What contradicts my preference for strict type systems?", "a": ["jazz", "improvisation"] },
+    { "q": "What event preceded the Lisbon tech conference?", "a": ["Dune", "March"] },
+    { "q": "What did I do before starting the Rorschach project?", "a": ["Keychron", "keyboard", "February"] },
+    { "q": "What follows my morning espresso in my daily routine?", "a": ["herbal tea", "evening"] },
+    { "q": "Why did I specialise in distributed systems?", "a": ["backend", "infrastructure", "decade"] }
+  ]
+}

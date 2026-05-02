@@ -80,13 +80,15 @@ system.subscribe(CostTopic, (event) => {
 // ─── recall_memory call tracking ───
 
 const recallMemoryCalls = new Set<string>()
-const toolCallsPerTrace = new Map<string, number>()
+const toolCallsPerTrace = new Map<string, string[]>()
 system.subscribe(TraceTopic, (span: TraceSpan) => {
   if (span.operation === 'tool-invoke' && span.data?.toolName === 'recall_memory') {
     recallMemoryCalls.add(span.traceId)
   }
-  if (span.operation === 'tool-invoke' && span.status === 'started') {
-    toolCallsPerTrace.set(span.traceId, (toolCallsPerTrace.get(span.traceId) ?? 0) + 1)
+  if (span.operation === 'tool-invoke' && span.status === 'started' && span.data?.toolName) {
+    const names = toolCallsPerTrace.get(span.traceId) ?? []
+    names.push(span.data.toolName as string)
+    toolCallsPerTrace.set(span.traceId, names)
   }
   system.publish(OutboundBroadcastTopic, { text: JSON.stringify({ type: 'trace', ...span }) })
 })
@@ -201,7 +203,7 @@ const sendTurn = async (text: string, clientId: string, traceId: string): Promis
 
 console.log('\n🚀 Starting Recall Phase (No Context)\n')
 
-type RecallResult = { q: string; expected: string[]; reply: string; latency: number; isCorrect: boolean; judgeScore: number; judgeReason: string; toolCalls: number; recallMemory: boolean }
+type RecallResult = { q: string; expected: string[]; reply: string; latency: number; isCorrect: boolean; judgeScore: number; judgeReason: string; toolCalls: string[]; recallMemory: boolean }
 const allRunResults: RecallResult[][] = []
 
 for (let run = 0; run < RUNS; run++) {
@@ -225,10 +227,10 @@ for (let run = 0; run < RUNS; run++) {
     const judge = await collectJudgeReply(q, a, result.reply)
     console.log(`${judge.score} (${judge.reason})`)
 
-    const toolCalls    = toolCallsPerTrace.get(traceId) ?? 0
+    const toolCalls    = toolCallsPerTrace.get(traceId) ?? []
     const recallMemory = recallMemoryCalls.has(traceId)
     runResults.push({ q, expected: a, reply: result.reply, latency: result.latency, isCorrect, judgeScore: judge.score, judgeReason: judge.reason, toolCalls, recallMemory })
-    console.log(`(Latency: ${result.latency}ms, Keyword: ${isCorrect}, Judge: ${judge.score}, tools: ${toolCalls}, recall_memory: ${recallMemory})\n`)
+    console.log(`(Latency: ${result.latency}ms, Keyword: ${isCorrect}, Judge: ${judge.score}, tools: [${toolCalls.join(', ')}], recall_memory: ${recallMemory})\n`)
   }
 
   system.publish(ClientDisconnectTopic, { clientId: RECALL_CLIENT_ID })
@@ -246,11 +248,23 @@ const judgeAccuracy  = (totalJudgeScore / allRecallResults.length) * 100
 const recallMemoryCount = allRecallResults.filter(r => r.recallMemory).length
 const totalCost      = Object.values(costByRole).reduce((s, r) => s + r.cost, 0)
 
+const toolFreq: Record<string, number> = {}
+for (const r of allRecallResults) {
+  for (const name of r.toolCalls) {
+    toolFreq[name] = (toolFreq[name] ?? 0) + 1
+  }
+}
+const toolFreqStr = Object.entries(toolFreq)
+  .sort((a, b) => b[1] - a[1])
+  .map(([name, count]) => `${name}×${count}`)
+  .join('  ')
+
 console.log('--- Recall Report ---\n')
 console.log(`Latency:      avg=${recallStats.mean.toFixed(0)}ms  median=${recallStats.median}ms  p95=${recallStats.p95}ms`)
 console.log(`Keyword Accuracy:    ${accuracy.toFixed(1)}% (${keywordCorrect}/${allRecallResults.length})`)
 console.log(`Judge Accuracy:      ${judgeAccuracy.toFixed(1)}% (${totalJudgeScore.toFixed(1)}/${allRecallResults.length})`)
 console.log(`recall_memory calls: ${recallMemoryCount}/${allRecallResults.length}`)
+console.log(`Tool usage:          ${toolFreqStr || '(none)'}`)
 console.log(`Total Cost:          $${totalCost.toFixed(4)}`)
 console.log('')
 
