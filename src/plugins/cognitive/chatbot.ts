@@ -679,9 +679,10 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           ({ type: '_llmProviderUpdated' as const, ref: event.ref }),
         )
 
-        context.subscribe(UserContextTopic, (event) =>
-          ({ type: '_userContext' as const, summary: event.summary }),
-        )
+        context.subscribe(UserContextTopic, (event) => {
+          if (event.userId !== userId) return null
+          return { type: '_userContext' as const, summary: event.summary }
+        })
 
         return { state }
       },
