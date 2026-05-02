@@ -31,7 +31,6 @@ export type ZettelIndex = { notes: ZettelNote[] }
 
 export type ScoreSources = {
   vector: number      // final vector component (reranker if used, else cosine)
-  graph?: number      // graph proximity (1.0 seeds, inherited for neighbors)
 }
 
 export type VectorSearchMatch = {

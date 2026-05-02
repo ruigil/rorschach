@@ -139,7 +139,6 @@ export const createKgraphActor = (
   embedding?: { model: string; dimensions: number },
   cosineSimilarityThreshold = 0.0,
   reranker?: { model: string; topK?: number },
-  graphBlend?: { weight: number },
 ): ActorDef<KgraphMsg, KgraphState> => ({
 
   lifecycle: onLifecycle({
@@ -288,12 +287,9 @@ export const createKgraphActor = (
       const llmRef = state.llmRef
       const db = resolveDb(state, userId, basePath)
 
-      const baseFetchLimit = graphBlend
-        ? Math.max(topN * 3, 10)
-        : topN
       const fetchLimit = reranker
-        ? (reranker.topK ?? Math.max(baseFetchLimit, 10))
-        : baseFetchLimit
+        ? (reranker.topK ?? Math.max(topN, 10))
+        : topN
 
       ctx.pipeToSelf(
         Promise.all(INDEXED_LABELS.map(lbl =>
@@ -336,45 +332,8 @@ export const createKgraphActor = (
             return []
           }
 
-          // Step 2: Graph expansion (if graphBlend active)
-          let allMatches = [...seeds]
-          const neighborLinkMap = new Map<number, number[]>() // neighbor nodeId -> linking seed nodeIds
-
-          if (graphBlend) {
-            const seedNodeIds = seeds.map(s => s.nodeId)
-            const seedIdsStr = seedNodeIds.join(',')
-
-            const neighborResult = await db.execute(`
-              MATCH (seed:Note)-[:LINKS_TO]->(neighbor:Note)
-              WHERE id(seed) IN [${seedIdsStr}]
-              RETURN id(neighbor) AS nodeId, neighbor.name AS name, neighbor.description AS description, cosine_similarity(neighbor._embedding, ${vectorStr}) AS score, id(seed) AS seedId
-            `)
-
-            const neighborMap = new Map<number, VectorSearchMatch>()
-            for (const row of neighborResult.toArray() as any[]) {
-              const nodeId = row.nodeId ?? row['id(neighbor)']
-              const seedId = row.seedId ?? row['id(seed)']
-
-              if (seeds.some(s => s.nodeId === nodeId)) continue
-
-              if (!neighborMap.has(nodeId)) {
-                const score = row.score ?? row['cosine_similarity(neighbor._embedding, ' + vectorStr + ')']
-                neighborMap.set(nodeId, {
-                  nodeId,
-                  score: 0,
-                  sources: { vector: score },
-                  name: row.name ?? row['neighbor.name'] ?? '',
-                  description: row.description ?? row['neighbor.description'] ?? '',
-                })
-                neighborLinkMap.set(nodeId, [])
-              }
-              neighborLinkMap.get(nodeId)!.push(seedId)
-            }
-
-            allMatches = [...seeds, ...Array.from(neighborMap.values())]
-          }
-
-          // Step 3: Rerank (if configured)
+          // Step 2: Rerank (if configured)
+          const allMatches = seeds
           if (reranker && allMatches.length > 0) {
             const rerankReply = await ask<LlmProviderMsg, RerankReply>(
               llmRef,
@@ -403,31 +362,12 @@ export const createKgraphActor = (
             }
           }
 
-          // Step 4: Compute unified scores
-          const seedNodeIds = new Set(seeds.map(s => s.nodeId))
-
+          // Step 3: Compute scores
           for (const match of allMatches) {
-            if (seedNodeIds.has(match.nodeId)) {
-              // Seed: graph proximity = 1.0
-              match.sources.graph = 1.0
-              match.score = graphBlend
-                ? (1 - graphBlend.weight) * match.sources.vector + graphBlend.weight * 1.0
-                : match.sources.vector
-            } else {
-              // Neighbor: graph proximity = max(linking seed final) * 0.5
-              const linkingSeedIds = neighborLinkMap.get(match.nodeId) ?? []
-              const linkingSeedScores = linkingSeedIds
-                .map(seedId => allMatches.find(m => m.nodeId === seedId)?.score ?? 0)
-                .filter(s => s > 0)
-              const maxSeedScore = linkingSeedScores.length > 0 ? Math.max(...linkingSeedScores) : 0
-              match.sources.graph = maxSeedScore * 0.5
-              match.score = graphBlend
-                ? (1 - graphBlend.weight) * match.sources.vector + graphBlend.weight * match.sources.graph
-                : match.sources.vector
-            }
+            match.score = match.sources.vector
           }
 
-          // Step 5: Sort and slice
+          // Step 4: Sort and slice
           const ranked = allMatches
             .sort((a, b) => b.score - a.score)
             .slice(0, topN)

@@ -72,7 +72,7 @@ describe('zettel-notes vector search', () => {
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
-    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }, 0.0, undefined, { weight: 0.3 }), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
+    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
 
     const zettelDir = tmpZettel()
     tempDirs.push(zettelDir)
@@ -116,71 +116,12 @@ describe('zettel-notes vector search', () => {
     await system.shutdown()
   })
 
-  test('expands results via wiki-links to linked notes', async () => {
-    const system = await createPluginSystem()
-    const mockLlmRef = spawnMockLlm(system)
-    system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
-
-    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }, 0.0, undefined, { weight: 0.3 }), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
-
-    const zettelDir = tmpZettel()
-    tempDirs.push(zettelDir)
-    // Kgraph's default cosineSimilarityThreshold (0.0) naturally excludes orthogonal
-    // matches (score = 0.0), so only the TypeScript note is returned from vector search.
-    // The Food note is brought in via zettel graph expansion.
-    const zettelRef = system.spawn('zettel', createZettelNotesActor(kgraphRef, zettelDir), { kgraphRef, dbPath: zettelDir }) as ActorRef<ZettelNoteMsg>
-
-    await tick()
-
-    const tsReply = await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
-      name: 'TypeScript Types',
-      synopsis: 'TypeScript static type checking.',
-      content: 'TypeScript adds static types to JavaScript.',
-      tags: ['typescript'],
-    })
-    expect(tsReply.type).toBe('toolResult')
-    const tsId = JSON.parse((tsReply as { type: 'toolResult'; result: string }).result).id as string
-
-    const foodReply = await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
-      name: 'French Cuisine',
-      synopsis: 'French cooking and cuisine techniques.',
-      content: 'Classic French dishes.',
-      tags: ['cooking', 'food'],
-    })
-    expect(foodReply.type).toBe('toolResult')
-    const foodId = JSON.parse((foodReply as { type: 'toolResult'; result: string }).result).id as string
-
-    // Link TypeScript note → Food note (unlikely real link, but tests graph expansion)
-    const linkReply = await invokeZettel(zettelRef, ZETTEL_LINK_TOOL, { sourceId: tsId, targetId: foodId })
-    expect(linkReply.type).toBe('toolResult')
-
-    await tick()
-
-    const reply = await invokeZettel(zettelRef, ZETTEL_SEARCH_TOOL, {
-      text: 'TypeScript static typing for programming',
-    })
-
-    expect(reply.type).toBe('toolResult')
-    const results = JSON.parse((reply as { type: 'toolResult'; result: string }).result) as Array<{ name: string; score: number }>
-
-    const names = results.map(r => r.name)
-    expect(names).toContain('TypeScript Types')    // direct vector match
-    expect(names).toContain('French Cuisine')      // graph expansion via link
-
-    // The seed note must rank above its graph-expanded neighbour
-    const tsScore   = results.find(r => r.name === 'TypeScript Types')!.score
-    const foodScore = results.find(r => r.name === 'French Cuisine')!.score
-    expect(tsScore).toBeGreaterThan(foodScore)
-
-    await system.shutdown()
-  })
-
   test('falls back to tag filtering when vector search finds no matches above threshold', async () => {
     const system = await createPluginSystem()
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
-    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }, 0.0, undefined, { weight: 0.3 }), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
+    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
 
     const zettelDir = tmpZettel()
     tempDirs.push(zettelDir)

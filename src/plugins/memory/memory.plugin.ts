@@ -51,7 +51,6 @@ export type MemoryConfig = {
     cosineSimilarityThreshold?: number
     rerankerModel?:             string
     rerankerTopK?:              number
-    graphBlendWeight?:          number
   }
   system?: MemoryActorConfig
 }
@@ -245,11 +244,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           ? { model: kgraphConfig.rerankerModel, topK: kgraphConfig.rerankerTopK }
           : undefined
 
-        const graphBlendCfg = typeof kgraphConfig.graphBlendWeight === 'number'
-          ? { weight: kgraphConfig.graphBlendWeight }
-          : undefined
-
-        const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg, graphBlendCfg), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
+        const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
         refs.kgraphRef = kgraphRef
 
         ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
@@ -324,11 +319,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           ? { model: newKgraphConfig.rerankerModel, topK: newKgraphConfig.rerankerTopK }
           : undefined
 
-        const newGraphBlendCfg = typeof newKgraphConfig.graphBlendWeight === 'number'
-          ? { weight: newKgraphConfig.graphBlendWeight }
-          : undefined
-
-        const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, createKgraphActor(dbPath, newEmbeddingCfg, newKgraphConfig.cosineSimilarityThreshold, newRerankerCfg, newGraphBlendCfg), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
+        const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, createKgraphActor(dbPath, newEmbeddingCfg, newKgraphConfig.cosineSimilarityThreshold, newRerankerCfg), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
         refs.kgraphRef = kgraphRef
 
         // ─── Reconfigure memory actors ───
