@@ -7,12 +7,10 @@ import type { KgraphMsg, ZettelNote, ZettelIndex, VectorSearchReply } from './ty
 
 // ─── Tool names ───
 
-export const ZETTEL_CREATE_TOOL   = 'zettel_create'
-export const ZETTEL_UPDATE_TOOL   = 'zettel_update'
-export const ZETTEL_READ_TOOL     = 'zettel_read'
-export const ZETTEL_LIST_TOOL     = 'zettel_list'
-export const ZETTEL_SEARCH_TOOL   = 'zettel_search'
-export const ZETTEL_LINKS_TOOL    = 'zettel_links'
+export const ZETTEL_CREATE_TOOL = 'zettel_create'
+export const ZETTEL_UPDATE_TOOL = 'zettel_update'
+export const ZETTEL_SEARCH_TOOL = 'zettel_search'
+export const ZETTEL_LINKS_TOOL = 'zettel_links'
 
 // ─── Tool schemas ───
 
@@ -24,12 +22,12 @@ export const ZETTEL_CREATE_SCHEMA: ToolSchema = {
     parameters: {
       type: 'object',
       properties: {
-        name:      { type: 'string', description: 'Short note title (2-5 words, Title Case).' },
-        synopsis:  { type: 'string', description: "One sentence summary of this note's content. Used for semantic search." },
-        content:   { type: 'string', description: 'Full markdown content. Use [[Note Title]] wiki-links to reference related notes.' },
-        tags:      { type: 'array', items: { type: 'string' }, description: 'Lowercase tags e.g. ["typescript", "work", "preference"].' },
+        name: { type: 'string', description: 'Short note title (2-5 words, Title Case).' },
+        synopsis: { type: 'string', description: "One sentence summary of this note's content. Used for semantic search." },
+        content: { type: 'string', description: 'Full markdown content.' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Lowercase tags e.g. ["typescript", "work", "preference"].' },
         eventTime: { type: 'string', description: 'Optional ISO 8601 timestamp for when the event occurred (if different from now).' },
-        userId:    { type: 'string' },
+        userId: { type: 'string' },
       },
       required: ['name', 'synopsis', 'content', 'tags'],
     },
@@ -44,46 +42,15 @@ export const ZETTEL_UPDATE_SCHEMA: ToolSchema = {
     parameters: {
       type: 'object',
       properties: {
-        id:        { type: 'string', description: 'Note UUID.' },
-        name:      { type: 'string', description: 'Updated title (optional).' },
-        synopsis:  { type: 'string', description: 'Updated one-sentence summary (optional).' },
-        content:   { type: 'string', description: 'Full updated markdown content (optional).' },
-        tags:      { type: 'array', items: { type: 'string' }, description: 'Updated tags (optional).' },
+        id: { type: 'string', description: 'Note UUID.' },
+        name: { type: 'string', description: 'Updated title (optional).' },
+        synopsis: { type: 'string', description: 'Updated one-sentence summary (optional).' },
+        content: { type: 'string', description: 'Full updated markdown content (optional).' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Updated tags (optional).' },
         eventTime: { type: 'string', description: 'Updated ISO 8601 timestamp (optional).' },
-        userId:    { type: 'string' },
+        userId: { type: 'string' },
       },
       required: ['id'],
-    },
-  },
-}
-
-export const ZETTEL_READ_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: ZETTEL_READ_TOOL,
-    description: 'Read a Zettelkasten note by id or name. Returns metadata and full content.',
-    parameters: {
-      type: 'object',
-      properties: {
-        id:     { type: 'string', description: 'Note UUID.' },
-        name:   { type: 'string', description: 'Note title (used if id is not provided).' },
-        userId: { type: 'string' },
-      },
-    },
-  },
-}
-
-export const ZETTEL_LIST_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: ZETTEL_LIST_TOOL,
-    description: 'List Zettelkasten note metadata. Optionally filter by tags (must match ALL provided tags).',
-    parameters: {
-      type: 'object',
-      properties: {
-        tags:   { type: 'array', items: { type: 'string' }, description: 'Filter notes that have ALL of these tags.' },
-        userId: { type: 'string' },
-      },
     },
   },
 }
@@ -92,13 +59,13 @@ export const ZETTEL_SEARCH_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: ZETTEL_SEARCH_TOOL,
-    description: 'Semantic search via vector embeddings with graph expansion. Finds notes similar to the given text, expands results via wiki-links, and re-ranks by combined similarity + graph proximity score. Optional tags enrich the vector query and serve as a fallback filter if no results are found. Returns up to 8 notes with full content and links — no need to call zettel_read afterwards.',
+    description: 'Semantic search via vector embeddings with graph expansion and re-ranking. Finds notes similar to the given text, expands results via wiki-links, and re-ranks by combined similarity + graph proximity. Each result includes scoreSources: { vector, graph? } where vector is semantic similarity and graph indicates the note was brought in via links from a strong result. Prioritize high-vector results for direct answers; high-graph results provide supporting context.',
     parameters: {
       type: 'object',
       properties: {
-        text:   { type: 'string', description: 'One-sentence synopsis of the topic to search for. Must be a declarative summary, not a question — this aligns with how note embeddings are stored.' },
-        tags:   { type: 'array', items: { type: 'string' }, description: 'Optional tags to enrich the vector query and filter results when vector search finds nothing. Must match ALL provided tags.' },
-        after:  { type: 'string', description: 'Optional. Filter results to notes on or after this ISO 8601 timestamp.' },
+        text: { type: 'string', description: 'One-sentence synopsis of the topic to search for. Must be a declarative summary, not a question — this aligns with how note embeddings are stored.' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags to enrich the vector query and filter results when vector search finds nothing. Must match ALL provided tags.' },
+        after: { type: 'string', description: 'Optional. Filter results to notes on or after this ISO 8601 timestamp.' },
         before: { type: 'string', description: 'Optional. Filter results to notes on or before this ISO 8601 timestamp.' },
         timeProperty: {
           type: 'string',
@@ -121,15 +88,15 @@ export const ZETTEL_LINKS_SCHEMA: ToolSchema = {
     parameters: {
       type: 'object',
       properties: {
-        id:     { type: 'string', description: 'Note UUID.' },
-        name:   { type: 'string', description: 'Note title (used if id is not provided).' },
+        id: { type: 'string', description: 'Note UUID.' },
+        name: { type: 'string', description: 'Note title (used if id is not provided).' },
         userId: { type: 'string' },
       },
     },
   },
 }
 
-export const ZETTEL_LINK_TOOL   = 'zettel_link'
+export const ZETTEL_LINK_TOOL = 'zettel_link'
 
 export const ZETTEL_LINK_SCHEMA: ToolSchema = {
   type: 'function',
@@ -139,11 +106,11 @@ export const ZETTEL_LINK_SCHEMA: ToolSchema = {
     parameters: {
       type: 'object',
       properties: {
-        sourceId:   { type: 'string', description: 'UUID of the source note.' },
+        sourceId: { type: 'string', description: 'UUID of the source note.' },
         sourceName: { type: 'string', description: 'Title of the source note (used if sourceId not provided).' },
-        targetId:   { type: 'string', description: 'UUID of the target note.' },
+        targetId: { type: 'string', description: 'UUID of the target note.' },
         targetName: { type: 'string', description: 'Title of the target note (used if targetId not provided).' },
-        userId:     { type: 'string' },
+        userId: { type: 'string' },
       },
     },
   },
@@ -151,11 +118,11 @@ export const ZETTEL_LINK_SCHEMA: ToolSchema = {
 
 // ─── State & messages ───
 
-type ZettelState = { kgraphRef: ActorRef<KgraphMsg>; dbPath: string } | null
+type ZettelState = { kgraphRef: ActorRef<KgraphMsg>; dbPath: string } 
 
 export type ZettelNoteMsg =
   | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; result: string }
+  | { type: '_done'; replyTo: ActorRef<ToolReply>; result: string }
   | { type: '_error'; replyTo: ActorRef<ToolReply>; error: string }
 
 // ─── File helpers ───
@@ -165,7 +132,7 @@ const slugify = (name: string): string =>
 
 const getBasePath = (userId: string, dbPath: string) => `${dbPath}/${userId}`
 
-const indexPath    = (userId: string, dbPath: string) => `${getBasePath(userId, dbPath)}/notes/index.json`
+const indexPath = (userId: string, dbPath: string) => `${getBasePath(userId, dbPath)}/notes/index.json`
 const noteFilePath = (userId: string, meta: Pick<ZettelNote, 'path'>, dbPath: string) =>
   `${getBasePath(userId, dbPath)}/${meta.path}`
 
@@ -209,7 +176,7 @@ const writeIndex = async (userId: string, index: ZettelIndex, dbPath: string): P
 }
 
 const serializeNote = (meta: ZettelNote, body: string): string => {
-  const tags  = meta.tags.length  > 0 ? `[${meta.tags.join(', ')}]`  : '[]'
+  const tags = meta.tags.length > 0 ? `[${meta.tags.join(', ')}]` : '[]'
   const links = meta.links.length > 0 ? `[${meta.links.join(', ')}]` : '[]'
   const eventTime = meta.eventTime ? `\neventTime: ${meta.eventTime}` : ''
   const nodeId = meta.kgraphNodeId !== undefined ? `\nkgraphNodeId: ${meta.kgraphNodeId}` : ''
@@ -219,7 +186,7 @@ const serializeNote = (meta: ZettelNote, body: string): string => {
 const parseNote = (raw: string): { meta: ZettelNote; body: string } => {
   const match = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
   if (!match) throw new Error('Invalid note format: missing frontmatter')
-  const fm   = match[1]!
+  const fm = match[1]!
   const body = match[2]!.trim()
 
   const get = (key: string): string => {
@@ -237,15 +204,15 @@ const parseNote = (raw: string): { meta: ZettelNote; body: string } => {
   return {
     meta: {
       id,
-      name:          get('name'),
-      synopsis:      get('synopsis'),
-      tags:          getArr('tags'),
-      createdAt:     get('createdAt'),
-      updatedAt:     get('updatedAt'),
-      eventTime:     get('eventTime') || undefined,
-      path:          `notes/${id}.md`,
-      links:         getArr('links'),
-      kgraphNodeId:  rawNodeId ? Number(rawNodeId) : undefined,
+      name: get('name'),
+      synopsis: get('synopsis'),
+      tags: getArr('tags'),
+      createdAt: get('createdAt'),
+      updatedAt: get('updatedAt'),
+      eventTime: get('eventTime') || undefined,
+      path: `notes/${id}.md`,
+      links: getArr('links'),
+      kgraphNodeId: rawNodeId ? Number(rawNodeId) : undefined,
     },
     body,
   }
@@ -300,37 +267,6 @@ const upsertInKgraph = async (
   return (JSON.parse(reply.result) as { nodeId: number }).nodeId
 }
 
-const linkNotesInKgraph = async (
-  kgraphRef: ActorRef<KgraphMsg>,
-  userId: string,
-  sourceCanonical: string,
-  linkTargets: string[],
-  index: ZettelIndex,
-  log: any,
-): Promise<void> => {
-  const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-
-  for (const targetName of linkTargets) {
-    if (!index.notes.some(n => n.name === targetName)) continue  // target not created yet
-
-    log.debug('zettel-notes: linking in kgraph', { userId, source: sourceCanonical, target: targetName })
-    const statement =
-      `MATCH (a:Note {name:"${esc(sourceCanonical)}"}), (b:Note {name:"${esc(targetName)}"}) ` +
-      `MERGE (a)-[:LINKS_TO]->(b)`
-
-    await ask<KgraphMsg, ToolReply>(
-      kgraphRef,
-      (replyTo) => ({
-        type: 'invoke',
-        toolName: 'kgraph_create_link',
-        arguments: JSON.stringify({ statement, userId }),
-        replyTo,
-        userId,
-      }),
-    ).catch(() => {})  // best-effort: link may fail if canonical names diverged
-  }
-}
-
 // ─── Tool handlers ───
 
 type IndexQueue = ReturnType<typeof makeIndexQueue>
@@ -343,15 +279,15 @@ const handleCreate = async (
   dbPath: string,
   log: any,
 ): Promise<string> => {
-  const name      = args.name as string
-  const synopsis  = args.synopsis as string
-  const content   = args.content as string
-  const tags      = Array.isArray(args.tags) ? (args.tags as string[]) : []
+  const name = args.name as string
+  const synopsis = args.synopsis as string
+  const content = args.content as string
+  const tags = Array.isArray(args.tags) ? (args.tags as string[]) : []
   const eventTime = typeof args.eventTime === 'string' ? args.eventTime : undefined
 
   log.info('zettel-notes: creating note', { userId, name, tags })
-  const id   = crypto.randomUUID()
-  const now  = new Date().toISOString()
+  const id = crypto.randomUUID()
+  const now = new Date().toISOString()
   const slug = slugify(name)
 
   const kgraphNodeId = await upsertInKgraph(kgraphRef, userId, undefined, name, synopsis, tags, log, eventTime)
@@ -380,7 +316,7 @@ const handleUpdate = async (
   dbPath: string,
   log: any,
 ): Promise<string> => {
-  const id  = args.id as string
+  const id = args.id as string
   log.info('zettel-notes: updating note', { userId, id })
 
   const currentIndex = await queue.current(userId)
@@ -390,12 +326,12 @@ const handleUpdate = async (
   const raw = await Bun.file(noteFilePath(userId, existingMeta, dbPath)).text()
   const { body: existingBody } = parseNote(raw)
 
-  const name      = typeof args.name      === 'string' ? args.name      : existingMeta.name
-  const synopsis  = typeof args.synopsis  === 'string' ? args.synopsis  : existingMeta.synopsis
-  const content   = typeof args.content   === 'string' ? args.content   : existingBody
-  const tags      = Array.isArray(args.tags) ? (args.tags as string[]) : existingMeta.tags
+  const name = typeof args.name === 'string' ? args.name : existingMeta.name
+  const synopsis = typeof args.synopsis === 'string' ? args.synopsis : existingMeta.synopsis
+  const content = typeof args.content === 'string' ? args.content : existingBody
+  const tags = Array.isArray(args.tags) ? (args.tags as string[]) : existingMeta.tags
   const eventTime = typeof args.eventTime === 'string' ? args.eventTime : existingMeta.eventTime
-  const now       = new Date().toISOString()
+  const now = new Date().toISOString()
 
   const updated: ZettelNote = { ...existingMeta, name, synopsis, tags, eventTime, updatedAt: now }
 
@@ -406,58 +342,7 @@ const handleUpdate = async (
   return JSON.stringify({ id, name, synopsis, tags, updatedAt: now, eventTime })
 }
 
-const handleRead = async (
-  userId: string,
-  args: Record<string, unknown>,
-  queue: IndexQueue,
-  dbPath: string,
-  log: any,
-): Promise<string> => {
-  let noteId = typeof args.id === 'string' ? args.id : undefined
-
-  if (!noteId && typeof args.name === 'string') {
-    const index = await queue.current(userId)
-    noteId = index.notes.find(n => n.name === args.name)?.id
-  }
-
-  log.debug('zettel-notes: reading note', { userId, id: noteId, name: args.name })
-  if (!noteId) return JSON.stringify({ error: 'Note not found' })
-
-  const index    = await queue.current(userId)
-  const noteMeta = index.notes.find(n => n.id === noteId)
-  if (!noteMeta) return JSON.stringify({ error: `Note ${noteId} not found` })
-
-  try {
-    const raw    = await Bun.file(noteFilePath(userId, noteMeta, dbPath)).text()
-    const { body } = parseNote(raw)
-    return JSON.stringify({ ...noteMeta, content: body })
-  } catch {
-    return JSON.stringify({ error: `Note ${noteId} not found` })
-  }
-}
-
-const handleList = async (
-  userId: string,
-  args: Record<string, unknown>,
-  queue: IndexQueue,
-  log: any,
-): Promise<string> => {
-  const filterTags = Array.isArray(args.tags) ? (args.tags as string[]) : []
-  log.debug('zettel-notes: listing notes', { userId, filterTags })
-  const index = await queue.current(userId)
-
-  const notes = filterTags.length > 0
-    ? index.notes.filter(n => filterTags.every(t => n.tags.includes(t)))
-    : index.notes
-
-  return JSON.stringify(notes.map(({ id, name, synopsis, tags, createdAt, updatedAt }) =>
-    ({ id, name, synopsis, tags, createdAt, updatedAt })))
-}
-
-const SEARCH_TOP_N         = 5
-const SEARCH_MAX_RESULTS   = 8
-const SEARCH_VECTOR_WEIGHT = 0.7
-const SEARCH_GRAPH_WEIGHT  = 0.3
+const ZETTEL_SEARCH_TOP_N = 8
 
 const handleSearch = async (
   kgraphRef: ActorRef<KgraphMsg>,
@@ -467,19 +352,19 @@ const handleSearch = async (
   dbPath: string,
   log: any,
 ): Promise<string> => {
-  const text       = args.text as string
+  const text = args.text as string
   const filterTags = Array.isArray(args.tags) ? (args.tags as string[]) : []
-  const before     = typeof args.before === 'string' ? args.before : undefined
-  const after      = typeof args.after  === 'string' ? args.after  : undefined
+  const before = typeof args.before === 'string' ? args.before : undefined
+  const after = typeof args.after === 'string' ? args.after : undefined
   const timeProperty = (typeof args.timeProperty === 'string' ? args.timeProperty : 'eventTime') as string
-  const queryText  = filterTags.length > 0 ? `${text} ${filterTags.join(' ')}` : text
+  const queryText = filterTags.length > 0 ? `${text} ${filterTags.join(' ')}` : text
   log.info('zettel-notes: semantic search', { userId, text: text.slice(0, 50) + '...' })
 
   const filter = (before || after) ? { before, after, property: timeProperty } : undefined
 
   const reply = await ask<KgraphMsg, VectorSearchReply>(
     kgraphRef,
-    (replyTo) => ({ type: 'vectorSearch', label: 'Note', text: queryText, topN: SEARCH_TOP_N, userId, replyTo, filter }),
+    (replyTo) => ({ type: 'vectorSearch', label: 'Note', text: queryText, topN: ZETTEL_SEARCH_TOP_N, userId, replyTo, filter }),
   )
 
   const index = await queue.current(userId)
@@ -491,9 +376,10 @@ const handleSearch = async (
     } catch { return '' }
   }
 
-  const noteToResult = async (note: ZettelNote) => ({
+  const noteToResult = async (note: ZettelNote, score: number, scoreSources?: { vector: number; graph?: number }) => ({
     id: note.id, name: note.name, synopsis: note.synopsis, tags: note.tags,
-    links: note.links, content: await readContent(note),
+    links: note.links, content: await readContent(note), score,
+    ...(scoreSources ? { scoreSources } : {}),
   })
 
   if (reply.type === 'vectorSearchError') {
@@ -501,55 +387,29 @@ const handleSearch = async (
     const pool = filterTags.length > 0
       ? index.notes.filter(n => filterTags.every(t => n.tags.includes(t)))
       : index.notes.slice(-10)
-    return JSON.stringify(await Promise.all(pool.map(noteToResult)))
+    return JSON.stringify(await Promise.all(pool.map(n => noteToResult(n, 0))))
   }
 
-  // Step 1: seed notes from vector search
-  const seedNoteIds = new Set<string>()
-
-  type Candidate = { note: ZettelNote; score: number; graphProximity: number }
-  const candidates = new Map<string, Candidate>()
-
-  for (const m of reply.matches) {
-    const note = index.notes.find(n => n.kgraphNodeId === m.nodeId)
-    if (!note) continue
-    seedNoteIds.add(note.id)
-    candidates.set(note.id, { note, score: m.score, graphProximity: 1.0 })
-  }
-
-  // Tag fallback: vector search found nothing
-  if (candidates.size === 0 && filterTags.length > 0) {
-    const tagMatches = index.notes.filter(n => filterTags.every(t => n.tags.includes(t)))
-    log.debug('zettel-notes: tag fallback results', { userId, count: tagMatches.length })
-    return JSON.stringify(await Promise.all(tagMatches.map(noteToResult)))
-  }
-
-  // Step 2: expand 1 hop via wiki-links from each seed
-  for (const id of seedNoteIds) {
-    const seed = candidates.get(id)!.note
-    for (const linkName of seed.links) {
-      const neighbour = index.notes.find(n => n.name === linkName)
-      if (!neighbour || candidates.has(neighbour.id)) continue
-      candidates.set(neighbour.id, { note: neighbour, score: 1.0, graphProximity: 0.5 })
-    }
-  }
-
-  // Step 3: re-rank by blended score and take top N
-  const ranked = [...candidates.values()]
-    .map(c => ({
-      note:  c.note,
-      score: Math.round((SEARCH_VECTOR_WEIGHT * c.score + SEARCH_GRAPH_WEIGHT * c.graphProximity) * 1000) / 1000,
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, SEARCH_MAX_RESULTS)
-
-  // Step 4: load full content for each result
+  // Map kgraph matches to zettel notes
   const results = await Promise.all(
-    ranked.map(async ({ note, score }) => ({ ...await noteToResult(note), score }))
+    reply.matches.map(async (m) => {
+      const note = index.notes.find(n => n.kgraphNodeId === m.nodeId)
+      if (!note) return null
+      return noteToResult(note, Math.round(m.score * 1000) / 1000, m.sources)
+    })
   )
 
-  log.debug('zettel-notes: search results', { userId, count: results.length })
-  return JSON.stringify(results)
+  const validResults = results.filter((r): r is NonNullable<typeof r> => r !== null)
+
+  // Tag fallback: vector search found nothing
+  if (validResults.length === 0 && filterTags.length > 0) {
+    const tagMatches = index.notes.filter(n => filterTags.every(t => n.tags.includes(t)))
+    log.debug('zettel-notes: tag fallback results', { userId, count: tagMatches.length })
+    return JSON.stringify(await Promise.all(tagMatches.map(n => noteToResult(n, 0))))
+  }
+
+  log.debug('zettel-notes: search results', { userId, count: validResults.length })
+  return JSON.stringify(validResults)
 }
 
 const handleLinks = async (
@@ -627,7 +487,7 @@ const handleLink = async (
   await ask<KgraphMsg, ToolReply>(
     kgraphRef,
     (replyTo) => ({ type: 'invoke', toolName: 'kgraph_create_link', arguments: JSON.stringify({ statement, userId }), replyTo, userId }),
-  ).catch(() => {})
+  ).catch(() => { })
 
   log.info('zettel-notes: linked notes', { userId, source: source.name, target: target.name })
   return JSON.stringify({ ok: true, source: source.name, target: target.name })
@@ -639,51 +499,47 @@ export const createZettelNotesActor = (kgraphRef: ActorRef<KgraphMsg>, dbPath: s
   const queue = makeIndexQueue(dbPath)
 
   return {
-  lifecycle: onLifecycle({
-    start: (_state) => ({ state: { kgraphRef, dbPath } }),
-  }),
+    lifecycle: onLifecycle({
+      start: (_state) => ({ state: { kgraphRef, dbPath } }),
+    }),
 
-  handler: onMessage<ZettelNoteMsg, ZettelState>({
-    invoke: (state, msg, ctx) => {
-      if (!state) {
-        msg.replyTo.send({ type: 'toolError', error: 'zettel-notes not ready' })
-        return { state }
-      }
+    handler: onMessage<ZettelNoteMsg, ZettelState>({
+      invoke: (state, msg, ctx) => {
+        const { toolName, arguments: rawArgs, replyTo } = msg
+        const userId = msg.userId
 
-      const { toolName, arguments: rawArgs, replyTo } = msg
-      const userId = msg.userId
-
-      ctx.pipeToSelf(
-        (async () => {
+        const runTool = async (): Promise<string> => {
           const args = JSON.parse(rawArgs) as Record<string, unknown>
           const effectiveUserId = (args.userId as string | undefined) ?? userId
           switch (toolName) {
-            case ZETTEL_CREATE_TOOL:   return handleCreate(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
-            case ZETTEL_UPDATE_TOOL:   return handleUpdate(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
-            case ZETTEL_READ_TOOL:     return handleRead(effectiveUserId, args, queue, state.dbPath, ctx.log)
-            case ZETTEL_LIST_TOOL:     return handleList(effectiveUserId, args, queue, ctx.log)
-            case ZETTEL_SEARCH_TOOL:   return handleSearch(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
-            case ZETTEL_LINKS_TOOL:    return handleLinks(effectiveUserId, args, queue, state.dbPath, ctx.log)
-            case ZETTEL_LINK_TOOL:    return handleLink(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case ZETTEL_CREATE_TOOL: return handleCreate(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case ZETTEL_UPDATE_TOOL: return handleUpdate(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case ZETTEL_SEARCH_TOOL: return handleSearch(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case ZETTEL_LINKS_TOOL:  return handleLinks(effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case ZETTEL_LINK_TOOL:  return handleLink(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
             default: throw new Error(`Unknown tool: ${toolName}`)
           }
-        })(),
-        (result) => ({ type: '_done'  as const, replyTo, result }),
-        (error)  => ({ type: '_error' as const, replyTo, error: String(error) }),
-      )
+        }
 
-      return { state }
-    },
+        ctx.pipeToSelf(
+          runTool(),
+          (result) => ({ type: '_done'  as const, replyTo, result }),
+          (error)  => ({ type: '_error' as const, replyTo, error: String(error) }),
+        )
 
-    _done: (state, msg) => {
-      msg.replyTo.send({ type: 'toolResult', result: msg.result })
-      return { state }
-    },
+        return { state }
+      },
 
-    _error: (state, msg, ctx) => {
-      ctx.log.error('zettel-notes error', { error: msg.error })
-      msg.replyTo.send({ type: 'toolError', error: msg.error })
-      return { state }
-    },
-  }),
-}}
+      _done: (state, msg) => {
+        msg.replyTo.send({ type: 'toolResult', result: msg.result })
+        return { state }
+      },
+
+      _error: (state, msg, ctx) => {
+        ctx.log.error('zettel-notes error', { error: msg.error })
+        msg.replyTo.send({ type: 'toolError', error: msg.error })
+        return { state }
+      },
+    }),
+  }
+}
