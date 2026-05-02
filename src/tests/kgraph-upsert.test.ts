@@ -70,7 +70,7 @@ describe('kgraph create_node', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
-      null,
+      { userDbs: new Map(), llmRef: null },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -93,7 +93,7 @@ describe('kgraph create_node', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
-      null,
+      { userDbs: new Map(), llmRef: null },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -118,7 +118,7 @@ describe('kgraph create_node', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
-      null,
+      { userDbs: new Map(), llmRef: null },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -145,7 +145,7 @@ describe('kgraph create_node', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
-      null,
+      { userDbs: new Map(), llmRef: null },
     ) as ActorRef<KgraphMsg>
 
     await tick()

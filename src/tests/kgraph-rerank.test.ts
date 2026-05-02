@@ -70,6 +70,22 @@ function vectorSearch(
   )
 }
 
+function createLink(
+  kgraphRef: ActorRef<KgraphMsg>,
+  sourceName: string,
+  targetName: string,
+  userId = 'test-user',
+): Promise<ToolReply> {
+  const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const statement = `MATCH (a:Note {name:"${esc(sourceName)}"}), (b:Note {name:"${esc(targetName)}"}) MERGE (a)-[:LINKS_TO]->(b)`
+  const args = JSON.stringify({ statement })
+  return ask<KgraphMsg, ToolReply>(
+    kgraphRef,
+    (replyTo) => ({ type: 'invoke', toolName: 'kgraph_create_link', arguments: args, replyTo, userId }),
+    { timeoutMs: 5_000 },
+  )
+}
+
 // ─── Tests ───
 
 describe('kgraph vector search with reranker', () => {
@@ -83,7 +99,7 @@ describe('kgraph vector search with reranker', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
-      null,
+      { userDbs: new Map(), llmRef: null },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -135,7 +151,7 @@ describe('kgraph vector search with reranker', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
-      null,
+      { userDbs: new Map(), llmRef: null },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -152,6 +168,54 @@ describe('kgraph vector search with reranker', () => {
 
     // Should fall back to vector ordering
     expect(matches[0]!.name).toBe('TypeScript Types')
+
+    await system.shutdown()
+  })
+
+  test('graph expansion brings in linked neighbors', async () => {
+    const system = await createPluginSystem()
+    const mockLlmRef = spawnMockLlm(system)
+    system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
+
+    // graphBlend active, no reranker, threshold 0.5 to exclude Food from seeds
+    const kgraphRef = system.spawn(
+      'kgraph',
+      createKgraphActor(tmpDb(), { model: 'test-embed', dimensions: DIMS }, 0.5, undefined, { weight: 0.3 }),
+      { userDbs: new Map(), llmRef: null },
+    ) as ActorRef<KgraphMsg>
+
+    await tick()
+
+    await createNode(kgraphRef, 'TypeScript Types', 'TypeScript static type checking.', 'typescript programming')
+    await createNode(kgraphRef, 'French Cuisine', 'French cooking and cuisine techniques.', 'french cuisine cooking')
+
+    await tick()
+
+    // Create LINKS_TO edge from TypeScript to Food
+    await createLink(kgraphRef, 'TypeScript Types', 'French Cuisine')
+
+    await tick()
+
+    const reply = await vectorSearch(kgraphRef, 'programming typescript', 3)
+
+    expect(reply.type).toBe('vectorSearchResult')
+    const { matches } = reply as { type: 'vectorSearchResult'; matches: VectorSearchMatch[] }
+
+    const names = matches.map(m => m.name)
+    expect(names).toContain('TypeScript Types')
+    expect(names).toContain('French Cuisine')
+
+    // TypeScript should be first (seed with graphProximity=1.0)
+    expect(matches[0]!.name).toBe('TypeScript Types')
+    expect(matches[0]!.sources.graph).toBe(1.0)
+
+    // Food is a neighbor via graph expansion
+    const foodMatch = matches.find(m => m.name === 'French Cuisine')!
+    expect(foodMatch.sources.graph).toBeLessThan(1.0)
+    expect(foodMatch.sources.graph).toBeGreaterThan(0)
+
+    // Seed scores higher than neighbor
+    expect(matches[0]!.score).toBeGreaterThan(foodMatch.score)
 
     await system.shutdown()
   })

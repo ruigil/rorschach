@@ -103,7 +103,7 @@ describe('kgraph vector search (real embeddings)', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
-      null,
+      { userDbs: new Map(), llmRef: null },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -135,7 +135,7 @@ describe('kgraph vector search (real embeddings)', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
-      null,
+      { userDbs: new Map(), llmRef: null },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -168,7 +168,7 @@ describe('kgraph vector search (real embeddings)', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
-      null,
+      { userDbs: new Map(), llmRef: null },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -200,7 +200,7 @@ describe('kgraph vector search (real embeddings)', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
-      null,
+      { userDbs: new Map(), llmRef: null },
     ) as ActorRef<KgraphMsg>
 
     await tick()
