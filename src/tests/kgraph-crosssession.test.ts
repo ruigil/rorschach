@@ -37,7 +37,7 @@ function spawnKgraph(system: Awaited<ReturnType<typeof createPluginSystem>>): Ac
   return system.spawn(
     'kgraph',
     createKgraphActor(TEST_DB, { model: EMBED_MODEL, dimensions: DIMS }),
-    null,
+    { userDbs: new Map(), llmRef: null },
   ) as ActorRef<KgraphMsg>
 }
 
