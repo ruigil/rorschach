@@ -12,8 +12,7 @@ import type {
   ToolCall,
 } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type { MemoryConsolidationMsg, UserConsolidationWorkerMsg, UserContextMsg } from './types.ts'
-import { createUserContextActor, INITIAL_USER_CONTEXT_STATE } from './user-context.ts'
+import type { MemoryConsolidationMsg, UserConsolidationWorkerMsg } from './types.ts'
 import { ask } from '../../system/ask.ts'
 import { zettelStoreSection } from './ontology.ts'
 
@@ -31,7 +30,6 @@ type WorkerOptions = {
   userId:           string
   llmRef:           ActorRef<LlmProviderMsg>
   tools:            ToolCollection
-  userContextTools: ToolCollection
   maxToolLoops?:    number
 }
 
@@ -52,7 +50,6 @@ type WorkerState = {
   accumulated:    string
   pendingBatch:   PendingBatch | null
   toolLoopCount:  number
-  userContextRef: ActorRef<UserContextMsg> | null
   requestSpan:    SpanHandle | null
   llmSpan:        SpanHandle | null
 }
@@ -64,7 +61,6 @@ const INITIAL_WORKER_STATE: WorkerState = {
   accumulated:    '',
   pendingBatch:   null,
   toolLoopCount:  0,
-  userContextRef: null,
   requestSpan:    null,
   llmSpan:        null,
 }
@@ -116,10 +112,10 @@ const buildMessages = (userId: string, turns: UserStreamEvent[]): ApiMessage[] =
   ]
 }
 
-// ─── Worker actor: one per user, persistent, owns its UserContext child ───
+// ─── Worker actor: one per user, persistent ───
 
 const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserConsolidationWorkerMsg, WorkerState> => {
-  const { model, userId, llmRef, tools, userContextTools, maxToolLoops = 25 } = options
+  const { model, userId, llmRef, tools, maxToolLoops = 25 } = options
 
   type Ctx = ActorContext<UserConsolidationWorkerMsg>
   type Result = ActorResult<UserConsolidationWorkerMsg, WorkerState>
@@ -258,18 +254,8 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
       state.requestSpan?.done()
       context.log.info('memory consolidation done', { userId })
 
-      let ucRef = state.userContextRef
-      if (!ucRef) {
-        ucRef = context.spawn(
-          'user-context',
-          createUserContextActor({ model, userId, llmRef, tools: userContextTools }),
-          INITIAL_USER_CONTEXT_STATE,
-        )
-      }
-      ucRef.send({ type: '_run' })
-
       return {
-        state:  { ...state, requestId: null, turnMessages: null, accumulated: '', userContextRef: ucRef, requestSpan: null, llmSpan: null },
+        state:  { ...state, requestId: null, turnMessages: null, accumulated: '', requestSpan: null, llmSpan: null },
         become: idleHandler,
       }
     },
@@ -363,7 +349,6 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
 export type ConsolidationState = {
   llmRef:           ActorRef<LlmProviderMsg> | null
   tools:            ToolCollection
-  userContextTools: ToolCollection
   workers:          Record<string, ActorRef<UserConsolidationWorkerMsg>>
   workerSeq:        number
 }
@@ -431,7 +416,6 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
               userId:           msg.userId,
               llmRef:           state.llmRef,
               tools:            state.tools,
-              userContextTools: state.userContextTools,
               maxToolLoops,
             }),
             INITIAL_WORKER_STATE,
@@ -478,7 +462,6 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
 export const INITIAL_CONSOLIDATION_STATE: ConsolidationState = {
   llmRef:           null,
   tools:            {},
-  userContextTools: {},
   workers:          {},
   workerSeq:        0,
 }

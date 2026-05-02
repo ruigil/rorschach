@@ -62,6 +62,7 @@ export function applyToForm(cfg) {
   configForm.kgraphEmbeddingDimensions.value       = cfg.kgraphEmbeddingDimensions ?? 1536
   configForm.memoryModel.value                     = cfg.memoryModel ?? ''
   configForm.memoryConsolidationIntervalMs.value   = cfg.memoryConsolidationIntervalMs ?? 30000
+  configForm.memoryContextIntervalMs.value         = cfg.memoryContextIntervalMs ?? 60000
   configForm.memoryReflectionIntervalMs.value      = cfg.memoryReflectionIntervalMs ?? 604800000
   configForm.notebookDir.value                     = cfg.notebookDir ?? './workspace/notebook'
   configForm.notebookAgentModel.value              = cfg.notebookAgentModel ?? ''

@@ -77,20 +77,18 @@
         "embeddingModel": "qwen/qwen3-embedding-8b",
         "embeddingDimensions": 4096,
         "cosineSimilarityThreshold": 0.6,
-        "rerankerModel": "cohere/rerank-4-pro",
-        "rerankerTopK": 15
+        "rerankerModel": "cohere/rerank-4-pro"
       },
       "system": {
         "model": "moonshotai/kimi-k2.6",
         "consolidationIntervalMs": 3600000,
-        "reflectionIntervalMs": 604800000
+        "contextIntervalMs": 60000
       }
     },
     "notebook": {
       "notebookDir": "workspace/notebook",
       "agentModel": "minimax/minimax-m2.7",
-      "maxToolLoops": 10,
-      "consolidationIntervalMs": 604800000
+      "maxToolLoops": 10
     },
     "googleapis": {
       "clientId": "${GOOGLE_CLIENT_ID}",
