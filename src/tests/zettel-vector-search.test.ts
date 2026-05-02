@@ -72,11 +72,11 @@ describe('zettel-notes vector search', () => {
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
-    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }), null) as ActorRef<KgraphMsg>
+    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }, 0.0, undefined, { weight: 0.3 }), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
 
     const zettelDir = tmpZettel()
     tempDirs.push(zettelDir)
-    const zettelRef = system.spawn('zettel', createZettelNotesActor(kgraphRef, zettelDir), null) as ActorRef<ZettelNoteMsg>
+    const zettelRef = system.spawn('zettel', createZettelNotesActor(kgraphRef, zettelDir), { kgraphRef, dbPath: zettelDir }) as ActorRef<ZettelNoteMsg>
 
     await tick()
 
@@ -121,14 +121,14 @@ describe('zettel-notes vector search', () => {
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
-    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }), null) as ActorRef<KgraphMsg>
+    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }, 0.0, undefined, { weight: 0.3 }), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
 
     const zettelDir = tmpZettel()
     tempDirs.push(zettelDir)
     // Kgraph's default cosineSimilarityThreshold (0.0) naturally excludes orthogonal
     // matches (score = 0.0), so only the TypeScript note is returned from vector search.
     // The Food note is brought in via zettel graph expansion.
-    const zettelRef = system.spawn('zettel', createZettelNotesActor(kgraphRef, zettelDir), null) as ActorRef<ZettelNoteMsg>
+    const zettelRef = system.spawn('zettel', createZettelNotesActor(kgraphRef, zettelDir), { kgraphRef, dbPath: zettelDir }) as ActorRef<ZettelNoteMsg>
 
     await tick()
 
@@ -180,11 +180,11 @@ describe('zettel-notes vector search', () => {
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
-    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }), null) as ActorRef<KgraphMsg>
+    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }, 0.0, undefined, { weight: 0.3 }), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
 
     const zettelDir = tmpZettel()
     tempDirs.push(zettelDir)
-    const zettelRef = system.spawn('zettel', createZettelNotesActor(kgraphRef, zettelDir), null) as ActorRef<ZettelNoteMsg>
+    const zettelRef = system.spawn('zettel', createZettelNotesActor(kgraphRef, zettelDir), { kgraphRef, dbPath: zettelDir }) as ActorRef<ZettelNoteMsg>
 
     await tick()
 
