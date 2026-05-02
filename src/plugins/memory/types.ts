@@ -29,7 +29,18 @@ export type ZettelIndex = { notes: ZettelNote[] }
 
 // ─── kgraph vector search types ───
 
-export type VectorSearchMatch = { nodeId: number; score: number; name: string; description: string }
+export type ScoreSources = {
+  vector: number      // final vector component (reranker if used, else cosine)
+  graph?: number      // graph proximity (1.0 seeds, inherited for neighbors)
+}
+
+export type VectorSearchMatch = {
+  nodeId: number
+  score: number        // final blended score
+  sources: ScoreSources
+  name: string
+  description: string
+}
 
 export type VectorSearchReply =
   | { type: 'vectorSearchResult'; matches: VectorSearchMatch[] }
@@ -105,9 +116,15 @@ export type UserConsolidationWorkerMsg =
 
 // ─── User context message protocol ───
 
+// Supervisor: subscribes to topics + timer, routes turns to per-user workers.
 export type UserContextMsg =
+  | { type: '_turn';             userId: string; userText: string; assistantText: string; timestamp: number }
   | { type: '_run' }
-  | { type: '_toolResult';        toolCallId: string; toolName: string; reply: ToolReply }
-  | { type: '_contextSaved';      userId: string }
-  | { type: '_contextSaveFailed'; userId: string; error: string }
+  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_workerDone';       worker: ActorRef<UserContextWorkerMsg> }
+
+// Worker: one per user, runs the update loop.
+export type UserContextWorkerMsg =
+  | { type: '_start' }
+  | { type: '_stop' }
   | LlmProviderReply
