@@ -34,11 +34,14 @@
       "kgraph": {
         "embeddingModel": "qwen/qwen3-embedding-8b",
         "embeddingDimensions": 4096,
-        "cosineSimilarityThreshold": 0.7
+        "cosineSimilarityThreshold": 0.6,
+        "rerankerModel": "cohere/rerank-4-pro",
+        "rerankerTopK": 15
       },
       "system": {
         "model": "google/gemini-3.1-flash-lite-preview",
-        "consolidationIntervalMs": 3600000
+        "consolidationIntervalMs": 3600000,
+        "contextIntervalMs": 60000
       }
     }
   },
