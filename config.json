@@ -82,13 +82,15 @@
       "system": {
         "model": "moonshotai/kimi-k2.6",
         "consolidationIntervalMs": 3600000,
-        "contextIntervalMs": 3600000
+        "contextIntervalMs": 60000,
+        "reflectionIntervalMs": 604800000
       }
     },
     "notebook": {
       "notebookDir": "workspace/notebook",
       "agentModel": "minimax/minimax-m2.7",
-      "maxToolLoops": 10
+      "maxToolLoops": 10,
+      "consolidationIntervalMs": 604800000
     },
     "googleapis": {
       "clientId": "${GOOGLE_CLIENT_ID}",

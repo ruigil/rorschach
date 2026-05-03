@@ -36,6 +36,23 @@ marked.use({
         return `<audio controls autoplay class="message-audio" src="${href}"></audio>`
       }
       return false
+    },
+    link(href, title, text) {
+      const ytMatch = href.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?|shorts)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+      if (ytMatch) {
+        const videoId = ytMatch[1];
+        const embed = `<div class="video-container"><iframe src="https://www.youtube-nocookie.com/embed/${videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div>`;
+        const isBareLink = text === href || 
+                           text === href.replace(/^https?:\/\//, '') || 
+                           text === href.replace(/^https?:\/\/www\./, '');
+        
+        if (isBareLink) {
+          return embed;
+        } else {
+          return `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>${embed}`;
+        }
+      }
+      return false;
     }
   }
 })

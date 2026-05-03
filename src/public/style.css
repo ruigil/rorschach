@@ -1997,7 +1997,29 @@ button[type="submit"] svg { pointer-events: none; }
   white-space: nowrap;
 }
 
-/* ─── Reasoning section ─── */
+/* ─── Video Embeds ─── */
+
+.video-container {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%; /* 16:9 */
+  height: 0;
+  margin: 0.8rem 0;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border-mid);
+}
+
+.video-container iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+
 
 .reasoning {
   margin-bottom: 8px;

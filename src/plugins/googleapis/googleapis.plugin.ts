@@ -34,6 +34,11 @@ import {
   DRIVE_DOWNLOAD_FILE_TOOL_NAME, DRIVE_DOWNLOAD_FILE_SCHEMA,
   DRIVE_UPLOAD_FILE_TOOL_NAME,   DRIVE_UPLOAD_FILE_SCHEMA,
 } from './tools/drive.ts'
+import {
+  createYoutubeActor,
+  YOUTUBE_SEARCH_VIDEOS_TOOL_NAME, YOUTUBE_SEARCH_VIDEOS_SCHEMA,
+  YOUTUBE_VIDEO_DETAILS_TOOL_NAME, YOUTUBE_VIDEO_DETAILS_SCHEMA,
+} from './tools/youtube.ts'
 
 // ─── Public tool schema ───
 
@@ -43,7 +48,7 @@ export const GOOGLE_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: GOOGLE_TOOL_NAME,
-    description: `Interact with the user's Google Workspace (Gmail, Calendar, Drive) via a natural language request. A sub-agent handles the request and returns a summary.
+    description: `Interact with the user's Google Workspace (Gmail, Calendar, Drive, YouTube) via a natural language request. A sub-agent handles the request and returns a summary.
 
 This tool is for the user only — only call it when explicitly asked by the user.
 
@@ -65,6 +70,10 @@ This tool is for the user only — only call it when explicitly asked by the use
 - "Download file id abc... to local storage"
 - "Upload a text file named 'notes.txt' with content '...'"
 - "Upload the local file at /absolute/path/to/file.pdf to Drive"
+
+**YouTube**:
+- "Search YouTube for recent AI news"
+- "Get stats and details for YouTube video id xyz"
 
 When uploading a local file, always include its full absolute path in the request (e.g. a path returned by fetch_file or drive_download_file). Never pass just a filename — the sub-agent needs the absolute path to read the file.`,
     parameters: {
@@ -90,12 +99,13 @@ type PluginState = {
   gmailRef:       ActorRef<ToolInvokeMsg> | null
   calendarRef:    ActorRef<ToolInvokeMsg> | null
   driveRef:       ActorRef<ToolInvokeMsg> | null
+  youtubeRef:     ActorRef<ToolInvokeMsg> | null
   googleAgentRef: ActorRef<GoogleAgentMsg> | null
 }
 
 // ─── Helpers ───
 
-type SpawnResult = Pick<PluginState, 'gmailRef' | 'calendarRef' | 'driveRef' | 'googleAgentRef'>
+type SpawnResult = Pick<PluginState, 'gmailRef' | 'calendarRef' | 'driveRef' | 'youtubeRef' | 'googleAgentRef'>
 
 const spawnChildren = (
   gen:          number,
@@ -110,6 +120,7 @@ const spawnChildren = (
   const gmailRef    = ctx.spawn(`googleapis-gmail-${gen}`,    createGmailActor(tokenStoreRef, clientId, clientSecret),    null) as ActorRef<ToolInvokeMsg>
   const calendarRef = ctx.spawn(`googleapis-calendar-${gen}`, createCalendarActor(tokenStoreRef, clientId, clientSecret), null) as ActorRef<ToolInvokeMsg>
   const driveRef    = ctx.spawn(`googleapis-drive-${gen}`,    createDriveActor(tokenStoreRef, clientId, clientSecret),    null) as ActorRef<ToolInvokeMsg>
+  const youtubeRef  = ctx.spawn(`googleapis-youtube-${gen}`,  createYoutubeActor(tokenStoreRef, clientId, clientSecret),  null) as ActorRef<ToolInvokeMsg>
 
   const tools: ToolCollection = {
     [GMAIL_LIST_MESSAGES_TOOL_NAME]:   { schema: GMAIL_LIST_MESSAGES_SCHEMA,   ref: gmailRef },
@@ -125,6 +136,8 @@ const spawnChildren = (
     [DRIVE_GET_FILE_TOOL_NAME]:        { schema: DRIVE_GET_FILE_SCHEMA,        ref: driveRef },
     [DRIVE_DOWNLOAD_FILE_TOOL_NAME]:   { schema: DRIVE_DOWNLOAD_FILE_SCHEMA,   ref: driveRef },
     [DRIVE_UPLOAD_FILE_TOOL_NAME]:     { schema: DRIVE_UPLOAD_FILE_SCHEMA,     ref: driveRef },
+    [YOUTUBE_SEARCH_VIDEOS_TOOL_NAME]: { schema: YOUTUBE_SEARCH_VIDEOS_SCHEMA, ref: youtubeRef },
+    [YOUTUBE_VIDEO_DETAILS_TOOL_NAME]: { schema: YOUTUBE_VIDEO_DETAILS_SCHEMA, ref: youtubeRef },
   }
 
   const agentOpts     = { model, maxToolLoops, tools }
@@ -140,13 +153,14 @@ const spawnChildren = (
     ref:    googleAgentRef as unknown as ActorRef<ToolInvokeMsg>,
   })
 
-  return { gmailRef, calendarRef, driveRef, googleAgentRef }
+  return { gmailRef, calendarRef, driveRef, youtubeRef, googleAgentRef }
 }
 
 const stopChildren = (state: PluginState, ctx: ActorContext<GooglePluginMsg>): void => {
   if (state.gmailRef)       ctx.stop(state.gmailRef)
   if (state.calendarRef)    ctx.stop(state.calendarRef)
   if (state.driveRef)       ctx.stop(state.driveRef)
+  if (state.youtubeRef)     ctx.stop(state.youtubeRef)
   if (state.googleAgentRef) ctx.stop(state.googleAgentRef)
   ctx.deleteRetained(ToolRegistrationTopic, GOOGLE_TOOL_NAME, { name: GOOGLE_TOOL_NAME, ref: null })
 }
@@ -178,7 +192,7 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
   return {
     id:          'googleapis',
     version:     '1.0.0',
-    description: 'Google Workspace integration: Gmail, Calendar, and Drive via a single "google" tool.',
+    description: 'Google Workspace integration: Gmail, Calendar, Drive, and YouTube via a single "google" tool.',
 
     configDescriptor: {
       defaults: {
@@ -199,6 +213,7 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
       gmailRef:       null,
       calendarRef:    null,
       driveRef:       null,
+      youtubeRef:     null,
       googleAgentRef: null,
     },
 
@@ -231,7 +246,7 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
 
         const children = clientId && clientSecret
           ? spawnChildren(0, model, maxToolLoops, refs, ctx)
-          : { gmailRef: null, calendarRef: null, driveRef: null, googleAgentRef: null }
+          : { gmailRef: null, calendarRef: null, driveRef: null, youtubeRef: null, googleAgentRef: null }
 
         ctx.log.info('googleapis plugin activated', { configured: !!(clientId && clientSecret) })
         return { state: { ...state, initialized: true, gen: 0, model, maxToolLoops, ...children } }
@@ -271,7 +286,7 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
 
         const children = clientId && clientSecret
           ? spawnChildren(gen, model, maxToolLoops, refs, ctx)
-          : { gmailRef: null, calendarRef: null, driveRef: null, googleAgentRef: null }
+          : { gmailRef: null, calendarRef: null, driveRef: null, youtubeRef: null, googleAgentRef: null }
 
         return { state: { ...state, gen, model, maxToolLoops, ...children } }
       },
