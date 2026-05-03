@@ -32,6 +32,7 @@ import {
   ZETTEL_UPDATE_TOOL,  ZETTEL_UPDATE_SCHEMA,
   ZETTEL_SEARCH_TOOL,  ZETTEL_SEARCH_SCHEMA,
   ZETTEL_LINKS_TOOL,   ZETTEL_LINKS_SCHEMA,
+  ZETTEL_UNLINKED_TOOL, ZETTEL_UNLINKED_SCHEMA,
   ZETTEL_LINK_TOOL,     ZETTEL_LINK_SCHEMA,
 } from './zettel-notes.ts'
 
@@ -116,8 +117,9 @@ const spawnMemoryActors = (
   }
 
   const consolidationTools: ToolCollection = {
-    [ZETTEL_SEARCH_TOOL]: { schema: ZETTEL_SEARCH_SCHEMA, ref },
-    [ZETTEL_LINK_TOOL]:   { schema: ZETTEL_LINK_SCHEMA,   ref },
+    [ZETTEL_SEARCH_TOOL]:   { schema: ZETTEL_SEARCH_SCHEMA, ref },
+    [ZETTEL_UNLINKED_TOOL]: { schema: ZETTEL_UNLINKED_SCHEMA, ref },
+    [ZETTEL_LINK_TOOL]:     { schema: ZETTEL_LINK_SCHEMA,   ref },
   }
 
   const recallTools: ToolCollection = {

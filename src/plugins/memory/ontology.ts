@@ -43,6 +43,11 @@ const toolDescs = {
   links:
     `**zettel_links** { id?, name?, userId }\n` +
     `  Return notes linked from a given note, with full content and linkType for each result.\n\n`,
+
+  unlinked:
+    `**zettel_unlinked_notes** { userId }\n` +
+    `  Get notes that have no incoming links (orphans) or only one outgoing link. ` +
+    `  Use this to find notes that need better integration into the knowledge graph.\n\n`,
 }
 
 const writingRules = (): string =>
@@ -83,11 +88,13 @@ export const zettelConsolidationSection = (userId: string): string =>
   noteSystemHeader() +
   `### Available tools\n\n` +
   toolDescs.search +
+  toolDescs.unlinked +
   toolDescs.link +
   linkTypeOntology() +
   `### Consolidation Workflow\n` +
-  `1. Identify key concepts and facts from the conversation turns.\n` +
-  `2. zettel_search to find the relevant notes for those concepts.\n` +
-  `3. Create relationships between existing notes using zettel_link to build the knowledge web.\n` +
-  `   (Consolidation focuses on discovering links across different turns/topics).\n`
+  `1. **Obtain orphan notes**: Call zettel_unlinked_notes to find notes with no incoming links or minimal outgoing links.\n` +
+  `2. **Analyze context**: Identify key concepts and facts from the conversation turns.\n` +
+  `3. **Search & Connect**: For each orphan note and turn concept, use zettel_search to find related notes.\n` +
+  `4. **Create Relationships**: Use zettel_link to connect the orphan notes and new turn concepts to the broader knowledge web.\n` +
+  `   (Consolidation focuses on discovering links across different turns/topics to ensure a dense, reachable graph).\n`
 

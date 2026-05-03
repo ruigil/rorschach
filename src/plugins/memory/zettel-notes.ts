@@ -12,6 +12,7 @@ export const ZETTEL_CREATE_TOOL = 'zettel_create'
 export const ZETTEL_UPDATE_TOOL = 'zettel_update'
 export const ZETTEL_SEARCH_TOOL = 'zettel_search'
 export const ZETTEL_LINKS_TOOL = 'zettel_links'
+export const ZETTEL_UNLINKED_TOOL = 'zettel_unlinked_notes'
 
 // ─── Tool schemas ───
 
@@ -91,6 +92,20 @@ export const ZETTEL_LINKS_SCHEMA: ToolSchema = {
       properties: {
         id: { type: 'string', description: 'Note UUID.' },
         name: { type: 'string', description: 'Note title (used if id is not provided).' },
+        userId: { type: 'string' },
+      },
+    },
+  },
+}
+
+export const ZETTEL_UNLINKED_SCHEMA: ToolSchema = {
+  type: 'function',
+  function: {
+    name: ZETTEL_UNLINKED_TOOL,
+    description: 'Get all notes that have no incoming links (orphans) or exactly one outgoing link. Useful for consolidation to find notes that need to be connected to the broader knowledge graph.',
+    parameters: {
+      type: 'object',
+      properties: {
         userId: { type: 'string' },
       },
     },
@@ -466,6 +481,40 @@ const handleLinks = async (
   return JSON.stringify(linked)
 }
 
+const handleUnlinkedNotes = async (
+  userId: string,
+  queue: IndexQueue,
+  log: any,
+): Promise<string> => {
+  const index = await queue.current(userId)
+  log.info('zettel-notes: fetching unlinked notes', { userId })
+
+  const incomingCount = new Map<string, number>()
+  for (const note of index.notes) {
+    for (const link of note.links) {
+      incomingCount.set(link.name, (incomingCount.get(link.name) || 0) + 1)
+    }
+  }
+
+  const orphans = index.notes.filter(n => (incomingCount.get(n.name) || 0) === 0)
+  const singleOutgoing = index.notes.filter(n => n.links.length === 1)
+
+  // Combine and deduplicate
+  const resultIds = new Set([...orphans, ...singleOutgoing].map(n => n.id))
+  const results = index.notes
+    .filter(n => resultIds.has(n.id))
+    .map(n => ({
+      id: n.id,
+      name: n.name,
+      synopsis: n.synopsis,
+      tags: n.tags,
+      incomingLinks: incomingCount.get(n.name) || 0,
+      outgoingLinks: n.links.length,
+    }))
+
+  return JSON.stringify(results)
+}
+
 const handleLink = async (
   kgraphRef: ActorRef<KgraphMsg>,
   userId: string,
@@ -541,6 +590,7 @@ export const createZettelNotesActor = (kgraphRef: ActorRef<KgraphMsg>, dbPath: s
             case ZETTEL_UPDATE_TOOL: return handleUpdate(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
             case ZETTEL_SEARCH_TOOL: return handleSearch(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
             case ZETTEL_LINKS_TOOL:  return handleLinks(effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case ZETTEL_UNLINKED_TOOL: return handleUnlinkedNotes(effectiveUserId, queue, ctx.log)
             case ZETTEL_LINK_TOOL:  return handleLink(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
             default: throw new Error(`Unknown tool: ${toolName}`)
           }
