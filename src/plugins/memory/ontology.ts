@@ -47,8 +47,11 @@ const toolDescs = {
 
   unlinked:
     `**zettel_unlinked_notes** { userId }\n` +
-    `  Get notes that have no incoming links (orphans) or only one outgoing link. ` +
-    `  Use this to find notes that need better integration into the knowledge graph.\n\n`,
+    `  Get notes that are poorly integrated into the knowledge graph. Returns notes that:\n` +
+    `  - Are orphans (no incoming and no outgoing links).\n` +
+    `  - Have no outgoing links.\n` +
+    `  - Have only one outgoing link.\n` +
+    `  Use this to find notes that need better integration.\n\n`,
 }
 
 const writingRules = (): string =>
@@ -93,9 +96,14 @@ export const zettelConsolidationSection = (userId: string): string =>
   toolDescs.link +
   linkTypeOntology() +
   `### Consolidation Workflow\n` +
-  `1. **Obtain orphan notes**: Call zettel_unlinked_notes to find notes with no incoming links or minimal outgoing links.\n` +
+  `1. **Obtain unlinked notes**: Call zettel_unlinked_notes to find notes needing integration.\n` +
   `2. **Analyze context**: Identify key concepts and facts from the conversation turns.\n` +
-  `3. **Search & Connect**: For each orphan note and turn concept, use zettel_search to find related notes.\n` +
-  `4. **Create Relationships**: Use zettel_link to connect the orphan notes and new turn concepts to the broader knowledge web.\n` +
-  `   (Consolidation focuses on discovering links across different turns/topics to ensure a dense, reachable graph).\n`
+  `3. **Search & Connect**: For each unlinked note and turn concept, use zettel_search to find related notes.\n` +
+  `4. **Create Relationships**: Use zettel_link to connect notes to the broader knowledge web.\n\n` +
+  `### Link Priority\n` +
+  `When creating links, prioritize notes in this order:\n` +
+  `1. **Orphans**: Notes with NO incoming and NO outgoing links.\n` +
+  `2. **No outgoing**: Notes with incoming links but no outgoing links.\n` +
+  `3. **Single outgoing**: Notes with exactly one outgoing link.\n\n` +
+  `(Consolidation focuses on discovering links across different turns/topics to ensure a dense, reachable graph).\n`
 

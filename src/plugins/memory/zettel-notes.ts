@@ -495,11 +495,16 @@ const handleUnlinkedNotes = async (
     }
   }
 
-  const orphans = index.notes.filter(n => (incomingCount.get(n.name) || 0) === 0)
+  const noIncoming = index.notes.filter(n => (incomingCount.get(n.name) || 0) === 0)
+  const noOutgoing = index.notes.filter(n => n.links.length === 0)
   const singleOutgoing = index.notes.filter(n => n.links.length === 1)
 
   // Combine and deduplicate
-  const resultIds = new Set([...orphans, ...singleOutgoing].map(n => n.id))
+  const resultIds = new Set([
+    ...noIncoming.map(n => n.id),
+    ...noOutgoing.map(n => n.id),
+    ...singleOutgoing.map(n => n.id)
+  ])
   const results = index.notes
     .filter(n => resultIds.has(n.id))
     .map(n => ({

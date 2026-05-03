@@ -1,4 +1,4 @@
-import { createPluginSystem, LogTopic } from '../src/system/index.ts'
+import { createPluginSystem, LogTopic, MetricsTopic } from '../src/system/index.ts'
 import interfacesPlugin from '../src/plugins/interfaces/interfaces.plugin.ts'
 import cognitivePlugin from '../src/plugins/cognitive/cognitive.plugin.ts'
 import memoryPlugin from '../src/plugins/memory/memory.plugin.ts'
@@ -103,6 +103,15 @@ system.subscribe(LogTopic, (event) => {
   if (log.level === 'error' || log.level === 'warn') {
     console.log(`[${log.level.toUpperCase()}] [${log.source}] ${log.message}`)
   }
+  // Forward to UI
+  system.publish(OutboundBroadcastTopic, { text: JSON.stringify({ type: 'log', ...log }) })
+})
+
+// ─── Metrics subscription ───
+
+system.subscribe(MetricsTopic, (event) => {
+  // Forward to UI
+  system.publish(OutboundBroadcastTopic, { text: JSON.stringify({ type: 'metrics', ...event }) })
 })
 
 // ─── sendTurn ───
@@ -112,6 +121,17 @@ const sendTurn = async (text: string, clientId: string, traceId: string): Promis
   const spanId = newId()
   let reply = ''
 
+  // Publish "started" event for the root 'request' span to satisfy UI
+  system.publish(TraceTopic, {
+    traceId,
+    spanId,
+    actor: 'benchmark-inject',
+    operation: 'request',
+    status: 'started',
+    timestamp: start,
+    data: { text }
+  })
+
   return new Promise((res) => {
     let resolved = false
     let msgUnsub: (() => void) | undefined
@@ -120,6 +140,20 @@ const sendTurn = async (text: string, clientId: string, traceId: string): Promis
       resolved = true
       clearTimeout(timeout)
       if (msgUnsub) msgUnsub()
+
+      // Publish "done" event for the root 'request' span
+      const end = Date.now()
+      system.publish(TraceTopic, {
+        traceId,
+        spanId,
+        actor: 'benchmark-inject',
+        operation: 'request',
+        status: result.reply === 'TIMEOUT' || result.reply.startsWith('ERROR') ? 'error' : 'done',
+        timestamp: end,
+        durationMs: end - start,
+        data: { reply: result.reply }
+      })
+
       res(result)
     }
 

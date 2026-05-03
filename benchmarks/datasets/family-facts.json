@@ -1,0 +1,36 @@
+{
+  "name": "Family Facts",
+  "description": "Family relationships, birthdays, and lineage facts for memory testing.",
+  "statements": [
+    "My father's name is Robert, and he was born on June 12, 1965.",
+    "My mother, Elena, celebrates her birthday on March 22, 1968.",
+    "I have an older sister named Sofia who was born on November 5, 1992.",
+    "My younger brother, Luca, was born on August 14, 1998.",
+    "I am married to Clara; our wedding anniversary is September 20, 2022.",
+    "Clara's birthday is January 15, 1994.",
+    "We have a daughter named Mia, born on February 10, 2024.",
+    "My paternal grandfather was named Henry, and my paternal grandmother was Margaret.",
+    "My mother's parents (my maternal grandparents) are named Giovanni and Maria.",
+    "Sofia is married to Marco, and they have a son named Leo.",
+    "Leo was born on July 3, 2025, making him my first nephew.",
+    "My brother Luca is currently dating a girl named Giulia.",
+    "Robert and Elena live in Milan, while Sofia and Marco live in Rome.",
+    "My daughter Mia's middle name is Elena, after her grandmother."
+  ],
+  "questions": [
+    { "q": "What is my father's name and when was he born?", "a": ["Robert", "June 12", "1965"] },
+    { "q": "When is my mother Elena's birthday?", "a": ["March 22", "1968"] },
+    { "q": "Who are my siblings and what are their birth dates?", "a": ["Sofia", "November 5, 1992", "Luca", "August 14, 1998"] },
+    { "q": "When is my wedding anniversary with Clara?", "a": ["September 20", "2022"] },
+    { "q": "What is Clara's birthday?", "a": ["January 15", "1994"] },
+    { "q": "What is my daughter's name and her birth date?", "a": ["Mia", "February 10, 2024"] },
+    { "q": "Who are my paternal grandparents?", "a": ["Henry", "Margaret"] },
+    { "q": "What are the names of my maternal grandparents?", "a": ["Giovanni", "Maria"] },
+    { "q": "Who is Leo and when was he born?", "a": ["nephew", "Sofia's son", "July 3", "2025"] },
+    { "q": "What is the name of my sister's husband?", "a": ["Marco"] },
+    { "q": "Where do my parents live?", "a": ["Milan"] },
+    { "q": "Where do Sofia and Marco live?", "a": ["Rome"] },
+    { "q": "Who is Luca dating?", "a": ["Giulia"] },
+    { "q": "What is my daughter's middle name and who is she named after?", "a": ["Elena", "grandmother"] }
+  ]
+}

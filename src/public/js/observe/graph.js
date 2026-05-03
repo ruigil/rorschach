@@ -2,19 +2,20 @@ import { state } from '../state.js'
 import { escHtml } from '../utils.js'
 
 const LABEL_COLORS = {
-  Entity:     { fill: 'rgba(0,196,212,0.12)',   stroke: '#00c4d4' },
-  Project:    { fill: 'rgba(196,132,58,0.12)',   stroke: '#c4843a' },
-  Concept:    { fill: 'rgba(160,100,220,0.12)',  stroke: '#a064dc' },
-  Preference: { fill: 'rgba(224,96,48,0.12)',    stroke: '#e06030' },
-  Goal:       { fill: 'rgba(57,232,160,0.12)',   stroke: '#39e8a0' },
-  Place:      { fill: 'rgba(80,180,100,0.12)',   stroke: '#50b464' },
-  Event:      { fill: 'rgba(91,160,184,0.12)',   stroke: '#5ba0b8' },
-  Habit:      { fill: 'rgba(220,180,40,0.12)',   stroke: '#dcb428' },
+  Entity:     { stroke: '#00c4d4' },
+  Project:    { stroke: '#c4843a' },
+  Concept:    { stroke: '#a064dc' },
+  Preference: { stroke: '#e06030' },
+  Goal:       { stroke: '#39e8a0' },
+  Place:      { stroke: '#50b464' },
+  Event:      { stroke: '#5ba0b8' },
+  Habit:      { stroke: '#dcb428' },
 }
-const DEFAULT_NODE_COLOR = { fill: 'rgba(10,24,32,0.5)', stroke: '#1a3548' }
+const NODE_BG = '#060e14'
+const DEFAULT_STROKE = '#1a3548'
 
-function nodeColor(label)       { return (LABEL_COLORS[label] || DEFAULT_NODE_COLOR).fill }
-function nodeColorStroke(label) { return (LABEL_COLORS[label] || DEFAULT_NODE_COLOR).stroke }
+function nodeColor()            { return NODE_BG }
+function nodeColorStroke(label) { return (LABEL_COLORS[label] || { stroke: DEFAULT_STROKE }).stroke }
 
 export async function fetchKgraph() {
   const statsEl = document.getElementById('memory-stats')
@@ -120,11 +121,13 @@ function renderKgraph(graph) {
 
   const sim = d3.forceSimulation(simNodes)
     .force('link',    d3.forceLink(simEdges).id(d => d.id).distance(130))
-    .force('charge',  d3.forceManyBody().strength(-320))
+    .force('charge',  d3.forceManyBody().strength(-200))
     .force('center',  d3.forceCenter(width / 2, height / 2))
+    .force('x',       d3.forceX(width / 2).strength(0.05))
+    .force('y',       d3.forceY(height / 2).strength(0.05))
     .force('collide', d3.forceCollide(R + 18))
-    .force('orphan-x', d3.forceX(width / 2).strength(d => isOrphan(d) ? 0.18 : 0))
-    .force('orphan-y', d3.forceY(height / 2).strength(d => isOrphan(d) ? 0.18 : 0))
+    .force('orphan-x', d3.forceX(width / 2).strength(d => isOrphan(d) ? 0.15 : 0))
+    .force('orphan-y', d3.forceY(height / 2).strength(d => isOrphan(d) ? 0.15 : 0))
     .on('tick', () => {
       edgeLine
         .attr('x1', d => d.source.x)
@@ -140,8 +143,17 @@ function renderKgraph(graph) {
           return d.target.y - (dy / dist) * (R + 10)
         })
       edgeLabel
-        .attr('x', d => (d.source.x + d.target.x) / 2)
-        .attr('y', d => (d.source.y + d.target.y) / 2 - 5)
+        .attr('x', d => {
+          const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y
+          const dist = Math.sqrt(dx*dx + dy*dy) || 1
+          return d.source.x + (dx / dist) * (R + 25)
+        })
+        .attr('y', d => {
+          const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y
+          const dist = Math.sqrt(dx*dx + dy*dy) || 1
+          return d.source.y + (dy / dist) * (R + 25)
+        })
+        .attr('text-anchor', d => (d.target.x > d.source.x) ? 'start' : 'end')
       nodeGroup.attr('transform', d => `translate(${d.x},${d.y})`)
     })
 }

@@ -40,12 +40,12 @@
       },
       "system": {
         "model": "google/gemini-3.1-flash-lite-preview",
-        "consolidationIntervalMs": 3600000,
-        "contextIntervalMs": 60000
+        "consolidationIntervalMs": 60000,
+        "contextIntervalMs": 3600000
       }
     }
   },
-  "dataset": "benchmarks/datasets/linked-facts.json",
+  "dataset": "benchmarks/datasets/family-facts.json",
   "judge": {
     "model": "google/gemini-3.1-flash-lite-preview",
     "systemPrompt": "You are an impartial judge. Compare the GROUND TRUTH with the ASSISTANT REPLY for the given QUESTION. If the assistant reply contains the factual information from the ground truth, score it 1. If it is partially correct but misses key details, score 0.5. If it is wrong or says I do not know, score 0. Output ONLY JSON: { \"score\": number, \"reason\": \"string\" }"
