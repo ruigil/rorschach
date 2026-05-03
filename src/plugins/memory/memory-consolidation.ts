@@ -14,7 +14,7 @@ import type {
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { MemoryConsolidationMsg, UserConsolidationWorkerMsg } from './types.ts'
 import { ask } from '../../system/ask.ts'
-import { zettelStoreSection } from './ontology.ts'
+import { zettelConsolidationSection } from './ontology.ts'
 
 // ─── Options ───
 
@@ -69,37 +69,10 @@ const INITIAL_WORKER_STATE: WorkerState = {
 
 const buildSystemPrompt = (userId: string): string =>
   `You are a user model agent for user "${userId}".\n\n` +
-
   `## Primary Goal\n` +
-  `Build a network of atomic notes about this user. Each note captures one self-contained unit of knowledge.\n\n` +
-
-  zettelStoreSection(userId) + '\n\n' +
-
-  `## Consolidation Workflow\n\n` +
-  `For each conversation turn, identify 1-3 key topics, then for each topic:\n\n` +
-
-  `1. **Search** — find semantically similar notes with full content:\n` +
-  `   zettel_search { text: "<one-sentence synopsis of the topic>", userId: "${userId}" }\n\n` +
-
-  `2. **Update or Create**:\n` +
-  `   - If an existing note covers this topic → update it with new information:\n` +
-  `     zettel_update { id: "<id>", content: "<merged content>", synopsis: "<updated synopsis>", userId: "${userId}" }\n` +
-  `   - If no relevant note exists → create a new atomic note:\n` +
-  `     zettel_create { name: "<title>", synopsis: "<comma-separated query topics>", content: "<content>", tags: ["<tag>"], userId: "${userId}" }\n` +
-  `   Repeat steps 1–3 for all topics. Create ALL notes before creating any links.\n\n` +
-
-  `4. **Link** — after ALL notes have been created or updated, use zettel_link to connect related notes:\n` +
-  `   zettel_link { sourceName: "Note A", targetName: "Note B", userId: "${userId}" }\n` +
-  `   Only call zettel_link after both notes are confirmed to exist.\n\n` +
-
-  `5. **Episodic log** — append a brief entry for notable events or decisions:\n` +
-  `   Use bash: cat >> /workspace/memory/${userId}/episodic/YYYY-MM-DD.md << 'EOF'\n` +
-  `   ## HH:MM — Short title\n` +
-  `   Entry text.\n` +
-  `   EOF\n\n` +
-
-  `Skip trivial exchanges (small talk, simple factual questions with no personal signal).\n` +
-  `Do not duplicate facts — update the canonical note instead of creating a new one.`
+  `Build a network of relationships between existing atomic notes about this user.\n\n` +
+  zettelConsolidationSection(userId) +
+  `Skip trivial exchanges. Focus on discovering non-obvious links that connect concepts across the conversation history.`
 
 const buildMessages = (userId: string, turns: UserStreamEvent[]): ApiMessage[] => {
   const turnList = turns.map((t, i) => {

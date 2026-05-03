@@ -117,8 +117,6 @@ const spawnMemoryActors = (
 
   const consolidationTools: ToolCollection = {
     [ZETTEL_SEARCH_TOOL]: { schema: ZETTEL_SEARCH_SCHEMA, ref },
-    [ZETTEL_CREATE_TOOL]: { schema: ZETTEL_CREATE_SCHEMA, ref },
-    [ZETTEL_UPDATE_TOOL]: { schema: ZETTEL_UPDATE_SCHEMA, ref },
     [ZETTEL_LINK_TOOL]:   { schema: ZETTEL_LINK_SCHEMA,   ref },
   }
 
