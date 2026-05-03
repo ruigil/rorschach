@@ -20,21 +20,21 @@ const linkTypeOntology = (): string =>
 
 const toolDescs = {
   search:
-    `**zettel_search** { text, tags[]?, after? (ISO), before? (ISO), userId }\n` +
+    `**zettel_search** { text, tags[], after? (ISO), before? (ISO), userId }\n` +
     `  Semantic search via vector embeddings and re-ranking.\n` +
-    `  - text: a short natural-language summary of the topic (e.g., "coding preferences").\n` +
-    `  - tags: optional lowercase tags to enrich the query or filter results.\n` +
+    `  - text: a comma-separated list of query topics (e.g., "coding preferences, language choice").\n` +
+    `  - tags: required lowercase tags to enrich the query or filter results.\n` +
     `  - Returns array of { id, name, synopsis, tags, links, content, score }.\n` +
     `  - **links**: Array of { name, type } representing outgoing connections.\n` +
     `  - **score**: 0-1 (semantic similarity). Higher is better.\n\n`,
 
   create:
     `**zettel_create** { name, synopsis, content, tags[], eventTime?, userId }\n` +
-    `  Create a new atomic note. name: 2-5 words, Title Case. synopsis: one sentence.\n\n`,
+    `  Create a new atomic note. name: 2-5 words, Title Case. synopsis: comma-separated list of query topics.\n\n`,
 
   update:
     `**zettel_update** { id, content?, name?, synopsis?, tags?, eventTime?, userId }\n` +
-    `  Update an existing note. Only pass fields that should change.\n\n`,
+    `  Update an existing note. Only pass fields that should change. synopsis: comma-separated list of query topics.\n\n`,
 
   link:
     `**zettel_link** { sourceId?, sourceName?, targetId?, targetName?, linkType, userId }\n` +

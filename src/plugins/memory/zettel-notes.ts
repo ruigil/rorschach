@@ -25,7 +25,7 @@ export const ZETTEL_CREATE_SCHEMA: ToolSchema = {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Short note title (2-5 words, Title Case).' },
-        synopsis: { type: 'string', description: "One sentence summary of this note's content. Used for semantic search." },
+        synopsis: { type: 'string', description: "Comma-separated list of query topics that would find this note. Used for semantic search." },
         content: { type: 'string', description: 'Full markdown content.' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Lowercase tags e.g. ["typescript", "work", "preference"].' },
         eventTime: { type: 'string', description: 'Optional ISO 8601 timestamp for when the event occurred (if different from now).' },
@@ -46,7 +46,7 @@ export const ZETTEL_UPDATE_SCHEMA: ToolSchema = {
       properties: {
         id: { type: 'string', description: 'Note UUID.' },
         name: { type: 'string', description: 'Updated title (optional).' },
-        synopsis: { type: 'string', description: 'Updated one-sentence summary (optional).' },
+        synopsis: { type: 'string', description: 'Updated comma-separated list of query topics (optional).' },
         content: { type: 'string', description: 'Full updated markdown content (optional).' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Updated tags (optional).' },
         eventTime: { type: 'string', description: 'Updated ISO 8601 timestamp (optional).' },
@@ -65,8 +65,8 @@ export const ZETTEL_SEARCH_SCHEMA: ToolSchema = {
     parameters: {
       type: 'object',
       properties: {
-        text: { type: 'string', description: 'One-sentence synopsis of the topic to search for. Must be a declarative summary, not a question — this aligns with how note embeddings are stored.' },
-        tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags to enrich the vector query and filter results when vector search finds nothing. Must match ALL provided tags.' },
+        text: { type: 'string', description: 'Comma-separated list of query topics to search for. Must be a declarative summary, not a question.' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Required tags to enrich the vector query and filter results. Must match ALL provided tags.' },
         after: { type: 'string', description: 'Optional. Filter results to notes on or after this ISO 8601 timestamp.' },
         before: { type: 'string', description: 'Optional. Filter results to notes on or before this ISO 8601 timestamp.' },
         timeProperty: {
@@ -77,7 +77,7 @@ export const ZETTEL_SEARCH_SCHEMA: ToolSchema = {
         },
         userId: { type: 'string' },
       },
-      required: ['text'],
+      required: ['text', 'tags'],
     },
   },
 }
