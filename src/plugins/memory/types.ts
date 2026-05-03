@@ -38,14 +38,9 @@ export type ZettelIndex = { notes: ZettelNote[] }
 
 // ─── kgraph vector search types ───
 
-export type ScoreSources = {
-  vector: number      // final vector component (reranker if used, else cosine)
-}
-
 export type VectorSearchMatch = {
   nodeId: number
   score: number        // final blended score
-  sources: ScoreSources
   name: string
   description: string
 }

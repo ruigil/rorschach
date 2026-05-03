@@ -21,11 +21,12 @@ const linkTypeOntology = (): string =>
 const toolDescs = {
   search:
     `**zettel_search** { text, tags[]?, after? (ISO), before? (ISO), userId }\n` +
-    `  Semantic search via vector embeddings with graph expansion and re-ranking.\n` +
+    `  Semantic search via vector embeddings and re-ranking.\n` +
     `  - text: a short natural-language summary of the topic (e.g., "coding preferences").\n` +
     `  - tags: optional lowercase tags to enrich the query or filter results.\n` +
-    `  - Returns array of { id, name, synopsis, tags, links, content, score, scoreSources }.\n` +
-    `  - scoreSources: { vector: 0-1, graph: 0-1 }. Prioritize high vector scores for direct answers.\n\n`,
+    `  - Returns array of { id, name, synopsis, tags, links, content, score }.\n` +
+    `  - **links**: Array of { name, type } representing outgoing connections.\n` +
+    `  - **score**: 0-1 (semantic similarity). Higher is better.\n\n`,
 
   create:
     `**zettel_create** { name, synopsis, content, tags[], eventTime?, userId }\n` +

@@ -61,7 +61,7 @@ export const ZETTEL_SEARCH_SCHEMA: ToolSchema = {
   type: 'function',
   function: {
     name: ZETTEL_SEARCH_TOOL,
-    description: 'Semantic search via vector embeddings with graph expansion and re-ranking. Finds notes similar to the given text, expands results via wiki-links, and re-ranks by combined similarity + graph proximity. Each result includes scoreSources: { vector, graph? } where vector is semantic similarity and graph indicates the note was brought in via links from a strong result. Prioritize high-vector results for direct answers; high-graph results provide supporting context.',
+    description: 'Semantic search via vector embeddings and re-ranking. Finds notes similar to the given text and re-ranks by similarity. Each result includes a score (0-1) indicating semantic closeness.',
     parameters: {
       type: 'object',
       properties: {
@@ -410,10 +410,9 @@ const handleSearch = async (
     } catch { return '' }
   }
 
-  const noteToResult = async (note: ZettelNote, score: number, scoreSources?: { vector: number; graph?: number }) => ({
+  const noteToResult = async (note: ZettelNote, score: number) => ({
     id: note.id, name: note.name, synopsis: note.synopsis, tags: note.tags,
     links: note.links, content: await readContent(note), score,
-    ...(scoreSources ? { scoreSources } : {}),
   })
 
   if (reply.type === 'vectorSearchError') {
@@ -429,7 +428,7 @@ const handleSearch = async (
     reply.matches.map(async (m) => {
       const note = index.notes.find(n => n.kgraphNodeId === m.nodeId)
       if (!note) return null
-      return noteToResult(note, Math.round(m.score * 1000) / 1000, m.sources)
+      return noteToResult(note, Math.round(m.score * 1000) / 1000)
     })
   )
 

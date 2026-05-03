@@ -321,58 +321,53 @@ export const createKgraphActor = (
             LIMIT ${fetchLimit}
           `)
           const seeds: VectorSearchMatch[] = seedResult.toArray().map((row: any) => ({
-            nodeId:      row.nodeId ?? row['id(n)'],
-            score:       0,
-            sources:     { vector: row.score ?? row['cosine_similarity(n._embedding, ' + vectorStr + ')'] },
-            name:        row.name ?? '',
-            description: row.description ?? '',
+           nodeId:      row.nodeId ?? row['id(n)'],
+           score:       row.score ?? row['cosine_similarity(n._embedding, ' + vectorStr + ')'],
+           name:        row.name ?? '',
+           description: row.description ?? '',
           }))
 
           if (seeds.length === 0) {
-            return []
+           return []
           }
 
           // Step 2: Rerank (if configured)
           const allMatches = seeds
           if (reranker && allMatches.length > 0) {
-            const rerankReply = await ask<LlmProviderMsg, RerankReply>(
-              llmRef,
-              (replyToRerank) => ({
-                type: 'rerank',
-                requestId: crypto.randomUUID(),
-                model: reranker.model,
-                query: text,
-                documents: allMatches.map(m => `${m.name}. ${m.description}`),
-                topN: allMatches.length,
-                replyTo: replyToRerank,
-              }),
-            )
+           const rerankReply = await ask<LlmProviderMsg, RerankReply>(
+             llmRef,
+             (replyToRerank) => ({
+               type: 'rerank',
+               requestId: crypto.randomUUID(),
+               model: reranker.model,
+               query: text,
+               documents: allMatches.map(m => `${m.name}. ${m.description}`),
+               topN: allMatches.length,
+               replyTo: replyToRerank,
+             }),
+           )
 
-            if (rerankReply.type === 'rerankError') {
-              ctx.log.warn('kgraph rerank failed, using vector scores', { error: rerankReply.error })
-            } else {
-              const scoreMap = new Map<number, number>()
-              for (const r of rerankReply.scores) {
-                scoreMap.set(r.index, r.score)
-              }
-              for (let i = 0; i < allMatches.length; i++) {
-                const match = allMatches[i]!
-                match.sources.vector = scoreMap.get(i) ?? match.sources.vector
-              }
-            }
+           if (rerankReply.type === 'rerankError') {
+             ctx.log.warn('kgraph rerank failed, using vector scores', { error: rerankReply.error })
+           } else {
+             const scoreMap = new Map<number, number>()
+             for (const r of rerankReply.scores) {
+               scoreMap.set(r.index, r.score)
+             }
+             for (let i = 0; i < allMatches.length; i++) {
+               const match = allMatches[i]!
+               match.score = scoreMap.get(i) ?? match.score
+             }
+           }
           }
 
-          // Step 3: Compute scores
-          for (const match of allMatches) {
-            match.score = match.sources.vector
-          }
-
-          // Step 4: Sort and slice
+          // Step 3: Sort and slice
           const ranked = allMatches
-            .sort((a, b) => b.score - a.score)
-            .slice(0, topN)
+           .sort((a, b) => b.score - a.score)
+           .slice(0, topN)
 
           return ranked
+
         })),
         (matches) => ({ type: '_vectorSearchDone' as const, matches, replyTo }),
         (error)   => ({ type: '_vectorSearchErr'  as const, error: String(error), replyTo }),
