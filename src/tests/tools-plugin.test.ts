@@ -229,10 +229,12 @@ describe('tools plugin', () => {
       bash:      { config: null, ref: null, gen: 0 },
       vision:    { config: null, ref: null, gen: 0 },
       audio:     { config: null, ref: null, gen: 0 },
-      cron:      { ref: null },
-      pdf:       { ref: null },
-      fetchFile: { ref: null },
-      llmRef:    null,
+      cron:       { ref: null },
+      pdf:        { ref: null },
+      fetchFile:  { ref: null },
+      longTask:   { ref: null },
+      toolStatus: { ref: null },
+      llmRef:     null,
       tools: {},
     }
 
@@ -249,10 +251,12 @@ describe('tools plugin', () => {
       bash:      { config: null, ref: null, gen: 0 },
       vision:    { config: null, ref: null, gen: 0 },
       audio:     { config: null, ref: null, gen: 0 },
-      cron:      { ref: null },
-      pdf:       { ref: null },
-      fetchFile: { ref: null },
-      llmRef:    null,
+      cron:       { ref: null },
+      pdf:        { ref: null },
+      fetchFile:  { ref: null },
+      longTask:   { ref: null },
+      toolStatus: { ref: null },
+      llmRef:     null,
       tools: {},
     }
 

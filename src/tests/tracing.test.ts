@@ -4,7 +4,7 @@ import type { MessageHeaders } from '../system/index.ts'
 import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
-import type { ToolInvokeMsg } from '../types/tools.ts'
+import type { ToolInvokeMsg, ToolMsg } from '../types/tools.ts'
 import { ToolRegistrationTopic } from '../types/tools.ts'
 import { WEB_SEARCH_SCHEMA, WEB_SEARCH_TOOL_NAME } from '../plugins/tools/web-search.ts'
 
@@ -223,12 +223,14 @@ describe('distributed tracing', () => {
     let capturedHeaders: MessageHeaders | undefined
 
     // A fake tool actor ref that captures message headers and replies immediately
-    const fakeToolRef: import('../system/types.ts').ActorRef<ToolInvokeMsg> = {
+    const fakeToolRef: import('../system/types.ts').ActorRef<ToolMsg> = {
       name:    'fake-tool',
       isAlive: () => true,
-      send:    (msg: ToolInvokeMsg, headers?: MessageHeaders) => {
+      send:    (msg: ToolMsg, headers?: MessageHeaders) => {
         capturedHeaders = headers
-        msg.replyTo.send({ type: 'toolResult', result: 'fake result' })
+        if (msg.type === 'invoke') {
+          msg.replyTo.send({ type: 'toolResult', result: 'fake result' })
+        }
       },
     }
 
