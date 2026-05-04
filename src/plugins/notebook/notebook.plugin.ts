@@ -1,7 +1,7 @@
 import { resolve, sep } from 'node:path'
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import type { ToolCollection, ToolInvokeMsg, ToolSchema } from '../../types/tools.ts'
+import type { ToolCollection, ToolMsg, ToolSchema } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { IdentityProviderTopic, resolveIdentity } from '../../types/identity.ts'
@@ -94,11 +94,11 @@ type PluginState = {
   notebookDir:  string
   model:        string
   maxToolLoops: number
-  journalRef:   ActorRef<ToolInvokeMsg> | null
-  notesRef:     ActorRef<ToolInvokeMsg> | null
-  trackerRef:   ActorRef<ToolInvokeMsg> | null
-  todosRef:     ActorRef<ToolInvokeMsg> | null
-  searchRef:    ActorRef<ToolInvokeMsg> | null
+  journalRef:   ActorRef<ToolMsg> | null
+  notesRef:     ActorRef<ToolMsg> | null
+  trackerRef:   ActorRef<ToolMsg> | null
+  todosRef:     ActorRef<ToolMsg> | null
+  searchRef:    ActorRef<ToolMsg> | null
   noteAgentRef: ActorRef<NoteAgentMsg>  | null
   reminderRef:  ActorRef<TodoReminderMsg> | null
 }
@@ -168,11 +168,11 @@ const registerRoutes = (ctx: ActorContext<PluginMsg>, refs: SharedRefs): void =>
 // ─── Tool collection builder ───
 
 const buildToolCollection = (
-  journalRef:  ActorRef<ToolInvokeMsg>,
-  notesRef:    ActorRef<ToolInvokeMsg>,
-  trackerRef:  ActorRef<ToolInvokeMsg>,
-  todosRef:    ActorRef<ToolInvokeMsg>,
-  searchRef:   ActorRef<ToolInvokeMsg>,
+  journalRef:  ActorRef<ToolMsg>,
+  notesRef:    ActorRef<ToolMsg>,
+  trackerRef:  ActorRef<ToolMsg>,
+  todosRef:    ActorRef<ToolMsg>,
+  searchRef:   ActorRef<ToolMsg>,
 ): ToolCollection => ({
   [JOURNAL_WRITE_TOOL_NAME]:        { schema: JOURNAL_WRITE_SCHEMA,        ref: journalRef },
   [JOURNAL_READ_TOOL_NAME]:         { schema: JOURNAL_READ_SCHEMA,         ref: journalRef },
@@ -211,11 +211,11 @@ const spawnChildren = (
   ctx: ActorContext<PluginMsg>,
 ): SpawnResult => {
   // Spawn internal tool actors — NOT registered on ToolRegistrationTopic
-  const journalRef = ctx.spawn(`journal-${gen}`, createJournalActor(notebookDir), null) as ActorRef<ToolInvokeMsg>
-  const notesRef   = ctx.spawn(`notes-${gen}`,   createNotesActor(notebookDir),   null) as ActorRef<ToolInvokeMsg>
-  const trackerRef = ctx.spawn(`tracker-${gen}`, createTrackerActor(notebookDir), null) as ActorRef<ToolInvokeMsg>
-  const todosRef   = ctx.spawn(`todos-${gen}`,   createTodosActor(notebookDir),   null) as ActorRef<ToolInvokeMsg>
-  const searchRef  = ctx.spawn(`search-${gen}`,  createSearchActor(notebookDir),  null) as ActorRef<ToolInvokeMsg>
+  const journalRef = ctx.spawn(`journal-${gen}`, createJournalActor(notebookDir), null) as ActorRef<ToolMsg>
+  const notesRef   = ctx.spawn(`notes-${gen}`,   createNotesActor(notebookDir),   null) as ActorRef<ToolMsg>
+  const trackerRef = ctx.spawn(`tracker-${gen}`, createTrackerActor(notebookDir), null) as ActorRef<ToolMsg>
+  const todosRef   = ctx.spawn(`todos-${gen}`,   createTodosActor(notebookDir),   null) as ActorRef<ToolMsg>
+  const searchRef  = ctx.spawn(`search-${gen}`,  createSearchActor(notebookDir),  null) as ActorRef<ToolMsg>
 
   const internalTools = buildToolCollection(journalRef, notesRef, trackerRef, todosRef, searchRef)
 
@@ -231,7 +231,7 @@ const spawnChildren = (
   ctx.publishRetained(ToolRegistrationTopic, NOTE_TOOL_NAME, {
     name:   NOTE_TOOL_NAME,
     schema: NOTE_SCHEMA,
-    ref:    noteAgentRef as unknown as ActorRef<ToolInvokeMsg>,
+    ref:    noteAgentRef as unknown as ActorRef<ToolMsg>,
   })
 
   // Spawn todo reminder

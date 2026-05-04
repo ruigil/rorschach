@@ -3,7 +3,7 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
-import type { ToolCollection, ToolInvokeMsg, ToolSchema } from '../../types/tools.ts'
+import type { ToolCollection, ToolMsg, ToolSchema } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 
 import type { GoogleApisConfig, GoogleAgentMsg, GooglePluginMsg, SharedRefs } from './types.ts'
@@ -96,10 +96,10 @@ type PluginState = {
   gen:            number
   model:          string
   maxToolLoops:   number
-  gmailRef:       ActorRef<ToolInvokeMsg> | null
-  calendarRef:    ActorRef<ToolInvokeMsg> | null
-  driveRef:       ActorRef<ToolInvokeMsg> | null
-  youtubeRef:     ActorRef<ToolInvokeMsg> | null
+  gmailRef:       ActorRef<ToolMsg> | null
+  calendarRef:    ActorRef<ToolMsg> | null
+  driveRef:       ActorRef<ToolMsg> | null
+  youtubeRef:     ActorRef<ToolMsg> | null
   googleAgentRef: ActorRef<GoogleAgentMsg> | null
 }
 
@@ -117,10 +117,10 @@ const spawnChildren = (
   const tokenStoreRef = refs.tokenStoreRef!
   const { clientId, clientSecret } = refs
 
-  const gmailRef    = ctx.spawn(`googleapis-gmail-${gen}`,    createGmailActor(tokenStoreRef, clientId, clientSecret),    null) as ActorRef<ToolInvokeMsg>
-  const calendarRef = ctx.spawn(`googleapis-calendar-${gen}`, createCalendarActor(tokenStoreRef, clientId, clientSecret), null) as ActorRef<ToolInvokeMsg>
-  const driveRef    = ctx.spawn(`googleapis-drive-${gen}`,    createDriveActor(tokenStoreRef, clientId, clientSecret),    null) as ActorRef<ToolInvokeMsg>
-  const youtubeRef  = ctx.spawn(`googleapis-youtube-${gen}`,  createYoutubeActor(tokenStoreRef, clientId, clientSecret),  null) as ActorRef<ToolInvokeMsg>
+  const gmailRef    = ctx.spawn(`googleapis-gmail-${gen}`,    createGmailActor(tokenStoreRef, clientId, clientSecret),    null) as ActorRef<ToolMsg>
+  const calendarRef = ctx.spawn(`googleapis-calendar-${gen}`, createCalendarActor(tokenStoreRef, clientId, clientSecret), null) as ActorRef<ToolMsg>
+  const driveRef    = ctx.spawn(`googleapis-drive-${gen}`,    createDriveActor(tokenStoreRef, clientId, clientSecret),    null) as ActorRef<ToolMsg>
+  const youtubeRef  = ctx.spawn(`googleapis-youtube-${gen}`,  createYoutubeActor(tokenStoreRef, clientId, clientSecret),  null) as ActorRef<ToolMsg>
 
   const tools: ToolCollection = {
     [GMAIL_LIST_MESSAGES_TOOL_NAME]:   { schema: GMAIL_LIST_MESSAGES_SCHEMA,   ref: gmailRef },
@@ -150,7 +150,7 @@ const spawnChildren = (
   ctx.publishRetained(ToolRegistrationTopic, GOOGLE_TOOL_NAME, {
     name:   GOOGLE_TOOL_NAME,
     schema: GOOGLE_SCHEMA,
-    ref:    googleAgentRef as unknown as ActorRef<ToolInvokeMsg>,
+    ref:    googleAgentRef as unknown as ActorRef<ToolMsg>,
   })
 
   return { gmailRef, calendarRef, driveRef, youtubeRef, googleAgentRef }

@@ -1,7 +1,7 @@
 import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { ask } from '../../system/ask.ts'
-import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
+import { invokeTool } from '../../system/invoke-tool.ts'
+import type { ToolCollection, ToolEntry, ToolReply } from '../../types/tools.ts'
 import type { ToolSchema } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type {
@@ -212,11 +212,9 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
         const entry = state.tools[call.name]!
         const toolSpan = spans[call.id]
         context.pipeToSelf(
-          ask<ToolInvokeMsg, ToolReply>(
-            entry.ref,
-            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId: state.clientId, userId: state.userId }),
-            undefined,
-            toolSpan ? context.trace.injectHeaders(toolSpan) : undefined,
+          invokeTool(context, entry.ref,
+            { toolName: call.name, arguments: call.arguments, clientId: state.clientId, userId: state.userId },
+            { headers: toolSpan ? context.trace.injectHeaders(toolSpan) : undefined },
           ),
           (reply): GoogleAgentMsg => ({ type: '_toolResult', toolName: call.name, toolCallId: call.id, reply }),
           (error): GoogleAgentMsg => ({

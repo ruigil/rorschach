@@ -2,7 +2,7 @@ import type { ActorContext, ActorDef, ActorRef, ActorResult, MessageHandler, Spa
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { UserStreamTopic } from '../../types/events.ts'
 import type { UserStreamEvent } from '../../types/events.ts'
-import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
+import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolMsg } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import type {
   ApiMessage,
@@ -13,7 +13,7 @@ import type {
 } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { MemoryConsolidationMsg, UserConsolidationWorkerMsg } from './types.ts'
-import { ask } from '../../system/ask.ts'
+import { invokeTool } from '../../system/invoke-tool.ts'
 import { zettelConsolidationSection } from './ontology.ts'
 
 // ─── Options ───
@@ -199,11 +199,9 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
           batch.toolSpans[call.id] = toolSpan
         }
         context.pipeToSelf(
-          ask<ToolInvokeMsg, ToolReply>(
-            entry.ref,
-            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, userId }),
-            undefined,
-            toolSpan ? context.trace.injectHeaders(toolSpan) : undefined,
+          invokeTool(context, entry.ref,
+            { toolName: call.name, arguments: call.arguments, userId },
+            { headers: toolSpan ? context.trace.injectHeaders(toolSpan) : undefined },
           ),
           (reply) => ({ type: '_toolResult' as const, toolName: call.name, toolCallId: call.id, reply }),
           (error) => ({

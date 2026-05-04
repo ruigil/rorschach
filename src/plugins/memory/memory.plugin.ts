@@ -1,7 +1,7 @@
 import type { ActorRef, PluginActorState, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
-import type { ToolCollection, ToolInvokeMsg } from '../../types/tools.ts'
+import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { IdentityProviderTopic, resolveIdentity } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
@@ -107,7 +107,7 @@ const spawnMemoryActors = (
     { kgraphRef, dbPath },
   )
 
-  const ref = zettel as unknown as ActorRef<ToolInvokeMsg>
+  const ref = zettel as unknown as ActorRef<ToolMsg>
 
   const storeTools: ToolCollection = {
     [ZETTEL_SEARCH_TOOL]: { schema: ZETTEL_SEARCH_SCHEMA, ref },

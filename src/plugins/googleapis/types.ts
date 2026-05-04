@@ -1,6 +1,6 @@
 import type { ActorRef, SpanHandle } from '../../system/types.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
+import type { ToolFinalReply, ToolInvokeMsg } from '../../types/tools.ts'
 import type { ApiMessage, LlmProviderMsg, LlmProviderReply, ToolCall } from '../../types/llm.ts'
 
 // ─── Domain types ───
@@ -40,7 +40,7 @@ export type GooglePluginMsg =
 export type GoogleAgentMsg =
   | ToolInvokeMsg
   | LlmProviderReply
-  | { type: '_toolResult'; toolCallId: string; toolName: string; reply: ToolReply }
+  | { type: '_toolResult'; toolCallId: string; toolName: string; reply: ToolFinalReply }
   | { type: '_llmProviderUpdated'; ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── Shared closure state (passed into route handlers and tool actors) ───

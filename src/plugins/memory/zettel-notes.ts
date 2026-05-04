@@ -294,8 +294,12 @@ const upsertInKgraph = async (
     }),
   )
 
-  if (reply.type === 'toolError') {
-    log.warn('zettel-notes: kgraph create_node failed', { userId, name, error: reply.error })
+  if (reply.type !== 'toolResult') {
+    if (reply.type === 'toolError') {
+      log.warn('zettel-notes: kgraph create_node failed', { userId, name, error: reply.error })
+    } else {
+      log.warn('zettel-notes: unexpected long-running reply for kgraph create_node', { userId, name, jobId: reply.jobId })
+    }
     return undefined
   }
   return (JSON.parse(reply.result) as { nodeId: number }).nodeId

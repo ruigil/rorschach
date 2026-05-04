@@ -1,5 +1,5 @@
 import type { ActorRef, SpanHandle } from '../../system/types.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import type { ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 
 export type CreateNodeResult = { name: string; nodeId: number }
@@ -82,9 +82,9 @@ export type KgraphMsg =
 
 export type MemoryRecallMsg =
   | ToolInvokeMsg
-  | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolReply }
+  | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolFinalReply }
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
+  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolMsg> }
   | { type: '_toolUnregistered'; name: string }
   | { type: '_workerDone';       worker: ActorRef<MemoryRecallMsg> }
   | LlmProviderReply
@@ -93,9 +93,9 @@ export type MemoryRecallMsg =
 
 export type MemoryStoreMsg =
   | ToolInvokeMsg
-  | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolReply }
+  | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolFinalReply }
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
+  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolMsg> }
   | { type: '_toolUnregistered'; name: string }
   | { type: '_workerDone';       worker: ActorRef<MemoryStoreMsg> }
   | LlmProviderReply
@@ -107,14 +107,14 @@ export type MemoryConsolidationMsg =
   | { type: '_turn';             userId: string; userText: string; assistantText: string; timestamp: number }
   | { type: '_consolidate' }
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolInvokeMsg> }
+  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolMsg> }
   | { type: '_toolUnregistered'; name: string }
 
 // Worker: one per user, runs the agentic loop over a local buffer.
 export type UserConsolidationWorkerMsg =
   | { type: '_turn';        userText: string; assistantText: string; timestamp: number }
   | { type: '_consolidate' }
-  | { type: '_toolResult';  toolCallId: string; toolName: string; reply: ToolReply }
+  | { type: '_toolResult';  toolCallId: string; toolName: string; reply: ToolFinalReply }
   | LlmProviderReply
 
 // ─── User context message protocol ───

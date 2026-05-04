@@ -2,9 +2,9 @@ import { mkdir } from 'node:fs/promises'
 import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, MessageHandler, ActorResult } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { ask } from '../../system/ask.ts'
+import { invokeTool } from '../../system/invoke-tool.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
-import type { ToolCollection, ToolEntry, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
+import type { ToolCollection, ToolEntry, ToolFinalReply } from '../../types/tools.ts'
 import type { ApiMessage, LlmProviderMsg, LlmProviderReply, Tool, ToolCall } from '../../types/llm.ts'
 import type { Plan, PlannerInputMsg, PlanTask } from './types.ts'
 import { PlannerActiveTopic } from './types.ts'
@@ -28,7 +28,7 @@ export type PlannerAgentOptions = {
 export type PlannerMsg =
   | PlannerInputMsg
   | LlmProviderReply
-  | { type: '_toolResult';     toolCallId: string; toolName: string; reply: ToolReply }
+  | { type: '_toolResult';     toolCallId: string; toolName: string; reply: ToolFinalReply }
   | { type: '_planWriteDone';  filepath: string }
   | { type: '_planWriteError'; error: string }
 
@@ -289,9 +289,9 @@ export const createPlannerAgentActor = (options: PlannerAgentOptions): ActorDef<
           continue
         }
         context.pipeToSelf(
-          ask<ToolInvokeMsg, ToolReply>(entry.ref, replyTo => ({
-            type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId, userId,
-          })),
+          invokeTool(context, entry.ref, {
+            toolName: call.name, arguments: call.arguments, clientId, userId,
+          }),
           (reply): PlannerMsg => ({ type: '_toolResult', toolName: call.name, toolCallId: call.id, reply }),
           (error): PlannerMsg => ({ type: '_toolResult', toolName: call.name, toolCallId: call.id, reply: { type: 'toolError', error: String(error) } }),
         )

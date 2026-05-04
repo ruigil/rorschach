@@ -1,7 +1,7 @@
 import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { ask } from '../../system/ask.ts'
-import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { invokeTool } from '../../system/invoke-tool.ts'
+import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import type {
   ApiMessage,
@@ -207,11 +207,9 @@ const createMemoryRecallWorkerActor = (
           batch.toolSpans[call.id] = toolSpan
         }
         context.pipeToSelf(
-          ask<ToolInvokeMsg, ToolReply>(
-            entry.ref,
-            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, userId: state.userId }),
-            undefined,
-            toolSpan ? context.trace.injectHeaders(toolSpan) : undefined,
+          invokeTool(context, entry.ref,
+            { toolName: call.name, arguments: call.arguments, userId: state.userId },
+            { headers: toolSpan ? context.trace.injectHeaders(toolSpan) : undefined },
           ),
           (reply) => ({ type: '_toolResult' as const, toolName: call.name, toolCallId: call.id, reply }),
           (error)  => ({
@@ -342,7 +340,7 @@ export const createMemoryRecallActor = (options: MemoryRecallOptions): ActorDef<
         context.publishRetained(ToolRegistrationTopic, MEMORY_RECALL_TOOL_NAME, {
           name:   MEMORY_RECALL_TOOL_NAME,
           schema: MEMORY_RECALL_SCHEMA,
-          ref:    context.self as unknown as ActorRef<ToolInvokeMsg>,
+          ref:    context.self as unknown as ActorRef<ToolMsg>,
         })
         return { state: _state }
       },

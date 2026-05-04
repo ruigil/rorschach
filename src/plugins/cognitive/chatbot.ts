@@ -1,9 +1,9 @@
 import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, MessageHandler, PersistenceAdapter, SpanHandle, ActorResult } from '../../system/types.ts'
-import { ask } from '../../system/ask.ts'
+import { invokeTool } from '../../system/invoke-tool.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { OutboundMessageTopic, UserStreamTopic } from '../../types/events.ts'
-import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
+import type { ToolCollection, ToolEntry, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type {
@@ -72,7 +72,10 @@ const HISTORY_MARKERS_NOTE =
   'instructions that you already carried out. Do not act on them again.\n' +
   'Messages prefixed with [Planning session completed] mark the end of a past background ' +
   'planning session. They are historical context — do not start a new planning session because ' +
-  'of them. Only plan again if the user explicitly asks you to.'
+  'of them. Only plan again if the user explicitly asks you to.\n' +
+  'Messages prefixed with [Background tool result — ...] are deferred results from long-running ' +
+  'tools whose work has now completed. Use them to inform your reply to the user — relay the ' +
+  'result naturally rather than restating the bracketed prefix.'
 
 // ─── Options ───
 
@@ -187,7 +190,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
   // ─── Shared handlers (used across all behaviors) ───
 
   const toolRegistered = (state: ChatbotState, msg: Extract<ChatbotMsg, { type: '_toolRegistered' }>): { state: ChatbotState } => ({
-    state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } },
+    state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } } },
   })
 
   const toolUnregistered = (state: ChatbotState, msg: Extract<ChatbotMsg, { type: '_toolUnregistered' }>): { state: ChatbotState } => {
@@ -198,6 +201,70 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
   const llmProviderUpdated = (state: ChatbotState, msg: Extract<ChatbotMsg, { type: '_llmProviderUpdated' }>): { state: ChatbotState } => ({
     state: { ...state, llmRef: msg.ref },
   })
+
+  // ─── _toolUpdate: inject background-tool completion + new LLM turn (idle only) ───
+
+  const injectBackgroundResult = (
+    state: ChatbotState,
+    msg: Extract<ChatbotMsg, { type: '_toolUpdate' }>,
+    context: import('../../system/types.ts').ActorContext<ChatbotMsg>,
+  ): Result => {
+    if (!state.llmRef) {
+      context.log.warn('chatbot: dropping _toolUpdate, no LLM ref', { toolName: msg.toolName, toolCallId: msg.toolCallId })
+      return { state }
+    }
+    const resultText = msg.reply.type === 'toolResult'
+      ? msg.reply.result
+      : `Tool error: ${msg.reply.error}`
+    const injection = `[Background tool result — ${msg.toolName} (toolCallId=${msg.toolCallId})]: ${resultText}`
+
+    const todayDateNote = `Today's date is ${new Date().toDateString()}.`
+    const fullSystemPrompt = [systemPrompt, todayDateNote, state.userContext, HISTORY_MARKERS_NOTE].filter(Boolean).join('\n\n---\n\n')
+    const traceId = crypto.randomUUID().replace(/-/g, '').slice(0, 32)
+    const requestSpan = context.trace.child(traceId, '0000000000000000', 'chatbot-bgresult', { toolName: msg.toolName, toolCallId: msg.toolCallId })
+    const llmSpan = context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
+    const requestId = crypto.randomUUID()
+
+    const apiMessages: ApiMessage[] = [
+      ...(fullSystemPrompt ? [{ role: 'system' as const, content: fullSystemPrompt }] : []),
+      ...state.history,
+      { role: 'user' as const, content: injection },
+    ]
+    const toolSchemas = [
+      ...Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool),
+      ...(plannerConfig ? [PLAN_TOOL_SCHEMA] : []),
+    ]
+    const tools = toolSchemas.length > 0 ? toolSchemas : undefined
+
+    state.llmRef.send({
+      type: 'stream',
+      requestId,
+      model,
+      messages: apiMessages,
+      tools,
+      role: 'reasoning',
+      clientId,
+      replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
+    })
+
+    return {
+      state: {
+        ...state,
+        history: [...state.history, { role: 'user' as const, content: injection, timestamp: Date.now() }],
+        requestId,
+        turnMessages: apiMessages,
+        pending: '',
+        pendingReasoning: '',
+        pendingUsage: { promptTokens: 0, completionTokens: 0 },
+        spanHandles: { requestSpan, llmSpan, toolSpans: {} },
+        toolLoopCount: 0,
+        isInjected: true,
+      },
+      become: awaitingLlmHandler,
+    }
+  }
+
+  const stashToolUpdate = (state: ChatbotState): Result => ({ state, stash: true })
 
   // ─── Forward declarations for circular references ───
 
@@ -309,6 +376,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       }
     },
 
+    _toolUpdate:         (state, msg, context): Result => injectBackgroundResult(state, msg, context),
     _toolRegistered:     (state, msg): Result => toolRegistered(state, msg),
     _toolUnregistered:   (state, msg): Result => toolUnregistered(state, msg),
     _llmProviderUpdated: (state, msg): Result => llmProviderUpdated(state, msg),
@@ -319,6 +387,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
   planningModeHandler = onMessage<ChatbotMsg, ChatbotState>({
     userMessage: (state): Result => ({ state, stash: true }),
+    _toolUpdate: (state): Result => stashToolUpdate(state),
 
     _plannerDone: (state, _msg, context): Result => {
       if (state.activePlannerRef) context.stop(state.activePlannerRef)
@@ -409,6 +478,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           state: { ...state, requestId: null, turnMessages: null, spanHandles: null, pendingUsage: { promptTokens: 0, completionTokens: 0 } },
           events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool unavailable. Please try again.' }) })],
           become: idleHandler,
+          unstashAll: true,
         }
       }
 
@@ -434,11 +504,14 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         if (toolSpan) newToolSpans[call.id] = toolSpan
 
         context.pipeToSelf(
-          ask<ToolInvokeMsg, ToolReply>(
+          invokeTool(
+            context,
             entry.ref,
-            (replyTo) => ({ type: 'invoke', toolName: call.name, arguments: call.arguments, replyTo, clientId, userId }),
-            undefined,
-            toolSpan ? context.trace.injectHeaders(toolSpan) : undefined,
+            { toolName: call.name, arguments: call.arguments, clientId, userId },
+            {
+              onCompletion: (reply) => ({ type: '_toolUpdate' as const, toolName: call.name, toolCallId: call.id, reply }),
+              headers: toolSpan ? context.trace.injectHeaders(toolSpan) : undefined,
+            },
           ),
           (reply) => ({ type: '_toolResult' as const, toolName: call.name, toolCallId: call.id, reply }),
           (error) => ({
@@ -523,6 +596,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) }),
         ],
         become: idleHandler,
+        unstashAll: true,
       }
     },
 
@@ -538,9 +612,11 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         state: { ...state, requestId: null, turnMessages: null, spanHandles: null, pending: '', pendingReasoning: '', pendingUsage: { promptTokens: 0, completionTokens: 0 }, isInjected: undefined },
         events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }) })],
         become: idleHandler,
+        unstashAll: true,
       }
     },
 
+    _toolUpdate:         (state): Result => stashToolUpdate(state),
     _toolRegistered:     (state, msg): Result => toolRegistered(state, msg),
     _toolUnregistered:   (state, msg): Result => toolUnregistered(state, msg),
     _llmProviderUpdated: (state, msg): Result => llmProviderUpdated(state, msg),
@@ -605,6 +681,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
             emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool loop limit reached. Please try again.' }) }),
           ],
           become: idleHandler,
+          unstashAll: true,
         }
       }
 
@@ -656,6 +733,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       }
     },
 
+    _toolUpdate:         (state): Result => stashToolUpdate(state),
     _toolRegistered:     (state, msg): Result => toolRegistered(state, msg),
     _toolUnregistered:   (state, msg): Result => toolUnregistered(state, msg),
     _llmProviderUpdated: (state, msg): Result => llmProviderUpdated(state, msg),
@@ -670,7 +748,13 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
         context.subscribe(ToolRegistrationTopic, (event) => {
           if (!applyToolFilter(event.name, toolFilter)) return null
           if ('schema' in event) {
-            return { type: '_toolRegistered' as const, name: event.name, schema: event.schema, ref: event.ref }
+            return {
+              type: '_toolRegistered' as const,
+              name: event.name,
+              schema: event.schema,
+              ref: event.ref,
+              mayBeLongRunning: event.mayBeLongRunning,
+            }
           }
           return { type: '_toolUnregistered' as const, name: event.name }
         })
