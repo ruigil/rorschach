@@ -1,5 +1,5 @@
 import type { ActorRef, SpanHandle } from '../../system/types.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import type { ToolFinalReply, ToolInvokeMsg } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 
 // ─── Domain types ───
@@ -62,7 +62,7 @@ export type PendingBatch = {
 export type NoteAgentMsg =
   | ToolInvokeMsg
   | LlmProviderReply
-  | { type: '_toolResult'; toolCallId: string; toolName: string; reply: ToolReply }
+  | { type: '_toolResult'; toolCallId: string; toolName: string; reply: ToolFinalReply }
   | { type: '_llmProviderUpdated'; ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── Todo reminder message protocol ───

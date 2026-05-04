@@ -4,6 +4,8 @@ export { createWorkerBridge } from '../plugins/parallel/worker-bridge.ts'
 export { taskTopic } from '../plugins/parallel/types.ts'
 export type { TaskEvent, WorkerBridge, WorkerBridgeMsg, WorkerBridgeOptions, WorkerBridgeState } from '../plugins/parallel/types.ts'
 export { ask } from './ask.ts'
+export { invokeTool } from './invoke-tool.ts'
+export type { InvokeToolArgs, InvokeToolOptions } from './invoke-tool.ts'
 export { onLifecycle, onMessage } from './match.ts'
 export { watchTopic } from './services.ts'
 
