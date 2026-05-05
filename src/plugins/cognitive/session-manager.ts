@@ -4,7 +4,7 @@ import { ClientConnectTopic, ClientDisconnectTopic, InboundMessageTopic, CronTri
 import { createChatbotActor } from './chatbot.ts'
 import type { ChatbotState } from './chatbot.ts'
 import type { ToolFilter } from '../../types/tools.ts'
-import type { ChatbotMsg, PlannerInputMsg, PlannerConfig } from './types.ts'
+import type { ChatbotMsg, PlannerInputMsg } from './types.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import { PlannerActiveTopic } from './types.ts'
 
@@ -38,7 +38,6 @@ export type SessionManagerOptions = {
   systemPrompt?:  string
   historyWindowHours?: number
   toolFilter?:    ToolFilter
-  plannerConfig?: PlannerConfig
 }
 
 // ─── Initial chatbot state ───
@@ -49,7 +48,6 @@ const initialChatbotState = (llmRef: ActorRef<LlmProviderMsg>): ChatbotState => 
   sessionUsage:     { promptTokens: 0, completionTokens: 0 },
   llmRef,
   userContext:      null,
-  activePlannerRef: null,
   requestId:        null,
   turnMessages:     null,
   spanHandles:      null,
@@ -64,7 +62,7 @@ const initialChatbotState = (llmRef: ActorRef<LlmProviderMsg>): ChatbotState => 
 // ─── Actor definition ───
 
 export const createSessionManagerActor = (options: SessionManagerOptions): ActorDef<SessionManagerMsg, SessionManagerState> => {
-  const { llmRef, model, systemPrompt, historyWindowHours, toolFilter, plannerConfig } = options
+  const { llmRef, model, systemPrompt, historyWindowHours, toolFilter } = options
 
   return {
     lifecycle: onLifecycle({
@@ -105,7 +103,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
         }
         const ref = context.spawn(
           `chatbot-${userId}`,
-          createChatbotActor({ clientId, model, systemPrompt, historyWindowHours, toolFilter, plannerConfig, userId, roles, llmRef }),
+          createChatbotActor({ clientId, model, systemPrompt, historyWindowHours, toolFilter, userId, roles, llmRef }),
           initialChatbotState(llmRef),
         )
         return {
@@ -161,24 +159,6 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
 
         // Planner is done — restore normal routing
         const { [clientId]: _, ...plannerSessions } = state.plannerSessions
-
-        const userId     = state.clientIndex[clientId]
-        const chatbotRef = userId ? state.userSessions[userId] : undefined
-
-        // Always tell the chatbot to clean up the planner actor
-        chatbotRef?.send({ type: '_plannerDone' })
-
-        if (summary) {
-          // Inject summary as a synthetic userMessage so the chatbot replies naturally
-          chatbotRef?.send({
-            type:         'userMessage',
-            clientId,
-            text:         `[Planning session completed] ${summary}`,
-            traceId:      crypto.randomUUID(),
-            parentSpanId: crypto.randomUUID(),
-            isInjected:   true,
-          })
-        }
 
         return { state: { ...state, plannerSessions } }
       },

@@ -14,7 +14,6 @@ export type ChatbotMsg =
   | { type: '_toolUpdate';          toolName: string; toolCallId: string; reply: ToolFinalReply }
   | { type: '_llmProviderUpdated';  ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_userContext';         summary: string }
-  | { type: '_plannerDone' }
 
 // ─── Planner configuration (used to configure per-session planner instances) ───
 
