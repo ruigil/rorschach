@@ -6,7 +6,6 @@ import { createAudioActor, type AudioState, TRANSCRIBE_AUDIO_TOOL_NAME, TRANSCRI
 import { createVideoActor, type VideoState, GENERATE_VIDEO_TOOL_NAME, GENERATE_VIDEO_SCHEMA } from './video-actor.ts'
 import { createPdfActor, PDF_TOOL_NAME, PDF_SCHEMA } from './pdf.ts'
 import { createFetchFileActor, FETCH_FILE_TOOL_NAME, FETCH_FILE_SCHEMA } from './fetch-file.ts'
-import { createLongTaskActor, createInitialLongTaskState, LONG_TASK_TOOL_NAME, LONG_TASK_SCHEMA } from './long-task.ts'
 import { createToolStatusActor, createInitialToolStatusState, TOOL_STATUS_TOOL_NAME, TOOL_STATUS_SCHEMA } from './tool-status.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
@@ -61,7 +60,6 @@ type PluginState = {
   cron: { ref: ActorRef<ToolMsg> | null }
   pdf: { ref: ActorRef<ToolMsg> | null }
   fetchFile: { ref: ActorRef<ToolMsg> | null }
-  longTask: { ref: ActorRef<ToolMsg> | null }
   toolStatus: { ref: ActorRef<ToolMsg> | null }
   llmRef: ActorRef<LlmProviderMsg> | null
 }
@@ -95,7 +93,6 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
     cron:       { ref: null },
     pdf:        { ref: null },
     fetchFile:  { ref: null },
-    longTask:   { ref: null },
     toolStatus: { ref: null },
     llmRef:     null,
   },
@@ -129,9 +126,6 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       const fetchFileRef = ctx.spawn('fetch-file-0', createFetchFileActor(), null) as ActorRef<ToolMsg>
       ctx.publishRetained(ToolRegistrationTopic, FETCH_FILE_TOOL_NAME, { name: FETCH_FILE_TOOL_NAME, schema: FETCH_FILE_SCHEMA, ref: fetchFileRef })
 
-      const longTaskRef = ctx.spawn('long-task-0', createLongTaskActor(), createInitialLongTaskState()) as unknown as ActorRef<ToolMsg>
-      ctx.publishRetained(ToolRegistrationTopic, LONG_TASK_TOOL_NAME, { name: LONG_TASK_TOOL_NAME, schema: LONG_TASK_SCHEMA, ref: longTaskRef, mayBeLongRunning: true })
-
       const toolStatusRef = ctx.spawn('tool-status-0', createToolStatusActor(), createInitialToolStatusState()) as unknown as ActorRef<ToolMsg>
       ctx.publishRetained(ToolRegistrationTopic, TOOL_STATUS_TOOL_NAME, { name: TOOL_STATUS_TOOL_NAME, schema: TOOL_STATUS_SCHEMA, ref: toolStatusRef })
 
@@ -149,7 +143,6 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         cron:       { ref: cronRef },
         pdf:        { ref: pdfRef },
         fetchFile:  { ref: fetchFileRef },
-        longTask:   { ref: longTaskRef },
         toolStatus: { ref: toolStatusRef },
         llmRef:     null,
       } }
@@ -185,9 +178,6 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       }
       if (state.fetchFile.ref) {
         ctx.deleteRetained(ToolRegistrationTopic, FETCH_FILE_TOOL_NAME, { name: FETCH_FILE_TOOL_NAME, ref: null })
-      }
-      if (state.longTask.ref) {
-        ctx.deleteRetained(ToolRegistrationTopic, LONG_TASK_TOOL_NAME, { name: LONG_TASK_TOOL_NAME, ref: null })
       }
       if (state.toolStatus.ref) {
         ctx.deleteRetained(ToolRegistrationTopic, TOOL_STATUS_TOOL_NAME, { name: TOOL_STATUS_TOOL_NAME, ref: null })
