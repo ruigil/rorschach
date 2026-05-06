@@ -365,7 +365,7 @@ const handleAwaitingLlm = (
   jobId: string,
 ): SessionResult => {
   switch (msg.type) {
-    case '_userInput': {
+    case 'userMessage': {
       // Drop user input while LLM is actively generating
       return { state: { ...state, sessions: { ...state.sessions, [jobId]: sess } }, sess, events: [] }
     }
@@ -426,8 +426,8 @@ const handleToolLoop = (
   jobId: string,
 ): SessionResult => {
   switch (msg.type) {
-    case '_userInput': {
-      // Stash user input while tools are running
+    case 'userMessage': {
+      // Drop user input while tools are running
       return { state: { ...state, sessions: { ...state.sessions, [jobId]: sess } }, sess, events: [] }
     }
 
@@ -481,7 +481,7 @@ const handleIdle = (
   ctx: Ctx,
   jobId: string,
 ): SessionResult => {
-  if (msg.type !== '_userInput' || msg.clientId !== sess.clientId) {
+  if (msg.type !== 'userMessage' || msg.clientId !== sess.clientId) {
     return { state, sess, events: [] }
   }
 
@@ -509,7 +509,7 @@ const handleFormalizing = (
   jobId: string,
 ): SessionResult => {
   switch (msg.type) {
-    case '_userInput': {
+    case 'userMessage': {
       return { state: { ...state, sessions: { ...state.sessions, [jobId]: sess } }, sess, events: [] }
     }
 
@@ -674,7 +674,7 @@ export const createPlannerToolActor = (options: PlannerToolOptions): ActorDef<Pl
         return { state }
       },
 
-      _userInput: (state, msg, ctx) => {
+      userMessage: (state, msg, ctx) => {
         const jobId = state.clientToJob[msg.clientId]
         if (!jobId) return { state }
         const sess = state.sessions[jobId]

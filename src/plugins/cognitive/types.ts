@@ -42,9 +42,9 @@ export type Plan = {
   tasks:     PlanTask[]
 }
 
-// ─── Planner input message (subset sent by session-manager) ───
+// ─── Planner input message (sent by session-manager) ───
 
-export type PlannerInputMsg = { type: '_userInput'; clientId: string; text: string }
+export type PlannerInputMsg = { type: 'userMessage'; clientId: string; text: string }
 
 // ─── Planner session routing topic ───
 

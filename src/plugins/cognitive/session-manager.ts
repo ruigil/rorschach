@@ -139,7 +139,7 @@ export const createSessionManagerActor = (options: SessionManagerOptions): Actor
         // If a planner session is active for this client, route input to the planner instead
         const plannerRef = state.plannerSessions[clientId]
         if (plannerRef) {
-          plannerRef.send({ type: '_userInput', clientId, text })
+          plannerRef.send({ type: 'userMessage', clientId, text })
           return { state }
         }
 
