@@ -48,18 +48,13 @@ export type PlannerToolMsg = ToolInvokeMsg | ToolJobStatusMsg | PlannerInputMsg 
 
 // ─── Session state types ───
 
-type SessionBehavior = 'awaitingLlm' | 'toolLoop' | 'awaitingUser' | 'refinementLoop' | 'finalizing' | 'done'
+type SessionBehavior = 'awaitingLlm' | 'toolLoop' | 'idle' | 'formalizing' | 'done'
 
 type PendingBatch = {
   remaining:          number
   results:            Array<{ toolCallId: string; toolName: string; content: string }>
   messagesAtCall:     ApiMessage[]
   assistantToolCalls: ToolCall[]
-}
-
-type PendingAskUser = {
-  toolCallId:     string
-  messagesAtCall: ApiMessage[]
 }
 
 type PlannerSessionState = {
@@ -70,9 +65,7 @@ type PlannerSessionState = {
   requestId:      string | null
   pending:        string
   pendingBatch:   PendingBatch | null
-  pendingAskUser: PendingAskUser | null
   toolLoopCount:  number
-  proposedPlan:   Plan | null
   pendingSummary: string | null
 }
 
@@ -91,26 +84,11 @@ export type PlannerToolState = {
 
 // ─── Control tool schemas ───
 
-const ASK_USER_TOOL: Tool = {
+const FORMALIZE_PLAN_TOOL: Tool = {
   type: 'function',
   function: {
-    name: 'ask_user',
-    description: 'Send a single clarifying question to the user and wait for their response. Use this to gather context you cannot research yourself.',
-    parameters: {
-      type: 'object',
-      properties: {
-        question: { type: 'string', description: 'The question to ask the user' },
-      },
-      required: ['question'],
-    },
-  },
-}
-
-const PROPOSE_PLAN_TOOL: Tool = {
-  type: 'function',
-  function: {
-    name: 'propose_plan',
-    description: 'Propose a structured plan to the user once you have enough context. The user will either approve it or provide feedback for revision.',
+    name: 'formalize_plan',
+    description: 'Finalize and save the accepted plan to disk. Call this only when the user has explicitly approved the plan you described conversationally.',
     parameters: {
       type: 'object',
       properties: {
@@ -124,7 +102,7 @@ const PROPOSE_PLAN_TOOL: Tool = {
           items: {
             type: 'object',
             properties: {
-              id:                 { type: 'string', description: 'Short unique identifier, e.g. t1, t2' },
+              id:                 { type: 'string', description: 'Short unique identifier' },
               name:               { type: 'string', description: 'Short task name' },
               description:        { type: 'string', description: 'What needs to be done' },
               validationCriteria: { type: 'string', description: 'How to verify this task is complete' },
@@ -136,15 +114,6 @@ const PROPOSE_PLAN_TOOL: Tool = {
       },
       required: ['summary', 'tasks'],
     },
-  },
-}
-
-const APPROVE_PLAN_TOOL: Tool = {
-  type: 'function',
-  function: {
-    name: 'approve_plan',
-    description: 'Call this tool when the user explicitly approves the most recently proposed plan.',
-    parameters: { type: 'object', properties: {} },
   },
 }
 
@@ -162,7 +131,7 @@ const ABORT_PLAN_TOOL: Tool = {
   },
 }
 
-const CONTROL_TOOL_NAMES = new Set(['ask_user', 'propose_plan', 'approve_plan', 'abort_plan'])
+const CONTROL_TOOL_NAMES = new Set(['formalize_plan', 'abort_plan'])
 
 // ─── System prompt ───
 
@@ -171,20 +140,18 @@ const buildSystemPrompt = (): string =>
 Today's date is ${new Date().toDateString()}.
 
 You have access to:
-- ask_user: ask the user a clarifying question (one at a time)
-- propose_plan: propose a structured task plan once you have enough context
-- approve_plan: confirm the user's approval and finalize the plan
-- abort_plan: cancel the planning session if the user no longer wishes to proceed
 - Research tools (web_search, fetch_file, etc.) to gather information proactively
+- formalize_plan: save the final plan to disk once the user explicitly accepts it
+- abort_plan: cancel the session if the user no longer wishes to proceed
 
 Process:
-1. Research the goal using available research tools to understand what is involved — do this silently before asking questions.
-2. Ask the user targeted clarifying questions (one at a time via ask_user) to understand constraints, preferences, and context. Aim for 3–8 questions. Do not ask things you can look up yourself.
-3. Once you have enough context, call propose_plan with a structured list of tasks organised as a DAG.
-4. The user will approve or provide feedback. 
-   - If they approve, call approve_plan.
-   - If they provide feedback, incorporate it, ask more questions or call propose_plan again.
-   - If they want to cancel, call abort_plan.
+1. Research the goal using available research tools to understand what is involved. Do this before asking the user anything you can look up yourself.
+2. Ask the user clarifying questions directly in your response — be conversational. You do not need a special tool for questions. Aim for a few targeted questions to understand constraints, preferences, and context.
+3. Once you have enough context, describe the full plan to the user in your response. Include every task with its id, name, description, validation criteria, and dependencies.
+4. Wait for the user's feedback. They may:
+   - Accept the plan: call formalize_plan with the plan structure.
+   - Request changes: do more research if needed and describe the revised plan.
+   - Cancel: call abort_plan.
 
 Task quality guidelines:
 - Each task must have a clear, specific name and description
@@ -200,31 +167,6 @@ const todayISO = (): string => new Date().toISOString().slice(0, 10)
 
 const slugify = (text: string): string =>
   text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50)
-
-const formatPlanMarkdown = (plan: Plan): string => {
-  const lines: string[] = [
-    `**Here is your plan:**`,
-    ``,
-    `**Goal:** ${plan.goal}`,
-    ``,
-    plan.context,
-    ``,
-    `**Tasks:**`,
-  ]
-  for (const task of plan.tasks) {
-    lines.push(``)
-    lines.push(`**${task.id}. ${task.name}**`)
-    lines.push(task.description)
-    lines.push(`✓ Done when: ${task.validationCriteria}`)
-    if (task.dependencies.length > 0) {
-      lines.push(`↳ Depends on: ${task.dependencies.join(', ')}`)
-    }
-  }
-  lines.push(``)
-  lines.push(`---`)
-  lines.push(`Let me know if this looks good to save, or if you'd like to make any changes or cancel.`)
-  return lines.join('\n')
-}
 
 // ─── Event helper ───
 
@@ -263,9 +205,7 @@ const sessionSendToLlm = (
 }
 
 const buildTools = (state: PlannerToolState): Tool[] => [
-  ASK_USER_TOOL,
-  PROPOSE_PLAN_TOOL,
-  APPROVE_PLAN_TOOL,
+  FORMALIZE_PLAN_TOOL,
   ABORT_PLAN_TOOL,
   ...Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool),
 ]
@@ -357,30 +297,8 @@ const handleSessionToolCalls = (
   const updatedHistory = [...sess.history, assistantMsg]
   const updatedSess = { ...sess, history: updatedHistory, requestId: null as string | null, pending: '' }
 
-  // ── ask_user ──
-  if (controlCall.name === 'ask_user') {
-    let question: string
-    try {
-      question = (JSON.parse(controlCall.arguments) as { question?: string }).question ?? controlCall.arguments
-    } catch {
-      question = controlCall.arguments
-    }
-    ctx.log.info('planner-tool: asking user', { jobId, question: question.slice(0, 100) })
-    return {
-      state: {
-        ...state,
-        sessions: { ...state.sessions, [jobId]: { ...updatedSess, behavior: 'awaitingUser', pendingAskUser: { toolCallId: controlCall.id, messagesAtCall: updatedHistory } } },
-      },
-      sess: { ...updatedSess, behavior: 'awaitingUser', pendingAskUser: { toolCallId: controlCall.id, messagesAtCall: updatedHistory } },
-      events: [
-        emit(OutboundMessageTopic, { clientId: sess.clientId, text: JSON.stringify({ type: 'chunk', text: question }) }),
-        emit(OutboundMessageTopic, { clientId: sess.clientId, text: JSON.stringify({ type: 'done' }) }),
-      ],
-    }
-  }
-
-  // ── propose_plan ──
-  if (controlCall.name === 'propose_plan') {
+  // ── formalize_plan ──
+  if (controlCall.name === 'formalize_plan') {
     let summary: string
     let rawTasks: PlanTask[]
     try {
@@ -397,28 +315,10 @@ const handleSessionToolCalls = (
       createdAt: new Date().toISOString(),
       tasks:     rawTasks,
     }
-    ctx.log.info('planner-tool: proposing plan', { jobId, tasks: plan.tasks.length })
-    return {
-      state: {
-        ...state,
-        sessions: { ...state.sessions, [jobId]: { ...updatedSess, behavior: 'refinementLoop', proposedPlan: plan } },
-      },
-      sess: { ...updatedSess, behavior: 'refinementLoop', proposedPlan: plan },
-      events: [
-        emit(OutboundMessageTopic, { clientId: sess.clientId, text: JSON.stringify({ type: 'chunk', text: formatPlanMarkdown(plan) }) }),
-        emit(OutboundMessageTopic, { clientId: sess.clientId, text: JSON.stringify({ type: 'done' }) }),
-      ],
-    }
-  }
-
-  // ── approve_plan ──
-  if (controlCall.name === 'approve_plan') {
-    const plan = sess.proposedPlan
-    if (!plan) return abortSession(state, sess, ctx, jobId, 'No plan found to approve.')
     const shortId  = crypto.randomUUID().slice(0, 8)
     const filename = `${todayISO()}-${slugify(plan.goal)}-${shortId}.json`
     const filepath = `${state.plansDir}/${filename}`
-    const summary  = `Goal: ${plan.goal}. ${plan.context} Plan saved to ${filepath} — ${plan.tasks.length} tasks.`
+    const saveSummary = `Goal: ${plan.goal}. ${plan.context} Plan saved to ${filepath} — ${plan.tasks.length} tasks.`
     ctx.pipeToSelf(
       (async () => {
         await mkdir(state.plansDir, { recursive: true })
@@ -427,13 +327,13 @@ const handleSessionToolCalls = (
       (): InternalMsg => ({ type: '_planWriteDone', jobId, filepath }),
       (err): InternalMsg => ({ type: '_planWriteError', jobId, error: String(err) }),
     )
-    ctx.log.info('planner-tool: plan approved, writing to disk', { jobId, filepath })
+    ctx.log.info('planner-tool: formalizing plan', { jobId, filepath, tasks: plan.tasks.length })
     return {
       state: {
         ...state,
-        sessions: { ...state.sessions, [jobId]: { ...updatedSess, behavior: 'finalizing', proposedPlan: null, pendingSummary: summary } },
+        sessions: { ...state.sessions, [jobId]: { ...updatedSess, behavior: 'formalizing', pendingSummary: saveSummary } },
       },
-      sess: { ...updatedSess, behavior: 'finalizing', proposedPlan: null, pendingSummary: summary },
+      sess: { ...updatedSess, behavior: 'formalizing', pendingSummary: saveSummary },
       events: [emit(OutboundMessageTopic, { clientId: sess.clientId, text: JSON.stringify({ type: 'chunk', text: 'Saving your plan…' }) })],
     }
   }
@@ -466,7 +366,7 @@ const handleAwaitingLlm = (
 ): SessionResult => {
   switch (msg.type) {
     case '_userInput': {
-      // Stash user input while LLM is running
+      // Drop user input while LLM is actively generating
       return { state: { ...state, sessions: { ...state.sessions, [jobId]: sess } }, sess, events: [] }
     }
 
@@ -488,20 +388,19 @@ const handleAwaitingLlm = (
 
     case 'llmDone': {
       if (msg.requestId !== sess.requestId) return { state, sess, events: [] }
-      ctx.log.warn('planner-tool: LLM responded without tool call, ending session', { jobId })
-      ctx.publishRetained(PlannerActiveTopic, sess.clientId, { clientId: sess.clientId, plannerRef: null })
-      const { [sess.clientId]: _, ...clientToJob } = state.clientToJob
-      const doneSess: PlannerSessionState = { ...sess, behavior: 'done', pendingSummary: sess.pending || null, requestId: null, pending: '' }
-      const events: Emitted[] = [
-        emit(OutboundMessageTopic, { clientId: sess.clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) }),
-      ]
+      // Append the assistant's pending text as a history message, then go idle
+      const assistantHistory = sess.pending
+        ? [...sess.history, { role: 'assistant' as const, content: sess.pending }]
+        : sess.history
+      const idleSess: PlannerSessionState = { ...sess, behavior: 'idle', history: assistantHistory, requestId: null, pending: '' }
+      const events: Emitted[] = []
       if (sess.pending) {
         events.push(emit(OutboundMessageTopic, { clientId: sess.clientId, text: JSON.stringify({ type: 'chunk', text: sess.pending }) }))
         events.push(emit(OutboundMessageTopic, { clientId: sess.clientId, text: JSON.stringify({ type: 'done' }) }))
       }
       return {
-        state: { ...state, clientToJob, sessions: { ...state.sessions, [jobId]: doneSess } },
-        sess: doneSess,
+        state: { ...state, sessions: { ...state.sessions, [jobId]: idleSess } },
+        sess: idleSess,
         events,
       }
     }
@@ -573,9 +472,9 @@ const handleToolLoop = (
   }
 }
 
-// --- awaitingUser ---
+// --- idle ---
 
-const handleAwaitingUser = (
+const handleIdle = (
   state: PlannerToolState,
   sess: PlannerSessionState,
   msg: PlannerToolMsg,
@@ -586,40 +485,10 @@ const handleAwaitingUser = (
     return { state, sess, events: [] }
   }
 
-  const pendingAsk    = sess.pendingAskUser!
-  const toolResultMsg: ApiMessage = {
-    role: 'tool', content: msg.text, tool_call_id: pendingAsk.toolCallId,
-  }
-  const nextHistory = [...sess.history, toolResultMsg]
+  const userMsg: ApiMessage = { role: 'user', content: msg.text }
+  const nextHistory = [...sess.history, userMsg]
 
-  ctx.log.info('planner-tool: user answered', { jobId, answer: msg.text.slice(0, 80) })
-
-  const updatedSess = { ...sess, history: nextHistory, pendingAskUser: null, pending: '' }
-  const { state: newState, sess: newSess } = sessionSendToLlm(state, updatedSess, ctx, jobId, nextHistory)
-  return {
-    state: { ...newState, sessions: { ...newState.sessions, [jobId]: { ...newSess, behavior: 'awaitingLlm' } } },
-    sess:  { ...newSess, behavior: 'awaitingLlm' },
-    events: [],
-  }
-}
-
-// --- refinementLoop ---
-
-const handleRefinementLoop = (
-  state: PlannerToolState,
-  sess: PlannerSessionState,
-  msg: PlannerToolMsg,
-  ctx: Ctx,
-  jobId: string,
-): SessionResult => {
-  if (msg.type !== '_userInput' || msg.clientId !== sess.clientId) {
-    return { state, sess, events: [] }
-  }
-
-  const feedbackMsg: ApiMessage = { role: 'user', content: `[User feedback on plan]: ${msg.text}` }
-  const nextHistory = [...sess.history, feedbackMsg]
-
-  ctx.log.info('planner-tool: plan feedback', { jobId, feedback: msg.text.slice(0, 100) })
+  ctx.log.info('planner-tool: user input while idle', { jobId, text: msg.text.slice(0, 100) })
 
   const updatedSess = { ...sess, history: nextHistory, pending: '' }
   const { state: newState, sess: newSess } = sessionSendToLlm(state, updatedSess, ctx, jobId, nextHistory)
@@ -630,9 +499,9 @@ const handleRefinementLoop = (
   }
 }
 
-// --- finalizing ---
+// --- formalizing ---
 
-const handleFinalizing = (
+const handleFormalizing = (
   state: PlannerToolState,
   sess: PlannerSessionState,
   msg: PlannerToolMsg,
@@ -693,12 +562,11 @@ const dispatchSession = (
   jobId: string,
 ): SessionResult => {
   switch (sess.behavior) {
-    case 'awaitingLlm':     return handleAwaitingLlm(state, sess, msg, ctx, jobId)
-    case 'toolLoop':        return handleToolLoop(state, sess, msg, ctx, jobId)
-    case 'awaitingUser':    return handleAwaitingUser(state, sess, msg, ctx, jobId)
-    case 'refinementLoop':  return handleRefinementLoop(state, sess, msg, ctx, jobId)
-    case 'finalizing':      return handleFinalizing(state, sess, msg, ctx, jobId)
-    case 'done':            return { state, sess, events: [] }
+    case 'awaitingLlm': return handleAwaitingLlm(state, sess, msg, ctx, jobId)
+    case 'toolLoop':    return handleToolLoop(state, sess, msg, ctx, jobId)
+    case 'idle':        return handleIdle(state, sess, msg, ctx, jobId)
+    case 'formalizing': return handleFormalizing(state, sess, msg, ctx, jobId)
+    case 'done':        return { state, sess, events: [] }
   }
 }
 
@@ -754,9 +622,7 @@ export const createPlannerToolActor = (options: PlannerToolOptions): ActorDef<Pl
           requestId:      null,
           pending:        '',
           pendingBatch:   null,
-          pendingAskUser: null,
           toolLoopCount:  0,
-          proposedPlan:   null,
           pendingSummary: null,
         }
 
@@ -871,15 +737,15 @@ export const createPlannerToolActor = (options: PlannerToolOptions): ActorDef<Pl
 
       _planWriteDone: (state, msg, ctx) => {
         const sess = state.sessions[msg.jobId]
-        if (!sess || sess.behavior !== 'finalizing') return { state }
-        const { state: newState, sess: newSess, events } = handleFinalizing(state, sess, msg, ctx, msg.jobId)
+        if (!sess || sess.behavior !== 'formalizing') return { state }
+        const { state: newState, sess: newSess, events } = handleFormalizing(state, sess, msg, ctx, msg.jobId)
         return { state: newState, events }
       },
 
       _planWriteError: (state, msg, ctx) => {
         const sess = state.sessions[msg.jobId]
-        if (!sess || sess.behavior !== 'finalizing') return { state }
-        const { state: newState, sess: newSess, events } = handleFinalizing(state, sess, msg, ctx, msg.jobId)
+        if (!sess || sess.behavior !== 'formalizing') return { state }
+        const { state: newState, sess: newSess, events } = handleFormalizing(state, sess, msg, ctx, msg.jobId)
         return { state: newState, events }
       },
     }),
