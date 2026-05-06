@@ -4,8 +4,8 @@ import type { ActorDef, ActorRef, ActorContext } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { invokeTool } from '../../system/invoke-tool.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
-import type { ToolCollection, ToolEntry, ToolFinalReply, ToolFilter, ToolInvokeMsg, ToolJobStatusMsg, ToolReply } from '../../types/tools.ts'
-import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
+import type { ToolCollection, ToolEntry, ToolFinalReply, ToolFilter, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
+import { applyToolFilter, JobRegistryTopic, ToolRegistrationTopic } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { ApiMessage, LlmProviderMsg, LlmProviderReply, Tool, ToolCall } from '../../types/llm.ts'
 import type { Plan, PlannerInputMsg, PlanTask } from './types.ts'
@@ -44,7 +44,7 @@ type InternalMsg =
   | { type: '_planWriteDone';  jobId: string; filepath: string }
   | { type: '_planWriteError'; jobId: string; error: string }
 
-export type PlannerToolMsg = ToolInvokeMsg | ToolJobStatusMsg | PlannerInputMsg | LlmProviderReply | InternalMsg
+export type PlannerToolMsg = ToolInvokeMsg | PlannerInputMsg | LlmProviderReply | InternalMsg
 
 // ─── Session state types ───
 
@@ -232,6 +232,7 @@ const abortSession = (
     clientToJob,
     sessions: { ...state.sessions, [jobId]: { ...sess, behavior: 'done', pendingSummary: errorText } },
   }
+  ctx.publishRetained(JobRegistryTopic, jobId, { jobId, status: 'failed', error: errorText })
   return {
     state: updatedState,
     sess:  { ...sess, behavior: 'done', pendingSummary: errorText },
@@ -517,6 +518,7 @@ const handleFormalizing = (
       if (msg.jobId !== jobId) return { state, sess, events: [] }
       const summary = sess.pendingSummary ?? `Plan saved to ${msg.filepath}.`
       ctx.publishRetained(PlannerActiveTopic, sess.clientId, { clientId: sess.clientId, plannerRef: null, summary })
+      ctx.publishRetained(JobRegistryTopic, jobId, { jobId, status: 'completed', result: summary })
       ctx.log.info('planner-tool: session complete', { jobId, filepath: msg.filepath })
       const { [sess.clientId]: _, ...clientToJob } = state.clientToJob
       const doneSess: PlannerSessionState = { ...sess, behavior: 'done', pendingSummary: summary }
@@ -535,6 +537,7 @@ const handleFormalizing = (
       if (msg.jobId !== jobId) return { state, sess, events: [] }
       ctx.log.error('planner-tool: failed to write plan', { jobId, error: msg.error })
       ctx.publishRetained(PlannerActiveTopic, sess.clientId, { clientId: sess.clientId, plannerRef: null })
+      ctx.publishRetained(JobRegistryTopic, jobId, { jobId, status: 'failed', error: msg.error })
       const { [sess.clientId]: _, ...clientToJob } = state.clientToJob
       const doneSess: PlannerSessionState = { ...sess, behavior: 'done', pendingSummary: `Failed to save plan: ${msg.error}` }
       return {
@@ -638,12 +641,11 @@ export const createPlannerToolActor = (options: PlannerToolOptions): ActorDef<Pl
           state, { ...sess, history: [userMsg] }, ctx, jobId, [userMsg],
         )
 
-        // Reply toolPending so invokeTool starts polling
+        // Reply toolPending so invokeTool registers the job and subscribes
         msg.replyTo.send({
           type: 'toolPending',
           jobId,
           placeholderText: 'Planning session started.',
-          pollIntervalMs: 15000,
         })
 
         ctx.log.info('planner-tool: session started', { jobId, clientId, goal: goal.slice(0, 100) })
@@ -655,23 +657,6 @@ export const createPlannerToolActor = (options: PlannerToolOptions): ActorDef<Pl
             clientToJob: { ...updatedState.clientToJob, [clientId]: jobId },
           },
         }
-      },
-
-      jobStatus: (state, msg, ctx) => {
-        const sess = state.sessions[msg.jobId]
-        if (!sess) {
-          msg.replyTo.send({ type: 'toolError', error: `No active planning session with jobId ${msg.jobId}.` })
-          return { state }
-        }
-        if (sess.behavior === 'done') {
-          msg.replyTo.send({ type: 'toolResult', result: sess.pendingSummary ?? 'Planning session completed.' })
-          // Clean up session
-          const { [msg.jobId]: _, ...sessions } = state.sessions
-          const clientToJob = Object.fromEntries(Object.entries(state.clientToJob).filter(([, id]) => id !== msg.jobId))
-          return { state: { ...state, sessions, clientToJob } }
-        }
-        msg.replyTo.send({ type: 'toolPending', jobId: msg.jobId })
-        return { state }
       },
 
       userMessage: (state, msg, ctx) => {
