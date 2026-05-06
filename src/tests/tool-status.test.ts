@@ -3,49 +3,48 @@ import { createPluginSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { createToolStatusActor, createInitialToolStatusState, TOOL_STATUS_TOOL_NAME } from '../plugins/tools/tool-status.ts'
 import { JobRegistryTopic } from '../types/tools.ts'
-import type { ToolMsg, ToolReply } from '../types/tools.ts'
+import type { JobLifecycleEvent, ToolMsg, ToolReply } from '../types/tools.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
-// A fake long-running tool: replies with toolPending or toolResult based on its
-// internal state, controlled by direct topic events from the test.
+// A fake long-running tool: stores jobs and publishes completion to
+// JobRegistryTopic when `_finish` is received, simulating the topic-based
+// completion flow.
+//
+// The tool itself no longer needs a `jobStatus` handler — tool_status serves
+// status from its cached topic-derived state.
 
-type FakeToolState = { jobs: Record<string, { done: boolean; result: string }> }
-type FakeMsg = ToolMsg | { type: '_finish'; jobId: string }
+type FakeToolState = { jobs: Record<string, { result: string }> }
+type FakeInternalMsg = { type: '_finish'; jobId: string } | { type: '_fail'; jobId: string; error: string }
+type FakeMsg = ToolMsg | FakeInternalMsg
 
 const createFakeTool = (): ActorDef<FakeMsg, FakeToolState> => ({
-  handler: (state, msg) => {
+  handler: (state, msg, ctx) => {
     if (msg.type === 'invoke') {
       msg.replyTo.send({ type: 'toolError', error: 'use direct registry events' })
-      return { state }
-    }
-    if (msg.type === 'jobStatus') {
-      const job = state.jobs[msg.jobId]
-      if (!job) {
-        msg.replyTo.send({ type: 'toolError', error: `unknown job ${msg.jobId}` })
-        return { state }
-      }
-      if (job.done) {
-        msg.replyTo.send({ type: 'toolResult', result: job.result })
-      } else {
-        msg.replyTo.send({ type: 'toolPending', jobId: msg.jobId })
-      }
       return { state }
     }
     if (msg.type === '_finish') {
       const job = state.jobs[msg.jobId]
       if (!job) return { state }
-      return { state: { jobs: { ...state.jobs, [msg.jobId]: { ...job, done: true } } } }
+      ctx.publish(JobRegistryTopic, { jobId: msg.jobId, status: 'completed', result: job.result } as JobLifecycleEvent)
+      return { state }
+    }
+    if (msg.type === '_fail') {
+      const job = state.jobs[msg.jobId]
+      if (!job) return { state }
+      ctx.publish(JobRegistryTopic, { jobId: msg.jobId, status: 'failed', error: msg.error } as JobLifecycleEvent)
+      return { state }
     }
     return { state }
   },
 })
 
 describe('tool_status', () => {
-  test('lookup by jobId forwards a fresh jobStatus to the underlying tool', async () => {
+  test('status of running job served from cached topic state', async () => {
     const system = await createPluginSystem()
     const fakeTool = system.spawn('fake-tool', createFakeTool(), {
-      jobs: { 'job-1': { done: false, result: 'eventual' } },
+      jobs: { 'job-1': { result: 'eventual' } },
     }) as unknown as ActorRef<ToolMsg>
 
     const statusRef = system.spawn(
@@ -55,7 +54,7 @@ describe('tool_status', () => {
     ) as unknown as ActorRef<ToolMsg>
     await tick()
 
-    // Register a running job in the JobRegistry — tool_status should pick it up via subscription
+    // Register a running job in the JobRegistry — tool_status picks it up via subscription
     system.publishRetained(JobRegistryTopic, 'job-1', {
       jobId: 'job-1',
       status: 'running',
@@ -84,10 +83,98 @@ describe('tool_status', () => {
     await system.shutdown()
   })
 
+  test('completed job status shows result from topic', async () => {
+    const system = await createPluginSystem()
+    const fakeTool = system.spawn('fake-tool-c', createFakeTool(), {
+      jobs: { 'job-c': { result: 'all done' } },
+    }) as unknown as ActorRef<ToolMsg>
+
+    const statusRef = system.spawn(
+      'tool-status-c',
+      createToolStatusActor(),
+      createInitialToolStatusState(),
+    ) as unknown as ActorRef<ToolMsg>
+    await tick()
+
+    // Register running
+    system.publishRetained(JobRegistryTopic, 'job-c', {
+      jobId: 'job-c',
+      status: 'running',
+      toolName: 'fake-tool',
+      toolRef: fakeTool,
+      startedAt: Date.now() - 5000,
+    })
+    await tick()
+
+    // Tool publishes completion via the topic
+    ;(fakeTool as unknown as ActorRef<FakeInternalMsg>).send({ type: '_finish', jobId: 'job-c' })
+    await tick()
+
+    const reply = await ask<ToolMsg, ToolReply>(
+      statusRef,
+      (replyTo) => ({
+        type: 'invoke',
+        toolName: TOOL_STATUS_TOOL_NAME,
+        arguments: JSON.stringify({ jobId: 'job-c' }),
+        replyTo,
+        userId: 'tester',
+      }),
+      { timeoutMs: 2000 },
+    )
+
+    expect(reply.type).toBe('toolResult')
+    expect((reply as { type: 'toolResult'; result: string }).result).toContain('completed')
+    expect((reply as { type: 'toolResult'; result: string }).result).toContain('all done')
+    await system.shutdown()
+  })
+
+  test('failed job status shows error from topic', async () => {
+    const system = await createPluginSystem()
+    const fakeTool = system.spawn('fake-tool-f', createFakeTool(), {
+      jobs: { 'job-f': { result: '' } },
+    }) as unknown as ActorRef<ToolMsg>
+
+    const statusRef = system.spawn(
+      'tool-status-f',
+      createToolStatusActor(),
+      createInitialToolStatusState(),
+    ) as unknown as ActorRef<ToolMsg>
+    await tick()
+
+    system.publishRetained(JobRegistryTopic, 'job-f', {
+      jobId: 'job-f',
+      status: 'running',
+      toolName: 'fake-tool',
+      toolRef: fakeTool,
+      startedAt: Date.now() - 5000,
+    })
+    await tick()
+
+    ;(fakeTool as unknown as ActorRef<FakeInternalMsg>).send({ type: '_fail', jobId: 'job-f', error: 'network timeout' })
+    await tick()
+
+    const reply = await ask<ToolMsg, ToolReply>(
+      statusRef,
+      (replyTo) => ({
+        type: 'invoke',
+        toolName: TOOL_STATUS_TOOL_NAME,
+        arguments: JSON.stringify({ jobId: 'job-f' }),
+        replyTo,
+        userId: 'tester',
+      }),
+      { timeoutMs: 2000 },
+    )
+
+    expect(reply.type).toBe('toolResult')
+    expect((reply as { type: 'toolResult'; result: string }).result).toContain('failed')
+    expect((reply as { type: 'toolResult'; result: string }).result).toContain('network timeout')
+    await system.shutdown()
+  })
+
   test('list mode (no jobId) returns active jobs with age', async () => {
     const system = await createPluginSystem()
     const fakeTool = system.spawn('fake-tool-2', createFakeTool(), {
-      jobs: { 'jA': { done: false, result: '' }, 'jB': { done: false, result: '' } },
+      jobs: { 'jA': { result: '' }, 'jB': { result: '' } },
     }) as unknown as ActorRef<ToolMsg>
 
     const statusRef = system.spawn(

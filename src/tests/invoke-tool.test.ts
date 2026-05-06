@@ -6,7 +6,6 @@ import type {
   JobLifecycleEvent,
   ToolFinalReply,
   ToolMsg,
-  ToolReply,
 } from '../types/tools.ts'
 
 // ─── Helpers ───
@@ -16,26 +15,27 @@ const tick = (ms = 50) => Bun.sleep(ms)
 // ─── Configurable test tool ───
 //
 // On `invoke`: replies according to its `mode`. Modes:
-//   - 'syncResult' / 'syncError'                    → final reply immediately
-//   - 'pendingThen(<n>, syncResult|syncError)'      → toolPending first, then
-//                                                     after `n` jobStatus polls
-//                                                     resolves with the kind
-// `pollIntervalMsHint` is sent in the toolPending reply to drive the helper's
-// polling cadence (kept short so tests stay fast).
+//   - 'syncResult' / 'syncError'    → final reply immediately
+//   - 'pending'                     → toolPending first, then publishes
+//                                     completion/failure to JobRegistryTopic
+//                                     after `delayMs` via an actor timer.
+
+type TestInternalMsg = { type: '_complete'; jobId: string }
 
 type ToolMode =
   | { kind: 'syncResult'; result: string }
   | { kind: 'syncError';  error:  string }
-  | { kind: 'pending'; eventually: ToolFinalReply; pollsUntilDone: number; intervalMs?: number; placeholder?: string }
+  | { kind: 'pending'; eventually: ToolFinalReply; delayMs: number; placeholder?: string }
 
 type ToolState = {
-  mode:        ToolMode
-  jobs:        Record<string, { remaining: number; eventually: ToolFinalReply }>
-  pollCounts:  Record<string, number>
+  mode: ToolMode
+  jobs: Record<string, ToolFinalReply>
 }
 
-const createTestTool = (mode: ToolMode): ActorDef<ToolMsg, ToolState> => ({
-  handler: (state, msg) => {
+type TestMsg = ToolMsg | TestInternalMsg
+
+const createTestTool = (mode: ToolMode): ActorDef<TestMsg, ToolState> => ({
+  handler: (state, msg, ctx) => {
     if (msg.type === 'invoke') {
       if (state.mode.kind === 'syncResult') {
         msg.replyTo.send({ type: 'toolResult', result: state.mode.result })
@@ -45,40 +45,33 @@ const createTestTool = (mode: ToolMode): ActorDef<ToolMsg, ToolState> => ({
         msg.replyTo.send({ type: 'toolError', error: state.mode.error })
         return { state }
       }
+      // pending mode: start a timer to simulate long-running completion
       const jobId = `job-${Object.keys(state.jobs).length + 1}`
       msg.replyTo.send({
         type: 'toolPending',
         jobId,
         placeholderText: state.mode.placeholder,
-        pollIntervalMs: state.mode.intervalMs,
       })
+      ctx.timers.startSingleTimer(`test-tool:${jobId}`, { type: '_complete', jobId }, state.mode.delayMs)
       return {
         state: {
           ...state,
-          jobs: { ...state.jobs, [jobId]: { remaining: state.mode.pollsUntilDone, eventually: state.mode.eventually } },
+          jobs: { ...state.jobs, [jobId]: state.mode.eventually },
         },
       }
     }
-    // jobStatus
-    const job = state.jobs[msg.jobId]
-    if (!job) {
-      msg.replyTo.send({ type: 'toolError', error: `unknown job ${msg.jobId}` })
-      return { state }
+    // _complete: timer fired → publish completion to JobRegistryTopic
+    if (msg.type === '_complete') {
+      const job = state.jobs[msg.jobId]
+      if (!job) return { state }
+      const event: JobLifecycleEvent = job.type === 'toolResult'
+        ? { jobId: msg.jobId, status: 'completed', result: job.result }
+        : { jobId: msg.jobId, status: 'failed',    error: job.error }
+      ctx.publish(JobRegistryTopic, event)
+      const { [msg.jobId]: _drop, ...rest } = state.jobs
+      return { state: { ...state, jobs: rest } }
     }
-    const polls = (state.pollCounts[msg.jobId] ?? 0) + 1
-    if (job.remaining > 0) {
-      msg.replyTo.send({ type: 'toolPending', jobId: msg.jobId })
-      return {
-        state: {
-          ...state,
-          jobs:       { ...state.jobs, [msg.jobId]: { ...job, remaining: job.remaining - 1 } },
-          pollCounts: { ...state.pollCounts, [msg.jobId]: polls },
-        },
-      }
-    }
-    msg.replyTo.send(job.eventually)
-    const { [msg.jobId]: _drop, ...rest } = state.jobs
-    return { state: { ...state, jobs: rest, pollCounts: { ...state.pollCounts, [msg.jobId]: polls } } }
+    return { state }
   },
 })
 
@@ -134,7 +127,7 @@ describe('invokeTool primitive', () => {
     system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
 
     const tool = system.spawn('tool-sync-ok', createTestTool({ kind: 'syncResult', result: 'hi' }), {
-      mode: { kind: 'syncResult', result: 'hi' }, jobs: {}, pollCounts: {},
+      mode: { kind: 'syncResult', result: 'hi' }, jobs: {},
     }) as unknown as ActorRef<ToolMsg>
     const caller = system.spawn('caller-sync-ok', createCaller(tool, null), null)
     await tick()
@@ -158,7 +151,7 @@ describe('invokeTool primitive', () => {
     system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
 
     const tool = system.spawn('tool-sync-err', createTestTool({ kind: 'syncError', error: 'nope' }), {
-      mode: { kind: 'syncError', error: 'nope' }, jobs: {}, pollCounts: {},
+      mode: { kind: 'syncError', error: 'nope' }, jobs: {},
     }) as unknown as ActorRef<ToolMsg>
     const caller = system.spawn('caller-sync-err', createCaller(tool, null), null)
     await tick()
@@ -178,9 +171,9 @@ describe('invokeTool primitive', () => {
     const events: JobLifecycleEvent[] = []
     system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
 
-    const mode: ToolMode = { kind: 'pending', eventually: { type: 'toolResult', result: 'done' }, pollsUntilDone: 0, intervalMs: 30 }
+    const mode: ToolMode = { kind: 'pending', eventually: { type: 'toolResult', result: 'done' }, delayMs: 30 }
     const tool = system.spawn('tool-pending-no-cb', createTestTool(mode), {
-      mode, jobs: {}, pollCounts: {},
+      mode, jobs: {},
     }) as unknown as ActorRef<ToolMsg>
     // Caller without onCompletion
     const caller = system.spawn('caller-no-cb', createCaller(tool, null), null)
@@ -194,7 +187,6 @@ describe('invokeTool primitive', () => {
     expect(immediate).toHaveLength(1)
     expect(immediate[0]?.type).toBe('toolError')
     expect((immediate[0] as { type: 'toolError'; error: string }).error).toContain('does not support background completion')
-    expect(events).toHaveLength(0)
     await system.shutdown()
   })
 
@@ -205,13 +197,12 @@ describe('invokeTool primitive', () => {
 
     const mode: ToolMode = {
       kind: 'pending',
-      eventually:    { type: 'toolResult', result: 'finished work' },
-      pollsUntilDone: 1,        // first jobStatus → still pending; second → done
-      intervalMs:    20,
-      placeholder:   'WORKING…',
+      eventually: { type: 'toolResult', result: 'finished work' },
+      delayMs:    40,
+      placeholder: 'WORKING…',
     }
     const tool = system.spawn('tool-pending-cb', createTestTool(mode), {
-      mode, jobs: {}, pollCounts: {},
+      mode, jobs: {},
     }) as unknown as ActorRef<ToolMsg>
 
     const updatesSink: ToolFinalReply[] = []
@@ -233,8 +224,8 @@ describe('invokeTool primitive', () => {
     const running = events.find(e => e.status === 'running')
     expect(running).toBeDefined()
 
-    // Wait long enough for two polls (first → pending, second → done)
-    await tick(120)
+    // Wait for timer to complete
+    await tick(80)
 
     expect(updatesSink).toHaveLength(1)
     expect(updatesSink[0]).toEqual({ type: 'toolResult', result: 'finished work' })
@@ -245,38 +236,68 @@ describe('invokeTool primitive', () => {
     await system.shutdown()
   })
 
-  test('custom pollIntervalMs from tool reply is honored', async () => {
+  test('completion via JobRegistryTopic respects tool timer delay', async () => {
     const system = await createPluginSystem()
     const start = Date.now()
     const mode: ToolMode = {
       kind: 'pending',
-      eventually:    { type: 'toolResult', result: 'ok' },
-      pollsUntilDone: 0,        // ready on first jobStatus
-      intervalMs:    150,       // first poll after 150ms
+      eventually: { type: 'toolResult', result: 'ok' },
+      delayMs: 50,
     }
-    const tool = system.spawn('tool-interval', createTestTool(mode), {
-      mode, jobs: {}, pollCounts: {},
+    const tool = system.spawn('tool-delay', createTestTool(mode), {
+      mode, jobs: {},
     }) as unknown as ActorRef<ToolMsg>
 
     const updatesSink: ToolFinalReply[] = []
     const updatesRef: ActorRef<ToolFinalReply> = {
       name: 'updates2', isAlive: () => true, send: (r) => { updatesSink.push(r) },
     }
-    const caller = system.spawn('caller-interval', createCaller(tool, updatesRef), null)
+    const caller = system.spawn('caller-delay', createCaller(tool, updatesRef), null)
     await tick()
 
     const sink: ActorRef<ToolFinalReply> = { name: 'sink', isAlive: () => true, send: () => {} }
     caller.send({ type: 'go', replyTo: sink })
 
-    // After 100ms, completion should NOT have arrived (interval was 150)
-    await tick(100)
+    // After 20ms, completion should NOT have arrived (delay was 50ms)
+    await tick(20)
     expect(updatesSink).toHaveLength(0)
 
-    // After another 200ms, it should have
-    await tick(200)
+    // After another 100ms, it should have
+    await tick(100)
     expect(updatesSink).toHaveLength(1)
     const elapsed = Date.now() - start
-    expect(elapsed).toBeGreaterThanOrEqual(140)  // honored the >=150ms wait
+    expect(elapsed).toBeGreaterThanOrEqual(45)
+    await system.shutdown()
+  })
+
+  test('toolPending error completion via JobRegistryTopic', async () => {
+    const system = await createPluginSystem()
+    const mode: ToolMode = {
+      kind: 'pending',
+      eventually: { type: 'toolError', error: 'something went wrong' },
+      delayMs: 20,
+    }
+    const tool = system.spawn('tool-err', createTestTool(mode), {
+      mode, jobs: {},
+    }) as unknown as ActorRef<ToolMsg>
+
+    const updatesSink: ToolFinalReply[] = []
+    const updatesRef: ActorRef<ToolFinalReply> = {
+      name: 'updates3', isAlive: () => true, send: (r) => { updatesSink.push(r) },
+    }
+    const caller = system.spawn('caller-err', createCaller(tool, updatesRef), null)
+    await tick()
+
+    const immediate: ToolFinalReply[] = []
+    const sink: ActorRef<ToolFinalReply> = { name: 'sink', isAlive: () => true, send: (r) => { immediate.push(r) } }
+    caller.send({ type: 'go', replyTo: sink })
+    await tick(80)
+
+    expect(immediate).toHaveLength(1)
+    expect(immediate[0]?.type).toBe('toolResult') // placeholder
+
+    expect(updatesSink).toHaveLength(1)
+    expect(updatesSink[0]).toEqual({ type: 'toolError', error: 'something went wrong' })
     await system.shutdown()
   })
 })
