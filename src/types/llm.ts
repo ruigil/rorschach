@@ -67,6 +67,22 @@ export type RerankReply =
   | { type: 'rerankResult'; requestId: string; scores: Array<{ index: number; score: number }>; usage: TokenUsage | null }
   | { type: 'rerankError';  requestId: string; error: string }
 
+// ─── Video generation reply types — used by the video actor ───
+
+export type VideoSubmitReply =
+  | { type: 'videoSubmitted';    requestId: string; jobId: string; pollingUrl: string; usage: TokenUsage | null }
+  | { type: 'videoSubmitError';  requestId: string; error: string }
+
+export type VideoPollReply =
+  | { type: 'videoPollResult';   requestId: string; status: 'completed' | 'failed' | 'processing'; unsigned_urls?: string[]; error?: string }
+  | { type: 'videoPollError';    requestId: string; error: string }
+
+// ─── Video download reply type — used by the video actor ───
+
+export type VideoDownloadReply =
+  | { type: 'videosDownloaded';    requestId: string; destPaths: string[] }
+  | { type: 'videoDownloadError';  requestId: string; error: string }
+
 // ─── Incoming messages ───
 
 export type LlmProviderMsg =
@@ -77,6 +93,12 @@ export type LlmProviderMsg =
   | { type: 'fetchModelInfo';    model: string; replyTo: ActorRef<ModelInfo | null> }
   | { type: 'fetchModels';       replyTo: ActorRef<string[]> }
   | { type: 'rerank';            requestId: string; model: string; query: string; documents: string[]; topN?: number; clientId?: string; replyTo: ActorRef<RerankReply> }
+  | { type: 'submitVideo';       requestId: string; model: string; prompt: string; aspectRatio?: string; duration?: number; resolution?: string; role: string; clientId?: string; replyTo: ActorRef<VideoSubmitReply> }
+  | { type: 'pollVideo';         requestId: string; pollingUrl: string; role: string; clientId?: string; replyTo: ActorRef<VideoPollReply> }
+  | { type: 'downloadVideos';    requestId: string; downloads: { url: string; destPath: string }[]; role: string; clientId?: string; replyTo: ActorRef<VideoDownloadReply> }
+  | { type: '_videoSubmitDone';  result: VideoSubmitReply; model: string; role: string; clientId?: string; replyTo: ActorRef<VideoSubmitReply> }
+  | { type: '_videoPollDone';    result: VideoPollReply; role: string; clientId?: string; replyTo: ActorRef<VideoPollReply> }
+  | { type: '_videoDownloadDone'; result: VideoDownloadReply; role: string; clientId?: string; replyTo: ActorRef<VideoDownloadReply> }
   | { type: '_streamDone';       result: LlmProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<LlmProviderReply> }
   | { type: '_streamImageDone';  result: VisionProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<VisionProviderReply> }
   | { type: '_streamAudioDone';  result: AudioProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<AudioProviderReply> }
@@ -138,6 +160,9 @@ export type LlmProviderAdapter = {
   fetchModelInfo(model: string): Promise<ModelInfo | null>
   fetchModels(): Promise<string[]>
   rerank(model: string, query: string, documents: string[], topN?: number): Promise<{ scores: Array<{ index: number; score: number }>; usage: TokenUsage | null }>
+  submitVideoGeneration(model: string, prompt: string, aspectRatio?: string, duration?: number, resolution?: string): Promise<{ jobId: string; pollingUrl: string }>
+  pollVideoGeneration(pollingUrl: string): Promise<{ status: 'completed' | 'failed' | 'processing'; unsigned_urls?: string[]; error?: string }>
+  downloadVideos(downloads: { url: string; destPath: string }[]): Promise<void>
 }
 
 // ─── OpenRouter adapter options ───

@@ -738,6 +738,15 @@ button[type="submit"] svg { pointer-events: none; }
   outline: none;
 }
 
+.message-video {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  margin-top: 0.45rem;
+  border-radius: 8px;
+  outline: none;
+}
+
 .message-pdf-chip {
   display: inline-flex;
   align-items: center;

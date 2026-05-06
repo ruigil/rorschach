@@ -35,6 +35,9 @@ marked.use({
       if (/\.(wav|mp3|ogg|m4a|flac)(\?.*)?$/i.test(href)) {
         return `<audio controls autoplay class="message-audio" src="${href}"></audio>`
       }
+      if (/\.(mp4|webm|mov)(\?.*)?$/i.test(href)) {
+        return `<video controls class="message-video" src="${href}"></video>`
+      }
       return false
     },
     link(href, title, text) {

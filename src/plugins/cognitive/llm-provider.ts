@@ -1,9 +1,11 @@
 import type { ActorDef } from '../../system/types.ts'
 import { emit } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
+import { mkdir } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import type {
   TokenUsage, LlmProviderMsg, LlmProviderAdapter, OpenRouterAdapterOptions, VisionProviderReply, AudioProviderReply,
-  ModelInfo
+  ModelInfo, VideoSubmitReply, VideoPollReply, VideoDownloadReply
 } from '../../types/llm.ts'
 import { CostTopic } from '../../types/llm.ts'
 
@@ -315,6 +317,49 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
         : null
       return { scores, usage }
     },
+
+    submitVideoGeneration: async (model, prompt, aspectRatio, duration, resolution) => {
+      const body: Record<string, unknown> = { model, prompt }
+      if (aspectRatio) body.aspect_ratio = aspectRatio
+      if (duration !== undefined) body.duration = duration
+      if (resolution) body.resolution = resolution
+
+      const res = await fetch('https://openrouter.ai/api/v1/videos', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`OpenRouter video submit ${res.status}: ${body}`)
+      }
+      const data = await res.json() as { id: string; polling_url: string }
+      return { jobId: data.id, pollingUrl: data.polling_url }
+    },
+
+    pollVideoGeneration: async (pollingUrl) => {
+      const res = await fetch(pollingUrl, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      })
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`OpenRouter video poll ${res.status}: ${body}`)
+      }
+      const data = await res.json() as { status: 'completed' | 'failed' | 'processing'; unsigned_urls?: string[]; error?: string }
+      return { status: data.status, unsigned_urls: data.unsigned_urls, error: data.error }
+    },
+
+    downloadVideos: async (downloads) => {
+      for (const { url, destPath } of downloads) {
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } })
+        if (!res.ok) throw new Error(`HTTP ${res.status} downloading video`)
+        await mkdir(dirname(destPath), { recursive: true })
+        await Bun.write(destPath, res)
+      }
+    },
   }
 }
 
@@ -477,6 +522,91 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
           (error):                LlmProviderMsg => ({ type: '_rerankDone', result: { type: 'rerankError', requestId, error: String(error) }, model, role, clientId, usage: null, replyTo }),
         )
 
+        return { state }
+      },
+
+      submitVideo: (state, message, context) => {
+        const { requestId, model, prompt, aspectRatio, duration, resolution, role, clientId, replyTo } = message
+        context.log.info('llm video submit', { requestId, model })
+
+        context.pipeToSelf(
+          adapter.submitVideoGeneration(model, prompt, aspectRatio, duration, resolution),
+          (result): LlmProviderMsg => ({
+            type: '_videoSubmitDone',
+            result: { type: 'videoSubmitted', requestId, jobId: result.jobId, pollingUrl: result.pollingUrl, usage: null },
+            model, role, clientId,
+            replyTo,
+          }),
+          (error): LlmProviderMsg => ({
+            type: '_videoSubmitDone',
+            result: { type: 'videoSubmitError', requestId, error: String(error) },
+            model, role, clientId,
+            replyTo,
+          }),
+        )
+
+        return { state }
+      },
+
+      pollVideo: (state, message, context) => {
+        const { requestId, pollingUrl, role, clientId, replyTo } = message
+        context.log.info('llm video poll', { requestId })
+
+        context.pipeToSelf(
+          adapter.pollVideoGeneration(pollingUrl),
+          (result): LlmProviderMsg => ({
+            type: '_videoPollDone',
+            result: { type: 'videoPollResult', requestId, status: result.status, unsigned_urls: result.unsigned_urls, error: result.error },
+            role, clientId,
+            replyTo,
+          }),
+          (error): LlmProviderMsg => ({
+            type: '_videoPollDone',
+            result: { type: 'videoPollError', requestId, error: String(error) },
+            role, clientId,
+            replyTo,
+          }),
+        )
+
+        return { state }
+      },
+
+      downloadVideos: (state, message, context) => {
+        const { requestId, downloads, role, clientId, replyTo } = message
+        const destPaths = downloads.map(d => d.destPath)
+        context.log.info('llm video download', { requestId, count: downloads.length })
+
+        context.pipeToSelf(
+          adapter.downloadVideos(downloads),
+          (): LlmProviderMsg => ({
+            type: '_videoDownloadDone',
+            result: { type: 'videosDownloaded', requestId, destPaths },
+            role, clientId,
+            replyTo,
+          }),
+          (error): LlmProviderMsg => ({
+            type: '_videoDownloadDone',
+            result: { type: 'videoDownloadError', requestId, error: String(error) },
+            role, clientId,
+            replyTo,
+          }),
+        )
+
+        return { state }
+      },
+
+      _videoSubmitDone: (state, message) => {
+        message.replyTo.send(message.result)
+        return { state }
+      },
+
+      _videoPollDone: (state, message) => {
+        message.replyTo.send(message.result)
+        return { state }
+      },
+
+      _videoDownloadDone: (state, message) => {
+        message.replyTo.send(message.result)
         return { state }
       },
 

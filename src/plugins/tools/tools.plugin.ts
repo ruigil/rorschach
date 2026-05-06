@@ -3,6 +3,7 @@ import { createBashActor, BASH_TOOL_NAME, BASH_SCHEMA, WRITE_TOOL_NAME, WRITE_SC
 import { createVisionActor, ANALYZE_IMAGE_TOOL_NAME, ANALYZE_IMAGE_SCHEMA, GENERATE_IMAGE_TOOL_NAME, GENERATE_IMAGE_SCHEMA } from './vision-actor.ts'
 import { createCronActor, type CronState, CRON_CREATE_TOOL_NAME, CRON_CREATE_SCHEMA, CRON_DELETE_TOOL_NAME, CRON_DELETE_SCHEMA, CRON_LIST_TOOL_NAME, CRON_LIST_SCHEMA } from './cron.ts'
 import { createAudioActor, type AudioState, TRANSCRIBE_AUDIO_TOOL_NAME, TRANSCRIBE_AUDIO_SCHEMA, TEXT_TO_SPEECH_TOOL_NAME, TEXT_TO_SPEECH_SCHEMA } from './audio.ts'
+import { createVideoActor, type VideoState, GENERATE_VIDEO_TOOL_NAME, GENERATE_VIDEO_SCHEMA } from './video-actor.ts'
 import { createPdfActor, PDF_TOOL_NAME, PDF_SCHEMA } from './pdf.ts'
 import { createFetchFileActor, FETCH_FILE_TOOL_NAME, FETCH_FILE_SCHEMA } from './fetch-file.ts'
 import { createLongTaskActor, createInitialLongTaskState, LONG_TASK_TOOL_NAME, LONG_TASK_SCHEMA } from './long-task.ts'
@@ -27,11 +28,21 @@ type AudioActorConfig = {
   voice?: string
 }
 
+type VideoActorConfig = {
+  model: string
+  aspectRatio?: string
+  duration?: number
+  resolution?: string
+  pollIntervalMs?: number
+  pollTimeoutMs?: number
+}
+
 export type ToolsConfig = {
   webSearch?: WebSearchActorConfig
   bash?: BashConfig
   visionActor?: VisionActorConfig
   audioActor?: AudioActorConfig
+  videoActor?: VideoActorConfig
 }
 
 // ─── Plugin internals ───
@@ -46,6 +57,7 @@ type PluginState = {
   bash: PluginActorState<BashConfig>
   vision: PluginActorState<VisionActorConfig>
   audio: PluginActorState<AudioActorConfig>
+  video: PluginActorState<VideoActorConfig>
   cron: { ref: ActorRef<ToolMsg> | null }
   pdf: { ref: ActorRef<ToolMsg> | null }
   fetchFile: { ref: ActorRef<ToolMsg> | null }
@@ -79,6 +91,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
     bash:      { config: null, ref: null, gen: 0 },
     vision:    { config: null, ref: null, gen: 0 },
     audio:     { config: null, ref: null, gen: 0 },
+    video:     { config: null, ref: null, gen: 0 },
     cron:       { ref: null },
     pdf:        { ref: null },
     fetchFile:  { ref: null },
@@ -132,6 +145,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         bash:      { config: bashConfig, ref: bashRef, gen: 0 },
         vision:    { config: slice?.visionActor ?? null, ref: null, gen: 0 },
         audio:     { config: slice?.audioActor ?? null, ref: null, gen: 0 },
+        video:     { config: slice?.videoActor ?? null, ref: null, gen: 0 },
         cron:       { ref: cronRef },
         pdf:        { ref: pdfRef },
         fetchFile:  { ref: fetchFileRef },
@@ -157,6 +171,9 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       if (state.audio.ref) {
         ctx.deleteRetained(ToolRegistrationTopic, TRANSCRIBE_AUDIO_TOOL_NAME, { name: TRANSCRIBE_AUDIO_TOOL_NAME, ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, TEXT_TO_SPEECH_TOOL_NAME,   { name: TEXT_TO_SPEECH_TOOL_NAME,   ref: null })
+      }
+      if (state.video.ref) {
+        ctx.deleteRetained(ToolRegistrationTopic, GENERATE_VIDEO_TOOL_NAME, { name: GENERATE_VIDEO_TOOL_NAME, ref: null })
       }
       if (state.cron.ref) {
         ctx.deleteRetained(ToolRegistrationTopic, CRON_CREATE_TOOL_NAME,  { name: CRON_CREATE_TOOL_NAME,  ref: null })
@@ -212,6 +229,10 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         ctx.deleteRetained(ToolRegistrationTopic, TRANSCRIBE_AUDIO_TOOL_NAME, { name: TRANSCRIBE_AUDIO_TOOL_NAME, ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, TEXT_TO_SPEECH_TOOL_NAME,   { name: TEXT_TO_SPEECH_TOOL_NAME,   ref: null })
       }
+      if (state.video.ref) {
+        ctx.stop(state.video.ref)
+        ctx.deleteRetained(ToolRegistrationTopic, GENERATE_VIDEO_TOOL_NAME, { name: GENERATE_VIDEO_TOOL_NAME, ref: null })
+      }
       if (state.pdf.ref) {
         ctx.stop(state.pdf.ref)
         ctx.deleteRetained(ToolRegistrationTopic, PDF_TOOL_NAME, { name: PDF_TOOL_NAME, ref: null })
@@ -229,6 +250,8 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       const visionGen = state.vision.gen + 1
       const newAudioConfig = msg.slice?.audioActor ?? null
       const audioGen = state.audio.gen + 1
+      const newVideoConfig = msg.slice?.videoActor ?? null
+      const videoGen = state.video.gen + 1
 
       let webSearchRef: ActorRef<ToolMsg> | null = null
 
@@ -260,6 +283,14 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         audioRef = audioRefTyped
       }
 
+      let videoRef: ActorRef<ToolMsg> | null = null
+      if (state.llmRef && newVideoConfig) {
+        const ref = ctx.spawn(`video-actor-${videoGen}`, createVideoActor({ llmRef: state.llmRef, model: newVideoConfig.model, aspectRatio: newVideoConfig.aspectRatio, duration: newVideoConfig.duration, resolution: newVideoConfig.resolution, pollIntervalMs: newVideoConfig.pollIntervalMs, pollTimeoutMs: newVideoConfig.pollTimeoutMs }), { pending: {} } as VideoState)
+        const videoRefTyped = ref as unknown as ActorRef<ToolMsg>
+        ctx.publishRetained(ToolRegistrationTopic, GENERATE_VIDEO_TOOL_NAME, { name: GENERATE_VIDEO_TOOL_NAME, schema: GENERATE_VIDEO_SCHEMA, ref: videoRefTyped, mayBeLongRunning: true })
+        videoRef = videoRefTyped
+      }
+
       const pdfGen = (state.pdf.ref ? 1 : 0) + 1
       const newPdfRef = ctx.spawn(`pdf-${pdfGen}`, createPdfActor(), null) as ActorRef<ToolMsg>
       ctx.publishRetained(ToolRegistrationTopic, PDF_TOOL_NAME, { name: PDF_TOOL_NAME, schema: PDF_SCHEMA, ref: newPdfRef })
@@ -274,6 +305,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         bash:      { config: newBashConfig, ref: bashRef, gen: bashGen },
         vision:    { config: newVisionConfig, ref: visionRef, gen: visionGen },
         audio:     { config: newAudioConfig,  ref: audioRef,  gen: audioGen  },
+        video:     { config: newVideoConfig,  ref: videoRef,  gen: videoGen  },
         pdf:       { ref: newPdfRef },
         fetchFile: { ref: newFetchFileRef },
       } }
@@ -292,6 +324,12 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         ctx.stop(state.audio.ref)
         ctx.deleteRetained(ToolRegistrationTopic, TRANSCRIBE_AUDIO_TOOL_NAME, { name: TRANSCRIBE_AUDIO_TOOL_NAME, ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, TEXT_TO_SPEECH_TOOL_NAME,   { name: TEXT_TO_SPEECH_TOOL_NAME,   ref: null })
+      }
+
+      // Stop existing video actor
+      if (state.video.ref) {
+        ctx.stop(state.video.ref)
+        ctx.deleteRetained(ToolRegistrationTopic, GENERATE_VIDEO_TOOL_NAME, { name: GENERATE_VIDEO_TOOL_NAME, ref: null })
       }
 
       const visionGen = state.vision.gen
@@ -316,11 +354,22 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         audioRef = audioRefTyped
       }
 
+      const videoGen = state.video.gen
+      let videoRef: ActorRef<ToolMsg> | null = null
+
+      if (msg.ref && state.video.config) {
+        const ref = ctx.spawn(`video-actor-${videoGen}`, createVideoActor({ llmRef: msg.ref, model: state.video.config.model, aspectRatio: state.video.config.aspectRatio, duration: state.video.config.duration, resolution: state.video.config.resolution, pollIntervalMs: state.video.config.pollIntervalMs, pollTimeoutMs: state.video.config.pollTimeoutMs }), { pending: {} } as VideoState)
+        const videoRefTyped = ref as unknown as ActorRef<ToolMsg>
+        ctx.publishRetained(ToolRegistrationTopic, GENERATE_VIDEO_TOOL_NAME, { name: GENERATE_VIDEO_TOOL_NAME, schema: GENERATE_VIDEO_SCHEMA, ref: videoRefTyped, mayBeLongRunning: true })
+        videoRef = videoRefTyped
+      }
+
       return { state: {
         ...state,
         llmRef: msg.ref,
         vision: { ...state.vision, ref: visionRef, gen: visionGen + 1 },
         audio:  { ...state.audio,  ref: audioRef,  gen: audioGen  + 1 },
+        video:  { ...state.video,  ref: videoRef,  gen: videoGen  + 1 },
       } }
     },
   }),

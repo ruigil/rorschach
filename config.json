@@ -39,6 +39,14 @@
       "audioActor": {
         "model": "openai/gpt-audio",
         "voice": "nova"
+      },
+      "videoActor": {
+        "model": "google/veo-3.1-lite",
+        "aspectRatio": "16:9",
+        "duration": 4,
+        "resolution": "720p",
+        "pollIntervalMs": 5000,
+        "pollTimeoutMs": 600000
       }
     },
     "cognitive": {
