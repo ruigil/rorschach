@@ -4,8 +4,16 @@ import { onMessage } from '../../system/match.ts'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type {
-  TokenUsage, LlmProviderMsg, LlmProviderAdapter, OpenRouterAdapterOptions, VisionProviderReply, AudioProviderReply,
-  ModelInfo, VideoSubmitReply, VideoPollReply, VideoDownloadReply
+  TokenUsage, 
+  LlmProviderMsg, 
+  LlmProviderAdapter, 
+  OpenRouterAdapterOptions, 
+  VisionProviderReply, 
+  AudioProviderReply, 
+  ModelInfo,
+  VideoSubmitReply,
+  VideoPollReply,
+  VideoDownloadReply
 } from '../../types/llm.ts'
 import { CostTopic } from '../../types/llm.ts'
 
@@ -15,220 +23,120 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
   const { apiKey, reasoning } = options
   const modelInfoCache = new Map<string, ModelInfo>()
 
-  return {
-    stream: async (model, messages, tools, onChunk, onReasoningChunk) => {
-      const res = await fetch(OPENROUTER_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: true,
-          stream_options: { include_usage: true },
-          ...(tools ? { tools, tool_choice: 'auto' } : {}),
-          ...(reasoning?.enabled ? { reasoning: { effort: reasoning.effort ?? 'medium' } } : {}),
-        }),
-      })
+  async function openRouterStream<T>(
+    extraBody: Record<string, unknown>,
+    onEvent: (parsed: Record<string, unknown>) => void,
+    onDone: (usage: TokenUsage | null) => T,
+  ): Promise<T> {
+    const res = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...extraBody,
+        stream: true,
+        stream_options: { include_usage: true },
+      }),
+    })
 
-      if (!res.ok) {
-        const body = await res.text()
-        throw new Error(`OpenRouter ${res.status}: ${body}`)
-      }
+    if (!res.ok) {
+      const body = await res.text()
+      throw new Error(`OpenRouter ${res.status}: ${body}`)
+    }
 
-      const reader = res.body!.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let lastUsage: TokenUsage | null = null
-      const toolCalls: Record<number, { id: string; name: string; arguments: string }> = {}
+    const reader = res.body!.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let lastUsage: TokenUsage | null = null
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
 
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
 
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const data = line.slice(6).trim()
-          if (data === '[DONE]') {
-            const calls = Object.values(toolCalls).filter(tc => tc.name)
-            if (calls.length > 0) return { type: 'toolCalls', calls, usage: lastUsage }
-            return { type: 'content', usage: lastUsage }
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const data = line.slice(6).trim()
+        if (data === '[DONE]') return onDone(lastUsage)
+
+        try {
+          const parsed = JSON.parse(data)
+          if (parsed.usage) {
+            lastUsage = { promptTokens: parsed.usage.prompt_tokens, completionTokens: parsed.usage.completion_tokens }
           }
-
-          try {
-            const parsed = JSON.parse(data) as {
-              choices: Array<{
-                delta: {
-                  content?: string
-                  reasoning?: string
-                  tool_calls?: Array<{
-                    index: number
-                    id?: string
-                    function?: { name?: string; arguments?: string }
-                  }>
-                }
-              }>
-              usage?: { prompt_tokens: number; completion_tokens: number }
-            }
-            if (parsed.usage) {
-              lastUsage = { promptTokens: parsed.usage.prompt_tokens, completionTokens: parsed.usage.completion_tokens }
-            }
-            const delta = parsed.choices[0]?.delta
-            if (delta?.content) onChunk(delta.content)
-            if (delta?.reasoning) onReasoningChunk(delta.reasoning)
-            if (delta?.tool_calls) {
-              for (const tc of delta.tool_calls) {
-                if (!toolCalls[tc.index]) {
-                  toolCalls[tc.index] = { id: tc.id ?? '', name: tc.function?.name ?? '', arguments: '' }
-                }
-                if (tc.function?.arguments) toolCalls[tc.index]!.arguments += tc.function.arguments
-              }
-            }
-          } catch {
-            // ignore malformed SSE lines
-          }
+          onEvent(parsed)
+        } catch {
+          // ignore malformed SSE lines
         }
       }
+    }
 
-      const calls = Object.values(toolCalls).filter(tc => tc.name)
-      if (calls.length > 0) return { type: 'toolCalls', calls, usage: lastUsage }
-      return { type: 'content', usage: lastUsage }
+    return onDone(lastUsage)
+  }
+
+  return {
+    stream: async (model, messages, tools, onChunk, onReasoningChunk) => {
+      const toolCalls: Record<number, { id: string; name: string; arguments: string }> = {}
+
+      return openRouterStream(
+        {
+          model,
+          messages,
+          ...(tools ? { tools, tool_choice: 'auto' } : {}),
+          ...(reasoning?.enabled ? { reasoning: { effort: reasoning.effort ?? 'medium' } } : {}),
+        },
+        (parsed) => {
+          const delta: Record<string, unknown> = (parsed as any).choices?.[0]?.delta ?? {}
+          if (delta.content) onChunk(delta.content as string)
+          if (delta.reasoning) onReasoningChunk(delta.reasoning as string)
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls as Array<{ index: number; id?: string; function?: { name?: string; arguments?: string } }>) {
+              if (!toolCalls[tc.index]) {
+                toolCalls[tc.index] = { id: tc.id ?? '', name: tc.function?.name ?? '', arguments: '' }
+              }
+              if (tc.function?.arguments) toolCalls[tc.index]!.arguments += tc.function.arguments
+            }
+          }
+        },
+        (usage) => {
+          const calls = Object.values(toolCalls).filter(tc => tc.name)
+          if (calls.length > 0) return { type: 'toolCalls', calls, usage }
+          return { type: 'content', usage }
+        },
+      )
     },
 
     streamImage: async (model, messages, onChunk, onImageChunk) => {
-      const res = await fetch(OPENROUTER_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          messages,
-          modalities: ['image', 'text'],
-          stream: true,
-          stream_options: { include_usage: true },
-        }),
-      })
-
-      if (!res.ok) {
-        const body = await res.text()
-        throw new Error(`OpenRouter ${res.status}: ${body}`)
-      }
-
-      const reader = res.body!.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let lastUsage: TokenUsage | null = null
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const data = line.slice(6).trim()
-          if (data === '[DONE]') return { type: 'content', usage: lastUsage }
-
-          try {
-            const parsed = JSON.parse(data) as {
-              choices: Array<{
-                delta: {
-                  content?: string
-                  images?: Array<{ image_url: { url: string } }>
-                }
-              }>
-              usage?: { prompt_tokens: number; completion_tokens: number }
+      return openRouterStream(
+        { model, messages, modalities: ['image', 'text'] },
+        (parsed) => {
+          const delta: Record<string, unknown> = (parsed as any).choices?.[0]?.delta ?? {}
+          if (delta.content) onChunk(delta.content as string)
+          if (delta.images) {
+            for (const img of delta.images as Array<{ image_url: { url: string } }>) {
+              onImageChunk(img.image_url.url)
             }
-            if (parsed.usage) {
-              lastUsage = { promptTokens: parsed.usage.prompt_tokens, completionTokens: parsed.usage.completion_tokens }
-            }
-            const delta = parsed.choices[0]?.delta
-            if (delta?.content) onChunk(delta.content)
-            if (delta?.images) {
-              for (const img of delta.images) onImageChunk(img.image_url.url)
-            }
-          } catch {
-            // ignore malformed SSE lines
           }
-        }
-      }
-
-      return { type: 'content', usage: lastUsage }
+        },
+        (usage) => ({ type: 'content', usage }),
+      )
     },
 
     streamAudio: async (model, messages, voice, onChunk, onAudioChunk) => {
-      const res = await fetch(OPENROUTER_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
+      return openRouterStream(
+        { model, messages, modalities: ['text', 'audio'], audio: { voice, format: 'pcm16' } },
+        (parsed) => {
+          const audio: Record<string, unknown> = (parsed as any).choices?.[0]?.delta?.audio ?? {}
+          if (audio.data) onAudioChunk(audio.data as string)
+          if (audio.transcript) onChunk(audio.transcript as string)
         },
-        body: JSON.stringify({
-          model,
-          messages,
-          modalities: ['text', 'audio'],
-          audio: { voice, format: 'pcm16' },
-          stream: true,
-          stream_options: { include_usage: true },
-        }),
-      })
-
-      if (!res.ok) {
-        const body = await res.text()
-        throw new Error(`OpenRouter ${res.status}: ${body}`)
-      }
-
-      const reader = res.body!.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let lastUsage: TokenUsage | null = null
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const data = line.slice(6).trim()
-          if (data === '[DONE]') return { type: 'content', usage: lastUsage }
-
-          try {
-            const parsed = JSON.parse(data) as {
-              choices: Array<{
-                delta: {
-                  audio?: { data?: string; transcript?: string }
-                }
-              }>
-              usage?: { prompt_tokens: number; completion_tokens: number }
-            }
-            if (parsed.usage) {
-              lastUsage = { promptTokens: parsed.usage.prompt_tokens, completionTokens: parsed.usage.completion_tokens }
-            }
-            const audio = parsed.choices[0]?.delta?.audio
-            if (audio?.data) onAudioChunk(audio.data)
-            if (audio?.transcript) onChunk(audio.transcript)
-          } catch {
-            // ignore malformed SSE lines
-          }
-        }
-      }
-
-      return { type: 'content', usage: lastUsage }
+        (usage) => ({ type: 'content', usage }),
+      )
     },
 
     fetchModelInfo: async (model: string) => {
@@ -371,6 +279,27 @@ export type LlmProviderActorOptions = {
 
 export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorDef<LlmProviderMsg, null> => {
   const { adapter } = options
+
+  const handleStreamDone = (
+    state: null,
+    replyTo: { send: (msg: unknown) => void },
+    result: { type: string; usage?: TokenUsage | null },
+    model: string,
+    role: string,
+    clientId: string | undefined,
+    context: { pipeToSelf: (promise: Promise<unknown>, onSuccess: (r: unknown) => unknown, onError: (e: unknown) => unknown) => void },
+  ) => {
+    replyTo.send(result)
+    const usage = result.usage ?? null
+    if (usage) {
+      context.pipeToSelf(
+        adapter.fetchModelInfo(model),
+        (info): LlmProviderMsg => ({ type: '_costReady', model, role, clientId, usage, info: info as ModelInfo | null }),
+        (): LlmProviderMsg => ({ type: '_costReady', model, role, clientId, usage, info: null }),
+      )
+    }
+    return { state }
+  }
 
   return {
     handler: onMessage<LlmProviderMsg, null>({
@@ -533,13 +462,13 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
           adapter.submitVideoGeneration(model, prompt, aspectRatio, duration, resolution),
           (result): LlmProviderMsg => ({
             type: '_videoSubmitDone',
-            result: { type: 'videoSubmitted', requestId, jobId: result.jobId, pollingUrl: result.pollingUrl, usage: null },
+            result: { type: 'videoSubmitted', requestId, jobId: result.jobId, pollingUrl: result.pollingUrl, usage: null } as VideoSubmitReply,
             model, role, clientId,
             replyTo,
           }),
           (error): LlmProviderMsg => ({
             type: '_videoSubmitDone',
-            result: { type: 'videoSubmitError', requestId, error: String(error) },
+            result: { type: 'videoSubmitError', requestId, error: String(error) } as VideoSubmitReply,
             model, role, clientId,
             replyTo,
           }),
@@ -556,13 +485,13 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
           adapter.pollVideoGeneration(pollingUrl),
           (result): LlmProviderMsg => ({
             type: '_videoPollDone',
-            result: { type: 'videoPollResult', requestId, status: result.status, unsigned_urls: result.unsigned_urls, error: result.error },
+            result: { type: 'videoPollResult', requestId, status: result.status, unsigned_urls: result.unsigned_urls, error: result.error } as VideoPollReply,
             role, clientId,
             replyTo,
           }),
           (error): LlmProviderMsg => ({
             type: '_videoPollDone',
-            result: { type: 'videoPollError', requestId, error: String(error) },
+            result: { type: 'videoPollError', requestId, error: String(error) } as VideoPollReply,
             role, clientId,
             replyTo,
           }),
@@ -580,13 +509,13 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
           adapter.downloadVideos(downloads),
           (): LlmProviderMsg => ({
             type: '_videoDownloadDone',
-            result: { type: 'videosDownloaded', requestId, destPaths },
+            result: { type: 'videosDownloaded', requestId, destPaths } as VideoDownloadReply,
             role, clientId,
             replyTo,
           }),
           (error): LlmProviderMsg => ({
             type: '_videoDownloadDone',
-            result: { type: 'videoDownloadError', requestId, error: String(error) },
+            result: { type: 'videoDownloadError', requestId, error: String(error) } as VideoDownloadReply,
             role, clientId,
             replyTo,
           }),
@@ -610,59 +539,49 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
         return { state }
       },
 
-      _rerankDone: (state, message, context) => {
-        message.replyTo.send(message.result)
-        const usage = message.result.type === 'rerankResult' ? message.result.usage : null
-        if (usage) {
-          context.pipeToSelf(
-            adapter.fetchModelInfo(message.model),
-            (info): LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info }),
-            ():    LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info: null }),
-          )
-        }
-        return { state }
-      },
+      _rerankDone: (state, message, context) =>
+        handleStreamDone(
+          state,
+          message.replyTo as { send: (msg: unknown) => void },
+          message.result as { type: string; usage?: TokenUsage | null },
+          message.model,
+          message.role,
+          message.clientId,
+          context as { pipeToSelf: (promise: Promise<unknown>, onSuccess: (r: unknown) => unknown, onError: (e: unknown) => unknown) => void },
+        ),
 
-      _streamDone: (state, message, context) => {
-        message.replyTo.send(message.result)
-        const usage = (message.result.type === 'llmDone' || message.result.type === 'llmToolCalls')
-          ? message.result.usage
-          : null
-        if (usage) {
-          context.pipeToSelf(
-            adapter.fetchModelInfo(message.model),
-            (info): LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info }),
-            ():    LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info: null }),
-          )
-        }
-        return { state }
-      },
+      _streamDone: (state, message, context) =>
+        handleStreamDone(
+          state,
+          message.replyTo as { send: (msg: unknown) => void },
+          message.result as { type: string; usage?: TokenUsage | null },
+          message.model,
+          message.role,
+          message.clientId,
+          context as { pipeToSelf: (promise: Promise<unknown>, onSuccess: (r: unknown) => unknown, onError: (e: unknown) => unknown) => void },
+        ),
 
-      _streamImageDone: (state, message, context) => {
-        message.replyTo.send(message.result)
-        const usage = message.result.type === 'llmDone' ? message.result.usage : null
-        if (usage) {
-          context.pipeToSelf(
-            adapter.fetchModelInfo(message.model),
-            (info): LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info }),
-            ():    LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info: null }),
-          )
-        }
-        return { state }
-      },
+      _streamImageDone: (state, message, context) =>
+        handleStreamDone(
+          state,
+          message.replyTo as { send: (msg: unknown) => void },
+          message.result as { type: string; usage?: TokenUsage | null },
+          message.model,
+          message.role,
+          message.clientId,
+          context as { pipeToSelf: (promise: Promise<unknown>, onSuccess: (r: unknown) => unknown, onError: (e: unknown) => unknown) => void },
+        ),
 
-      _streamAudioDone: (state, message, context) => {
-        message.replyTo.send(message.result)
-        const usage = message.result.type === 'llmDone' ? message.result.usage : null
-        if (usage) {
-          context.pipeToSelf(
-            adapter.fetchModelInfo(message.model),
-            (info): LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info }),
-            ():    LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: usage!, info: null }),
-          )
-        }
-        return { state }
-      },
+      _streamAudioDone: (state, message, context) =>
+        handleStreamDone(
+          state,
+          message.replyTo as { send: (msg: unknown) => void },
+          message.result as { type: string; usage?: TokenUsage | null },
+          message.model,
+          message.role,
+          message.clientId,
+          context as { pipeToSelf: (promise: Promise<unknown>, onSuccess: (r: unknown) => unknown, onError: (e: unknown) => unknown) => void },
+        ),
 
       _costReady: (state, message) => {
         const { model, role, clientId, usage, info } = message
