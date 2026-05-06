@@ -300,10 +300,11 @@ export type ActorContext<M> = {
   readonly publishRetained: <T>(topic: EventTopic<T>, key: string, event: T) => void
   /** Remove a retained entry and publish the tombstone to current subscribers. */
   readonly deleteRetained: <T>(topic: EventTopic<T>, key: string, tombstone: T) => void
-  /** Subscribe to a typed topic. The adapter maps bus events (typed T) into this actor's message type M. */
-  readonly subscribe: <T>(topic: EventTopic<T>, adapter: (event: T) => M | null) => void
-  /** Unsubscribe from a topic. */
-  readonly unsubscribe: (topic: EventTopic) => void
+  /** Subscribe to a typed topic. The adapter maps bus events (typed T) into this actor's message type M.
+   *  Pass an optional `identifier` to create a namespaced subscription that can be individually unsubscribed. */
+  readonly subscribe: <T>(topic: EventTopic<T>, adapter: (event: T) => M | null, identifier?: string) => void
+  /** Unsubscribe from a topic. Pass the same `identifier` used during subscribe to remove only that subscription. */
+  readonly unsubscribe: (topic: EventTopic, identifier?: string) => void
   /** Remove a topic's subscriber map entry. Call after publishing a terminal event on a short-lived topic to prevent accumulation. */
   readonly deleteTopic: (topic: EventTopic) => void
 

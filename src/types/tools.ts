@@ -21,26 +21,14 @@ export type ToolInvokeMsg = {
   userId: string
 }
 
-/**
- * Status query for long-running tool jobs. A tool that previously replied to
- * `invoke` with `toolPending` MUST handle this message for the same jobId,
- * replying with one of: `toolPending` (still running), `toolResult` (done),
- * `toolError` (failed or unknown jobId).
- */
-export type ToolJobStatusMsg = {
-  type: 'jobStatus'
-  jobId: string
-  replyTo: ActorRef<ToolReply>
-}
-
-export type ToolMsg = ToolInvokeMsg | ToolJobStatusMsg
+export type ToolMsg = ToolInvokeMsg
 
 export type ToolReply =
   | { type: 'toolResult'; result: string; sources?: ToolSource[] }
   | { type: 'toolError'; error: string }
-  | { type: 'toolPending'; jobId: string; placeholderText?: string; pollIntervalMs?: number }
+  | { type: 'toolPending'; jobId: string; placeholderText?: string }
 
-/** Final tool reply variants — what callers see from `invokeTool`. No `toolPending`. */
+/** Final tool reply variants — what callers see from `invokeTool`. */
 export type ToolFinalReply =
   | { type: 'toolResult'; result: string; sources?: ToolSource[] }
   | { type: 'toolError'; error: string }
@@ -64,10 +52,11 @@ export const ToolRegistrationTopic = createTopic<ToolRegistrationEvent>('tools.r
 
 // ─── Job registry (for long-running jobs) ───
 //
-// `invokeTool` publishes `running` when a tool returns `toolPending`, and
-// `cleared` when the job's final reply arrives. The `tool_status` plugin
-// subscribes to this topic so it can route status queries (or list active
-// jobs) without each agent having to track jobs itself.
+// `invokeTool` publishes `running` when a tool returns `toolPending`.
+// Tools publish `completed` or `failed` when their work finishes.
+// `invokeTool`'s subscriber catches these and publishes `cleared`
+// to remove the retained entry. The `tool_status` plugin subscribes
+// to this topic so it can route status queries without polling tools.
 
 export type JobLifecycleEvent =
   | {
@@ -79,6 +68,8 @@ export type JobLifecycleEvent =
       clientId?: string
       userId?: string
     }
+  | { jobId: string; status: 'completed'; result: string; sources?: ToolSource[] }
+  | { jobId: string; status: 'failed';    error: string }
   | { jobId: string; status: 'cleared' }
 
 export const JobRegistryTopic = createTopic<JobLifecycleEvent>('tools.jobs')

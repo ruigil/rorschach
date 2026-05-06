@@ -1,6 +1,5 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { ask } from '../../system/ask.ts'
 import { JobRegistryTopic } from '../../types/tools.ts'
 import type { ToolMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
 
@@ -36,6 +35,8 @@ type JobInfo = {
   startedAt: number
   clientId?: string
   userId?:   string
+  result?:   string
+  error?:    string
 }
 
 export type ToolStatusState = { jobs: Record<string, JobInfo> }
@@ -47,13 +48,8 @@ export const createInitialToolStatusState = (): ToolStatusState => ({ jobs: {} }
 type InternalMsg =
   | { type: '_jobRegistered'; jobId: string; info: JobInfo }
   | { type: '_jobCleared';    jobId: string }
-  | {
-      type:        '_statusReply'
-      userReplyTo: ActorRef<ToolReply>
-      jobId:       string
-      reply:       ToolReply
-      info:        JobInfo
-    }
+  | { type: '_jobCompleted';  jobId: string; result: string }
+  | { type: '_jobFailed';     jobId: string; error: string }
 
 type Msg = ToolMsg | InternalMsg
 
@@ -68,6 +64,17 @@ const formatAge = (ms: number): string => {
   return `${h}h ${m % 60}m`
 }
 
+const formatJobStatus = (jobId: string, info: JobInfo): string => {
+  const age = formatAge(Date.now() - info.startedAt)
+  if (info.result !== undefined) {
+    return `Job ${jobId} (${info.toolName}) completed (${age}): ${info.result}`
+  }
+  if (info.error !== undefined) {
+    return `Job ${jobId} (${info.toolName}) failed: ${info.error}`
+  }
+  return `Job ${jobId} (${info.toolName}) is still running, started ${age} ago.`
+}
+
 // ─── Actor ───
 
 export const createToolStatusActor = (): ActorDef<Msg, ToolStatusState> => ({
@@ -76,6 +83,12 @@ export const createToolStatusActor = (): ActorDef<Msg, ToolStatusState> => ({
       ctx.subscribe(JobRegistryTopic, (event) => {
         if (event.status === 'cleared') {
           return { type: '_jobCleared' as const, jobId: event.jobId }
+        }
+        if (event.status === 'completed') {
+          return { type: '_jobCompleted' as const, jobId: event.jobId, result: event.result }
+        }
+        if (event.status === 'failed') {
+          return { type: '_jobFailed' as const, jobId: event.jobId, error: event.error }
         }
         return {
           type: '_jobRegistered' as const,
@@ -98,12 +111,24 @@ export const createToolStatusActor = (): ActorDef<Msg, ToolStatusState> => ({
       state: { jobs: { ...state.jobs, [msg.jobId]: msg.info } },
     }),
 
+    _jobCompleted: (state, msg) => {
+      const existing = state.jobs[msg.jobId]
+      if (!existing) return { state }
+      return { state: { jobs: { ...state.jobs, [msg.jobId]: { ...existing, result: msg.result } } } }
+    },
+
+    _jobFailed: (state, msg) => {
+      const existing = state.jobs[msg.jobId]
+      if (!existing) return { state }
+      return { state: { jobs: { ...state.jobs, [msg.jobId]: { ...existing, error: msg.error } } } }
+    },
+
     _jobCleared: (state, msg) => {
       const { [msg.jobId]: _drop, ...rest } = state.jobs
       return { state: { jobs: rest } }
     },
 
-    invoke: (state, msg, ctx) => {
+    invoke: (state, msg) => {
       let parsed: { jobId?: string }
       try {
         parsed = JSON.parse(msg.arguments) as { jobId?: string }
@@ -119,8 +144,11 @@ export const createToolStatusActor = (): ActorDef<Msg, ToolStatusState> => ({
           msg.replyTo.send({ type: 'toolResult', result: 'No active jobs.' })
           return { state }
         }
-        const lines = entries.map(([id, j]) =>
-          `- ${id} (${j.toolName}, running ${formatAge(Date.now() - j.startedAt)})`)
+        const lines = entries.map(([id, j]) => {
+          const age = formatAge(Date.now() - j.startedAt)
+          const status = j.result !== undefined ? 'completed' : j.error !== undefined ? 'failed' : `running ${age}`
+          return `- ${id} (${j.toolName}, ${status})`
+        })
         msg.replyTo.send({ type: 'toolResult', result: lines.join('\n') })
         return { state }
       }
@@ -134,42 +162,8 @@ export const createToolStatusActor = (): ActorDef<Msg, ToolStatusState> => ({
         return { state }
       }
 
-      // Forward a fresh jobStatus query to the underlying tool — the tool is the source of truth.
-      ctx.pipeToSelf(
-        ask<ToolMsg, ToolReply>(
-          info.toolRef,
-          (replyTo) => ({ type: 'jobStatus', jobId, replyTo }),
-          { timeoutMs: 5000 },
-        ),
-        (reply) => ({ type: '_statusReply' as const, userReplyTo: msg.replyTo, jobId, reply, info }),
-        (err)   => ({
-          type: '_statusReply' as const,
-          userReplyTo: msg.replyTo,
-          jobId,
-          reply: { type: 'toolError' as const, error: String(err) },
-          info,
-        }),
-      )
-      return { state }
-    },
-
-    jobStatus: (state, msg) => {
-      // tool_status itself is not long-running. If something asks us this, decline.
-      msg.replyTo.send({ type: 'toolError', error: 'tool_status does not run background jobs.' })
-      return { state }
-    },
-
-    _statusReply: (state, msg) => {
-      const age = formatAge(Date.now() - msg.info.startedAt)
-      let text: string
-      if (msg.reply.type === 'toolPending') {
-        text = `Job ${msg.jobId} (${msg.info.toolName}) is still running, started ${age} ago.`
-      } else if (msg.reply.type === 'toolResult') {
-        text = `Job ${msg.jobId} (${msg.info.toolName}) completed (${age}): ${msg.reply.result}`
-      } else {
-        text = `Job ${msg.jobId} (${msg.info.toolName}) failed: ${msg.reply.error}`
-      }
-      msg.userReplyTo.send({ type: 'toolResult', result: text })
+      // Serve from cached state — no need to poll the underlying tool
+      msg.replyTo.send({ type: 'toolResult', result: formatJobStatus(jobId, info) })
       return { state }
     },
   }),

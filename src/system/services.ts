@@ -117,9 +117,8 @@ export const createEventStream = (): EventStream => {
         const entries = forward.get(topic)
         if (entries) {
           for (const entry of entries) {
-            if (entry.name === subscriberName) {
+            if (entry.name === subscriberName || entry.name.startsWith(subscriberName + '|')) {
               entries.delete(entry)
-              break
             }
           }
           if (entries.size === 0) forward.delete(topic)

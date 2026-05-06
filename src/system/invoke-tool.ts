@@ -13,15 +13,11 @@ export type InvokeToolArgs = {
 export type InvokeToolOptions<M> = {
   /**
    * Called when a long-running job eventually completes. The returned message
-   * is enqueued to the caller's actor inbox via `pipeToSelf`. If omitted,
-   * `toolPending` replies are converted to `toolError` (graceful fallback for
-   * agents that don't support background completion).
+   * is enqueued to the caller's actor inbox. If omitted, `toolPending` replies
+   * are converted to `toolError` (graceful fallback for agents that don't
+   * support background completion).
    */
   onCompletion?: (reply: ToolFinalReply) => M
-  /** Default poll interval if the tool's `toolPending` reply doesn't supply one. */
-  defaultPollIntervalMs?: number
-  /** Per-poll `jobStatus` ask timeout (default 5000ms). */
-  jobStatusTimeoutMs?: number
   headers?: MessageHeaders
 }
 
@@ -32,9 +28,9 @@ export type InvokeToolOptions<M> = {
  * If the tool replies with `toolPending` and `onCompletion` is supplied:
  *   - this Promise resolves immediately with a placeholder `toolResult`
  *   - the job is registered on `JobRegistryTopic` (so `tool_status` can find it)
- *   - polling continues in the background
- *   - when a final reply arrives, the job is cleared from the registry and
- *     `onCompletion(finalReply)` is delivered via `pipeToSelf`
+ *   - the caller subscribes to `JobRegistryTopic` for completion events
+ *   - when the tool publishes `completed` or `failed`, the subscription
+ *     delivers `onCompletion(finalReply)` to the caller's inbox and cleans up
  *
  * If `onCompletion` is omitted, a `toolPending` reply is converted to
  * `toolError` so the caller's existing error path runs.
@@ -64,7 +60,7 @@ export const invokeTool = async <M>(
   }
 
   // toolPending
-  const { jobId, placeholderText, pollIntervalMs } = firstReply
+  const { jobId, placeholderText } = firstReply
 
   if (!options?.onCompletion) {
     return {
@@ -74,8 +70,6 @@ export const invokeTool = async <M>(
   }
 
   const onCompletion = options.onCompletion
-  const askTimeout = options.jobStatusTimeoutMs ?? 5000
-  const startInterval = pollIntervalMs ?? options.defaultPollIntervalMs ?? 5000
 
   ctx.publishRetained(JobRegistryTopic, jobId, {
     jobId,
@@ -87,41 +81,22 @@ export const invokeTool = async <M>(
     userId: args.userId,
   })
 
-  const finalPromise = (async (): Promise<ToolFinalReply> => {
-    let currentInterval = startInterval
-    while (true) {
-      await new Promise<void>(r => setTimeout(r, currentInterval))
-      let reply: ToolReply
-      try {
-        reply = await ask<ToolMsg, ToolReply>(
-          toolRef,
-          (replyTo) => ({ type: 'jobStatus', jobId, replyTo }),
-          { timeoutMs: askTimeout },
-          options.headers,
-        )
-      } catch {
-        // ask timeout — retry on next interval
-        continue
-      }
-      if (reply.type === 'toolPending') {
-        currentInterval = reply.pollIntervalMs ?? currentInterval
-        continue
-      }
-      return reply
+  // Subscribe for completion notification via the topic instead of polling.
+  // The jobId doubles as the subscription identifier for precise unsubscribe.
+  ctx.subscribe(JobRegistryTopic, (event) => {
+    if (event.jobId !== jobId) return null
+    if (event.status === 'completed') {
+      ctx.unsubscribe(JobRegistryTopic, jobId)
+      ctx.publishRetained(JobRegistryTopic, jobId, { jobId, status: 'cleared' })
+      return onCompletion({ type: 'toolResult', result: event.result, sources: event.sources })
     }
-  })()
-
-  ctx.pipeToSelf(
-    finalPromise,
-    (finalReply) => {
+    if (event.status === 'failed') {
+      ctx.unsubscribe(JobRegistryTopic, jobId)
       ctx.publishRetained(JobRegistryTopic, jobId, { jobId, status: 'cleared' })
-      return onCompletion(finalReply)
-    },
-    (err) => {
-      ctx.publishRetained(JobRegistryTopic, jobId, { jobId, status: 'cleared' })
-      return onCompletion({ type: 'toolError', error: String(err) })
-    },
-  )
+      return onCompletion({ type: 'toolError', error: event.error })
+    }
+    return null
+  }, jobId)
 
   return {
     type: 'toolResult',

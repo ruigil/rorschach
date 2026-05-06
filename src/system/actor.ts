@@ -284,8 +284,9 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       services.eventStream.deleteRetained(topic, key, tombstone)
     },
 
-    subscribe: <T>(topic: EventTopic<T>, adapter: (event: T) => M | null) => {
-      services.eventStream.subscribe(name, topic, (event: T) => {
+    subscribe: <T>(topic: EventTopic<T>, adapter: (event: T) => M | null, identifier?: string) => {
+      const subName = identifier ? `${name}|${identifier}` : name
+      services.eventStream.subscribe(subName, topic, (event: T) => {
         if (!isStopped()) {
           const msg = adapter(event)
           if (msg !== null) mailbox.enqueue({ tag: 'message', payload: msg, headers: {} })
@@ -293,8 +294,9 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       })
     },
 
-    unsubscribe: (topic: EventTopic) => {
-      services.eventStream.unsubscribe(name, topic)
+    unsubscribe: (topic: EventTopic, identifier?: string) => {
+      const subName = identifier ? `${name}|${identifier}` : name
+      services.eventStream.unsubscribe(subName, topic)
     },
 
     deleteTopic: (topic: EventTopic) => {

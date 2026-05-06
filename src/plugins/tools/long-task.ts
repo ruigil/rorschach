@@ -1,5 +1,6 @@
 import type { ActorDef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
+import { JobRegistryTopic } from '../../types/tools.ts'
 import type { ToolMsg, ToolSchema } from '../../types/tools.ts'
 
 // ─── Schema ───
@@ -26,8 +27,7 @@ export const LONG_TASK_SCHEMA: ToolSchema = {
 
 // ─── State ───
 
-type JobStatus = 'running' | 'done' | 'error'
-type Job = { jobId: string; status: JobStatus; result?: string; error?: string }
+type Job = { jobId: string; result?: string; error?: string }
 export type LongTaskState = { jobs: Record<string, Job> }
 
 export const createInitialLongTaskState = (): LongTaskState => ({ jobs: {} })
@@ -65,40 +65,32 @@ export const createLongTaskActor = (): ActorDef<Msg, LongTaskState> => ({
         type: 'toolPending',
         jobId,
         placeholderText: `Started long task ${jobId} (delay=${delaySeconds}s).`,
-        pollIntervalMs: 2000,
       })
-      return { state: { jobs: { ...state.jobs, [jobId]: { jobId, status: 'running', result: message } } } }
+      return { state: { jobs: { ...state.jobs, [jobId]: { jobId, result: message } } } }
     },
 
-    jobStatus: (state, msg) => {
+    _complete: (state, msg, ctx) => {
       const job = state.jobs[msg.jobId]
-      if (!job) {
-        msg.replyTo.send({ type: 'toolError', error: `Unknown jobId ${msg.jobId}` })
-        return { state }
-      }
-      if (job.status === 'running') {
-        msg.replyTo.send({ type: 'toolPending', jobId: msg.jobId })
-        return { state }
-      }
-      if (job.status === 'done') {
-        msg.replyTo.send({ type: 'toolResult', result: job.result ?? '' })
-      } else {
-        msg.replyTo.send({ type: 'toolError', error: job.error ?? 'unknown error' })
-      }
+      if (!job) return { state }
+      ctx.publishRetained(JobRegistryTopic, msg.jobId, {
+        jobId: msg.jobId,
+        status: 'completed',
+        result: job.result ?? '',
+      })
       const { [msg.jobId]: _drop, ...rest } = state.jobs
       return { state: { jobs: rest } }
     },
 
-    _complete: (state, msg) => {
+    _fail: (state, msg, ctx) => {
       const job = state.jobs[msg.jobId]
       if (!job) return { state }
-      return { state: { jobs: { ...state.jobs, [msg.jobId]: { ...job, status: 'done' } } } }
-    },
-
-    _fail: (state, msg) => {
-      const job = state.jobs[msg.jobId]
-      if (!job) return { state }
-      return { state: { jobs: { ...state.jobs, [msg.jobId]: { ...job, status: 'error', error: msg.error } } } }
+      ctx.publishRetained(JobRegistryTopic, msg.jobId, {
+        jobId: msg.jobId,
+        status: 'failed',
+        error: msg.error,
+      })
+      const { [msg.jobId]: _drop, ...rest } = state.jobs
+      return { state: { jobs: rest } }
     },
   }),
 
