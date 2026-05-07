@@ -1,17 +1,8 @@
-import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../system/types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
-import { invokeTool } from '../../system/invoke-tool.ts'
-import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
-import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
-import type {
-  ApiMessage,
-  LlmProviderMsg,
-  LlmProviderReply,
-  Tool,
-  ToolCall,
-} from '../../types/llm.ts'
-import { LlmProviderTopic } from '../../types/llm.ts'
-import type { MemoryStoreMsg } from './types.ts'
+import type { ActorDef, ActorRef } from '../../system/types.ts'
+import { createReactLoop, type ReactTurn } from '../../system/react-loop.ts'
+import type { ToolCollection, ToolReply, ToolSchema } from '../../types/tools.ts'
+import type { LlmProviderMsg } from '../../types/llm.ts'
+import type { MemoryStoreMsg, MemorySupervisorMsg } from './types.ts'
 import { zettelStoreSection } from './ontology.ts'
 
 // ─── Tool registration ───
@@ -39,38 +30,19 @@ export const MEMORY_STORE_SCHEMA: ToolSchema = {
 
 export type MemoryStoreOptions = {
   model:         string
-  toolFilter?:   ToolFilter
   maxToolLoops?: number
 }
 
-// ─── Internal types ───
+// ─── Worker State ───
 
-type PendingBatch = {
-  remaining:          number
-  results:            Array<{ toolCallId: string; toolName: string; content: string }>
-  messagesAtCall:     ApiMessage[]
-  assistantToolCalls: ToolCall[]
-  toolSpans:          Record<string, SpanHandle>
-}
-
-export type SupervisorState = {
-  llmRef:      ActorRef<LlmProviderMsg> | null
-  tools:       ToolCollection
-  workerIdSeq: number
-}
-
-type WorkerState = {
-  llmRef:        ActorRef<LlmProviderMsg>
-  tools:         ToolCollection
-  requestId:     string | null
-  turnMessages:  ApiMessage[] | null
-  accumulated:   string
-  pendingBatch:  PendingBatch | null
-  toolLoopCount: number
-  replyTo:       ActorRef<ToolReply> | null
-  userId:        string
-  requestSpan:   SpanHandle | null
-  llmSpan:       SpanHandle | null
+export type MemoryStoreWorkerState = {
+  llmRef:       ActorRef<LlmProviderMsg>
+  tools:        ToolCollection
+  model:        string
+  maxToolLoops: number
+  replyTo:      ActorRef<ToolReply> | null
+  userId:       string
+  turn:         ReactTurn
 }
 
 // ─── System prompt ───
@@ -84,36 +56,27 @@ const buildSystemPrompt = (userId: string, topic?: string): string => {
   )
 }
 
-// ─── Worker Actor Definition ───
+// ─── Worker Actor ───
 
-const createMemoryStoreWorkerActor = (
-  options: MemoryStoreOptions,
-  parent:  ActorRef<MemoryStoreMsg>,
-): ActorDef<MemoryStoreMsg, WorkerState> => {
-  const { model, maxToolLoops = 25 } = options
+export const createMemoryStoreWorkerActor = (
+  parent: ActorRef<MemorySupervisorMsg>,
+): ActorDef<MemoryStoreMsg, MemoryStoreWorkerState> => {
+  const handlers = createReactLoop<MemoryStoreWorkerState, MemoryStoreMsg>({
+    role:      'memory-store',
+    spanName:  'memory-store',
+    logPrefix: 'memory store worker',
+    stashConcurrent: false,
 
-  let awaitingLlmHandler: MessageHandler<MemoryStoreMsg, WorkerState>
-  let toolLoopHandler:    MessageHandler<MemoryStoreMsg, WorkerState>
+    llmRef:       (s) => s.llmRef,
+    setLlmRef:    (s, ref) => ({ ...s, llmRef: ref ?? s.llmRef }),
+    tools:        (s) => s.tools,
+    model:        (s) => s.model,
+    maxToolLoops: (s) => s.maxToolLoops,
+    turn:         (s) => s.turn,
+    withTurn:     (s, turn) => ({ ...s, turn }),
+    userId:       (s) => s.userId,
 
-  const finish = (
-    state: WorkerState,
-    reply: ToolReply,
-    context: any,
-  ): any => { // Using any to simplify ActorResult union matching
-    state.replyTo!.send(reply)
-    parent.send({ type: '_workerDone', worker: context.self as ActorRef<MemoryStoreMsg> })
-    return { state }
-  }
-
-  // ─── Handler: idle (Worker) ───
-
-  const idleHandler: MessageHandler<MemoryStoreMsg, WorkerState> = onMessage<MemoryStoreMsg, WorkerState>({
-    invoke: (state, msg, context) => {
-      const traceParent = context.trace.fromHeaders()
-      const requestSpan = traceParent
-        ? context.trace.child(traceParent.traceId, traceParent.spanId, 'memory-store', {})
-        : null
-
+    buildTurn: (_s, msg) => {
       let content: string
       let topic: string | undefined
       try {
@@ -121,288 +84,43 @@ const createMemoryStoreWorkerActor = (
         content = typeof args.content === 'string' ? args.content : ''
         topic   = typeof args.topic   === 'string' ? args.topic   : undefined
       } catch {
-        requestSpan?.error('Invalid arguments')
-        msg.replyTo.send({ type: 'toolError', error: 'Invalid arguments' })
-        parent.send({ type: '_workerDone', worker: context.self as ActorRef<MemoryStoreMsg> })
-        return { state }
+        return { error: 'Invalid arguments' }
       }
-
-      if (!content) {
-        requestSpan?.error('Missing content argument')
-        msg.replyTo.send({ type: 'toolError', error: 'Missing content argument' })
-        parent.send({ type: '_workerDone', worker: context.self as ActorRef<MemoryStoreMsg> })
-        return { state }
-      }
-
-      const userId    = msg.userId
-      const requestId = crypto.randomUUID()
-      const messages: ApiMessage[] = [
-        { role: 'system', content: buildSystemPrompt(userId, topic) },
-        { role: 'user',   content },
-      ]
-      const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
-
-      const llmSpan = requestSpan
-        ? context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
-        : null
-
-      state.llmRef.send({
-        type:    'stream',
-        requestId,
-        model,
-        messages,
-        tools:   toolSchemas.length > 0 ? toolSchemas : undefined,
-        role:    'memory-store',
-        replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
-      })
-
-      context.log.info('memory store worker started', { userId, topic })
-
+      if (!content) return { error: 'Missing content argument' }
       return {
-        state: { ...state, requestId, turnMessages: messages, accumulated: '', replyTo: msg.replyTo, userId, requestSpan, llmSpan },
-        become: awaitingLlmHandler,
-      }
-    },
-  })
-
-  // ─── Handler: awaitingLlm (Worker) ───
-
-  awaitingLlmHandler = onMessage<MemoryStoreMsg, WorkerState>({
-    llmChunk: (state, msg) => {
-      if (msg.requestId !== state.requestId) return { state }
-      return { state: { ...state, accumulated: state.accumulated + msg.text } }
-    },
-
-    llmReasoningChunk: (state) => ({ state }),
-
-    llmToolCalls: (state, msg, context) => {
-      if (msg.requestId !== state.requestId) return { state }
-
-      state.llmSpan?.done({ toolCalls: msg.calls.map(c => c.name) })
-
-      const assistantToolCalls: ToolCall[] = msg.calls.map(c => ({
-        id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments },
-      }))
-
-      const batch: PendingBatch = {
-        remaining:          msg.calls.length,
-        results:            [],
-        messagesAtCall:     state.turnMessages!,
-        assistantToolCalls,
-        toolSpans:          {},
-      }
-
-      for (const call of msg.calls) {
-        const entry = state.tools[call.name]
-        if (!entry) {
-          context.log.warn('memory store worker: unknown tool', { tool: call.name })
-          continue
-        }
-        const toolSpan = state.requestSpan
-          ? context.trace.child(
-              state.requestSpan.traceId,
-              state.requestSpan.spanId,
-              'tool-invoke',
-              { toolName: call.name },
-            )
-          : null
-        if (toolSpan) {
-          batch.toolSpans[call.id] = toolSpan
-        }
-        context.pipeToSelf(
-          invokeTool(context, entry.ref,
-            { toolName: call.name, arguments: call.arguments, userId: state.userId },
-            { headers: toolSpan ? context.trace.injectHeaders(toolSpan) : undefined },
-          ),
-          (reply) => ({ type: '_toolResult' as const, toolName: call.name, toolCallId: call.id, reply }),
-          (error)  => ({
-            type:       '_toolResult' as const,
-            toolName:   call.name,
-            toolCallId: call.id,
-            reply:      { type: 'toolError' as const, error: String(error) },
-          }),
-        )
-      }
-
-      return {
-        state:  { ...state, requestId: null, pendingBatch: batch, llmSpan: null },
-        become: toolLoopHandler,
+        messages: [
+          { role: 'system', content: buildSystemPrompt(msg.userId, topic) },
+          { role: 'user',   content },
+        ],
+        updates: (s) => ({ ...s, replyTo: msg.replyTo, userId: msg.userId }),
       }
     },
 
-    llmDone: (state, msg, context) => {
-      if (msg.requestId !== state.requestId) return { state }
-      state.llmSpan?.done()
-      state.requestSpan?.done()
-      context.log.info('memory store worker done', { userId: state.userId })
-      return finish(state, { type: 'toolResult', result: state.accumulated || 'Memory stored.' }, context)
+    onComplete: (state, finalText, ctx) => {
+      state.replyTo?.send({ type: 'toolResult', result: finalText || 'Memory stored.' })
+      parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
+      return { state }
     },
 
-    llmError: (state, msg, context) => {
-      if (msg.requestId !== state.requestId) return { state }
-      state.llmSpan?.error(String(msg.error))
-      state.requestSpan?.error(String(msg.error))
-      context.log.error('memory store worker LLM error', { userId: state.userId, error: String(msg.error) })
-      return finish(state, { type: 'toolError', error: String(msg.error) }, context)
+    onLlmError: (state, error, ctx) => {
+      state.replyTo?.send({ type: 'toolError', error: String(error) })
+      parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
+      return { state }
     },
-  })
 
-  // ─── Handler: toolLoop (Worker) ───
-
-  toolLoopHandler = onMessage<MemoryStoreMsg, WorkerState>({
-    _toolResult: (state, msg, context) => {
-      const batch   = state.pendingBatch!
-      const content = msg.reply.type === 'toolResult' ? msg.reply.result : `Tool error: ${msg.reply.error}`
-      const updated = [...batch.results, { toolCallId: msg.toolCallId, toolName: msg.toolName, content }]
-      const remaining = batch.remaining - 1
-
-      const toolSpan = batch.toolSpans[msg.toolCallId]
-      if (toolSpan) {
-        msg.reply.type === 'toolResult' ? toolSpan.done() : toolSpan.error(msg.reply.error)
-      }
-
-      if (remaining > 0) {
-        return { state: { ...state, pendingBatch: { ...batch, remaining, results: updated } } }
-      }
-
-      const nextLoopCount = state.toolLoopCount + 1
-
-      if (nextLoopCount >= maxToolLoops) {
-        state.requestSpan?.error('tool loop limit reached')
-        context.log.warn('memory store worker tool loop limit reached', { userId: state.userId, limit: maxToolLoops })
-        return finish(
-          { ...state, pendingBatch: null, toolLoopCount: 0, requestSpan: null, llmSpan: null },
-          state.accumulated
-            ? { type: 'toolResult', result: state.accumulated }
-            : { type: 'toolError',  error:  'Tool loop limit reached' },
-          context,
-        )
-      }
-
-      const toolResultMsgs: ApiMessage[] = updated.map(r => ({
-        role: 'tool', content: r.content, tool_call_id: r.toolCallId,
-      }))
-      const nextMessages: ApiMessage[] = [
-        ...batch.messagesAtCall,
-        { role: 'assistant', content: null, tool_calls: batch.assistantToolCalls },
-        ...toolResultMsgs,
-      ]
-      const requestId   = crypto.randomUUID()
-      const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
-
-      const llmSpan = state.requestSpan
-        ? context.trace.child(state.requestSpan.traceId, state.requestSpan.spanId, 'llm-call', { model })
-        : null
-
-      state.llmRef.send({
-        type:    'stream',
-        requestId,
-        model,
-        messages: nextMessages,
-        tools:    toolSchemas.length > 0 ? toolSchemas : undefined,
-        role:     'memory-store',
-        replyTo:  context.self as unknown as ActorRef<LlmProviderReply>,
-      })
-
-      return {
-        state:  { ...state, requestId, turnMessages: nextMessages, pendingBatch: null, toolLoopCount: nextLoopCount, llmSpan },
-        become: awaitingLlmHandler,
-      }
+    onLoopLimit: (state, finalText, ctx) => {
+      const reply: ToolReply = finalText
+        ? { type: 'toolResult', result: finalText }
+        : { type: 'toolError',  error:  'Tool loop limit reached' }
+      state.replyTo?.send(reply)
+      parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
+      return { state }
     },
+
+    onUnknownTool: () => ({ kind: 'skip' }),
   })
 
   return {
-    handler: idleHandler,
+    handler: handlers.idle,
   }
-}
-
-// ─── Supervisor Actor Definition ───
-
-export const createMemoryStoreActor = (options: MemoryStoreOptions): ActorDef<MemoryStoreMsg, SupervisorState> => {
-  const { toolFilter } = options
-
-  return {
-    lifecycle: onLifecycle({
-      start: (_state, context) => {
-        context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
-        context.subscribe(ToolRegistrationTopic, (e) => {
-          if (!applyToolFilter(e.name, toolFilter)) return null
-          if (e.ref === null) {
-            return { type: '_toolUnregistered' as const, name: e.name }
-          }
-          return { type: '_toolRegistered' as const, name: e.name, schema: e.schema, ref: e.ref }
-        })
-        context.publishRetained(ToolRegistrationTopic, MEMORY_STORE_TOOL_NAME, {
-          name:   MEMORY_STORE_TOOL_NAME,
-          schema: MEMORY_STORE_SCHEMA,
-          ref:    context.self as unknown as ActorRef<ToolMsg>,
-        })
-        return { state: _state }
-      },
-
-      stopped: (_state, context) => {
-        context.deleteRetained(ToolRegistrationTopic, MEMORY_STORE_TOOL_NAME, {
-          name: MEMORY_STORE_TOOL_NAME,
-          ref:  null,
-        })
-        return { state: _state }
-      },
-    }),
-
-    handler: onMessage<MemoryStoreMsg, SupervisorState>({
-      invoke: (state, msg, context) => {
-        if (state.llmRef === null) {
-          msg.replyTo.send({ type: 'toolError', error: 'Memory not ready' })
-          return { state }
-        }
-
-        const nextSeq  = state.workerIdSeq + 1
-        const workerId = `memory-store-worker-${nextSeq}`
-
-        const worker = context.spawn(
-          workerId,
-          createMemoryStoreWorkerActor(options, context.self as ActorRef<MemoryStoreMsg>),
-          {
-            llmRef:        state.llmRef,
-            tools:         state.tools,
-            requestId:     null,
-            turnMessages:  null,
-            accumulated:   '',
-            pendingBatch:  null,
-            toolLoopCount: 0,
-            replyTo:       null,
-            userId:        '',
-            requestSpan:   null,
-            llmSpan:       null,
-          },
-        )
-
-        worker.send(msg, context.messageHeaders())
-
-        return { state: { ...state, workerIdSeq: nextSeq } }
-      },
-
-      _workerDone: (state, msg, context) => {
-        context.stop(msg.worker)
-        return { state }
-      },
-
-      _llmProvider: (state, msg) =>
-        ({ state: { ...state, llmRef: msg.ref } }),
-
-      _toolRegistered: (state, msg) =>
-        ({ state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } } }),
-
-      _toolUnregistered: (state, msg) => {
-        const { [msg.name]: _dropped, ...rest } = state.tools
-        return { state: { ...state, tools: rest } }
-      },
-    }),
-  }
-}
-
-export const INITIAL_STORE_STATE: SupervisorState = {
-  llmRef:      null,
-  tools:       {},
-  workerIdSeq: 0,
 }

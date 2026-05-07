@@ -5,7 +5,7 @@ import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { IdentityProviderTopic, resolveIdentity } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
-import type { KgraphGraph, KgraphMsg, MemoryConsolidationMsg, MemoryRecallMsg, MemoryStoreMsg, UserContextMsg } from './types.ts'
+import type { KgraphGraph, KgraphMsg, MemoryConsolidationMsg, MemorySupervisorMsg, UserContextMsg } from './types.ts'
 import {
   createKgraphActor,
 } from './kgraph.ts'
@@ -14,13 +14,9 @@ import {
   INITIAL_CONSOLIDATION_STATE,
 } from './memory-consolidation.ts'
 import {
-  createMemoryRecallActor,
-  INITIAL_RECALL_STATE,
-} from './memory-recall.ts'
-import {
-  createMemoryStoreActor,
-  INITIAL_STORE_STATE,
-} from './memory-store.ts'
+  createMemorySupervisorActor,
+  INITIAL_MEMORY_SUPERVISOR_STATE,
+} from './memory-supervisor.ts'
 import {
   createUserContextActor,
   INITIAL_USER_CONTEXT_STATE,
@@ -64,8 +60,7 @@ const KGRAPH_ROUTE_ID = 'memory.kgraph.api'
 
 type MemoryActors = {
   consolidation: ActorRef<MemoryConsolidationMsg>
-  recall:        ActorRef<MemoryRecallMsg>
-  store:         ActorRef<MemoryStoreMsg>
+  memory:        ActorRef<MemorySupervisorMsg>
   zettel:        ActorRef<ZettelNoteMsg>
   userContext:   ActorRef<UserContextMsg>
 }
@@ -74,12 +69,11 @@ type MemoryPluginState = {
   initialized:         boolean
   kgraph:              PluginActorState<Exclude<MemoryConfig['kgraph'], undefined>>
   consolidation:       ActorRef<MemoryConsolidationMsg> | null
-  recall:              ActorRef<MemoryRecallMsg>         | null
-  store:               ActorRef<MemoryStoreMsg>          | null
-  zettel:              ActorRef<ZettelNoteMsg>           | null
-  userContext:         ActorRef<UserContextMsg>          | null
+  memory:              ActorRef<MemorySupervisorMsg>    | null
+  zettel:              ActorRef<ZettelNoteMsg>          | null
+  userContext:         ActorRef<UserContextMsg>         | null
   memoryGen:           number
-  identityProviderRef: ActorRef<IdentityProviderMsg>     | null
+  identityProviderRef: ActorRef<IdentityProviderMsg>    | null
 }
 
 type MemoryPluginMsg =
@@ -137,26 +131,20 @@ const spawnMemoryActors = (
     createUserContextActor({ model: config.model, intervalMs: config.contextIntervalMs }),
     INITIAL_USER_CONTEXT_STATE,
   )
-  const recall = ctx.spawn(
-    `memory-recall-${gen}`,
-    createMemoryRecallActor({ model: config.model, toolFilter: EMPTY_TOOL_FILTER }),
-    { ...INITIAL_RECALL_STATE, tools: recallTools },
-  ) as ActorRef<MemoryRecallMsg>
-  const store = ctx.spawn(
-    `memory-store-${gen}`,
-    createMemoryStoreActor({ model: config.model, toolFilter: EMPTY_TOOL_FILTER }),
-    { ...INITIAL_STORE_STATE, tools: storeTools },
-  ) as ActorRef<MemoryStoreMsg>
-  return { consolidation, recall, store, zettel, userContext }
+  const memory = ctx.spawn(
+    `memory-supervisor-${gen}`,
+    createMemorySupervisorActor({ model: config.model }),
+    { ...INITIAL_MEMORY_SUPERVISOR_STATE, recallTools, storeTools },
+  ) as ActorRef<MemorySupervisorMsg>
+  return { consolidation, memory, zettel, userContext }
 }
 
 const stopMemoryActors = (
   ctx: Parameters<NonNullable<PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig>['lifecycle']>>[2],
-  state: Pick<MemoryPluginState, 'consolidation' | 'recall' | 'store' | 'zettel' | 'userContext'>,
+  state: Pick<MemoryPluginState, 'consolidation' | 'memory' | 'zettel' | 'userContext'>,
 ): void => {
   if (state.consolidation) ctx.stop(state.consolidation)
-  if (state.recall)        ctx.stop(state.recall)
-  if (state.store)         ctx.stop(state.store)
+  if (state.memory)        ctx.stop(state.memory)
   if (state.zettel)        ctx.stop(state.zettel)
   if (state.userContext)   ctx.stop(state.userContext)
 }
@@ -222,8 +210,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       initialized:         false,
       kgraph:              { config: null, ref: null, gen: 0 },
       consolidation:       null,
-      recall:              null,
-      store:               null,
+      memory:              null,
       zettel:              null,
       userContext:         null,
       memoryGen:           0,
@@ -250,16 +237,14 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
 
         let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
-        let recall:        ActorRef<MemoryRecallMsg>         | null = null
-        let store:         ActorRef<MemoryStoreMsg>          | null = null
-        let zettel:        ActorRef<ZettelNoteMsg>           | null = null
-        let userContext:   ActorRef<UserContextMsg>          | null = null
+        let memory:        ActorRef<MemorySupervisorMsg>    | null = null
+        let zettel:        ActorRef<ZettelNoteMsg>          | null = null
+        let userContext:   ActorRef<UserContextMsg>         | null = null
 
         if (slice?.system) {
           const actors = spawnMemoryActors(ctx, slice.system, 0, kgraphRef, dbPath)
           consolidation = actors.consolidation
-          recall        = actors.recall
-          store         = actors.store
+          memory        = actors.memory
           zettel        = actors.zettel
           userContext   = actors.userContext
           ctx.log.info('memory actors activated', { model: slice.system.model })
@@ -269,8 +254,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           initialized: true,
           kgraph: { config: kgraphConfig, ref: kgraphRef, gen: 0 },
           consolidation,
-          recall,
-          store,
+          memory,
           zettel,
           userContext,
           memoryGen: 0,
@@ -326,17 +310,15 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         stopMemoryActors(ctx, state)
 
         let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
-        let recall:        ActorRef<MemoryRecallMsg>         | null = null
-        let store:         ActorRef<MemoryStoreMsg>          | null = null
-        let zettel:        ActorRef<ZettelNoteMsg>           | null = null
-        let userContext:   ActorRef<UserContextMsg>          | null = null
+        let memory:        ActorRef<MemorySupervisorMsg>    | null = null
+        let zettel:        ActorRef<ZettelNoteMsg>          | null = null
+        let userContext:   ActorRef<UserContextMsg>         | null = null
         const memoryGen = state.memoryGen + 1
 
         if (msg.slice?.system) {
           const actors = spawnMemoryActors(ctx, msg.slice.system, memoryGen, kgraphRef, dbPath)
           consolidation = actors.consolidation
-          recall        = actors.recall
-          store         = actors.store
+          memory        = actors.memory
           zettel        = actors.zettel
           userContext   = actors.userContext
           ctx.log.info('memory actors reconfigured', { gen: memoryGen })
@@ -346,8 +328,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           ...state,
           kgraph: { config: newKgraphConfig, ref: kgraphRef, gen: kgraphGen },
           consolidation,
-          recall,
-          store,
+          memory,
           zettel,
           userContext,
           memoryGen,

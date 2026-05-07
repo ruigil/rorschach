@@ -1,4 +1,4 @@
-import type { ActorRef, SpanHandle } from '../../system/types.ts'
+import type { ActorIdentity, ActorRef, SpanHandle } from '../../system/types.ts'
 import type { ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 
@@ -78,27 +78,26 @@ export type KgraphMsg =
   | { type: '_dumpDone';          graph: KgraphGraph;          replyTo: ActorRef<KgraphGraph> }
   | { type: '_dumpErr';           error: string;               replyTo: ActorRef<KgraphGraph> }
 
-// ─── Memory recall message protocol ───
+// ─── Memory worker message protocols ───
+// Workers only send `_workerDone` to the supervisor; they never receive it,
+// so it does not appear in the worker-internal unions below.
 
 export type MemoryRecallMsg =
   | ToolInvokeMsg
-  | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolFinalReply }
-  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolMsg> }
-  | { type: '_toolUnregistered'; name: string }
-  | { type: '_workerDone';       worker: ActorRef<MemoryRecallMsg> }
+  | { type: '_toolResult';  toolCallId: string; toolName: string; reply: ToolFinalReply }
   | LlmProviderReply
-
-// ─── Memory store message protocol ───
 
 export type MemoryStoreMsg =
   | ToolInvokeMsg
-  | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolFinalReply }
-  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolMsg> }
-  | { type: '_toolUnregistered'; name: string }
-  | { type: '_workerDone';       worker: ActorRef<MemoryStoreMsg> }
+  | { type: '_toolResult';  toolCallId: string; toolName: string; reply: ToolFinalReply }
   | LlmProviderReply
+
+// ─── Memory supervisor message protocol ───
+
+export type MemorySupervisorMsg =
+  | ToolInvokeMsg
+  | { type: '_workerDone';  worker: ActorIdentity }
+  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── Memory consolidation message protocol ───
 
