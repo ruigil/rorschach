@@ -1,5 +1,5 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
-import { createReactLoop, type ReactTurn } from '../../system/react-loop.ts'
+import { createReactLoop, initialReactLoopSlice, type ReactLoopSlice } from '../../system/react-loop.ts'
 import type { ToolCollection, ToolReply, ToolSchema } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { MemoryRecallMsg, MemorySupervisorMsg } from './types.ts'
@@ -27,21 +27,17 @@ export const MEMORY_RECALL_SCHEMA: ToolSchema = {
 
 // ─── Options ───
 
-export type MemoryRecallOptions = {
-  model:         string
-  maxToolLoops?: number
+export type MemoryRecallWorkerOptions = {
+  model:        string
+  maxToolLoops: number
+  tools:        ToolCollection
+  llmRef:       ActorRef<LlmProviderMsg>
 }
 
 // ─── Worker State ───
 
 export type MemoryRecallWorkerState = {
-  llmRef:       ActorRef<LlmProviderMsg>
-  tools:        ToolCollection
-  model:        string
-  maxToolLoops: number
-  replyTo:      ActorRef<ToolReply> | null
-  userId:       string
-  turn:         ReactTurn
+  loop: ReactLoopSlice
 }
 
 // ─── System prompt ───
@@ -54,22 +50,20 @@ const buildSystemPrompt = (userId: string): string =>
 // ─── Worker Actor ───
 
 export const createMemoryRecallWorkerActor = (
-  parent: ActorRef<MemorySupervisorMsg>,
+  parent:  ActorRef<MemorySupervisorMsg>,
+  options: MemoryRecallWorkerOptions,
 ): ActorDef<MemoryRecallMsg, MemoryRecallWorkerState> => {
   const handlers = createReactLoop<MemoryRecallWorkerState, MemoryRecallMsg>({
-    role:      'memory-recall',
-    spanName:  'memory-recall',
-    logPrefix: 'memory recall',
+    role:            'memory-recall',
+    spanName:        'memory-recall',
+    logPrefix:       'memory recall',
     stashConcurrent: false,
+    model:           options.model,
+    maxToolLoops:    options.maxToolLoops,
+    tools:           options.tools,
 
-    llmRef:       (s) => s.llmRef,
-    setLlmRef:    (s, ref) => ({ ...s, llmRef: ref ?? s.llmRef }),
-    tools:        (s) => s.tools,
-    model:        (s) => s.model,
-    maxToolLoops: (s) => s.maxToolLoops,
-    turn:         (s) => s.turn,
-    withTurn:     (s, turn) => ({ ...s, turn }),
-    userId:       (s) => s.userId,
+    slice:    (s) => s.loop,
+    setSlice: (s, loop) => ({ ...s, loop }),
 
     buildTurn: (_s, msg) => {
       let query: string
@@ -85,18 +79,17 @@ export const createMemoryRecallWorkerActor = (
           { role: 'system', content: buildSystemPrompt(msg.userId) },
           { role: 'user',   content: query },
         ],
-        updates: (s) => ({ ...s, replyTo: msg.replyTo, userId: msg.userId }),
       }
     },
 
     onComplete: (state, finalText, ctx) => {
-      state.replyTo?.send({ type: 'toolResult', result: finalText || '(no result)' })
+      state.loop.turn.replyTo?.send({ type: 'toolResult', result: finalText || '(no result)' })
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
     },
 
     onLlmError: (state, error, ctx) => {
-      state.replyTo?.send({ type: 'toolError', error: String(error) })
+      state.loop.turn.replyTo?.send({ type: 'toolError', error: String(error) })
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
     },
@@ -105,15 +98,19 @@ export const createMemoryRecallWorkerActor = (
       const reply: ToolReply = finalText
         ? { type: 'toolResult', result: finalText }
         : { type: 'toolError',  error:  'Tool loop limit reached' }
-      state.replyTo?.send(reply)
+      state.loop.turn.replyTo?.send(reply)
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
     },
-
-    onUnknownTool: () => ({ kind: 'skip' }),
   })
 
   return {
     handler: handlers.idle,
   }
 }
+
+export const createInitialMemoryRecallWorkerState = (
+  options: MemoryRecallWorkerOptions,
+): MemoryRecallWorkerState => ({
+  loop: { llmRef: options.llmRef, turn: initialReactLoopSlice().turn },
+})

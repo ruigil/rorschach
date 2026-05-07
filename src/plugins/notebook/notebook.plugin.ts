@@ -224,7 +224,7 @@ const spawnChildren = (
   const noteAgentRef = ctx.spawn(
     `note-agent-${gen}`,
     createNoteAgentActor(agentOpts),
-    createInitialNoteAgentState(agentOpts),
+    createInitialNoteAgentState(),
   ) as ActorRef<NoteAgentMsg>
 
   // Register the single public tool

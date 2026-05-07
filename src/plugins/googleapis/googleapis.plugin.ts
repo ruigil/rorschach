@@ -144,7 +144,7 @@ const spawnChildren = (
   const googleAgentRef = ctx.spawn(
     `googleapis-agent-${gen}`,
     createGoogleAgentActor(agentOpts),
-    createInitialGoogleAgentState(agentOpts),
+    createInitialGoogleAgentState(),
   ) as ActorRef<GoogleAgentMsg>
 
   ctx.publishRetained(ToolRegistrationTopic, GOOGLE_TOOL_NAME, {

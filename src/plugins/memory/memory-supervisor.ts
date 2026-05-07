@@ -1,7 +1,6 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { initialReactTurn } from '../../system/react-loop.ts'
-import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
+import type { ToolMsg, ToolCollection } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
@@ -10,13 +9,13 @@ import {
   MEMORY_RECALL_TOOL_NAME,
   MEMORY_RECALL_SCHEMA,
   createMemoryRecallWorkerActor,
-  type MemoryRecallWorkerState,
+  createInitialMemoryRecallWorkerState,
 } from './memory-recall.ts'
 import {
   MEMORY_STORE_TOOL_NAME,
   MEMORY_STORE_SCHEMA,
   createMemoryStoreWorkerActor,
-  type MemoryStoreWorkerState,
+  createInitialMemoryStoreWorkerState,
 } from './memory-store.ts'
 
 // ─── Options ───
@@ -89,38 +88,22 @@ export const createMemorySupervisorActor = (
         const self    = context.self as ActorRef<MemorySupervisorMsg>
 
         if (msg.toolName === MEMORY_RECALL_TOOL_NAME) {
-          const initial: MemoryRecallWorkerState = {
-            llmRef:       state.llmRef,
-            tools:        state.recallTools,
-            model,
-            maxToolLoops,
-            replyTo:      null,
-            userId:       '',
-            turn:         initialReactTurn(),
-          }
+          const opts = { model, maxToolLoops, tools: state.recallTools, llmRef: state.llmRef }
           const worker = context.spawn(
             `memory-recall-worker-${nextSeq}`,
-            createMemoryRecallWorkerActor(self),
-            initial,
+            createMemoryRecallWorkerActor(self, opts),
+            createInitialMemoryRecallWorkerState(opts),
           )
           worker.send(msg, context.messageHeaders())
           return { state: { ...state, workerIdSeq: nextSeq } }
         }
 
         if (msg.toolName === MEMORY_STORE_TOOL_NAME) {
-          const initial: MemoryStoreWorkerState = {
-            llmRef:       state.llmRef,
-            tools:        state.storeTools,
-            model,
-            maxToolLoops,
-            replyTo:      null,
-            userId:       '',
-            turn:         initialReactTurn(),
-          }
+          const opts = { model, maxToolLoops, tools: state.storeTools, llmRef: state.llmRef }
           const worker = context.spawn(
             `memory-store-worker-${nextSeq}`,
-            createMemoryStoreWorkerActor(self),
-            initial,
+            createMemoryStoreWorkerActor(self, opts),
+            createInitialMemoryStoreWorkerState(opts),
           )
           worker.send(msg, context.messageHeaders())
           return { state: { ...state, workerIdSeq: nextSeq } }

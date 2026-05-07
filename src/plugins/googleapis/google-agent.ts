@@ -1,9 +1,8 @@
-import type { ActorDef, ActorRef } from '../../system/types.ts'
+import type { ActorDef } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { createReactLoop, initialReactTurn, type ReactLoopHandlers, type ReactTurn } from '../../system/react-loop.ts'
-import type { ToolCollection, ToolReply } from '../../types/tools.ts'
+import { createReactLoop, initialReactLoopSlice, type ReactLoopSlice } from '../../system/react-loop.ts'
+import type { ToolCollection } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { GoogleAgentMsg } from './types.ts'
 
 // ─── Options ───
@@ -17,16 +16,7 @@ export type GoogleAgentOptions = {
 // ─── State ───
 
 export type GoogleAgentState = {
-  llmRef:       ActorRef<LlmProviderMsg> | null
-  model:        string
-  maxToolLoops: number
-  tools:        ToolCollection
-
-  // per-turn
-  replyTo:  ActorRef<ToolReply> | null
-  clientId: string | undefined
-  userId:   string
-  turn:     ReactTurn
+  loop: ReactLoopSlice
 }
 
 // ─── Helpers ───
@@ -56,33 +46,19 @@ const buildSystemPrompt = (): string =>
   `Use the appropriate tools to fulfill the user's request. Reply with a concise summary of what was done.\n\n` +
   `Your reply is not for the final user but a main service agent. Do not use fillers or engage in conversation. Be formal and factual.`
 
-const resetTurn = (state: GoogleAgentState): GoogleAgentState => ({
-  ...state,
-  replyTo:  null,
-  clientId: undefined,
-  userId:   '',
-  turn:     initialReactTurn(),
-})
-
 // ─── Actor ───
 
-export const createGoogleAgentActor = (_options: GoogleAgentOptions): ActorDef<GoogleAgentMsg, GoogleAgentState> => {
-  // eslint-disable-next-line prefer-const — `handlers` is referenced inside hook callbacks before assignment completes
-  let handlers: ReactLoopHandlers<GoogleAgentMsg, GoogleAgentState>
-  handlers = createReactLoop<GoogleAgentState, GoogleAgentMsg>({
-    role:     'google',
-    spanName: 'google-agent',
-    logPrefix: 'google-agent',
+export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<GoogleAgentMsg, GoogleAgentState> => {
+  const handlers = createReactLoop<GoogleAgentState, GoogleAgentMsg>({
+    role:         'google',
+    spanName:     'google-agent',
+    logPrefix:    'google-agent',
+    model:        options.model,
+    maxToolLoops: options.maxToolLoops,
+    tools:        options.tools,
 
-    llmRef:       (s) => s.llmRef,
-    setLlmRef:    (s, ref) => ({ ...s, llmRef: ref }),
-    tools:        (s) => s.tools,
-    model:        (s) => s.model,
-    maxToolLoops: (s) => s.maxToolLoops,
-    turn:         (s) => s.turn,
-    withTurn:     (s, turn) => ({ ...s, turn }),
-    userId:       (s) => s.userId,
-    clientId:     (s) => s.clientId,
+    slice:    (s) => s.loop,
+    setSlice: (s, loop) => ({ ...s, loop }),
 
     buildTurn: (_s, msg) => {
       let request: string
@@ -97,28 +73,22 @@ export const createGoogleAgentActor = (_options: GoogleAgentOptions): ActorDef<G
           { role: 'system', content: buildSystemPrompt() },
           { role: 'user',   content: request },
         ],
-        updates: (s) => ({ ...s, replyTo: msg.replyTo, clientId: msg.clientId, userId: msg.userId }),
       }
     },
 
     onComplete: (state, finalText) => {
-      state.replyTo?.send({ type: 'toolResult', result: finalText || '(done)' })
-      return { state: resetTurn(state), become: handlers.idle, unstashAll: true }
+      state.loop.turn.replyTo?.send({ type: 'toolResult', result: finalText || '(done)' })
+      return { state }
     },
 
     onLlmError: (state) => {
-      state.replyTo?.send({ type: 'toolError', error: 'Google agent encountered an LLM error.' })
-      return { state: resetTurn(state), become: handlers.idle, unstashAll: true }
+      state.loop.turn.replyTo?.send({ type: 'toolError', error: 'Google agent encountered an LLM error.' })
+      return { state }
     },
 
     onLoopLimit: (state) => {
-      state.replyTo?.send({ type: 'toolError', error: 'Tool loop limit reached.' })
-      return { state: resetTurn(state), become: handlers.idle, unstashAll: true }
-    },
-
-    onUnknownTool: (state, name) => {
-      state.replyTo?.send({ type: 'toolError', error: `Tool not available: ${name}` })
-      return { kind: 'finish', action: { state: resetTurn(state), become: handlers.idle, unstashAll: true } }
+      state.loop.turn.replyTo?.send({ type: 'toolError', error: 'Tool loop limit reached.' })
+      return { state }
     },
   })
 
@@ -137,14 +107,6 @@ export const createGoogleAgentActor = (_options: GoogleAgentOptions): ActorDef<G
   }
 }
 
-export const createInitialGoogleAgentState = (options: GoogleAgentOptions): GoogleAgentState => ({
-  llmRef:       null,
-  model:        options.model,
-  maxToolLoops: options.maxToolLoops,
-  tools:        options.tools,
-  replyTo:      null,
-  clientId:     undefined,
-  userId:       '',
-  turn:         initialReactTurn(),
+export const createInitialGoogleAgentState = (): GoogleAgentState => ({
+  loop: initialReactLoopSlice(),
 })
-
