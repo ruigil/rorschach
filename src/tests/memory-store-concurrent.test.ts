@@ -1,10 +1,12 @@
 import { describe, test, expect } from 'bun:test'
 import { createPluginSystem, ask } from '../system/index.ts'
-import { createMemoryStoreActor, INITIAL_STORE_STATE } from '../plugins/memory/memory-store.ts'
-import type { MemoryStoreMsg } from '../plugins/memory/types.ts'
+import {
+  createMemorySupervisorActor,
+  INITIAL_MEMORY_SUPERVISOR_STATE,
+} from '../plugins/memory/memory-supervisor.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
-import type { LlmProviderMsg, LlmProviderReply } from '../types/llm.ts'
+import type { LlmProviderMsg } from '../types/llm.ts'
 import type { ActorRef } from '../system/types.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
@@ -40,9 +42,9 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
 
     // 2. Spawn Memory Store Supervisor
     const storeRef = system.spawn(
-      'memory-store',
-      createMemoryStoreActor({ model: 'test-model' }),
-      INITIAL_STORE_STATE
+      'memory-supervisor',
+      createMemorySupervisorActor({ model: 'test-model' }),
+      { ...INITIAL_MEMORY_SUPERVISOR_STATE, recallTools: {}, storeTools: {} }
     )
     
     await tick(100) // Wait for subscriptions
@@ -89,9 +91,9 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     const system = await createPluginSystem()
     
     const storeRef = system.spawn(
-      'memory-store',
-      createMemoryStoreActor({ model: 'test-model' }),
-      INITIAL_STORE_STATE
+      'memory-supervisor',
+      createMemorySupervisorActor({ model: 'test-model' }),
+      { ...INITIAL_MEMORY_SUPERVISOR_STATE, recallTools: {}, storeTools: {} }
     )
     
     await tick()
