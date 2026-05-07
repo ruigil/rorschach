@@ -1,5 +1,5 @@
-import type { ActorRef, SpanHandle } from '../../system/types.ts'
-import type { ToolFinalReply, ToolInvokeMsg } from '../../types/tools.ts'
+import type { ActorRef } from '../../system/types.ts'
+import type { ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolSchema } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 
 // ─── Domain types ───
@@ -47,23 +47,15 @@ export type NotebookConfig = {
   maxToolLoops?: number  // default: 10
 }
 
-// ─── Shared internal types ───
-
-export type PendingBatch = {
-  remaining:          number
-  results:            Array<{ toolCallId: string; toolName: string; content: string }>
-  messagesAtCall:     import('../../types/llm.ts').ApiMessage[]
-  assistantToolCalls: import('../../types/llm.ts').ToolCall[]
-  spans:              Record<string, SpanHandle>
-}
-
 // ─── Note agent message protocol ───
 
 export type NoteAgentMsg =
   | ToolInvokeMsg
   | LlmProviderReply
-  | { type: '_toolResult'; toolCallId: string; toolName: string; reply: ToolFinalReply }
-  | { type: '_llmProviderUpdated'; ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolFinalReply }
+  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolMsg> }
+  | { type: '_toolUnregistered'; name: string }
 
 // ─── Todo reminder message protocol ───
 

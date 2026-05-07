@@ -1,17 +1,10 @@
-import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../system/types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
-import { invokeTool } from '../../system/invoke-tool.ts'
-import type { ToolCollection, ToolEntry, ToolReply } from '../../types/tools.ts'
-import type { ToolSchema } from '../../types/tools.ts'
+import type { ActorDef, ActorRef } from '../../system/types.ts'
+import { onLifecycle } from '../../system/match.ts'
+import { createReactLoop, initialReactTurn, type ReactLoopHandlers, type ReactTurn } from '../../system/react-loop.ts'
+import type { ToolCollection, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type {
-  ApiMessage,
-  LlmProviderMsg,
-  LlmProviderReply,
-  Tool,
-  ToolCall,
-} from '../../types/llm.ts'
-import type { GoogleAgentMsg, PendingBatch } from './types.ts'
+import type { LlmProviderMsg } from '../../types/llm.ts'
+import type { GoogleAgentMsg } from './types.ts'
 
 // ─── Options ───
 
@@ -24,21 +17,16 @@ export type GoogleAgentOptions = {
 // ─── State ───
 
 export type GoogleAgentState = {
-  llmRef:        ActorRef<LlmProviderMsg> | null
-  model:         string
-  maxToolLoops:  number
-  tools:         ToolCollection
+  llmRef:       ActorRef<LlmProviderMsg> | null
+  model:        string
+  maxToolLoops: number
+  tools:        ToolCollection
 
-  requestId:     string | null
-  replyTo:       ActorRef<ToolReply> | null
-  clientId:      string | undefined
-  userId:        string
-  turnMessages:  ApiMessage[] | null
-  pending:       string
-  pendingBatch:  PendingBatch | null
-  toolLoopCount: number
-  requestSpan:   SpanHandle | null
-  llmSpan:       SpanHandle | null
+  // per-turn
+  replyTo:  ActorRef<ToolReply> | null
+  clientId: string | undefined
+  userId:   string
+  turn:     ReactTurn
 }
 
 // ─── Helpers ───
@@ -70,270 +58,79 @@ const buildSystemPrompt = (): string =>
 
 const resetTurn = (state: GoogleAgentState): GoogleAgentState => ({
   ...state,
-  requestId:     null,
-  replyTo:       null,
-  clientId:      undefined,
-  userId:        '',
-  turnMessages:  null,
-  pending:       '',
-  pendingBatch:  null,
-  toolLoopCount: 0,
-  requestSpan:   null,
-  llmSpan:       null,
+  replyTo:  null,
+  clientId: undefined,
+  userId:   '',
+  turn:     initialReactTurn(),
 })
 
 // ─── Actor ───
 
-export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<GoogleAgentMsg, GoogleAgentState> => {
-  const { model, maxToolLoops, tools } = options
+export const createGoogleAgentActor = (_options: GoogleAgentOptions): ActorDef<GoogleAgentMsg, GoogleAgentState> => {
+  // eslint-disable-next-line prefer-const — `handlers` is referenced inside hook callbacks before assignment completes
+  let handlers: ReactLoopHandlers<GoogleAgentMsg, GoogleAgentState>
+  handlers = createReactLoop<GoogleAgentState, GoogleAgentMsg>({
+    role:     'google',
+    spanName: 'google-agent',
+    logPrefix: 'google-agent',
 
-  let awaitingLlmHandler: MessageHandler<GoogleAgentMsg, GoogleAgentState>
-  let toolLoopHandler:    MessageHandler<GoogleAgentMsg, GoogleAgentState>
+    llmRef:       (s) => s.llmRef,
+    setLlmRef:    (s, ref) => ({ ...s, llmRef: ref }),
+    tools:        (s) => s.tools,
+    model:        (s) => s.model,
+    maxToolLoops: (s) => s.maxToolLoops,
+    turn:         (s) => s.turn,
+    withTurn:     (s, turn) => ({ ...s, turn }),
+    userId:       (s) => s.userId,
+    clientId:     (s) => s.clientId,
 
-  // ─── Handler: idle ───
-
-  const idleHandler: MessageHandler<GoogleAgentMsg, GoogleAgentState> = onMessage<GoogleAgentMsg, GoogleAgentState>({
-    invoke: (state, msg, context) => {
+    buildTurn: (_s, msg) => {
       let request: string
       try {
         const args = JSON.parse(msg.arguments) as { request?: string }
         request = args.request ?? msg.arguments
       } catch {
-        msg.replyTo.send({ type: 'toolError', error: 'Invalid arguments: expected { request: string }' })
-        return { state }
+        return { error: 'Invalid arguments: expected { request: string }' }
       }
-
-      if (!state.llmRef) {
-        msg.replyTo.send({ type: 'toolError', error: 'Google agent not ready (no LLM provider).' })
-        return { state }
-      }
-
-      const requestId   = crypto.randomUUID()
-      const messages: ApiMessage[] = [
-        { role: 'system', content: buildSystemPrompt() },
-        { role: 'user',   content: request },
-      ]
-      const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
-
-      context.log.info('google-agent: request', { request: request.slice(0, 300) })
-
-      const parent     = context.trace.fromHeaders()
-      const requestSpan = parent
-        ? context.trace.child(parent.traceId, parent.spanId, 'google-agent', { request })
-        : null
-      const llmSpan = requestSpan
-        ? context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model: state.model })
-        : null
-
-      state.llmRef.send({
-        type: 'stream',
-        requestId,
-        model: state.model,
-        messages,
-        tools: toolSchemas.length > 0 ? toolSchemas : undefined,
-        role: 'google',
-        clientId: msg.clientId,
-        replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
-      })
-
       return {
-        state: {
-          ...state,
-          requestId,
-          replyTo:       msg.replyTo,
-          clientId:      msg.clientId,
-          userId:        msg.userId,
-          turnMessages:  messages,
-          pending:       '',
-          pendingBatch:  null,
-          toolLoopCount: 0,
-          requestSpan,
-          llmSpan,
-        },
-        become: awaitingLlmHandler,
+        messages: [
+          { role: 'system', content: buildSystemPrompt() },
+          { role: 'user',   content: request },
+        ],
+        updates: (s) => ({ ...s, replyTo: msg.replyTo, clientId: msg.clientId, userId: msg.userId }),
       }
     },
 
-    _llmProviderUpdated: (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
-  })
-
-  // ─── Handler: awaitingLlm ───
-
-  awaitingLlmHandler = onMessage<GoogleAgentMsg, GoogleAgentState>({
-    invoke: (state) => ({ state, stash: true }),
-
-    llmChunk: (state, msg) => {
-      if (msg.requestId !== state.requestId) return { state }
-      return { state: { ...state, pending: state.pending + msg.text } }
+    onComplete: (state, finalText) => {
+      state.replyTo?.send({ type: 'toolResult', result: finalText || '(done)' })
+      return { state: resetTurn(state), become: handlers.idle, unstashAll: true }
     },
 
-    llmReasoningChunk: (state) => ({ state }),
-
-    llmToolCalls: (state, msg, context) => {
-      if (msg.requestId !== state.requestId) return { state }
-
-      state.llmSpan?.done({ toolCalls: msg.calls.map(c => c.name) })
-
-      const assistantToolCalls: ToolCall[] = msg.calls.map(c => ({
-        id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments },
-      }))
-
-      context.log.info('google-agent: tool calls', { tools: msg.calls.map(c => c.name) })
-
-      const unknownCall = msg.calls.find(c => !state.tools[c.name])
-      if (unknownCall) {
-        context.log.warn('google-agent: unknown tool', { tool: unknownCall.name })
-        state.requestSpan?.error(`Tool not available: ${unknownCall.name}`)
-        state.replyTo?.send({ type: 'toolError', error: `Tool not available: ${unknownCall.name}` })
-        return { state: resetTurn(state), become: idleHandler, unstashAll: true }
-      }
-
-      const spans: Record<string, SpanHandle> = {}
-      for (const call of msg.calls) {
-        if (state.requestSpan) {
-          spans[call.id] = context.trace.child(
-            state.requestSpan.traceId,
-            state.requestSpan.spanId,
-            'tool-invoke',
-            { toolName: call.name, arguments: call.arguments },
-          )
-        }
-      }
-
-      const batch: PendingBatch = {
-        remaining:          msg.calls.length,
-        results:            [],
-        messagesAtCall:     state.turnMessages!,
-        assistantToolCalls,
-        spans,
-      }
-
-      for (const call of msg.calls) {
-        const entry = state.tools[call.name]!
-        const toolSpan = spans[call.id]
-        context.pipeToSelf(
-          invokeTool(context, entry.ref,
-            { toolName: call.name, arguments: call.arguments, clientId: state.clientId, userId: state.userId },
-            { headers: toolSpan ? context.trace.injectHeaders(toolSpan) : undefined },
-          ),
-          (reply): GoogleAgentMsg => ({ type: '_toolResult', toolName: call.name, toolCallId: call.id, reply }),
-          (error): GoogleAgentMsg => ({
-            type: '_toolResult', toolName: call.name, toolCallId: call.id,
-            reply: { type: 'toolError', error: String(error) },
-          }),
-        )
-      }
-
-      return {
-        state: { ...state, requestId: null, llmSpan: null, pendingBatch: batch },
-        become: toolLoopHandler,
-      }
-    },
-
-    llmDone: (state, msg, context) => {
-      if (msg.requestId !== state.requestId) return { state }
-      context.log.info('google-agent: done', { chars: state.pending.length })
-      state.llmSpan?.done()
-      state.requestSpan?.done()
-      state.replyTo?.send({ type: 'toolResult', result: state.pending || '(done)' })
-      return { state: resetTurn(state), become: idleHandler, unstashAll: true }
-    },
-
-    llmError: (state, msg, context) => {
-      if (msg.requestId !== state.requestId) return { state }
-      context.log.error('google-agent LLM error', { error: String(msg.error) })
-      state.llmSpan?.error(msg.error)
-      state.requestSpan?.error(msg.error)
+    onLlmError: (state) => {
       state.replyTo?.send({ type: 'toolError', error: 'Google agent encountered an LLM error.' })
-      return { state: resetTurn(state), become: idleHandler, unstashAll: true }
+      return { state: resetTurn(state), become: handlers.idle, unstashAll: true }
     },
 
-    _llmProviderUpdated: (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
-  })
-
-  // ─── Handler: toolLoop ───
-
-  toolLoopHandler = onMessage<GoogleAgentMsg, GoogleAgentState>({
-    invoke: (state) => ({ state, stash: true }),
-
-    _toolResult: (state, msg, context) => {
-      const batch = state.pendingBatch!
-      const span  = batch.spans[msg.toolCallId]
-      if (msg.reply.type === 'toolResult') {
-        span?.done()
-        context.log.info('google-agent: tool result', { tool: msg.toolName, ok: true })
-      } else {
-        span?.error(msg.reply.error)
-        context.log.warn('google-agent: tool error', { tool: msg.toolName, error: msg.reply.error })
-      }
-      const content = msg.reply.type === 'toolResult' ? msg.reply.result : `Tool error: ${msg.reply.error}`
-      const updated = [...batch.results, { toolCallId: msg.toolCallId, toolName: msg.toolName, content }]
-      const remaining = batch.remaining - 1
-
-      if (remaining > 0) {
-        return { state: { ...state, pendingBatch: { ...batch, remaining, results: updated } } }
-      }
-
-      const nextLoopCount = state.toolLoopCount + 1
-      if (nextLoopCount >= maxToolLoops) {
-        context.log.warn('google-agent tool loop limit reached', { limit: maxToolLoops })
-        state.replyTo?.send({ type: 'toolError', error: 'Tool loop limit reached.' })
-        return { state: resetTurn(state), become: idleHandler, unstashAll: true }
-      }
-
-      const toolResultMsgs: ApiMessage[] = updated.map(r => ({
-        role: 'tool', content: r.content, tool_call_id: r.toolCallId,
-      }))
-      const nextMessages: ApiMessage[] = [
-        ...batch.messagesAtCall,
-        { role: 'assistant', content: null, tool_calls: batch.assistantToolCalls },
-        ...toolResultMsgs,
-      ]
-
-      const requestId   = crypto.randomUUID()
-      const toolSchemas = Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool)
-
-      const llmSpan = state.requestSpan
-        ? context.trace.child(state.requestSpan.traceId, state.requestSpan.spanId, 'llm-response', { model: state.model })
-        : null
-
-      state.llmRef!.send({
-        type: 'stream',
-        requestId,
-        model: state.model,
-        messages: nextMessages,
-        tools: toolSchemas.length > 0 ? toolSchemas : undefined,
-        role: 'google',
-        clientId: state.clientId,
-        replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
-      })
-
-      return {
-        state: {
-          ...state,
-          requestId,
-          turnMessages:  nextMessages,
-          pending:       '',
-          pendingBatch:  null,
-          toolLoopCount: nextLoopCount,
-          llmSpan,
-        },
-        become: awaitingLlmHandler,
-      }
+    onLoopLimit: (state) => {
+      state.replyTo?.send({ type: 'toolError', error: 'Tool loop limit reached.' })
+      return { state: resetTurn(state), become: handlers.idle, unstashAll: true }
     },
 
-    _llmProviderUpdated: (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
+    onUnknownTool: (state, name) => {
+      state.replyTo?.send({ type: 'toolError', error: `Tool not available: ${name}` })
+      return { kind: 'finish', action: { state: resetTurn(state), become: handlers.idle, unstashAll: true } }
+    },
   })
 
   return {
     lifecycle: onLifecycle({
-      start: (_state, context) => {
-        context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProviderUpdated' as const, ref: e.ref }))
-        return { state: _state }
+      start: (state, context) => {
+        context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
+        return { state }
       },
     }),
 
-    handler: idleHandler,
+    handler: handlers.idle,
 
     stashCapacity: 50,
     supervision:   { type: 'restart', maxRetries: 3, withinMs: 30_000 },
@@ -341,18 +138,13 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
 }
 
 export const createInitialGoogleAgentState = (options: GoogleAgentOptions): GoogleAgentState => ({
-  llmRef:        null,
-  model:         options.model,
-  maxToolLoops:  options.maxToolLoops,
-  tools:         options.tools,
-  requestId:     null,
-  replyTo:       null,
-  clientId:      undefined,
-  userId:        '',
-  turnMessages:  null,
-  pending:       '',
-  pendingBatch:  null,
-  toolLoopCount: 0,
-  requestSpan:   null,
-  llmSpan:       null,
+  llmRef:       null,
+  model:        options.model,
+  maxToolLoops: options.maxToolLoops,
+  tools:        options.tools,
+  replyTo:      null,
+  clientId:     undefined,
+  userId:       '',
+  turn:         initialReactTurn(),
 })
+
