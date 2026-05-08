@@ -8,7 +8,7 @@ import type { ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolSchema, ToolFilter } f
 
 export type ChatbotMsg =
   | { type: 'userMessage'; clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string; isCron?: boolean; isInjected?: boolean }
-  | ReactInvokeMsg
+  | ReactInvokeMsg<{ llmText: string; isInjected?: boolean }>
   | LlmProviderReply
   | { type: '_toolRegistered';      name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered';    name: string }

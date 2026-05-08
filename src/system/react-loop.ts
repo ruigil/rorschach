@@ -75,10 +75,15 @@ export const initialReactLoopSlice = (): ReactLoopSlice => ({
 
 // ─── Base message variants the closure dispatches on ───────────────────────
 
-export type ReactInvokeMsg = {
+/**
+ * `Args` defaults to `string` — the shape the LLM produces for tool calls.
+ * Agents that synthesize their own invokes in-process can parameterize with a
+ * structured type and skip JSON encode/decode in `buildTurn`.
+ */
+export type ReactInvokeMsg<Args = string> = {
   type:          'invoke'
   toolName:      string
-  arguments:     string
+  arguments:     string | Args
   clientId?:     string
   userId:        string
   replyTo:       ActorRef<ToolReply>
@@ -103,8 +108,8 @@ export type ReactSubscriptionMsg =
  * may add additional variants on top — the closure ignores anything it
  * doesn't recognise.
  */
-export type ReactBaseMsg =
-  | ReactInvokeMsg
+export type ReactBaseMsg<Args = string> =
+  | ReactInvokeMsg<Args>
   | LlmProviderReply
   | ReactToolResultMsg
   | ReactSubscriptionMsg
@@ -140,7 +145,7 @@ export type ReactToolCallInterception<M extends { type: string }, S> =
 /** Result of an `onChunk` / `onReasoningChunk` hook. Either a bare state, or state plus events emitted alongside the chunk. */
 export type ReactChunkResult<S> = S | { state: S; events?: TypedEvent[] }
 
-export type ReactLoopHooks<S, M extends { type: string }> = {
+export type ReactLoopHooks<S, M extends { type: string }, Args = string> = {
   /** Role string sent on every LLM stream message (e.g. 'google', 'memory-recall'). */
   role:         string
   /** Operation name used when creating the per-request root span. */
@@ -165,7 +170,7 @@ export type ReactLoopHooks<S, M extends { type: string }> = {
 
   // ─── Entry ───
   /** Validate the invoke message and produce the turn's initial messages. */
-  buildTurn:     (s: S, msg: ReactInvokeMsg, ctx: ActorContext<M>) => ReactBuildTurnResult
+  buildTurn:     (s: S, msg: ReactInvokeMsg<Args>, ctx: ActorContext<M>) => ReactBuildTurnResult
 
   // ─── Completion handlers ───
   /** Called on `llmDone` after the request span is closed. Returned state is applied and the actor becomes idle (or `action.become`). */
@@ -238,8 +243,8 @@ export type ReactLoopHandlers<M extends { type: string }, S> = {
 
 // ─── Implementation ────────────────────────────────────────────────────────
 
-export const createReactLoop = <S, M extends { type: string }>(
-  hooks: ReactLoopHooks<S, M>,
+export const createReactLoop = <S, M extends { type: string }, Args = string>(
+  hooks: ReactLoopHooks<S, M, Args>,
 ): ReactLoopHandlers<M, S> => {
   const log       = hooks.logPrefix ?? hooks.spanName
   const stash     = hooks.stashConcurrent !== false
@@ -329,7 +334,7 @@ export const createReactLoop = <S, M extends { type: string }>(
 
   // ── idle ─────────────────────────────────────────────────────────────────
   const idleCases: any = {
-    invoke: (state: S, msg: ReactInvokeMsg, ctx: ActorContext<M>) => {
+    invoke: (state: S, msg: ReactInvokeMsg<Args>, ctx: ActorContext<M>) => {
       const inv = msg
 
       const built = hooks.buildTurn(state, inv, ctx)

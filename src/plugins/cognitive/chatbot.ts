@@ -144,11 +144,12 @@ const createPersistence = (
   }
 }
 
-// ─── Invoke argument encoding ───
+// ─── Invoke argument shape ───
 //
-// The userMessage adapter encodes the LLM-form text and per-turn flags into
-// invoke.arguments (JSON). buildTurn parses them back when assembling the turn.
-type TurnArgs = {
+// The userMessage adapter passes a structured payload directly through
+// invoke.arguments — the react-loop is parameterized with this type so
+// buildTurn reads fields without JSON round-tripping.
+type ChatbotInvokeArgs = {
   llmText:     string  // text the LLM should see for this turn (may differ from history-form for cron)
   isInjected?: boolean
 }
@@ -182,10 +183,10 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     traceId:      string,
     parentSpanId: string,
     isInjected?:  boolean,
-  ): ReactInvokeMsg => ({
+  ): ReactInvokeMsg<ChatbotInvokeArgs> => ({
     type:         'invoke',
     toolName:     'chatbot-turn',
-    arguments:    JSON.stringify({ llmText: text, isInjected } satisfies TurnArgs),
+    arguments:    { llmText: text, isInjected },
     clientId,
     userId,
     replyTo:      noopReplyTo,
@@ -195,7 +196,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
   // ─── React-loop ─────────────────────────────────────────────────────────
 
-  const handlers = createReactLoop<S, M>({
+  const handlers = createReactLoop<S, M, ChatbotInvokeArgs>({
     role:         'reasoning',
     spanName:     'chatbot',
     logPrefix:    'chatbot',
@@ -208,20 +209,20 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     setSlice: (s, loop) => ({ ...s, loop }),
 
     buildTurn: (state, msg) => {
-      let parsed: TurnArgs
-      try { parsed = JSON.parse(msg.arguments) as TurnArgs }
-      catch { return { error: 'invalid invoke arguments' } }
+      // arguments is structured (ChatbotInvokeArgs) — synthesizeInvoke is the
+      // only producer, so we narrow without a runtime check.
+      const { llmText } = msg.arguments as ChatbotInvokeArgs
 
       const sysPrompt = buildSystemPrompt(systemPrompt, state.userContext)
 
       // history already contains the current user turn (appended by the shell).
-      // For the LLM-form, replace the last entry's content with parsed.llmText
+      // For the LLM-form, replace the last entry's content with llmText
       // (handles cron variant: "[Internal Instruction — do not mention…]" vs
       // history-form "[Internal Instruction]").
       const apiMessages: ApiMessage[] = [
         ...(sysPrompt ? [{ role: 'system' as const, content: sysPrompt }] : []),
         ...state.history.slice(0, -1).map(toApiMessage),
-        { role: 'user' as const, content: parsed.llmText },
+        { role: 'user' as const, content: llmText },
       ]
       return { messages: apiMessages }
     },
