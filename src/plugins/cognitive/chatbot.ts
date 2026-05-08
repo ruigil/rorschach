@@ -262,7 +262,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
     interceptToolCalls: (state, calls) => ({
       handled: false,
-      events:  [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'searching', tools: calls.map(c => c.name) }) })],
+      events:  [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'tooling', tools: calls.map(c => c.name) }) })],
     }),
 
     onToolResult: (state, result) => {

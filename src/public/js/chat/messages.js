@@ -263,7 +263,7 @@ function appendUserMessage(text, images, audio, pdfs = []) {
 export function handleChatMsg(msg) {
   if (msg.type === 'plannerMode') {
     isPlannerMode = msg.active
-  } else if (msg.type === 'searching') {
+  } else if (msg.type === 'tooling') {
     removeThinking()
     const tools = msg.tools ?? []
     const label = tools.length === 1

@@ -128,11 +128,11 @@ describe('chatbot search integration', () => {
     await tick(400)
 
     const types = events.map(e => e.type)
-    expect(types).toContain('searching')
+    expect(types).toContain('tooling')
     expect(types).toContain('chunk')
     expect(types).toContain('done')
     // searching must arrive before the first chunk
-    expect(types.indexOf('searching')).toBeLessThan(types.indexOf('chunk'))
+    expect(types.indexOf('tooling')).toBeLessThan(types.indexOf('chunk'))
 
     await system.shutdown()
   })

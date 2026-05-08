@@ -380,7 +380,7 @@ export const createCliActor = (): ActorDef<CliMsg, CliState> => {
           }
 
           // ─── Tool call — replace thinking line, add new thinking below ───
-          case 'searching': {
+          case 'tooling': {
             const tools = (ev.tools as string[]).join(', ')
             setScrollEnd(`${C.cyan}⚙${C.reset} ${C.dim}${tools}…${C.reset}`)
             appendScroll([`${C.dim}⟳ thinking…${C.reset}`])
