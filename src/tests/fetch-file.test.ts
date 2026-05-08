@@ -40,11 +40,11 @@ describe('fetch-file actor', () => {
 
     expect(reply.type).toBe('toolResult')
     if (reply.type === 'toolResult') {
-      expect(reply.result).toContain('Downloaded to:')
-      expect(reply.result).toContain('test.txt')
-      expect(reply.result).toContain('11 bytes')
+      expect(reply.result.text).toContain('Downloaded to:')
+      expect(reply.result.text).toContain('test.txt')
+      expect(reply.result.text).toContain('11 bytes')
 
-      const pathMatch = reply.result.match(/Downloaded to: (.*)\b/)
+      const pathMatch = reply.result.text.match(/Downloaded to: (.*)\b/)
       if (pathMatch && pathMatch[1]) {
         const filePath = pathMatch[1]!.split(' (')[0]!
         try { await unlink(filePath) } catch { /* ignore cleanup errors */ }
@@ -81,7 +81,7 @@ describe('fetch-file actor', () => {
     )
     expect(reply1.type).toBe('toolResult')
     if (reply1.type !== 'toolResult') return
-    const pathMatch1 = reply1.result.match(/Downloaded to: (.*?) \(/)
+    const pathMatch1 = reply1.result.text.match(/Downloaded to: (.*?) \(/)
     if (!pathMatch1) return
     const filePath1 = pathMatch1[1]!
 
@@ -98,7 +98,7 @@ describe('fetch-file actor', () => {
     )
     expect(reply2.type).toBe('toolResult')
     if (reply2.type !== 'toolResult') return
-    const pathMatch2 = reply2.result.match(/Downloaded to: (.*?) \(/)
+    const pathMatch2 = reply2.result.text.match(/Downloaded to: (.*?) \(/)
     if (!pathMatch2) return
     const filePath2 = pathMatch2[1]!
 
@@ -139,8 +139,8 @@ describe('fetch-file actor', () => {
     }
     expect(reply.type).toBe('toolResult')
     if (reply.type === 'toolResult') {
-      expect(reply.result).toMatch(/Downloaded to: /)
-      const pathMatch = reply.result.match(/Downloaded to: (.*?) \(/)
+      expect(reply.result.text).toMatch(/Downloaded to: /)
+      const pathMatch = reply.result.text.match(/Downloaded to: (.*?) \(/)
       expect(pathMatch).not.toBeNull()
       const filePath = pathMatch![1]!
       expect(filePath).toMatch(/rorschach-[a-f0-9-]+\.bin$/)

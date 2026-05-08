@@ -147,7 +147,7 @@ export const createJournalActor = (notebookDir: string): ActorDef<JournalMsg, nu
 
     _done: (state, msg) => {
       msg.span?.done()
-      msg.replyTo.send({ type: 'toolResult', result: msg.result })
+      msg.replyTo.send({ type: 'toolResult', result: { text: msg.result } })
       return { state }
     },
 

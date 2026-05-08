@@ -3,6 +3,7 @@ import { createPluginSystem, TraceTopic, type TraceSpan } from '../system/index.
 import type { MessageHeaders } from '../system/index.ts'
 import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
+import { initialReactLoopSlice } from '../system/react-loop.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import type { ToolInvokeMsg, ToolMsg } from '../types/tools.ts'
 import { ToolRegistrationTopic } from '../types/tools.ts'
@@ -21,20 +22,12 @@ const LLM_PROVIDER_ADAPTER_OPTS = {
   model: 'openai/gpt-4o-mini',
 }
 
-const INITIAL_CHATBOT_STATE: Omit<ChatbotState, 'llmRef'> = {
-  history:          [],
-  tools:            {},
-  sessionUsage:     { promptTokens: 0, completionTokens: 0 },
-  requestId:        null,
-  turnMessages:     null,
-  spanHandles:      null,
-  pendingUsage:     { promptTokens: 0, completionTokens: 0 },
-  pending:          '',
-  pendingReasoning: '',
-  pendingBatch:     null,
-  userContext:      null,
-  toolLoopCount:    0,
-  activeClientId:   '',
+const INITIAL_CHATBOT_STATE: Omit<ChatbotState, 'loop'> = {
+  history:        [],
+  tools:          {},
+  sessionUsage:   { promptTokens: 0, completionTokens: 0 },
+  userContext:    null,
+  activeClientId: '',
 }
 
 // ─── SSE helpers ───
@@ -95,7 +88,7 @@ const spanFor = (spans: TraceSpan[], operation: string, status: TraceSpan['statu
 
 const spawnChatbot = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
   const llmRef = system.spawn('llm-provider', createLlmProviderActor({ adapter: createOpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }), null)
-  return system.spawn('chatbot', createChatbotActor({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model, userId: `test-user-${crypto.randomUUID()}` }), { ...INITIAL_CHATBOT_STATE, llmRef })
+  return system.spawn('chatbot', createChatbotActor({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model, userId: `test-user-${crypto.randomUUID()}` }), { ...INITIAL_CHATBOT_STATE, loop: { ...initialReactLoopSlice(), llmRef } })
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -170,23 +163,28 @@ describe('distributed tracing', () => {
     const reactStart       = spanFor(spans, 'chatbot',      'started')
     const toolInvokeStart    = spanFor(spans, 'tool-invoke',  'started')
     const toolInvokeDone     = spanFor(spans, 'tool-invoke',  'done')
-    const llmResponseStart   = spanFor(spans, 'llm-response', 'started')
-    const llmResponseDone    = spanFor(spans, 'llm-response', 'done')
+    // Both initial and follow-up LLM calls within a turn use the unified
+    // 'llm-call' span name under the shared react-loop. There should be at
+    // least 2 'llm-call' spans (one before tool dispatch, one after).
+    const llmCallStarts   = spans.filter(s => s.operation === 'llm-call' && s.status === 'started')
+    const llmCallDones    = spans.filter(s => s.operation === 'llm-call' && s.status === 'done')
 
     expect(reactStart).toBeDefined()
     expect(toolInvokeStart).toBeDefined()
     expect(toolInvokeDone).toBeDefined()
-    expect(llmResponseStart).toBeDefined()
-    expect(llmResponseDone).toBeDefined()
+    expect(llmCallStarts.length).toBeGreaterThanOrEqual(2)
+    expect(llmCallDones.length).toBeGreaterThanOrEqual(2)
 
     // all spans share the same traceId
-    for (const span of [toolInvokeStart, toolInvokeDone, llmResponseStart, llmResponseDone]) {
+    for (const span of [toolInvokeStart, toolInvokeDone, ...llmCallStarts, ...llmCallDones]) {
       expect(span!.traceId).toBe(TRACE_ID)
     }
 
-    // tool-invoke and llm-response are both direct children of the chatbot span
+    // tool-invoke and the follow-up llm-call are both direct children of the chatbot span
     expect(toolInvokeStart!.parentSpanId).toBe(reactStart!.spanId)
-    expect(llmResponseStart!.parentSpanId).toBe(reactStart!.spanId)
+    for (const s of llmCallStarts) {
+      expect(s.parentSpanId).toBe(reactStart!.spanId)
+    }
 
     await system.shutdown()
   })
@@ -228,7 +226,7 @@ describe('distributed tracing', () => {
       send:    (msg: ToolMsg, headers?: MessageHeaders) => {
         capturedHeaders = headers
         if (msg.type === 'invoke') {
-          msg.replyTo.send({ type: 'toolResult', result: 'fake result' })
+          msg.replyTo.send({ type: 'toolResult', result: { text: 'fake result' } })
         }
       },
     }

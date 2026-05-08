@@ -3,7 +3,7 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { UserStreamTopic } from '../../types/events.ts'
 import type { UserStreamEvent } from '../../types/events.ts'
 import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolMsg } from '../../types/tools.ts'
-import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
+import { applyToolFilter, renderToolResultForLlm, ToolRegistrationTopic } from '../../types/tools.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
@@ -251,7 +251,7 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
 
     _toolResult: (state, msg, context) => {
       const batch          = state.pendingBatch!
-      const content        = msg.reply.type === 'toolResult' ? msg.reply.result : `Tool error: ${msg.reply.error}`
+      const content        = msg.reply.type === 'toolResult' ? renderToolResultForLlm(msg.reply.result) : `Tool error: ${msg.reply.error}`
       const updatedResults = [...batch.results, { toolCallId: msg.toolCallId, toolName: msg.toolName, content }]
       const remaining      = batch.remaining - 1
 

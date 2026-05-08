@@ -123,7 +123,7 @@ describe('zettel-notes unlinked notes', () => {
     const reply = await invokeZettel(zettelRef, ZETTEL_UNLINKED_TOOL, {})
     expect(reply.type).toBe('toolResult')
     
-    const results = JSON.parse((reply as { type: 'toolResult'; result: string }).result) as Array<{
+    const results = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text) as Array<{
       name: string;
       incomingLinks: number;
       outgoingLinks: number;
@@ -187,7 +187,7 @@ describe('zettel-notes unlinked notes', () => {
  
      // Note A has in=2, out=2 -> SHOULD NOT BE RETURNED
      const reply = await invokeZettel(zettelRef, ZETTEL_UNLINKED_TOOL, {})
-     const results = JSON.parse((reply as { type: 'toolResult'; result: string }).result) as Array<{ name: string }>
+     const results = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text) as Array<{ name: string }>
  
      expect(results.map(r => r.name)).not.toContain('Note A')
  

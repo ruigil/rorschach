@@ -77,7 +77,7 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
     },
 
     onComplete: (state, finalText) => {
-      state.loop.turn.replyTo?.send({ type: 'toolResult', result: finalText || '(done)' })
+      state.loop.turn.replyTo?.send({ type: 'toolResult', result: { text: finalText || '(done)' } })
       return { state }
     },
 

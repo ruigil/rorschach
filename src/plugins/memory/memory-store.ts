@@ -90,7 +90,7 @@ export const createMemoryStoreWorkerActor = (
     },
 
     onComplete: (state, finalText, ctx) => {
-      state.loop.turn.replyTo?.send({ type: 'toolResult', result: finalText || 'Memory stored.' })
+      state.loop.turn.replyTo?.send({ type: 'toolResult', result: { text: finalText || 'Memory stored.' } })
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
     },
@@ -103,7 +103,7 @@ export const createMemoryStoreWorkerActor = (
 
     onLoopLimit: (state, finalText, ctx) => {
       const reply: ToolReply = finalText
-        ? { type: 'toolResult', result: finalText }
+        ? { type: 'toolResult', result: { text: finalText } }
         : { type: 'toolError',  error:  'Tool loop limit reached' }
       state.loop.turn.replyTo?.send(reply)
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })

@@ -204,7 +204,7 @@ export const createGmailActor = (
       return { state }
     },
 
-    _done:  (state, msg) => { msg.replyTo.send({ type: 'toolResult', result: msg.result });       return { state } },
+    _done:  (state, msg) => { msg.replyTo.send({ type: 'toolResult', result: { text: msg.result } });       return { state } },
     _error: (state, msg) => { msg.replyTo.send({ type: 'toolError',  error:  msg.error  });       return { state } },
   }),
 })

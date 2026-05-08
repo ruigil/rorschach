@@ -153,7 +153,7 @@ export const createFetchFileActor = (): ActorDef<FetchFileMsg, null> => ({
     _done: (state, message) => {
       const { filePath, contentType, bytes, replyTo, span } = message
       span?.done({ bytes, filePath })
-      replyTo.send({ type: 'toolResult', result: `Downloaded to: ${filePath} (${contentType}, ${bytes} bytes)` })
+      replyTo.send({ type: 'toolResult', result: { text: `Downloaded to: ${filePath} (${contentType}, ${bytes} bytes)` } })
       return { state }
     },
 

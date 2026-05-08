@@ -78,7 +78,7 @@ describe('kgraph create_node', () => {
     const reply = await createNode(kgraphRef, 'Note', 'Lisbon', 'Capital of Portugal')
     expect(reply.type).toBe('toolResult')
 
-    const result: CreateNodeResult = JSON.parse((reply as { type: 'toolResult'; result: string }).result)
+    const result: CreateNodeResult = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text)
     expect(result.name).toBe('Lisbon')
     expect(typeof result.nodeId).toBe('number')
 
@@ -99,10 +99,10 @@ describe('kgraph create_node', () => {
     await tick()
 
     const first = await createNode(kgraphRef, 'Note', 'Lisbon', 'Capital of Portugal')
-    const firstResult: CreateNodeResult = JSON.parse((first as { type: 'toolResult'; result: string }).result)
+    const firstResult: CreateNodeResult = JSON.parse((first as { type: 'toolResult'; result: { text: string } }).result.text)
 
     const second = await createNode(kgraphRef, 'Note', 'Lisbon', 'Lisbon, western Portugal')
-    const secondResult: CreateNodeResult = JSON.parse((second as { type: 'toolResult'; result: string }).result)
+    const secondResult: CreateNodeResult = JSON.parse((second as { type: 'toolResult'; result: { text: string } }).result.text)
 
     expect(secondResult.name).toBe('Lisbon')
     expect(secondResult.nodeId).not.toBe(firstResult.nodeId)
@@ -129,7 +129,7 @@ describe('kgraph create_node', () => {
     for (const name of names) {
       const reply = await createNode(kgraphRef, 'Note', name)
       expect(reply.type).toBe('toolResult')
-      const result: CreateNodeResult = JSON.parse((reply as { type: 'toolResult'; result: string }).result)
+      const result: CreateNodeResult = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text)
       results.push(result)
     }
 

@@ -12,6 +12,37 @@ export type ToolSchema = {
 
 export type ToolSource = { title: string; url: string; snippet: string }
 
+export type ToolAttachment =
+  | { kind: 'image'; url: string; alt?: string; mimeType?: string }
+  | { kind: 'audio'; url: string; alt?: string; mimeType?: string }
+  | { kind: 'video'; url: string; alt?: string; mimeType?: string }
+  | { kind: 'file';  url: string; alt?: string; mimeType?: string }
+
+export type ToolResultPayload = {
+  text:         string
+  sources?:     ToolSource[]
+  attachments?: ToolAttachment[]
+}
+
+/**
+ * Render a ToolResultPayload as the string content for a `tool`-role LLM message.
+ * Auto-appends a standardized attachments block so individual tools don't have to
+ * coax the LLM with hand-written markdown like "Include this in your reply: ![...](url)".
+ * Sources are NOT auto-appended — tools that have citations should inline grounding
+ * snippets directly in `text` (see web-search).
+ */
+export const renderToolResultForLlm = (payload: ToolResultPayload): string => {
+  if (!payload.attachments || payload.attachments.length === 0) return payload.text
+  const lines = payload.attachments.map((a) => {
+    const label = a.alt ? ` (${a.alt})` : ''
+    return `- ${a.kind}: ${a.url}${label}`
+  })
+  const header = '[Attachments produced by this tool — reference these in your reply if relevant:]'
+  return payload.text
+    ? `${payload.text}\n\n${header}\n${lines.join('\n')}`
+    : `${header}\n${lines.join('\n')}`
+}
+
 export type ToolInvokeMsg = {
   type: 'invoke'
   toolName: string
@@ -24,13 +55,13 @@ export type ToolInvokeMsg = {
 export type ToolMsg = ToolInvokeMsg
 
 export type ToolReply =
-  | { type: 'toolResult'; result: string; sources?: ToolSource[] }
+  | { type: 'toolResult'; result: ToolResultPayload }
   | { type: 'toolError'; error: string }
   | { type: 'toolPending'; jobId: string; placeholderText?: string }
 
 /** Final tool reply variants — what callers see from `invokeTool`. */
 export type ToolFinalReply =
-  | { type: 'toolResult'; result: string; sources?: ToolSource[] }
+  | { type: 'toolResult'; result: ToolResultPayload }
   | { type: 'toolError'; error: string }
 
 // ─── Registry types ───
@@ -68,7 +99,7 @@ export type JobLifecycleEvent =
       clientId?: string
       userId?: string
     }
-  | { jobId: string; status: 'completed'; result: string; sources?: ToolSource[] }
+  | { jobId: string; status: 'completed'; result: ToolResultPayload }
   | { jobId: string; status: 'failed';    error: string }
   | { jobId: string; status: 'cleared' }
 

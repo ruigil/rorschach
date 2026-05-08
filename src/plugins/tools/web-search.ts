@@ -128,7 +128,7 @@ export const createWebSearchActor = (options: WebSearchActorOptions): ActorDef<W
         const { result, replyTo, span } = message
         const { text, sources } = formatResult(result)
         span?.done({ resultCount: result.grounding.generic.length })
-        replyTo.send({ type: 'toolResult', result: text, sources })
+        replyTo.send({ type: 'toolResult', result: { text, sources } })
         return { state }
       },
 

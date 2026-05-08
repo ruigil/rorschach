@@ -4,6 +4,7 @@ import type {
   ActorContext,
   MessageHandler,
   SpanHandle,
+  TypedEvent,
 } from './types.ts'
 import { onMessage } from './match.ts'
 import { invokeTool } from './invoke-tool.ts'
@@ -13,10 +14,12 @@ import type {
   ToolFinalReply,
   ToolReply,
 } from '../types/tools.ts'
+import { renderToolResultForLlm } from '../types/tools.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
   LlmProviderReply,
+  TokenUsage,
   Tool,
   ToolCall,
 } from '../types/llm.ts'
@@ -42,6 +45,8 @@ export type ReactTurn = {
   userId:        string
   clientId:      string | undefined
   replyTo:       ActorRef<ToolReply> | null
+  /** Aggregated usage across this turn (chunks + done + toolCalls). Reset on materialize. */
+  pendingUsage:  TokenUsage
 }
 
 export const initialReactTurn = (): ReactTurn => ({
@@ -55,6 +60,7 @@ export const initialReactTurn = (): ReactTurn => ({
   userId:        '',
   clientId:      undefined,
   replyTo:       null,
+  pendingUsage:  { promptTokens: 0, completionTokens: 0 },
 })
 
 /** Loop-internal mutable state. Agents hold this in one field of their state bag. */
@@ -71,12 +77,15 @@ export const initialReactLoopSlice = (): ReactLoopSlice => ({
 // ─── Base message variants the closure dispatches on ───────────────────────
 
 export type ReactInvokeMsg = {
-  type:      'invoke'
-  toolName:  string
-  arguments: string
-  clientId?: string
-  userId:    string
-  replyTo:   ActorRef<ToolReply>
+  type:          'invoke'
+  toolName:      string
+  arguments:     string
+  clientId?:     string
+  userId:        string
+  replyTo:       ActorRef<ToolReply>
+  /** When `spans: 'fromMessage'`, the request span is built from these IDs. Ignored otherwise. */
+  traceId?:      string
+  parentSpanId?: string
 }
 
 export type ReactToolResultMsg = {
@@ -103,14 +112,34 @@ export type ReactBaseMsg =
 
 // ─── Hook surface ──────────────────────────────────────────────────────────
 
-export type ReactCompletionAction<S> = { state: S; unstashAll?: boolean }
+export type ReactCompletionAction<M extends { type: string }, S> = {
+  state:       S
+  unstashAll?: boolean
+  /** Override the post-completion handler. Defaults to the loop's idle. */
+  become?:     MessageHandler<M, S>
+  /** Domain events to emit alongside the transition. */
+  events?:     TypedEvent[]
+}
 
 /** Result of buildTurn: either reject with error, or accept with the turn's initial messages. */
 export type ReactBuildTurnResult =
   | { error: string }
   | { messages: ApiMessage[] }
 
-export type ReactSpanPolicy = 'fromHeaders' | 'always' | 'never'
+export type ReactSpanPolicy = 'fromHeaders' | 'fromMessage' | 'always' | 'never'
+
+/**
+ * Pre-dispatch tool-call hook. Runs after the requestId guard and after the
+ * llmSpan is closed, *before* the loop partitions and dispatches calls.
+ * - `{ handled: true, result }` short-circuits the turn (caller owns spans, become, unstashAll).
+ * - `{ handled: false, events? }` lets the loop dispatch normally; any `events` are emitted alongside the transition (e.g. a `searching` notification).
+ */
+export type ReactToolCallInterception<M extends { type: string }, S> =
+  | { handled: true;  result: ActorResult<M, S> }
+  | { handled: false; events?: TypedEvent[] }
+
+/** Result of an `onChunk` / `onReasoningChunk` hook. Either a bare state, or state plus events emitted alongside the chunk. */
+export type ReactChunkResult<S> = S | { state: S; events?: TypedEvent[] }
 
 export type ReactLoopHooks<S, M extends { type: string }> = {
   /** Role string sent on every LLM stream message (e.g. 'google', 'memory-recall'). */
@@ -120,8 +149,14 @@ export type ReactLoopHooks<S, M extends { type: string }> = {
   /** Prefix used in info/warn/error log messages. Defaults to `spanName`. */
   logPrefix?:   string
 
-  // ─── Per-actor config (immutable for the lifetime of the actor) ───
-  tools:        ToolCollection
+  // ─── Per-actor config ───
+  /** Either a constant tool collection (immutable) or an accessor that reads from state (dynamic — registered/unregistered at runtime). */
+  tools:        ToolCollection | ((s: S) => ToolCollection)
+  /**
+   * Extra schemas to advertise to the LLM that are NOT in `tools` (no dispatch ref).
+   * Use with `interceptToolCalls` to handle them in-actor (e.g. planner control tools).
+   */
+  extraToolSchemas?: (s: S) => Tool[]
   model:        string
   maxToolLoops: number
 
@@ -134,21 +169,63 @@ export type ReactLoopHooks<S, M extends { type: string }> = {
   buildTurn:     (s: S, msg: ReactInvokeMsg, ctx: ActorContext<M>) => ReactBuildTurnResult
 
   // ─── Completion handlers ───
-  /** Called on `llmDone` after the request span is closed. Returned state is applied and the actor becomes idle. */
-  onComplete:    (s: S, finalText: string, ctx: ActorContext<M>) => ReactCompletionAction<S>
+  /** Called on `llmDone` after the request span is closed. Returned state is applied and the actor becomes idle (or `action.become`). */
+  onComplete:    (s: S, finalText: string, ctx: ActorContext<M>) => ReactCompletionAction<M, S>
   /** Called on `llmError`. Spans are already closed by the closure. */
-  onLlmError:    (s: S, error: unknown,  ctx: ActorContext<M>) => ReactCompletionAction<S>
+  onLlmError:    (s: S, error: unknown,  ctx: ActorContext<M>) => ReactCompletionAction<M, S>
   /** Called when the tool-loop ceiling is hit. The current `pending` text is passed in. */
-  onLoopLimit:   (s: S, finalText: string, ctx: ActorContext<M>) => ReactCompletionAction<S>
+  onLoopLimit:   (s: S, finalText: string, ctx: ActorContext<M>) => ReactCompletionAction<M, S>
 
   // ─── Optional streaming hooks ───
-  onChunk?:           (s: S, chunkText: string, requestId: string, ctx: ActorContext<M>) => S
-  onReasoningChunk?:  (s: S, chunkText: string, requestId: string, ctx: ActorContext<M>) => S
+  /** Per-token text chunk. Return either a new state (no events) or `{ state, events }`. */
+  onChunk?:           (s: S, chunkText: string, requestId: string, ctx: ActorContext<M>) => ReactChunkResult<S>
+  /** Per-token reasoning chunk. Same return shape as `onChunk`. */
+  onReasoningChunk?:  (s: S, chunkText: string, requestId: string, ctx: ActorContext<M>) => ReactChunkResult<S>
+
+  /**
+   * Called once for each tool result the loop processes (just after the
+   * pendingBatch is updated, before deciding whether to loop back). Lets agents
+   * emit per-result events (e.g. `sources`).
+   */
+  onToolResult?: (
+    s: S,
+    result: { toolName: string; toolCallId: string; reply: ToolFinalReply },
+    ctx: ActorContext<M>,
+  ) => { state: S; events?: TypedEvent[] }
+
+  /**
+   * Optional pre-dispatch hook for `llmToolCalls`. Lets agents handle
+   * synthetic/control tools (e.g. planner's `formalize_plan`) by short-
+   * circuiting the loop. See `ReactToolCallInterception`.
+   */
+  interceptToolCalls?: (
+    s:     S,
+    calls: Extract<LlmProviderReply, { type: 'llmToolCalls' }>['calls'],
+    ctx:   ActorContext<M>,
+  ) => ReactToolCallInterception<M, S>
+
+  /**
+   * Extra message-type cases to merge into the internal idle/awaitingLlm/toolLoop
+   * handlers. Survives `become` transitions because the loop's materialize uses
+   * the merged handlers, not the bare ones. Use for shell-specific messages
+   * like userMessage, _toolRegistered, _userContext, _planWriteDone, etc.
+   */
+  extraCases?: {
+    idle?:        Record<string, (s: S, msg: any, ctx: ActorContext<M>) => ActorResult<M, S>>
+    awaitingLlm?: Record<string, (s: S, msg: any, ctx: ActorContext<M>) => ActorResult<M, S>>
+    toolLoop?:    Record<string, (s: S, msg: any, ctx: ActorContext<M>) => ActorResult<M, S>>
+  }
 
   // ─── Knobs ───
   /** Stash concurrent `invoke` messages while a turn is in flight. Default: true. */
   stashConcurrent?:   boolean
-  /** Span policy. 'fromHeaders' — only when caller propagated headers (default). 'always' — always create a root span. 'never' — no spans. */
+  /**
+   * Span policy:
+   * - 'fromHeaders' (default) — adopt parent span from incoming W3C headers
+   * - 'fromMessage' — adopt parent span from `traceId`/`parentSpanId` on the invoke msg
+   * - 'always' — always create a fresh root span
+   * - 'never' — no spans
+   */
   spans?:             ReactSpanPolicy
 }
 
@@ -170,7 +247,13 @@ export const createReactLoop = <S, M extends { type: string }>(
   const spansMode = hooks.spans ?? 'fromHeaders'
 
   const { tools: toolsCfg, model, maxToolLoops } = hooks
-  const toolSchemas = Object.values(toolsCfg).map((e: ToolEntry) => e.schema as Tool)
+  const resolveTools = (s: S): ToolCollection =>
+    typeof toolsCfg === 'function' ? toolsCfg(s) : toolsCfg
+  const resolveSchemas = (s: S): Tool[] => {
+    const fromTools = Object.values(resolveTools(s)).map((e: ToolEntry) => e.schema as Tool)
+    const extras    = hooks.extraToolSchemas ? hooks.extraToolSchemas(s) : []
+    return [...fromTools, ...extras]
+  }
 
   // mutually-recursive handler refs
   let idle:        MessageHandler<M, S>
@@ -182,9 +265,14 @@ export const createReactLoop = <S, M extends { type: string }>(
   const withTurn  = (s: S, turn: ReactTurn): S => hooks.setSlice(s, { ...hooks.slice(s), turn })
   const getLlmRef = (s: S): ActorRef<LlmProviderMsg> | null => hooks.slice(s).llmRef
 
-  const materialize = (a: ReactCompletionAction<S>): ActorResult<M, S> => {
+  const materialize = (a: ReactCompletionAction<M, S>): ActorResult<M, S> => {
     const reset = hooks.setSlice(a.state, { ...hooks.slice(a.state), turn: initialReactTurn() })
-    return { state: reset, become: idle, unstashAll: a.unstashAll ?? true }
+    return {
+      state:      reset,
+      become:     a.become ?? idle,
+      unstashAll: a.unstashAll ?? true,
+      ...(a.events ? { events: a.events } : {}),
+    }
   }
 
   // ── Helper: send `stream` to LLM and return the new llmSpan ───────────────
@@ -198,12 +286,13 @@ export const createReactLoop = <S, M extends { type: string }>(
     const llmSpan = turn.requestSpan
       ? ctx.trace.child(turn.requestSpan.traceId, turn.requestSpan.spanId, 'llm-call', { model })
       : null
+    const schemas = resolveSchemas(state)
     getLlmRef(state)!.send({
       type:     'stream',
       requestId,
       model,
       messages,
-      tools:    toolSchemas.length > 0 ? toolSchemas : undefined,
+      tools:    schemas.length > 0 ? schemas : undefined,
       role:     hooks.role,
       clientId: turn.clientId,
       replyTo:  ctx.self as unknown as ActorRef<LlmProviderReply>,
@@ -260,6 +349,10 @@ export const createReactLoop = <S, M extends { type: string }>(
         requestSpan = parent
           ? ctx.trace.child(parent.traceId, parent.spanId, hooks.spanName, {})
           : null
+      } else if (spansMode === 'fromMessage') {
+        if (inv.traceId && inv.parentSpanId) {
+          requestSpan = ctx.trace.child(inv.traceId, inv.parentSpanId, hooks.spanName, {})
+        }
       } else if (spansMode === 'always') {
         requestSpan = ctx.trace.start(hooks.spanName, {})
       }
@@ -287,9 +380,19 @@ export const createReactLoop = <S, M extends { type: string }>(
     },
 
     ...subscriptionCases,
+    ...(hooks.extraCases?.idle ?? {}),
   }
 
   idle = onMessage<M, S>(idleCases) as MessageHandler<M, S>
+
+  // ── Helpers for new hook return shapes ────────────────────────────────────
+  const normalizeChunkResult = (r: ReactChunkResult<S>): { state: S; events?: TypedEvent[] } =>
+    (r && typeof r === 'object' && 'state' in (r as object))
+      ? r as { state: S; events?: TypedEvent[] }
+      : { state: r as S }
+
+  const addUsage = (a: TokenUsage, b: TokenUsage | null | undefined): TokenUsage =>
+    b ? { promptTokens: a.promptTokens + b.promptTokens, completionTokens: a.completionTokens + b.completionTokens } : a
 
   // ── awaitingLlm ──────────────────────────────────────────────────────────
   const awaitingLlmCases: any = {
@@ -297,15 +400,19 @@ export const createReactLoop = <S, M extends { type: string }>(
       const turn = getTurn(state)
       if (msg.requestId !== turn.requestId) return { state }
       let next = withTurn(state, { ...turn, pending: turn.pending + msg.text })
-      if (hooks.onChunk) next = hooks.onChunk(next, msg.text, msg.requestId, ctx)
-      return { state: next }
+      let events: TypedEvent[] | undefined
+      if (hooks.onChunk) {
+        const r = normalizeChunkResult(hooks.onChunk(next, msg.text, msg.requestId, ctx))
+        next = r.state
+        events = r.events
+      }
+      return events && events.length > 0 ? { state: next, events } : { state: next }
     },
 
     llmReasoningChunk: (state: S, msg: Extract<LlmProviderReply, { type: 'llmReasoningChunk' }>, ctx: ActorContext<M>) => {
-      if (hooks.onReasoningChunk) {
-        return { state: hooks.onReasoningChunk(state, msg.text, msg.requestId, ctx) }
-      }
-      return { state }
+      if (!hooks.onReasoningChunk) return { state }
+      const r = normalizeChunkResult(hooks.onReasoningChunk(state, msg.text, msg.requestId, ctx))
+      return r.events && r.events.length > 0 ? { state: r.state, events: r.events } : { state: r.state }
     },
 
     llmToolCalls: (state: S, msg: Extract<LlmProviderReply, { type: 'llmToolCalls' }>, ctx: ActorContext<M>) => {
@@ -315,7 +422,23 @@ export const createReactLoop = <S, M extends { type: string }>(
       turn.llmSpan?.done({ toolCalls: msg.calls.map(c => c.name) })
       ctx.log.info(`${log}: tool calls`, { tools: msg.calls.map(c => c.name) })
 
-      const tools = toolsCfg
+      // Aggregate usage on this turn boundary.
+      const accumulatedUsage = addUsage(turn.pendingUsage, msg.usage)
+
+      // Allow agents to short-circuit dispatch (e.g. planner control tools)
+      // or to emit pre-dispatch events (e.g. chatbot's `searching` notification).
+      let advertEvents: TypedEvent[] | undefined
+      if (hooks.interceptToolCalls) {
+        const intercepted = hooks.interceptToolCalls(
+          withTurn(state, { ...turn, llmSpan: null, pendingUsage: accumulatedUsage }),
+          msg.calls,
+          ctx,
+        )
+        if (intercepted.handled) return intercepted.result
+        advertEvents = intercepted.events
+      }
+
+      const tools = resolveTools(state)
       const assistantToolCalls: ToolCall[] = msg.calls.map(c => ({
         id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments },
       }))
@@ -391,8 +514,10 @@ export const createReactLoop = <S, M extends { type: string }>(
         ctx.self.send(synthetic)
       }
 
-      const next = withTurn(state, { ...turn, requestId: null, llmSpan: null, pendingBatch: batch })
-      return { state: next, become: toolLoop }
+      const next = withTurn(state, { ...turn, requestId: null, llmSpan: null, pendingBatch: batch, pendingUsage: accumulatedUsage })
+      return advertEvents && advertEvents.length > 0
+        ? { state: next, become: toolLoop, events: advertEvents }
+        : { state: next, become: toolLoop }
     },
 
     llmDone: (state: S, msg: Extract<LlmProviderReply, { type: 'llmDone' }>, ctx: ActorContext<M>) => {
@@ -401,7 +526,8 @@ export const createReactLoop = <S, M extends { type: string }>(
       turn.llmSpan?.done()
       turn.requestSpan?.done()
       ctx.log.info(`${log}: done`, { chars: turn.pending.length })
-      return materialize(hooks.onComplete(state, turn.pending, ctx))
+      const stateWithUsage = withTurn(state, { ...turn, pendingUsage: addUsage(turn.pendingUsage, msg.usage) })
+      return materialize(hooks.onComplete(stateWithUsage, turn.pending, ctx))
     },
 
     llmError: (state: S, msg: Extract<LlmProviderReply, { type: 'llmError' }>, ctx: ActorContext<M>) => {
@@ -419,6 +545,7 @@ export const createReactLoop = <S, M extends { type: string }>(
   if (stash) {
     awaitingLlmCases.invoke = (state: S) => ({ state, stash: true })
   }
+  Object.assign(awaitingLlmCases, hooks.extraCases?.awaitingLlm ?? {})
 
   awaitingLlm = onMessage<M, S>(awaitingLlmCases) as MessageHandler<M, S>
 
@@ -435,19 +562,34 @@ export const createReactLoop = <S, M extends { type: string }>(
         span?.error(msg.reply.error)
         ctx.log.warn(`${log}: tool error`, { tool: msg.toolName, error: msg.reply.error })
       }
-      const content = msg.reply.type === 'toolResult' ? msg.reply.result : `Tool error: ${msg.reply.error}`
+      const content = msg.reply.type === 'toolResult' ? renderToolResultForLlm(msg.reply.result) : `Tool error: ${msg.reply.error}`
       const updated = [...batch.results, { toolCallId: msg.toolCallId, toolName: msg.toolName, content }]
       const remaining = batch.remaining - 1
 
+      // Per-result hook (e.g. sources event). Lets agents observe results
+      // before the loop decides to continue/stop, but never overrides flow.
+      let withResultState = state
+      let resultEvents: TypedEvent[] | undefined
+      if (hooks.onToolResult) {
+        const r = hooks.onToolResult(state, { toolName: msg.toolName, toolCallId: msg.toolCallId, reply: msg.reply }, ctx)
+        withResultState = r.state
+        resultEvents    = r.events
+      }
+
       if (remaining > 0) {
-        return { state: withTurn(state, { ...turn, pendingBatch: { ...batch, remaining, results: updated } }) }
+        const next = withTurn(withResultState, { ...turn, pendingBatch: { ...batch, remaining, results: updated } })
+        return resultEvents && resultEvents.length > 0 ? { state: next, events: resultEvents } : { state: next }
       }
 
       const nextLoopCount = turn.toolLoopCount + 1
       if (nextLoopCount >= maxToolLoops) {
         ctx.log.warn(`${log}: tool loop limit reached`, { limit: maxToolLoops })
         turn.requestSpan?.error('Tool loop limit reached')
-        return materialize(hooks.onLoopLimit(state, turn.pending, ctx))
+        const completion = hooks.onLoopLimit(withResultState, turn.pending, ctx)
+        const merged = resultEvents && resultEvents.length > 0
+          ? { ...completion, events: [...resultEvents, ...(completion.events ?? [])] }
+          : completion
+        return materialize(merged)
       }
 
       const toolResultMsgs: ApiMessage[] = updated.map(r => ({
@@ -459,7 +601,10 @@ export const createReactLoop = <S, M extends { type: string }>(
         ...toolResultMsgs,
       ]
 
-      return startNextTurn(state, nextMessages, nextLoopCount, ctx)
+      const nextResult = startNextTurn(withResultState, nextMessages, nextLoopCount, ctx)
+      return resultEvents && resultEvents.length > 0
+        ? { ...nextResult, events: [...resultEvents, ...(('events' in nextResult && nextResult.events) || [])] }
+        : nextResult
     },
 
     ...subscriptionCases,
@@ -468,6 +613,7 @@ export const createReactLoop = <S, M extends { type: string }>(
   if (stash) {
     toolLoopCases.invoke = (state: S) => ({ state, stash: true })
   }
+  Object.assign(toolLoopCases, hooks.extraCases?.toolLoop ?? {})
 
   toolLoop = onMessage<M, S>(toolLoopCases) as MessageHandler<M, S>
 

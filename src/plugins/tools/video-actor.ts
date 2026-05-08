@@ -245,13 +245,17 @@ export const createVideoActor = (options: VideoActorOptions): ActorDef<VideoActo
         const publicUrls = destPaths.map(p => `${GENERATED_PUBLIC_PREFIX}/${p.split('/').pop()!}`)
         context.log.info('video: download complete', { requestId, jobId: req.jobId, count: publicUrls.length })
 
-        const videoMarkdown = publicUrls.map((url, i) => {
-          const label = publicUrls.length > 1 ? `Video ${i + 1}` : 'Generated Video'
-          return `![${label}](${url})`
-        }).join('\n')
-        const result = `Video generation completed.\n\n${videoMarkdown}`
+        const attachments = publicUrls.map((url, i) => ({
+          kind: 'video' as const,
+          url,
+          alt: publicUrls.length > 1 ? `Video ${i + 1}` : 'Generated Video',
+        }))
 
-        context.publishRetained(JobRegistryTopic, req.jobId, { jobId: req.jobId, status: 'completed', result })
+        context.publishRetained(JobRegistryTopic, req.jobId, {
+          jobId: req.jobId,
+          status: 'completed',
+          result: { text: 'Video generation completed.', attachments },
+        })
         const { [requestId]: _, ...rest } = state.pending
         return { state: { ...state, pending: rest } }
       },

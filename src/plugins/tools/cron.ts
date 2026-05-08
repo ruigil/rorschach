@@ -151,7 +151,7 @@ export const createCronActor = (): ActorDef<CronMsg, CronState> => ({
         scheduleTimer(job, ctx)
         ctx.log.info('cron job created', { id, expression: args.expression, nextIn: `${Math.round((fireAt - Date.now()) / 1000)}s` })
 
-        replyTo.send({ type: 'toolResult', result: `Created cron job ${id}. Next run: ${formatLocalDate(fireAt)}` })
+        replyTo.send({ type: 'toolResult', result: { text: `Created cron job ${id}. Next run: ${formatLocalDate(fireAt)}` } })
         return { state: { ...state, jobs: { ...state.jobs, [id]: job } } }
       }
 
@@ -171,14 +171,14 @@ export const createCronActor = (): ActorDef<CronMsg, CronState> => ({
         const { [args.jobId]: _removed, ...remaining } = state.jobs
         ctx.log.info('cron job deleted', { id: args.jobId })
 
-        replyTo.send({ type: 'toolResult', result: `Deleted cron job ${args.jobId}` })
+        replyTo.send({ type: 'toolResult', result: { text: `Deleted cron job ${args.jobId}` } })
         return { state: { ...state, jobs: remaining } }
       }
 
       if (toolName === CRON_LIST_TOOL_NAME) {
         const jobs = Object.values(state.jobs)
         if (jobs.length === 0) {
-          replyTo.send({ type: 'toolResult', result: 'No scheduled cron jobs.' })
+          replyTo.send({ type: 'toolResult', result: { text: 'No scheduled cron jobs.' } })
           return { state }
         }
 
@@ -187,7 +187,7 @@ export const createCronActor = (): ActorDef<CronMsg, CronState> => ({
           const lastFired = j.lastFiredAt ? formatLocalDate(j.lastFiredAt) : 'never'
           return `- ${j.id}: "${j.expression}" → ${preview}\n  Next: ${formatLocalDate(j.nextFireAt)}  Last fired: ${lastFired}`
         })
-        replyTo.send({ type: 'toolResult', result: lines.join('\n') })
+        replyTo.send({ type: 'toolResult', result: { text: lines.join('\n') } })
         return { state }
       }
 

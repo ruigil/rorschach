@@ -108,7 +108,7 @@ describe('zettel-notes vector search', () => {
     })
 
     expect(reply.type).toBe('toolResult')
-    const results = JSON.parse((reply as { type: 'toolResult'; result: string }).result) as Array<{ name: string; score: number }>
+    const results = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text) as Array<{ name: string; score: number }>
 
     expect(results.length).toBeGreaterThan(0)
     expect(results[0]!.name).toBe('TypeScript Types')
@@ -153,7 +153,7 @@ describe('zettel-notes vector search', () => {
     })
 
     expect(reply.type).toBe('toolResult')
-    const results = JSON.parse((reply as { type: 'toolResult'; result: string }).result) as Array<{ name: string }>
+    const results = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text) as Array<{ name: string }>
 
     expect(results.length).toBe(1)
     expect(results[0]!.name).toBe('French Cuisine')

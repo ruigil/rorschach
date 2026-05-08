@@ -62,7 +62,7 @@ export const createPdfActor = (): ActorDef<PdfMsg, null> => ({
     _done: (state, message) => {
       const { text, pages, replyTo, span } = message
       span?.done({ pages })
-      replyTo.send({ type: 'toolResult', result: `[${pages} page(s)]\n\n${text}` })
+      replyTo.send({ type: 'toolResult', result: { text: `[${pages} page(s)]\n\n${text}` } })
       return { state }
     },
 

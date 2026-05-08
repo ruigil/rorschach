@@ -302,7 +302,7 @@ const upsertInKgraph = async (
     }
     return undefined
   }
-  return (JSON.parse(reply.result) as { nodeId: number }).nodeId
+  return (JSON.parse(reply.result.text) as { nodeId: number }).nodeId
 }
 
 // ─── Tool handlers ───
@@ -614,7 +614,7 @@ export const createZettelNotesActor = (kgraphRef: ActorRef<KgraphMsg>, dbPath: s
       },
 
       _done: (state, msg) => {
-        msg.replyTo.send({ type: 'toolResult', result: msg.result })
+        msg.replyTo.send({ type: 'toolResult', result: { text: msg.result } })
         return { state }
       },
 

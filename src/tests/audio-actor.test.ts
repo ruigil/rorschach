@@ -48,11 +48,12 @@ describe('audio actor', () => {
 
     expect(reply.type).toBe('toolResult')
     if (reply.type === 'toolResult') {
-      expect(reply.result).toContain('Audio generated')
-      expect(reply.result).toContain('generated/')
-      
+      expect(reply.result.text).toContain('Audio generated')
+      const audioAttachment = reply.result.attachments?.find(a => a.kind === 'audio')
+      expect(audioAttachment?.url).toContain('generated/')
+
       // Extract path for cleanup
-      const match = reply.result.match(/\((generated\/.*\.wav)\)/)
+      const match = audioAttachment?.url.match(/(generated\/.*\.wav)/)
       if (match && match[1]) {
         const filePath = join(import.meta.dir, '../../workspace/media', match[1])
         try { await unlink(filePath) } catch {}
@@ -113,7 +114,7 @@ describe('audio actor', () => {
 
     expect(reply.type).toBe('toolResult')
     if (reply.type === 'toolResult') {
-      expect(reply.result).toBe('The User said: "hello"')
+      expect(reply.result.text).toBe('The User said: "hello"')
     }
 
     try { await unlink(testFile) } catch {}

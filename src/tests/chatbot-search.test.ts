@@ -3,6 +3,7 @@ import { createPluginSystem } from '../system/index.ts'
 import { OutboundMessageTopic } from '../types/events.ts'
 import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
+import { initialReactLoopSlice } from '../system/react-loop.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import type { BraveLlmContextResponse } from '../plugins/tools/web-search.ts'
 
@@ -18,20 +19,12 @@ const LLM_PROVIDER_ADAPTER_OPTS = {
   model: 'openai/gpt-4o-mini',
 }
 
-const INITIAL_CHATBOT_STATE: Omit<ChatbotState, 'llmRef'> = {
-  history:          [],
-  tools:            {},
-  sessionUsage:     { promptTokens: 0, completionTokens: 0 },
-  requestId:        null,
-  turnMessages:     null,
-  spanHandles:      null,
-  pendingUsage:     { promptTokens: 0, completionTokens: 0 },
-  pending:          '',
-  pendingReasoning: '',
-  pendingBatch:     null,
-  userContext:      null,
-  toolLoopCount:    0,
-  activeClientId:   '',
+const INITIAL_CHATBOT_STATE: Omit<ChatbotState, 'loop'> = {
+  history:        [],
+  tools:          {},
+  sessionUsage:   { promptTokens: 0, completionTokens: 0 },
+  userContext:    null,
+  activeClientId: '',
 }
 
 const mockBraveResponse: BraveLlmContextResponse = {
@@ -106,7 +99,7 @@ const stubFetchByUrl = (completions: (() => Response)[], braveFactory?: () => Re
 
 const spawnChatbot = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
   const llmRef = system.spawn('llm-provider', createLlmProviderActor({ adapter: createOpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }), null)
-  return system.spawn('chatbot', createChatbotActor({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model, userId: `test-user-${crypto.randomUUID()}` }), { ...INITIAL_CHATBOT_STATE, llmRef })
+  return system.spawn('chatbot', createChatbotActor({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model, userId: `test-user-${crypto.randomUUID()}` }), { ...INITIAL_CHATBOT_STATE, loop: { ...initialReactLoopSlice(), llmRef } })
 }
 
 // ═══════════════════════════════════════════════════════════════════

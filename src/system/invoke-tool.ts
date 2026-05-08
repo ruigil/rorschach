@@ -88,7 +88,7 @@ export const invokeTool = async <M>(
     if (event.status === 'completed') {
       ctx.unsubscribe(JobRegistryTopic, jobId)
       ctx.publishRetained(JobRegistryTopic, jobId, { jobId, status: 'cleared' })
-      return onCompletion({ type: 'toolResult', result: event.result, sources: event.sources })
+      return onCompletion({ type: 'toolResult', result: event.result })
     }
     if (event.status === 'failed') {
       ctx.unsubscribe(JobRegistryTopic, jobId)
@@ -100,6 +100,6 @@ export const invokeTool = async <M>(
 
   return {
     type: 'toolResult',
-    result: placeholderText ?? `Job started; result will be delivered when ready (jobId=${jobId}).`,
+    result: { text: placeholderText ?? `Job started; result will be delivered when ready (jobId=${jobId}).` },
   }
 }

@@ -117,7 +117,7 @@ describe('zettel-notes time-based search', () => {
     })
 
     expect(replyLastWeek.type).toBe('toolResult')
-    const resultsLastWeek = JSON.parse((replyLastWeek as { type: 'toolResult'; result: string }).result) as Array<{ name: string }>
+    const resultsLastWeek = JSON.parse((replyLastWeek as { type: 'toolResult'; result: { text: string } }).result.text) as Array<{ name: string }>
     
     expect(resultsLastWeek.length).toBe(1)
     expect(resultsLastWeek[0]!.name).toBe('The Matrix')
@@ -130,7 +130,7 @@ describe('zettel-notes time-based search', () => {
     })
 
     expect(replyYesterday.type).toBe('toolResult')
-    const resultsYesterday = JSON.parse((replyYesterday as { type: 'toolResult'; result: string }).result) as Array<{ name: string }>
+    const resultsYesterday = JSON.parse((replyYesterday as { type: 'toolResult'; result: { text: string } }).result.text) as Array<{ name: string }>
     
     expect(resultsYesterday.length).toBe(1)
     expect(resultsYesterday[0]!.name).toBe('Inception')
@@ -173,7 +173,7 @@ describe('zettel-notes time-based search', () => {
     })
 
     expect(reply.type).toBe('toolResult')
-    const results = JSON.parse((reply as { type: 'toolResult'; result: string }).result) as Array<{ name: string }>
+    const results = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text) as Array<{ name: string }>
     
     expect(results.length).toBe(1)
     expect(results[0]!.name).toBe('Recent Note')

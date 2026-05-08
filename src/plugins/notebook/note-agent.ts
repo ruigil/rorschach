@@ -75,7 +75,7 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
     },
 
     onComplete: (state, finalText) => {
-      state.loop.turn.replyTo?.send({ type: 'toolResult', result: finalText || '(done)' })
+      state.loop.turn.replyTo?.send({ type: 'toolResult', result: { text: finalText || '(done)' } })
       return { state }
     },
 

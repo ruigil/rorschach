@@ -273,7 +273,7 @@ export const createTodosActor = (notebookDir: string): ActorDef<TodosMsg, null> 
 
     _done: (state, msg) => {
       msg.span?.done()
-      msg.replyTo.send({ type: 'toolResult', result: msg.result })
+      msg.replyTo.send({ type: 'toolResult', result: { text: msg.result } })
       return { state }
     },
 

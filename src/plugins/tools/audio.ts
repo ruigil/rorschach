@@ -268,7 +268,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
 
         if (req.kind === 'transcription') {
           context.log.info('audio: transcription complete', { requestId: message.requestId })
-          req.replyTo.send({ type: 'toolResult', result: req.accumulated || '(no transcription)' })
+          req.replyTo.send({ type: 'toolResult', result: { text: req.accumulated || '(no transcription)' } })
           return { state: { ...state, pending: rest } }
         }
 
@@ -299,7 +299,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
       _audioSaved: (state, message, context) => {
         const { publicUrl, replyTo } = message
         context.log.info('audio: audio saved', { requestId: message.requestId, publicUrl })
-        replyTo.send({ type: 'toolResult', result: `Audio generated. Include this in your reply to the user: ![audio](${publicUrl})` })
+        replyTo.send({ type: 'toolResult', result: { text: 'Audio generated.', attachments: [{ kind: 'audio', url: publicUrl }] } })
         return { state }
       },
 

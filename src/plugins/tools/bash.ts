@@ -149,7 +149,7 @@ export const createBashActor = (options?: BashOptions): ActorDef<BashToolMsg, nu
       _bashDone: (state, message, context) => {
         const { result, replyTo, span } = message
         span?.done({ exitCode: result.exitCode })
-        replyTo.send({ type: 'toolResult', result: formatExecResult(result) })
+        replyTo.send({ type: 'toolResult', result: { text: formatExecResult(result) } })
         return { state }
       },
 
@@ -164,7 +164,7 @@ export const createBashActor = (options?: BashOptions): ActorDef<BashToolMsg, nu
       _writeDone: (state, message) => {
         const { path, replyTo, span } = message
         span?.done({ path })
-        replyTo.send({ type: 'toolResult', result: `Written ${path}` })
+        replyTo.send({ type: 'toolResult', result: { text: `Written ${path}` } })
         return { state }
       },
 
@@ -179,7 +179,7 @@ export const createBashActor = (options?: BashOptions): ActorDef<BashToolMsg, nu
       _readDone: (state, message) => {
         const { content, replyTo, span } = message
         span?.done()
-        replyTo.send({ type: 'toolResult', result: content })
+        replyTo.send({ type: 'toolResult', result: { text: content } })
         return { state }
       },
 

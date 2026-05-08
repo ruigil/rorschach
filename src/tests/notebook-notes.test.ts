@@ -34,7 +34,7 @@ describe('notebook notes', () => {
     expect(createReply.type).toBe('toolResult')
     if (createReply.type !== 'toolResult') throw new Error('create failed')
 
-    const id = createReply.result.match(/id=([^,]+)/)?.[1]
+    const id = createReply.result.text.match(/id=([^,]+)/)?.[1]
     expect(id).toBeTruthy()
 
     const attachReply = await ask<ToolInvokeMsg, ToolReply>(notesRef, replyTo => ({
@@ -56,9 +56,9 @@ describe('notebook notes', () => {
 
     expect(readReply.type).toBe('toolResult')
     if (readReply.type === 'toolResult') {
-      expect(readReply.result).toContain('Attachments:')
-      expect(readReply.result).toContain('[My File #1.pdf](/notebook/attachments/')
-      expect(readReply.result).not.toContain('/inbound/My File #1.pdf')
+      expect(readReply.result.text).toContain('Attachments:')
+      expect(readReply.result.text).toContain('[My File #1.pdf](/notebook/attachments/')
+      expect(readReply.result.text).not.toContain('/inbound/My File #1.pdf')
     }
 
     await system.shutdown()

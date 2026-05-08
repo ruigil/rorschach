@@ -70,9 +70,9 @@ describe('web-search actor', () => {
 
     expect(reply.type).toBe('toolResult')
     if (reply.type === 'toolResult') {
-      expect(reply.result).toContain('Example Page')
-      expect(reply.sources).toHaveLength(1)
-      expect(reply.sources?.[0]?.url).toBe('https://example.com/page')
+      expect(reply.result.text).toContain('Example Page')
+      expect(reply.result.sources).toHaveLength(1)
+      expect(reply.result.sources?.[0]?.url).toBe('https://example.com/page')
     }
 
     await system.shutdown()

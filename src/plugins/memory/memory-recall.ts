@@ -83,7 +83,7 @@ export const createMemoryRecallWorkerActor = (
     },
 
     onComplete: (state, finalText, ctx) => {
-      state.loop.turn.replyTo?.send({ type: 'toolResult', result: finalText || '(no result)' })
+      state.loop.turn.replyTo?.send({ type: 'toolResult', result: { text: finalText || '(no result)' } })
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
     },
@@ -96,7 +96,7 @@ export const createMemoryRecallWorkerActor = (
 
     onLoopLimit: (state, finalText, ctx) => {
       const reply: ToolReply = finalText
-        ? { type: 'toolResult', result: finalText }
+        ? { type: 'toolResult', result: { text: finalText } }
         : { type: 'toolError',  error:  'Tool loop limit reached' }
       state.loop.turn.replyTo?.send(reply)
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })

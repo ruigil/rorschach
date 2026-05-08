@@ -218,8 +218,13 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
         context.log.info('vision: image saved', { requestId: message.requestId, publicUrl: message.publicUrl })
         const rawDescription = (req.accumulatedText || 'Image generated successfully.')
           .replace(/generated_image_url_placeholder/g, message.publicUrl)
-        const result = `![Generated Image](${message.publicUrl})\n\n${rawDescription}`
-        req.replyTo.send({ type: 'toolResult', result })
+        req.replyTo.send({
+          type: 'toolResult',
+          result: {
+            text: rawDescription,
+            attachments: [{ kind: 'image', url: message.publicUrl, alt: rawDescription.slice(0, 200) }],
+          },
+        })
         return { state: { ...state, pending: rest } }
       },
 
@@ -269,7 +274,7 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
 
         if (req.kind === 'analysis') {
           context.log.info('vision: analysis complete', { requestId: message.requestId })
-          req.replyTo.send({ type: 'toolResult', result: req.accumulated || 'No description available.' })
+          req.replyTo.send({ type: 'toolResult', result: { text: req.accumulated || 'No description available.' } })
           return { state: { ...state, pending: rest } }
         }
 

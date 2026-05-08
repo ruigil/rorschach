@@ -27,7 +27,7 @@ const createFakeTool = (): ActorDef<FakeMsg, FakeToolState> => ({
     if (msg.type === '_finish') {
       const job = state.jobs[msg.jobId]
       if (!job) return { state }
-      ctx.publish(JobRegistryTopic, { jobId: msg.jobId, status: 'completed', result: job.result } as JobLifecycleEvent)
+      ctx.publish(JobRegistryTopic, { jobId: msg.jobId, status: 'completed', result: { text: job.result } } as JobLifecycleEvent)
       return { state }
     }
     if (msg.type === '_fail') {
@@ -77,9 +77,9 @@ describe('tool_status', () => {
     )
 
     expect(reply.type).toBe('toolResult')
-    expect((reply as { type: 'toolResult'; result: string }).result).toContain('still running')
-    expect((reply as { type: 'toolResult'; result: string }).result).toContain('job-1')
-    expect((reply as { type: 'toolResult'; result: string }).result).toContain('fake-tool')
+    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('still running')
+    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('job-1')
+    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('fake-tool')
     await system.shutdown()
   })
 
@@ -123,8 +123,8 @@ describe('tool_status', () => {
     )
 
     expect(reply.type).toBe('toolResult')
-    expect((reply as { type: 'toolResult'; result: string }).result).toContain('completed')
-    expect((reply as { type: 'toolResult'; result: string }).result).toContain('all done')
+    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('completed')
+    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('all done')
     await system.shutdown()
   })
 
@@ -166,8 +166,8 @@ describe('tool_status', () => {
     )
 
     expect(reply.type).toBe('toolResult')
-    expect((reply as { type: 'toolResult'; result: string }).result).toContain('failed')
-    expect((reply as { type: 'toolResult'; result: string }).result).toContain('network timeout')
+    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('failed')
+    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('network timeout')
     await system.shutdown()
   })
 
@@ -201,7 +201,7 @@ describe('tool_status', () => {
     )
 
     expect(reply.type).toBe('toolResult')
-    const text = (reply as { type: 'toolResult'; result: string }).result
+    const text = (reply as { type: 'toolResult'; result: { text: string } }).result.text
     expect(text).toContain('jA')
     expect(text).toContain('jB')
     expect(text).toContain('t1')
@@ -240,7 +240,7 @@ describe('tool_status', () => {
     )
 
     expect(reply.type).toBe('toolResult')
-    expect((reply as { type: 'toolResult'; result: string }).result).toContain('No active job')
+    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('No active job')
     await system.shutdown()
   })
 
@@ -266,7 +266,7 @@ describe('tool_status', () => {
     )
 
     expect(reply.type).toBe('toolResult')
-    expect((reply as { type: 'toolResult'; result: string }).result).toBe('No active jobs.')
+    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toBe('No active jobs.')
     await system.shutdown()
   })
 })

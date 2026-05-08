@@ -78,10 +78,10 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     expect(reply2.type).toBe('toolResult')
     
     if (reply1.type === 'toolResult') {
-      expect(reply1.result).toContain('I like apples')
+      expect(reply1.result.text).toContain('I like apples')
     }
     if (reply2.type === 'toolResult') {
-      expect(reply2.result).toContain('I like oranges')
+      expect(reply2.result.text).toContain('I like oranges')
     }
 
     await system.shutdown()

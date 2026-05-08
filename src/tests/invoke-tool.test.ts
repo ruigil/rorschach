@@ -38,7 +38,7 @@ const createTestTool = (mode: ToolMode): ActorDef<TestMsg, ToolState> => ({
   handler: (state, msg, ctx) => {
     if (msg.type === 'invoke') {
       if (state.mode.kind === 'syncResult') {
-        msg.replyTo.send({ type: 'toolResult', result: state.mode.result })
+        msg.replyTo.send({ type: 'toolResult', result: { text: state.mode.result } })
         return { state }
       }
       if (state.mode.kind === 'syncError') {
@@ -140,7 +140,7 @@ describe('invokeTool primitive', () => {
     await tick(80)
 
     expect(result).toHaveLength(1)
-    expect(result[0]).toEqual({ type: 'toolResult', result: 'hi' })
+    expect(result[0]).toEqual({ type: 'toolResult', result: { text: 'hi' } })
     expect(events).toHaveLength(0)
     await system.shutdown()
   })
@@ -171,7 +171,7 @@ describe('invokeTool primitive', () => {
     const events: JobLifecycleEvent[] = []
     system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
 
-    const mode: ToolMode = { kind: 'pending', eventually: { type: 'toolResult', result: 'done' }, delayMs: 30 }
+    const mode: ToolMode = { kind: 'pending', eventually: { type: 'toolResult', result: { text: 'done' } }, delayMs: 30 }
     const tool = system.spawn('tool-pending-no-cb', createTestTool(mode), {
       mode, jobs: {},
     }) as unknown as ActorRef<ToolMsg>
@@ -197,7 +197,7 @@ describe('invokeTool primitive', () => {
 
     const mode: ToolMode = {
       kind: 'pending',
-      eventually: { type: 'toolResult', result: 'finished work' },
+      eventually: { type: 'toolResult', result: { text: 'finished work' } },
       delayMs:    40,
       placeholder: 'WORKING…',
     }
@@ -219,7 +219,7 @@ describe('invokeTool primitive', () => {
 
     // Immediate placeholder
     expect(immediate).toHaveLength(1)
-    expect(immediate[0]).toEqual({ type: 'toolResult', result: 'WORKING…' })
+    expect(immediate[0]).toEqual({ type: 'toolResult', result: { text: 'WORKING…' } })
     // Running event published
     const running = events.find(e => e.status === 'running')
     expect(running).toBeDefined()
@@ -228,7 +228,7 @@ describe('invokeTool primitive', () => {
     await tick(80)
 
     expect(updatesSink).toHaveLength(1)
-    expect(updatesSink[0]).toEqual({ type: 'toolResult', result: 'finished work' })
+    expect(updatesSink[0]).toEqual({ type: 'toolResult', result: { text: 'finished work' } })
 
     // Cleared event published after completion
     const cleared = events.find(e => e.status === 'cleared')
@@ -241,7 +241,7 @@ describe('invokeTool primitive', () => {
     const start = Date.now()
     const mode: ToolMode = {
       kind: 'pending',
-      eventually: { type: 'toolResult', result: 'ok' },
+      eventually: { type: 'toolResult', result: { text: 'ok' } },
       delayMs: 50,
     }
     const tool = system.spawn('tool-delay', createTestTool(mode), {

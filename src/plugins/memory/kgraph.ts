@@ -379,7 +379,7 @@ export const createKgraphActor = (
     _queryDone: (state, message) => {
       const { rows, replyTo, span } = message
       span?.done({ rowCount: rows.length })
-      replyTo.send({ type: 'toolResult', result: JSON.stringify(rows) })
+      replyTo.send({ type: 'toolResult', result: { text: JSON.stringify(rows) } })
       return { state }
     },
 
@@ -398,10 +398,10 @@ export const createKgraphActor = (
         ctx.log.warn('kgraph create_link matched 0 rows — likely a missing create_node', {})
         replyTo.send({
           type: 'toolResult',
-          result: 'Warning: 0 rows matched — no relationships were written. Every node referenced in MATCH must exist via kgraph_create_node before calling kgraph_create_link. Check that all node names are correct and were previously created.',
+          result: { text: 'Warning: 0 rows matched — no relationships were written. Every node referenced in MATCH must exist via kgraph_create_node before calling kgraph_create_link. Check that all node names are correct and were previously created.' },
         })
       } else {
-        replyTo.send({ type: 'toolResult', result: matched > 0 ? `ok (${matched} rows matched)` : 'ok' })
+        replyTo.send({ type: 'toolResult', result: { text: matched > 0 ? `ok (${matched} rows matched)` : 'ok' } })
       }
       return { state }
     },
@@ -418,7 +418,7 @@ export const createKgraphActor = (
       const { result, replyTo, span } = message
       ctx.log.info('kgraph create_node done', { name: result.name, nodeId: result.nodeId })
       span?.done({ nodeId: result.nodeId })
-      replyTo.send({ type: 'toolResult', result: JSON.stringify(result) })
+      replyTo.send({ type: 'toolResult', result: { text: JSON.stringify(result) } })
       return { state }
     },
 
@@ -474,7 +474,7 @@ export const createKgraphActor = (
 
     _updateNodeDone: (state, message, ctx) => {
       ctx.log.info('kgraph update_node done', {})
-      message.replyTo.send({ type: 'toolResult', result: 'ok' })
+      message.replyTo.send({ type: 'toolResult', result: { text: 'ok' } })
       return { state }
     },
 
