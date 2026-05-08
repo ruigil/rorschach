@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { emit } from '../../system/types.ts'
-import type { ActorDef, ActorRef, ActorContext } from '../../system/types.ts'
+import type { ActorDef, ActorRef, ActorContext, MessageHandler } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { invokeTool } from '../../system/invoke-tool.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
@@ -24,8 +24,9 @@ export type PlannerSessionWorkerOptions = {
 }
 
 // ─── State ───
-
-type SessionBehavior = 'awaitingLlm' | 'toolLoop' | 'idle' | 'formalizing' | 'done'
+//
+// The current behavior (awaitingLlm / toolLoop / idle / formalizing / done) is
+// encoded in the active handler via `become`, not in a state field.
 
 type PendingBatch = {
   remaining:          number
@@ -35,7 +36,6 @@ type PendingBatch = {
 }
 
 export type PlannerSessionWorkerState = {
-  behavior:       SessionBehavior
   history:        ApiMessage[]
   requestId:      string | null
   pending:        string
@@ -47,7 +47,6 @@ export type PlannerSessionWorkerState = {
 export const createInitialPlannerSessionWorkerState = (
   options: PlannerSessionWorkerOptions,
 ): PlannerSessionWorkerState => ({
-  behavior:       'awaitingLlm',
   history:        [{ role: 'user', content: options.goal }],
   requestId:      null,
   pending:        '',
@@ -157,16 +156,23 @@ export const createPlannerSessionWorkerActor = (
 ): ActorDef<PlannerSessionWorkerMsg, PlannerSessionWorkerState> => {
   const { model, plansDir, maxToolLoops, tools, llmRef, clientId, goal, jobId } = options
 
-  type Ctx     = ActorContext<PlannerSessionWorkerMsg>
+  type M       = PlannerSessionWorkerMsg
+  type S       = PlannerSessionWorkerState
+  type Ctx     = ActorContext<M>
   type Emitted = ReturnType<typeof emit>
 
-  type Result = { state: PlannerSessionWorkerState; events?: Emitted[] }
+  // `awaitingLlm` is the only handler reached by forward reference (idle and
+  // toolLoop both transition into it). Forward-declare with `let`; assign at
+  // the bottom. The rest are `const` declared in dependency order.
+  let awaitingLlm: MessageHandler<M, S>
+
+  // ── Side-effect helpers ──────────────────────────────────────────────────
 
   const sendToLlm = (
-    state:    PlannerSessionWorkerState,
+    state:    S,
     ctx:      Ctx,
     messages: ApiMessage[],
-  ): PlannerSessionWorkerState => {
+  ): S => {
     const requestId = crypto.randomUUID()
     llmRef.send({
       type:     'stream',
@@ -182,11 +188,11 @@ export const createPlannerSessionWorkerActor = (
   }
 
   const finishSession = (
-    state:   PlannerSessionWorkerState,
+    state:   S,
     ctx:     Ctx,
     summary: string | null,
     failure: string | null,
-  ): PlannerSessionWorkerState => {
+  ): S => {
     ctx.publishRetained(PlannerActiveTopic, clientId, {
       clientId, plannerRef: null, summary: summary ?? undefined,
     })
@@ -196,30 +202,109 @@ export const createPlannerSessionWorkerActor = (
       ctx.publishRetained(JobRegistryTopic, jobId, { jobId, status: 'completed', result: summary })
     }
     parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
-    return {
-      ...state,
-      behavior:       'done',
-      pendingSummary: summary ?? failure ?? state.pendingSummary,
-    }
+    return { ...state, pendingSummary: summary ?? failure ?? state.pendingSummary }
   }
 
+  // ── Handlers in dependency order ─────────────────────────────────────────
+
+  // Terminal: drop any late-arriving messages until the supervisor stops us.
+  const done: MessageHandler<M, S> = onMessage<M, S>({})
+
   const abortSession = (
-    state:     PlannerSessionWorkerState,
+    state:     S,
     ctx:       Ctx,
     errorText: string,
-  ): Result => ({
-    state: finishSession(state, ctx, null, errorText),
+  ) => ({
+    state:  finishSession(state, ctx, null, errorText),
+    become: done,
     events: [
       emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) }),
       emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'error', text: errorText }) }),
     ],
   })
 
+  const formalizing: MessageHandler<M, S> = onMessage<M, S>({
+    _planWriteDone: (state, msg, ctx) => {
+      const summary = state.pendingSummary ?? `Plan saved to ${msg.filepath}.`
+      ctx.log.info('planner-session: complete', { jobId, filepath: msg.filepath })
+      return {
+        state:  finishSession(state, ctx, summary, null),
+        become: done,
+        events: [
+          emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) }),
+          emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: `\nPlan saved to \`${msg.filepath}\`` }) }),
+          emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
+        ],
+      }
+    },
+
+    _planWriteError: (state, msg, ctx) => {
+      ctx.log.error('planner-session: failed to write plan', { jobId, error: msg.error })
+      return {
+        state:  finishSession(state, ctx, null, msg.error),
+        become: done,
+        events: [
+          emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) }),
+          emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'error', text: `Failed to save plan: ${msg.error}` }) }),
+        ],
+      }
+    },
+  })
+
+  const idle: MessageHandler<M, S> = onMessage<M, S>({
+    userMessage: (state, msg, ctx) => {
+      if (msg.clientId !== clientId) return { state }
+      const userMsg: ApiMessage = { role: 'user', content: msg.text }
+      const nextHistory = [...state.history, userMsg]
+      ctx.log.info('planner-session: user input while idle', { jobId, text: msg.text.slice(0, 100) })
+      const next = sendToLlm({ ...state, history: nextHistory, pending: '' }, ctx, nextHistory)
+      return { state: next, become: awaitingLlm }
+    },
+  })
+
+  const toolLoop: MessageHandler<M, S> = onMessage<M, S>({
+    _toolResult: (state, msg, ctx) => {
+      const batch     = state.pendingBatch!
+      const content   = msg.reply.type === 'toolResult' ? msg.reply.result : `Tool error: ${msg.reply.error}`
+      const updated   = [...batch.results, { toolCallId: msg.toolCallId, toolName: msg.toolName, content }]
+      const remaining = batch.remaining - 1
+
+      if (remaining > 0) {
+        return { state: { ...state, pendingBatch: { ...batch, remaining, results: updated } } }
+      }
+
+      const nextLoopCount = state.toolLoopCount + 1
+      if (nextLoopCount >= maxToolLoops) {
+        ctx.log.warn('planner-session: tool loop limit reached', { jobId })
+        return abortSession(state, ctx, 'Tool loop limit reached in planner. Please try again.')
+      }
+
+      const toolResultMsgs: ApiMessage[] = updated.map(r => ({
+        role: 'tool' as const, content: r.content, tool_call_id: r.toolCallId,
+      }))
+      const nextHistory: ApiMessage[] = [
+        ...batch.messagesAtCall,
+        { role: 'assistant' as const, content: null, tool_calls: batch.assistantToolCalls },
+        ...toolResultMsgs,
+      ]
+      const next = sendToLlm({
+        ...state,
+        history:       nextHistory,
+        pending:       '',
+        pendingBatch:  null,
+        toolLoopCount: nextLoopCount,
+      }, ctx, nextHistory)
+      return { state: next, become: awaitingLlm }
+    },
+  })
+
+  // handleToolCalls is only reachable from `awaitingLlm`, so it lives down
+  // here where formalizing/toolLoop/abortSession are all in scope.
   const handleToolCalls = (
-    state: PlannerSessionWorkerState,
+    state: S,
     msg:   Extract<LlmProviderReply, { type: 'llmToolCalls' }>,
     ctx:   Ctx,
-  ): Result => {
+  ) => {
     const { calls } = msg
     const controlCalls  = calls.filter(c =>  CONTROL_TOOL_NAMES.has(c.name))
     const externalCalls = calls.filter(c => !CONTROL_TOOL_NAMES.has(c.name))
@@ -243,12 +328,13 @@ export const createPlannerSessionWorkerActor = (
         }
         ctx.pipeToSelf(
           invokeTool(ctx, entry.ref, { toolName: call.name, arguments: call.arguments, clientId, userId: '' }),
-          (reply): PlannerSessionWorkerMsg => ({ type: '_toolResult', toolName: call.name, toolCallId: call.id, reply }),
-          (error): PlannerSessionWorkerMsg => ({ type: '_toolResult', toolName: call.name, toolCallId: call.id, reply: { type: 'toolError', error: String(error) } }),
+          (reply): M => ({ type: '_toolResult', toolName: call.name, toolCallId: call.id, reply }),
+          (error): M => ({ type: '_toolResult', toolName: call.name, toolCallId: call.id, reply: { type: 'toolError', error: String(error) } }),
         )
       }
       return {
-        state: { ...state, behavior: 'toolLoop', requestId: null, pending: '', pendingBatch: batch },
+        state:  { ...state, requestId: null, pending: '', pendingBatch: batch },
+        become: toolLoop,
       }
     }
 
@@ -288,19 +374,19 @@ export const createPlannerSessionWorkerActor = (
           await mkdir(plansDir, { recursive: true })
           await Bun.write(filepath, JSON.stringify(plan, null, 2))
         })(),
-        (): PlannerSessionWorkerMsg => ({ type: '_planWriteDone', filepath }),
-        (err): PlannerSessionWorkerMsg => ({ type: '_planWriteError', error: String(err) }),
+        (): M => ({ type: '_planWriteDone', filepath }),
+        (err): M => ({ type: '_planWriteError', error: String(err) }),
       )
       ctx.log.info('planner-session: formalizing plan', { jobId, filepath, tasks: plan.tasks.length })
       return {
         state: {
           ...state,
-          behavior:       'formalizing',
           history:        updatedHistory,
           requestId:      null,
           pending:        '',
           pendingSummary: saveSummary,
         },
+        become: formalizing,
         events: [emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: 'Saving your plan…' }) })],
       }
     }
@@ -319,125 +405,55 @@ export const createPlannerSessionWorkerActor = (
     return abortSession(state, ctx, 'Unexpected tool call from planner LLM.')
   }
 
+  awaitingLlm = onMessage<M, S>({
+    llmChunk: (state, msg) => {
+      if (msg.requestId !== state.requestId) return { state }
+      return { state: { ...state, pending: state.pending + msg.text } }
+    },
+
+    llmReasoningChunk: (state) => ({ state }),
+    llmImageChunk:     (state) => ({ state }),
+
+    llmToolCalls: (state, msg, ctx) => {
+      if (msg.requestId !== state.requestId) return { state }
+      return handleToolCalls(state, msg, ctx)
+    },
+
+    llmDone: (state, msg) => {
+      if (msg.requestId !== state.requestId) return { state }
+      const assistantHistory = state.pending
+        ? [...state.history, { role: 'assistant' as const, content: state.pending }]
+        : state.history
+      const events: Emitted[] = []
+      if (state.pending) {
+        events.push(emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: state.pending }) }))
+        events.push(emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'done' }) }))
+      }
+      return {
+        state:  { ...state, history: assistantHistory, requestId: null, pending: '' },
+        become: idle,
+        events,
+      }
+    },
+
+    llmError: (state, msg, ctx) => {
+      if (msg.requestId !== state.requestId) return { state }
+      ctx.log.error('planner-session: LLM error', { jobId, error: String(msg.error) })
+      return abortSession(state, ctx, 'The planner encountered an error. Please try again.')
+    },
+  })
+
   return {
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.log.info('planner-session: started', { jobId, clientId, goal: goal.slice(0, 100) })
         const next = sendToLlm(state, ctx, state.history)
-        return { state: { ...next, behavior: 'awaitingLlm' } }
+        return { state: next }
       },
     }),
 
-    handler: onMessage<PlannerSessionWorkerMsg, PlannerSessionWorkerState>({
-      userMessage: (state, msg, ctx) => {
-        if (state.behavior !== 'idle') return { state }
-        if (msg.clientId !== clientId) return { state }
-        const userMsg: ApiMessage = { role: 'user', content: msg.text }
-        const nextHistory = [...state.history, userMsg]
-        ctx.log.info('planner-session: user input while idle', { jobId, text: msg.text.slice(0, 100) })
-        const next = sendToLlm({ ...state, history: nextHistory, pending: '' }, ctx, nextHistory)
-        return { state: { ...next, behavior: 'awaitingLlm' } }
-      },
-
-      llmChunk: (state, msg) => {
-        if (state.behavior !== 'awaitingLlm') return { state }
-        if (msg.requestId !== state.requestId) return { state }
-        return { state: { ...state, pending: state.pending + msg.text } }
-      },
-
-      llmReasoningChunk: (state) => ({ state }),
-      llmImageChunk:     (state) => ({ state }),
-
-      llmToolCalls: (state, msg, ctx) => {
-        if (state.behavior !== 'awaitingLlm') return { state }
-        if (msg.requestId !== state.requestId) return { state }
-        return handleToolCalls(state, msg, ctx)
-      },
-
-      llmDone: (state, msg) => {
-        if (state.behavior !== 'awaitingLlm') return { state }
-        if (msg.requestId !== state.requestId) return { state }
-        const assistantHistory = state.pending
-          ? [...state.history, { role: 'assistant' as const, content: state.pending }]
-          : state.history
-        const events: Emitted[] = []
-        if (state.pending) {
-          events.push(emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: state.pending }) }))
-          events.push(emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'done' }) }))
-        }
-        return {
-          state: { ...state, behavior: 'idle', history: assistantHistory, requestId: null, pending: '' },
-          events,
-        }
-      },
-
-      llmError: (state, msg, ctx) => {
-        if (state.behavior !== 'awaitingLlm') return { state }
-        if (msg.requestId !== state.requestId) return { state }
-        ctx.log.error('planner-session: LLM error', { jobId, error: String(msg.error) })
-        return abortSession(state, ctx, 'The planner encountered an error. Please try again.')
-      },
-
-      _toolResult: (state, msg, ctx) => {
-        if (state.behavior !== 'toolLoop') return { state }
-        const batch     = state.pendingBatch!
-        const content   = msg.reply.type === 'toolResult' ? msg.reply.result : `Tool error: ${msg.reply.error}`
-        const updated   = [...batch.results, { toolCallId: msg.toolCallId, toolName: msg.toolName, content }]
-        const remaining = batch.remaining - 1
-
-        if (remaining > 0) {
-          return { state: { ...state, pendingBatch: { ...batch, remaining, results: updated } } }
-        }
-
-        const nextLoopCount = state.toolLoopCount + 1
-        if (nextLoopCount >= maxToolLoops) {
-          ctx.log.warn('planner-session: tool loop limit reached', { jobId })
-          return abortSession(state, ctx, 'Tool loop limit reached in planner. Please try again.')
-        }
-
-        const toolResultMsgs: ApiMessage[] = updated.map(r => ({
-          role: 'tool' as const, content: r.content, tool_call_id: r.toolCallId,
-        }))
-        const nextHistory: ApiMessage[] = [
-          ...batch.messagesAtCall,
-          { role: 'assistant' as const, content: null, tool_calls: batch.assistantToolCalls },
-          ...toolResultMsgs,
-        ]
-        const next = sendToLlm({
-          ...state,
-          history:       nextHistory,
-          pending:       '',
-          pendingBatch:  null,
-          toolLoopCount: nextLoopCount,
-        }, ctx, nextHistory)
-        return { state: { ...next, behavior: 'awaitingLlm' } }
-      },
-
-      _planWriteDone: (state, msg, ctx) => {
-        if (state.behavior !== 'formalizing') return { state }
-        const summary = state.pendingSummary ?? `Plan saved to ${msg.filepath}.`
-        ctx.log.info('planner-session: complete', { jobId, filepath: msg.filepath })
-        return {
-          state: finishSession(state, ctx, summary, null),
-          events: [
-            emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) }),
-            emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'chunk', text: `\nPlan saved to \`${msg.filepath}\`` }) }),
-            emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'done' }) }),
-          ],
-        }
-      },
-
-      _planWriteError: (state, msg, ctx) => {
-        if (state.behavior !== 'formalizing') return { state }
-        ctx.log.error('planner-session: failed to write plan', { jobId, error: msg.error })
-        return {
-          state: finishSession(state, ctx, null, msg.error),
-          events: [
-            emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'plannerMode', active: false }) }),
-            emit(OutboundMessageTopic, { clientId, text: JSON.stringify({ type: 'error', text: `Failed to save plan: ${msg.error}` }) }),
-          ],
-        }
-      },
-    }),
+    // Initial handler: the worker spawns straight into `awaitingLlm` because
+    // lifecycle.start has already kicked off the first LLM stream request.
+    handler: (state, msg, ctx) => awaitingLlm(state, msg, ctx),
   }
 }
