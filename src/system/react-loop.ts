@@ -14,7 +14,6 @@ import type {
   ToolFinalReply,
   ToolReply,
 } from '../types/tools.ts'
-import { renderToolResultForLlm } from '../types/tools.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
@@ -562,7 +561,7 @@ export const createReactLoop = <S, M extends { type: string }>(
         span?.error(msg.reply.error)
         ctx.log.warn(`${log}: tool error`, { tool: msg.toolName, error: msg.reply.error })
       }
-      const content = msg.reply.type === 'toolResult' ? renderToolResultForLlm(msg.reply.result) : `Tool error: ${msg.reply.error}`
+      const content = msg.reply.type === 'toolResult' ? msg.reply.result.text : `Tool error: ${msg.reply.error}`
       const updated = [...batch.results, { toolCallId: msg.toolCallId, toolName: msg.toolName, content }]
       const remaining = batch.remaining - 1
 

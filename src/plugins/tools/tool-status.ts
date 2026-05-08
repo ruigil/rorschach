@@ -1,6 +1,6 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { JobRegistryTopic, renderToolResultForLlm } from '../../types/tools.ts'
+import { JobRegistryTopic } from '../../types/tools.ts'
 import type { ToolMsg, ToolReply, ToolResultPayload, ToolSchema } from '../../types/tools.ts'
 
 // ─── Schema ───
@@ -67,7 +67,7 @@ const formatAge = (ms: number): string => {
 const formatJobStatus = (jobId: string, info: JobInfo): string => {
   const age = formatAge(Date.now() - info.startedAt)
   if (info.result !== undefined) {
-    return `Job ${jobId} (${info.toolName}) completed (${age}): ${renderToolResultForLlm(info.result)}`
+    return `Job ${jobId} (${info.toolName}) completed (${age}): ${info.result.text}`
   }
   if (info.error !== undefined) {
     return `Job ${jobId} (${info.toolName}) failed: ${info.error}`

@@ -16,6 +16,8 @@ let streamRawText         = ''
 let reasoningEl           = null
 let pendingSources        = null
 let sourcesWrap           = null
+let pendingAttachments    = null
+let attachmentsWrap       = null
 let isPlannerMode         = false
 
 // ─── Input state ───
@@ -47,6 +49,8 @@ export function resetStream() {
   reasoningEl           = null
   pendingSources        = null
   sourcesWrap           = null
+  pendingAttachments    = null
+  attachmentsWrap       = null
 }
 
 // ─── Thinking indicator ───
@@ -149,6 +153,56 @@ function renderSources(sources) {
   return wrap
 }
 
+function renderAttachments(attachments) {
+  const wrap = document.createElement('div')
+  wrap.className = 'attachments'
+  attachments.forEach((a) => {
+    const item = document.createElement('div')
+    item.className = `attachment attachment-${a.kind}`
+    if (a.kind === 'image') {
+      const img = document.createElement('img')
+      img.src = a.url
+      img.className = 'attachment-image'
+      if (a.alt) img.alt = a.alt
+      item.appendChild(img)
+    } else if (a.kind === 'audio') {
+      const audio = document.createElement('audio')
+      audio.src = a.url
+      audio.controls = true
+      audio.className = 'attachment-audio'
+      item.appendChild(audio)
+      if (a.alt) {
+        const caption = document.createElement('div')
+        caption.className = 'attachment-caption'
+        caption.textContent = a.alt
+        item.appendChild(caption)
+      }
+    } else if (a.kind === 'video') {
+      const video = document.createElement('video')
+      video.src = a.url
+      video.controls = true
+      video.className = 'attachment-video'
+      item.appendChild(video)
+      if (a.alt) {
+        const caption = document.createElement('div')
+        caption.className = 'attachment-caption'
+        caption.textContent = a.alt
+        item.appendChild(caption)
+      }
+    } else {
+      const link = document.createElement('a')
+      link.href = a.url
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      link.className = 'attachment-file'
+      link.textContent = a.alt || a.url.split('/').pop() || 'file'
+      item.appendChild(link)
+    }
+    wrap.appendChild(item)
+  })
+  return wrap
+}
+
 function toolActionLabel(toolName) {
   if (toolName === 'web_search')    return 'searching the web…'
   if (toolName === 'analyze_image') return 'analysing image…'
@@ -218,6 +272,8 @@ export function handleChatMsg(msg) {
     showThinking(label, 'searching')
   } else if (msg.type === 'sources') {
     pendingSources = msg.sources
+  } else if (msg.type === 'attachments') {
+    pendingAttachments = msg.attachments
   } else if (msg.type === 'reasoningChunk') {
     removeThinking()
     if (!streamWrap) {
@@ -252,6 +308,11 @@ export function handleChatMsg(msg) {
         streamBubbleContainer.appendChild(sourcesWrap)
         pendingSources = null
       }
+      if (pendingAttachments) {
+        attachmentsWrap = renderAttachments(pendingAttachments)
+        streamBubbleContainer.appendChild(attachmentsWrap)
+        pendingAttachments = null
+      }
       streamBubbleContainer.appendChild(bodyEl)
       streamBubble = bodyEl
       streamRawText = ''
@@ -270,6 +331,7 @@ export function handleChatMsg(msg) {
     streamWrap            = null
     reasoningEl           = null
     sourcesWrap           = null
+    attachmentsWrap       = null
     setWaiting(false)
   } else if (msg.type === 'error') {
     removeThinking()
@@ -280,6 +342,8 @@ export function handleChatMsg(msg) {
     reasoningEl           = null
     pendingSources        = null
     sourcesWrap           = null
+    pendingAttachments    = null
+    attachmentsWrap       = null
     const wrap   = document.createElement('div')
     wrap.className = 'message error'
     const bubble = document.createElement('div')

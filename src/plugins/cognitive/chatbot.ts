@@ -9,7 +9,7 @@ import {
 } from '../../system/react-loop.ts'
 import { OutboundMessageTopic, UserStreamTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
-import { applyToolFilter, renderToolResultForLlm, ToolRegistrationTopic } from '../../types/tools.ts'
+import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type {
   ApiMessage,
@@ -247,7 +247,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       // Subsequent results in the same batch only append the tool-result.
       const batch         = state.loop.turn.pendingBatch!
       const isFirstResult = batch.results.length === 0
-      const content       = result.reply.type === 'toolResult' ? renderToolResultForLlm(result.reply.result) : `Tool error: ${result.reply.error}`
+      const content       = result.reply.type === 'toolResult' ? result.reply.result.text : `Tool error: ${result.reply.error}`
       const toolEntry: ConversationMessage = {
         role: 'tool', content, tool_call_id: result.toolCallId, timestamp: Date.now(),
       }
@@ -374,7 +374,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       ctx.log.warn('chatbot: dropping _toolUpdate, no LLM ref', { toolName: msg.toolName, toolCallId: msg.toolCallId })
       return { state }
     }
-    const resultText = msg.reply.type === 'toolResult' ? renderToolResultForLlm(msg.reply.result) : `Tool error: ${msg.reply.error}`
+    const resultText = msg.reply.type === 'toolResult' ? msg.reply.result.text : `Tool error: ${msg.reply.error}`
     const injection  = `[Background tool result — ${msg.toolName} (toolCallId=${msg.toolCallId})]: ${resultText}`
 
     // No upstream traceId for background completions — synthesize a fresh one.

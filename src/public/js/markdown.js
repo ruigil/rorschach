@@ -31,15 +31,6 @@ marked.use({
   gfm: true,
   breaks: true,
   renderer: {
-    image(href) {
-      if (/\.(wav|mp3|ogg|m4a|flac)(\?.*)?$/i.test(href)) {
-        return `<audio controls autoplay class="message-audio" src="${href}"></audio>`
-      }
-      if (/\.(mp4|webm|mov)(\?.*)?$/i.test(href)) {
-        return `<video controls class="message-video" src="${href}"></video>`
-      }
-      return false
-    },
     link(href, title, text) {
       const ytMatch = href.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?|shorts)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
       if (ytMatch) {
