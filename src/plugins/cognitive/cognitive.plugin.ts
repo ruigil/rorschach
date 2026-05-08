@@ -5,7 +5,7 @@ import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { ToolFilter, ToolMsg } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { PlannerConfig } from './types.ts'
-import { createPlannerToolActor, createInitialPlannerToolState, PLAN_TOOL_SCHEMA } from './planner-agent.ts'
+import { createPlannerSupervisorActor, createInitialPlannerSupervisorState, PLAN_TOOL_SCHEMA } from './planner-agent.ts'
 import type { PlannerToolOptions } from './planner-agent.ts'
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
@@ -90,8 +90,8 @@ const spawnAll = (
   const effectivePlannerConfig = mergePlannerConfig(plannerConfig)
   const plannerRef = ctx.spawn(
     `plan-tool-${gen}`,
-    createPlannerToolActor(effectivePlannerConfig),
-    createInitialPlannerToolState(),
+    createPlannerSupervisorActor(effectivePlannerConfig),
+    createInitialPlannerSupervisorState(),
   ) as ActorRef<ToolMsg>
   ctx.publishRetained(ToolRegistrationTopic, 'plan', {
     name: 'plan', schema: PLAN_TOOL_SCHEMA as any,
@@ -223,8 +223,8 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
         const effectivePlannerConfig = mergePlannerConfig(newPlannerConfig)
         const plannerRef = ctx.spawn(
           `plan-tool-${gen}`,
-          createPlannerToolActor(effectivePlannerConfig),
-          createInitialPlannerToolState(),
+          createPlannerSupervisorActor(effectivePlannerConfig),
+          createInitialPlannerSupervisorState(),
         ) as ActorRef<ToolMsg>
         ctx.publishRetained(ToolRegistrationTopic, 'plan', {
           name: 'plan', schema: PLAN_TOOL_SCHEMA as any,

@@ -1,7 +1,7 @@
-import type { ActorRef } from '../../system/types.ts'
+import type { ActorIdentity, ActorRef } from '../../system/types.ts'
 import { createTopic } from '../../system/types.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
-import type { ToolFinalReply, ToolMsg, ToolSchema, ToolFilter } from '../../types/tools.ts'
+import type { ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolSchema, ToolFilter } from '../../types/tools.ts'
 
 // ─── Chatbot actor message protocol ───
 
@@ -55,3 +55,21 @@ export type PlannerSessionEvent =
 /** Retained topic. Planner publishes when a session starts/ends for a clientId.
  *  Session manager subscribes to re-route user messages to the planner while active. */
 export const PlannerActiveTopic = createTopic<PlannerSessionEvent>('planner.session.active')
+
+// ─── Planner supervisor / worker message protocols ───
+// Supervisor: receives invoke messages and spawns one worker per planning session.
+// Workers send `_workerDone` to the supervisor when their session terminates.
+
+export type PlannerSupervisorMsg =
+  | ToolInvokeMsg
+  | { type: '_workerDone';  worker: ActorIdentity }
+  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
+
+// Worker: one per active planning session, owns the conversational state.
+
+export type PlannerSessionWorkerMsg =
+  | PlannerInputMsg
+  | LlmProviderReply
+  | { type: '_toolResult';     toolCallId: string; toolName: string; reply: ToolFinalReply }
+  | { type: '_planWriteDone';  filepath: string }
+  | { type: '_planWriteError'; error: string }
