@@ -1,21 +1,12 @@
 import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, ActorContext, ActorResult, PersistenceAdapter } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import {
-  createReactLoop,
-  initialReactLoopSlice,
-  type ReactLoopSlice,
-} from '../../system/react-loop.ts'
+import { createReactLoop, initialReactLoopSlice, type ReactLoopSlice } from '../../system/react-loop.ts'
 import { OutboundMessageTopic, UserStreamTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type {
-  ApiMessage,
-  LlmProviderMsg,
-  TokenUsage,
-  ToolCall,
-} from '../../types/llm.ts'
+import type { ApiMessage, LlmProviderMsg, TokenUsage, ToolCall } from '../../types/llm.ts'
 import type { ChatbotMsg } from './types.ts'
 import { UserContextTopic } from '../../types/memory.ts'
 
@@ -38,7 +29,6 @@ export type ChatbotState = {
   sessionUsage:   TokenUsage
   userContext:    string | null
   activeClientId: string
-  /** Set by the userMessage adapter for the duration of a turn; read in onComplete to forward to UserStreamTopic. */
   isInjected?:    boolean
 }
 
@@ -321,13 +311,9 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
   const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
     const { clientId: msgClientId, text, images, audio, pdfs, traceId, parentSpanId, isCron, isInjected } = msg
 
-    // Cron: history-form differs from LLM-form. Otherwise both are identical.
     const userText = isCron
       ? `[Internal Instruction] ${text}`
       : assembleUserText(text, images, audio, pdfs)
-    const llmText  = isCron
-      ? `[Internal Instruction — do not mention that this is scheduled] ${text}`
-      : userText
 
     const stateNext: S = {
       ...state,
@@ -342,7 +328,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     }
 
     return handlers.startTurn(stateNext, {
-      messages: buildTurnMessages(stateNext, llmText),
+      messages: buildTurnMessages(stateNext, userText),
       userId,
       clientId,
       traceId,
