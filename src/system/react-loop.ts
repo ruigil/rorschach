@@ -76,9 +76,9 @@ export const initialReactLoopSlice = (): ReactLoopSlice => ({
 // ─── Base message variants the closure dispatches on ───────────────────────
 
 /**
- * `Args` defaults to `string` — the shape the LLM produces for tool calls.
- * Agents that synthesize their own invokes in-process can parameterize with a
- * structured type and skip JSON encode/decode in `buildTurn`.
+ * Tool-agent entry message. The LLM hands the agent a JSON `arguments` string;
+ * `buildTurn` decodes it. User-facing agents do NOT use this — they call
+ * `handlers.startTurn` directly with already-built `ApiMessage[]`.
  */
 export type ReactInvokeMsg<Args = string> = {
   type:          'invoke'
@@ -88,6 +88,22 @@ export type ReactInvokeMsg<Args = string> = {
   userId:        string
   replyTo:       ActorRef<ToolReply>
   /** When `spans: 'fromMessage'`, the request span is built from these IDs. Ignored otherwise. */
+  traceId?:      string
+  parentSpanId?: string
+}
+
+/**
+ * Parameters for `handlers.startTurn` — the in-process entry point used by
+ * user-facing agents (chatbot, planner). They construct the turn's
+ * `ApiMessage[]` themselves (no `buildTurn` indirection) and omit `replyTo`
+ * since they stream completion via topic events rather than a tool reply.
+ */
+export type ReactStartTurnParams = {
+  messages:      ApiMessage[]
+  userId:        string
+  clientId?:     string
+  replyTo?:      ActorRef<ToolReply>
+  /** When `spans: 'fromMessage'`, the request span is built from these IDs. */
   traceId?:      string
   parentSpanId?: string
 }
@@ -169,8 +185,12 @@ export type ReactLoopHooks<S, M extends { type: string }, Args = string> = {
   setSlice:     (s: S, slice: ReactLoopSlice) => S
 
   // ─── Entry ───
-  /** Validate the invoke message and produce the turn's initial messages. */
-  buildTurn:     (s: S, msg: ReactInvokeMsg<Args>, ctx: ActorContext<M>) => ReactBuildTurnResult
+  /**
+   * Validate the invoke message and produce the turn's initial messages.
+   * Required for tool agents that receive `invoke`. User-facing agents that
+   * only enter via `startTurn` may omit this.
+   */
+  buildTurn?:    (s: S, msg: ReactInvokeMsg<Args>, ctx: ActorContext<M>) => ReactBuildTurnResult
 
   // ─── Completion handlers ───
   /** Called on `llmDone` after the request span is closed. Returned state is applied and the actor becomes idle (or `action.become`). */
@@ -239,6 +259,12 @@ export type ReactLoopHandlers<M extends { type: string }, S> = {
   idle:        MessageHandler<M, S>
   awaitingLlm: MessageHandler<M, S>
   toolLoop:    MessageHandler<M, S>
+  /**
+   * In-process turn entry for user-facing agents. Bypasses `invoke`/`buildTurn`
+   * and starts a turn directly from already-built `ApiMessage[]`. Caller must
+   * have applied any state mutations (e.g. appending to history) before calling.
+   */
+  startTurn:   (state: S, params: ReactStartTurnParams, ctx: ActorContext<M>) => ActorResult<M, S>
 }
 
 // ─── Implementation ────────────────────────────────────────────────────────
@@ -332,55 +358,72 @@ export const createReactLoop = <S, M extends { type: string }, Args = string>(
     return { state: next, become: awaitingLlm }
   }
 
+  // ── startTurn: in-process entry, shared by `invoke` shim and user-facing agents ──
+  const startTurn = (
+    state:  S,
+    params: ReactStartTurnParams,
+    ctx:    ActorContext<M>,
+  ): ActorResult<M, S> => {
+    let requestSpan: SpanHandle | null = null
+    if (spansMode === 'fromHeaders') {
+      const parent = ctx.trace.fromHeaders()
+      requestSpan = parent
+        ? ctx.trace.child(parent.traceId, parent.spanId, hooks.spanName, {})
+        : null
+    } else if (spansMode === 'fromMessage') {
+      if (params.traceId && params.parentSpanId) {
+        requestSpan = ctx.trace.child(params.traceId, params.parentSpanId, hooks.spanName, {})
+      }
+    } else if (spansMode === 'always') {
+      requestSpan = ctx.trace.start(hooks.spanName, {})
+    }
+
+    const requestId = crypto.randomUUID()
+    let next = withTurn(state, {
+      ...getTurn(state),
+      requestId,
+      turnMessages:  params.messages,
+      pending:       '',
+      pendingBatch:  null,
+      toolLoopCount: 0,
+      requestSpan,
+      llmSpan:       null,
+      userId:        params.userId,
+      clientId:      params.clientId,
+      replyTo:       params.replyTo ?? null,
+    })
+    const llmSpan = sendStream(next, requestId, params.messages, ctx)
+    next = withTurn(next, { ...getTurn(next), llmSpan })
+
+    ctx.log.info(`${log}: request started`, { userId: params.userId })
+
+    return { state: next, become: awaitingLlm }
+  }
+
   // ── idle ─────────────────────────────────────────────────────────────────
   const idleCases: any = {
     invoke: (state: S, msg: ReactInvokeMsg<Args>, ctx: ActorContext<M>) => {
-      const inv = msg
-
-      const built = hooks.buildTurn(state, inv, ctx)
+      if (!hooks.buildTurn) {
+        msg.replyTo.send({ type: 'toolError', error: `${log} does not accept invoke (no buildTurn configured).` })
+        return { state }
+      }
+      const built = hooks.buildTurn(state, msg, ctx)
       if ('error' in built) {
-        inv.replyTo.send({ type: 'toolError', error: built.error })
+        msg.replyTo.send({ type: 'toolError', error: built.error })
         return { state }
       }
       if (!getLlmRef(state)) {
-        inv.replyTo.send({ type: 'toolError', error: `${log} not ready (no LLM provider).` })
+        msg.replyTo.send({ type: 'toolError', error: `${log} not ready (no LLM provider).` })
         return { state }
       }
-
-      let requestSpan: SpanHandle | null = null
-      if (spansMode === 'fromHeaders') {
-        const parent = ctx.trace.fromHeaders()
-        requestSpan = parent
-          ? ctx.trace.child(parent.traceId, parent.spanId, hooks.spanName, {})
-          : null
-      } else if (spansMode === 'fromMessage') {
-        if (inv.traceId && inv.parentSpanId) {
-          requestSpan = ctx.trace.child(inv.traceId, inv.parentSpanId, hooks.spanName, {})
-        }
-      } else if (spansMode === 'always') {
-        requestSpan = ctx.trace.start(hooks.spanName, {})
-      }
-
-      const requestId = crypto.randomUUID()
-      let next = withTurn(state, {
-        ...getTurn(state),
-        requestId,
-        turnMessages:  built.messages,
-        pending:       '',
-        pendingBatch:  null,
-        toolLoopCount: 0,
-        requestSpan,
-        llmSpan:       null,
-        userId:        inv.userId,
-        clientId:      inv.clientId,
-        replyTo:       inv.replyTo,
-      })
-      const llmSpan = sendStream(next, requestId, built.messages, ctx)
-      next = withTurn(next, { ...getTurn(next), llmSpan })
-
-      ctx.log.info(`${log}: request started`, { userId: inv.userId })
-
-      return { state: next, become: awaitingLlm }
+      return startTurn(state, {
+        messages:     built.messages,
+        userId:       msg.userId,
+        clientId:     msg.clientId,
+        replyTo:      msg.replyTo,
+        traceId:      msg.traceId,
+        parentSpanId: msg.parentSpanId,
+      }, ctx)
     },
 
     ...subscriptionCases,
@@ -621,5 +664,5 @@ export const createReactLoop = <S, M extends { type: string }, Args = string>(
 
   toolLoop = onMessage<M, S>(toolLoopCases) as MessageHandler<M, S>
 
-  return { idle, awaitingLlm, toolLoop }
+  return { idle, awaitingLlm, toolLoop, startTurn }
 }

@@ -4,7 +4,6 @@ import { onLifecycle } from '../../system/match.ts'
 import {
   createReactLoop,
   initialReactLoopSlice,
-  type ReactInvokeMsg,
   type ReactLoopSlice,
 } from '../../system/react-loop.ts'
 import { OutboundMessageTopic, UserStreamTopic } from '../../types/events.ts'
@@ -144,16 +143,6 @@ const createPersistence = (
   }
 }
 
-// ─── Invoke argument shape ───
-//
-// The userMessage adapter passes a structured payload directly through
-// invoke.arguments — the react-loop is parameterized with this type so
-// buildTurn reads fields without JSON round-tripping.
-type ChatbotInvokeArgs = {
-  llmText:     string  // text the LLM should see for this turn (may differ from history-form for cron)
-  isInjected?: boolean
-}
-
 // ─── Actor ───
 
 export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<ChatbotMsg, ChatbotState> => {
@@ -171,28 +160,6 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
   type M   = ChatbotMsg
   type S   = ChatbotState
   type Ctx = ActorContext<M>
-
-  // The replyTo on synthesized invokes is unused (chatbot streams via OutboundMessageTopic).
-  const noopReplyTo = {
-    name: 'chatbot-noop-sink',
-    send: () => {},
-  } as unknown as ReactInvokeMsg['replyTo']
-
-  const synthesizeInvoke = (
-    text:         string,
-    traceId:      string,
-    parentSpanId: string,
-    isInjected?:  boolean,
-  ): ReactInvokeMsg<ChatbotInvokeArgs> => ({
-    type:         'invoke',
-    toolName:     'chatbot-turn',
-    arguments:    { llmText: text, isInjected },
-    clientId,
-    userId,
-    replyTo:      noopReplyTo,
-    traceId,
-    parentSpanId,
-  })
 
   // ─── Shared state-mutation handlers (used in all three states) ──────────
 
@@ -219,7 +186,20 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
   // ─── React-loop ─────────────────────────────────────────────────────────
 
-  const handlers = createReactLoop<S, M, ChatbotInvokeArgs>({
+  // history must already contain the current user turn (appended by the caller).
+  // For the LLM-form, replace the last entry's content with llmText
+  // (handles cron variant: "[Internal Instruction — do not mention…]" vs
+  // history-form "[Internal Instruction]").
+  const buildTurnMessages = (state: S, llmText: string): ApiMessage[] => {
+    const sysPrompt = buildSystemPrompt(systemPrompt, state.userContext)
+    return [
+      ...(sysPrompt ? [{ role: 'system' as const, content: sysPrompt }] : []),
+      ...state.history.slice(0, -1).map(toApiMessage),
+      { role: 'user' as const, content: llmText },
+    ]
+  }
+
+  const handlers = createReactLoop<S, M>({
     role:         'reasoning',
     spanName:     'chatbot',
     logPrefix:    'chatbot',
@@ -230,25 +210,6 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
     slice:    (s) => s.loop,
     setSlice: (s, loop) => ({ ...s, loop }),
-
-    buildTurn: (state, msg) => {
-      // arguments is structured (ChatbotInvokeArgs) — synthesizeInvoke is the
-      // only producer, so we narrow without a runtime check.
-      const { llmText } = msg.arguments as ChatbotInvokeArgs
-
-      const sysPrompt = buildSystemPrompt(systemPrompt, state.userContext)
-
-      // history already contains the current user turn (appended by the shell).
-      // For the LLM-form, replace the last entry's content with llmText
-      // (handles cron variant: "[Internal Instruction — do not mention…]" vs
-      // history-form "[Internal Instruction]").
-      const apiMessages: ApiMessage[] = [
-        ...(sysPrompt ? [{ role: 'system' as const, content: sysPrompt }] : []),
-        ...state.history.slice(0, -1).map(toApiMessage),
-        { role: 'user' as const, content: llmText },
-      ]
-      return { messages: apiMessages }
-    },
 
     onChunk: (state, text) => ({
       state,
@@ -355,7 +316,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     },
   })
 
-  // ─── Adapter: userMessage → invoke ──────────────────────────────────────
+  // ─── Adapter: userMessage → startTurn ───────────────────────────────────
 
   const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
     const { clientId: msgClientId, text, images, audio, pdfs, traceId, parentSpanId, isCron, isInjected } = msg
@@ -375,10 +336,21 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       isInjected:     isInjected || isCron || false,
     }
 
-    return handlers.idle(stateNext, synthesizeInvoke(llmText, traceId, parentSpanId, stateNext.isInjected) as unknown as M, ctx)
+    if (!stateNext.loop.llmRef) {
+      ctx.log.warn('chatbot: dropping userMessage, no LLM ref', { clientId: msgClientId })
+      return { state: stateNext }
+    }
+
+    return handlers.startTurn(stateNext, {
+      messages: buildTurnMessages(stateNext, llmText),
+      userId,
+      clientId,
+      traceId,
+      parentSpanId,
+    }, ctx)
   }
 
-  // ─── Adapter: _toolUpdate (idle) → invoke ───────────────────────────────
+  // ─── Adapter: _toolUpdate (idle) → startTurn ────────────────────────────
 
   const handleToolUpdate = (state: S, msg: Extract<M, { type: '_toolUpdate' }>, ctx: Ctx): ActorResult<M, S> => {
     if (!state.loop.llmRef) {
@@ -398,7 +370,13 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       isInjected: true,
     }
 
-    return handlers.idle(stateNext, synthesizeInvoke(injection, traceId, parentSpanId, true) as unknown as M, ctx)
+    return handlers.startTurn(stateNext, {
+      messages: buildTurnMessages(stateNext, injection),
+      userId,
+      clientId,
+      traceId,
+      parentSpanId,
+    }, ctx)
   }
 
   return {

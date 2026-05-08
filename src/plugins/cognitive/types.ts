@@ -1,6 +1,5 @@
 import type { ActorIdentity, ActorRef } from '../../system/types.ts'
 import { createTopic } from '../../system/types.ts'
-import type { ReactInvokeMsg } from '../../system/react-loop.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 import type { ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolSchema, ToolFilter } from '../../types/tools.ts'
 
@@ -8,7 +7,6 @@ import type { ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolSchema, ToolFilter } f
 
 export type ChatbotMsg =
   | { type: 'userMessage'; clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string; isCron?: boolean; isInjected?: boolean }
-  | ReactInvokeMsg<{ llmText: string; isInjected?: boolean }>
   | LlmProviderReply
   | { type: '_toolRegistered';      name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered';    name: string }
@@ -73,8 +71,8 @@ export type PlannerSupervisorMsg =
 
 export type PlannerSessionWorkerMsg =
   | PlannerInputMsg
-  | ReactInvokeMsg
   | LlmProviderReply
+  | { type: '_kickoff' }
   | { type: '_toolResult';     toolCallId: string; toolName: string; reply: ToolFinalReply }
   | { type: '_planWriteDone';  filepath: string }
   | { type: '_planWriteError'; error: string }

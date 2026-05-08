@@ -5,13 +5,12 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import {
   createReactLoop,
   initialReactLoopSlice,
-  type ReactInvokeMsg,
   type ReactLoopHandlers,
   type ReactLoopSlice,
 } from '../../system/react-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ToolCollection } from '../../types/tools.ts'
-import { JobRegistryTopic, type ToolReply } from '../../types/tools.ts'
+import { JobRegistryTopic } from '../../types/tools.ts'
 import type { ApiMessage, LlmProviderMsg, Tool } from '../../types/llm.ts'
 import type { Plan, PlanTask, PlannerSessionWorkerMsg, PlannerSupervisorMsg } from './types.ts'
 import { PlannerActiveTopic } from './types.ts'
@@ -144,13 +143,6 @@ export const createPlannerSessionWorkerActor = (
   type S   = PlannerSessionWorkerState
   type Ctx = ActorContext<M>
 
-  // The replyTo on synthesized invokes is unused (planner streams via OutboundMessageTopic),
-  // but ReactInvokeMsg requires the field. A no-op sink keeps the type honest.
-  const noopReplyTo: ActorRef<ToolReply> = {
-    name: 'planner-noop-sink',
-    send: () => {},
-  } as unknown as ActorRef<ToolReply>
-
   // Forward refs.
   let formalizing: MessageHandler<M, S>
   let done:        MessageHandler<M, S>
@@ -174,16 +166,8 @@ export const createPlannerSessionWorkerActor = (
     return { ...state, pendingSummary: summary ?? failure ?? state.pendingSummary }
   }
 
-  const synthesizeInvoke = (text: string): ReactInvokeMsg => ({
-    type:         'invoke',
-    toolName:     'planner-turn',
-    arguments:    text,
-    clientId,
-    userId:       '',
-    replyTo:      noopReplyTo,
-    traceId,
-    parentSpanId,
-  })
+  const buildTurnMessages = (state: S): ApiMessage[] =>
+    [{ role: 'system', content: buildSystemPrompt() }, ...state.history]
 
   // ── React-loop construction ─────────────────────────────────────────────
 
@@ -199,10 +183,6 @@ export const createPlannerSessionWorkerActor = (
 
     slice:    (s) => s.loop,
     setSlice: (s, loop) => ({ ...s, loop }),
-
-    buildTurn: (state) => ({
-      messages: [{ role: 'system', content: buildSystemPrompt() }, ...state.history],
-    }),
 
     // Per-chunk streaming: matches today's planner UX of emitting once on
     // llmDone (see onComplete). React-loop's onChunk hook can't carry events,
@@ -346,8 +326,22 @@ export const createPlannerSessionWorkerActor = (
           ctx.log.info('planner-session: user input while idle', { jobId, text: msg.text.slice(0, 100) })
           const userMsg: ApiMessage = { role: 'user', content: msg.text }
           const stateWithHistory: S = { ...state, history: [...state.history, userMsg] }
-          return handlers.idle(stateWithHistory, synthesizeInvoke(msg.text) as unknown as M, ctx)
+          return handlers.startTurn(stateWithHistory, {
+            messages: buildTurnMessages(stateWithHistory),
+            userId:   '',
+            clientId,
+            traceId,
+            parentSpanId,
+          }, ctx)
         },
+        _kickoff: (state: S, _msg: Extract<M, { type: '_kickoff' }>, ctx: Ctx): ActorResult<M, S> =>
+          handlers.startTurn(state, {
+            messages: buildTurnMessages(state),
+            userId:   '',
+            clientId,
+            traceId,
+            parentSpanId,
+          }, ctx),
       },
     },
   })
@@ -391,9 +385,8 @@ export const createPlannerSessionWorkerActor = (
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.log.info('planner-session: started', { jobId, clientId, goal: goal.slice(0, 100) })
-        // Kick off the first turn by self-sending a synthetic invoke. The goal
-        // is already seeded in state.history, so buildTurn will pick it up.
-        ctx.self.send(synthesizeInvoke(goal) as unknown as M)
+        // Kick off the first turn. The goal is already seeded in state.history.
+        ctx.self.send({ type: '_kickoff' })
         return { state }
       },
     }),
