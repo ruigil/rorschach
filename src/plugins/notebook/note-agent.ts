@@ -94,7 +94,6 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
-        // NOTE: deliberately NOT subscribing to ToolRegistrationTopic — tools are private
         return { state }
       },
     }),
