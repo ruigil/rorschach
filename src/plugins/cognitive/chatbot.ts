@@ -1,23 +1,26 @@
 import { emit } from '../../system/types.ts'
-import type { ActorDef, ActorRef, MessageHandler, PersistenceAdapter, SpanHandle, ActorResult } from '../../system/types.ts'
-import { invokeTool } from '../../system/invoke-tool.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import type { ActorDef, ActorRef, ActorContext, ActorResult, PersistenceAdapter } from '../../system/types.ts'
+import { onLifecycle } from '../../system/match.ts'
+import {
+  createReactLoop,
+  initialReactLoopSlice,
+  type ReactInvokeMsg,
+  type ReactLoopSlice,
+} from '../../system/react-loop.ts'
 import { OutboundMessageTopic, UserStreamTopic } from '../../types/events.ts'
-import type { ToolCollection, ToolEntry, ToolFilter } from '../../types/tools.ts'
-import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
+import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
+import { applyToolFilter, renderToolResultForLlm, ToolRegistrationTopic } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
-  LlmProviderReply,
   TokenUsage,
-  Tool,
   ToolCall,
 } from '../../types/llm.ts'
 import type { ChatbotMsg } from './types.ts'
 import { UserContextTopic } from '../../types/memory.ts'
 
-// ─── State ───
+// ─── Conversation history ───
 
 type ConversationMessage = {
   timestamp?: number
@@ -27,44 +30,21 @@ type ConversationMessage = {
   | { role: 'tool';      content: string; tool_call_id: string }
 )
 
-type PendingBatch = {
-  remaining:          number
-  results:            Array<{ toolCallId: string; toolName: string; content: string }>
-  messagesAtCall:     ApiMessage[]
-  assistantToolCalls: ToolCall[]
-}
-
-type SpanHandles = {
-  requestSpan: import('../../system/types.ts').SpanHandle
-  llmSpan?:    import('../../system/types.ts').SpanHandle
-  toolSpans:   Record<string, import('../../system/types.ts').SpanHandle>
-}
+// ─── State ───
 
 export type ChatbotState = {
-  // Permanent
-  history:          ConversationMessage[]
-  tools:            ToolCollection
-  sessionUsage:     TokenUsage
-  llmRef:           ActorRef<LlmProviderMsg> | null
-  userContext:      string | null
-  activeClientId:   string   // updated per userMessage to route responses to current sender
-
-  // Active turn (set on userMessage, cleared on llmDone/llmError)
-  requestId:        string | null
-  turnMessages:     ApiMessage[] | null
-  spanHandles:      SpanHandles | null
-  pendingUsage:     TokenUsage
-  pending:          string
-  pendingReasoning: string
-  isInjected?:      boolean
-
-  // Active tool batch (set on llmToolCalls, cleared when all results arrive)
-  pendingBatch:     PendingBatch | null
-  toolLoopCount:    number
+  loop:           ReactLoopSlice
+  history:        ConversationMessage[]
+  tools:          ToolCollection
+  sessionUsage:   TokenUsage
+  userContext:    string | null
+  activeClientId: string
+  /** Set by the userMessage adapter for the duration of a turn; read in onComplete to forward to UserStreamTopic. */
+  isInjected?:    boolean
 }
 
-// ─── History markers note ───
-// Baked into every system prompt so the LLM correctly interprets synthetic history entries.
+// ─── History markers ───
+
 const HISTORY_MARKERS_NOTE =
   'Messages prefixed with [Internal Instruction] in the conversation history are past internal ' +
   'instructions that you already carried out. Do not act on them again.\n' +
@@ -75,23 +55,24 @@ const HISTORY_MARKERS_NOTE =
 // ─── Options ───
 
 export type ChatbotActorOptions = {
-  clientId:       string
-  model:          string
-  systemPrompt?:  string
-  historyWindowHours?:     number
-  toolFilter?:    ToolFilter
-  maxToolLoops?:  number
-  userId:         string
-  roles?:         string[]
-  llmRef?:        ActorRef<LlmProviderMsg> | null
+  clientId:            string
+  model:               string
+  systemPrompt?:       string
+  historyWindowHours?: number
+  toolFilter?:         ToolFilter
+  maxToolLoops?:       number
+  userId:              string
+  roles?:              string[]
+  llmRef?:             ActorRef<LlmProviderMsg> | null
 }
 
 // ─── Helpers ───
 
-/**
- * Trims the conversation history to fit within a specific time window (in hours).
- * Always cuts at a 'user' message to ensure complete turns are preserved.
- */
+const buildSystemPrompt = (basePrompt: string | undefined, userContext: string | null): string => {
+  const todayDateNote = `Today's date is ${new Date().toDateString()}.`
+  return [basePrompt, todayDateNote, userContext, HISTORY_MARKERS_NOTE].filter(Boolean).join('\n\n---\n\n')
+}
+
 const trimHistory = (history: ConversationMessage[], historyWindowHours: number): ConversationMessage[] => {
   const cutoffTime = Date.now() - historyWindowHours * 60 * 60 * 1000
   let earliestValidIndex = history.length
@@ -99,29 +80,48 @@ const trimHistory = (history: ConversationMessage[], historyWindowHours: number)
   for (let i = history.length - 1; i >= 0; i--) {
     const msg = history[i]!
     const msgTime = msg.timestamp ?? Date.now()
-
-    if (msgTime < cutoffTime) {
-      break
-    }
-
-    if (msg.role === 'user') {
-      earliestValidIndex = i
-    }
+    if (msgTime < cutoffTime) break
+    if (msg.role === 'user') earliestValidIndex = i
   }
 
   return history.slice(earliestValidIndex)
 }
 
-// ─── Persistence ───
-//
-// Only the durable fields are saved. Ephemeral turn state and ActorRefs are
-// always reset to defaults on load — they are restored via subscriptions at startup.
-
-type PersistedChatbotState = {
-  userContext: string | null
+const assembleUserText = (
+  text:    string,
+  images?: string[],
+  audio?:  string,
+  pdfs?:   string[],
+): string => {
+  let out = text
+  if (images && images.length > 0) {
+    const note = images.length === 1
+      ? `[Image attached: "${images[0]}"]`
+      : `[Images attached: ${images.map(p => `"${p}"`).join(', ')}]`
+    out = out ? `${out}\n\n${note}` : note
+  }
+  if (audio) {
+    const note = `[Audio attached: "${audio}"]`
+    out = out ? `${out}\n\n${note}` : note
+  }
+  if (pdfs && pdfs.length > 0) {
+    const note = pdfs.length === 1
+      ? `[PDF attached: "${pdfs[0]}"]`
+      : `[PDFs attached: ${pdfs.map(p => `"${p}"`).join(', ')}]`
+    out = out ? `${out}\n\n${note}` : note
+  }
+  return out
 }
 
-const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<LlmProviderMsg> | null): PersistenceAdapter<ChatbotState> => {
+// ─── Persistence ───
+
+type PersistedChatbotState = { userContext: string | null }
+
+const createPersistence = (
+  userId:   string,
+  clientId: string,
+  llmRef:   ActorRef<LlmProviderMsg> | null,
+): PersistenceAdapter<ChatbotState> => {
   const path = `workspace/history/${userId}.json`
   return {
     load: async () => {
@@ -129,21 +129,12 @@ const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<Ll
       if (!await file.exists()) return undefined
       const saved = JSON.parse(await file.text()) as PersistedChatbotState
       return {
-        history:          [],
-        sessionUsage:     { promptTokens: 0, completionTokens: 0 },
-        userContext:      saved.userContext ?? null,
-        // Ephemeral fields — reset to defaults; restored via subscriptions on start
-        tools:            {},
-        llmRef,
-        activeClientId:   clientId,
-        requestId:        null,
-        turnMessages:     null,
-        spanHandles:      null,
-        pendingUsage:     { promptTokens: 0, completionTokens: 0 },
-        pending:          '',
-        pendingReasoning: '',
-        pendingBatch:     null,
-        toolLoopCount:    0,
+        loop:           { ...initialReactLoopSlice(), llmRef },
+        history:        [],
+        tools:          {},
+        sessionUsage:   { promptTokens: 0, completionTokens: 0 },
+        userContext:    saved.userContext ?? null,
+        activeClientId: clientId,
       }
     },
     save: async (state) => {
@@ -153,496 +144,268 @@ const createPersistence = (userId: string, clientId: string, llmRef: ActorRef<Ll
   }
 }
 
-// ─── Actor definition ───
+// ─── Invoke argument encoding ───
+//
+// The userMessage adapter encodes the LLM-form text and per-turn flags into
+// invoke.arguments (JSON). buildTurn parses them back when assembling the turn.
+type TurnArgs = {
+  llmText:     string  // text the LLM should see for this turn (may differ from history-form for cron)
+  isInjected?: boolean
+}
+
+// ─── Actor ───
 
 export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<ChatbotMsg, ChatbotState> => {
-  const { clientId, model, systemPrompt, historyWindowHours, toolFilter, maxToolLoops = 25, userId, llmRef: initialLlmRef = null } = options
+  const {
+    clientId,
+    model,
+    systemPrompt,
+    historyWindowHours,
+    toolFilter,
+    maxToolLoops = 25,
+    userId,
+    llmRef: initialLlmRef = null,
+  } = options
 
-  type Result = ActorResult<ChatbotMsg, ChatbotState>
+  type M   = ChatbotMsg
+  type S   = ChatbotState
+  type Ctx = ActorContext<M>
 
-  // ─── Shared handlers (used across all behaviors) ───
+  // The replyTo on synthesized invokes is unused (chatbot streams via OutboundMessageTopic).
+  const noopReplyTo = {
+    name: 'chatbot-noop-sink',
+    send: () => {},
+  } as unknown as ReactInvokeMsg['replyTo']
 
-  const toolRegistered = (state: ChatbotState, msg: Extract<ChatbotMsg, { type: '_toolRegistered' }>): { state: ChatbotState } => ({
-    state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } } },
+  const synthesizeInvoke = (
+    text:         string,
+    traceId:      string,
+    parentSpanId: string,
+    isInjected?:  boolean,
+  ): ReactInvokeMsg => ({
+    type:         'invoke',
+    toolName:     'chatbot-turn',
+    arguments:    JSON.stringify({ llmText: text, isInjected } satisfies TurnArgs),
+    clientId,
+    userId,
+    replyTo:      noopReplyTo,
+    traceId,
+    parentSpanId,
   })
 
-  const toolUnregistered = (state: ChatbotState, msg: Extract<ChatbotMsg, { type: '_toolUnregistered' }>): { state: ChatbotState } => {
-    const { [msg.name]: _, ...rest } = state.tools
-    return { state: { ...state, tools: rest } }
-  }
+  // ─── React-loop ─────────────────────────────────────────────────────────
 
-  const llmProviderUpdated = (state: ChatbotState, msg: Extract<ChatbotMsg, { type: '_llmProviderUpdated' }>): { state: ChatbotState } => ({
-    state: { ...state, llmRef: msg.ref },
-  })
+  const handlers = createReactLoop<S, M>({
+    role:         'reasoning',
+    spanName:     'chatbot',
+    logPrefix:    'chatbot',
+    model,
+    maxToolLoops,
+    tools:        (s) => s.tools,
+    spans:        'fromMessage',
 
-  // ─── _toolUpdate: inject background-tool completion + new LLM turn (idle only) ───
+    slice:    (s) => s.loop,
+    setSlice: (s, loop) => ({ ...s, loop }),
 
-  const injectBackgroundResult = (
-    state: ChatbotState,
-    msg: Extract<ChatbotMsg, { type: '_toolUpdate' }>,
-    context: import('../../system/types.ts').ActorContext<ChatbotMsg>,
-  ): Result => {
-    if (!state.llmRef) {
-      context.log.warn('chatbot: dropping _toolUpdate, no LLM ref', { toolName: msg.toolName, toolCallId: msg.toolCallId })
-      return { state }
-    }
-    const resultText = msg.reply.type === 'toolResult'
-      ? msg.reply.result
-      : `Tool error: ${msg.reply.error}`
-    const injection = `[Background tool result — ${msg.toolName} (toolCallId=${msg.toolCallId})]: ${resultText}`
+    buildTurn: (state, msg) => {
+      let parsed: TurnArgs
+      try { parsed = JSON.parse(msg.arguments) as TurnArgs }
+      catch { return { error: 'invalid invoke arguments' } }
 
-    const todayDateNote = `Today's date is ${new Date().toDateString()}.`
-    const fullSystemPrompt = [systemPrompt, todayDateNote, state.userContext, HISTORY_MARKERS_NOTE].filter(Boolean).join('\n\n---\n\n')
-    const traceId = crypto.randomUUID().replace(/-/g, '').slice(0, 32)
-    const requestSpan = context.trace.child(traceId, '0000000000000000', 'chatbot-bgresult', { toolName: msg.toolName, toolCallId: msg.toolCallId })
-    const llmSpan = context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
-    const requestId = crypto.randomUUID()
+      const sysPrompt = buildSystemPrompt(systemPrompt, state.userContext)
 
-    const apiMessages: ApiMessage[] = [
-      ...(fullSystemPrompt ? [{ role: 'system' as const, content: fullSystemPrompt }] : []),
-      ...state.history,
-      { role: 'user' as const, content: injection },
-    ]
-    const toolSchemas = [
-      ...Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool),
-    ]
-    const tools = toolSchemas.length > 0 ? toolSchemas : undefined
-
-    state.llmRef.send({
-      type: 'stream',
-      requestId,
-      model,
-      messages: apiMessages,
-      tools,
-      role: 'reasoning',
-      clientId,
-      replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
-    })
-
-    return {
-      state: {
-        ...state,
-        history: [...state.history, { role: 'user' as const, content: injection, timestamp: Date.now() }],
-        requestId,
-        turnMessages: apiMessages,
-        pending: '',
-        pendingReasoning: '',
-        pendingUsage: { promptTokens: 0, completionTokens: 0 },
-        spanHandles: { requestSpan, llmSpan, toolSpans: {} },
-        toolLoopCount: 0,
-        isInjected: true,
-      },
-      become: awaitingLlmHandler,
-    }
-  }
-
-  const stashToolUpdate = (state: ChatbotState): Result => ({ state, stash: true })
-
-  // ─── Forward declarations for circular references ───
-
-  let awaitingLlmHandler: MessageHandler<ChatbotMsg, ChatbotState>
-  let toolLoopHandler: MessageHandler<ChatbotMsg, ChatbotState>
-
-  // ─── Handler: idle — waiting for user input ───
-
-  const idleHandler: MessageHandler<ChatbotMsg, ChatbotState> = onMessage<ChatbotMsg, ChatbotState>({
-    userMessage: (state, message, context): Result => {
-      const { clientId: msgClientId, text, images, audio, pdfs, traceId, parentSpanId, isCron, isInjected } = message
-      const activeClientId = msgClientId
-      const todayDateNote = `Today's date is ${new Date().toDateString()}.`
-      const fullSystemPrompt = [systemPrompt, todayDateNote, state.userContext, HISTORY_MARKERS_NOTE].filter(Boolean).join('\n\n---\n\n')
-      const requestSpan = context.trace.child(traceId, parentSpanId, 'chatbot', { preview: text.slice(0, 80) })
-      const llmSpan = context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
-      const toolSchemas = [
-        ...Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool),
-      ]
-      const tools = toolSchemas.length > 0 ? toolSchemas : undefined
-      const requestId = crypto.randomUUID()
-
-      if (isCron) {
-        // Cron prompts are instructions to the LLM to initiate a message to the user.
-        // Inject as a system task — do NOT add to history as a user message, so the
-        // conversation reads naturally (assistant speaks first, user responds).
-        const apiMessages: ApiMessage[] = [
-          ...(fullSystemPrompt ? [{ role: 'system' as const, content: fullSystemPrompt }] : []),
-          ...state.history,
-          { role: 'user' as const, content: `[Internal Instruction — do not mention that this is scheduled] ${text}` },
-        ]
-
-        state.llmRef?.send({
-          type: 'stream', requestId, model, messages: apiMessages, tools,
-          role: 'reasoning', clientId,
-          replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
-        })
-
-        return {
-          state: {
-            ...state,
-            activeClientId,
-            history: [...state.history, { role: 'user' as const, content: `[Internal Instruction] ${text}`, timestamp: Date.now() }],
-            requestId,
-            turnMessages: apiMessages,
-            pending: '',
-            pendingReasoning: '',
-            pendingUsage: { promptTokens: 0, completionTokens: 0 },
-            spanHandles: { requestSpan, llmSpan, toolSpans: {} },
-            toolLoopCount: 0,
-            isInjected: true,
-          },
-          become: awaitingLlmHandler,
-        }
-      }
-
-      let userText = text
-      if (images && images.length > 0) {
-        const imageNote = images.length === 1
-          ? `[Image attached: "${images[0]}"]`
-          : `[Images attached: ${images.map(p => `"${p}"`).join(', ')}]`
-        userText = text ? `${text}\n\n${imageNote}` : imageNote
-      }
-      if (audio) {
-        const audioNote = `[Audio attached: "${audio}"]`
-        userText = userText ? `${userText}\n\n${audioNote}` : audioNote
-      }
-      if (pdfs && pdfs.length > 0) {
-        const pdfNote = pdfs.length === 1
-          ? `[PDF attached: "${pdfs[0]}"]`
-          : `[PDFs attached: ${pdfs.map(p => `"${p}"`).join(', ')}]`
-        userText = userText ? `${userText}\n\n${pdfNote}` : pdfNote
-      }
-
+      // history already contains the current user turn (appended by the shell).
+      // For the LLM-form, replace the last entry's content with parsed.llmText
+      // (handles cron variant: "[Internal Instruction — do not mention…]" vs
+      // history-form "[Internal Instruction]").
       const apiMessages: ApiMessage[] = [
-        ...(fullSystemPrompt ? [{ role: 'system' as const, content: fullSystemPrompt }] : []),
-        ...state.history,
-        { role: 'user', content: userText },
+        ...(sysPrompt ? [{ role: 'system' as const, content: sysPrompt }] : []),
+        ...state.history.slice(0, -1).map(toApiMessage),
+        { role: 'user' as const, content: parsed.llmText },
       ]
-
-      state.llmRef?.send({
-        type: 'stream',
-        requestId,
-        model,
-        messages: apiMessages,
-        tools,
-        role: 'reasoning',
-        clientId,
-        replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
-      })
-
-      return {
-        state: {
-          ...state,
-          activeClientId,
-          history: [...state.history, { role: 'user', content: userText, timestamp: Date.now() }],
-          requestId,
-          turnMessages: apiMessages,
-          pending: '',
-          pendingReasoning: '',
-          pendingUsage: { promptTokens: 0, completionTokens: 0 },
-          spanHandles: { requestSpan, llmSpan, toolSpans: {} },
-          toolLoopCount: 0,
-          isInjected: isInjected || false,
-        },
-        become: awaitingLlmHandler,
-      }
+      return { messages: apiMessages }
     },
 
-    _toolUpdate:         (state, msg, context): Result => injectBackgroundResult(state, msg, context),
-    _toolRegistered:     (state, msg): Result => toolRegistered(state, msg),
-    _toolUnregistered:   (state, msg): Result => toolUnregistered(state, msg),
-    _llmProviderUpdated: (state, msg): Result => llmProviderUpdated(state, msg),
-    _userContext:        (state, msg): Result => ({ state: { ...state, userContext: msg.summary } }),
-  })
+    onChunk: (state, text) => ({
+      state,
+      events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'chunk', text }) })],
+    }),
 
+    onReasoningChunk: (state, text) => ({
+      state,
+      events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'reasoningChunk', text }) })],
+    }),
 
-  // ─── Handler: awaitingLlm — LLM running, will return tool calls or text ───
+    interceptToolCalls: (state, calls) => ({
+      handled: false,
+      events:  [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'searching', tools: calls.map(c => c.name) }) })],
+    }),
 
-  awaitingLlmHandler = onMessage<ChatbotMsg, ChatbotState>({
-    llmToolCalls: (state, message, context): Result => {
-      const { requestId, calls, usage } = message
-      if (requestId !== state.requestId) return { state }
+    onToolResult: (state, result) => {
+      // Append assistant-tool-call shell on the first result of a batch (when
+      // pendingBatch.results is still empty), then the tool-result entry.
+      // Subsequent results in the same batch only append the tool-result.
+      const batch         = state.loop.turn.pendingBatch!
+      const isFirstResult = batch.results.length === 0
+      const content       = result.reply.type === 'toolResult' ? renderToolResultForLlm(result.reply.result) : `Tool error: ${result.reply.error}`
+      const toolEntry: ConversationMessage = {
+        role: 'tool', content, tool_call_id: result.toolCallId, timestamp: Date.now(),
+      }
+      const newHistory: ConversationMessage[] = isFirstResult
+        ? [...state.history, { role: 'assistant', content: null, tool_calls: batch.assistantToolCalls, timestamp: Date.now() }, toolEntry]
+        : [...state.history, toolEntry]
 
-      const handles = state.spanHandles
-      handles?.llmSpan?.done({ toolCalls: calls.map(c => c.name) })
-
-      const mergedPending: TokenUsage = usage
-        ? { promptTokens: state.pendingUsage.promptTokens + usage.promptTokens, completionTokens: state.pendingUsage.completionTokens + usage.completionTokens }
-        : state.pendingUsage
-
-      // Dispatch tools — all tools go through the standard invokeTool pipeline
-      const unknownCall = calls.find(c => !state.tools[c.name])
-      if (unknownCall) {
-        handles?.requestSpan.error('tool unavailable')
-        return {
-          state: { ...state, requestId: null, turnMessages: null, spanHandles: null, pendingUsage: { promptTokens: 0, completionTokens: 0 } },
-          events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool unavailable. Please try again.' }) })],
-          become: idleHandler,
-          unstashAll: true,
-        }
+      const payload     = result.reply.type === 'toolResult' ? result.reply.result : undefined
+      const events: ReturnType<typeof emit>[] = []
+      if (payload?.sources?.length) {
+        events.push(emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'sources', sources: payload.sources }) }))
+      }
+      if (payload?.attachments?.length) {
+        events.push(emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'attachments', attachments: payload.attachments }) }))
       }
 
-      const assistantToolCalls: ToolCall[] = calls.map(c => ({
-        id: c.id,
-        type: 'function',
-        function: { name: c.name, arguments: c.arguments },
-      }))
-
-      const batch: PendingBatch = {
-        remaining: calls.length,
-        results: [],
-        messagesAtCall: state.turnMessages!,
-        assistantToolCalls,
-      }
-
-      const newToolSpans: Record<string, SpanHandle> = {}
-      for (const call of calls) {
-        const entry = state.tools[call.name]!
-        const toolSpan = handles
-          ? context.trace.child(handles.requestSpan.traceId, handles.requestSpan.spanId, 'tool-invoke', { toolName: call.name })
-          : null
-        if (toolSpan) newToolSpans[call.id] = toolSpan
-
-        context.pipeToSelf(
-          invokeTool(
-            context,
-            entry.ref,
-            { toolName: call.name, arguments: call.arguments, clientId, userId },
-            {
-              onCompletion: (reply) => ({ type: '_toolUpdate' as const, toolName: call.name, toolCallId: call.id, reply }),
-              headers: toolSpan ? context.trace.injectHeaders(toolSpan) : undefined,
-            },
-          ),
-          (reply) => ({ type: '_toolResult' as const, toolName: call.name, toolCallId: call.id, reply }),
-          (error) => ({
-            type: '_toolResult' as const,
-            toolName: call.name,
-            toolCallId: call.id,
-            reply: { type: 'toolError' as const, error: String(error) },
-          }),
-        )
-      }
-
-      return {
-        state: {
-          ...state,
-          requestId: null,
-          pendingUsage: mergedPending,
-          pendingBatch: batch,
-          ...(handles ? { spanHandles: { ...handles, llmSpan: undefined, toolSpans: newToolSpans } } : {}),
-        },
-        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'searching', tools: calls.map(c => c.name) }) })],
-        become: toolLoopHandler,
-      }
+      return { state: { ...state, history: newHistory }, events }
     },
 
-    llmChunk: (state, message): Result => {
-      if (message.requestId !== state.requestId) return { state }
-      const { text } = message
-      return {
-        state: { ...state, pending: state.pending + text },
-        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'chunk', text }) })],
+    onComplete: (state, finalText, _ctx) => {
+      const turn = state.loop.turn
+      // Append assistant message to history (if any text), trim, fold usage into session.
+      const rawHistory: ConversationMessage[] = finalText
+        ? [...state.history, { role: 'assistant', content: finalText, timestamp: Date.now() }]
+        : state.history
+      const history = historyWindowHours ? trimHistory(rawHistory, historyWindowHours) : rawHistory
+
+      const sessionUsage: TokenUsage = {
+        promptTokens:     state.sessionUsage.promptTokens     + turn.pendingUsage.promptTokens,
+        completionTokens: state.sessionUsage.completionTokens + turn.pendingUsage.completionTokens,
       }
-    },
 
-    llmReasoningChunk: (state, message): Result => {
-      if (message.requestId !== state.requestId) return { state }
-      const { text } = message
-      return {
-        state: { ...state, pendingReasoning: state.pendingReasoning + text },
-        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'reasoningChunk', text }) })],
-      }
-    },
-
-    llmDone: (state, message): Result => {
-      const { requestId, usage } = message
-      if (requestId !== state.requestId) return { state }
-
-      const handles = state.spanHandles
-      handles?.llmSpan?.done()
-      handles?.requestSpan.done()
-
-      const accumulated = state.pendingUsage
-      const totalUsage: TokenUsage | null = usage
-        ? { promptTokens: accumulated.promptTokens + usage.promptTokens, completionTokens: accumulated.completionTokens + usage.completionTokens }
-        : (accumulated.promptTokens > 0 ? accumulated : null)
-
-      const prevSession = state.sessionUsage
-      const newSession: TokenUsage = totalUsage
-        ? { promptTokens: prevSession.promptTokens + totalUsage.promptTokens, completionTokens: prevSession.completionTokens + totalUsage.completionTokens }
-        : prevSession
-
-      const rawHistory: ConversationMessage[] = [...state.history, { role: 'assistant', content: state.pending, timestamp: Date.now() }]
-      const newHistory = historyWindowHours ? trimHistory(rawHistory, historyWindowHours) : rawHistory
-
-      const userMsg = state.turnMessages?.findLast(m => m.role === 'user')
+      // Recover the original user prompt from turnMessages (last user role) for telemetry.
+      const userMsg  = turn.turnMessages?.findLast(m => m.role === 'user')
       const userText = typeof userMsg?.content === 'string' ? userMsg.content : ''
 
       return {
-        state: {
-          ...state,
-          history: newHistory,
-          pending: '',
-          pendingReasoning: '',
-          requestId: null,
-          turnMessages: null,
-          spanHandles: null,
-          pendingUsage: { promptTokens: 0, completionTokens: 0 },
-          sessionUsage: newSession,
-          isInjected: undefined,
-        },
+        state: { ...state, history, sessionUsage, isInjected: undefined },
         events: [
-          emit(UserStreamTopic, { userId, userText, assistantText: state.pending, timestamp: Date.now(), injected: state.isInjected }),
+          emit(UserStreamTopic, { userId, userText, assistantText: finalText, timestamp: Date.now(), injected: state.isInjected }),
           emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) }),
         ],
-        become: idleHandler,
-        unstashAll: true,
       }
     },
 
-    llmError: (state, message, context): Result => {
-      const { requestId, error } = message
-      if (requestId !== state.requestId) return { state }
+    onLlmError: (state) => ({
+      state: { ...state, isInjected: undefined },
+      events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }) })],
+    }),
 
-      context.log.error('LLM stream failed', { clientId, error: String(error) })
-      state.spanHandles?.llmSpan?.error(error)
-      state.spanHandles?.requestSpan?.error(error)
-
+    onLoopLimit: (state, _finalText, ctx) => {
+      ctx.log.warn('chatbot: tool loop limit reached', { clientId: state.activeClientId })
       return {
-        state: { ...state, requestId: null, turnMessages: null, spanHandles: null, pending: '', pendingReasoning: '', pendingUsage: { promptTokens: 0, completionTokens: 0 }, isInjected: undefined },
-        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }) })],
-        become: idleHandler,
-        unstashAll: true,
+        state:  { ...state, isInjected: undefined },
+        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool loop limit reached. Please try again.' }) })],
       }
     },
 
-    _toolUpdate:         (state): Result => stashToolUpdate(state),
-    _toolRegistered:     (state, msg): Result => toolRegistered(state, msg),
-    _toolUnregistered:   (state, msg): Result => toolUnregistered(state, msg),
-    _llmProviderUpdated: (state, msg): Result => llmProviderUpdated(state, msg),
-    _userContext:        (state, msg): Result => ({ state: { ...state, userContext: msg.summary } }),
+    extraCases: {
+      idle: {
+        userMessage: (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> =>
+          handleUserMessage(state, msg, ctx),
+        _toolUpdate: (state: S, msg: Extract<M, { type: '_toolUpdate' }>, ctx: Ctx): ActorResult<M, S> =>
+          handleToolUpdate(state, msg, ctx),
+        _toolRegistered:   toolRegistered,
+        _toolUnregistered: toolUnregistered,
+        _userContext:      setUserContext,
+      },
+      awaitingLlm: {
+        _toolUpdate:       (state: S): ActorResult<M, S> => ({ state, stash: true }),
+        _toolRegistered:   toolRegistered,
+        _toolUnregistered: toolUnregistered,
+        _userContext:      setUserContext,
+      },
+      toolLoop: {
+        _toolUpdate:       (state: S): ActorResult<M, S> => ({ state, stash: true }),
+        _toolRegistered:   toolRegistered,
+        _toolUnregistered: toolUnregistered,
+        _userContext:      setUserContext,
+      },
+    },
   })
 
-  // ─── Handler: toolLoop — tools executing, accumulating results ───
+  // ─── Shared state-mutation handlers (used in all three states) ──────────
 
-  toolLoopHandler = onMessage<ChatbotMsg, ChatbotState>({
-    _toolResult: (state, message, context): Result => {
-      const { toolName, toolCallId, reply } = message
-      const batch = state.pendingBatch!
-      const handles = state.spanHandles
+  function toolRegistered (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> {
+    return { state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } } } }
+  }
+  function toolUnregistered (state: S, msg: Extract<M, { type: '_toolUnregistered' }>): ActorResult<M, S> {
+    const { [msg.name]: _, ...rest } = state.tools
+    return { state: { ...state, tools: rest } }
+  }
+  function setUserContext (state: S, msg: Extract<M, { type: '_userContext' }>): ActorResult<M, S> {
+    return { state: { ...state, userContext: msg.summary } }
+  }
 
-      const toolSpan = handles?.toolSpans[toolCallId]
-      if (toolSpan) {
-        reply.type === 'toolResult' ? toolSpan.done() : toolSpan.error(reply.error)
-      }
+  // ─── Adapter: userMessage → invoke ──────────────────────────────────────
 
-      const content = reply.type === 'toolResult' ? reply.result : `Tool error: ${reply.error}`
-      const sources = reply.type === 'toolResult' ? reply.sources : undefined
-      const updatedResults = [...batch.results, { toolCallId, toolName, content }]
-      const remaining = batch.remaining - 1
+  function handleUserMessage (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> {
+    const { clientId: msgClientId, text, images, audio, pdfs, traceId, parentSpanId, isCron, isInjected } = msg
 
-      const sourceEvents = sources
-        ? [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'sources', sources }) })]
-        : []
+    // Cron: history-form differs from LLM-form. Otherwise both are identical.
+    const userText = isCron
+      ? `[Internal Instruction] ${text}`
+      : assembleUserText(text, images, audio, pdfs)
+    const llmText  = isCron
+      ? `[Internal Instruction — do not mention that this is scheduled] ${text}`
+      : userText
 
-      if (remaining > 0) {
-        return {
-          state: { ...state, pendingBatch: { ...batch, remaining, results: updatedResults } },
-          events: sourceEvents,
-        }
-      }
+    const stateNext: S = {
+      ...state,
+      activeClientId: msgClientId,
+      history:        [...state.history, { role: 'user', content: userText, timestamp: Date.now() }],
+      isInjected:     isInjected || isCron || false,
+    }
 
-      // All tools done — check loop limit before looping back
-      const nextLoopCount = state.toolLoopCount + 1
+    return handlers.idle(stateNext, synthesizeInvoke(llmText, traceId, parentSpanId, stateNext.isInjected) as unknown as M, ctx)
+  }
 
-      const toolCallHistoryMsgs: Array<ConversationMessage> = [
-        { role: 'assistant', content: null, tool_calls: batch.assistantToolCalls, timestamp: Date.now() },
-        ...updatedResults.map(r => ({ role: 'tool' as const, content: r.content, tool_call_id: r.toolCallId, timestamp: Date.now() })),
-      ]
+  // ─── Adapter: _toolUpdate (idle) → invoke ───────────────────────────────
 
-      if (nextLoopCount >= maxToolLoops) {
-        context.log.warn('tool loop limit reached', { clientId, limit: maxToolLoops })
-        handles?.requestSpan.error('tool loop limit reached')
-        return {
-          state: {
-            ...state,
-            history: [...state.history, ...toolCallHistoryMsgs],
-            requestId: null,
-            turnMessages: null,
-            spanHandles: null,
-            pendingBatch: null,
-            pending: '',
-            pendingReasoning: '',
-            pendingUsage: { promptTokens: 0, completionTokens: 0 },
-            toolLoopCount: 0,
-          },
-          events: [
-            ...sourceEvents,
-            emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool loop limit reached. Please try again.' }) }),
-          ],
-          become: idleHandler,
-          unstashAll: true,
-        }
-      }
+  function handleToolUpdate (state: S, msg: Extract<M, { type: '_toolUpdate' }>, ctx: Ctx): ActorResult<M, S> {
+    if (!state.loop.llmRef) {
+      ctx.log.warn('chatbot: dropping _toolUpdate, no LLM ref', { toolName: msg.toolName, toolCallId: msg.toolCallId })
+      return { state }
+    }
+    const resultText = msg.reply.type === 'toolResult' ? renderToolResultForLlm(msg.reply.result) : `Tool error: ${msg.reply.error}`
+    const injection  = `[Background tool result — ${msg.toolName} (toolCallId=${msg.toolCallId})]: ${resultText}`
 
-      // Build next LLM request, loop back to awaitingLlm
-      const toolResultMsgs: ApiMessage[] = updatedResults.map(r => ({
-        role: 'tool', content: r.content, tool_call_id: r.toolCallId,
-      }))
-      const messagesWithResults: ApiMessage[] = [
-        ...batch.messagesAtCall,
-        { role: 'assistant', content: null, tool_calls: batch.assistantToolCalls },
-        ...toolResultMsgs,
-      ]
+    // No upstream traceId for background completions — synthesize a fresh one.
+    const traceId      = crypto.randomUUID().replace(/-/g, '').slice(0, 32)
+    const parentSpanId = '0000000000000000'
 
-      const llmSpan = handles
-        ? context.trace.child(handles.requestSpan.traceId, handles.requestSpan.spanId, 'llm-response', { model })
-        : null
+    const stateNext: S = {
+      ...state,
+      history:    [...state.history, { role: 'user', content: injection, timestamp: Date.now() }],
+      isInjected: true,
+    }
 
-      const requestId = crypto.randomUUID()
-      const toolSchemas = [
-        ...Object.values(state.tools).map((e: ToolEntry) => e.schema as Tool),
-      ]
-      const tools = toolSchemas.length > 0 ? toolSchemas : undefined
+    return handlers.idle(stateNext, synthesizeInvoke(injection, traceId, parentSpanId, true) as unknown as M, ctx)
+  }
 
-      state.llmRef?.send({
-        type: 'stream',
-        requestId,
-        model,
-        messages: messagesWithResults,
-        tools,
-        role: 'reasoning',
-        clientId,
-        replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
-      })
+  // ─── ApiMessage projection ──────────────────────────────────────────────
 
-      return {
-        state: {
-          ...state,
-          requestId,
-          turnMessages: messagesWithResults,
-          history: [...state.history, ...toolCallHistoryMsgs],
-          pendingBatch: null,
-          pending: '',
-          toolLoopCount: nextLoopCount,
-          ...(handles ? { spanHandles: { ...handles, llmSpan: llmSpan ?? undefined, toolSpans: {} } } : {}),
-        },
-        events: sourceEvents,
-        become: awaitingLlmHandler,
-      }
-    },
-
-    _toolUpdate:         (state): Result => stashToolUpdate(state),
-    _toolRegistered:     (state, msg): Result => toolRegistered(state, msg),
-    _toolUnregistered:   (state, msg): Result => toolUnregistered(state, msg),
-    _llmProviderUpdated: (state, msg): Result => llmProviderUpdated(state, msg),
-    _userContext:        (state, msg): Result => ({ state: { ...state, userContext: msg.summary } }),
-  })
+  function toApiMessage (m: ConversationMessage): ApiMessage {
+    if (m.role === 'user')      return { role: 'user',      content: m.content }
+    if (m.role === 'assistant') return m.tool_calls
+      ? { role: 'assistant', content: m.content, tool_calls: m.tool_calls }
+      : { role: 'assistant', content: m.content ?? '' }
+    return { role: 'tool', content: m.content, tool_call_id: m.tool_call_id }
+  }
 
   return {
     persistence: createPersistence(userId, clientId, initialLlmRef),
 
     lifecycle: onLifecycle({
-      start: (state, context) => {
-        context.subscribe(ToolRegistrationTopic, (event) => {
+      start: (state, ctx) => {
+        ctx.subscribe(ToolRegistrationTopic, (event) => {
           if (!applyToolFilter(event.name, toolFilter)) return null
           if ('schema' in event) {
             return {
@@ -656,11 +419,11 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           return { type: '_toolUnregistered' as const, name: event.name }
         })
 
-        context.subscribe(LlmProviderTopic, (event) =>
-          ({ type: '_llmProviderUpdated' as const, ref: event.ref }),
+        ctx.subscribe(LlmProviderTopic, (event) =>
+          ({ type: '_llmProvider' as const, ref: event.ref }),
         )
 
-        context.subscribe(UserContextTopic, (event) => {
+        ctx.subscribe(UserContextTopic, (event) => {
           if (event.userId !== userId) return null
           return { type: '_userContext' as const, summary: event.summary }
         })
@@ -669,7 +432,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       },
     }),
 
-    handler: idleHandler,
+    handler: handlers.idle,
 
     supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }

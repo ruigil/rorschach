@@ -1,5 +1,6 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
+import { initialReactLoopSlice } from '../../system/react-loop.ts'
 import { ClientConnectTopic, ClientDisconnectTopic, InboundMessageTopic, CronTriggerTopic } from '../../types/events.ts'
 import { createChatbotActor } from './chatbot.ts'
 import type { ChatbotState } from './chatbot.ts'
@@ -43,20 +44,12 @@ export type SessionManagerOptions = {
 // ─── Initial chatbot state ───
 
 const initialChatbotState = (llmRef: ActorRef<LlmProviderMsg>): ChatbotState => ({
-  history:          [],
-  tools:            {},
-  sessionUsage:     { promptTokens: 0, completionTokens: 0 },
-  llmRef,
-  userContext:      null,
-  requestId:        null,
-  turnMessages:     null,
-  spanHandles:      null,
-  pendingUsage:     { promptTokens: 0, completionTokens: 0 },
-  pending:          '',
-  pendingReasoning: '',
-  pendingBatch:     null,
-  toolLoopCount:    0,
-  activeClientId:   '',
+  loop:           { ...initialReactLoopSlice(), llmRef },
+  history:        [],
+  tools:          {},
+  sessionUsage:   { promptTokens: 0, completionTokens: 0 },
+  userContext:    null,
+  activeClientId: '',
 })
 
 // ─── Actor definition ───

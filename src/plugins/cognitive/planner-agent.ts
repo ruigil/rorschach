@@ -1,6 +1,6 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import type { ToolCollection, ToolFilter, ToolMsg } from '../../types/tools.ts'
+import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
@@ -72,16 +72,16 @@ export const createPlannerSupervisorActor = (
 
         ctx.subscribe(ToolRegistrationTopic, (event) => {
           if (!applyToolFilter(event.name, toolFilter)) return null
-          if (event.ref === null) {
-            const { [event.name]: _, ...tools } = state.tools
-            state.tools = tools
-            return null
+          if ('schema' in event) {
+            return {
+              type:             '_toolRegistered' as const,
+              name:             event.name,
+              schema:           event.schema,
+              ref:              event.ref,
+              mayBeLongRunning: event.mayBeLongRunning,
+            }
           }
-          state.tools = {
-            ...state.tools,
-            [event.name]: { schema: event.schema, ref: event.ref, mayBeLongRunning: event.mayBeLongRunning },
-          }
-          return null
+          return { type: '_toolUnregistered' as const, name: event.name }
         })
 
         ctx.log.info('planner-supervisor: started', { model, plansDir, maxToolLoops })
@@ -90,6 +90,18 @@ export const createPlannerSupervisorActor = (
     }),
 
     handler: onMessage<PlannerSupervisorMsg, PlannerSupervisorState>({
+      _toolRegistered: (state, msg) => ({
+        state: {
+          ...state,
+          tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } },
+        },
+      }),
+
+      _toolUnregistered: (state, msg) => {
+        const { [msg.name]: _, ...tools } = state.tools
+        return { state: { ...state, tools } }
+      },
+
       invoke: (state, msg, ctx) => {
         if (state.llmRef === null) {
           msg.replyTo.send({ type: 'toolError', error: 'Planner not ready' })
@@ -104,11 +116,17 @@ export const createPlannerSupervisorActor = (
         const clientId = msg.clientId ?? 'unknown'
         const nextSeq  = state.workerIdSeq + 1
 
+        // Propagate W3C trace context from the invoke headers to the worker.
+        // Each worker turn becomes a child span of this parent.
+        const parent = ctx.trace.fromHeaders()
+
         const workerOptions: PlannerSessionWorkerOptions = {
           model, plansDir, maxToolLoops,
-          tools:    state.tools,
-          llmRef:   state.llmRef,
+          tools:        state.tools,
+          llmRef:       state.llmRef,
           clientId, goal, jobId,
+          traceId:      parent?.traceId,
+          parentSpanId: parent?.spanId,
         }
 
         const worker = ctx.spawn(
@@ -141,5 +159,7 @@ export const createPlannerSupervisorActor = (
       _llmProvider: (state, msg) =>
         ({ state: { ...state, llmRef: msg.ref } }),
     }),
+
+    supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }
 }

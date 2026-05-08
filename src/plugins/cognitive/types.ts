@@ -1,5 +1,6 @@
 import type { ActorIdentity, ActorRef } from '../../system/types.ts'
 import { createTopic } from '../../system/types.ts'
+import type { ReactInvokeMsg } from '../../system/react-loop.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 import type { ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolSchema, ToolFilter } from '../../types/tools.ts'
 
@@ -7,12 +8,13 @@ import type { ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolSchema, ToolFilter } f
 
 export type ChatbotMsg =
   | { type: 'userMessage'; clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string; isCron?: boolean; isInjected?: boolean }
+  | ReactInvokeMsg
   | LlmProviderReply
   | { type: '_toolRegistered';      name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered';    name: string }
   | { type: '_toolResult';          toolName: string; toolCallId: string; reply: ToolFinalReply }
   | { type: '_toolUpdate';          toolName: string; toolCallId: string; reply: ToolFinalReply }
-  | { type: '_llmProviderUpdated';  ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_llmProvider';         ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_userContext';         summary: string }
 
 // ─── Planner configuration (used to configure per-session planner instances) ───
@@ -62,13 +64,16 @@ export const PlannerActiveTopic = createTopic<PlannerSessionEvent>('planner.sess
 
 export type PlannerSupervisorMsg =
   | ToolInvokeMsg
-  | { type: '_workerDone';  worker: ActorIdentity }
-  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_workerDone';      worker: ActorIdentity }
+  | { type: '_llmProvider';     ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
+  | { type: '_toolUnregistered'; name: string }
 
 // Worker: one per active planning session, owns the conversational state.
 
 export type PlannerSessionWorkerMsg =
   | PlannerInputMsg
+  | ReactInvokeMsg
   | LlmProviderReply
   | { type: '_toolResult';     toolCallId: string; toolName: string; reply: ToolFinalReply }
   | { type: '_planWriteDone';  filepath: string }
