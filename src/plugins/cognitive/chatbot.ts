@@ -194,6 +194,29 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     parentSpanId,
   })
 
+  // ─── Shared state-mutation handlers (used in all three states) ──────────
+
+  const toolRegistered = (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> => {
+    return { state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } } } }
+  }
+  const toolUnregistered = (state: S, msg: Extract<M, { type: '_toolUnregistered' }>): ActorResult<M, S> => {
+    const { [msg.name]: _, ...rest } = state.tools
+    return { state: { ...state, tools: rest } }
+  }
+  const setUserContext = (state: S, msg: Extract<M, { type: '_userContext' }>): ActorResult<M, S> => {
+    return { state: { ...state, userContext: msg.summary } }
+  }
+
+  // ─── ApiMessage projection ──────────────────────────────────────────────
+
+  const toApiMessage = (m: ConversationMessage): ApiMessage => {
+    if (m.role === 'user')      return { role: 'user',      content: m.content }
+    if (m.role === 'assistant') return m.tool_calls
+      ? { role: 'assistant', content: m.content, tool_calls: m.tool_calls }
+      : { role: 'assistant', content: m.content ?? '' }
+    return { role: 'tool', content: m.content, tool_call_id: m.tool_call_id }
+  }
+
   // ─── React-loop ─────────────────────────────────────────────────────────
 
   const handlers = createReactLoop<S, M, ChatbotInvokeArgs>({
@@ -332,22 +355,9 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     },
   })
 
-  // ─── Shared state-mutation handlers (used in all three states) ──────────
-
-  function toolRegistered (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> {
-    return { state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } } } }
-  }
-  function toolUnregistered (state: S, msg: Extract<M, { type: '_toolUnregistered' }>): ActorResult<M, S> {
-    const { [msg.name]: _, ...rest } = state.tools
-    return { state: { ...state, tools: rest } }
-  }
-  function setUserContext (state: S, msg: Extract<M, { type: '_userContext' }>): ActorResult<M, S> {
-    return { state: { ...state, userContext: msg.summary } }
-  }
-
   // ─── Adapter: userMessage → invoke ──────────────────────────────────────
 
-  function handleUserMessage (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> {
+  const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
     const { clientId: msgClientId, text, images, audio, pdfs, traceId, parentSpanId, isCron, isInjected } = msg
 
     // Cron: history-form differs from LLM-form. Otherwise both are identical.
@@ -370,7 +380,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
   // ─── Adapter: _toolUpdate (idle) → invoke ───────────────────────────────
 
-  function handleToolUpdate (state: S, msg: Extract<M, { type: '_toolUpdate' }>, ctx: Ctx): ActorResult<M, S> {
+  const handleToolUpdate = (state: S, msg: Extract<M, { type: '_toolUpdate' }>, ctx: Ctx): ActorResult<M, S> => {
     if (!state.loop.llmRef) {
       ctx.log.warn('chatbot: dropping _toolUpdate, no LLM ref', { toolName: msg.toolName, toolCallId: msg.toolCallId })
       return { state }
@@ -389,16 +399,6 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     }
 
     return handlers.idle(stateNext, synthesizeInvoke(injection, traceId, parentSpanId, true) as unknown as M, ctx)
-  }
-
-  // ─── ApiMessage projection ──────────────────────────────────────────────
-
-  function toApiMessage (m: ConversationMessage): ApiMessage {
-    if (m.role === 'user')      return { role: 'user',      content: m.content }
-    if (m.role === 'assistant') return m.tool_calls
-      ? { role: 'assistant', content: m.content, tool_calls: m.tool_calls }
-      : { role: 'assistant', content: m.content ?? '' }
-    return { role: 'tool', content: m.content, tool_call_id: m.tool_call_id }
   }
 
   return {
