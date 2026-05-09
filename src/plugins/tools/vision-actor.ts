@@ -69,7 +69,7 @@ type AnalysisPending = {
 
 type GenerationPending = {
   kind: 'generation'
-  accumulatedText: string
+  prompt: string
   accumulatedImage: string
   replyTo: ActorRef<ToolReply>
   clientId?: string
@@ -147,7 +147,7 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
               ...state,
               pending: {
                 ...state.pending,
-                [requestId]: { kind: 'generation', accumulatedText: '', accumulatedImage: '', replyTo, clientId },
+                [requestId]: { kind: 'generation', prompt, accumulatedImage: '', replyTo, clientId },
               },
             },
           }
@@ -216,13 +216,13 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
         const { [message.requestId]: req, ...rest } = state.pending
         if (!req || req.kind !== 'generation') return { state }
         context.log.info('vision: image saved', { requestId: message.requestId, publicUrl: message.publicUrl })
-        const rawDescription = (req.accumulatedText || 'Image generated successfully.')
-          .replace(/generated_image_url_placeholder/g, message.publicUrl)
+        const snippet = req.prompt.length > 300 ? `${req.prompt.slice(0, 300)}…` : req.prompt
+        const text = `Generated an image from prompt: "${snippet}" and delivered it to the user as an attachment.`
         req.replyTo.send({
           type: 'toolResult',
           result: {
-            text: rawDescription,
-            attachments: [{ kind: 'image', url: message.publicUrl, alt: rawDescription.slice(0, 200) }],
+            text,
+            attachments: [{ kind: 'image', url: message.publicUrl, alt: snippet }],
           },
         })
         return { state: { ...state, pending: rest } }
@@ -238,20 +238,11 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
 
       llmChunk: (state, message) => {
         const req = state.pending[message.requestId]
-        if (!req) return { state }
-        if (req.kind === 'analysis') {
-          return {
-            state: {
-              ...state,
-              pending: { ...state.pending, [message.requestId]: { ...req, accumulated: req.accumulated + message.text } },
-            },
-          }
-        }
-        // generation — accumulate description text
+        if (!req || req.kind !== 'analysis') return { state }
         return {
           state: {
             ...state,
-            pending: { ...state.pending, [message.requestId]: { ...req, accumulatedText: req.accumulatedText + message.text } },
+            pending: { ...state.pending, [message.requestId]: { ...req, accumulated: req.accumulated + message.text } },
           },
         }
       },
