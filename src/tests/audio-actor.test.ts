@@ -28,7 +28,8 @@ describe('audio actor', () => {
 
     const audioRef = system.spawn('audio', createAudioActor({
       llmRef,
-      model: 'test-model',
+      ttsModel: 'test-tts-model',
+      sttModel: 'test-stt-model',
       voice: 'alloy'
     }), { pending: {} })
 
@@ -48,7 +49,8 @@ describe('audio actor', () => {
 
     expect(reply.type).toBe('toolResult')
     if (reply.type === 'toolResult') {
-      expect(reply.result.text).toContain('Audio generated')
+      expect(reply.result.text).toContain('Generated speech audio')
+      expect(reply.result.text).toContain('hello world')
       const audioAttachment = reply.result.attachments?.find(a => a.kind === 'audio')
       expect(audioAttachment?.url).toContain('generated/')
 
@@ -94,7 +96,8 @@ describe('audio actor', () => {
 
     const audioRef = system.spawn('audio', createAudioActor({
       llmRef,
-      model: 'test-model',
+      ttsModel: 'test-tts-model',
+      sttModel: 'test-stt-model',
       voice: 'alloy'
     }), { pending: {} })
 

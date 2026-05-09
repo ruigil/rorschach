@@ -56,7 +56,7 @@ export type AudioActorMsg =
   | AudioProviderReply
   | { type: '_audioLoaded';    requestId: string; data: string; format: string; replyTo: ActorRef<ToolReply> }
   | { type: '_audioLoadError'; requestId: string; error: string; replyTo: ActorRef<ToolReply> }
-  | { type: '_audioSaved';     requestId: string; filePath: string; publicUrl: string; replyTo: ActorRef<ToolReply> }
+  | { type: '_audioSaved';     requestId: string; filePath: string; publicUrl: string; spokenText: string; voice: string; replyTo: ActorRef<ToolReply> }
   | { type: '_audioSaveError'; requestId: string; error: string; replyTo: ActorRef<ToolReply> }
 
 // ─── State ───
@@ -71,6 +71,8 @@ type TranscriptionPending = {
 type TtsPending = {
   kind: 'tts'
   accumulatedPcm: Buffer[]
+  spokenText: string
+  voice: string
   replyTo: ActorRef<ToolReply>
   clientId?: string
 }
@@ -83,7 +85,8 @@ export type AudioState = {
 
 export type AudioActorOptions = {
   llmRef: ActorRef<LlmProviderMsg>
-  model: string
+  ttsModel: string
+  sttModel: string
   voice: string
   systemPrompt?: string
 }
@@ -136,7 +139,7 @@ const saveAudio = async (accumulatedPcm: Buffer[]): Promise<{ filePath: string; 
 // ─── Actor definition ───
 
 export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActorMsg, AudioState> => {
-  const { llmRef, model, voice, systemPrompt = DEFAULT_TTS_SYSTEM_PROMPT } = options
+  const { llmRef, ttsModel, sttModel, voice, systemPrompt = DEFAULT_TTS_SYSTEM_PROMPT } = options
 
   return {
     handler: onMessage<AudioActorMsg, AudioState>({
@@ -167,7 +170,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
           llmRef.send({
             type: 'streamAudio',
             requestId,
-            model,
+            model: ttsModel,
             messages,
             voice: ttsVoice,
             role: 'audio',
@@ -177,7 +180,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
           return {
             state: {
               ...state,
-              pending: { ...state.pending, [requestId]: { kind: 'tts', accumulatedPcm: [], replyTo, clientId } },
+              pending: { ...state.pending, [requestId]: { kind: 'tts', accumulatedPcm: [], spokenText: text, voice: ttsVoice, replyTo, clientId } },
             },
           }
         }
@@ -218,7 +221,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
         llmRef.send({
           type: 'stream',
           requestId,
-          model,
+          model: sttModel,
           messages: [
             { role: 'user', content: [
               { type: 'text', text: "Reply with: 'The User said: \"<what the user said>\"'. Nothing Else." },
@@ -282,7 +285,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
         context.log.info('audio: TTS complete, saving audio', { requestId: message.requestId })
         context.pipeToSelf(
           saveAudio(req.accumulatedPcm),
-          (r): AudioActorMsg => ({ type: '_audioSaved',     requestId: message.requestId, filePath: r.filePath, publicUrl: r.publicUrl, replyTo: req.replyTo }),
+          (r): AudioActorMsg => ({ type: '_audioSaved',     requestId: message.requestId, filePath: r.filePath, publicUrl: r.publicUrl, spokenText: req.spokenText, voice: req.voice, replyTo: req.replyTo }),
           (e): AudioActorMsg => ({ type: '_audioSaveError', requestId: message.requestId, error: String(e), replyTo: req.replyTo }),
         )
         return { state: { ...state, pending: rest } }
@@ -297,9 +300,11 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
       },
 
       _audioSaved: (state, message, context) => {
-        const { publicUrl, replyTo } = message
+        const { publicUrl, spokenText, voice, replyTo } = message
         context.log.info('audio: audio saved', { requestId: message.requestId, publicUrl })
-        replyTo.send({ type: 'toolResult', result: { text: 'Audio generated.', attachments: [{ kind: 'audio', url: publicUrl }] } })
+        const snippet = spokenText.length > 300 ? `${spokenText.slice(0, 300)}…` : spokenText
+        const text = `Generated speech audio (voice: ${voice}) and delivered it to the user as an attachment. Spoken text: "${snippet}"`
+        replyTo.send({ type: 'toolResult', result: { text, attachments: [{ kind: 'audio', url: publicUrl }] } })
         return { state }
       },
 

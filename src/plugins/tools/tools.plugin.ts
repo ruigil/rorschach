@@ -23,7 +23,8 @@ type VisionActorConfig = {
 }
 
 type AudioActorConfig = {
-  model: string
+  ttsModel: string
+  sttModel: string
   voice?: string
 }
 
@@ -266,7 +267,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
 
       let audioRef: ActorRef<ToolMsg> | null = null
       if (state.llmRef && newAudioConfig) {
-        const ref = ctx.spawn(`audio-actor-${audioGen}`, createAudioActor({ llmRef: state.llmRef, model: newAudioConfig.model, voice: newAudioConfig.voice ?? 'alloy' }), { pending: {} } as AudioState)
+        const ref = ctx.spawn(`audio-actor-${audioGen}`, createAudioActor({ llmRef: state.llmRef, ttsModel: newAudioConfig.ttsModel, sttModel: newAudioConfig.sttModel, voice: newAudioConfig.voice ?? 'alloy' }), { pending: {} } as AudioState)
         const audioRefTyped = ref as unknown as ActorRef<ToolMsg>
         ctx.publishRetained(ToolRegistrationTopic, TRANSCRIBE_AUDIO_TOOL_NAME, { name: TRANSCRIBE_AUDIO_TOOL_NAME, schema: TRANSCRIBE_AUDIO_SCHEMA, ref: audioRefTyped })
         ctx.publishRetained(ToolRegistrationTopic, TEXT_TO_SPEECH_TOOL_NAME,   { name: TEXT_TO_SPEECH_TOOL_NAME,   schema: TEXT_TO_SPEECH_SCHEMA,   ref: audioRefTyped })
@@ -337,7 +338,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       let audioRef: ActorRef<ToolMsg> | null = null
 
       if (msg.ref && state.audio.config) {
-        const ref = ctx.spawn(`audio-actor-${audioGen}`, createAudioActor({ llmRef: msg.ref, model: state.audio.config.model, voice: state.audio.config.voice ?? 'alloy' }), { pending: {} } as AudioState)
+        const ref = ctx.spawn(`audio-actor-${audioGen}`, createAudioActor({ llmRef: msg.ref, ttsModel: state.audio.config.ttsModel, sttModel: state.audio.config.sttModel, voice: state.audio.config.voice ?? 'alloy' }), { pending: {} } as AudioState)
         const audioRefTyped = ref as unknown as ActorRef<ToolMsg>
         ctx.publishRetained(ToolRegistrationTopic, TRANSCRIBE_AUDIO_TOOL_NAME, { name: TRANSCRIBE_AUDIO_TOOL_NAME, schema: TRANSCRIBE_AUDIO_SCHEMA, ref: audioRefTyped })
         ctx.publishRetained(ToolRegistrationTopic, TEXT_TO_SPEECH_TOOL_NAME,   { name: TEXT_TO_SPEECH_TOOL_NAME,   schema: TEXT_TO_SPEECH_SCHEMA,   ref: audioRefTyped })
