@@ -37,7 +37,8 @@
         "model": "google/gemini-3-pro-image-preview"
       },
       "audioActor": {
-        "model": "openai/gpt-audio",
+        "ttsModel": "openai/gpt-audio",
+        "sttModel": "openai/gpt-audio",
         "voice": "nova"
       },
       "videoActor": {
@@ -59,7 +60,7 @@
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "model": "google/gemini-3.1-flash-lite-preview",
+        "model": "google/gemini-3.1-flash-lite",
         "historyWindowHours": 4,
         "toolFilter": {
           "deny": [
@@ -90,21 +91,19 @@
       "system": {
         "model": "moonshotai/kimi-k2.6",
         "consolidationIntervalMs": 3600000,
-        "contextIntervalMs": 60000,
-        "reflectionIntervalMs": 604800000
+        "contextIntervalMs": 60000
       }
     },
     "notebook": {
       "notebookDir": "workspace/notebook",
       "agentModel": "minimax/minimax-m2.7",
-      "maxToolLoops": 10,
-      "consolidationIntervalMs": 604800000
+      "maxToolLoops": 10
     },
     "googleapis": {
       "clientId": "${GOOGLE_CLIENT_ID}",
       "clientSecret": "${GOOGLE_CLIENT_SECRET}",
       "baseUrl": "https://rorschach.bot",
-      "agentModel": "google/gemini-3-flash-preview",
+      "agentModel": "google/gemini-3.1-flash-lite",
       "maxToolLoops": 10
     },
     "observability": {

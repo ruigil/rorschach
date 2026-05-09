@@ -24,10 +24,8 @@ const configDefaults = {
   kgraphEmbeddingDimensions:       1536,
   memoryModel:                     '',
   memoryConsolidationIntervalMs:   30000,
-  memoryReflectionIntervalMs:      604800000,
   notebookDir:                     './workspace/notebook',
   notebookAgentModel:              '',
-  notebookConsolidationIntervalMs: 604800000,
   notebookMaxToolLoops:            10,
   googleApisAgentModel:            '',
   googleApisMaxToolLoops:          10,
@@ -63,10 +61,8 @@ export function applyToForm(cfg) {
   configForm.memoryModel.value                     = cfg.memoryModel ?? ''
   configForm.memoryConsolidationIntervalMs.value   = cfg.memoryConsolidationIntervalMs ?? 30000
   configForm.memoryContextIntervalMs.value         = cfg.memoryContextIntervalMs ?? 60000
-  configForm.memoryReflectionIntervalMs.value      = cfg.memoryReflectionIntervalMs ?? 604800000
   configForm.notebookDir.value                     = cfg.notebookDir ?? './workspace/notebook'
   configForm.notebookAgentModel.value              = cfg.notebookAgentModel ?? ''
-  configForm.notebookConsolidationIntervalMs.value = cfg.notebookConsolidationIntervalMs ?? 604800000
   configForm.notebookMaxToolLoops.value            = cfg.notebookMaxToolLoops ?? 10
   configForm.googleApisAgentModel.value            = cfg.googleApisAgentModel ?? ''
   configForm.googleApisMaxToolLoops.value          = cfg.googleApisMaxToolLoops ?? 10
@@ -95,10 +91,8 @@ function readFromForm() {
     kgraphEmbeddingDimensions:       Number(configForm.kgraphEmbeddingDimensions.value),
     memoryModel:                     configForm.memoryModel.value,
     memoryConsolidationIntervalMs:   Number(configForm.memoryConsolidationIntervalMs.value),
-    memoryReflectionIntervalMs:      Number(configForm.memoryReflectionIntervalMs.value),
     notebookDir:                     configForm.notebookDir.value.trim(),
     notebookAgentModel:              configForm.notebookAgentModel.value,
-    notebookConsolidationIntervalMs: Number(configForm.notebookConsolidationIntervalMs.value),
     notebookMaxToolLoops:            Number(configForm.notebookMaxToolLoops.value),
     googleApisAgentModel:            configForm.googleApisAgentModel.value,
     googleApisMaxToolLoops:          Number(configForm.googleApisMaxToolLoops.value),

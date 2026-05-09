@@ -43,7 +43,6 @@ const buildConfigSnapshot = (c: Record<string, unknown>): Record<string, unknown
     memoryModel:                   mem.system?.model                       ?? '',
     memoryConsolidationIntervalMs: mem.system?.consolidationIntervalMs     ?? 30000,
     memoryContextIntervalMs:       mem.system?.contextIntervalMs           ?? 60000,
-    memoryReflectionIntervalMs:    mem.system?.reflectionIntervalMs        ?? 604800000,
     logPath:                       obs.jsonlLogger?.filePath               ?? './logs/app.jsonl',
     minLevel:                      obs.jsonlLogger?.minLevel               ?? 'debug',
     flushIntervalMs:               obs.jsonlLogger?.flushIntervalMs        ?? 3000,
@@ -51,7 +50,6 @@ const buildConfigSnapshot = (c: Record<string, unknown>): Record<string, unknown
     metricsEnabled:                obs.metrics !== undefined,
     notebookDir:                   nb.notebookDir                          ?? './workspace/notebook',
     notebookAgentModel:            nb.agentModel                           ?? '',
-    notebookConsolidationIntervalMs: nb.consolidationIntervalMs            ?? 604800000,
     notebookMaxToolLoops:          nb.maxToolLoops                         ?? 10,
     googleApisAgentModel:          ga.agentModel                           ?? '',
     googleApisMaxToolLoops:        ga.maxToolLoops                         ?? 10,
@@ -165,14 +163,12 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
         model:                   String(form.memoryModel),
         consolidationIntervalMs: Number(form.memoryConsolidationIntervalMs ?? 30000),
         contextIntervalMs:       Number(form.memoryContextIntervalMs       ?? 60000),
-        reflectionIntervalMs:    Number(form.memoryReflectionIntervalMs    ?? 604800000),
       },
     } : {}),
   }
   const notebookPatch = {
     notebookDir:             String(form.notebookDir ?? (config.notebook as any)?.notebookDir ?? './workspace/notebook'),
     ...(form.notebookAgentModel ? { agentModel: String(form.notebookAgentModel) } : {}),
-    consolidationIntervalMs: Number(form.notebookConsolidationIntervalMs ?? 604800000),
     maxToolLoops:            Number(form.notebookMaxToolLoops ?? 10),
   }
   const googleApisPatch = {

@@ -154,6 +154,7 @@ function renderSources(sources) {
 }
 
 function renderAttachments(attachments) {
+  console.log('Rendering attachments:3', attachments)
   const wrap = document.createElement('div')
   wrap.className = 'attachments'
   attachments.forEach((a) => {
@@ -261,6 +262,7 @@ function appendUserMessage(text, images, audio, pdfs = []) {
 // ─── WebSocket message handler ───
 
 export function handleChatMsg(msg) {
+  console.log('message', msg)
   if (msg.type === 'plannerMode') {
     isPlannerMode = msg.active
   } else if (msg.type === 'tooling') {
@@ -273,7 +275,15 @@ export function handleChatMsg(msg) {
   } else if (msg.type === 'sources') {
     pendingSources = msg.sources
   } else if (msg.type === 'attachments') {
-    pendingAttachments = msg.attachments
+    console.log('Received attachments:2', msg.attachments)
+    if (streamBubbleContainer) {
+      const wrap = renderAttachments(msg.attachments)
+      if (streamBubble) streamBubbleContainer.insertBefore(wrap, streamBubble)
+      else streamBubbleContainer.appendChild(wrap)
+      attachmentsWrap = wrap
+    } else {
+      pendingAttachments = msg.attachments
+    }
   } else if (msg.type === 'reasoningChunk') {
     removeThinking()
     if (!streamWrap) {
@@ -324,6 +334,16 @@ export function handleChatMsg(msg) {
     if (streamBubble && streamRawText) {
       streamBubble.textContent = ''
       streamBubble.appendChild(renderMarkdown(streamRawText))
+    }
+    if (pendingAttachments) {
+      if (!streamWrap) {
+        const { wrap, bubble } = createMessageWrap()
+        streamWrap = wrap
+        streamBubbleContainer = bubble
+        messagesEl.appendChild(streamWrap)
+      }
+      streamBubbleContainer.appendChild(renderAttachments(pendingAttachments))
+      pendingAttachments = null
     }
     streamRawText         = ''
     streamBubble          = null
