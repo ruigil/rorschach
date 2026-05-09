@@ -10,8 +10,10 @@ import { ask } from '../../system/ask.ts'
 import { ClientConnectTopic, InboundMessageTopic, OutboundMessageTopic } from '../../types/events.ts'
 import { IdentityProviderTopic, resolveIdentity } from '../../types/identity.ts'
 import type { IdentityProviderMsg, Identity } from '../../types/identity.ts'
+import type { ToolAttachment, ToolSource } from '../../types/tools.ts'
 
 const INBOUND_DIR = join(import.meta.dir, '../../..', 'workspace/media/inbound')
+const MEDIA_DIR   = join(import.meta.dir, '../../..', 'workspace/media')
 
 // ─── Markdown → Signal formatting ───
 //
@@ -19,11 +21,10 @@ const INBOUND_DIR = join(import.meta.dir, '../../..', 'workspace/media/inbound')
 // This function strips all markdown markers, produces clean plain text, and tracks
 // the byte-offset ranges for BOLD, ITALIC, STRIKETHROUGH, and MONOSPACE.
 //
-export type SignalFormatted = { message: string; textStyles: string[]; attachments: string[] }
+export type SignalFormatted = { message: string; textStyles: string[] }
 
 export const renderForSignal = (md: string): SignalFormatted => {
   const spans: Array<{ start: number; length: number; style: string }> = []
-  const mediaUrls: string[] = []
   let pos = 0           // cursor into the plain-text output being built
   const parts: string[] = []
 
@@ -38,17 +39,6 @@ export const renderForSignal = (md: string): SignalFormatted => {
     const flushPlain = () => { push(plain); plain = '' }
 
     while (i < src.length) {
-      // Images — extract URL as attachment, drop from text
-      if (src[i] === '!' && src[i+1] === '[') {
-        const be = src.indexOf(']', i + 2)
-        if (be !== -1 && src[be+1] === '(') {
-          const pe = src.indexOf(')', be + 2)
-          if (pe !== -1) {
-            mediaUrls.push(src.slice(be + 2, pe))
-            i = pe + 1; continue
-          }
-        }
-      }
       // Links: [text](url) → text (url)
       if (src[i] === '[') {
         const be = src.indexOf(']', i + 1)
@@ -187,7 +177,7 @@ export const renderForSignal = (md: string): SignalFormatted => {
     .filter(s => s.start >= 0 && s.length > 0 && s.start + s.length <= message.length)
     .map(s => `${s.start}:${s.length}:${s.style}`)
 
-  return { message, textStyles, attachments: mediaUrls }
+  return { message, textStyles }
 }
 
 // ─── Options ───
@@ -198,7 +188,6 @@ export type SignalActorOptions = {
   account?:        string
   reconnectMs?:    number     // default: 3000
   attachmentsDir?: string
-  publicDir?:      string     // default: <signal.ts dir>/../../public
 }
 
 // ─── Message protocol ───
@@ -213,6 +202,8 @@ type Envelope = {
 }
 
 type BufferedMsg = { text: string; images?: string[]; audio?: string }
+
+type PendingTurn = { text: string; attachments: ToolAttachment[]; sources: ToolSource[] }
 
 type SignalMsg =
   | { type: '_reconnect' }
@@ -230,7 +221,7 @@ type SignalMsg =
 
 export type SignalState = {
   seenIds:             Set<string>
-  pending:             Map<string, string>                       // clientId → buffered chunks waiting for 'done'
+  pending:             Map<string, PendingTurn>                  // clientId → buffered chunks/attachments waiting for 'done'
   activeSpans:         Record<string, SpanHandle>
   identityProviderRef: ActorRef<IdentityProviderMsg> | null
   pendingConnect:      Map<string, BufferedMsg[]>                // phone → buffered messages while resolving userId
@@ -246,7 +237,6 @@ export const createSignalActor = (
   const account        = options?.account        ?? null
   const reconnectMs    = options?.reconnectMs    ?? 3_000
   const attachmentsDir = options?.attachmentsDir ?? `${process.env.HOME}/.local/share/signal-cli/attachments`
-  const publicDir      = options?.publicDir      ?? join(import.meta.dir, '../../public')
 
   let msgId        = 0
   let activeSocket: Socket | null = null
@@ -264,13 +254,13 @@ export const createSignalActor = (
   const rpcLine = (method: string, params: Record<string, unknown>): string =>
     JSON.stringify({ jsonrpc: '2.0', id: ++msgId, method, params }) + '\n'
 
-  const sendOverSocket = (clientId: string, { message, textStyles, attachments }: SignalFormatted): Promise<void> =>
+  const sendOverSocket = (clientId: string, { message, textStyles }: SignalFormatted, attachments: string[] = []): Promise<void> =>
     writeToSocket(rpcLine('send', {
       ...(account ? { account } : {}),
       recipient: [clientId],
       message,
       ...(textStyles.length > 0 ? { textStyles } : {}),
-      ...(attachments.length > 0 ? { attachments: attachments.map(url => join(publicDir, url)) } : {}),
+      ...(attachments.length > 0 ? { attachments } : {}),
     }))
 
   // Fire-and-forget — typing indicators are best-effort
@@ -435,19 +425,40 @@ export const createSignalActor = (
               }
             }
             const pending = new Map(state.pending)
-            pending.set(msg.clientId, (pending.get(msg.clientId) ?? '') + String(ev.text ?? ''))
+            const cur     = pending.get(msg.clientId) ?? { text: '', attachments: [], sources: [] }
+            pending.set(msg.clientId, { ...cur, text: cur.text + String(ev.text ?? '') })
+            return { state: { ...state, pending } }
+          }
+
+          case 'attachments': {
+            const incoming = (ev.attachments as ToolAttachment[] | undefined) ?? []
+            if (incoming.length === 0) return { state }
+            const pending = new Map(state.pending)
+            const cur     = pending.get(msg.clientId) ?? { text: '', attachments: [], sources: [] }
+            pending.set(msg.clientId, { ...cur, attachments: [...cur.attachments, ...incoming] })
+            return { state: { ...state, pending } }
+          }
+
+          case 'sources': {
+            const incoming = (ev.sources as ToolSource[] | undefined) ?? []
+            if (incoming.length === 0) return { state }
+            const pending = new Map(state.pending)
+            const cur     = pending.get(msg.clientId) ?? { text: '', attachments: [], sources: [] }
+            pending.set(msg.clientId, { ...cur, sources: [...cur.sources, ...incoming] })
             return { state: { ...state, pending } }
           }
 
           case 'done': {
-            const raw = state.pending.get(msg.clientId)
-            if (!raw) return { state }
+            const buf = state.pending.get(msg.clientId)
+            if (!buf) return { state }
             const pending = new Map(state.pending)
             pending.delete(msg.clientId)
             sendTyping(msg.clientId, true)
             if (pending.size === 0) ctx.timers.cancel('typing')
+            const rendered = renderForSignal(buf.text)
+            const allAttachments = buf.attachments.map(a => join(MEDIA_DIR, a.url))
             ctx.pipeToSelf(
-              sendOverSocket(msg.clientId, renderForSignal(raw)),
+              sendOverSocket(msg.clientId, rendered, allAttachments),
               ()    => ({ type: '_sendOk'  as const }),
               (err) => ({ type: '_sendErr' as const, error: String(err) }),
             )
@@ -467,7 +478,7 @@ export const createSignalActor = (
             pendingAfterErr.delete(msg.clientId)
             if (pendingAfterErr.size === 0) ctx.timers.cancel('typing')
             ctx.pipeToSelf(
-              sendOverSocket(msg.clientId, { message: `⚠️ ${text}`, textStyles: [], attachments: [] }),
+              sendOverSocket(msg.clientId, { message: `⚠️ ${text}`, textStyles: [] }),
               ()    => ({ type: '_sendOk'  as const }),
               (err) => ({ type: '_sendErr' as const, error: String(err) }),
             )
