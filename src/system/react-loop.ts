@@ -229,6 +229,14 @@ export type ReactLoopHooks<S, M extends { type: string }, Args = string> = {
   ) => ReactToolCallInterception<M, S>
 
   /**
+   * Long-running tool support. Called when a tool replies with `toolPending`
+   * and later completes/fails. Return the message to enqueue to the actor
+   * inbox carrying the final reply. If omitted, `toolPending` is converted
+   * to `toolError` (current default).
+   */
+  onToolPending?: (call: { toolName: string; toolCallId: string }, reply: ToolFinalReply) => M
+
+  /**
    * Extra message-type cases to merge into the internal idle/awaitingLlm/toolLoop
    * handlers. Survives `become` transitions because the loop's materialize uses
    * the merged handlers, not the bare ones. Use for shell-specific messages
@@ -532,7 +540,12 @@ export const createReactLoop = <S, M extends { type: string }, Args = string>(
         ctx.pipeToSelf(
           invokeTool(ctx, entry.ref,
             { toolName: call.name, arguments: call.arguments, clientId, userId },
-            { headers: toolSpan ? ctx.trace.injectHeaders(toolSpan) : undefined },
+            {
+              headers: toolSpan ? ctx.trace.injectHeaders(toolSpan) : undefined,
+              onCompletion: hooks.onToolPending
+                ? (reply) => hooks.onToolPending!({ toolName: call.name, toolCallId: call.id }, reply)
+                : undefined,
+            },
           ),
           (reply) => ({
             type:       '_toolResult',
