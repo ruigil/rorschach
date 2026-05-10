@@ -61,6 +61,20 @@ export type AudioProviderReply =
   | { type: 'llmDone';       requestId: string; usage: TokenUsage | null }
   | { type: 'llmError';      requestId: string; error: unknown }
 
+// ─── Reply type for transcribe — used only by the audio actor ───
+
+export type TranscriptionProviderReply =
+  | { type: 'llmChunk'; requestId: string; text: string }
+  | { type: 'llmDone';  requestId: string; usage: TokenUsage | null }
+  | { type: 'llmError'; requestId: string; error: unknown }
+
+// ─── Reply type for speak — used only by the audio actor ───
+
+export type SpeechProviderReply =
+  | { type: 'llmAudioChunk'; requestId: string; data: string; format: string }
+  | { type: 'llmDone';       requestId: string; usage: TokenUsage | null }
+  | { type: 'llmError';      requestId: string; error: unknown }
+
 // ─── Rerank reply ───
 
 export type RerankReply =
@@ -89,6 +103,8 @@ export type LlmProviderMsg =
   | { type: 'stream';            requestId: string; model: string; messages: ApiMessage[]; tools?: Tool[]; role: string; clientId?: string; replyTo: ActorRef<LlmProviderReply> }
   | { type: 'streamImage';       requestId: string; model: string; messages: ApiMessage[]; role: string; clientId?: string; replyTo: ActorRef<VisionProviderReply> }
   | { type: 'streamAudio';       requestId: string; model: string; messages: ApiMessage[]; voice?: string; role: string; clientId?: string; replyTo: ActorRef<AudioProviderReply> }
+  | { type: 'transcribe';        requestId: string; model: string; audio: { data: string; format: string }; role: string; clientId?: string; replyTo: ActorRef<TranscriptionProviderReply> }
+  | { type: 'speak';             requestId: string; model: string; input: string; voice: string; instructions?: string; format?: string | undefined; role: string; clientId?: string; replyTo: ActorRef<SpeechProviderReply> }
   | { type: 'embed';             requestId: string; model: string; text: string; dimensions?: number; clientId?: string; replyTo: ActorRef<EmbeddingReply> }
   | { type: 'fetchModelInfo';    model: string; replyTo: ActorRef<ModelInfo | null> }
   | { type: 'fetchModels';       replyTo: ActorRef<string[]> }
@@ -102,6 +118,8 @@ export type LlmProviderMsg =
   | { type: '_streamDone';       result: LlmProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<LlmProviderReply> }
   | { type: '_streamImageDone';  result: VisionProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<VisionProviderReply> }
   | { type: '_streamAudioDone';  result: AudioProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<AudioProviderReply> }
+  | { type: '_transcribeDone';   result: TranscriptionProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<TranscriptionProviderReply> }
+  | { type: '_speakDone';        result: SpeechProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<SpeechProviderReply> }
   | { type: '_embedDone';        result: EmbeddingReply; model: string; role: string; clientId?: string; usage: TokenUsage | null; replyTo: ActorRef<EmbeddingReply> }
   | { type: '_modelInfoDone';    info: ModelInfo | null; replyTo: ActorRef<ModelInfo | null> }
   | { type: '_modelsDone';       models: string[]; replyTo: ActorRef<string[]> }
@@ -156,6 +174,17 @@ export type LlmProviderAdapter = {
     onChunk: (text: string) => void,
     onAudioChunk: (data: string) => void,
   ): Promise<AdapterStreamResult>
+  transcribe(
+    model: string,
+    audio: { data: string; format: string },
+  ): Promise<{ text: string; usage: TokenUsage | null }>
+  speak(
+    model: string,
+    input: string,
+    voice: string,
+    instructions: string | undefined,
+    format: string | undefined,
+  ): Promise<{ data: string; format: string; usage: TokenUsage | null }>
   embed(model: string, text: string, dimensions?: number): Promise<{ embedding: number[]; usage: TokenUsage | null }>
   fetchModelInfo(model: string): Promise<ModelInfo | null>
   fetchModels(): Promise<string[]>

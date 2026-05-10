@@ -8,8 +8,10 @@ import type {
   LlmProviderMsg, 
   LlmProviderAdapter, 
   OpenRouterAdapterOptions, 
-  VisionProviderReply, 
-  AudioProviderReply, 
+  VisionProviderReply,
+  AudioProviderReply,
+  TranscriptionProviderReply,
+  SpeechProviderReply,
   ModelInfo,
   VideoSubmitReply,
   VideoPollReply,
@@ -137,6 +139,45 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
         },
         (usage) => ({ type: 'content', usage }),
       )
+    },
+
+    speak: async (model, input, voice, instructions, format) => {
+      const body: Record<string, unknown> = { model, input, voice }
+      if (instructions) body.instructions = instructions
+      const res = await fetch('https://openrouter.ai/api/v1/audio/speech', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const errBody = await res.text()
+        throw new Error(`OpenRouter speech ${res.status}: ${errBody}`)
+      }
+      const buf = Buffer.from(await res.arrayBuffer())
+      return { data: buf.toString('base64'), format: format ?? 'pcm', usage: null }
+    },
+
+    transcribe: async (model, audio) => {
+      const res = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model, input_audio: { data: audio.data, format: audio.format } }),
+      })
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`OpenRouter transcribe ${res.status}: ${body}`)
+      }
+      const data = await res.json() as { text: string; usage?: { prompt_tokens: number; completion_tokens: number } }
+      const usage: TokenUsage | null = data.usage
+        ? { promptTokens: data.usage.prompt_tokens, completionTokens: data.usage.completion_tokens ?? 0 }
+        : null
+      return { text: data.text ?? '', usage }
     },
 
     fetchModelInfo: async (model: string) => {
@@ -388,6 +429,59 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
         return { state }
       },
 
+      speak: (state, message, context) => {
+        const { requestId, model, input, voice, instructions, format, role, clientId, replyTo } = message
+        const fmt = format ?? 'mp3'
+        context.log.info('llm speak', { requestId, model, voice, format: fmt })
+
+        context.pipeToSelf(
+          adapter.speak(model, input, voice, instructions, fmt),
+          ({ data, format: outFormat, usage }): LlmProviderMsg => {
+            replyTo.send({ type: 'llmAudioChunk', requestId, data, format: outFormat })
+            return {
+              type: '_speakDone',
+              result: { type: 'llmDone', requestId, usage } as SpeechProviderReply,
+              model, role, clientId,
+              replyTo,
+            }
+          },
+          (error): LlmProviderMsg => ({
+            type: '_speakDone',
+            result: { type: 'llmError', requestId, error } as SpeechProviderReply,
+            model, role, clientId,
+            replyTo,
+          }),
+        )
+
+        return { state }
+      },
+
+      transcribe: (state, message, context) => {
+        const { requestId, model, audio, role, clientId, replyTo } = message
+        context.log.info('llm transcribe', { requestId, model, format: audio.format })
+
+        context.pipeToSelf(
+          adapter.transcribe(model, audio),
+          ({ text, usage }): LlmProviderMsg => {
+            replyTo.send({ type: 'llmChunk', requestId, text })
+            return {
+              type: '_transcribeDone',
+              result: { type: 'llmDone', requestId, usage } as TranscriptionProviderReply,
+              model, role, clientId,
+              replyTo,
+            }
+          },
+          (error): LlmProviderMsg => ({
+            type: '_transcribeDone',
+            result: { type: 'llmError', requestId, error } as TranscriptionProviderReply,
+            model, role, clientId,
+            replyTo,
+          }),
+        )
+
+        return { state }
+      },
+
       embed: (state, message, context) => {
         const { requestId, model, text, dimensions, replyTo } = message
         const role     = 'memory-embed'
@@ -479,7 +573,6 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
 
       pollVideo: (state, message, context) => {
         const { requestId, pollingUrl, role, clientId, replyTo } = message
-        context.log.info('llm video poll', { requestId })
 
         context.pipeToSelf(
           adapter.pollVideoGeneration(pollingUrl),
@@ -573,6 +666,28 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
         ),
 
       _streamAudioDone: (state, message, context) =>
+        handleStreamDone(
+          state,
+          message.replyTo as { send: (msg: unknown) => void },
+          message.result as { type: string; usage?: TokenUsage | null },
+          message.model,
+          message.role,
+          message.clientId,
+          context as { pipeToSelf: (promise: Promise<unknown>, onSuccess: (r: unknown) => unknown, onError: (e: unknown) => unknown) => void },
+        ),
+
+      _speakDone: (state, message, context) =>
+        handleStreamDone(
+          state,
+          message.replyTo as { send: (msg: unknown) => void },
+          message.result as { type: string; usage?: TokenUsage | null },
+          message.model,
+          message.role,
+          message.clientId,
+          context as { pipeToSelf: (promise: Promise<unknown>, onSuccess: (r: unknown) => unknown, onError: (e: unknown) => unknown) => void },
+        ),
+
+      _transcribeDone: (state, message, context) =>
         handleStreamDone(
           state,
           message.replyTo as { send: (msg: unknown) => void },
