@@ -37,9 +37,9 @@
         "model": "google/gemini-3-pro-image-preview"
       },
       "audioActor": {
-        "ttsModel": "openai/gpt-audio",
-        "sttModel": "openai/gpt-audio",
-        "voice": "nova"
+        "ttsModel": "google/gemini-3.1-flash-tts-preview",
+        "sttModel": "google/chirp-3",
+        "voice": "alloy"
       },
       "videoActor": {
         "model": "google/veo-3.1-lite",
@@ -60,7 +60,7 @@
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "model": "google/gemini-3.1-flash-lite",
+        "model": "deepseek/deepseek-v4-flash",
         "historyWindowHours": 4,
         "toolFilter": {
           "deny": [
@@ -91,7 +91,7 @@
       "system": {
         "model": "moonshotai/kimi-k2.6",
         "consolidationIntervalMs": 3600000,
-        "contextIntervalMs": 60000
+        "contextIntervalMs": 3600000
       }
     },
     "notebook": {
