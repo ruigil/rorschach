@@ -76,6 +76,8 @@ const trimHistory = (history: ConversationMessage[], historyWindowHours: number)
   return history.slice(earliestValidIndex)
 }
 
+// user file attachments are represented as special text tokens in the user message content, which the LLM can refer to when formulating a response. 
+// This function assembles the final user message content by appending notes about attached files (images, audio, PDFs) to the original text.
 const assembleUserText = (
   text:    string,
   images?: string[],
@@ -211,6 +213,9 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'reasoningChunk', text }) })],
     }),
 
+    onToolPending: ({ toolName, toolCallId }, reply) =>
+      ({ type: '_toolUpdate', toolName, toolCallId, reply } as unknown as M),
+
     interceptToolCalls: (state, calls) => ({
       handled: false,
       events:  [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'tooling', tools: calls.map(c => c.name) }) })],
@@ -283,10 +288,8 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
     extraCases: {
       idle: {
-        userMessage: (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> =>
-          handleUserMessage(state, msg, ctx),
-        _toolUpdate: (state: S, msg: Extract<M, { type: '_toolUpdate' }>, ctx: Ctx): ActorResult<M, S> =>
-          handleToolUpdate(state, msg, ctx),
+        userMessage: (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => handleUserMessage(state, msg, ctx),
+        _toolUpdate: (state: S, msg: Extract<M, { type: '_toolUpdate' }>, ctx: Ctx): ActorResult<M, S> => handleToolUpdate(state, msg, ctx),
         _toolRegistered:   toolRegistered,
         _toolUnregistered: toolUnregistered,
         _userContext:      setUserContext,
@@ -354,6 +357,14 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       ...state,
       history:    [...state.history, { role: 'user', content: injection, timestamp: Date.now() }],
       isInjected: true,
+    }
+
+    const payload = msg.reply.type === 'toolResult' ? msg.reply.result : undefined
+    if (payload?.sources?.length) {
+      ctx.publish(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'sources', sources: payload.sources }) })
+    }
+    if (payload?.attachments?.length) {
+      ctx.publish(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'attachments', attachments: payload.attachments }) })
     }
 
     return handlers.startTurn(stateNext, {
