@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
-import type { LlmProviderMsg, ApiMessage, AudioProviderReply, LlmProviderReply } from '../../types/llm.ts'
+import type { LlmProviderMsg, SpeechProviderReply, TranscriptionProviderReply } from '../../types/llm.ts'
 
 // ─── Output directory for generated audio ───
 
@@ -53,7 +53,8 @@ export const TEXT_TO_SPEECH_SCHEMA: ToolSchema = {
 
 export type AudioActorMsg =
   | ToolInvokeMsg
-  | AudioProviderReply
+  | TranscriptionProviderReply
+  | SpeechProviderReply
   | { type: '_audioLoaded';    requestId: string; data: string; format: string; replyTo: ActorRef<ToolReply> }
   | { type: '_audioLoadError'; requestId: string; error: string; replyTo: ActorRef<ToolReply> }
   | { type: '_audioSaved';     requestId: string; filePath: string; publicUrl: string; spokenText: string; voice: string; replyTo: ActorRef<ToolReply> }
@@ -70,7 +71,8 @@ type TranscriptionPending = {
 
 type TtsPending = {
   kind: 'tts'
-  accumulatedPcm: Buffer[]
+  audioData: string | null
+  audioFormat: string
   spokenText: string
   voice: string
   replyTo: ActorRef<ToolReply>
@@ -88,10 +90,10 @@ export type AudioActorOptions = {
   ttsModel: string
   sttModel: string
   voice: string
-  systemPrompt?: string
+  ttsFormat?: string
 }
 
-const DEFAULT_TTS_SYSTEM_PROMPT = 'Transcribe this audio'
+const DEFAULT_TTS_FORMAT = 'pcm'
 
 // ─── Helpers ───
 
@@ -107,7 +109,7 @@ const loadAudioAsWavBase64 = async (filePath: string): Promise<string> => {
   return Buffer.from(output).toString('base64')
 }
 
-// PCM16 is raw 16-bit little-endian mono at 24000 Hz — wrap in WAV to make it playable
+// Wrap raw PCM16 (mono, little-endian) bytes in a WAV header so the file is playable
 const pcm16ToWav = (pcm: Buffer, sampleRate = 24000, channels = 1): Buffer => {
   const header = Buffer.alloc(44)
   const dataSize = pcm.length
@@ -127,19 +129,22 @@ const pcm16ToWav = (pcm: Buffer, sampleRate = 24000, channels = 1): Buffer => {
   return Buffer.concat([header, pcm])
 }
 
-const saveAudio = async (accumulatedPcm: Buffer[]): Promise<{ filePath: string; publicUrl: string }> => {
-  const pcm = Buffer.concat(accumulatedPcm)
-  const name = `${crypto.randomUUID()}.wav`
+const saveAudio = async (data: string, format: string): Promise<{ filePath: string; publicUrl: string }> => {
+  const raw = Buffer.from(data, 'base64')
+  const isPcm = format === 'pcm'
+  const bytes = isPcm ? pcm16ToWav(raw) : raw
+  const ext = isPcm ? 'wav' : format
+  const name = `${crypto.randomUUID()}.${ext}`
   await mkdir(GENERATED_DIR, { recursive: true })
   const filePath = join(GENERATED_DIR, name)
-  await Bun.write(filePath, pcm16ToWav(pcm))
+  await Bun.write(filePath, bytes)
   return { filePath, publicUrl: `${GENERATED_PUBLIC_PREFIX}/${name}` }
 }
 
 // ─── Actor definition ───
 
 export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActorMsg, AudioState> => {
-  const { llmRef, ttsModel, sttModel, voice, systemPrompt = DEFAULT_TTS_SYSTEM_PROMPT } = options
+  const { llmRef, ttsModel, sttModel, voice, ttsFormat = DEFAULT_TTS_FORMAT } = options
 
   return {
     handler: onMessage<AudioActorMsg, AudioState>({
@@ -162,25 +167,24 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
           }
 
           const requestId = crypto.randomUUID()
+          
           context.log.info('audio: starting TTS', { requestId, voice: ttsVoice, textLength: text.length })
-          const messages: ApiMessage[] = [
-            { role: 'system', content: instructions ? `${systemPrompt}\n\n${instructions}` : systemPrompt },
-            { role: 'user', content: text },
-          ]
           llmRef.send({
-            type: 'streamAudio',
+            type: 'speak',
             requestId,
             model: ttsModel,
-            messages,
+            input: text,
             voice: ttsVoice,
+            instructions: instructions || undefined,
+            format: ttsFormat,
             role: 'audio',
             clientId,
-            replyTo: context.self as unknown as ActorRef<AudioProviderReply>,
+            replyTo: context.self as unknown as ActorRef<SpeechProviderReply>,
           })
           return {
             state: {
               ...state,
-              pending: { ...state.pending, [requestId]: { kind: 'tts', accumulatedPcm: [], spokenText: text, voice: ttsVoice, replyTo, clientId } },
+              pending: { ...state.pending, [requestId]: { kind: 'tts', audioData: null, audioFormat: ttsFormat, spokenText: text, voice: ttsVoice, replyTo, clientId } },
             },
           }
         }
@@ -219,18 +223,13 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
 
         context.log.info('audio: audio loaded, sending to LLM for transcription', { requestId })
         llmRef.send({
-          type: 'stream',
+          type: 'transcribe',
           requestId,
           model: sttModel,
-          messages: [
-            { role: 'user', content: [
-              { type: 'text', text: "Reply with: 'The User said: \"<what the user said>\"'. Nothing Else." },
-              { type: 'input_audio', input_audio: { data, format } }
-            ] },
-          ],
+          audio: { data, format },
           role: 'audio',
           clientId: req.clientId,
-          replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
+          replyTo: context.self as unknown as ActorRef<TranscriptionProviderReply>,
         })
         return { state }
       },
@@ -260,7 +259,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
         return {
           state: {
             ...state,
-            pending: { ...state.pending, [message.requestId]: { ...req, accumulatedPcm: [...req.accumulatedPcm, Buffer.from(message.data, 'base64')] } },
+            pending: { ...state.pending, [message.requestId]: { ...req, audioData: message.data, audioFormat: message.format } },
           },
         }
       },
@@ -275,16 +274,16 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
           return { state: { ...state, pending: rest } }
         }
 
-        // tts — save PCM to WAV
-        if (!req.accumulatedPcm.length) {
+        // tts — save audio bytes to file
+        if (!req.audioData) {
           context.log.error('audio: TTS completed but no audio data received')
           req.replyTo.send({ type: 'toolError', error: 'No audio data received from model.' })
           return { state: { ...state, pending: rest } }
         }
 
-        context.log.info('audio: TTS complete, saving audio', { requestId: message.requestId })
+        context.log.info('audio: TTS complete, saving audio', { requestId: message.requestId, format: req.audioFormat })
         context.pipeToSelf(
-          saveAudio(req.accumulatedPcm),
+          saveAudio(req.audioData, req.audioFormat),
           (r): AudioActorMsg => ({ type: '_audioSaved',     requestId: message.requestId, filePath: r.filePath, publicUrl: r.publicUrl, spokenText: req.spokenText, voice: req.voice, replyTo: req.replyTo }),
           (e): AudioActorMsg => ({ type: '_audioSaveError', requestId: message.requestId, error: String(e), replyTo: req.replyTo }),
         )
@@ -303,7 +302,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
         const { publicUrl, spokenText, voice, replyTo } = message
         context.log.info('audio: audio saved', { requestId: message.requestId, publicUrl })
         const snippet = spokenText.length > 300 ? `${spokenText.slice(0, 300)}…` : spokenText
-        const text = `Generated speech audio (voice: ${voice}) and delivered it to the user as an attachment. Spoken text: "${snippet}"`
+        const text = `Generated speech audio (voice: ${voice}) and delivered it to the user as an attachment"`
         replyTo.send({ type: 'toolResult', result: { text, attachments: [{ kind: 'audio', url: publicUrl }] } })
         return { state }
       },
