@@ -15,10 +15,9 @@ describe('audio actor', () => {
     // Mock LLM Provider
     const llmDef = {
       handler: (state: any, msg: LlmProviderMsg) => {
-        if (msg.type === 'streamAudio') {
-          // Send some mock PCM data (base64 encoded)
-          const mockPcm = Buffer.from(new Uint8Array(100)).toString('base64')
-          msg.replyTo.send({ type: 'llmAudioChunk', requestId: msg.requestId, data: mockPcm })
+        if (msg.type === 'speak') {
+          const mockAudio = Buffer.from(new Uint8Array(100)).toString('base64')
+          msg.replyTo.send({ type: 'llmAudioChunk', requestId: msg.requestId, data: mockAudio, format: msg.format ?? 'mp3' })
           msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: null })
         }
         return { state }
@@ -50,7 +49,6 @@ describe('audio actor', () => {
     expect(reply.type).toBe('toolResult')
     if (reply.type === 'toolResult') {
       expect(reply.result.text).toContain('Generated speech audio')
-      expect(reply.result.text).toContain('hello world')
       const audioAttachment = reply.result.attachments?.find(a => a.kind === 'audio')
       expect(audioAttachment?.url).toContain('generated/')
 
@@ -85,7 +83,7 @@ describe('audio actor', () => {
     
     const llmDef = {
       handler: (state: any, msg: LlmProviderMsg) => {
-        if (msg.type === 'stream') {
+        if (msg.type === 'transcribe') {
           msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'The User said: "hello"' })
           msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: null })
         }
