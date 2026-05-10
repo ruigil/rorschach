@@ -154,7 +154,6 @@ function renderSources(sources) {
 }
 
 function renderAttachments(attachments) {
-  console.log('Rendering attachments:3', attachments)
   const wrap = document.createElement('div')
   wrap.className = 'attachments'
   attachments.forEach((a) => {
@@ -262,7 +261,7 @@ function appendUserMessage(text, images, audio, pdfs = []) {
 // ─── WebSocket message handler ───
 
 export function handleChatMsg(msg) {
-  console.log('message', msg)
+  console.log( 'Chat message received:', msg)
   if (msg.type === 'plannerMode') {
     isPlannerMode = msg.active
   } else if (msg.type === 'tooling') {
@@ -275,7 +274,6 @@ export function handleChatMsg(msg) {
   } else if (msg.type === 'sources') {
     pendingSources = msg.sources
   } else if (msg.type === 'attachments') {
-    console.log('Received attachments:2', msg.attachments)
     if (streamBubbleContainer) {
       const wrap = renderAttachments(msg.attachments)
       if (streamBubble) streamBubbleContainer.insertBefore(wrap, streamBubble)
