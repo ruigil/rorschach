@@ -225,7 +225,6 @@ export const createVideoActor = (options: VideoActorOptions): ActorDef<VideoActo
           return { state: { ...state, pending: rest } }
         }
 
-        context.log.info('video: polling', { requestId, jobId: req.jobId })
         llmRef.send({
           type: 'pollVideo',
           requestId,
