@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { PluginSystem } from '../system/index.ts'
+import { SystemPlugin } from '../system/index.ts'
 import type {
   ActorDef,
   ActorRef,
@@ -44,7 +44,7 @@ describe('Actor: parent-child hierarchy', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const parent = system.spawn('parent', parentDef, { state: { child: null } })
     await tick()
 
@@ -76,7 +76,7 @@ describe('Actor: parent-child hierarchy', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const ref = system.spawn('root', parentDef)
     await tick()
 
@@ -110,7 +110,7 @@ describe('Actor: parent-child hierarchy', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const ref = system.spawn('parent', parentDef)
     await tick()
 
@@ -159,7 +159,7 @@ describe('Actor: parent-child hierarchy', () => {
       handler: (state) => ({ state }),
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('p', parentDef)
     await tick(100)
 
@@ -191,7 +191,7 @@ describe('Actor: parent-child hierarchy', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const ref = system.spawn('parent', parentDef)
     await tick()
 
@@ -227,7 +227,7 @@ describe('Watch: cross-hierarchy observation', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const targetRef = system.spawn('target', targetDef)
     const watcher = system.spawn('watcher', watcherDef)
     await tick()
@@ -268,7 +268,7 @@ describe('Watch: cross-hierarchy observation', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const targetRef = system.spawn('target', targetDef)
     await tick()
 
@@ -313,7 +313,7 @@ describe('Watch: cross-hierarchy observation', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const targetRef = system.spawn('target', targetDef)
     const watcher = system.spawn('watcher', watcherDef)
     await tick()
@@ -352,7 +352,7 @@ describe('Watch: cross-hierarchy observation', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const targetRef = system.spawn('target', targetDef)
     const watcher = system.spawn('watcher', watcherDef)
     await tick()
@@ -373,7 +373,7 @@ describe('Watch: cross-hierarchy observation', () => {
 
   test('watches are cleaned up when the watcher itself stops', async () => {
     // This test verifies no errors/dangling refs when watcher dies before target
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
 
     const targetDef: ActorDef<string, null> = {
       handler: (state) => ({ state }),
@@ -423,7 +423,7 @@ describe('Watch: cross-hierarchy observation', () => {
       },
     })
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const targetRef = system.spawn('target', targetDef)
     const watcherA = system.spawn('watcher-a', makeWatcher(eventsA))
     const watcherB = system.spawn('watcher-b', makeWatcher(eventsB))

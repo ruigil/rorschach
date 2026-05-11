@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach } from 'bun:test'
-import { PluginSystem } from '../system/index.ts'
+import { SystemPlugin } from '../system/index.ts'
 import { OutboundMessageTopic } from '../types/events.ts'
 import { Chatbot, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
 import { HistoryStore } from '../plugins/cognitive/history-store.ts'
@@ -77,7 +77,7 @@ afterEach(() => {
 
 type ParsedEvent = Record<string, unknown> & { type: string }
 
-const collectEvents = (system: Awaited<ReturnType<typeof PluginSystem>>): ParsedEvent[] => {
+const collectEvents = (system: Awaited<ReturnType<typeof SystemPlugin>>): ParsedEvent[] => {
   const events: ParsedEvent[] = []
   system.subscribe(OutboundMessageTopic, ({ text }) => {
     try { events.push(JSON.parse(text) as ParsedEvent) } catch { /* ignore */ }
@@ -99,7 +99,7 @@ const stubFetchByUrl = (completions: (() => Response)[], braveFactory?: () => Re
 
 // ─── Spawn helpers ───
 
-const spawnChatbot = (system: Awaited<ReturnType<typeof PluginSystem>>) => {
+const spawnChatbot = (system: Awaited<ReturnType<typeof SystemPlugin>>) => {
   const userId = `test-user-${crypto.randomUUID()}`
   const llmRef = system.spawn('llm-provider', LlmProvider({ adapter: OpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }))
   const historyStoreRef = system.spawn(`history-store-${userId}`, HistoryStore({ userId }))
@@ -124,7 +124,7 @@ describe('chatbot search integration', () => {
       () => new Response(JSON.stringify(mockBraveResponse), { status: 200 }),
     )
 
-    const system = await PluginSystem({
+    const system = await SystemPlugin({
       config: { tools: { webSearch: { apiKey: 'brave-key' } } },
       plugins: [toolsPlugin],
     })
@@ -154,7 +154,7 @@ describe('chatbot search integration', () => {
       () => new Response(JSON.stringify(mockBraveResponse), { status: 200 }),
     )
 
-    const system = await PluginSystem({
+    const system = await SystemPlugin({
       config: { tools: { webSearch: { apiKey: 'brave-key' } } },
       plugins: [toolsPlugin],
     })
@@ -189,7 +189,7 @@ describe('chatbot search integration', () => {
     }) as unknown as typeof fetch
 
     // No tools plugin — chatbot actor has no registered tools, LLM call uses empty tool list
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const events = collectEvents(system)
     const react = spawnChatbot(system)
 
@@ -212,7 +212,7 @@ describe('chatbot search integration', () => {
       () => new Response('Rate limited', { status: 429 }),
     )
 
-    const system = await PluginSystem({
+    const system = await SystemPlugin({
       config: { tools: { webSearch: { apiKey: 'brave-key' } } },
       plugins: [toolsPlugin],
     })
@@ -242,7 +242,7 @@ describe('chatbot search integration', () => {
       return makeSSEResponse(contentPayloads('No tool call needed.'))
     }) as unknown as typeof fetch
 
-    const system = await PluginSystem({
+    const system = await SystemPlugin({
       config: { tools: { webSearch: { apiKey: 'brave-key' } } },
       plugins: [toolsPlugin],
     })

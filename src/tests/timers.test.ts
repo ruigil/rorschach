@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { PluginSystem } from '../system/index.ts'
+import { SystemPlugin } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 
 /** Small delay to let async actor processing settle */
@@ -24,7 +24,7 @@ describe('Timers: single timer', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('single', def)
     await tick(150)
 
@@ -46,7 +46,7 @@ describe('Timers: single timer', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('once', def)
     await tick(200)
 
@@ -70,7 +70,7 @@ describe('Timers: single timer', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('active-check', def)
     await tick(100)
 
@@ -98,7 +98,7 @@ describe('Timers: periodic timer', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('periodic', def)
     await tick(250)
 
@@ -125,7 +125,7 @@ describe('Timers: periodic timer', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('periodic-active', def)
     await tick(100)
 
@@ -157,7 +157,7 @@ describe('Timers: key replacement', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('replace', def)
     await tick(150)
 
@@ -184,7 +184,7 @@ describe('Timers: key replacement', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('replace-type', def)
     await tick(200)
 
@@ -216,7 +216,7 @@ describe('Timers: cancel', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('cancel-single', def)
     await tick(150)
 
@@ -242,7 +242,7 @@ describe('Timers: cancel', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('cancel-periodic', def)
     await tick(200)
 
@@ -265,7 +265,7 @@ describe('Timers: cancel', () => {
       handler: (state) => ({ state }),
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('cancel-noop', def)
     await tick()
 
@@ -292,7 +292,7 @@ describe('Timers: cancel', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('cancel-all', def)
     await tick(200)
 
@@ -320,7 +320,7 @@ describe('Timers: isActive', () => {
       handler: (state) => ({ state }),
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('is-active-true', def)
     await tick()
 
@@ -339,7 +339,7 @@ describe('Timers: isActive', () => {
       handler: (state) => ({ state }),
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('is-active-false', def)
     await tick()
 
@@ -362,7 +362,7 @@ describe('Timers: isActive', () => {
       handler: (state) => ({ state }),
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('is-active-cancelled', def)
     await tick()
 
@@ -393,7 +393,7 @@ describe('Timers: lifecycle integration', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('stop-cancels', def)
     await tick()
 
@@ -419,7 +419,7 @@ describe('Timers: lifecycle integration', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('shutdown-cancels', def)
     await tick()
 
@@ -452,7 +452,7 @@ describe('Timers: lifecycle integration', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const ref = system.spawn('restart-cancels', def)
     await tick()
 
@@ -486,7 +486,7 @@ describe('Timers: lifecycle integration', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const ref = system.spawn('restart-resets', def)
     await tick(150)
 
@@ -522,7 +522,7 @@ describe('Timers: message interleaving', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const ref = system.spawn('interleave', def)
     await tick()
 
@@ -549,7 +549,7 @@ describe('Timers: message interleaving', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const ref = system.spawn('handler-timer', def)
     await tick()
 
@@ -585,7 +585,7 @@ describe('Timers: symbol keys', () => {
       },
     }
 
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.spawn('symbol-key', def)
     await tick(100)
 

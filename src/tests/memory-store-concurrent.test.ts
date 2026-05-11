@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { PluginSystem, ask } from '../system/index.ts'
+import { SystemPlugin, ask } from '../system/index.ts'
 import {
   MemorySupervisor,
   INITIAL_MEMORY_SUPERVISOR_STATE,
@@ -13,7 +13,7 @@ const tick = (ms = 50) => Bun.sleep(ms)
 
 describe('Memory Store Actor (Supervisor/Worker)', () => {
   test('handles multiple concurrent invoke requests by spawning workers', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     
     // 1. Mock LLM Provider
     const mockLlmDef = {
@@ -87,7 +87,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
   })
 
   test('reports error when LLM provider is missing', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     
     const storeRef = system.spawn(
       'memory-supervisor',

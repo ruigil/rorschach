@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { PluginSystem, ask } from '../system/index.ts'
+import { SystemPlugin, type PluginSystem, ask } from '../system/index.ts'
 import type { ActorRef } from '../system/index.ts'
 import { Kgraph, KGRAPH_CREATE_NODE_TOOL_NAME } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
@@ -20,7 +20,7 @@ const tmpDb = () => `/tmp/kgraph-vs-test-${crypto.randomUUID()}.db`
 
 // ─── Helpers ───
 
-function spawnRealLlm(system: Awaited<ReturnType<typeof PluginSystem>>): ActorRef<LlmProviderMsg> {
+function spawnRealLlm(system: Awaited<PluginSystem>): ActorRef<LlmProviderMsg> {
   const adapter = OpenRouterAdapter({ apiKey: API_KEY })
   return system.spawn('llm', LlmProvider({ adapter })) as ActorRef<LlmProviderMsg>
 }
@@ -96,7 +96,7 @@ const withKey = test.skipIf(!API_KEY)
 describe('kgraph vector search (real embeddings)', () => {
 
   withKey('returns nearest neighbour first when querying with a full sentence', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const llmRef = spawnRealLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
 
@@ -127,7 +127,7 @@ describe('kgraph vector search (real embeddings)', () => {
   }, 60_000)
 
   withKey('respects topN limit with sentence queries', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const llmRef = spawnRealLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
 
@@ -159,7 +159,7 @@ describe('kgraph vector search (real embeddings)', () => {
   }, 60_000)
 
   withKey('results carry name and description stored at index time', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const llmRef = spawnRealLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
 
@@ -191,7 +191,7 @@ describe('kgraph vector search (real embeddings)', () => {
   }, 60_000)
 
   withKey('isolates results by userId', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const llmRef = spawnRealLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
 

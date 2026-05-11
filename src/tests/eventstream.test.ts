@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import {
-  PluginSystem,
+  SystemPlugin,
   createTopic,
   emit,
   DeadLetterTopic,
@@ -23,7 +23,7 @@ const tick = (ms = 50) => Bun.sleep(ms)
 
 describe('EventStream: pub-sub', () => {
   test('actor can publish and another actor can subscribe to events', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const received: string[] = []
 
     // Subscriber actor
@@ -70,7 +70,7 @@ describe('EventStream: pub-sub', () => {
   })
 
   test('multiple subscribers receive the same event', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const receivedA: string[] = []
     const receivedB: string[] = []
 
@@ -105,7 +105,7 @@ describe('EventStream: pub-sub', () => {
   })
 
   test('unsubscribe stops delivery', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const received: string[] = []
 
     type Msg = { type: 'got'; value: string } | { type: 'unsub' }
@@ -146,7 +146,7 @@ describe('EventStream: pub-sub', () => {
   })
 
   test('subscriptions are cleaned up when actor stops', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const received: string[] = []
 
     type Msg = { type: 'got'; value: string }
@@ -183,7 +183,7 @@ describe('EventStream: pub-sub', () => {
   })
 
   test('system.subscribe returns an unsubscribe function', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const received: unknown[] = []
 
     const unsub = system.subscribe('test', (event) => {
@@ -208,7 +208,7 @@ describe('EventStream: pub-sub', () => {
 
 describe('EventStream: handler-returned events', () => {
   test('events returned from handler are published to their declared topic', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const published: unknown[] = []
 
     type Msg = { type: 'produce'; value: string }
@@ -247,7 +247,7 @@ describe('EventStream: handler-returned events', () => {
   })
 
   test('handler with no events does not publish', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const published: unknown[] = []
 
     const SomeTopic = createTopic<unknown>('some.topic')
@@ -276,7 +276,7 @@ describe('EventStream: handler-returned events', () => {
 
 describe('Dead letters', () => {
   test('message sent to a stopped actor produces a dead letter', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const deadLetters: DeadLetter[] = []
 
     system.subscribe(DeadLetterTopic, (event) => {
@@ -303,7 +303,7 @@ describe('Dead letters', () => {
   })
 
   test('messages to live actors do not produce dead letters', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const deadLetters: DeadLetter[] = []
 
     system.subscribe(DeadLetterTopic, (event) => {
@@ -330,7 +330,7 @@ describe('Dead letters', () => {
 
 describe('Logging', () => {
   test('actor lifecycle emits started and stopped log events', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const logs: LogEvent[] = []
 
     system.subscribe(LogTopic, (event) => {
@@ -357,7 +357,7 @@ describe('Logging', () => {
   })
 
   test('actor failure emits an error log event', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const logs: LogEvent[] = []
 
     system.subscribe(LogTopic, (event) => {
@@ -383,7 +383,7 @@ describe('Logging', () => {
   })
 
   test('actor restart emits a warning log event', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const logs: LogEvent[] = []
 
     system.subscribe(LogTopic, (event) => {
@@ -413,7 +413,7 @@ describe('Logging', () => {
   })
 
   test('ctx.log.info publishes a log event to the log topic', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const logs: LogEvent[] = []
 
     system.subscribe(LogTopic, (event) => {
@@ -446,7 +446,7 @@ describe('Logging', () => {
   })
 
   test('all log levels work (debug, info, warn, error)', async () => {
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     const logs: LogEvent[] = []
 
     system.subscribe(LogTopic, (event) => {

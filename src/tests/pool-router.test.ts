@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { PluginSystem, DeadLetterTopic, MetricsTopic, SystemLifecycleTopic } from '../system/index.ts'
+import { SystemPlugin, DeadLetterTopic, MetricsTopic, SystemLifecycleTopic } from '../system/index.ts'
 import type { ActorDef, DeadLetter, LifecycleEvent, MetricsEvent } from '../system/index.ts'
 import { PoolRouter } from '../plugins/parallel/pool-router.ts'
 import observabilityPlugin from '../plugins/observability/observability.plugin.ts'
@@ -10,7 +10,7 @@ const tick = (ms = 50) => Bun.sleep(ms)
 
 const withMetrics = async () => {
   const events: MetricsEvent[] = []
-  const system = await PluginSystem({
+  const system = await SystemPlugin({
     config: { observability: { metrics: { intervalMs: 50 } } },
     plugins: [observabilityPlugin],
   })
@@ -37,7 +37,7 @@ const makeRecordingWorker = (
 describe('PoolRouter: round-robin distribution', () => {
   test('distributes messages evenly across all workers', async () => {
     const log: Array<{ worker: string; message: string }> = []
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
 
     const router = PoolRouter({
       poolSize: 3,
@@ -73,7 +73,7 @@ describe('PoolRouter: round-robin distribution', () => {
 
   test('first message always goes to worker-0', async () => {
     const log: Array<{ worker: string; message: string }> = []
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
 
     const router = PoolRouter({
       poolSize: 3,
@@ -95,7 +95,7 @@ describe('PoolRouter: round-robin distribution', () => {
 
   test('cycles back to the first worker after a full round', async () => {
     const log: Array<{ worker: string; message: string }> = []
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
 
     const router = PoolRouter({
       poolSize: 2,
@@ -181,7 +181,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
 
   test('replacement worker processes messages normally', async () => {
     const log: Array<{ worker: string; message: string }> = []
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
 
     const router = PoolRouter({
       poolSize: 2,
@@ -293,7 +293,7 @@ describe("PoolRouter: onWorkerFailure 'shrink'", () => {
 
   test('remaining workers still process messages after shrink', async () => {
     const log: Array<{ worker: string; message: string }> = []
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
 
     const router = PoolRouter({
       poolSize: 2,
@@ -321,7 +321,7 @@ describe("PoolRouter: onWorkerFailure 'shrink'", () => {
 
   test('messages go to dead letters when pool shrinks to empty', async () => {
     const deadLetters: DeadLetter[] = []
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.subscribe(DeadLetterTopic, (dl) => deadLetters.push(dl))
 
     const router = PoolRouter({
@@ -353,7 +353,7 @@ describe("PoolRouter: onWorkerFailure 'shrink'", () => {
 describe("PoolRouter: onWorkerFailure 'escalate'", () => {
   test('router terminates when a worker fails', async () => {
     const events: LifecycleEvent[] = []
-    const system = await PluginSystem()
+    const system = await SystemPlugin()
     system.subscribe(SystemLifecycleTopic, (e) => events.push(e))
 
     const router = PoolRouter({
