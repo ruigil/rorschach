@@ -105,7 +105,7 @@ const spawnChatbot = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
   const historyStoreRef = system.spawn(`history-store-${userId}`, HistoryStore({ userId }))
   return system.spawn(
     'chatbot',
-    Chatbot({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model, userId, historyStoreRef }),
+    Chatbot({ model: LLM_PROVIDER_ADAPTER_OPTS.model }, { clientId: CLIENT_ID, userId, historyStoreRef, llmRef }),
     { state: { ...INITIAL_CHATBOT_STATE, loop: { ...initialAgentLoopSlice(), llmRef } } },
   )
 }

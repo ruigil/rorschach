@@ -8,9 +8,8 @@ import { AgentRegistry } from './agent-registry.ts'
 import {
   AgentRegistrationTopic,
   type AgentDescriptor,
-  type AgentFactoryOpts,
 } from './types.ts'
-import { Chatbot } from './chatbot.ts'
+import { ChatbotAgentFactory } from './chatbot.ts'
 import { PlannerAgentFactory, type PlannerAgentConfig } from './planner-agent.ts'
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
@@ -77,16 +76,10 @@ const PLANNER_DEFAULTS: ResolvedPlannerConfig = {
 const resolvePlannerConfig = (cfg: PlannerConfig | null): ResolvedPlannerConfig =>
   cfg ? { ...PLANNER_DEFAULTS, ...cfg } : { ...PLANNER_DEFAULTS }
 
-type ResolvedSessionConfig = {
-  defaultMode:         string
-  historyWindowHours?: number
-}
 
-const DEFAULT_MODE_FALLBACK = 'chatbot'
-
-const resolveSessionConfig = (cfg: SessionConfig | null): ResolvedSessionConfig => ({
-  defaultMode:        cfg?.defaultMode ?? DEFAULT_MODE_FALLBACK,
-  historyWindowHours: cfg?.historyWindowHours,
+const resolveSessionConfig = (cfg: SessionConfig | null): SessionConfig => ({
+  defaultMode:        cfg?.defaultMode ?? 'chatbot',
+  historyWindowHours: cfg?.historyWindowHours ?? 4,
 })
 
 // ─── Descriptor builders ───
@@ -95,14 +88,10 @@ const buildChatbotDescriptor = (cfg: ChatbotConfig): AgentDescriptor => ({
   mode:         'chatbot',
   displayName:  'Chatbot',
   shortDesc:    'General-purpose conversational assistant',
-  factory:      (opts: AgentFactoryOpts) => Chatbot({
-    clientId:        opts.clientId,
-    userId:          opts.userId,
-    model:           cfg.model,
-    systemPrompt:    cfg.systemPrompt,
-    toolFilter:      cfg.toolFilter,
-    historyStoreRef: opts.historyStoreRef,
-    llmRef:          opts.llmRef,
+  factory:      ChatbotAgentFactory({
+    model:        cfg.model,
+    systemPrompt: cfg.systemPrompt,
+    toolFilter:   cfg.toolFilter,
   }),
   capabilities: { userVisible: true },
 })
@@ -137,10 +126,7 @@ const spawnAll = (
   ) as ActorRef<LlmProviderMsg>
   ctx.publishRetained(LlmProviderTopic, 'ref', { ref: llmProviderRef })
 
-  const agentRegistryRef = ctx.spawn(
-    `agent-registry-${gen}`,
-    AgentRegistry(),
-  )
+  const agentRegistryRef = ctx.spawn(`agent-registry-${gen}`, AgentRegistry())
 
   const resolvedSession = resolveSessionConfig(sessionConfig)
   const sessionManagerRef = chatbotConfig

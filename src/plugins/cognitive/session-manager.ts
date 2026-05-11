@@ -58,44 +58,23 @@ export type SessionManagerOptions = {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-const updateSession = (
-  state: SessionManagerState,
-  userId: string,
-  patch: Partial<Session>,
-): SessionManagerState => ({
+const updateSession = (state: SessionManagerState, userId: string, patch: Partial<Session> ): SessionManagerState => ({
   ...state,
   sessions: { ...state.sessions, [userId]: { ...state.sessions[userId]!, ...patch } },
 })
 
-const setSession = (
-  state: SessionManagerState,
-  userId: string,
-  session: Session,
-): SessionManagerState => ({
+const setSession = (state: SessionManagerState, userId: string, session: Session ): SessionManagerState => ({
   ...state,
   sessions: { ...state.sessions, [userId]: session },
 })
 
-const removeSession = (
-  state: SessionManagerState,
-  userId: string,
-): SessionManagerState => {
+const removeSession = (state: SessionManagerState, userId: string): SessionManagerState => {
   const { [userId]: _, ...sessions } = state.sessions
   const clientIndex = Object.fromEntries(
     Object.entries(state.clientIndex).filter(([, uid]) => uid !== userId),
   )
   return { ...state, sessions, clientIndex }
 }
-
-const spawnHistoryStore = (
-  ctx: any,
-  userId: string,
-  historyWindowHours: number | undefined,
-): ActorRef<HistoryStoreMsg> =>
-  ctx.spawn(
-    `history-store-${userId}`,
-    HistoryStore({ userId, historyWindowHours }),
-  ) as ActorRef<HistoryStoreMsg>
 
 const ensureAgent = (
   state: SessionManagerState,
@@ -235,7 +214,7 @@ export const SessionManager = (
         }
 
         // First connect for this userId — spawn history store + default agent.
-        const historyStoreRef = spawnHistoryStore(ctx, userId, historyWindowHours)
+        const historyStoreRef = ctx.spawn(`history-store-${userId}`, HistoryStore({ userId, historyWindowHours })) as ActorRef<HistoryStoreMsg>
         const seeded: Session = {
           historyStoreRef,
           agentRefs:   {},

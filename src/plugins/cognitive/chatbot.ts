@@ -10,6 +10,7 @@ import { LlmProviderTopic } from '../../types/llm.ts'
 import type { ApiMessage, LlmProviderMsg, TokenUsage } from '../../types/llm.ts'
 import type { ChatbotMsg } from './types.ts'
 import { HistorySnapshotTopic } from './types.ts'
+import type { AgentFactoryOpts } from './types.ts'
 import type { HistoryStoreMsg } from './history-store.ts'
 
 // ─── State ───
@@ -41,16 +42,11 @@ const HISTORY_MARKERS_NOTE =
 
 // ─── Options ───
 
-export type ChatbotOptions = {
-  clientId:        string
-  model:           string
-  systemPrompt?:   string
-  toolFilter?:     ToolFilter
-  maxToolLoops?:   number
-  userId:          string
-  roles?:          string[]
-  llmRef?:         ActorRef<LlmProviderMsg> | null
-  historyStoreRef: ActorRef<HistoryStoreMsg>
+export type ChatbotAgentConfig = {
+  model:         string
+  systemPrompt?: string
+  toolFilter?:   ToolFilter
+  maxToolLoops?: number
 }
 
 // ─── Helpers ───
@@ -99,18 +95,22 @@ const initialChatbotState = (): ChatbotState => ({
   activeClientId: '',
 })
 
-// ─── Actor ───
+// ─── Factory ───
+//
+// Curried so cognitive.plugin.ts can register the descriptor with the
+// chatbot config closed over, while SessionManager supplies per-instance
+// AgentFactoryOpts (userId, clientId, llmRef, historyStoreRef) at spawn time.
 
-export const Chatbot = (options: ChatbotOptions): ActorDef<ChatbotMsg, ChatbotState> => {
-  const {
-    clientId,
-    model,
-    systemPrompt,
-    toolFilter,
-    maxToolLoops = 25,
-    userId,
-    historyStoreRef,
-  } = options
+export const ChatbotAgentFactory = (config: ChatbotAgentConfig) =>
+  (opts: AgentFactoryOpts): ActorDef<ChatbotMsg, ChatbotState> =>
+    Chatbot(config, opts)
+
+export const Chatbot = (
+  config: ChatbotAgentConfig,
+  opts:   AgentFactoryOpts,
+): ActorDef<ChatbotMsg, ChatbotState> => {
+  const { model, systemPrompt, toolFilter, maxToolLoops = 25 } = config
+  const { userId, historyStoreRef } = opts
 
   type M   = ChatbotMsg
   type S   = ChatbotState
@@ -293,7 +293,7 @@ export const Chatbot = (options: ChatbotOptions): ActorDef<ChatbotMsg, ChatbotSt
     return handlers.startTurn(stateNext, {
       messages: buildTurnMessages(optimisticHistory, stateNext.userContext, userText),
       userId,
-      clientId,
+      clientId: msgClientId,
       traceId,
       parentSpanId,
     }, ctx)
@@ -334,7 +334,7 @@ export const Chatbot = (options: ChatbotOptions): ActorDef<ChatbotMsg, ChatbotSt
     return handlers.startTurn(stateNext, {
       messages: buildTurnMessages(optimisticHistory, stateNext.userContext, injection),
       userId,
-      clientId,
+      clientId: state.activeClientId,
       traceId,
       parentSpanId,
     }, ctx)
