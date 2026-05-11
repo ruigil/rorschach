@@ -2,8 +2,7 @@ import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ClientConnectTopic, ClientDisconnectTopic, InboundMessageTopic, CronTriggerTopic, OutboundMessageTopic } from '../../types/events.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
-import { HistoryStore } from './history-store.ts'
-import type { HistoryStoreMsg } from './history-store.ts'
+import { HistoryStore, type HistoryStoreMsg} from './history-store.ts'
 import {
   AgentRegistrationTopic,
   SessionLifecycleTopic,
