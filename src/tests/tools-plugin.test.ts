@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach } from 'bun:test'
-import { createPluginSystem, ask } from '../system/index.ts'
+import { PluginSystem, ask } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import {
   createWebSearchActor,
@@ -58,7 +58,7 @@ describe('web-search actor', () => {
   test('sends toolResult to replyTo on successful Brave API response', async () => {
     stubFetchOk(mockBraveResponse)
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }))
     await tick()
 
@@ -81,7 +81,7 @@ describe('web-search actor', () => {
   test('sends toolError to replyTo when Brave API returns non-ok status', async () => {
     stubFetchError(429, 'Rate limit exceeded')
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }))
     await tick()
 
@@ -102,7 +102,7 @@ describe('web-search actor', () => {
   test('sends toolError to replyTo when fetch throws a network error', async () => {
     stubFetchThrow('network unreachable')
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }))
     await tick()
 
@@ -128,7 +128,7 @@ describe('web-search actor', () => {
       return new Response(JSON.stringify(mockBraveResponse), { status: 200 })
     }) as unknown as typeof fetch
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key', count: 7 }))
     await tick()
 
@@ -152,7 +152,7 @@ describe('web-search actor', () => {
       return new Response(JSON.stringify(mockBraveResponse), { status: 200 })
     }) as unknown as typeof fetch
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'my-secret-key' }))
     await tick()
 
@@ -176,7 +176,7 @@ describe('tools plugin', () => {
   test('activates and spawns web-search child actor', async () => {
     stubFetchOk(mockBraveResponse)
 
-    const system = await createPluginSystem({
+    const system = await PluginSystem({
       config: { tools: { webSearch: { apiKey: 'test-key', count: 10 } } },
       plugins: [toolsPlugin],
     })
@@ -268,7 +268,7 @@ describe('tools plugin', () => {
   test('config change replaces web-search child actor', async () => {
     stubFetchOk(mockBraveResponse)
 
-    const system = await createPluginSystem({
+    const system = await PluginSystem({
       config: { tools: { webSearch: { apiKey: 'initial-key', count: 5 } } },
       plugins: [toolsPlugin],
     })

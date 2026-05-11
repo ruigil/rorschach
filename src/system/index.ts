@@ -1,5 +1,5 @@
 // ─── Public API ───
-export { createPluginSystem, type PluginSystemOptions } from './system.ts'
+export { PluginSystem, type PluginSystemOptions } from './system.ts'
 export { createWorkerBridge } from '../plugins/parallel/worker-bridge.ts'
 export { taskTopic } from '../plugins/parallel/types.ts'
 export type { TaskEvent, WorkerBridge, WorkerBridgeMsg, WorkerBridgeOptions, WorkerBridgeState } from '../plugins/parallel/types.ts'

@@ -1,4 +1,4 @@
-import { createPluginSystem, LogTopic, onLifecycle } from '../system/index.ts'
+import { PluginSystem, LogTopic, onLifecycle } from '../system/index.ts'
 import type { ActorDef, ActorContext, ActorRef, LogEvent, PluginDef } from '../system/index.ts'
 
 
@@ -73,7 +73,7 @@ const createCounterPlugin = (config: CounterConfig): PluginDef<CounterPluginMsg,
 
 // ─── Create system with counter loaded at startup ─────────────────────────────
 
-const system = await createPluginSystem({
+const system = await PluginSystem({
   plugins: [createCounterPlugin({ startAt: 0, tickMs: 1_000 })],
 })
 

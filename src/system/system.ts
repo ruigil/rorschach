@@ -64,7 +64,7 @@ const deepMerge = (base: unknown, override: unknown): unknown => {
   return result
 }
 
-// ─── createPluginSystem ──────────────────────────────────────────────────────
+// ─── PluginSystem ──────────────────────────────────────────────────────
 //
 // Creates the root actor system with integrated plugin management.
 //
@@ -75,7 +75,7 @@ const deepMerge = (base: unknown, override: unknown): unknown => {
 // Returns a Promise because initial plugins (from options.plugins) must be
 // fully activated before the system is usable.
 //
-export const createPluginSystem = async (
+export const PluginSystem = async (
   options?: PluginSystemOptions,
 ): Promise<PluginSystem> => {
   const { shutdownTimeoutMs, plugins: initialPlugins, config: initialConfig } = options ?? {}

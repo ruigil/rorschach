@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createPluginSystem, SystemLifecycleTopic } from '../system/index.ts'
+import { PluginSystem, SystemLifecycleTopic } from '../system/index.ts'
 import type {
   ActorDef,
   LifecycleEvent,
@@ -29,7 +29,7 @@ describe('System-as-root-actor: structural symmetry', () => {
       },
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const parent = system.spawn('parent', parentDef)
     await tick()
 
@@ -66,7 +66,7 @@ describe('System-as-root-actor: structural symmetry', () => {
       handler: (state) => ({ state }),
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     system.spawn('parent', parentDef)
     await tick(100)
 
@@ -81,7 +81,7 @@ describe('System-as-root-actor: structural symmetry', () => {
   test('implicit child watch works for root — terminated events delivered on shutdown', async () => {
     const events: LifecycleEvent[] = []
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     system.spawn('a', { handler: (state: null) => ({ state }) })
@@ -108,7 +108,7 @@ describe('System-as-root-actor: structural symmetry', () => {
       },
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
     const ref = system.spawn('doomed', failingDef)
     await tick()
@@ -140,7 +140,7 @@ describe('System-as-root-actor: structural symmetry', () => {
       handler: () => { throw new Error('fail') },
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
 
     // Spawn an actor that will fail
     const ref1 = system.spawn('worker', failDef)

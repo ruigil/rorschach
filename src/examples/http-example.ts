@@ -1,10 +1,10 @@
-import { createPluginSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
+import { PluginSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
 import { InboundMessageTopic } from '../types/events.ts'
 import interfacesPlugin from '../plugins/interfaces/interfaces.plugin.ts'
 import type { LifecycleEvent, LogEvent } from '../system/types.ts'
 
 // ─── Create the actor system with unified config ───
-const system = await createPluginSystem({
+const system = await PluginSystem({
   config: { interfaces: { http: { port: 3000 } } },
   plugins: [interfacesPlugin],
 })

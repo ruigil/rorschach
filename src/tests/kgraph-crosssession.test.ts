@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { rm, mkdir } from 'node:fs/promises'
 import { GrafeoDB } from '@grafeo-db/js'
-import { createPluginSystem, ask } from '../system/index.ts'
+import { PluginSystem, ask } from '../system/index.ts'
 import type { ActorRef } from '../system/index.ts'
 import { createKgraphActor, KGRAPH_CREATE_NODE_TOOL_NAME } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
@@ -25,15 +25,15 @@ const withKey = test.skipIf(!API_KEY)
 // ─── Helpers ───
 
 function spawnSystem() {
-  return createPluginSystem()
+  return PluginSystem()
 }
 
-function spawnLlm(system: Awaited<ReturnType<typeof createPluginSystem>>): ActorRef<LlmProviderMsg> {
+function spawnLlm(system: Awaited<ReturnType<typeof PluginSystem>>): ActorRef<LlmProviderMsg> {
   const adapter = createOpenRouterAdapter({ apiKey: API_KEY })
   return system.spawn('llm', createLlmProviderActor({ adapter })) as ActorRef<LlmProviderMsg>
 }
 
-function spawnKgraph(system: Awaited<ReturnType<typeof createPluginSystem>>): ActorRef<KgraphMsg> {
+function spawnKgraph(system: Awaited<ReturnType<typeof PluginSystem>>): ActorRef<KgraphMsg> {
   return system.spawn(
     'kgraph',
     createKgraphActor(TEST_DB, { model: EMBED_MODEL, dimensions: DIMS }),

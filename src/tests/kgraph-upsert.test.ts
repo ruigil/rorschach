@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createPluginSystem, ask } from '../system/index.ts'
+import { PluginSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { createKgraphActor, KGRAPH_CREATE_NODE_TOOL_NAME } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
@@ -29,7 +29,7 @@ const EMBEDDINGS: Record<string, number[]> = {
 const EMBEDDING_DIMS = 4
 const EMBEDDING_MODEL = 'test-embed'
 
-function spawnMockLlm(system: Awaited<ReturnType<typeof createPluginSystem>>): ActorRef<LlmProviderMsg> {
+function spawnMockLlm(system: Awaited<ReturnType<typeof PluginSystem>>): ActorRef<LlmProviderMsg> {
   const def: ActorDef<LlmProviderMsg, null> = {
     handler: (state, msg) => {
       if (msg.type === 'embed') {
@@ -63,7 +63,7 @@ function createNode(
 describe('kgraph create_node', () => {
 
   test('creates a node and returns { name, nodeId }', async () => {
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
@@ -86,7 +86,7 @@ describe('kgraph create_node', () => {
   })
 
   test('two nodes with the same name produce separate records (no merging)', async () => {
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
@@ -111,7 +111,7 @@ describe('kgraph create_node', () => {
   })
 
   test('multiple distinct nodes produce separate records', async () => {
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
@@ -140,7 +140,7 @@ describe('kgraph create_node', () => {
   })
 
   test('fails gracefully when no LLM provider is available', async () => {
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
 
     const kgraphRef = system.spawn(
       'kgraph',

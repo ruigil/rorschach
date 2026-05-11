@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createPluginSystem, ask } from '../system/index.ts'
+import { PluginSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { createToolStatusActor, TOOL_STATUS_TOOL_NAME } from '../plugins/tools/tool-status.ts'
 import { JobRegistryTopic } from '../types/tools.ts'
@@ -42,7 +42,7 @@ const createFakeTool = (): ActorDef<FakeMsg, FakeToolState> => ({
 
 describe('tool_status', () => {
   test('status of running job served from cached topic state', async () => {
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const fakeTool = system.spawn('fake-tool', createFakeTool(), { state: {
       jobs: { 'job-1': { result: 'eventual' } },
     } }) as unknown as ActorRef<ToolMsg>
@@ -83,7 +83,7 @@ describe('tool_status', () => {
   })
 
   test('completed job status shows result from topic', async () => {
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const fakeTool = system.spawn('fake-tool-c', createFakeTool(), { state: {
       jobs: { 'job-c': { result: 'all done' } },
     } }) as unknown as ActorRef<ToolMsg>
@@ -127,7 +127,7 @@ describe('tool_status', () => {
   })
 
   test('failed job status shows error from topic', async () => {
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const fakeTool = system.spawn('fake-tool-f', createFakeTool(), { state: {
       jobs: { 'job-f': { result: '' } },
     } }) as unknown as ActorRef<ToolMsg>
@@ -169,7 +169,7 @@ describe('tool_status', () => {
   })
 
   test('list mode (no jobId) returns active jobs with age', async () => {
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const fakeTool = system.spawn('fake-tool-2', createFakeTool(), { state: {
       jobs: { 'jA': { result: '' }, 'jB': { result: '' } },
     } }) as unknown as ActorRef<ToolMsg>
@@ -206,7 +206,7 @@ describe('tool_status', () => {
   })
 
   test('cleared job is removed and lookup reports it gone', async () => {
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const fakeTool = system.spawn('fake-tool-3', createFakeTool(), { state: {
       jobs: {},
     } }) as unknown as ActorRef<ToolMsg>
@@ -240,7 +240,7 @@ describe('tool_status', () => {
   })
 
   test('empty list when no jobs are active', async () => {
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const statusRef = system.spawn(
       'tool-status-4',
       createToolStatusActor()

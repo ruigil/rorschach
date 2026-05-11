@@ -13,14 +13,14 @@
 // Both can be used directly (as shown below) or wired up via the parallel
 // plugin, which manages their lifecycle through the config system.
 
-import { createPluginSystem, LogTopic, taskTopic } from '../system/index.ts'
+import { PluginSystem, LogTopic, taskTopic } from '../system/index.ts'
 import { createPoolRouter } from '../plugins/parallel/pool-router.ts'
 import { createWorkerBridge } from '../plugins/parallel/worker-bridge.ts'
 import type { ActorDef, LogEvent, TaskEvent, WorkerBridgeMsg, WorkerBridgeState } from '../system/index.ts'
 
 // ─── System setup ─────────────────────────────────────────────────────────────
 
-const system = await createPluginSystem()
+const system = await PluginSystem()
 
 system.subscribe(LogTopic, (e) => {
   const { level, source, message } = e as LogEvent

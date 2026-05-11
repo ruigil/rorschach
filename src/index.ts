@@ -1,5 +1,5 @@
 import {
-  createPluginSystem,
+  PluginSystem,
   LogTopic,
   MetricsTopic,
   SystemLifecycleTopic,
@@ -66,7 +66,7 @@ const SYSTEM_PROMPT = (config.cognitive as any)?.chatbot?.systemPrompt as string
 
 // ─── Create the actor system (plugins loaded in topo-sorted order) ───
 
-const system = await createPluginSystem({ plugins, config })
+const system = await PluginSystem({ plugins, config })
 
 // Seed the HTTP actor with the initial config snapshot
 system.publish(ConfigSnapshotTopic, { config: buildConfigSnapshot(config) })

@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import {
-  createPluginSystem,
+  PluginSystem,
   LogTopic,
   MetricsTopic,
   onLifecycle,
@@ -50,7 +50,7 @@ const workerDef: ActorDef<WorkerMsg, WorkerState> = {
 
 // ─── Bootstrap ───
 
-const system = await createPluginSystem({
+const system = await PluginSystem({
   config: {
     observability: {
       jsonlLogger: {

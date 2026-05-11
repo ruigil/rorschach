@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createPluginSystem } from '../system/index.ts'
+import { PluginSystem } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 
 /** Small delay to let async actor processing settle */
@@ -34,7 +34,7 @@ describe('pipeToSelf', () => {
       },
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const ref = system.spawn('pipe-success', def)
     await tick()
 
@@ -73,7 +73,7 @@ describe('pipeToSelf', () => {
       },
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const ref = system.spawn('pipe-failure', def)
     await tick()
 
@@ -114,7 +114,7 @@ describe('pipeToSelf', () => {
       },
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const ref = system.spawn('non-blocking', def)
     await tick()
 
@@ -152,7 +152,7 @@ describe('pipeToSelf', () => {
       },
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const ref = system.spawn('stop-before-resolve', def)
     await tick()
 
@@ -203,7 +203,7 @@ describe('pipeToSelf', () => {
       },
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const ref = system.spawn('multi-pipe', def)
     await tick()
 
@@ -249,7 +249,7 @@ describe('pipeToSelf', () => {
       },
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const ref = system.spawn('state-cycle', def, { state: { loading: false, data: null, error: null } })
     await tick()
 

@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach } from 'bun:test'
-import { createPluginSystem, TraceTopic, type TraceSpan } from '../system/index.ts'
+import { PluginSystem, TraceTopic, type TraceSpan } from '../system/index.ts'
 import type { MessageHeaders } from '../system/index.ts'
 import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
 import { createHistoryStoreActor } from '../plugins/cognitive/history-store.ts'
@@ -77,7 +77,7 @@ const stubFetchByUrl = (completions: (() => Response)[], braveFactory?: () => Re
 
 // ─── Span collection helpers ───
 
-const collectSpans = (system: Awaited<ReturnType<typeof createPluginSystem>>): TraceSpan[] => {
+const collectSpans = (system: Awaited<ReturnType<typeof PluginSystem>>): TraceSpan[] => {
   const spans: TraceSpan[] = []
   system.subscribe(TraceTopic, span => spans.push(span))
   return spans
@@ -88,7 +88,7 @@ const spanFor = (spans: TraceSpan[], operation: string, status: TraceSpan['statu
 
 // ─── Spawn helpers ───
 
-const spawnChatbot = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
+const spawnChatbot = (system: Awaited<ReturnType<typeof PluginSystem>>) => {
   const userId = `test-user-${crypto.randomUUID()}`
   const llmRef = system.spawn('llm-provider', createLlmProviderActor({ adapter: createOpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }))
   const historyStoreRef = system.spawn(`history-store-${userId}`, createHistoryStoreActor({ userId }))
@@ -107,7 +107,7 @@ describe('distributed tracing', () => {
   test('emits chatbot and llm-call spans with correct traceId and parent chain for a direct response', async () => {
     globalThis.fetch = (async () => makeSSEResponse(contentPayloads('Hello!'))) as unknown as typeof fetch
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const spans = collectSpans(system)
     const react = spawnChatbot(system)
 
@@ -157,7 +157,7 @@ describe('distributed tracing', () => {
       () => new Response(JSON.stringify(emptyBraveResponse), { status: 200 }),
     )
 
-    const system = await createPluginSystem({
+    const system = await PluginSystem({
       config: { tools: { webSearch: { apiKey: 'test-key' } } },
       plugins: [toolsPlugin],
     })
@@ -200,7 +200,7 @@ describe('distributed tracing', () => {
   test('closes chatbot and llm-call spans with error status when the LLM call fails', async () => {
     globalThis.fetch = (async () => new Response('Internal Server Error', { status: 500 })) as unknown as typeof fetch
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const spans = collectSpans(system)
     const react = spawnChatbot(system)
 
@@ -246,7 +246,7 @@ describe('distributed tracing', () => {
       ],
     )
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const spans = collectSpans(system)
     // Retain the tool before spawning chatbot — replayed on subscribe during chatbot's start lifecycle
     system.publishRetained(ToolRegistrationTopic, WEB_SEARCH_TOOL_NAME, { name: WEB_SEARCH_TOOL_NAME, schema: WEB_SEARCH_SCHEMA, ref: fakeToolRef })

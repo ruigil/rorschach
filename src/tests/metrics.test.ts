@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import {
-  createPluginSystem,
+  PluginSystem,
   MetricsTopic,
   type ActorDef,
   type MetricsEvent,
@@ -19,7 +19,7 @@ const getSnap = (events: MetricsEvent[], name: string) =>
 /** Create a system with the metrics actor loaded and a pre-wired event collector. */
 const withMetrics = async (intervalMs = 50): Promise<{ system: PluginSystem; events: MetricsEvent[] }> => {
   const events: MetricsEvent[] = []
-  const system = await createPluginSystem({
+  const system = await PluginSystem({
     config: { observability: { metrics: { intervalMs } } },
     plugins: [observabilityPlugin],
   })
@@ -334,7 +334,7 @@ describe('Metrics: push-based MetricsTopic', () => {
   })
 
   test('MetricsTopic is not published when observability plugin is not loaded', async () => {
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     system.spawn('counter', counterDef, { state: 0 })
 
     const events: unknown[] = []

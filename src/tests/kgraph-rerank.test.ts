@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createPluginSystem, ask } from '../system/index.ts'
+import { PluginSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { createKgraphActor, KGRAPH_CREATE_NODE_TOOL_NAME } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
@@ -26,7 +26,7 @@ const embeddingFor = (text: string): number[] => {
 
 // ─── Helpers ───
 
-function spawnMockLlm(system: Awaited<ReturnType<typeof createPluginSystem>>): ActorRef<LlmProviderMsg> {
+function spawnMockLlm(system: Awaited<ReturnType<typeof PluginSystem>>): ActorRef<LlmProviderMsg> {
   const def: ActorDef<LlmProviderMsg, null> = {
     handler: (state, msg) => {
       if (msg.type === 'embed') {
@@ -91,7 +91,7 @@ function createLink(
 describe('kgraph vector search with reranker', () => {
 
   test('reranker reorders vector search results', async () => {
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
@@ -133,7 +133,7 @@ describe('kgraph vector search with reranker', () => {
   })
 
   test('falls back to vector scores when reranker returns error', async () => {
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
 
     const errorDef: ActorDef<LlmProviderMsg, null> = {
       handler: (state, msg) => {

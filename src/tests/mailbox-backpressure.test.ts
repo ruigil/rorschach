@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { createMailbox } from '../system/mailbox.ts'
-import { createPluginSystem } from '../system/index.ts'
+import { PluginSystem } from '../system/index.ts'
 import { DeadLetterTopic } from '../system/types.ts'
 import type { ActorDef, DeadLetter, LifecycleEvent } from '../system/index.ts'
 
@@ -256,7 +256,7 @@ describe('Actor: bounded mailbox integration', () => {
       },
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
 
     system.subscribe(DeadLetterTopic, (event) => {
       deadLetters.push(event as DeadLetter)
@@ -299,7 +299,7 @@ describe('Actor: bounded mailbox integration', () => {
       },
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
 
     const ref = system.spawn('drop-oldest', def)
     await tick()
@@ -330,7 +330,7 @@ describe('Actor: bounded mailbox integration', () => {
       },
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
 
     const ref = system.spawn('unbounded', def)
     await tick()
@@ -380,7 +380,7 @@ describe('Actor: bounded mailbox integration', () => {
       },
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
     const ref = system.spawn('parent', parentDef, { state: { events: [] } })
     await tick(100)
 
@@ -418,7 +418,7 @@ describe('Actor: bounded mailbox integration', () => {
       },
     }
 
-    const system = await createPluginSystem()
+    const system = await PluginSystem()
 
     system.subscribe(DeadLetterTopic, (event) => {
       deadLetters.push((event as DeadLetter).message as string)
