@@ -7,27 +7,27 @@ import type { ToolCollection, ToolMsg, ToolSchema } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 
 import type { GoogleApisConfig, GoogleAgentMsg, GooglePluginMsg, SharedRefs } from './types.ts'
-import { createTokenStoreActor } from './token-store.ts'
-import { createOAuthStateActor } from './oauth-state.ts'
+import { TokenStore } from './token-store.ts'
+import { OAuthState } from './oauth-state.ts'
 import { buildGoogleOAuthRoutes } from './routes.ts'
-import { createGoogleAgentActor } from './google-agent.ts'
+import { GoogleAgent } from './google-agent.ts'
 
 import {
-  createGmailActor,
+  Gmail,
   GMAIL_LIST_MESSAGES_TOOL_NAME, GMAIL_LIST_MESSAGES_SCHEMA,
   GMAIL_GET_MESSAGE_TOOL_NAME,   GMAIL_GET_MESSAGE_SCHEMA,
   GMAIL_SEND_MESSAGE_TOOL_NAME,  GMAIL_SEND_MESSAGE_SCHEMA,
   GMAIL_SEARCH_TOOL_NAME,        GMAIL_SEARCH_SCHEMA,
 } from './tools/gmail.ts'
 import {
-  createCalendarActor,
+  Calendar,
   CALENDAR_LIST_EVENTS_TOOL_NAME,  CALENDAR_LIST_EVENTS_SCHEMA,
   CALENDAR_CREATE_EVENT_TOOL_NAME, CALENDAR_CREATE_EVENT_SCHEMA,
   CALENDAR_UPDATE_EVENT_TOOL_NAME, CALENDAR_UPDATE_EVENT_SCHEMA,
   CALENDAR_DELETE_EVENT_TOOL_NAME, CALENDAR_DELETE_EVENT_SCHEMA,
 } from './tools/calendar.ts'
 import {
-  createDriveActor,
+  Drive,
   DRIVE_LIST_FILES_TOOL_NAME,    DRIVE_LIST_FILES_SCHEMA,
   DRIVE_SEARCH_FILES_TOOL_NAME,  DRIVE_SEARCH_FILES_SCHEMA,
   DRIVE_GET_FILE_TOOL_NAME,      DRIVE_GET_FILE_SCHEMA,
@@ -35,7 +35,7 @@ import {
   DRIVE_UPLOAD_FILE_TOOL_NAME,   DRIVE_UPLOAD_FILE_SCHEMA,
 } from './tools/drive.ts'
 import {
-  createYoutubeActor,
+  Youtube,
   YOUTUBE_SEARCH_VIDEOS_TOOL_NAME, YOUTUBE_SEARCH_VIDEOS_SCHEMA,
   YOUTUBE_VIDEO_DETAILS_TOOL_NAME, YOUTUBE_VIDEO_DETAILS_SCHEMA,
 } from './tools/youtube.ts'
@@ -117,10 +117,10 @@ const spawnChildren = (
   const tokenStoreRef = refs.tokenStoreRef!
   const { clientId, clientSecret } = refs
 
-  const gmailRef    = ctx.spawn(`googleapis-gmail-${gen}`,    createGmailActor(tokenStoreRef, clientId, clientSecret))    as ActorRef<ToolMsg>
-  const calendarRef = ctx.spawn(`googleapis-calendar-${gen}`, createCalendarActor(tokenStoreRef, clientId, clientSecret)) as ActorRef<ToolMsg>
-  const driveRef    = ctx.spawn(`googleapis-drive-${gen}`,    createDriveActor(tokenStoreRef, clientId, clientSecret))    as ActorRef<ToolMsg>
-  const youtubeRef  = ctx.spawn(`googleapis-youtube-${gen}`,  createYoutubeActor(tokenStoreRef, clientId, clientSecret))  as ActorRef<ToolMsg>
+  const gmailRef    = ctx.spawn(`googleapis-gmail-${gen}`,    Gmail(tokenStoreRef, clientId, clientSecret))    as ActorRef<ToolMsg>
+  const calendarRef = ctx.spawn(`googleapis-calendar-${gen}`, Calendar(tokenStoreRef, clientId, clientSecret)) as ActorRef<ToolMsg>
+  const driveRef    = ctx.spawn(`googleapis-drive-${gen}`,    Drive(tokenStoreRef, clientId, clientSecret))    as ActorRef<ToolMsg>
+  const youtubeRef  = ctx.spawn(`googleapis-youtube-${gen}`,  Youtube(tokenStoreRef, clientId, clientSecret))  as ActorRef<ToolMsg>
 
   const tools: ToolCollection = {
     [GMAIL_LIST_MESSAGES_TOOL_NAME]:   { schema: GMAIL_LIST_MESSAGES_SCHEMA,   ref: gmailRef },
@@ -143,7 +143,7 @@ const spawnChildren = (
   const agentOpts     = { model, maxToolLoops, tools }
   const googleAgentRef = ctx.spawn(
     `googleapis-agent-${gen}`,
-    createGoogleAgentActor(agentOpts),
+    GoogleAgent(agentOpts),
   ) as ActorRef<GoogleAgentMsg>
 
   ctx.publishRetained(ToolRegistrationTopic, GOOGLE_TOOL_NAME, {
@@ -234,8 +234,8 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
         refs.clientSecret = clientSecret
         refs.baseUrl      = baseUrl
 
-        const tokenStoreRef = ctx.spawn('googleapis-token-store', createTokenStoreActor('workspace/googleapis/tokens.json'))
-        const oauthStateRef = ctx.spawn('googleapis-oauth-state', createOAuthStateActor())
+        const tokenStoreRef = ctx.spawn('googleapis-token-store', TokenStore('workspace/googleapis/tokens.json'))
+        const oauthStateRef = ctx.spawn('googleapis-oauth-state', OAuthState())
 
         refs.tokenStoreRef = tokenStoreRef
         refs.oauthStateRef = oauthStateRef

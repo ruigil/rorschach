@@ -1,10 +1,10 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { PluginSystem } from '../system/index.ts'
 import { OutboundMessageTopic } from '../types/events.ts'
-import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
-import { createHistoryStoreActor } from '../plugins/cognitive/history-store.ts'
-import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
-import { initialReactLoopSlice } from '../system/react-loop.ts'
+import { Chatbot, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
+import { HistoryStore } from '../plugins/cognitive/history-store.ts'
+import { LlmProvider, OpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
+import { initialAgentLoopSlice } from '../system/agent-loop.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import type { BraveLlmContextResponse } from '../plugins/tools/web-search.ts'
 
@@ -101,12 +101,12 @@ const stubFetchByUrl = (completions: (() => Response)[], braveFactory?: () => Re
 
 const spawnChatbot = (system: Awaited<ReturnType<typeof PluginSystem>>) => {
   const userId = `test-user-${crypto.randomUUID()}`
-  const llmRef = system.spawn('llm-provider', createLlmProviderActor({ adapter: createOpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }))
-  const historyStoreRef = system.spawn(`history-store-${userId}`, createHistoryStoreActor({ userId }))
+  const llmRef = system.spawn('llm-provider', LlmProvider({ adapter: OpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }))
+  const historyStoreRef = system.spawn(`history-store-${userId}`, HistoryStore({ userId }))
   return system.spawn(
     'chatbot',
-    createChatbotActor({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model, userId, historyStoreRef }),
-    { state: { ...INITIAL_CHATBOT_STATE, loop: { ...initialReactLoopSlice(), llmRef } } },
+    Chatbot({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model, userId, historyStoreRef }),
+    { state: { ...INITIAL_CHATBOT_STATE, loop: { ...initialAgentLoopSlice(), llmRef } } },
   )
 }
 

@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { PluginSystem, DeadLetterTopic, MetricsTopic, SystemLifecycleTopic } from '../system/index.ts'
 import type { ActorDef, DeadLetter, LifecycleEvent, MetricsEvent } from '../system/index.ts'
-import { createPoolRouter } from '../plugins/parallel/pool-router.ts'
+import { PoolRouter } from '../plugins/parallel/pool-router.ts'
 import observabilityPlugin from '../plugins/observability/observability.plugin.ts'
 
 // ─── Helpers ───
@@ -39,7 +39,7 @@ describe('PoolRouter: round-robin distribution', () => {
     const log: Array<{ worker: string; message: string }> = []
     const system = await PluginSystem()
 
-    const router = createPoolRouter({
+    const router = PoolRouter({
       poolSize: 3,
       worker: makeRecordingWorker(log),
       workerInitialState: null,
@@ -75,7 +75,7 @@ describe('PoolRouter: round-robin distribution', () => {
     const log: Array<{ worker: string; message: string }> = []
     const system = await PluginSystem()
 
-    const router = createPoolRouter({
+    const router = PoolRouter({
       poolSize: 3,
       worker: makeRecordingWorker(log),
       workerInitialState: null,
@@ -97,7 +97,7 @@ describe('PoolRouter: round-robin distribution', () => {
     const log: Array<{ worker: string; message: string }> = []
     const system = await PluginSystem()
 
-    const router = createPoolRouter({
+    const router = PoolRouter({
       poolSize: 2,
       worker: makeRecordingWorker(log),
       workerInitialState: null,
@@ -129,7 +129,7 @@ describe('PoolRouter: worker naming', () => {
   test('workers are named worker-0 through worker-N under the router', async () => {
     const { system, events } = await withMetrics()
 
-    const router = createPoolRouter({
+    const router = PoolRouter({
       poolSize: 3,
       worker: { handler: (state) => ({ state }) },
       workerInitialState: null,
@@ -159,7 +159,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
   test('spawns a replacement worker and maintains pool size', async () => {
     const { system, events } = await withMetrics()
 
-    const router = createPoolRouter({
+    const router = PoolRouter({
       poolSize: 3,
       worker: makeRecordingWorker([]),
       workerInitialState: null,
@@ -183,7 +183,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
     const log: Array<{ worker: string; message: string }> = []
     const system = await PluginSystem()
 
-    const router = createPoolRouter({
+    const router = PoolRouter({
       poolSize: 2,
       worker: makeRecordingWorker(log),
       workerInitialState: null,
@@ -215,7 +215,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
   test('replacement worker gets a new sequential name', async () => {
     const { system, events } = await withMetrics()
 
-    const router = createPoolRouter({
+    const router = PoolRouter({
       poolSize: 2,
       worker: makeRecordingWorker([]),
       workerInitialState: null,
@@ -243,7 +243,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
   test('can replace multiple workers across sequential failures', async () => {
     const { system, events } = await withMetrics()
 
-    const router = createPoolRouter({
+    const router = PoolRouter({
       poolSize: 3,
       worker: makeRecordingWorker([]),
       workerInitialState: null,
@@ -272,7 +272,7 @@ describe("PoolRouter: onWorkerFailure 'shrink'", () => {
   test('reduces pool size when a worker fails', async () => {
     const { system, events } = await withMetrics()
 
-    const router = createPoolRouter({
+    const router = PoolRouter({
       poolSize: 3,
       worker: makeRecordingWorker([]),
       workerInitialState: null,
@@ -295,7 +295,7 @@ describe("PoolRouter: onWorkerFailure 'shrink'", () => {
     const log: Array<{ worker: string; message: string }> = []
     const system = await PluginSystem()
 
-    const router = createPoolRouter({
+    const router = PoolRouter({
       poolSize: 2,
       worker: makeRecordingWorker(log),
       workerInitialState: null,
@@ -324,7 +324,7 @@ describe("PoolRouter: onWorkerFailure 'shrink'", () => {
     const system = await PluginSystem()
     system.subscribe(DeadLetterTopic, (dl) => deadLetters.push(dl))
 
-    const router = createPoolRouter({
+    const router = PoolRouter({
       poolSize: 1,
       worker: makeRecordingWorker([]),
       workerInitialState: null,
@@ -356,7 +356,7 @@ describe("PoolRouter: onWorkerFailure 'escalate'", () => {
     const system = await PluginSystem()
     system.subscribe(SystemLifecycleTopic, (e) => events.push(e))
 
-    const router = createPoolRouter({
+    const router = PoolRouter({
       poolSize: 2,
       worker: makeRecordingWorker([]),
       workerInitialState: null,
@@ -385,7 +385,7 @@ describe("PoolRouter: onWorkerFailure 'escalate'", () => {
 describe('PoolRouter: validation', () => {
   test('throws RangeError when poolSize is 0', () => {
     expect(() =>
-      createPoolRouter({
+      PoolRouter({
         poolSize: 0,
         worker: { handler: (state) => ({ state }) },
         workerInitialState: null,
@@ -395,7 +395,7 @@ describe('PoolRouter: validation', () => {
 
   test('throws RangeError when poolSize is negative', () => {
     expect(() =>
-      createPoolRouter({
+      PoolRouter({
         poolSize: -1,
         worker: { handler: (state) => ({ state }) },
         workerInitialState: null,
@@ -414,7 +414,7 @@ describe('PoolRouter: shutdown', () => {
       if (e.type === 'terminated') terminated.push(e.ref.name)
     })
 
-    const router = createPoolRouter({
+    const router = PoolRouter({
       poolSize: 3,
       worker: { handler: (state) => ({ state }) },
       workerInitialState: null,

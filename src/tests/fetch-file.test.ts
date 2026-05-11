@@ -1,6 +1,6 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { PluginSystem, ask } from '../system/index.ts'
-import { createFetchFileActor } from '../plugins/tools/fetch-file.ts'
+import { FetchFile } from '../plugins/tools/fetch-file.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 import { unlink } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -23,7 +23,7 @@ describe('fetch-file actor', () => {
     })) as unknown as typeof fetch
 
     const system = await PluginSystem()
-    const ref = system.spawn('fetch-file', createFetchFileActor())
+    const ref = system.spawn('fetch-file', FetchFile())
     await tick()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -65,7 +65,7 @@ describe('fetch-file actor', () => {
     })) as unknown as typeof fetch
 
     const system = await PluginSystem()
-    const ref = system.spawn('fetch-file', createFetchFileActor())
+    const ref = system.spawn('fetch-file', FetchFile())
     await tick()
 
     const reply1 = await ask<ToolInvokeMsg, ToolReply>(
@@ -119,7 +119,7 @@ describe('fetch-file actor', () => {
     })) as unknown as typeof fetch
 
     const system = await PluginSystem()
-    const ref = system.spawn('fetch-file', createFetchFileActor())
+    const ref = system.spawn('fetch-file', FetchFile())
     await tick(200)
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -156,7 +156,7 @@ describe('fetch-file actor', () => {
     })) as unknown as typeof fetch
 
     const system = await PluginSystem()
-    const ref = system.spawn('fetch-file', createFetchFileActor())
+    const ref = system.spawn('fetch-file', FetchFile())
     await tick()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -185,7 +185,7 @@ describe('fetch-file actor', () => {
     }) as unknown as typeof fetch
 
     const system = await PluginSystem()
-    const ref = system.spawn('fetch-file', createFetchFileActor())
+    const ref = system.spawn('fetch-file', FetchFile())
     await tick()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(

@@ -1,5 +1,5 @@
-import { createPoolRouter, type PoolRouterOptions } from './pool-router.ts'
-import { createWorkerBridge } from './worker-bridge.ts'
+import { PoolRouter, type PoolRouterOptions } from './pool-router.ts'
+import { GenericWorkerBridge } from './worker-bridge.ts'
 import type { WorkerBridgeOptions } from './types.ts'
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
@@ -27,11 +27,11 @@ const spawnFromSlice = (slice: ParallelConfig, ctx: ActorContext<PluginMsg>) => 
   const bridgeRefs: ActorRef<unknown>[] = []
 
   for (const entry of slice.poolRouters ?? []) {
-    const router = createPoolRouter(entry.options)
+    const router = PoolRouter(entry.options)
     routerRefs.push(ctx.spawn(entry.name, router.def) as ActorRef<unknown>)
   }
   for (const entry of slice.workerBridges ?? []) {
-    const bridge = createWorkerBridge(entry.options)
+    const bridge = GenericWorkerBridge(entry.options)
     bridgeRefs.push(ctx.spawn(entry.name, bridge.def) as ActorRef<unknown>)
   }
 

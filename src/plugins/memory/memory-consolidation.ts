@@ -87,7 +87,7 @@ const buildMessages = (userId: string, turns: UserStreamEvent[]): ApiMessage[] =
 
 // ─── Worker actor: one per user, persistent ───
 
-const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserConsolidationWorkerMsg, WorkerState> => {
+const UserConsolidationWorker = (options: WorkerOptions): ActorDef<UserConsolidationWorkerMsg, WorkerState> => {
   const { model, userId, llmRef, tools, maxToolLoops = 25 } = options
 
   type Ctx = ActorContext<UserConsolidationWorkerMsg>
@@ -325,7 +325,7 @@ export type ConsolidationState = {
   workerSeq:        number
 }
 
-export const createMemoryConsolidationActor = (options: MemoryConsolidationOptions): ActorDef<MemoryConsolidationMsg, ConsolidationState> => {
+export const MemoryConsolidation = (options: MemoryConsolidationOptions): ActorDef<MemoryConsolidationMsg, ConsolidationState> => {
   const { model, intervalMs, toolFilter, maxToolLoops } = options
 
   const stopAllWorkers = (
@@ -384,7 +384,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
           workerSeq = workerSeq + 1
           worker = context.spawn(
             `consolidation-user-${msg.userId}-${workerSeq}`,
-            createUserConsolidationWorker({
+            UserConsolidationWorker({
               model,
               userId:           msg.userId,
               llmRef:           state.llmRef,

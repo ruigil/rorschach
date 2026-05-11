@@ -29,7 +29,7 @@ const jsonPersistence = (filePath: string): PersistenceAdapter<TokenStoreState> 
 
 // ─── Actor definition ───
 
-export const createTokenStoreActor = (filePath: string): ActorDef<TokenStoreMsg, TokenStoreState> => ({
+export const TokenStore = (filePath: string): ActorDef<TokenStoreMsg, TokenStoreState> => ({
   initialState: initialTokenStoreState,
   persistence: jsonPersistence(filePath),
 

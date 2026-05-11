@@ -1,5 +1,5 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
-import { createReactLoop, initialReactLoopSlice, type ReactLoopSlice } from '../../system/react-loop.ts'
+import { AgentLoop, initialAgentLoopSlice, type AgentLoopSlice } from '../../system/agent-loop.ts'
 import type { ToolCollection, ToolReply, ToolSchema } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { MemoryStoreMsg, MemorySupervisorMsg } from './types.ts'
@@ -38,7 +38,7 @@ export type MemoryStoreWorkerOptions = {
 // ─── Worker State ───
 
 export type MemoryStoreWorkerState = {
-  loop: ReactLoopSlice
+  loop: AgentLoopSlice
 }
 
 // ─── System prompt ───
@@ -58,7 +58,7 @@ export const createMemoryStoreWorkerActor = (
   parent:  ActorRef<MemorySupervisorMsg>,
   options: MemoryStoreWorkerOptions,
 ): ActorDef<MemoryStoreMsg, MemoryStoreWorkerState> => {
-  const handlers = createReactLoop<MemoryStoreWorkerState, MemoryStoreMsg>({
+  const handlers = AgentLoop<MemoryStoreWorkerState, MemoryStoreMsg>({
     role:            'memory-store',
     spanName:        'memory-store',
     logPrefix:       'memory store worker',
@@ -112,7 +112,7 @@ export const createMemoryStoreWorkerActor = (
   })
 
   return {
-    initialState: () => ({ loop: { llmRef: options.llmRef, turn: initialReactLoopSlice().turn } }),
+    initialState: () => ({ loop: { llmRef: options.llmRef, turn: initialAgentLoopSlice().turn } }),
     handler: handlers.idle,
   }
 }

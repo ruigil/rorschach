@@ -134,7 +134,7 @@ const resolveDb = (state: KgraphState, userId: string, basePath: string): Grafeo
 
 // ─── Actor definition ───
 
-export const createKgraphActor = (
+export const Kgraph = (
   basePath: string,
   embedding?: { model: string; dimensions: number },
   cosineSimilarityThreshold = 0.0,

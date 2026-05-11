@@ -49,7 +49,7 @@ export const GENERATE_IMAGE_SCHEMA: ToolSchema = {
 
 // ─── Messages ───
 
-export type VisionActorMsg =
+export type VisionMsg =
   | ToolInvokeMsg
   | LlmProviderReply
   | VisionProviderReply
@@ -83,7 +83,7 @@ export type VisionState = {
 
 // ─── Options ───
 
-export type VisionActorOptions = {
+export type VisionOptions = {
   llmRef: ActorRef<LlmProviderMsg>
   model: string
 }
@@ -111,12 +111,12 @@ const saveGeneratedImage = async (dataUrl: string): Promise<{ filePath: string; 
 
 // ─── Actor definition ───
 
-export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionActorMsg, VisionState> => {
+export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState> => {
   const { llmRef, model } = options
 
   return {
     initialState: { pending: {} },
-    handler: onMessage<VisionActorMsg, VisionState>({
+    handler: onMessage<VisionMsg, VisionState>({
 
       // ── analyze_image invoke ──
       invoke: (state, message, context) => {

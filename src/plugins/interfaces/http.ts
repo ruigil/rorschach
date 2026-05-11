@@ -107,7 +107,7 @@ type WsData = { clientId: string; userId: string; roles: string[] }
 
 // ─── Options ───
 
-export type HttpActorOptions = {
+export type HTTPOptions = {
   port?: number
 }
 
@@ -159,8 +159,8 @@ const safeJoinUrlPath = (baseDir: string, pathname: string): string | null => {
  * The `broadcast` message type pushes text to all connected WebSocket clients
  * using Bun's built-in pub/sub channel.
  */
-export const createHttpActor = (
-  options?: HttpActorOptions,
+export const HTTP = (
+  options?: HTTPOptions,
 ): ActorDef<HttpMessage, HttpState> => {
   const port = options?.port ?? 3000
   const CHANNEL = 'broadcast'

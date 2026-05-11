@@ -2,7 +2,7 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { tmpdir } from 'node:os'
 import { mkdirSync } from 'node:fs'
 import { PluginSystem } from '../system/index.ts'
-import { createSignalActor, renderForSignal } from '../plugins/interfaces/signal.ts'
+import { Signal, renderForSignal } from '../plugins/interfaces/signal.ts'
 import { ClientConnectTopic, InboundMessageTopic, OutboundMessageTopic } from '../types/events.ts'
 import type { ClientConnectEvent, InboundMessageEvent } from '../types/events.ts'
 
@@ -67,7 +67,7 @@ describe('signal actor: TCP socket', () => {
     system.subscribe(ClientConnectTopic,  e => connectEvents.push(e))
     system.subscribe(InboundMessageTopic,  e => messageEvents.push(e))
 
-    system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17590 }),
+    system.spawn('signal', Signal({ host: '127.0.0.1', port: 17590 }),
       { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
 
     await tick(100)
@@ -89,7 +89,7 @@ describe('signal actor: TCP socket', () => {
     const system = await PluginSystem()
     system.subscribe(ClientConnectTopic, e => connectEvents.push(e))
 
-    system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17591 }),
+    system.spawn('signal', Signal({ host: '127.0.0.1', port: 17591 }),
       { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
 
     await tick(100)
@@ -106,7 +106,7 @@ describe('signal actor: TCP socket', () => {
     daemon = startMockSignalDaemon(17592)
 
     const system = await PluginSystem()
-    system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17592, account: '+0000000000' }),
+    system.spawn('signal', Signal({ host: '127.0.0.1', port: 17592, account: '+0000000000' }),
       { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
 
     await tick(100)
@@ -142,7 +142,7 @@ describe('signal actor: TCP socket', () => {
     const system = await PluginSystem()
     system.subscribe(InboundMessageTopic, e => messageEvents.push(e))
 
-    system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17595, attachmentsDir }),
+    system.spawn('signal', Signal({ host: '127.0.0.1', port: 17595, attachmentsDir }),
       { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
 
     await tick(100)
@@ -174,7 +174,7 @@ describe('signal actor: TCP socket', () => {
     const system = await PluginSystem()
     system.subscribe(InboundMessageTopic, e => messageEvents.push(e))
 
-    system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17593, reconnectMs: 200 }),
+    system.spawn('signal', Signal({ host: '127.0.0.1', port: 17593, reconnectMs: 200 }),
       { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
 
     await tick(100)
@@ -203,7 +203,7 @@ describe('signal actor: TCP socket', () => {
     })
 
     const system = await PluginSystem()
-    const ref = system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 17594 }),
+    const ref = system.spawn('signal', Signal({ host: '127.0.0.1', port: 17594 }),
       { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
 
     await tick(100)
@@ -219,7 +219,7 @@ describe('signal actor: TCP socket', () => {
 
   test('stays alive when no daemon is listening', async () => {
     const system = await PluginSystem()
-    const ref = system.spawn('signal', createSignalActor({ host: '127.0.0.1', port: 19998, reconnectMs: 100 }),
+    const ref = system.spawn('signal', Signal({ host: '127.0.0.1', port: 19998, reconnectMs: 100 }),
       { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
 
     await tick(400)
@@ -237,7 +237,7 @@ describe('signal actor: TCP socket', () => {
     system.subscribe(ClientConnectTopic, e => connectEvents.push(e))
     system.subscribe(InboundMessageTopic, e => messageEvents.push(e))
 
-    const ref = system.spawn('signal', createSignalActor({
+    const ref = system.spawn('signal', Signal({
       host: '127.0.0.1',
       port: 7583,
     }), { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
@@ -263,7 +263,7 @@ describe('signal actor: TCP socket', () => {
   test('integration: sends a real message via signal-cli TCP at 127.0.0.1:7583', async () => {
     const system = await PluginSystem()
 
-    const ref = system.spawn('signal', createSignalActor({
+    const ref = system.spawn('signal', Signal({
       host:    '127.0.0.1',
       port:    7583,
       account: '+41762189620',

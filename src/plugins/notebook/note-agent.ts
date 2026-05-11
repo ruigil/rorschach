@@ -1,6 +1,6 @@
 import type { ActorDef } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { createReactLoop, initialReactLoopSlice, type ReactLoopSlice } from '../../system/react-loop.ts'
+import { AgentLoop, initialAgentLoopSlice, type AgentLoopSlice } from '../../system/agent-loop.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { NoteAgentMsg } from './types.ts'
@@ -17,7 +17,7 @@ export type NoteAgentOptions = {
 // ─── State ───
 
 export type NoteAgentState = {
-  loop: ReactLoopSlice
+  loop: AgentLoopSlice
 }
 
 // ─── Helpers ───
@@ -44,10 +44,10 @@ const buildSystemPrompt = (notebookDir: string): string =>
 
 // ─── Actor ───
 
-export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, NoteAgentState> => {
+export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, NoteAgentState> => {
   const systemPrompt = buildSystemPrompt(options.notebookDir)
 
-  const handlers = createReactLoop<NoteAgentState, NoteAgentMsg>({
+  const handlers = AgentLoop<NoteAgentState, NoteAgentMsg>({
     role:         'notebook',
     spanName:     'note-agent',
     logPrefix:    'note-agent',
@@ -91,7 +91,7 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
   })
 
   return {
-    initialState: () => ({ loop: initialReactLoopSlice() }),
+    initialState: () => ({ loop: initialAgentLoopSlice() }),
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))

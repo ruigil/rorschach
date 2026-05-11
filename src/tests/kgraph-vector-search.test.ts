@@ -1,13 +1,13 @@
 import { describe, test, expect } from 'bun:test'
 import { PluginSystem, ask } from '../system/index.ts'
 import type { ActorRef } from '../system/index.ts'
-import { createKgraphActor, KGRAPH_CREATE_NODE_TOOL_NAME } from '../plugins/memory/kgraph.ts'
+import { Kgraph, KGRAPH_CREATE_NODE_TOOL_NAME } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
 import type { VectorSearchMatch, VectorSearchReply } from '../plugins/memory/types.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import type { ToolReply } from '../types/tools.ts'
-import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
+import { LlmProvider, OpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 
 // ─── Config ───
 
@@ -21,8 +21,8 @@ const tmpDb = () => `/tmp/kgraph-vs-test-${crypto.randomUUID()}.db`
 // ─── Helpers ───
 
 function spawnRealLlm(system: Awaited<ReturnType<typeof PluginSystem>>): ActorRef<LlmProviderMsg> {
-  const adapter = createOpenRouterAdapter({ apiKey: API_KEY })
-  return system.spawn('llm', createLlmProviderActor({ adapter })) as ActorRef<LlmProviderMsg>
+  const adapter = OpenRouterAdapter({ apiKey: API_KEY })
+  return system.spawn('llm', LlmProvider({ adapter })) as ActorRef<LlmProviderMsg>
 }
 
 function createNode(
@@ -102,7 +102,7 @@ describe('kgraph vector search (real embeddings)', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      createKgraphActor(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
+      Kgraph(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
       { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -120,7 +120,6 @@ describe('kgraph vector search (real embeddings)', () => {
 
     expect(reply.type).toBe('vectorSearchResult')
     const { matches } = reply as { type: 'vectorSearchResult'; matches: VectorSearchMatch[] }
-    console.log('scores:', matches.map(m => `${m.name}: ${m.score.toFixed(4)}`))
     expect(matches.length).toBeGreaterThan(0)
     expect(matches[0]!.name).toBe('Dietary Restrictions')
 
@@ -134,7 +133,7 @@ describe('kgraph vector search (real embeddings)', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      createKgraphActor(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
+      Kgraph(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
       { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -153,7 +152,6 @@ describe('kgraph vector search (real embeddings)', () => {
 
     expect(reply.type).toBe('vectorSearchResult')
     const { matches } = reply as { type: 'vectorSearchResult'; matches: VectorSearchMatch[] }
-    console.log(matches)
     expect(matches.length).toBeLessThanOrEqual(2)
     expect(matches[0]!.name).toBe('Workout Routine')
 
@@ -167,7 +165,7 @@ describe('kgraph vector search (real embeddings)', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      createKgraphActor(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
+      Kgraph(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
       { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -199,7 +197,7 @@ describe('kgraph vector search (real embeddings)', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      createKgraphActor(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
+      Kgraph(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
       { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 

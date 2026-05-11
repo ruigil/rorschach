@@ -34,7 +34,7 @@ import { taskTopic } from './types.ts'
  *     }
  *   }
  */
-export const createWorkerBridge = <P, R>(
+export const GenericWorkerBridge = <P, R>(
   options: WorkerBridgeOptions,
 ): WorkerBridge<P, R> => {
   const def: ActorDef<WorkerBridgeMsg<P, R>, WorkerBridgeState> = {

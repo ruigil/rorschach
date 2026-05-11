@@ -232,7 +232,7 @@ function appendScroll(lines: string[]): void {
 }
 
 // ─── Actor factory ───
-export const createCliActor = (): ActorDef<CliMsg, CliState> => {
+export const CLI = (): ActorDef<CliMsg, CliState> => {
   let inputBuf     = ''
   let currentState: CliState = { ...CLI_INITIAL_STATE }
 

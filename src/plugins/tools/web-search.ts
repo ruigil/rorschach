@@ -101,7 +101,7 @@ const formatResult = (result: BraveLlmContextResponse): { text: string; sources:
 
 // ─── Actor definition ───
 
-export const createWebSearchActor = (options: WebSearchActorOptions): ActorDef<WebSearchMsg, null> => {
+export const WebSearch = (options: WebSearchActorOptions): ActorDef<WebSearchMsg, null> => {
   const { apiKey, count = 20 } = options
 
   return {

@@ -68,7 +68,7 @@ const emptyTotals = (): CostTrackerState['dailyTotals'] => ({
  * Supports optional buffered writes via `flushIntervalMs`.
  * On stop, any remaining buffered events are flushed to disk.
  */
-export const createCostTrackerActor = (
+export const CostTracker = (
   options: CostTrackerOptions,
 ): ActorDef<CostTrackerMsg, CostTrackerState> => {
   const { costsDir, flushIntervalMs } = options

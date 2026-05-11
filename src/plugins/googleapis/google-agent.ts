@@ -1,6 +1,6 @@
 import type { ActorDef } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { createReactLoop, initialReactLoopSlice, type ReactLoopSlice } from '../../system/react-loop.ts'
+import { AgentLoop as AgentLoop, initialAgentLoopSlice, type AgentLoopSlice } from '../../system/agent-loop.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { GoogleAgentMsg } from './types.ts'
@@ -16,7 +16,7 @@ export type GoogleAgentOptions = {
 // ─── State ───
 
 export type GoogleAgentState = {
-  loop: ReactLoopSlice
+  loop: AgentLoopSlice
 }
 
 // ─── Helpers ───
@@ -48,8 +48,8 @@ const buildSystemPrompt = (): string =>
 
 // ─── Actor ───
 
-export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<GoogleAgentMsg, GoogleAgentState> => {
-  const handlers = createReactLoop<GoogleAgentState, GoogleAgentMsg>({
+export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMsg, GoogleAgentState> => {
+  const handlers = AgentLoop<GoogleAgentState, GoogleAgentMsg>({
     role:         'google',
     spanName:     'google-agent',
     logPrefix:    'google-agent',
@@ -109,5 +109,5 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
 }
 
 const createInitialGoogleAgentState = (): GoogleAgentState => ({
-  loop: initialReactLoopSlice(),
+  loop: initialAgentLoopSlice(),
 })

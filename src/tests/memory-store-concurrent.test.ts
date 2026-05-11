@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { PluginSystem, ask } from '../system/index.ts'
 import {
-  createMemorySupervisorActor,
+  MemorySupervisor,
   INITIAL_MEMORY_SUPERVISOR_STATE,
 } from '../plugins/memory/memory-supervisor.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
@@ -43,7 +43,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     // 2. Spawn Memory Store Supervisor
     const storeRef = system.spawn(
       'memory-supervisor',
-      createMemorySupervisorActor({ model: 'test-model' }),
+      MemorySupervisor({ model: 'test-model' }),
       { state: { ...INITIAL_MEMORY_SUPERVISOR_STATE, recallTools: {}, storeTools: {} } })
     
     await tick(100) // Wait for subscriptions
@@ -91,7 +91,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     
     const storeRef = system.spawn(
       'memory-supervisor',
-      createMemorySupervisorActor({ model: 'test-model' }),
+      MemorySupervisor({ model: 'test-model' }),
       { state: { ...INITIAL_MEMORY_SUPERVISOR_STATE, recallTools: {}, storeTools: {} } })
     
     await tick()

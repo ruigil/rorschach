@@ -41,7 +41,7 @@ export const INITIAL_MEMORY_SUPERVISOR_STATE: MemorySupervisorState = {
 
 // ─── Actor ───
 
-export const createMemorySupervisorActor = (
+export const MemorySupervisor = (
   options: MemorySupervisorOptions,
 ): ActorDef<MemorySupervisorMsg, MemorySupervisorState> => {
   const { model, maxToolLoops = 25 } = options

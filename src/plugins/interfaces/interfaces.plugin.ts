@@ -1,21 +1,21 @@
-import { createHttpActor, type HttpActorOptions } from './http.ts'
-import { createCliActor, CLI_INITIAL_STATE } from './cli.ts'
-import { createSignalActor, type SignalActorOptions } from './signal.ts'
+import { HTTP, type HTTPOptions } from './http.ts'
+import { CLI } from './cli.ts'
+import { Signal, type SignalOptions } from './signal.ts'
 import type { PluginActorState, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 
 export type InterfacesConfig = {
-  http?:   HttpActorOptions
+  http?:   HTTPOptions
   cli?:    Record<string, never>
-  signal?: SignalActorOptions
+  signal?: SignalOptions
 }
 
 type PluginMsg = { type: 'config'; slice: InterfacesConfig | undefined }
 type PluginState = {
   initialized: boolean
-  http:   PluginActorState<HttpActorOptions>
+  http:   PluginActorState<HTTPOptions>
   cli:    PluginActorState<Record<string, never>>
-  signal: PluginActorState<SignalActorOptions>
+  signal: PluginActorState<SignalOptions>
 }
 
 const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
@@ -43,13 +43,13 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
       const signalConfig = slice?.signal ?? null
 
       const httpRef = httpConfig
-        ? ctx.spawn('http-0', createHttpActor(httpConfig))
+        ? ctx.spawn('http-0', HTTP(httpConfig))
         : null
       const cliRef = cliConfig
-        ? ctx.spawn('cli-0', createCliActor())
+        ? ctx.spawn('cli-0', CLI())
         : null
       const signalRef = signalConfig
-        ? ctx.spawn('signal-0', createSignalActor(signalConfig))
+        ? ctx.spawn('signal-0', Signal(signalConfig))
         : null
 
       ctx.log.info('interfaces plugin activated')
@@ -80,13 +80,13 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
       const signalGen = state.signal.gen + 1
 
       const httpRef = newHttpConfig
-        ? ctx.spawn(`http-${httpGen}`, createHttpActor(newHttpConfig))
+        ? ctx.spawn(`http-${httpGen}`, HTTP(newHttpConfig))
         : null
       const cliRef = newCliConfig
-        ? ctx.spawn(`cli-${cliGen}`, createCliActor())
+        ? ctx.spawn(`cli-${cliGen}`, CLI())
         : null
       const signalRef = newSignalConfig
-        ? ctx.spawn(`signal-${signalGen}`, createSignalActor(newSignalConfig))
+        ? ctx.spawn(`signal-${signalGen}`, Signal(newSignalConfig))
         : null
 
       return { state: {

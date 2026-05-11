@@ -50,7 +50,7 @@ type YoutubeMsg =
 
 // ─── Actor ───
 
-export const createYoutubeActor = (
+export const Youtube = (
   tokenStoreRef: ActorRef<TokenStoreMsg>,
   clientId:      string,
   clientSecret:  string,

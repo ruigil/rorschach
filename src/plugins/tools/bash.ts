@@ -82,7 +82,7 @@ const formatExecResult = (result: BashExecResult): string => {
 
 // ─── Actor definition ───
 
-export const createBashActor = (options?: BashOptions): ActorDef<BashToolMsg, null> => {
+export const JustBash = (options?: BashOptions): ActorDef<BashToolMsg, null> => {
   const fs = new MountableFs({ base: new InMemoryFs() });
 
   // Mount read-only knowledge base

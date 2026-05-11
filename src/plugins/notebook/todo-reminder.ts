@@ -41,7 +41,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000
 
 // ─── Actor ───
 
-export const createTodoReminderActor = (notebookDir: string): ActorDef<TodoReminderMsg, TodoReminderState> => ({
+export const TodoReminder = (notebookDir: string): ActorDef<TodoReminderMsg, TodoReminderState> => ({
   initialState: { notebookDir },
   lifecycle: onLifecycle({
     start: async (state, ctx) => {

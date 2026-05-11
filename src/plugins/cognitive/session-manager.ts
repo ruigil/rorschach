@@ -2,7 +2,7 @@ import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ClientConnectTopic, ClientDisconnectTopic, InboundMessageTopic, CronTriggerTopic, OutboundMessageTopic } from '../../types/events.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
-import { createHistoryStoreActor } from './history-store.ts'
+import { HistoryStore } from './history-store.ts'
 import type { HistoryStoreMsg } from './history-store.ts'
 import {
   AgentRegistrationTopic,
@@ -76,7 +76,7 @@ const ensureHistoryStore = (
   if (existing) return { state, ref: existing }
   const ref = ctx.spawn(
     `history-store-${userId}`,
-    createHistoryStoreActor({ userId, historyWindowHours }),
+    HistoryStore({ userId, historyWindowHours }),
   ) as ActorRef<HistoryStoreMsg>
   return {
     state: { ...state, historyStores: { ...state.historyStores, [userId]: ref } },
@@ -131,7 +131,7 @@ const userIdOfClient = (state: SessionManagerState, clientId: string): string | 
 
 // ─── Actor ─────────────────────────────────────────────────────────────────
 
-export const createSessionManagerActor = (
+export const SessionManager = (
   options: SessionManagerOptions,
 ): ActorDef<SessionManagerMsg, SessionManagerState> => {
   const { llmRef, historyWindowHours } = options

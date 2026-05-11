@@ -2,11 +2,11 @@ import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, ActorContext, ActorResult } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
 import {
-  createReactLoop,
-  initialReactLoopSlice,
+  AgentLoop,
+  initialAgentLoopSlice,
   type ReactLoopHandlers,
-  type ReactLoopSlice,
-} from '../../system/react-loop.ts'
+  type AgentLoopSlice,
+} from '../../system/agent-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
@@ -17,7 +17,7 @@ import type { AgentFactoryOpts } from './types.ts'
 import {
   FORMALIZE_PLAN_TOOL_NAME,
   FORMALIZE_PLAN_SCHEMA,
-  createFormalizePlanToolActor,
+  FormalizePlanTool,
 } from './formalize-plan-tool.ts'
 
 // ─── Message protocol ───
@@ -38,7 +38,7 @@ export type PlannerAgentMsg =
 // planning chatter out of other agents' context.
 
 export type PlannerAgentState = {
-  loop:                    ReactLoopSlice
+  loop:                    AgentLoopSlice
   plannerHistory:          ApiMessage[]
   tools:                   ToolCollection
   pendingFormalizeSummary: string | null
@@ -46,7 +46,7 @@ export type PlannerAgentState = {
 }
 
 const initialPlannerAgentState = (): PlannerAgentState => ({
-  loop:                    initialReactLoopSlice(),
+  loop:                    initialAgentLoopSlice(),
   plannerHistory:          [],
   tools:                   {},
   pendingFormalizeSummary: null,
@@ -97,13 +97,13 @@ Be concise. Research first, then ask only what you genuinely need from the user.
 // planner config closed over, while SessionManager supplies per-instance
 // AgentFactoryOpts (userId, clientId, llmRef, historyStoreRef) at spawn time.
 
-export const createPlannerAgentFactory = (config: PlannerAgentConfig) =>
+export const PlannerAgentFactory = (config: PlannerAgentConfig) =>
   (opts: AgentFactoryOpts): ActorDef<PlannerAgentMsg, PlannerAgentState> =>
-    createPlannerAgentActor(config, opts)
+    PlannerAgent(config, opts)
 
 // ─── Actor ───
 
-const createPlannerAgentActor = (
+const PlannerAgent = (
   config: PlannerAgentConfig,
   opts:   AgentFactoryOpts,
 ): ActorDef<PlannerAgentMsg, PlannerAgentState> => {
@@ -125,7 +125,7 @@ const createPlannerAgentActor = (
     pendingFormalizeSummary: null,
   })
 
-  handlers = createReactLoop<S, M>({
+  handlers = AgentLoop<S, M>({
     role:         'planner',
     spanName:     'planner-turn',
     logPrefix:    'planner',
@@ -276,7 +276,7 @@ const createPlannerAgentActor = (
         // It does not flow through ToolRegistrationTopic — only this planner sees it.
         const formalizePlanToolRef = ctx.spawn(
           'formalize-plan-tool',
-          createFormalizePlanToolActor({ plansDir }),
+          FormalizePlanTool({ plansDir }),
         ) as ActorRef<ToolMsg>
 
         return {

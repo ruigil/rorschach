@@ -7,14 +7,14 @@ import { IdentityProviderTopic, resolveIdentity } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 import type { KgraphGraph, KgraphMsg, MemoryConsolidationMsg, MemorySupervisorMsg, UserContextMsg } from './types.ts'
 import {
-  createKgraphActor,
+  Kgraph,
 } from './kgraph.ts'
 import {
-  createMemoryConsolidationActor,
+  MemoryConsolidation,
   INITIAL_CONSOLIDATION_STATE,
 } from './memory-consolidation.ts'
 import {
-  createMemorySupervisorActor,
+  MemorySupervisor,
   INITIAL_MEMORY_SUPERVISOR_STATE,
 } from './memory-supervisor.ts'
 import {
@@ -22,7 +22,7 @@ import {
   INITIAL_USER_CONTEXT_STATE,
 } from './user-context.ts'
 import {
-  createZettelNotesActor,
+  ZettelNotes,
   type ZettelNoteMsg,
   ZETTEL_CREATE_TOOL,  ZETTEL_CREATE_SCHEMA,
   ZETTEL_UPDATE_TOOL,  ZETTEL_UPDATE_SCHEMA,
@@ -97,7 +97,7 @@ const spawnMemoryActors = (
 ): MemoryActors => {
   const zettel = ctx.spawn(
     `zettel-notes-${gen}`,
-    createZettelNotesActor(kgraphRef, dbPath),
+    ZettelNotes(kgraphRef, dbPath),
   )
 
   const ref = zettel as unknown as ActorRef<ToolMsg>
@@ -122,7 +122,7 @@ const spawnMemoryActors = (
 
   const consolidation = ctx.spawn(
     `memory-consolidation-${gen}`,
-    createMemoryConsolidationActor({ model: config.model, intervalMs: config.consolidationIntervalMs, toolFilter: EMPTY_TOOL_FILTER }),
+    MemoryConsolidation({ model: config.model, intervalMs: config.consolidationIntervalMs, toolFilter: EMPTY_TOOL_FILTER }),
     { state: { ...INITIAL_CONSOLIDATION_STATE, tools: consolidationTools } },
   )
   const userContext = ctx.spawn(
@@ -131,7 +131,7 @@ const spawnMemoryActors = (
   )
   const memory = ctx.spawn(
     `memory-supervisor-${gen}`,
-    createMemorySupervisorActor({ model: config.model }),
+    MemorySupervisor({ model: config.model }),
     { state: { ...INITIAL_MEMORY_SUPERVISOR_STATE, recallTools, storeTools } },
   ) as ActorRef<MemorySupervisorMsg>
   return { consolidation, memory, zettel, userContext }
@@ -229,7 +229,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           ? { model: kgraphConfig.rerankerModel, topK: kgraphConfig.rerankerTopK }
           : undefined
 
-        const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg)) as ActorRef<KgraphMsg>
+        const kgraphRef = ctx.spawn('kgraph-0', Kgraph(dbPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg)) as ActorRef<KgraphMsg>
         refs.kgraphRef = kgraphRef
 
         ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
@@ -301,7 +301,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           ? { model: newKgraphConfig.rerankerModel, topK: newKgraphConfig.rerankerTopK }
           : undefined
 
-        const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, createKgraphActor(dbPath, newEmbeddingCfg, newKgraphConfig.cosineSimilarityThreshold, newRerankerCfg)) as ActorRef<KgraphMsg>
+        const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, Kgraph(dbPath, newEmbeddingCfg, newKgraphConfig.cosineSimilarityThreshold, newRerankerCfg)) as ActorRef<KgraphMsg>
         refs.kgraphRef = kgraphRef
 
         // ─── Reconfigure memory actors ───

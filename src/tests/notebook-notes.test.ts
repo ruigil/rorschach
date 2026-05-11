@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PluginSystem, ask } from '../system/index.ts'
-import { createNotesActor, NOTES_ATTACH_FILE_TOOL_NAME, NOTES_CREATE_TOOL_NAME, NOTES_READ_TOOL_NAME } from '../plugins/notebook/tools/notes.ts'
+import { Notes, NOTES_ATTACH_FILE_TOOL_NAME, NOTES_CREATE_TOOL_NAME, NOTES_READ_TOOL_NAME } from '../plugins/notebook/tools/notes.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 
 const tempDirs: string[] = []
@@ -22,7 +22,7 @@ describe('notebook notes', () => {
     const sourceFile = join(dir, 'My File #1.pdf')
     await writeFile(sourceFile, 'pdf')
 
-    const notesRef = system.spawn('notes', createNotesActor(dir))
+    const notesRef = system.spawn('notes', Notes(dir))
 
     const createReply = await ask<ToolInvokeMsg, ToolReply>(notesRef, replyTo => ({
       type: 'invoke',

@@ -6,17 +6,17 @@ const STATE_TTL_MS = 10 * 60 * 1000  // 10 min
 
 // ─── State ───
 
-type OAuthStateActorState = {
+type OAuthStateState = {
   mapping: Record<string, string>  // state token → userId
 }
 
-const initialOAuthStateActorState = (): OAuthStateActorState => ({ mapping: {} })
+const initialOAuthStateState = (): OAuthStateState => ({ mapping: {} })
 
 // ─── Actor definition ───
 
-export const createOAuthStateActor = (): ActorDef<OAuthStateMsg, OAuthStateActorState> => ({
-  initialState: initialOAuthStateActorState,
-  handler: onMessage<OAuthStateMsg, OAuthStateActorState>({
+export const OAuthState = (): ActorDef<OAuthStateMsg, OAuthStateState> => ({
+  initialState: initialOAuthStateState,
+  handler: onMessage<OAuthStateMsg, OAuthStateState>({
     createState: (state, msg, ctx) => {
       const token = crypto.randomUUID()
       ctx.timers.startSingleTimer(`expire-${token}`, { type: '_expire', state: token }, STATE_TTL_MS)

@@ -9,13 +9,13 @@ import type { IdentityProviderMsg } from '../../types/identity.ts'
 
 import type { NoteEntry, NotebookConfig, NoteAgentMsg, TodoReminderMsg } from './types.ts'
 
-import { createJournalActor, JOURNAL_WRITE_TOOL_NAME, JOURNAL_WRITE_SCHEMA, JOURNAL_READ_TOOL_NAME, JOURNAL_READ_SCHEMA, JOURNAL_SEARCH_TOOL_NAME, JOURNAL_SEARCH_SCHEMA } from './tools/journal.ts'
-import { createNotesActor, NOTES_CREATE_TOOL_NAME, NOTES_CREATE_SCHEMA, NOTES_UPDATE_TOOL_NAME, NOTES_UPDATE_SCHEMA, NOTES_READ_TOOL_NAME, NOTES_READ_SCHEMA, NOTES_LIST_TOOL_NAME, NOTES_LIST_SCHEMA, NOTES_SEARCH_TOOL_NAME, NOTES_SEARCH_SCHEMA, NOTES_ATTACH_FILE_TOOL_NAME, NOTES_ATTACH_FILE_SCHEMA, NOTES_DELETE_TOOL_NAME, NOTES_DELETE_SCHEMA } from './tools/notes.ts'
-import { createTrackerActor, TRACKER_LOG_TOOL_NAME, TRACKER_LOG_SCHEMA, TRACKER_STATS_TOOL_NAME, TRACKER_STATS_SCHEMA, TRACKER_DEFINE_HABIT_TOOL_NAME, TRACKER_DEFINE_HABIT_SCHEMA, TRACKER_LIST_HABITS_TOOL_NAME, TRACKER_LIST_HABITS_SCHEMA } from './tools/tracker.ts'
-import { createTodosActor, TODOS_CREATE_TOOL_NAME, TODOS_CREATE_SCHEMA, TODOS_COMPLETE_TOOL_NAME, TODOS_COMPLETE_SCHEMA, TODOS_LIST_TOOL_NAME, TODOS_LIST_SCHEMA, TODOS_DELETE_TOOL_NAME, TODOS_DELETE_SCHEMA, TODOS_UPDATE_TOOL_NAME, TODOS_UPDATE_SCHEMA } from './tools/todos.ts'
-import { createSearchActor, NOTEBOOK_SEARCH_TOOL_NAME, NOTEBOOK_SEARCH_SCHEMA } from './tools/search.ts'
-import { createNoteAgentActor } from './note-agent.ts'
-import { createTodoReminderActor } from './todo-reminder.ts'
+import { Journal, JOURNAL_WRITE_TOOL_NAME, JOURNAL_WRITE_SCHEMA, JOURNAL_READ_TOOL_NAME, JOURNAL_READ_SCHEMA, JOURNAL_SEARCH_TOOL_NAME, JOURNAL_SEARCH_SCHEMA } from './tools/journal.ts'
+import { Notes, NOTES_CREATE_TOOL_NAME, NOTES_CREATE_SCHEMA, NOTES_UPDATE_TOOL_NAME, NOTES_UPDATE_SCHEMA, NOTES_READ_TOOL_NAME, NOTES_READ_SCHEMA, NOTES_LIST_TOOL_NAME, NOTES_LIST_SCHEMA, NOTES_SEARCH_TOOL_NAME, NOTES_SEARCH_SCHEMA, NOTES_ATTACH_FILE_TOOL_NAME, NOTES_ATTACH_FILE_SCHEMA, NOTES_DELETE_TOOL_NAME, NOTES_DELETE_SCHEMA } from './tools/notes.ts'
+import { Tracker, TRACKER_LOG_TOOL_NAME, TRACKER_LOG_SCHEMA, TRACKER_STATS_TOOL_NAME, TRACKER_STATS_SCHEMA, TRACKER_DEFINE_HABIT_TOOL_NAME, TRACKER_DEFINE_HABIT_SCHEMA, TRACKER_LIST_HABITS_TOOL_NAME, TRACKER_LIST_HABITS_SCHEMA } from './tools/tracker.ts'
+import { Todos, TODOS_CREATE_TOOL_NAME, TODOS_CREATE_SCHEMA, TODOS_COMPLETE_TOOL_NAME, TODOS_COMPLETE_SCHEMA, TODOS_LIST_TOOL_NAME, TODOS_LIST_SCHEMA, TODOS_DELETE_TOOL_NAME, TODOS_DELETE_SCHEMA, TODOS_UPDATE_TOOL_NAME, TODOS_UPDATE_SCHEMA } from './tools/todos.ts'
+import { Search, NOTEBOOK_SEARCH_TOOL_NAME, NOTEBOOK_SEARCH_SCHEMA } from './tools/search.ts'
+import { NoteAgent } from './note-agent.ts'
+import { TodoReminder } from './todo-reminder.ts'
 
 // ─── Public tool schema ───
 
@@ -211,11 +211,11 @@ const spawnChildren = (
   ctx: ActorContext<PluginMsg>,
 ): SpawnResult => {
   // Spawn internal tool actors — NOT registered on ToolRegistrationTopic
-  const journalRef = ctx.spawn(`journal-${gen}`, createJournalActor(notebookDir)) as ActorRef<ToolMsg>
-  const notesRef   = ctx.spawn(`notes-${gen}`,   createNotesActor(notebookDir))   as ActorRef<ToolMsg>
-  const trackerRef = ctx.spawn(`tracker-${gen}`, createTrackerActor(notebookDir)) as ActorRef<ToolMsg>
-  const todosRef   = ctx.spawn(`todos-${gen}`,   createTodosActor(notebookDir))   as ActorRef<ToolMsg>
-  const searchRef  = ctx.spawn(`search-${gen}`,  createSearchActor(notebookDir))  as ActorRef<ToolMsg>
+  const journalRef = ctx.spawn(`journal-${gen}`, Journal(notebookDir)) as ActorRef<ToolMsg>
+  const notesRef   = ctx.spawn(`notes-${gen}`,   Notes(notebookDir))   as ActorRef<ToolMsg>
+  const trackerRef = ctx.spawn(`tracker-${gen}`, Tracker(notebookDir)) as ActorRef<ToolMsg>
+  const todosRef   = ctx.spawn(`todos-${gen}`,   Todos(notebookDir))   as ActorRef<ToolMsg>
+  const searchRef  = ctx.spawn(`search-${gen}`,  Search(notebookDir))  as ActorRef<ToolMsg>
 
   const internalTools = buildToolCollection(journalRef, notesRef, trackerRef, todosRef, searchRef)
 
@@ -223,7 +223,7 @@ const spawnChildren = (
   const agentOpts = { model, notebookDir, maxToolLoops, tools: internalTools }
   const noteAgentRef = ctx.spawn(
     `note-agent-${gen}`,
-    createNoteAgentActor(agentOpts),
+    NoteAgent(agentOpts),
   ) as ActorRef<NoteAgentMsg>
 
   // Register the single public tool
@@ -236,7 +236,7 @@ const spawnChildren = (
   // Spawn todo reminder
   const reminderRef = ctx.spawn(
     `todo-reminder-${gen}`,
-    createTodoReminderActor(notebookDir),
+    TodoReminder(notebookDir),
   ) as ActorRef<TodoReminderMsg>
 
   return { journalRef, notesRef, trackerRef, todosRef, searchRef, noteAgentRef, reminderRef }

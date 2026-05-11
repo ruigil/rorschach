@@ -2,7 +2,7 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { PluginSystem, ask } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import {
-  createWebSearchActor,
+  WebSearch,
   type WebSearchMsg,
   type BraveLlmContextResponse,
 } from '../plugins/tools/web-search.ts'
@@ -59,7 +59,7 @@ describe('web-search actor', () => {
     stubFetchOk(mockBraveResponse)
 
     const system = await PluginSystem()
-    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }))
+    const ref = system.spawn('web-search', WebSearch({ apiKey: 'test-key' }))
     await tick()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -82,7 +82,7 @@ describe('web-search actor', () => {
     stubFetchError(429, 'Rate limit exceeded')
 
     const system = await PluginSystem()
-    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }))
+    const ref = system.spawn('web-search', WebSearch({ apiKey: 'test-key' }))
     await tick()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -103,7 +103,7 @@ describe('web-search actor', () => {
     stubFetchThrow('network unreachable')
 
     const system = await PluginSystem()
-    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }))
+    const ref = system.spawn('web-search', WebSearch({ apiKey: 'test-key' }))
     await tick()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -129,7 +129,7 @@ describe('web-search actor', () => {
     }) as unknown as typeof fetch
 
     const system = await PluginSystem()
-    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key', count: 7 }))
+    const ref = system.spawn('web-search', WebSearch({ apiKey: 'test-key', count: 7 }))
     await tick()
 
     await ask<ToolInvokeMsg, ToolReply>(
@@ -153,7 +153,7 @@ describe('web-search actor', () => {
     }) as unknown as typeof fetch
 
     const system = await PluginSystem()
-    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'my-secret-key' }))
+    const ref = system.spawn('web-search', WebSearch({ apiKey: 'my-secret-key' }))
     await tick()
 
     await ask<ToolInvokeMsg, ToolReply>(

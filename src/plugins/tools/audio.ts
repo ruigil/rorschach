@@ -51,7 +51,7 @@ export const TEXT_TO_SPEECH_SCHEMA: ToolSchema = {
 
 // ─── Messages ───
 
-export type AudioActorMsg =
+export type AudioMsg =
   | ToolInvokeMsg
   | TranscriptionProviderReply
   | SpeechProviderReply
@@ -85,7 +85,7 @@ export type AudioState = {
 
 // ─── Options ───
 
-export type AudioActorOptions = {
+export type AudioOptions = {
   llmRef: ActorRef<LlmProviderMsg>
   ttsModel: string
   sttModel: string
@@ -143,12 +143,12 @@ const saveAudio = async (data: string, format: string): Promise<{ filePath: stri
 
 // ─── Actor definition ───
 
-export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActorMsg, AudioState> => {
+export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => {
   const { llmRef, ttsModel, sttModel, voice, ttsFormat = DEFAULT_TTS_FORMAT } = options
 
   return {
     initialState: { pending: {} },
-    handler: onMessage<AudioActorMsg, AudioState>({
+    handler: onMessage<AudioMsg, AudioState>({
 
       invoke: (state, message, context) => {
         const { toolName, arguments: args, replyTo, clientId } = message
@@ -206,8 +206,8 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
         context.log.info('audio: loading audio for transcription', { requestId, audioPath, format })
         context.pipeToSelf(
           loadAudioAsWavBase64(audioPath),
-          (data): AudioActorMsg => ({ type: '_audioLoaded', requestId, data, format: 'wav', replyTo }),
-          (error): AudioActorMsg => ({ type: '_audioLoadError', requestId, error: String(error), replyTo }),
+          (data): AudioMsg => ({ type: '_audioLoaded', requestId, data, format: 'wav', replyTo }),
+          (error): AudioMsg => ({ type: '_audioLoadError', requestId, error: String(error), replyTo }),
         )
         return {
           state: {
@@ -285,8 +285,8 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
         context.log.info('audio: TTS complete, saving audio', { requestId: message.requestId, format: req.audioFormat })
         context.pipeToSelf(
           saveAudio(req.audioData, req.audioFormat),
-          (r): AudioActorMsg => ({ type: '_audioSaved',     requestId: message.requestId, filePath: r.filePath, publicUrl: r.publicUrl, spokenText: req.spokenText, voice: req.voice, replyTo: req.replyTo }),
-          (e): AudioActorMsg => ({ type: '_audioSaveError', requestId: message.requestId, error: String(e), replyTo: req.replyTo }),
+          (r): AudioMsg => ({ type: '_audioSaved',     requestId: message.requestId, filePath: r.filePath, publicUrl: r.publicUrl, spokenText: req.spokenText, voice: req.voice, replyTo: req.replyTo }),
+          (e): AudioMsg => ({ type: '_audioSaveError', requestId: message.requestId, error: String(e), replyTo: req.replyTo }),
         )
         return { state: { ...state, pending: rest } }
       },

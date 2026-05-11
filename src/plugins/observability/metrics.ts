@@ -8,7 +8,7 @@ export type MetricsActorOptions = {
   intervalMs: number
 }
 
-export const createMetricsActor = (options: MetricsActorOptions): ActorDef<MetricsMsg, null> => ({
+export const Metrics = (options: MetricsActorOptions): ActorDef<MetricsMsg, null> => ({
   initialState: null,
   lifecycle: onLifecycle({
     start: (state, ctx) => {

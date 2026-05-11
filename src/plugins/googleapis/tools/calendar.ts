@@ -95,7 +95,7 @@ type CalendarMsg =
 
 // ─── Actor ───
 
-export const createCalendarActor = (
+export const Calendar = (
   tokenStoreRef: ActorRef<TokenStoreMsg>,
   clientId:      string,
   clientSecret:  string,

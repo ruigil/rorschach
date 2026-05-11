@@ -330,7 +330,7 @@ const attachFile = async (
 
 // ─── Actor ───
 
-export const createNotesActor = (notebookDir: string): ActorDef<NotesMsg, null> => ({
+export const Notes = (notebookDir: string): ActorDef<NotesMsg, null> => ({
   initialState: null,
   handler: onMessage<NotesMsg, null>({
     invoke: (state, msg, ctx) => {

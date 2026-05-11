@@ -577,7 +577,7 @@ const handleLink = async (
 
 // ─── Actor definition ───
 
-export const createZettelNotesActor = (kgraphRef: ActorRef<KgraphMsg>, dbPath: string): ActorDef<ZettelNoteMsg, ZettelState> => {
+export const ZettelNotes = (kgraphRef: ActorRef<KgraphMsg>, dbPath: string): ActorDef<ZettelNoteMsg, ZettelState> => {
   const queue = makeIndexQueue(dbPath)
 
   return {

@@ -1,7 +1,7 @@
 import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, ActorContext, ActorResult } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { createReactLoop, initialReactLoopSlice, type ReactLoopSlice } from '../../system/react-loop.ts'
+import { AgentLoop, initialAgentLoopSlice, type AgentLoopSlice } from '../../system/agent-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import { UserStreamTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
@@ -20,7 +20,7 @@ import type { HistoryStoreMsg } from './history-store.ts'
 // snapshot, and the mirror updates via the subscription.
 
 export type ChatbotState = {
-  loop:           ReactLoopSlice
+  loop:           AgentLoopSlice
   historyMirror:  ApiMessage[]
   historyVersion: number
   tools:          ToolCollection
@@ -41,7 +41,7 @@ const HISTORY_MARKERS_NOTE =
 
 // ─── Options ───
 
-export type ChatbotActorOptions = {
+export type ChatbotOptions = {
   clientId:        string
   model:           string
   systemPrompt?:   string
@@ -90,7 +90,7 @@ const assembleUserText = (
 // ─── Initial state ───
 
 const initialChatbotState = (): ChatbotState => ({
-  loop:           initialReactLoopSlice(),
+  loop:           initialAgentLoopSlice(),
   historyMirror:  [],
   historyVersion: 0,
   tools:          {},
@@ -101,7 +101,7 @@ const initialChatbotState = (): ChatbotState => ({
 
 // ─── Actor ───
 
-export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<ChatbotMsg, ChatbotState> => {
+export const Chatbot = (options: ChatbotOptions): ActorDef<ChatbotMsg, ChatbotState> => {
   const {
     clientId,
     model,
@@ -153,7 +153,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
   // ─── React-loop ────────────────────────────────────────────────────────
 
-  const handlers = createReactLoop<S, M>({
+  const handlers = AgentLoop<S, M>({
     role:         'reasoning',
     spanName:     'chatbot',
     logPrefix:    'chatbot',

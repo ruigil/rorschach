@@ -14,8 +14,8 @@
 // plugin, which manages their lifecycle through the config system.
 
 import { PluginSystem, LogTopic, taskTopic } from '../system/index.ts'
-import { createPoolRouter } from '../plugins/parallel/pool-router.ts'
-import { createWorkerBridge } from '../plugins/parallel/worker-bridge.ts'
+import { PoolRouter } from '../plugins/parallel/pool-router.ts'
+import { GenericWorkerBridge } from '../plugins/parallel/worker-bridge.ts'
 import type { ActorDef, LogEvent, TaskEvent, WorkerBridgeMsg, WorkerBridgeState } from '../system/index.ts'
 
 // ─── System setup ─────────────────────────────────────────────────────────────
@@ -42,11 +42,11 @@ type ParsePayload = { input: string }
 type ParseResult  = string
 
 // Worker bridge: each pool slot runs parse-worker.ts in its own thread
-const parseBridge = createWorkerBridge<ParsePayload, ParseResult>({
+const parseBridge = GenericWorkerBridge<ParsePayload, ParseResult>({
   scriptPath: new URL('./workers/parse-worker.ts', import.meta.url).href,
 })
 
-const pool = createPoolRouter<WorkerBridgeMsg<ParsePayload, ParseResult>, WorkerBridgeState>({
+const pool = PoolRouter<WorkerBridgeMsg<ParsePayload, ParseResult>, WorkerBridgeState>({
   poolSize: 4,
   worker: parseBridge.def,
   workerInitialState: parseBridge.initialState,
@@ -100,7 +100,7 @@ console.log('Submitting a task to a worker thread...\n')
 type ComputePayload = { steps: number; multiplier: number }
 type ComputeResult  = number
 
-const bridge = createWorkerBridge<ComputePayload, ComputeResult>({
+const bridge = GenericWorkerBridge<ComputePayload, ComputeResult>({
   scriptPath: new URL('./workers/compute-worker.ts', import.meta.url).href,
 })
 const bridgeRef = system.spawn('compute-bridge', bridge.def)

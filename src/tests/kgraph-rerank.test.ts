@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { PluginSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
-import { createKgraphActor, KGRAPH_CREATE_NODE_TOOL_NAME } from '../plugins/memory/kgraph.ts'
+import { Kgraph, KGRAPH_CREATE_NODE_TOOL_NAME } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
 import type { VectorSearchMatch, VectorSearchReply } from '../plugins/memory/types.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
@@ -98,7 +98,7 @@ describe('kgraph vector search with reranker', () => {
     // Create kgraph with reranker config — rerankerTopK=3 ensures all docs are reranked
     const kgraphRef = system.spawn(
       'kgraph',
-      createKgraphActor(tmpDb(), { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
+      Kgraph(tmpDb(), { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
       { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -150,7 +150,7 @@ describe('kgraph vector search with reranker', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      createKgraphActor(tmpDb(), { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
+      Kgraph(tmpDb(), { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
       { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 

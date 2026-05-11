@@ -149,7 +149,7 @@ const resolveUniquePath = async (dir: string, basename: string): Promise<string>
 
 // ─── Actor ───
 
-export const createDriveActor = (
+export const Drive = (
   tokenStoreRef: ActorRef<TokenStoreMsg>,
   clientId:      string,
   clientSecret:  string,

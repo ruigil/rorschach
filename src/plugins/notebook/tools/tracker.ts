@@ -242,7 +242,7 @@ const listHabits = async (notebookDir: string): Promise<string> => {
 
 // ─── Actor ───
 
-export const createTrackerActor = (notebookDir: string): ActorDef<TrackerMsg, null> => ({
+export const Tracker = (notebookDir: string): ActorDef<TrackerMsg, null> => ({
   initialState: null,
   handler: onMessage<TrackerMsg, null>({
     invoke: (state, msg, ctx) => {

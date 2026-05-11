@@ -51,7 +51,7 @@ export type PoolRouter<WM> = {
  *
  * Worker failure behaviour is controlled by `onWorkerFailure` (default: 'replace').
  */
-export const createPoolRouter = <WM, WS>(
+export const PoolRouter = <WM, WS>(
   options: PoolRouterOptions<WM, WS>,
 ): PoolRouter<WM> => {
   const { poolSize, worker, workerInitialState, onWorkerFailure = 'replace' } = options

@@ -31,7 +31,7 @@ export const GENERATE_VIDEO_SCHEMA: ToolSchema = {
 
 // ─── Messages ───
 
-export type VideoActorMsg =
+export type VideoMsg =
   | ToolInvokeMsg
   | VideoSubmitReply
   | VideoPollReply
@@ -55,7 +55,7 @@ export type VideoState = {
 
 // ─── Options ───
 
-export type VideoActorOptions = {
+export type VideoOptions = {
   llmRef: ActorRef<LlmProviderMsg>
   model: string
   aspectRatio?: string
@@ -73,7 +73,7 @@ const DEFAULT_POLL_TIMEOUT_MS = 600_000
 
 // ─── Actor definition ───
 
-export const createVideoActor = (options: VideoActorOptions): ActorDef<VideoActorMsg, VideoState> => {
+export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => {
   const {
     llmRef, model,
     aspectRatio = DEFAULT_ASPECT_RATIO,
@@ -87,7 +87,7 @@ export const createVideoActor = (options: VideoActorOptions): ActorDef<VideoActo
 
   return {
     initialState: { pending: {} },
-    handler: onMessage<VideoActorMsg, VideoState>({
+    handler: onMessage<VideoMsg, VideoState>({
 
       invoke: (state, message, context) => {
         const { toolName, arguments: args, replyTo, clientId } = message

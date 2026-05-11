@@ -38,7 +38,7 @@ const jsonPersistence = (filePath: string): PersistenceAdapter<UserStoreState> =
 
 // ─── Actor definition ───
 
-export const createUserStoreActor = (filePath: string): ActorDef<UserStoreMsg, UserStoreState> => ({
+export const UserStore = (filePath: string): ActorDef<UserStoreMsg, UserStoreState> => ({
   initialState: initialUserStoreState,
   persistence: jsonPersistence(filePath),
 

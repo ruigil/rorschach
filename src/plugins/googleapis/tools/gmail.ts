@@ -118,7 +118,7 @@ const header = (msg: any, name: string): string =>
 
 // ─── Actor ───
 
-export const createGmailActor = (
+export const Gmail = (
   tokenStoreRef: ActorRef<TokenStoreMsg>,
   clientId:      string,
   clientSecret:  string,

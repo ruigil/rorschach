@@ -46,7 +46,7 @@ export type TraceRecorderOptions = {
  * Supports optional buffered writes via `flushIntervalMs`.
  * On stop, any remaining buffered spans are flushed to disk.
  */
-export const createTraceRecorderActor = (
+export const TraceRecorder = (
   options: TraceRecorderOptions,
 ): ActorDef<TraceRecorderMsg, TraceRecorderState> => {
   const { tracesDir, flushIntervalMs } = options

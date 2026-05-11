@@ -55,7 +55,7 @@ const slugify = (text: string): string =>
 
 // ─── Actor ───
 
-export const createFormalizePlanToolActor = (
+export const FormalizePlanTool = (
   opts: { plansDir: string },
 ): ActorDef<FormalizePlanToolMsg, null> => {
   const { plansDir } = opts

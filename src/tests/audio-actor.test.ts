@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { PluginSystem, ask } from '../system/index.ts'
-import { createAudioActor } from '../plugins/tools/audio.ts'
+import { Audio } from '../plugins/tools/audio.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 import { unlink, writeFile, mkdir } from 'node:fs/promises'
@@ -25,7 +25,7 @@ describe('audio actor', () => {
     }
     const llmRef = system.spawn('llm', llmDef)
 
-    const audioRef = system.spawn('audio', createAudioActor({
+    const audioRef = system.spawn('audio', Audio({
       llmRef,
       ttsModel: 'test-tts-model',
       sttModel: 'test-stt-model',
@@ -92,7 +92,7 @@ describe('audio actor', () => {
     }
     const llmRef = system.spawn('llm', llmDef)
 
-    const audioRef = system.spawn('audio', createAudioActor({
+    const audioRef = system.spawn('audio', Audio({
       llmRef,
       ttsModel: 'test-tts-model',
       sttModel: 'test-stt-model',

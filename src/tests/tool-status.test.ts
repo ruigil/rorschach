@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { PluginSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
-import { createToolStatusActor, TOOL_STATUS_TOOL_NAME } from '../plugins/tools/tool-status.ts'
+import { ToolStatus, TOOL_STATUS_TOOL_NAME } from '../plugins/tools/tool-status.ts'
 import { JobRegistryTopic } from '../types/tools.ts'
 import type { JobLifecycleEvent, ToolMsg, ToolReply } from '../types/tools.ts'
 
@@ -49,7 +49,7 @@ describe('tool_status', () => {
 
     const statusRef = system.spawn(
       "tool-status",
-      createToolStatusActor(),
+      ToolStatus(),
     ) as unknown as ActorRef<ToolMsg>
     await tick()
 
@@ -90,7 +90,7 @@ describe('tool_status', () => {
 
     const statusRef = system.spawn(
       'tool-status-c',
-      createToolStatusActor()
+      ToolStatus()
     ) as unknown as ActorRef<ToolMsg>
     await tick()
 
@@ -134,7 +134,7 @@ describe('tool_status', () => {
 
     const statusRef = system.spawn(
       'tool-status-f',
-      createToolStatusActor()
+      ToolStatus()
     ) as unknown as ActorRef<ToolMsg>
     await tick()
 
@@ -176,7 +176,7 @@ describe('tool_status', () => {
 
     const statusRef = system.spawn(
       'tool-status-2',
-      createToolStatusActor()
+      ToolStatus()
     ) as unknown as ActorRef<ToolMsg>
     await tick()
 
@@ -213,7 +213,7 @@ describe('tool_status', () => {
 
     const statusRef = system.spawn(
       'tool-status-3',
-      createToolStatusActor()
+      ToolStatus()
     ) as unknown as ActorRef<ToolMsg>
     await tick()
 
@@ -243,7 +243,7 @@ describe('tool_status', () => {
     const system = await PluginSystem()
     const statusRef = system.spawn(
       'tool-status-4',
-      createToolStatusActor()
+      ToolStatus()
     ) as unknown as ActorRef<ToolMsg>
     await tick()
 

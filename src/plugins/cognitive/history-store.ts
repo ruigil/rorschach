@@ -75,7 +75,7 @@ const toMessages = (records: Record_[]): ApiMessage[] => records.map(r => r.mess
 
 // ─── Actor ───
 
-export const createHistoryStoreActor = (
+export const HistoryStore = (
   options: HistoryStoreOptions,
 ): ActorDef<HistoryStoreMsg, HistoryStoreState> => {
   const { userId, historyWindowHours } = options

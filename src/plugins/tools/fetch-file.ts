@@ -130,7 +130,7 @@ const downloadFile = async (args: FetchFileArgs): Promise<{ filePath: string; co
 
 // ─── Actor definition ───
 
-export const createFetchFileActor = (): ActorDef<FetchFileMsg, null> => ({
+export const FetchFile = (): ActorDef<FetchFileMsg, null> => ({
   initialState: null,
   handler: onMessage<FetchFileMsg, null>({
     invoke: (state, message, ctx) => {

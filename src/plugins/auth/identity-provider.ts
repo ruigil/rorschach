@@ -28,7 +28,7 @@ const userToIdentity = (u: User): Identity => ({
   roles:    u.roles,
 })
 
-export const createIdentityProviderActor = (opts: {
+export const IdentityProvider = (opts: {
   authenticator: ActorRef<AuthenticatorMsg>
   userStore:     ActorRef<UserStoreMsg>
 }): ActorDef<IdentityProviderMsg, IdentityProviderState> => {

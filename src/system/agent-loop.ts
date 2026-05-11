@@ -25,7 +25,7 @@ import type {
 
 // ─── Shared turn-slice shapes ───────────────────────────────────────────────
 
-export type ReactPendingBatch = {
+export type LoopPendingBatch = {
   remaining:          number
   results:            { toolCallId: string; toolName: string; content: string }[]
   messagesAtCall:     ApiMessage[]
@@ -33,11 +33,11 @@ export type ReactPendingBatch = {
   spans:              Record<string, SpanHandle>
 }
 
-export type ReactTurn = {
+export type LoopTurn = {
   requestId:     string | null
   turnMessages:  ApiMessage[] | null
   pending:       string
-  pendingBatch:  ReactPendingBatch | null
+  pendingBatch:  LoopPendingBatch | null
   toolLoopCount: number
   requestSpan:   SpanHandle | null
   llmSpan:       SpanHandle | null
@@ -48,7 +48,7 @@ export type ReactTurn = {
   pendingUsage:  TokenUsage
 }
 
-export const initialReactTurn = (): ReactTurn => ({
+export const initialLoopTurn = (): LoopTurn => ({
   requestId:     null,
   turnMessages:  null,
   pending:       '',
@@ -63,14 +63,14 @@ export const initialReactTurn = (): ReactTurn => ({
 })
 
 /** Loop-internal mutable state. Agents hold this in one field of their state bag. */
-export type ReactLoopSlice = {
+export type AgentLoopSlice = {
   llmRef: ActorRef<LlmProviderMsg> | null
-  turn:   ReactTurn
+  turn:   LoopTurn
 }
 
-export const initialReactLoopSlice = (): ReactLoopSlice => ({
+export const initialAgentLoopSlice = (): AgentLoopSlice => ({
   llmRef: null,
-  turn:   initialReactTurn(),
+  turn:   initialLoopTurn(),
 })
 
 // ─── Base message variants the closure dispatches on ───────────────────────
@@ -80,7 +80,7 @@ export const initialReactLoopSlice = (): ReactLoopSlice => ({
  * `buildTurn` decodes it. User-facing agents do NOT use this — they call
  * `handlers.startTurn` directly with already-built `ApiMessage[]`.
  */
-export type ReactInvokeMsg<Args = string> = {
+export type LoopInvokeMsg<Args = string> = {
   type:          'invoke'
   toolName:      string
   arguments:     string | Args
@@ -98,7 +98,7 @@ export type ReactInvokeMsg<Args = string> = {
  * `ApiMessage[]` themselves (no `buildTurn` indirection) and omit `replyTo`
  * since they stream completion via topic events rather than a tool reply.
  */
-export type ReactStartTurnParams = {
+export type LoopStartTurnParams = {
   messages:      ApiMessage[]
   userId:        string
   clientId?:     string
@@ -108,14 +108,14 @@ export type ReactStartTurnParams = {
   parentSpanId?: string
 }
 
-export type ReactToolResultMsg = {
+export type LoopToolResultMsg = {
   type:       '_toolResult'
   toolName:   string
   toolCallId: string
   reply:      ToolFinalReply
 }
 
-export type ReactSubscriptionMsg =
+export type LoopSubscriptionMsg =
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
 
 /**
@@ -124,15 +124,15 @@ export type ReactSubscriptionMsg =
  * may add additional variants on top — the closure ignores anything it
  * doesn't recognise.
  */
-export type ReactBaseMsg<Args = string> =
-  | ReactInvokeMsg<Args>
+export type LoopBaseMsg<Args = string> =
+  | LoopInvokeMsg<Args>
   | LlmProviderReply
-  | ReactToolResultMsg
-  | ReactSubscriptionMsg
+  | LoopToolResultMsg
+  | LoopSubscriptionMsg
 
 // ─── Hook surface ──────────────────────────────────────────────────────────
 
-export type ReactCompletionAction<M extends { type: string }, S> = {
+export type LoopCompletionAction<M extends { type: string }, S> = {
   state:       S
   unstashAll?: boolean
   /** Override the post-completion handler. Defaults to the loop's idle. */
@@ -142,16 +142,16 @@ export type ReactCompletionAction<M extends { type: string }, S> = {
 }
 
 /** Result of buildTurn: either reject with error, or accept with the turn's initial messages. */
-export type ReactBuildTurnResult =
+export type LoopBuildTurnResult =
   | { error: string }
   | { messages: ApiMessage[] }
 
-export type ReactSpanPolicy = 'fromHeaders' | 'fromMessage' | 'always' | 'never'
+export type LoopSpanPolicy = 'fromHeaders' | 'fromMessage' | 'always' | 'never'
 
 /** Result of an `onChunk` / `onReasoningChunk` hook. Either a bare state, or state plus events emitted alongside the chunk. */
-export type ReactChunkResult<S> = S | { state: S; events?: TypedEvent[] }
+export type LoopChunkResult<S> = S | { state: S; events?: TypedEvent[] }
 
-export type ReactLoopHooks<S, M extends { type: string }, Args = string> = {
+export type AgentLoopHooks<S, M extends { type: string }, Args = string> = {
   /** Role string sent on every LLM stream message (e.g. 'google', 'memory-recall'). */
   role:         string
   /** Operation name used when creating the per-request root span. */
@@ -168,8 +168,8 @@ export type ReactLoopHooks<S, M extends { type: string }, Args = string> = {
   maxToolLoops: number
 
   // ─── Loop state slice ───
-  slice:        (s: S) => ReactLoopSlice
-  setSlice:     (s: S, slice: ReactLoopSlice) => S
+  slice:        (s: S) => AgentLoopSlice
+  setSlice:     (s: S, slice: AgentLoopSlice) => S
 
   // ─── Entry ───
   /**
@@ -177,21 +177,21 @@ export type ReactLoopHooks<S, M extends { type: string }, Args = string> = {
    * Required for tool agents that receive `invoke`. User-facing agents that
    * only enter via `startTurn` may omit this.
    */
-  buildTurn?:    (s: S, msg: ReactInvokeMsg<Args>, ctx: ActorContext<M>) => ReactBuildTurnResult
+  buildTurn?:    (s: S, msg: LoopInvokeMsg<Args>, ctx: ActorContext<M>) => LoopBuildTurnResult
 
   // ─── Completion handlers ───
   /** Called on `llmDone` after the request span is closed. Returned state is applied and the actor becomes idle (or `action.become`). */
-  onComplete:    (s: S, finalText: string, ctx: ActorContext<M>) => ReactCompletionAction<M, S>
+  onComplete:    (s: S, finalText: string, ctx: ActorContext<M>) => LoopCompletionAction<M, S>
   /** Called on `llmError`. Spans are already closed by the closure. */
-  onLlmError:    (s: S, error: unknown,  ctx: ActorContext<M>) => ReactCompletionAction<M, S>
+  onLlmError:    (s: S, error: unknown,  ctx: ActorContext<M>) => LoopCompletionAction<M, S>
   /** Called when the tool-loop ceiling is hit. The current `pending` text is passed in. */
-  onLoopLimit:   (s: S, finalText: string, ctx: ActorContext<M>) => ReactCompletionAction<M, S>
+  onLoopLimit:   (s: S, finalText: string, ctx: ActorContext<M>) => LoopCompletionAction<M, S>
 
   // ─── Optional streaming hooks ───
   /** Per-token text chunk. Return either a new state (no events) or `{ state, events }`. */
-  onChunk?:           (s: S, chunkText: string, requestId: string, ctx: ActorContext<M>) => ReactChunkResult<S>
+  onChunk?:           (s: S, chunkText: string, requestId: string, ctx: ActorContext<M>) => LoopChunkResult<S>
   /** Per-token reasoning chunk. Same return shape as `onChunk`. */
-  onReasoningChunk?:  (s: S, chunkText: string, requestId: string, ctx: ActorContext<M>) => ReactChunkResult<S>
+  onReasoningChunk?:  (s: S, chunkText: string, requestId: string, ctx: ActorContext<M>) => LoopChunkResult<S>
 
   /**
    * Called once for each tool result the loop processes (just after the
@@ -261,7 +261,7 @@ export type ReactLoopHooks<S, M extends { type: string }, Args = string> = {
    * - 'always' — always create a fresh root span
    * - 'never' — no spans
    */
-  spans?:             ReactSpanPolicy
+  spans?:             LoopSpanPolicy
 }
 
 // ─── Closure result ────────────────────────────────────────────────────────
@@ -275,13 +275,13 @@ export type ReactLoopHandlers<M extends { type: string }, S> = {
    * and starts a turn directly from already-built `ApiMessage[]`. Caller must
    * have applied any state mutations (e.g. appending to history) before calling.
    */
-  startTurn:   (state: S, params: ReactStartTurnParams, ctx: ActorContext<M>) => ActorResult<M, S>
+  startTurn:   (state: S, params: LoopStartTurnParams, ctx: ActorContext<M>) => ActorResult<M, S>
 }
 
 // ─── Implementation ────────────────────────────────────────────────────────
 
-export const createReactLoop = <S, M extends { type: string }, Args = string>(
-  hooks: ReactLoopHooks<S, M, Args>,
+export const AgentLoop = <S, M extends { type: string }, Args = string>(
+  hooks: AgentLoopHooks<S, M, Args>,
 ): ReactLoopHandlers<M, S> => {
   const log       = hooks.logPrefix ?? hooks.spanName
   const stash     = hooks.stashConcurrent !== false
@@ -302,12 +302,12 @@ export const createReactLoop = <S, M extends { type: string }, Args = string>(
   let toolLoop:    MessageHandler<M, S>
 
   // ── Slice accessors ───────────────────────────────────────────────────────
-  const getTurn   = (s: S): ReactTurn => hooks.slice(s).turn
-  const withTurn  = (s: S, turn: ReactTurn): S => hooks.setSlice(s, { ...hooks.slice(s), turn })
+  const getTurn   = (s: S): LoopTurn => hooks.slice(s).turn
+  const withTurn  = (s: S, turn: LoopTurn): S => hooks.setSlice(s, { ...hooks.slice(s), turn })
   const getLlmRef = (s: S): ActorRef<LlmProviderMsg> | null => hooks.slice(s).llmRef
 
-  const materialize = (a: ReactCompletionAction<M, S>): ActorResult<M, S> => {
-    const reset = hooks.setSlice(a.state, { ...hooks.slice(a.state), turn: initialReactTurn() })
+  const materialize = (a: LoopCompletionAction<M, S>): ActorResult<M, S> => {
+    const reset = hooks.setSlice(a.state, { ...hooks.slice(a.state), turn: initialLoopTurn() })
     return {
       state:      reset,
       become:     a.become ?? idle,
@@ -343,7 +343,7 @@ export const createReactLoop = <S, M extends { type: string }, Args = string>(
 
   // ── Subscription cases (shared across all three handlers) ─────────────────
   const subscriptionCases = {
-    _llmProvider: (state: S, msg: Extract<ReactSubscriptionMsg, { type: '_llmProvider' }>) =>
+    _llmProvider: (state: S, msg: Extract<LoopSubscriptionMsg, { type: '_llmProvider' }>) =>
       ({ state: hooks.setSlice(state, { ...hooks.slice(state), llmRef: msg.ref }) }),
   }
 
@@ -372,7 +372,7 @@ export const createReactLoop = <S, M extends { type: string }, Args = string>(
   // ── startTurn: in-process entry, shared by `invoke` shim and user-facing agents ──
   const startTurn = (
     state:  S,
-    params: ReactStartTurnParams,
+    params: LoopStartTurnParams,
     ctx:    ActorContext<M>,
   ): ActorResult<M, S> => {
     let requestSpan: SpanHandle | null = null
@@ -413,7 +413,7 @@ export const createReactLoop = <S, M extends { type: string }, Args = string>(
 
   // ── idle ─────────────────────────────────────────────────────────────────
   const idleCases: any = {
-    invoke: (state: S, msg: ReactInvokeMsg<Args>, ctx: ActorContext<M>) => {
+    invoke: (state: S, msg: LoopInvokeMsg<Args>, ctx: ActorContext<M>) => {
       if (!hooks.buildTurn) {
         msg.replyTo.send({ type: 'toolError', error: `${log} does not accept invoke (no buildTurn configured).` })
         return { state }
@@ -444,7 +444,7 @@ export const createReactLoop = <S, M extends { type: string }, Args = string>(
   idle = onMessage<M, S>(idleCases) as MessageHandler<M, S>
 
   // ── Helpers for new hook return shapes ────────────────────────────────────
-  const normalizeChunkResult = (r: ReactChunkResult<S>): { state: S; events?: TypedEvent[] } =>
+  const normalizeChunkResult = (r: LoopChunkResult<S>): { state: S; events?: TypedEvent[] } =>
     (r && typeof r === 'object' && 'state' in (r as object))
       ? r as { state: S; events?: TypedEvent[] }
       : { state: r as S }
@@ -524,7 +524,7 @@ export const createReactLoop = <S, M extends { type: string }, Args = string>(
         }
       }
 
-      const batch: ReactPendingBatch = {
+      const batch: LoopPendingBatch = {
         remaining:          knownCalls.length + skippedUnknownCalls.length,
         results:            [],
         messagesAtCall:     turn.turnMessages!,
@@ -613,7 +613,7 @@ export const createReactLoop = <S, M extends { type: string }, Args = string>(
 
   // ── toolLoop ─────────────────────────────────────────────────────────────
   const toolLoopCases: any = {
-    _toolResult: (state: S, msg: ReactToolResultMsg, ctx: ActorContext<M>) => {
+    _toolResult: (state: S, msg: LoopToolResultMsg, ctx: ActorContext<M>) => {
       const turn  = getTurn(state)
       const batch = turn.pendingBatch!
       const span  = batch.spans[msg.toolCallId]

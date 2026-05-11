@@ -1,17 +1,17 @@
-import { createSessionManagerActor } from './session-manager.ts'
-import { createLlmProviderActor, createOpenRouterAdapter } from './llm-provider.ts'
+import { SessionManager } from './session-manager.ts'
+import { LlmProvider, OpenRouterAdapter } from './llm-provider.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { ToolFilter } from '../../types/tools.ts'
 import type { PlannerConfig } from './types.ts'
-import { createAgentRegistryActor } from './agent-registry.ts'
+import { AgentRegistry } from './agent-registry.ts'
 import {
   AgentRegistrationTopic,
   type AgentDescriptor,
   type AgentFactoryOpts,
 } from './types.ts'
-import { createChatbotActor } from './chatbot.ts'
-import { createPlannerAgentFactory, type PlannerAgentConfig } from './planner-agent.ts'
+import { Chatbot } from './chatbot.ts'
+import { PlannerAgentFactory, type PlannerAgentConfig } from './planner-agent.ts'
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'
@@ -81,7 +81,7 @@ const buildChatbotDescriptor = (cfg: ChatbotConfig): AgentDescriptor => ({
   mode:         'chatbot',
   displayName:  'Chatbot',
   shortDesc:    'General-purpose conversational assistant',
-  factory:      (opts: AgentFactoryOpts) => createChatbotActor({
+  factory:      (opts: AgentFactoryOpts) => Chatbot({
     clientId:        opts.clientId,
     userId:          opts.userId,
     model:           cfg.model,
@@ -97,7 +97,7 @@ const buildPlannerDescriptor = (cfg: ResolvedPlannerConfig): AgentDescriptor => 
   mode:         'planner',
   displayName:  'Planner',
   shortDesc:    'Structured planning of multi-step goals',
-  factory:      createPlannerAgentFactory({
+  factory:      PlannerAgentFactory({
     model:        cfg.model,
     maxToolLoops: cfg.maxToolLoops,
     toolFilter:   cfg.toolFilter,
@@ -118,19 +118,19 @@ const spawnAll = (
   
   const llmProviderRef = ctx.spawn(
     `llm-provider-${gen}`,
-    createLlmProviderActor({ adapter: createOpenRouterAdapter({ apiKey: llmProviderConfig.apiKey, reasoning: llmProviderConfig.reasoning }) }),
+    LlmProvider({ adapter: OpenRouterAdapter({ apiKey: llmProviderConfig.apiKey, reasoning: llmProviderConfig.reasoning }) }),
   ) as ActorRef<LlmProviderMsg>
   ctx.publishRetained(LlmProviderTopic, 'ref', { ref: llmProviderRef })
 
   const agentRegistryRef = ctx.spawn(
     `agent-registry-${gen}`,
-    createAgentRegistryActor(),
+    AgentRegistry(),
   )
 
   const sessionManagerRef = chatbotConfig
     ? ctx.spawn(
         `session-manager-${gen}`,
-        createSessionManagerActor({
+        SessionManager({
           llmRef:             llmProviderRef,
           historyWindowHours: chatbotConfig.historyWindowHours,
         }),
@@ -232,7 +232,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
         if (state.llmProvider.ref) ctx.stop(state.llmProvider.ref)
         llmProviderRef = ctx.spawn(
           `llm-provider-${gen}`,
-          createLlmProviderActor({ adapter: createOpenRouterAdapter({ apiKey: newLlmProviderConfig.apiKey, reasoning: newLlmProviderConfig.reasoning }) }),
+          LlmProvider({ adapter: OpenRouterAdapter({ apiKey: newLlmProviderConfig.apiKey, reasoning: newLlmProviderConfig.reasoning }) }),
         ) as ActorRef<LlmProviderMsg>
         ctx.publishRetained(LlmProviderTopic, 'ref', { ref: llmProviderRef })
         llmProviderState = { config: newLlmProviderConfig, ref: llmProviderRef, gen }
@@ -246,7 +246,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
         const sessionManagerRef = newChatbotConfig
           ? ctx.spawn(
               `session-manager-${gen}`,
-              createSessionManagerActor({
+              SessionManager({
                 llmRef:             llmProviderRef!,
                 historyWindowHours: newChatbotConfig.historyWindowHours,
               }),

@@ -1,7 +1,7 @@
-import { createJsonlLoggerActor, type JsonlLoggerOptions } from './jsonl-logger.ts'
-import { createMetricsActor, type MetricsActorOptions } from './metrics.ts'
-import { createTraceRecorderActor, type TraceRecorderOptions } from './trace-recorder.ts'
-import { createCostTrackerActor, type CostTrackerOptions } from './cost-tracker.ts'
+import { JsonlLogger, type JsonlLoggerOptions } from './jsonl-logger.ts'
+import { Metrics, type MetricsActorOptions } from './metrics.ts'
+import { TraceRecorder, type TraceRecorderOptions } from './trace-recorder.ts'
+import { CostTracker, type CostTrackerOptions } from './cost-tracker.ts'
 import type { PluginActorState, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 
@@ -49,16 +49,16 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig
       const costTrackerConfig   = slice?.costTracker ?? null
 
       const loggerRef = loggerConfig
-        ? ctx.spawn('jsonl-logger-0', createJsonlLoggerActor(loggerConfig))
+        ? ctx.spawn('jsonl-logger-0', JsonlLogger(loggerConfig))
         : null
       const metricsRef = metricsConfig
-        ? ctx.spawn('metrics-0', createMetricsActor(metricsConfig))
+        ? ctx.spawn('metrics-0', Metrics(metricsConfig))
         : null
       const traceRecorderRef = traceRecorderConfig
-        ? ctx.spawn('trace-recorder-0', createTraceRecorderActor(traceRecorderConfig))
+        ? ctx.spawn('trace-recorder-0', TraceRecorder(traceRecorderConfig))
         : null
       const costTrackerRef = costTrackerConfig
-        ? ctx.spawn('cost-tracker-0', createCostTrackerActor(costTrackerConfig))
+        ? ctx.spawn('cost-tracker-0', CostTracker(costTrackerConfig))
         : null
 
       ctx.log.info('observability plugin activated')
@@ -94,16 +94,16 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig
       const costTrackerGen   = state.costTracker.gen   + 1
 
       const loggerRef = newLoggerConfig
-        ? ctx.spawn(`jsonl-logger-${loggerGen}`, createJsonlLoggerActor(newLoggerConfig))
+        ? ctx.spawn(`jsonl-logger-${loggerGen}`, JsonlLogger(newLoggerConfig))
         : null
       const metricsRef = newMetricsConfig
-        ? ctx.spawn(`metrics-${metricsGen}`, createMetricsActor(newMetricsConfig))
+        ? ctx.spawn(`metrics-${metricsGen}`, Metrics(newMetricsConfig))
         : null
       const traceRecorderRef = newTraceRecorderConfig
-        ? ctx.spawn(`trace-recorder-${traceRecorderGen}`, createTraceRecorderActor(newTraceRecorderConfig))
+        ? ctx.spawn(`trace-recorder-${traceRecorderGen}`, TraceRecorder(newTraceRecorderConfig))
         : null
       const costTrackerRef = newCostTrackerConfig
-        ? ctx.spawn(`cost-tracker-${costTrackerGen}`, createCostTrackerActor(newCostTrackerConfig))
+        ? ctx.spawn(`cost-tracker-${costTrackerGen}`, CostTracker(newCostTrackerConfig))
         : null
 
       return { state: {

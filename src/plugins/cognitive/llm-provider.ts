@@ -21,7 +21,7 @@ import { CostTopic } from '../../types/llm.ts'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
-export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmProviderAdapter => {
+export const OpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmProviderAdapter => {
   const { apiKey, reasoning } = options
   const modelInfoCache = new Map<string, ModelInfo>()
 
@@ -314,11 +314,11 @@ export const createOpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmP
 
 // ─── Actor definition ───
 
-export type LlmProviderActorOptions = {
+export type LlmProviderOptions = {
   adapter: LlmProviderAdapter
 }
 
-export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorDef<LlmProviderMsg, null> => {
+export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMsg, null> => {
   const { adapter } = options
 
   const handleStreamDone = (

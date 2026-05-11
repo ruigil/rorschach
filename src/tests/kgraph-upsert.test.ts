@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { PluginSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
-import { createKgraphActor, KGRAPH_CREATE_NODE_TOOL_NAME } from '../plugins/memory/kgraph.ts'
+import { Kgraph, KGRAPH_CREATE_NODE_TOOL_NAME } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
@@ -69,7 +69,7 @@ describe('kgraph create_node', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      createKgraphActor(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
+      Kgraph(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
       { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -92,7 +92,7 @@ describe('kgraph create_node', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      createKgraphActor(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
+      Kgraph(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
       { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -117,7 +117,7 @@ describe('kgraph create_node', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      createKgraphActor(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
+      Kgraph(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
       { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -144,7 +144,7 @@ describe('kgraph create_node', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      createKgraphActor(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
+      Kgraph(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
       { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 

@@ -182,7 +182,7 @@ export const renderForSignal = (md: string): SignalFormatted => {
 
 // ─── Options ───
 
-export type SignalActorOptions = {
+export type SignalOptions = {
   host?:           string     // default: '127.0.0.1'
   port?:           number     // default: 7583
   account?:        string
@@ -229,8 +229,8 @@ export type SignalState = {
 
 // ─── Actor factory ───
 
-export const createSignalActor = (
-  options?: SignalActorOptions,
+export const Signal = (
+  options?: SignalOptions,
 ): ActorDef<SignalMsg, SignalState> => {
   const host           = options?.host           ?? '127.0.0.1'
   const port           = options?.port           ?? 7583

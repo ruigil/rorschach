@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { PluginSystem, createTopic } from '../system/index.ts'
-import { createWorkerBridge } from '../plugins/parallel/worker-bridge.ts'
+import { GenericWorkerBridge } from '../plugins/parallel/worker-bridge.ts'
 import { taskTopic } from '../plugins/parallel/types.ts'
 import type { ActorDef, EventTopic } from '../system/index.ts'
 import type { TaskEvent, WorkerBridgeMsg } from '../plugins/parallel/types.ts'
@@ -16,7 +16,7 @@ const tick = (ms = 100) => Bun.sleep(ms)
 describe('WorkerBridge: task completion', () => {
   test('task.done is published when the worker replies', async () => {
     const system = await PluginSystem()
-    const bridge = createWorkerBridge<{ op: string; value: unknown }, string>({ scriptPath: WORKER })
+    const bridge = GenericWorkerBridge<{ op: string; value: unknown }, string>({ scriptPath: WORKER })
     const ref = system.spawn('bridge', bridge.def, { state: bridge.initialState })
     await tick()
 
@@ -47,7 +47,7 @@ describe('WorkerBridge: task completion', () => {
 
   test('task.progress events arrive before task.done, in order', async () => {
     const system = await PluginSystem()
-    const bridge = createWorkerBridge<{ op: string; value: unknown; steps?: number }, string>({ scriptPath: WORKER })
+    const bridge = GenericWorkerBridge<{ op: string; value: unknown; steps?: number }, string>({ scriptPath: WORKER })
     const ref = system.spawn('bridge', bridge.def, { state: bridge.initialState })
     await tick()
 
@@ -81,7 +81,7 @@ describe('WorkerBridge: task completion', () => {
 
   test('task.failed is published when the worker throws', async () => {
     const system = await PluginSystem()
-    const bridge = createWorkerBridge<{ op: string; error?: string }, never>({ scriptPath: WORKER })
+    const bridge = GenericWorkerBridge<{ op: string; error?: string }, never>({ scriptPath: WORKER })
     const ref = system.spawn('bridge', bridge.def, { state: bridge.initialState })
     await tick()
 
@@ -118,7 +118,7 @@ describe('WorkerBridge: task completion', () => {
 describe('WorkerBridge: topic lifecycle', () => {
   test('topic is deleted after task.done so no entry accumulates', async () => {
     const system = await PluginSystem()
-    const bridge = createWorkerBridge<{ op: string; value: unknown }, string>({ scriptPath: WORKER })
+    const bridge = GenericWorkerBridge<{ op: string; value: unknown }, string>({ scriptPath: WORKER })
     const ref = system.spawn('bridge', bridge.def, { state: bridge.initialState })
     await tick()
 
@@ -143,7 +143,7 @@ describe('WorkerBridge: topic lifecycle', () => {
 
   test('topic is deleted after task.failed', async () => {
     const system = await PluginSystem()
-    const bridge = createWorkerBridge<{ op: string; error?: string }, never>({ scriptPath: WORKER })
+    const bridge = GenericWorkerBridge<{ op: string; error?: string }, never>({ scriptPath: WORKER })
     const ref = system.spawn('bridge', bridge.def, { state: bridge.initialState })
     await tick()
 
@@ -167,7 +167,7 @@ describe('WorkerBridge: topic lifecycle', () => {
 describe('WorkerBridge: multiple observers', () => {
   test('two actors subscribed to the same task topic both receive all events', async () => {
     const system = await PluginSystem()
-    const bridge = createWorkerBridge<{ op: string; value: unknown; steps?: number }, string>({ scriptPath: WORKER })
+    const bridge = GenericWorkerBridge<{ op: string; value: unknown; steps?: number }, string>({ scriptPath: WORKER })
     const ref = system.spawn('bridge', bridge.def, { state: bridge.initialState })
     await tick()
 

@@ -66,7 +66,7 @@ const buildMessages = (userId: string, currentContext: string, turns: UserStream
 
 // ─── Worker Actor ───
 
-const createUserContextWorkerActor = (options: WorkerOptions): ActorDef<UserContextWorkerMsg, WorkerState> => {
+const UserContextWorker = (options: WorkerOptions): ActorDef<UserContextWorkerMsg, WorkerState> => {
   const { model, userId, llmRef, turns } = options
 
   return {
@@ -146,7 +146,7 @@ const createUserContextWorkerActor = (options: WorkerOptions): ActorDef<UserCont
 
 // ─── Supervisor Actor ───
 
-export const createUserContextActor = (options: UserContextOptions): ActorDef<UserContextMsg, UserContextState> => {
+export const UserContextSupervisor = (options: UserContextOptions): ActorDef<UserContextMsg, UserContextState> => {
   const { model, intervalMs } = options
 
   return {
@@ -205,7 +205,7 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
 
           const worker = context.spawn(
             `user-context-worker-${userId}`,
-            createUserContextWorkerActor({ model, userId, llmRef: state.llmRef, turns }),
+            UserContextWorker({ model, userId, llmRef: state.llmRef, turns }),
           )
           worker.send({ type: '_start' })
           workers[userId] = worker

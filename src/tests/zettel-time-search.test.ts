@@ -2,9 +2,9 @@ import { afterEach, describe, test, expect } from 'bun:test'
 import { rm } from 'node:fs/promises'
 import { PluginSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
-import { createKgraphActor } from '../plugins/memory/kgraph.ts'
+import { Kgraph } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
-import { createZettelNotesActor, ZETTEL_CREATE_TOOL, ZETTEL_SEARCH_TOOL } from '../plugins/memory/zettel-notes.ts'
+import { ZettelNotes, ZETTEL_CREATE_TOOL, ZETTEL_SEARCH_TOOL } from '../plugins/memory/zettel-notes.ts'
 import type { ZettelNoteMsg } from '../plugins/memory/zettel-notes.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
@@ -70,11 +70,11 @@ describe('zettel-notes time-based search', () => {
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
-    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }), { state: { userDbs: new Map(), llmRef: null } }) as ActorRef<KgraphMsg>
+    const kgraphRef = system.spawn('kgraph', Kgraph(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }), { state: { userDbs: new Map(), llmRef: null } }) as ActorRef<KgraphMsg>
 
     const zettelDir = tmpZettel()
     tempDirs.push(zettelDir)
-    const zettelRef = system.spawn('zettel', createZettelNotesActor(kgraphRef, zettelDir), { state: { kgraphRef, dbPath: zettelDir } }) as ActorRef<ZettelNoteMsg>
+    const zettelRef = system.spawn('zettel', ZettelNotes(kgraphRef, zettelDir), { state: { kgraphRef, dbPath: zettelDir } }) as ActorRef<ZettelNoteMsg>
 
     await tick()
 
@@ -143,11 +143,11 @@ describe('zettel-notes time-based search', () => {
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
-    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }), { state: { userDbs: new Map(), llmRef: null } }) as ActorRef<KgraphMsg>
+    const kgraphRef = system.spawn('kgraph', Kgraph(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }), { state: { userDbs: new Map(), llmRef: null } }) as ActorRef<KgraphMsg>
 
     const zettelDir = tmpZettel()
     tempDirs.push(zettelDir)
-    const zettelRef = system.spawn('zettel', createZettelNotesActor(kgraphRef, zettelDir), { state: { kgraphRef, dbPath: zettelDir } }) as ActorRef<ZettelNoteMsg>
+    const zettelRef = system.spawn('zettel', ZettelNotes(kgraphRef, zettelDir), { state: { kgraphRef, dbPath: zettelDir } }) as ActorRef<ZettelNoteMsg>
 
     await tick()
 

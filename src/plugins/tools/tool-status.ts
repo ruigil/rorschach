@@ -41,7 +41,6 @@ type JobInfo = {
 
 export type ToolStatusState = { jobs: Record<string, JobInfo> }
 
-const createInitialToolStatusState = (): ToolStatusState => ({ jobs: {} })
 
 // ─── Internal message protocol ───
 
@@ -51,7 +50,7 @@ type InternalMsg =
   | { type: '_jobCompleted';  jobId: string; result: ToolResultPayload }
   | { type: '_jobFailed';     jobId: string; error: string }
 
-type Msg = ToolMsg | InternalMsg
+type ToolStatusMsg = ToolMsg | InternalMsg
 
 // ─── Helpers ───
 
@@ -77,7 +76,7 @@ const formatJobStatus = (jobId: string, info: JobInfo): string => {
 
 // ─── Actor ───
 
-export const createToolStatusActor = (): ActorDef<Msg, ToolStatusState> => ({
+export const ToolStatus = (): ActorDef<ToolStatusMsg, ToolStatusState> => ({
   initialState: () => ({ jobs: {} }),
   lifecycle: onLifecycle({
     start: (state, ctx) => {
@@ -107,7 +106,7 @@ export const createToolStatusActor = (): ActorDef<Msg, ToolStatusState> => ({
     },
   }),
 
-  handler: onMessage<Msg, ToolStatusState>({
+  handler: onMessage<ToolStatusMsg, ToolStatusState>({
     _jobRegistered: (state, msg) => ({
       state: { jobs: { ...state.jobs, [msg.jobId]: msg.info } },
     }),

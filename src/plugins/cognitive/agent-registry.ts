@@ -57,7 +57,7 @@ const buildSwitchModeSchema = (descriptors: Record<string, AgentDescriptor>): To
 
 // ─── Actor ─────────────────────────────────────────────────────────────────
 
-export const createAgentRegistryActor = (): ActorDef<AgentRegistryMsg, AgentRegistryState> => {
+export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> => {
   const republish = (state: AgentRegistryState, ctx: any) => {
     const userVisible = Object.values(state.descriptors).filter(d => d.capabilities.userVisible !== false)
 

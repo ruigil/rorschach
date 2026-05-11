@@ -1,6 +1,6 @@
 import { appendFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import type { ActorDef, LogEvent } from '../../system/types.ts'
+import type { ActorDef } from '../../system/types.ts'
 import { LogTopic } from '../../system/types.ts'
 import type { JsonlLoggerMsg } from './types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
@@ -22,22 +22,23 @@ export type JsonlLoggerState = {
 
 // ─── Helpers ───
 
-function currentDateStr(): string {
+const currentDateStr = (): string => {
   return new Date().toISOString().slice(0, 10)
 }
 
-function resolvePath(template: string, dateStr: string): string {
+const resolvePath = (template: string, dateStr: string): string => {
   return template.replace('{date}', dateStr)
 }
 
-function ensureFile(path: string): void {
+
+const ensureFile = (path: string): void => {
   const dir = dirname(path)
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   if (!existsSync(path)) writeFileSync(path, '')
 }
 
 /** If the calendar day has rolled over, return new {resolvedPath, dateStr}; else null. */
-function checkRotation(state: JsonlLoggerState): { resolvedPath: string; dateStr: string } | null {
+const checkRotation = (state: JsonlLoggerState): { resolvedPath: string; dateStr: string } | null => {
   const today = currentDateStr()
   if (today === state.dateStr) return null
   const resolvedPath = resolvePath(state.filePath, today)
@@ -79,7 +80,7 @@ const LOG_LEVEL_ORDER = { debug: 0, info: 1, warn: 2, error: 3 } as const
  *
  * On stop, any remaining buffered entries are flushed to disk.
  */
-export const createJsonlLoggerActor = (
+export const JsonlLogger = (
   options: JsonlLoggerOptions,
 ): ActorDef<JsonlLoggerMsg, JsonlLoggerState> => {
   const { filePath, flushIntervalMs, minLevel = 'debug' } = options
