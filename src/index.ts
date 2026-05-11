@@ -1,5 +1,4 @@
 import {
-  PluginSystem,
   LogTopic,
   MetricsTopic,
   SystemLifecycleTopic,
@@ -11,6 +10,7 @@ import { loadConfig, saveConfig } from './config.ts'
 import type { LogEvent, MetricsEvent, LifecycleEvent, TraceSpan } from './system/index.ts'
 import { ToolRegistrationTopic } from './types/tools.ts'
 import type { ToolRegistrationEvent } from './types/tools.ts'
+import { AgentSystem } from './system/system.ts'
 
 if (!process.env.OPENROUTER_API_KEY) {
   console.error('Error: OPENROUTER_API_KEY environment variable is not set.')
@@ -29,7 +29,7 @@ const buildConfigSnapshot = (c: Record<string, unknown>): Record<string, unknown
   return {
     model:                         cog.chatbot?.model                     ?? '',
     systemPrompt:                  cog.chatbot?.systemPrompt               ?? '',
-    historyWindowHours: cog.chatbot?.historyWindowHours ?? 4,
+    historyWindowHours: cog.session?.historyWindowHours ?? 4,
     reasoningEnabled:              String(cog.llmProvider?.reasoning?.enabled ?? false),
     reasoningEffort:               cog.llmProvider?.reasoning?.effort      ?? 'medium',
     visionModel:                   tls.visionActor?.model                  ?? '',
@@ -66,7 +66,7 @@ const SYSTEM_PROMPT = (config.cognitive as any)?.chatbot?.systemPrompt as string
 
 // ─── Create the actor system (plugins loaded in topo-sorted order) ───
 
-const system = await PluginSystem({ plugins, config })
+const system = await AgentSystem({ plugins, config })
 
 // Seed the HTTP actor with the initial config snapshot
 system.publish(ConfigSnapshotTopic, { config: buildConfigSnapshot(config) })
@@ -131,6 +131,8 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
   const chatbotPatch = {
     model:         String(form.model ?? 'openai/gpt-4o-mini'),
     systemPrompt:  form.systemPrompt ? String(form.systemPrompt) : SYSTEM_PROMPT,
+  }
+  const sessionPatch = {
     historyWindowHours: form.historyWindowHours ? Number(form.historyWindowHours) : undefined,
   }
   const toolsPatch = {
@@ -202,6 +204,7 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
         },
       },
       chatbot: chatbotPatch,
+      session: sessionPatch,
     },
     tools: {
       ...toolsPatch,
@@ -223,6 +226,7 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
         },
       },
       chatbot: chatbotPatch,
+      session: sessionPatch,
     },
     tools:         toolsPatch,
     memory:        memoryPatch,
@@ -237,6 +241,7 @@ system.subscribe(HttpConfigTopic, async (form: HttpConfigPayload) => {
       cognitive: {
         llmProvider: { reasoning: { enabled: form.reasoningEnabled === 'true', effort: form.reasoningEffort } },
         chatbot: chatbotPatch,
+        session: sessionPatch,
       },
       tools:         toolsPatch,
       memory:        memoryPatch,
