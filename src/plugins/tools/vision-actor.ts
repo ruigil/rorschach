@@ -115,6 +115,7 @@ export const createVisionActor = (options: VisionActorOptions): ActorDef<VisionA
   const { llmRef, model } = options
 
   return {
+    initialState: { pending: {} },
     handler: onMessage<VisionActorMsg, VisionState>({
 
       // ── analyze_image invoke ──

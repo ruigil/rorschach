@@ -105,12 +105,7 @@ export const createMemoryRecallWorkerActor = (
   })
 
   return {
+    initialState: () => ({ loop: { llmRef: options.llmRef, turn: initialReactLoopSlice().turn } }),
     handler: handlers.idle,
   }
 }
-
-export const createInitialMemoryRecallWorkerState = (
-  options: MemoryRecallWorkerOptions,
-): MemoryRecallWorkerState => ({
-  loop: { llmRef: options.llmRef, turn: initialReactLoopSlice().turn },
-})

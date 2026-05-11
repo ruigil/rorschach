@@ -29,7 +29,7 @@ describe('Graceful shutdown: drain mode', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('drainer', def, null)
+    const ref = system.spawn('drainer', def)
     await tick()
 
     // Send several messages
@@ -58,7 +58,7 @@ describe('Graceful shutdown: drain mode', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('no-drain', def, null)
+    system.spawn('no-drain', def)
     await tick()
 
     system.stop({ name: 'system/no-drain' })
@@ -82,7 +82,7 @@ describe('Graceful shutdown: drain mode', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('drain-reject', def, null)
+    const ref = system.spawn('drain-reject', def)
     await tick()
 
     // Subscribe to dead letters
@@ -127,7 +127,7 @@ describe('Graceful shutdown: stopping lifecycle event', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('lifecycle-order', def, null)
+    system.spawn('lifecycle-order', def)
     await tick()
 
     system.stop({ name: 'system/lifecycle-order' })
@@ -150,7 +150,7 @@ describe('Graceful shutdown: stopping lifecycle event', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('no-stopping', def, null)
+    system.spawn('no-stopping', def)
     await tick()
 
     system.stop({ name: 'system/no-stopping' })
@@ -184,7 +184,7 @@ describe('Graceful shutdown: stopping lifecycle event', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('cleanup', def, { cleaning: false })
+    const ref = system.spawn('cleanup', def, { state: { cleaning: false } })
     await tick()
 
     ref.send('work')
@@ -232,7 +232,7 @@ describe('Graceful shutdown: timeout', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('timeout-test', def, null)
+    const ref = system.spawn('timeout-test', def)
     await tick()
 
     ref.send('start')
@@ -262,7 +262,7 @@ describe('Graceful shutdown: timeout', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('fast-drain', def, null)
+    const ref = system.spawn('fast-drain', def)
     await tick()
 
     ref.send('a')
@@ -295,7 +295,7 @@ describe('Graceful shutdown: parent-child interaction', () => {
 
     const parentDef: ActorDef<string, null> = {
       lifecycle: (state, event, ctx) => {
-        if (event.type === 'start') ctx.spawn('child', childDef, null)
+        if (event.type === 'start') ctx.spawn('child', childDef)
         else events.push(`parent-lifecycle:${event.type}`)
         return { state }
       },
@@ -307,7 +307,7 @@ describe('Graceful shutdown: parent-child interaction', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('parent', parentDef, null)
+    const ref = system.spawn('parent', parentDef)
     await tick()
 
     ref.send('work')
@@ -342,7 +342,7 @@ describe('Graceful shutdown: system-level options', () => {
       handler: (state) => ({ state }),
     }
 
-    system.spawn('observed', def, null)
+    system.spawn('observed', def)
     await tick()
 
     await system.shutdown()
@@ -366,7 +366,7 @@ describe('Graceful shutdown: system-level options', () => {
       },
     }
 
-    const ref = system.spawn('root-drain-child', def, null)
+    const ref = system.spawn('root-drain-child', def)
     await tick()
 
     ref.send('hello')

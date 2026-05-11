@@ -27,7 +27,7 @@ export type AuthenticatorState = {
   tickets:    Record<string, { token: string; expiresAt: number }>  // ticket → token
 }
 
-export const initialAuthenticatorState = (): AuthenticatorState => ({
+const initialAuthenticatorState = (): AuthenticatorState => ({
   challenges: {},
   sessions:   {},
   tickets:    {},
@@ -291,6 +291,7 @@ export const createAuthenticatorActor = (opts: {
   const { userStore, config } = opts
 
   return {
+    initialState: initialAuthenticatorState,
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.timers.startPeriodicTimer('gc', { type: '_gc' }, 60_000)

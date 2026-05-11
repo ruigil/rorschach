@@ -284,8 +284,7 @@ export type ActorContext<M> = {
   readonly spawn: <CM, CS>(
     name: string,
     def: ActorDef<CM, CS>,
-    initialState: CS,
-    options?: { config?: unknown },
+    options?: { state?: CS; config?: unknown },
   ) => ActorRef<CM>
   readonly stop: (child: ActorIdentity) => void
   /** Register interest in another actor's termination. Delivers a `terminated` lifecycle event when the target dies. */
@@ -380,6 +379,14 @@ export type PersistenceAdapter<S> = {
 export type ActorDef<M, S> = {
   /** Handles incoming messages. Returns the next state. */
   handler: MessageHandler<M,S>
+
+  /**
+   * Initial state for the actor. Either a value or a thunk; thunks are
+   * invoked at start and on every restart so each lifetime gets a fresh state.
+   * Spawn callers can override per-instance via `ctx.spawn(name, def, { state })`.
+   * If omitted, the actor starts with `null` (typed at the call site).
+   */
+  initialState?: S | (() => S)
 
   /** Reacts to lifecycle events (stopping, stopped, terminated). */
   lifecycle?: (
@@ -559,7 +566,6 @@ export type PluginDef<M, S = unknown, C = unknown> = ActorDef<M, S> & {
   readonly id: string
   readonly version: string
   readonly description?: string
-  readonly initialState: S
   readonly configDescriptor?: {
     /** Default config values for this plugin. Merged with user-supplied overrides. */
     readonly defaults: C
@@ -593,7 +599,7 @@ export type UnloadResult = { ok: true } | { ok: false; error: string }
 // ─── Plugin System (ActorSystem merged with plugin management) ───
 export type PluginSystem = {
   // ─── Actor management ───
-  readonly spawn: <M, S>(name: string, def: ActorDef<M, S>, initialState: S) => ActorRef<M>
+  readonly spawn: <M, S>(name: string, def: ActorDef<M, S>, options?: { state?: S }) => ActorRef<M>
   readonly stop: (child: ActorIdentity) => void
   readonly shutdown: () => Promise<void>
 

@@ -23,7 +23,7 @@ describe('fetch-file actor', () => {
     })) as unknown as typeof fetch
 
     const system = await createPluginSystem()
-    const ref = system.spawn('fetch-file', createFetchFileActor(), null)
+    const ref = system.spawn('fetch-file', createFetchFileActor())
     await tick()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -65,7 +65,7 @@ describe('fetch-file actor', () => {
     })) as unknown as typeof fetch
 
     const system = await createPluginSystem()
-    const ref = system.spawn('fetch-file', createFetchFileActor(), null)
+    const ref = system.spawn('fetch-file', createFetchFileActor())
     await tick()
 
     const reply1 = await ask<ToolInvokeMsg, ToolReply>(
@@ -119,7 +119,7 @@ describe('fetch-file actor', () => {
     })) as unknown as typeof fetch
 
     const system = await createPluginSystem()
-    const ref = system.spawn('fetch-file', createFetchFileActor(), null)
+    const ref = system.spawn('fetch-file', createFetchFileActor())
     await tick(200)
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -156,7 +156,7 @@ describe('fetch-file actor', () => {
     })) as unknown as typeof fetch
 
     const system = await createPluginSystem()
-    const ref = system.spawn('fetch-file', createFetchFileActor(), null)
+    const ref = system.spawn('fetch-file', createFetchFileActor())
     await tick()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -185,7 +185,7 @@ describe('fetch-file actor', () => {
     }) as unknown as typeof fetch
 
     const system = await createPluginSystem()
-    const ref = system.spawn('fetch-file', createFetchFileActor(), null)
+    const ref = system.spawn('fetch-file', createFetchFileActor())
     await tick()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(

@@ -11,6 +11,7 @@ type CounterPluginState = { counterRef: ActorRef<unknown> | null; tickerRef: Act
 const spawnCounterChildren = (config: CounterConfig, ctx: ActorContext<CounterPluginMsg>) => {
   type CounterMsg = { type: 'increment' } | { type: 'reset' }
   const counterDef: ActorDef<CounterMsg, { count: number }> = {
+    initialState: { count: config.startAt },
     handler: (s, msg) =>
       msg.type === 'increment'
         ? { state: { count: s.count + 1 } }
@@ -22,10 +23,11 @@ const spawnCounterChildren = (config: CounterConfig, ctx: ActorContext<CounterPl
       },
     }),
   }
-  const counterRef = ctx.spawn('counter', counterDef, { count: config.startAt }) as ActorRef<unknown>
+  const counterRef = ctx.spawn('counter', counterDef) as ActorRef<unknown>
 
   type TickMsg = { type: 'tick' }
   const tickerDef: ActorDef<TickMsg, null> = {
+    initialState: null,
     lifecycle: onLifecycle({
       start(s, tickCtx) {
         tickCtx.timers.startPeriodicTimer('tick', { type: 'tick' }, config.tickMs)
@@ -37,7 +39,7 @@ const spawnCounterChildren = (config: CounterConfig, ctx: ActorContext<CounterPl
       return { state: s }
     },
   }
-  const tickerRef = ctx.spawn('ticker', tickerDef, null) as ActorRef<unknown>
+  const tickerRef = ctx.spawn('ticker', tickerDef) as ActorRef<unknown>
 
   return { counterRef, tickerRef }
 }

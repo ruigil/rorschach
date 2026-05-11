@@ -112,12 +112,7 @@ export const createMemoryStoreWorkerActor = (
   })
 
   return {
+    initialState: () => ({ loop: { llmRef: options.llmRef, turn: initialReactLoopSlice().turn } }),
     handler: handlers.idle,
   }
 }
-
-export const createInitialMemoryStoreWorkerState = (
-  options: MemoryStoreWorkerOptions,
-): MemoryStoreWorkerState => ({
-  loop: { llmRef: options.llmRef, turn: initialReactLoopSlice().turn },
-})

@@ -93,6 +93,7 @@ export const createBashActor = (options?: BashOptions): ActorDef<BashToolMsg, nu
   const bash = new Bash({ fs, cwd: options?.cwd })
 
   return {
+    initialState: null,
     handler: onMessage<BashToolMsg, null>({
       invoke: (state, message, ctx) => {
         const { toolName, arguments: rawArgs, replyTo } = message

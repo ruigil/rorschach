@@ -9,13 +9,11 @@ import {
   MEMORY_RECALL_TOOL_NAME,
   MEMORY_RECALL_SCHEMA,
   createMemoryRecallWorkerActor,
-  createInitialMemoryRecallWorkerState,
 } from './memory-recall.ts'
 import {
   MEMORY_STORE_TOOL_NAME,
   MEMORY_STORE_SCHEMA,
   createMemoryStoreWorkerActor,
-  createInitialMemoryStoreWorkerState,
 } from './memory-store.ts'
 
 // ─── Options ───
@@ -34,8 +32,10 @@ export type MemorySupervisorState = {
   workerIdSeq: number
 }
 
-export const INITIAL_MEMORY_SUPERVISOR_STATE: Omit<MemorySupervisorState, 'recallTools' | 'storeTools'> = {
+export const INITIAL_MEMORY_SUPERVISOR_STATE: MemorySupervisorState = {
   llmRef:      null,
+  recallTools: {},
+  storeTools:  {},
   workerIdSeq: 0,
 }
 
@@ -47,6 +47,7 @@ export const createMemorySupervisorActor = (
   const { model, maxToolLoops = 25 } = options
 
   return {
+    initialState: INITIAL_MEMORY_SUPERVISOR_STATE,
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
@@ -92,7 +93,6 @@ export const createMemorySupervisorActor = (
           const worker = context.spawn(
             `memory-recall-worker-${nextSeq}`,
             createMemoryRecallWorkerActor(self, opts),
-            createInitialMemoryRecallWorkerState(opts),
           )
           worker.send(msg, context.messageHeaders())
           return { state: { ...state, workerIdSeq: nextSeq } }
@@ -103,7 +103,6 @@ export const createMemorySupervisorActor = (
           const worker = context.spawn(
             `memory-store-worker-${nextSeq}`,
             createMemoryStoreWorkerActor(self, opts),
-            createInitialMemoryStoreWorkerState(opts),
           )
           worker.send(msg, context.messageHeaders())
           return { state: { ...state, workerIdSeq: nextSeq } }

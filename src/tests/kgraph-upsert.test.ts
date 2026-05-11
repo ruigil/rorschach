@@ -39,7 +39,7 @@ function spawnMockLlm(system: Awaited<ReturnType<typeof createPluginSystem>>): A
       return { state }
     },
   }
-  return system.spawn('mock-llm', def, null) as ActorRef<LlmProviderMsg>
+  return system.spawn('mock-llm', def) as ActorRef<LlmProviderMsg>
 }
 
 function createNode(
@@ -70,7 +70,7 @@ describe('kgraph create_node', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
-      { userDbs: new Map(), llmRef: null },
+      { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -93,7 +93,7 @@ describe('kgraph create_node', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
-      { userDbs: new Map(), llmRef: null },
+      { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -118,7 +118,7 @@ describe('kgraph create_node', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
-      { userDbs: new Map(), llmRef: null },
+      { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -145,7 +145,7 @@ describe('kgraph create_node', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
-      { userDbs: new Map(), llmRef: null },
+      { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()

@@ -61,6 +61,7 @@ export const createPoolRouter = <WM, WS>(
   }
 
   const def: ActorDef<WM, PoolRouterState<WM>> = {
+    initialState: { workers: [], index: 0, workerSeq: 0 },
     handler: (state, message, ctx) => {
       if (state.workers.length === 0) {
         ctx.publish(DeadLetterTopic, {
@@ -79,7 +80,7 @@ export const createPoolRouter = <WM, WS>(
       start: (_state, ctx) => {
         const workers: ActorRef<WM>[] = []
         for (let i = 0; i < poolSize; i++) {
-          workers.push(ctx.spawn(`worker-${i}`, worker, workerInitialState))
+          workers.push(ctx.spawn(`worker-${i}`, worker, { state: workerInitialState }))
         }
         return { state: { workers, index: 0, workerSeq: poolSize } }
       },
@@ -100,7 +101,7 @@ export const createPoolRouter = <WM, WS>(
         const workers = state.workers.filter(w => w.name !== deadName)
 
         if (onWorkerFailure === 'replace') {
-          const newWorker = ctx.spawn(`worker-${state.workerSeq}`, worker, workerInitialState)
+          const newWorker = ctx.spawn(`worker-${state.workerSeq}`, worker, { state: workerInitialState })
           return {
             state: { workers: [...workers, newWorker], index: state.index, workerSeq: state.workerSeq + 1 },
           }

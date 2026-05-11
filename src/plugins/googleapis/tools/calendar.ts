@@ -103,6 +103,7 @@ export const createCalendarActor = (
   let cachedTimezone: string | null = null
 
   return ({
+  initialState: null,
   handler: onMessage<CalendarMsg, null>({
     invoke: (state, msg, ctx) => {
       ctx.pipeToSelf(

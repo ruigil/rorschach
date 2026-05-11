@@ -23,14 +23,14 @@ describe('audio actor', () => {
         return { state }
       }
     }
-    const llmRef = system.spawn('llm', llmDef, null)
+    const llmRef = system.spawn('llm', llmDef)
 
     const audioRef = system.spawn('audio', createAudioActor({
       llmRef,
       ttsModel: 'test-tts-model',
       sttModel: 'test-stt-model',
       voice: 'alloy'
-    }), { pending: {} })
+    }), { state: { pending: {} } })
 
     await tick()
 
@@ -90,14 +90,14 @@ describe('audio actor', () => {
         return { state }
       }
     }
-    const llmRef = system.spawn('llm', llmDef, null)
+    const llmRef = system.spawn('llm', llmDef)
 
     const audioRef = system.spawn('audio', createAudioActor({
       llmRef,
       ttsModel: 'test-tts-model',
       sttModel: 'test-stt-model',
       voice: 'alloy'
-    }), { pending: {} })
+    }), { state: { pending: {} } })
 
     await tick()
 

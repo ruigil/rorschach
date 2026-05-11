@@ -262,7 +262,7 @@ describe('Actor: bounded mailbox integration', () => {
       deadLetters.push(event as DeadLetter)
     })
 
-    const ref = system.spawn('bounded', def, null)
+    const ref = system.spawn('bounded', def)
     await tick()
 
     // Synchronous burst: msg1 resolves the suspended waiter (delivered directly),
@@ -301,7 +301,7 @@ describe('Actor: bounded mailbox integration', () => {
 
     const system = await createPluginSystem()
 
-    const ref = system.spawn('drop-oldest', def, null)
+    const ref = system.spawn('drop-oldest', def)
     await tick()
 
     // Synchronous burst: msg1 delivered directly, msg2+msg3 fill capacity=2 queue,
@@ -332,7 +332,7 @@ describe('Actor: bounded mailbox integration', () => {
 
     const system = await createPluginSystem()
 
-    const ref = system.spawn('unbounded', def, null)
+    const ref = system.spawn('unbounded', def)
     await tick()
 
     // Send many messages — all should be buffered and eventually processed
@@ -361,7 +361,7 @@ describe('Actor: bounded mailbox integration', () => {
 
       handler: (state, msg, ctx) => {
         if (msg === 'spawn') {
-          ctx.spawn('child', childDef, null)
+          ctx.spawn('child', childDef)
           return { state }
         }
         if (msg === 'stop-child') {
@@ -381,7 +381,7 @@ describe('Actor: bounded mailbox integration', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('parent', parentDef, { events: [] })
+    const ref = system.spawn('parent', parentDef, { state: { events: [] } })
     await tick(100)
 
     // Spawn a child
@@ -424,7 +424,7 @@ describe('Actor: bounded mailbox integration', () => {
       deadLetters.push((event as DeadLetter).message as string)
     })
 
-    const ref = system.spawn('timer-test', def, null)
+    const ref = system.spawn('timer-test', def)
     await tick()
 
     // Synchronous burst to fill the mailbox

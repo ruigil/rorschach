@@ -245,6 +245,7 @@ export const createCliActor = (): ActorDef<CliMsg, CliState> => {
   }
 
   return {
+    initialState: () => ({ ...CLI_INITIAL_STATE }),
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         currentState = state

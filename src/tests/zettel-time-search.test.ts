@@ -40,7 +40,7 @@ function spawnMockLlm(system: Awaited<ReturnType<typeof createPluginSystem>>): A
       return { state }
     },
   }
-  return system.spawn('mock-llm', def, null) as ActorRef<LlmProviderMsg>
+  return system.spawn('mock-llm', def) as ActorRef<LlmProviderMsg>
 }
 
 const invokeZettel = (
@@ -70,11 +70,11 @@ describe('zettel-notes time-based search', () => {
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
-    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
+    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }), { state: { userDbs: new Map(), llmRef: null } }) as ActorRef<KgraphMsg>
 
     const zettelDir = tmpZettel()
     tempDirs.push(zettelDir)
-    const zettelRef = system.spawn('zettel', createZettelNotesActor(kgraphRef, zettelDir), { kgraphRef, dbPath: zettelDir }) as ActorRef<ZettelNoteMsg>
+    const zettelRef = system.spawn('zettel', createZettelNotesActor(kgraphRef, zettelDir), { state: { kgraphRef, dbPath: zettelDir } }) as ActorRef<ZettelNoteMsg>
 
     await tick()
 
@@ -143,11 +143,11 @@ describe('zettel-notes time-based search', () => {
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
-    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
+    const kgraphRef = system.spawn('kgraph', createKgraphActor(tmpKgraph(), { model: 'test-embed', dimensions: DIMS }), { state: { userDbs: new Map(), llmRef: null } }) as ActorRef<KgraphMsg>
 
     const zettelDir = tmpZettel()
     tempDirs.push(zettelDir)
-    const zettelRef = system.spawn('zettel', createZettelNotesActor(kgraphRef, zettelDir), { kgraphRef, dbPath: zettelDir }) as ActorRef<ZettelNoteMsg>
+    const zettelRef = system.spawn('zettel', createZettelNotesActor(kgraphRef, zettelDir), { state: { kgraphRef, dbPath: zettelDir } }) as ActorRef<ZettelNoteMsg>
 
     await tick()
 

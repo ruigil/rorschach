@@ -2,11 +2,16 @@ import { createSessionManagerActor } from './session-manager.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from './llm-provider.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
-import type { ToolFilter, ToolMsg } from '../../types/tools.ts'
-import { ToolRegistrationTopic } from '../../types/tools.ts'
+import type { ToolFilter } from '../../types/tools.ts'
 import type { PlannerConfig } from './types.ts'
-import { createPlannerSupervisorActor, createInitialPlannerSupervisorState, PLAN_TOOL_SCHEMA } from './planner-agent.ts'
-import type { PlannerToolOptions } from './planner-agent.ts'
+import { createAgentRegistryActor } from './agent-registry.ts'
+import {
+  AgentRegistrationTopic,
+  type AgentDescriptor,
+  type AgentFactoryOpts,
+} from './types.ts'
+import { createChatbotActor } from './chatbot.ts'
+import { createPlannerAgentFactory, type PlannerAgentConfig } from './planner-agent.ts'
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'
@@ -19,10 +24,10 @@ type LlmProviderConfig = {
 }
 
 type ChatbotConfig = {
-  model:          string
-  systemPrompt?:  string
+  model:               string
+  systemPrompt?:       string
   historyWindowHours?: number
-  toolFilter?:    ToolFilter
+  toolFilter?:         ToolFilter
 }
 
 export type CognitiveConfig = {
@@ -38,26 +43,70 @@ type PluginMsg = { type: 'config'; slice: CognitiveConfig | undefined }
 type PluginState = {
   initialized:    boolean
   llmProvider:    { config: LlmProviderConfig | null; ref: ActorRef<LlmProviderMsg> | null; gen: number }
-  sessionManager: { config: ChatbotConfig | null;     ref: ActorRef<any> | null; gen: number }
-  planner:        { config: PlannerConfig | null;     ref: ActorRef<ToolMsg> | null; gen: number }
+  agentRegistry:  { ref: ActorRef<any>                | null; gen: number }
+  sessionManager: { config: ChatbotConfig | null;     ref: ActorRef<any>                | null; gen: number }
+  planner:        { config: PlannerConfig | null;     gen: number }
+  chatbot:        { config: ChatbotConfig | null;     gen: number }
 }
 
 const EMPTY_STATE: PluginState = {
   initialized:    true,
   llmProvider:    { config: null, ref: null, gen: 0 },
+  agentRegistry:  { ref: null, gen: 0 },
   sessionManager: { config: null, ref: null, gen: 0 },
-  planner:        { config: null, ref: null, gen: 0 },
+  planner:        { config: null, gen: 0 },
+  chatbot:        { config: null, gen: 0 },
 }
 
-const PLANNER_DEFAULTS: PlannerToolOptions = {
+type ResolvedPlannerConfig = {
+  model:        string
+  plansDir:     string
+  maxToolLoops: number
+  toolFilter?:  PlannerAgentConfig['toolFilter']
+}
+
+const PLANNER_DEFAULTS: ResolvedPlannerConfig = {
   model:        'google/gemini-2.5-flash-lite-preview',
   plansDir:     'workspace/plans',
   maxToolLoops: 10,
   toolFilter:   { allow: ['web_search', 'fetch_file'] },
 }
 
-const mergePlannerConfig = (cfg: PlannerConfig | null): PlannerToolOptions =>
+const resolvePlannerConfig = (cfg: PlannerConfig | null): ResolvedPlannerConfig =>
   cfg ? { ...PLANNER_DEFAULTS, ...cfg } : { ...PLANNER_DEFAULTS }
+
+// ─── Descriptor builders ───
+
+const buildChatbotDescriptor = (cfg: ChatbotConfig): AgentDescriptor => ({
+  mode:         'chatbot',
+  displayName:  'Chatbot',
+  shortDesc:    'General-purpose conversational assistant',
+  factory:      (opts: AgentFactoryOpts) => createChatbotActor({
+    clientId:        opts.clientId,
+    userId:          opts.userId,
+    model:           cfg.model,
+    systemPrompt:    cfg.systemPrompt,
+    toolFilter:      cfg.toolFilter,
+    historyStoreRef: opts.historyStoreRef,
+    llmRef:          opts.llmRef,
+  }),
+  capabilities: { userVisible: true },
+})
+
+const buildPlannerDescriptor = (cfg: ResolvedPlannerConfig): AgentDescriptor => ({
+  mode:         'planner',
+  displayName:  'Planner',
+  shortDesc:    'Structured planning of multi-step goals',
+  factory:      createPlannerAgentFactory({
+    model:        cfg.model,
+    maxToolLoops: cfg.maxToolLoops,
+    toolFilter:   cfg.toolFilter,
+    plansDir:     cfg.plansDir,
+  }),
+  capabilities: { userVisible: true },
+})
+
+// ─── Spawn helpers ───
 
 const spawnAll = (
   ctx: ActorContext<PluginMsg>,
@@ -66,49 +115,47 @@ const spawnAll = (
   plannerConfig: PlannerConfig | null,
   gen: number,
 ): Omit<PluginState, 'initialized'> => {
+  
   const llmProviderRef = ctx.spawn(
     `llm-provider-${gen}`,
     createLlmProviderActor({ adapter: createOpenRouterAdapter({ apiKey: llmProviderConfig.apiKey, reasoning: llmProviderConfig.reasoning }) }),
-    null,
   ) as ActorRef<LlmProviderMsg>
   ctx.publishRetained(LlmProviderTopic, 'ref', { ref: llmProviderRef })
+
+  const agentRegistryRef = ctx.spawn(
+    `agent-registry-${gen}`,
+    createAgentRegistryActor(),
+  )
 
   const sessionManagerRef = chatbotConfig
     ? ctx.spawn(
         `session-manager-${gen}`,
         createSessionManagerActor({
-          llmRef:        llmProviderRef,
-          model:         chatbotConfig.model,
-          systemPrompt:  chatbotConfig.systemPrompt,
+          llmRef:             llmProviderRef,
           historyWindowHours: chatbotConfig.historyWindowHours,
-          toolFilter:    chatbotConfig.toolFilter,
         }),
-        { userSessions: {}, clientIndex: {}, activeClients: {}, plannerSessions: {} },
       )
     : null
 
-  const effectivePlannerConfig = mergePlannerConfig(plannerConfig)
-  const plannerRef = ctx.spawn(
-    `plan-tool-${gen}`,
-    createPlannerSupervisorActor(effectivePlannerConfig),
-    createInitialPlannerSupervisorState(),
-  ) as ActorRef<ToolMsg>
-  ctx.publishRetained(ToolRegistrationTopic, 'plan', {
-    name: 'plan', schema: PLAN_TOOL_SCHEMA as any,
-    ref: plannerRef, mayBeLongRunning: true,
-  })
+  // Register built-in agents.
+  if (chatbotConfig) {
+    ctx.publish(AgentRegistrationTopic, { type: 'register', descriptor: buildChatbotDescriptor(chatbotConfig) })
+  }
+  ctx.publish(AgentRegistrationTopic, { type: 'register', descriptor: buildPlannerDescriptor(resolvePlannerConfig(plannerConfig)) })
 
   return {
     llmProvider:    { config: llmProviderConfig, ref: llmProviderRef, gen },
-    sessionManager: { config: chatbotConfig,     ref: sessionManagerRef, gen },
-    planner:        { config: plannerConfig,     ref: plannerRef, gen },
+    agentRegistry:  { ref: agentRegistryRef, gen },
+    sessionManager: { config: chatbotConfig, ref: sessionManagerRef, gen },
+    planner:        { config: plannerConfig, gen },
+    chatbot:        { config: chatbotConfig, gen },
   }
 }
 
 const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   id: 'cognitive',
-  version: '1.0.0',
-  description: 'Cognitive actors: LLM provider, chatbot actor and session management',
+  version: '2.0.0',
+  description: 'Cognitive actors: LLM provider, agent registry, session manager, chatbot + planner agents',
   configDescriptor: {
     defaults: {},
     onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
@@ -117,8 +164,10 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
   initialState: {
     initialized:    false,
     llmProvider:    { config: null, ref: null, gen: 0 },
+    agentRegistry:  { ref: null, gen: 0 },
     sessionManager: { config: null, ref: null, gen: 0 },
-    planner:        { config: null, ref: null, gen: 0 },
+    planner:        { config: null, gen: 0 },
+    chatbot:        { config: null, gen: 0 },
   },
 
   lifecycle: onLifecycle({
@@ -138,11 +187,11 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
       return { state: { initialized: true, ...children } }
     },
 
-    stopped: (_state, ctx) => {
+    stopped: (state, ctx) => {
       ctx.log.info('cognitive plugin deactivating')
       ctx.deleteRetained(LlmProviderTopic, 'ref', { ref: null })
-      ctx.deleteRetained(ToolRegistrationTopic, 'plan', { name: 'plan', ref: null })
-      return { state: _state }
+      // AgentRegistry's own stopped lifecycle clears AgentCatalogTopic + switchMode tool registration.
+      return { state }
     },
   }),
 
@@ -160,26 +209,23 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
       const newPlannerConfig     = msg.slice?.planner     ?? null
 
       const llmProviderChanged = JSON.stringify(newLlmProviderConfig) !== JSON.stringify(state.llmProvider.config)
-      const chatbotChanged     = JSON.stringify(newChatbotConfig)     !== JSON.stringify(state.sessionManager.config)
+      const chatbotChanged     = JSON.stringify(newChatbotConfig)     !== JSON.stringify(state.chatbot.config)
       const plannerChanged     = JSON.stringify(newPlannerConfig)     !== JSON.stringify(state.planner.config)
 
       if (!llmProviderChanged && !chatbotChanged && !plannerChanged) return { state }
 
       const gen = state.llmProvider.gen + 1
 
-      // No LLM provider → stop everything
+      // No LLM provider → tear everything down.
       if (!newLlmProviderConfig) {
         if (state.llmProvider.ref)    ctx.stop(state.llmProvider.ref)
+        if (state.agentRegistry.ref)  ctx.stop(state.agentRegistry.ref)
         if (state.sessionManager.ref) ctx.stop(state.sessionManager.ref)
-        if (state.planner.ref) {
-          ctx.stop(state.planner.ref)
-          ctx.deleteRetained(ToolRegistrationTopic, 'plan', { name: 'plan', ref: null })
-        }
         ctx.publishRetained(LlmProviderTopic, 'ref', { ref: null })
         return { state: { ...state, ...EMPTY_STATE, initialized: true } }
       }
 
-      // Restart LLM provider if its config changed
+      // Restart LLM provider if its config changed.
       let llmProviderRef: ActorRef<LlmProviderMsg> | null = state.llmProvider.ref
       let llmProviderState = state.llmProvider
       if (llmProviderChanged) {
@@ -187,53 +233,57 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
         llmProviderRef = ctx.spawn(
           `llm-provider-${gen}`,
           createLlmProviderActor({ adapter: createOpenRouterAdapter({ apiKey: newLlmProviderConfig.apiKey, reasoning: newLlmProviderConfig.reasoning }) }),
-          null,
         ) as ActorRef<LlmProviderMsg>
         ctx.publishRetained(LlmProviderTopic, 'ref', { ref: llmProviderRef })
         llmProviderState = { config: newLlmProviderConfig, ref: llmProviderRef, gen }
       }
 
-      // Restart session manager if its config changed
+      // Restart session-manager if chatbot config changed.
       let sessionManagerState = state.sessionManager
+      let chatbotState        = state.chatbot
       if (chatbotChanged) {
         if (state.sessionManager.ref) ctx.stop(state.sessionManager.ref)
         const sessionManagerRef = newChatbotConfig
           ? ctx.spawn(
               `session-manager-${gen}`,
               createSessionManagerActor({
-                llmRef:        llmProviderRef!,
-                model:         newChatbotConfig.model,
-                systemPrompt:  newChatbotConfig.systemPrompt,
+                llmRef:             llmProviderRef!,
                 historyWindowHours: newChatbotConfig.historyWindowHours,
-                toolFilter:    newChatbotConfig.toolFilter,
               }),
-              { userSessions: {}, clientIndex: {}, activeClients: {}, plannerSessions: {} },
             )
           : null
         sessionManagerState = { config: newChatbotConfig, ref: sessionManagerRef, gen }
+
+        // Re-register chatbot descriptor with new config.
+        if (newChatbotConfig) {
+          ctx.publish(AgentRegistrationTopic, { type: 'register', descriptor: buildChatbotDescriptor(newChatbotConfig) })
+        } else {
+          ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'chatbot' })
+        }
+        chatbotState = { config: newChatbotConfig, gen }
       }
 
-      // Restart planner if its config changed
+      // Re-register planner descriptor with new config. The formalize-plan
+      // tool actor is owned by each planner instance, so no plugin-level
+      // respawn is needed.
       let plannerState = state.planner
       if (plannerChanged) {
-        if (state.planner.ref) {
-          ctx.stop(state.planner.ref)
-          ctx.deleteRetained(ToolRegistrationTopic, 'plan', { name: 'plan', ref: null })
-        }
-        const effectivePlannerConfig = mergePlannerConfig(newPlannerConfig)
-        const plannerRef = ctx.spawn(
-          `plan-tool-${gen}`,
-          createPlannerSupervisorActor(effectivePlannerConfig),
-          createInitialPlannerSupervisorState(),
-        ) as ActorRef<ToolMsg>
-        ctx.publishRetained(ToolRegistrationTopic, 'plan', {
-          name: 'plan', schema: PLAN_TOOL_SCHEMA as any,
-          ref: plannerRef, mayBeLongRunning: true,
+        ctx.publish(AgentRegistrationTopic, {
+          type: 'register',
+          descriptor: buildPlannerDescriptor(resolvePlannerConfig(newPlannerConfig)),
         })
-        plannerState = { config: newPlannerConfig, ref: plannerRef, gen }
+        plannerState = { config: newPlannerConfig, gen }
       }
 
-      return { state: { ...state, llmProvider: llmProviderState, sessionManager: sessionManagerState, planner: plannerState } }
+      return {
+        state: {
+          ...state,
+          llmProvider:    llmProviderState,
+          sessionManager: sessionManagerState,
+          planner:        plannerState,
+          chatbot:        chatbotState,
+        },
+      }
     },
   }),
 }

@@ -3,9 +3,9 @@ import { onLifecycle } from '../../system/match.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { createUserStoreActor, initialUserStoreState } from './user-store.ts'
-import { createAuthenticatorActor, initialAuthenticatorState } from './authenticator.ts'
-import { createIdentityProviderActor, initialIdentityProviderState } from './identity-provider.ts'
+import { createUserStoreActor } from './user-store.ts'
+import { createAuthenticatorActor } from './authenticator.ts'
+import { createIdentityProviderActor } from './identity-provider.ts'
 import { buildAuthRoutes } from './routes.ts'
 import type { AuthConfig } from './authenticator.ts'
 import type { AuthenticatorMsg, UserStoreMsg } from './types.ts'
@@ -38,9 +38,9 @@ const authPlugin: PluginDef<never, AuthPluginState, AuthConfig> = {
     start: (state, ctx) => {
       const config      = ctx.initialConfig() as AuthConfig
       const storePath   = './workspace/auth/users.json'
-      const userStore        = ctx.spawn('user-store',        createUserStoreActor(storePath),                                  initialUserStoreState())
-      const authenticator    = ctx.spawn('authenticator',     createAuthenticatorActor({ userStore, config }),                  initialAuthenticatorState())
-      const identityProvider = ctx.spawn('identity-provider', createIdentityProviderActor({ authenticator, userStore }),        initialIdentityProviderState())
+      const userStore        = ctx.spawn('user-store',        createUserStoreActor(storePath))
+      const authenticator    = ctx.spawn('authenticator',     createAuthenticatorActor({ userStore, config }))
+      const identityProvider = ctx.spawn('identity-provider', createIdentityProviderActor({ authenticator, userStore }))
 
       // Public protocol — other plugins talk through this single retained topic.
       ctx.publishRetained(IdentityProviderTopic, 'identity-provider', { ref: identityProvider as ActorRef<IdentityProviderMsg> })

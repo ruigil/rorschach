@@ -35,7 +35,7 @@ describe('pipeToSelf', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('pipe-success', def, null)
+    const ref = system.spawn('pipe-success', def)
     await tick()
 
     ref.send({ type: 'fetch' })
@@ -74,7 +74,7 @@ describe('pipeToSelf', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('pipe-failure', def, null)
+    const ref = system.spawn('pipe-failure', def)
     await tick()
 
     ref.send({ type: 'fetch' })
@@ -115,7 +115,7 @@ describe('pipeToSelf', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('non-blocking', def, null)
+    const ref = system.spawn('non-blocking', def)
     await tick()
 
     ref.send({ type: 'startAsync' })
@@ -153,7 +153,7 @@ describe('pipeToSelf', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('stop-before-resolve', def, null)
+    const ref = system.spawn('stop-before-resolve', def)
     await tick()
 
     ref.send({ type: 'startAsync' })
@@ -204,7 +204,7 @@ describe('pipeToSelf', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('multi-pipe', def, null)
+    const ref = system.spawn('multi-pipe', def)
     await tick()
 
     ref.send({ type: 'startAll' })
@@ -250,7 +250,7 @@ describe('pipeToSelf', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('state-cycle', def, { loading: false, data: null, error: null })
+    const ref = system.spawn('state-cycle', def, { state: { loading: false, data: null, error: null } })
     await tick()
 
     // Capture state before load

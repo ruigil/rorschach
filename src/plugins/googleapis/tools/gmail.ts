@@ -123,6 +123,7 @@ export const createGmailActor = (
   clientId:      string,
   clientSecret:  string,
 ): ActorDef<GmailMsg, null> => ({
+  initialState: null,
   handler: onMessage<GmailMsg, null>({
     invoke: (state, msg, ctx) => {
       ctx.pipeToSelf(

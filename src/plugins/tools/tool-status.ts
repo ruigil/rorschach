@@ -41,7 +41,7 @@ type JobInfo = {
 
 export type ToolStatusState = { jobs: Record<string, JobInfo> }
 
-export const createInitialToolStatusState = (): ToolStatusState => ({ jobs: {} })
+const createInitialToolStatusState = (): ToolStatusState => ({ jobs: {} })
 
 // ─── Internal message protocol ───
 
@@ -78,6 +78,7 @@ const formatJobStatus = (jobId: string, info: JobInfo): string => {
 // ─── Actor ───
 
 export const createToolStatusActor = (): ActorDef<Msg, ToolStatusState> => ({
+  initialState: () => ({ jobs: {} }),
   lifecycle: onLifecycle({
     start: (state, ctx) => {
       ctx.subscribe(JobRegistryTopic, (event) => {

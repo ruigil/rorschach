@@ -25,7 +25,7 @@ describe('Timers: single timer', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('single', def, null)
+    system.spawn('single', def)
     await tick(150)
 
     expect(received).toEqual(['delayed-ping'])
@@ -47,7 +47,7 @@ describe('Timers: single timer', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('once', def, null)
+    system.spawn('once', def)
     await tick(200)
 
     expect(received).toEqual(['fire'])
@@ -71,7 +71,7 @@ describe('Timers: single timer', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('active-check', def, null)
+    system.spawn('active-check', def)
     await tick(100)
 
     expect(activeAfterFire).toBe(false)
@@ -99,7 +99,7 @@ describe('Timers: periodic timer', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('periodic', def, null)
+    system.spawn('periodic', def)
     await tick(250)
 
     // With 40ms interval over ~250ms, expect at least 3 deliveries
@@ -126,7 +126,7 @@ describe('Timers: periodic timer', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('periodic-active', def, null)
+    system.spawn('periodic-active', def)
     await tick(100)
 
     expect(checkedActive).toBe(true)
@@ -158,7 +158,7 @@ describe('Timers: key replacement', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('replace', def, null)
+    system.spawn('replace', def)
     await tick(150)
 
     // Only the replacement timer should have fired
@@ -185,7 +185,7 @@ describe('Timers: key replacement', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('replace-type', def, null)
+    system.spawn('replace-type', def)
     await tick(200)
 
     // The periodic timer was cancelled; only the single timer fires
@@ -217,7 +217,7 @@ describe('Timers: cancel', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('cancel-single', def, null)
+    system.spawn('cancel-single', def)
     await tick(150)
 
     expect(received).toEqual([])
@@ -243,7 +243,7 @@ describe('Timers: cancel', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('cancel-periodic', def, null)
+    system.spawn('cancel-periodic', def)
     await tick(200)
 
     // Should have received exactly 1 tick before cancellation
@@ -266,7 +266,7 @@ describe('Timers: cancel', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('cancel-noop', def, null)
+    system.spawn('cancel-noop', def)
     await tick()
 
     expect(setupCompleted).toBe(true)
@@ -293,7 +293,7 @@ describe('Timers: cancel', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('cancel-all', def, null)
+    system.spawn('cancel-all', def)
     await tick(200)
 
     expect(received).toEqual([])
@@ -321,7 +321,7 @@ describe('Timers: isActive', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('is-active-true', def, null)
+    system.spawn('is-active-true', def)
     await tick()
 
     expect(active).toBe(true)
@@ -340,7 +340,7 @@ describe('Timers: isActive', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('is-active-false', def, null)
+    system.spawn('is-active-false', def)
     await tick()
 
     expect(active).toBe(false)
@@ -363,7 +363,7 @@ describe('Timers: isActive', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('is-active-cancelled', def, null)
+    system.spawn('is-active-cancelled', def)
     await tick()
 
     expect(activeAfterCancel).toBe(false)
@@ -394,7 +394,7 @@ describe('Timers: lifecycle integration', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('stop-cancels', def, null)
+    system.spawn('stop-cancels', def)
     await tick()
 
     // Stop the actor before timers fire
@@ -420,7 +420,7 @@ describe('Timers: lifecycle integration', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('shutdown-cancels', def, null)
+    system.spawn('shutdown-cancels', def)
     await tick()
 
     await system.shutdown()
@@ -453,7 +453,7 @@ describe('Timers: lifecycle integration', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('restart-cancels', def, null)
+    const ref = system.spawn('restart-cancels', def)
     await tick()
 
     // Trigger a restart — this should cancel the timer set in setup
@@ -487,7 +487,7 @@ describe('Timers: lifecycle integration', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('restart-resets', def, null)
+    const ref = system.spawn('restart-resets', def)
     await tick(150)
 
     // First timer fires
@@ -523,7 +523,7 @@ describe('Timers: message interleaving', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('interleave', def, null)
+    const ref = system.spawn('interleave', def)
     await tick()
 
     ref.send('early')
@@ -550,7 +550,7 @@ describe('Timers: message interleaving', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('handler-timer', def, null)
+    const ref = system.spawn('handler-timer', def)
     await tick()
 
     ref.send('start')
@@ -586,7 +586,7 @@ describe('Timers: symbol keys', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('symbol-key', def, null)
+    system.spawn('symbol-key', def)
     await tick(100)
 
     expect(received).toEqual(['sym-msg'])

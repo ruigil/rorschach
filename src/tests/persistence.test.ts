@@ -35,7 +35,7 @@ describe('Persistence: load on start', () => {
     const adapter = memAdapter<Counter>({ count: 42 })
     const system = await createPluginSystem()
 
-    const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { count: 0 })
+    const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { state: { count: 0 } })
 
     await tick()
     ref.send('inc')
@@ -50,7 +50,7 @@ describe('Persistence: load on start', () => {
     const adapter = memAdapter<Counter>(undefined)
     const system = await createPluginSystem()
 
-    const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { count: 0 })
+    const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { state: { count: 0 } })
 
     await tick()
     ref.send('inc')
@@ -73,7 +73,7 @@ describe('Persistence: load on start', () => {
         return { state }
       },
       persistence: adapter,
-    }, { count: 0 })
+    }, { state: { count: 0 } })
 
     await tick()
 
@@ -93,7 +93,7 @@ describe('Persistence: save after message', () => {
     }
     const system = await createPluginSystem()
 
-    const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { count: 0 })
+    const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { state: { count: 0 } })
 
     await tick()
     ref.send('a')
@@ -125,7 +125,7 @@ describe('Persistence: save after message', () => {
     })
     system.subscribe(MetricsTopic, (e) => events.push(e))
 
-    const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { count: 0 })
+    const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { state: { count: 0 } })
 
     await tick()
     ref.send('a') // save throws
@@ -150,7 +150,7 @@ describe('Persistence: save after message', () => {
     const system = await createPluginSystem()
     system.subscribe(LogTopic, (e) => logs.push(e))
 
-    const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { count: 0 })
+    const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { state: { count: 0 } })
 
     await tick()
     ref.send('a')
@@ -177,7 +177,7 @@ describe('Persistence: load on restart', () => {
       },
       supervision: { type: 'restart', maxRetries: 1 },
       persistence: adapter,
-    }, { count: 0 })
+    }, { state: { count: 0 } })
 
     await tick()
 
@@ -220,7 +220,7 @@ describe('Persistence: load on restart', () => {
       },
       supervision: { type: 'restart', maxRetries: 1 },
       persistence: adapter,
-    }, { count: 7 })
+    }, { state: { count: 7 } })
 
     await tick()
     ref.send('POISON')
@@ -241,7 +241,7 @@ describe('Persistence: no adapter configured', () => {
       plugins: [observabilityPlugin],
     })
     system.subscribe(MetricsTopic, (e) => events.push(e))
-    const ref = system.spawn('counter', counterDef, { count: 0 })
+    const ref = system.spawn('counter', counterDef, { state: { count: 0 } })
 
     await tick()
     ref.send('a')

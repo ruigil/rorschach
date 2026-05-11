@@ -28,11 +28,11 @@ const spawnFromSlice = (slice: ParallelConfig, ctx: ActorContext<PluginMsg>) => 
 
   for (const entry of slice.poolRouters ?? []) {
     const router = createPoolRouter(entry.options)
-    routerRefs.push(ctx.spawn(entry.name, router.def, router.initialState) as ActorRef<unknown>)
+    routerRefs.push(ctx.spawn(entry.name, router.def) as ActorRef<unknown>)
   }
   for (const entry of slice.workerBridges ?? []) {
     const bridge = createWorkerBridge(entry.options)
-    bridgeRefs.push(ctx.spawn(entry.name, bridge.def, bridge.initialState) as ActorRef<unknown>)
+    bridgeRefs.push(ctx.spawn(entry.name, bridge.def) as ActorRef<unknown>)
   }
 
   return { routerRefs, bridgeRefs }

@@ -20,6 +20,7 @@ type WorkerMsg =
 type WorkerState = { processed: number; failed: number }
 
 const workerDef: ActorDef<WorkerMsg, WorkerState> = {
+  initialState: { processed: 0, failed: 0 },
   lifecycle: onLifecycle({
     start: (state, ctx) => {
       ctx.timers.startPeriodicTimer('tick', { type: 'tick' }, 1500)
@@ -67,7 +68,7 @@ const system = await createPluginSystem({
 
 // ─── Spawn a worker actor ───
 
-const worker = system.spawn('worker', workerDef, { processed: 0, failed: 0 })
+const worker = system.spawn('worker', workerDef)
 
 // ─── Forward logs to console ───
 

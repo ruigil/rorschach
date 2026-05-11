@@ -9,6 +9,7 @@ export type MetricsActorOptions = {
 }
 
 export const createMetricsActor = (options: MetricsActorOptions): ActorDef<MetricsMsg, null> => ({
+  initialState: null,
   lifecycle: onLifecycle({
     start: (state, ctx) => {
       ctx.timers.startPeriodicTimer('metrics-tick', { type: 'tick' }, options.intervalMs)

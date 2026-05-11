@@ -30,7 +30,7 @@ describe('Ask pattern', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('counter', def, { count: 0 })
+    const ref = system.spawn('counter', def, { state: { count: 0 } })
     await tick()
 
     ref.send({ type: 'increment' })
@@ -53,7 +53,7 @@ describe('Ask pattern', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('silent', def, null)
+    const ref = system.spawn('silent', def)
     await tick()
 
     await expect(
@@ -90,7 +90,7 @@ describe('Ask pattern', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('slow-replier', def, { replyTo: null })
+    const ref = system.spawn('slow-replier', def, { state: { replyTo: null } })
     await tick()
 
     // Ask with a short timeout — will reject before the actor replies
@@ -121,7 +121,7 @@ describe('Ask pattern', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('echoer', def, null)
+    const ref = system.spawn('echoer', def)
     await tick()
 
     const [r1, r2, r3] = await Promise.all([
@@ -160,7 +160,7 @@ describe('Ask pattern', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('calculator', def, null)
+    const ref = system.spawn('calculator', def)
     await tick()
 
     const result = await ask<Msg, number>(
@@ -196,7 +196,7 @@ describe('Ask pattern', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('delayed', def, null)
+    const ref = system.spawn('delayed', def)
     await tick()
 
     const result = await ask<Msg, string>(

@@ -115,6 +115,7 @@ const scheduleTimer = (job: CronJob, ctx: { timers: { startSingleTimer: (key: st
 // ─── Actor ───
 
 export const createCronActor = (): ActorDef<CronMsg, CronState> => ({
+  initialState: () => ({ jobs: {}, clientIds: new Set() }),
   persistence,
 
   lifecycle: onLifecycle({

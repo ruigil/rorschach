@@ -311,6 +311,7 @@ const createUserConsolidationWorker = (options: WorkerOptions): ActorDef<UserCon
   })
 
   return {
+    initialState: INITIAL_WORKER_STATE,
     handler: idleHandler,
   }
 }
@@ -336,6 +337,7 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
   }
 
   return {
+    initialState: INITIAL_CONSOLIDATION_STATE,
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(UserStreamTopic, (e) => {
@@ -389,7 +391,6 @@ export const createMemoryConsolidationActor = (options: MemoryConsolidationOptio
               tools:            state.tools,
               maxToolLoops,
             }),
-            INITIAL_WORKER_STATE,
           )
           workers = { ...workers, [msg.userId]: worker }
         }

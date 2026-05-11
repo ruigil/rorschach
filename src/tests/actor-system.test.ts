@@ -22,7 +22,8 @@ describe('Actor: lifecycle events', () => {
 
     system.spawn('stopper', {
       handler: (state: null) => ({ state }),
-    }, null)
+      initialState: null,
+    })
 
     await tick()
 
@@ -53,7 +54,7 @@ describe('Actor: lifecycle events', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('life', def, null)
+    system.spawn('life', def)
     await tick()
 
     await system.shutdown()
@@ -67,7 +68,8 @@ describe('Actor: lifecycle events', () => {
 
     system.spawn('ordered', {
       handler: (state: null) => ({ state }),
-    }, null)
+      initialState: null,
+    })
 
     await tick()
     await system.shutdown()
@@ -86,7 +88,8 @@ describe('Actor system', () => {
 
     const ref = system.spawn('test', {
       handler: (state: null) => ({ state }),
-    }, null)
+      initialState: null,
+    })
 
     expect(ref).toBeDefined()
     expect(ref.name).toBe('system/test')
@@ -99,12 +102,14 @@ describe('Actor system', () => {
 
     system.spawn('same', {
       handler: (state: null) => ({ state }),
-    }, null)
+      initialState: null,
+    })
 
     expect(() => {
       system.spawn('same', {
         handler: (state: null) => ({ state }),
-      }, null)
+        initialState: null,
+      })
     }).toThrow('already exists')
   })
 
@@ -115,7 +120,8 @@ describe('Actor system', () => {
     expect(() => {
       system.spawn('late', {
         handler: (state: null) => ({ state }),
-      }, null)
+        initialState: null,
+      })
     }).toThrow('shutting down')
   })
 
@@ -131,9 +137,9 @@ describe('Actor system', () => {
     })
 
     const system = await createPluginSystem()
-    system.spawn('a', makeDef('a'), null)
-    system.spawn('b', makeDef('b'), null)
-    system.spawn('c', makeDef('c'), null)
+    system.spawn('a', makeDef('a'))
+    system.spawn('b', makeDef('b'))
+    system.spawn('c', makeDef('c'))
     await tick()
 
     await system.shutdown()
@@ -148,7 +154,8 @@ describe('Actor system', () => {
 
     system.spawn('once', {
       handler: (state: null) => ({ state }),
-    }, null)
+      initialState: null,
+    })
     await tick()
 
     await system.shutdown()
@@ -169,8 +176,8 @@ describe('Actor system', () => {
     }
 
     const system = await createPluginSystem()
-    const refA = system.spawn('a', def, null)
-    const refB = system.spawn('b', def, null)
+    const refA = system.spawn('a', def)
+    const refB = system.spawn('b', def)
     await tick()
 
     refA.send('a1')
@@ -203,8 +210,8 @@ describe('Actor system', () => {
     })
 
     const system = await createPluginSystem()
-    const refX = system.spawn('x', makeDef('x'), null)
-    const refY = system.spawn('y', makeDef('y'), null)
+    const refX = system.spawn('x', makeDef('x'))
+    const refY = system.spawn('y', makeDef('y'))
     await tick()
 
     refX.send('1')

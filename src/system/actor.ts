@@ -231,8 +231,7 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
     spawn: <CM, CS>(
       childName: string,
       childDef: ActorDef<CM, CS>,
-      childInitialState: CS,
-      options?: { config?: unknown },
+      options?: { state?: CS; config?: unknown },
     ): ActorRef<CM> => {
       const fullName = `${name}/${childName}`
 
@@ -241,7 +240,7 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       }
 
       const childConfigRef = options?.config !== undefined ? { value: options.config } : undefined
-      const { handle: childHandle } = createActor(fullName, childDef, childInitialState, services, childConfigRef)
+      const { handle: childHandle } = createActor(fullName, childDef, services, childConfigRef, options?.state)
       children.set(fullName, childHandle as InternalActorHandle)
 
       // Parent implicitly watches its children
@@ -383,10 +382,17 @@ type ActorCreationResult<M> = {
 export const createActor = <M, S>(
   name: string,
   def: ActorDef<M, S>,
-  initialState: S,
   services: ActorServices,
   configRef?: { value: unknown },
+  stateOverride?: S,
 ): ActorCreationResult<M> => {
+  const resolveInitialState = (): S => {
+    if (stateOverride !== undefined) return stateOverride
+    const di = def.initialState
+    if (di === undefined) return null as unknown as S
+    return typeof di === 'function' ? (di as () => S)() : di
+  }
+  let initialState: S = resolveInitialState()
   // Internal logger for lifecycle events (created early so onOverflow can use it)
   const log = createInternalLog(name, services.eventStream)
 
@@ -690,7 +696,7 @@ export const createActor = <M, S>(
               await new Promise<void>(resolve => setTimeout(resolve, delayMs))
             }
 
-            state = initialState
+            state = resolveInitialState()
             if (def.persistence) {
               const loaded = await def.persistence.load()
               if (loaded !== undefined) state = loaded

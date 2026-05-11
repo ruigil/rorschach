@@ -16,6 +16,8 @@ import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { RouteHandler, RouteMatch, RouteRegistration } from '../../types/routes.ts'
 import { IdentityProviderTopic, resolveIdentity, ANONYMOUS_USER_ID } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
+import { AgentCatalogTopic, SwitchAgentTopic } from '../cognitive/types.ts'
+import type { AgentCatalogEvent } from '../cognitive/types.ts'
 
 // ─── Public directory (resolved relative to this module) ───
 const PUBLIC_DIR = join(import.meta.dir, '../..', 'public')
@@ -39,6 +41,8 @@ const FALLBACK_MODELS = [
 export type HttpMessage =
   | { type: 'connected'; clientId: string; userId: string; roles: string[] }
   | { type: 'message'; clientId: string; text: string; images?: string[]; audio?: string; pdfs?: Array<{ data: string; name: string }> }
+  | { type: 'switchMode'; clientId: string; mode: string }
+  | { type: 'listAgents'; clientId: string }
   | { type: '_mediaSaved'; clientId: string; text: string; imagePaths: string[]; audioPath?: string; pdfPaths?: string[] }
   | { type: 'closed'; clientId: string }
   | { type: 'broadcast'; text: string }
@@ -48,6 +52,7 @@ export type HttpMessage =
   | { type: '_llmProviderChanged'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
   | { type: '_routeChanged'; reg: RouteRegistration }
+  | { type: '_agentCatalog'; agents: AgentCatalogEvent['agents'] }
   | { type: '_imageGenerated'; publicUrl: string }
   | { type: '_audioGenerated'; publicUrl: string }
   | { type: '_cost'; event: CostEvent }
@@ -93,6 +98,7 @@ export type HttpState = {
   activeSpans:         Record<string, SpanHandle>
   llmProviderRef:      ActorRef<LlmProviderMsg>      | null
   identityProviderRef: ActorRef<IdentityProviderMsg> | null
+  agentCatalog:        AgentCatalogEvent['agents']
 }
 
 // ─── WebSocket attachment data ───
@@ -184,15 +190,39 @@ export const createHttpActor = (
   }
 
   return {
+    initialState: { server: null, connections: 0, activeSpans: {}, llmProviderRef: null, identityProviderRef: null, agentCatalog: [] },
     handler: onMessage({
 
       connected: (state, message, context) => {
         const connections = state.connections + 1
         context.log.info(`client connected: ${message.clientId} userId=${message.userId} (${connections} total)`)
+        // Push the agent catalog as a welcome frame so the UI can render its mode selector.
+        if (state.agentCatalog.length > 0) {
+          state.server?.publish(`client:${message.clientId}`, JSON.stringify({ type: 'agents', agents: state.agentCatalog }))
+        }
         return {
           state: { ...state, connections },
           events: [emit(ClientConnectTopic, { clientId: message.clientId, userId: message.userId, roles: message.roles })],
         }
+      },
+
+      switchMode: (state, message, context) => {
+        context.log.info(`switchMode: clientId=${message.clientId} mode=${message.mode}`)
+        return {
+          state,
+          events: [emit(SwitchAgentTopic, { clientId: message.clientId, mode: message.mode, source: 'user' })],
+        }
+      },
+
+      listAgents: (state, message) => {
+        state.server?.publish(`client:${message.clientId}`, JSON.stringify({ type: 'agents', agents: state.agentCatalog }))
+        return { state }
+      },
+
+      _agentCatalog: (state, message) => {
+        // Push to all already-connected clients on every catalog change.
+        state.server?.publish(CHANNEL, JSON.stringify({ type: 'agents', agents: message.agents }))
+        return { state: { ...state, agentCatalog: message.agents } }
       },
 
       message: (state, message, context) => {
@@ -375,6 +405,11 @@ export const createHttpActor = (
           reg,
         }))
 
+        context.subscribe(AgentCatalogTopic, (e) => ({
+          type: '_agentCatalog' as const,
+          agents: e.agents,
+        }))
+
 
         const server = Bun.serve<WsData>({
           port,
@@ -477,7 +512,23 @@ export const createHttpActor = (
               let audio: string | undefined
               let pdfs: Array<{ data: string; name: string }> | undefined
               try {
-                const parsed = JSON.parse(raw) as { text?: string; images?: string[]; audio?: string; pdfs?: Array<{ data: string; name: string }> }
+                const parsed = JSON.parse(raw) as {
+                  type?:    string
+                  mode?:    string
+                  text?:    string
+                  images?:  string[]
+                  audio?:   string
+                  pdfs?:    Array<{ data: string; name: string }>
+                }
+                // Control frames (switchMode, listAgents) — handled separately from chat messages.
+                if (parsed.type === 'switchMode' && typeof parsed.mode === 'string') {
+                  selfRef?.send({ type: 'switchMode', clientId: ws.data.clientId, mode: parsed.mode })
+                  return
+                }
+                if (parsed.type === 'listAgents') {
+                  selfRef?.send({ type: 'listAgents', clientId: ws.data.clientId })
+                  return
+                }
                 if (typeof parsed.text === 'string') {
                   text = parsed.text
                   images = parsed.images

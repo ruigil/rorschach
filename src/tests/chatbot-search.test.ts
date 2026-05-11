@@ -2,6 +2,7 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { createPluginSystem } from '../system/index.ts'
 import { OutboundMessageTopic } from '../types/events.ts'
 import { createChatbotActor, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
+import { createHistoryStoreActor } from '../plugins/cognitive/history-store.ts'
 import { createLlmProviderActor, createOpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import { initialReactLoopSlice } from '../system/react-loop.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
@@ -20,7 +21,8 @@ const LLM_PROVIDER_ADAPTER_OPTS = {
 }
 
 const INITIAL_CHATBOT_STATE: Omit<ChatbotState, 'loop'> = {
-  history:        [],
+  historyMirror:  [],
+  historyVersion: 0,
   tools:          {},
   sessionUsage:   { promptTokens: 0, completionTokens: 0 },
   userContext:    null,
@@ -98,8 +100,14 @@ const stubFetchByUrl = (completions: (() => Response)[], braveFactory?: () => Re
 // ─── Spawn helpers ───
 
 const spawnChatbot = (system: Awaited<ReturnType<typeof createPluginSystem>>) => {
-  const llmRef = system.spawn('llm-provider', createLlmProviderActor({ adapter: createOpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }), null)
-  return system.spawn('chatbot', createChatbotActor({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model, userId: `test-user-${crypto.randomUUID()}` }), { ...INITIAL_CHATBOT_STATE, loop: { ...initialReactLoopSlice(), llmRef } })
+  const userId = `test-user-${crypto.randomUUID()}`
+  const llmRef = system.spawn('llm-provider', createLlmProviderActor({ adapter: createOpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }))
+  const historyStoreRef = system.spawn(`history-store-${userId}`, createHistoryStoreActor({ userId }))
+  return system.spawn(
+    'chatbot',
+    createChatbotActor({ clientId: CLIENT_ID, model: LLM_PROVIDER_ADAPTER_OPTS.model, userId, historyStoreRef }),
+    { state: { ...INITIAL_CHATBOT_STATE, loop: { ...initialReactLoopSlice(), llmRef } } },
+  )
 }
 
 // ═══════════════════════════════════════════════════════════════════

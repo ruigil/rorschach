@@ -32,7 +32,7 @@ describe('Actor: parent-child hierarchy', () => {
     const parentDef: ActorDef<ParentMsg, { child: ActorRef<string> | null }> = {
       handler: (state, message, context) => {
         if (message.type === 'spawn') {
-          const child = context.spawn('worker', childDef, null)
+          const child = context.spawn('worker', childDef)
           childRef = child
           return { state: { child } }
         }
@@ -45,7 +45,7 @@ describe('Actor: parent-child hierarchy', () => {
     }
 
     const system = await createPluginSystem()
-    const parent = system.spawn('parent', parentDef, { child: null })
+    const parent = system.spawn('parent', parentDef, { state: { child: null } })
     await tick()
 
     parent.send({ type: 'spawn' })
@@ -70,14 +70,14 @@ describe('Actor: parent-child hierarchy', () => {
 
     const parentDef: ActorDef<'go', null> = {
       handler: (state, _msg, ctx) => {
-        const child = ctx.spawn('nested', childDef, null)
+        const child = ctx.spawn('nested', childDef)
         spawnedName = child.name
         return { state }
       },
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('root', parentDef, null)
+    const ref = system.spawn('root', parentDef)
     await tick()
 
     ref.send('go')
@@ -98,7 +98,7 @@ describe('Actor: parent-child hierarchy', () => {
     const parentDef: ActorDef<'spawn' | 'stop-child', null> = {
       handler: (state, msg, ctx) => {
         if (msg === 'spawn') {
-          ctx.spawn('kid', childDef, null)
+          ctx.spawn('kid', childDef)
         } else if (msg === 'stop-child') {
           ctx.stop({ name: 'system/parent/kid' })
         }
@@ -111,7 +111,7 @@ describe('Actor: parent-child hierarchy', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('parent', parentDef, null)
+    const ref = system.spawn('parent', parentDef)
     await tick()
 
     ref.send('spawn')
@@ -143,7 +143,7 @@ describe('Actor: parent-child hierarchy', () => {
 
     const childDef: ActorDef<string, null> = {
       lifecycle: (state, event, ctx) => {
-        if (event.type === 'start') ctx.spawn('grandkid', grandchildDef, null)
+        if (event.type === 'start') ctx.spawn('grandkid', grandchildDef)
         if (event.type === 'stopped') stoppedOrder.push('child')
         return { state }
       },
@@ -152,7 +152,7 @@ describe('Actor: parent-child hierarchy', () => {
 
     const parentDef: ActorDef<string, null> = {
       lifecycle: (state, event, ctx) => {
-        if (event.type === 'start') ctx.spawn('kid', childDef, null)
+        if (event.type === 'start') ctx.spawn('kid', childDef)
         if (event.type === 'stopped') stoppedOrder.push('parent')
         return { state }
       },
@@ -160,7 +160,7 @@ describe('Actor: parent-child hierarchy', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('p', parentDef, null)
+    system.spawn('p', parentDef)
     await tick(100)
 
     await system.shutdown()
@@ -182,8 +182,8 @@ describe('Actor: parent-child hierarchy', () => {
     const parentDef: ActorDef<'spawn', null> = {
       handler: (state, _msg, ctx) => {
         try {
-          ctx.spawn('dup', childDef, null)
-          ctx.spawn('dup', childDef, null) // duplicate
+          ctx.spawn('dup', childDef)
+          ctx.spawn('dup', childDef) // duplicate
         } catch (e) {
           error = e as Error
         }
@@ -192,7 +192,7 @@ describe('Actor: parent-child hierarchy', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('parent', parentDef, null)
+    const ref = system.spawn('parent', parentDef)
     await tick()
 
     ref.send('spawn')
@@ -228,8 +228,8 @@ describe('Watch: cross-hierarchy observation', () => {
     }
 
     const system = await createPluginSystem()
-    const targetRef = system.spawn('target', targetDef, null)
-    const watcher = system.spawn('watcher', watcherDef, null)
+    const targetRef = system.spawn('target', targetDef)
+    const watcher = system.spawn('watcher', watcherDef)
     await tick()
 
     watcher.send(targetRef as ActorRef<unknown>)
@@ -269,7 +269,7 @@ describe('Watch: cross-hierarchy observation', () => {
     }
 
     const system = await createPluginSystem()
-    const targetRef = system.spawn('target', targetDef, null)
+    const targetRef = system.spawn('target', targetDef)
     await tick()
 
     // Stop target first
@@ -277,7 +277,7 @@ describe('Watch: cross-hierarchy observation', () => {
     await tick(100)
 
     // Now spawn watcher and try to watch the dead target
-    const watcher = system.spawn('watcher', watcherDef, null)
+    const watcher = system.spawn('watcher', watcherDef)
     await tick()
 
     watcher.send(targetRef as ActorRef<unknown>)
@@ -314,8 +314,8 @@ describe('Watch: cross-hierarchy observation', () => {
     }
 
     const system = await createPluginSystem()
-    const targetRef = system.spawn('target', targetDef, null)
-    const watcher = system.spawn('watcher', watcherDef, null)
+    const targetRef = system.spawn('target', targetDef)
+    const watcher = system.spawn('watcher', watcherDef)
     await tick()
 
     watcher.send({ type: 'watch', ref: targetRef as ActorRef<unknown> })
@@ -353,8 +353,8 @@ describe('Watch: cross-hierarchy observation', () => {
     }
 
     const system = await createPluginSystem()
-    const targetRef = system.spawn('target', targetDef, null)
-    const watcher = system.spawn('watcher', watcherDef, null)
+    const targetRef = system.spawn('target', targetDef)
+    const watcher = system.spawn('watcher', watcherDef)
     await tick()
 
     // Watch twice
@@ -386,8 +386,8 @@ describe('Watch: cross-hierarchy observation', () => {
       },
     }
 
-    const targetRef = system.spawn('target', targetDef, null)
-    const watcher = system.spawn('watcher', watcherDef, null)
+    const targetRef = system.spawn('target', targetDef)
+    const watcher = system.spawn('watcher', watcherDef)
     await tick()
 
     watcher.send(targetRef as ActorRef<unknown>)
@@ -424,9 +424,9 @@ describe('Watch: cross-hierarchy observation', () => {
     })
 
     const system = await createPluginSystem()
-    const targetRef = system.spawn('target', targetDef, null)
-    const watcherA = system.spawn('watcher-a', makeWatcher(eventsA), null)
-    const watcherB = system.spawn('watcher-b', makeWatcher(eventsB), null)
+    const targetRef = system.spawn('target', targetDef)
+    const watcherA = system.spawn('watcher-a', makeWatcher(eventsA))
+    const watcherB = system.spawn('watcher-b', makeWatcher(eventsB))
     await tick()
 
     watcherA.send(targetRef as ActorRef<unknown>)

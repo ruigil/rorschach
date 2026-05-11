@@ -11,7 +11,7 @@ export type UserStoreState = {
   phoneIndex:      Record<string, UserId>
 }
 
-export const initialUserStoreState = (): UserStoreState => ({
+const initialUserStoreState = (): UserStoreState => ({
   users:           {},
   usernameIndex:   {},
   credentialIndex: {},
@@ -39,6 +39,7 @@ const jsonPersistence = (filePath: string): PersistenceAdapter<UserStoreState> =
 // ─── Actor definition ───
 
 export const createUserStoreActor = (filePath: string): ActorDef<UserStoreMsg, UserStoreState> => ({
+  initialState: initialUserStoreState,
   persistence: jsonPersistence(filePath),
 
   handler: onMessage<UserStoreMsg, UserStoreState>({

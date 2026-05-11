@@ -38,6 +38,7 @@ export const createWorkerBridge = <P, R>(
   options: WorkerBridgeOptions,
 ): WorkerBridge<P, R> => {
   const def: ActorDef<WorkerBridgeMsg<P, R>, WorkerBridgeState> = {
+    initialState: { worker: null as unknown as Worker },
     handler: onMessage({
       request: (state, msg) => {
         state.worker.postMessage({ id: msg.id, payload: msg.payload })

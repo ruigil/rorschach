@@ -40,6 +40,7 @@ const extractPdfText = async (path: string): Promise<{ text: string; pages: numb
 // ─── Actor definition ───
 
 export const createPdfActor = (): ActorDef<PdfMsg, null> => ({
+  initialState: null,
   handler: onMessage<PdfMsg, null>({
     invoke: (state, message, ctx) => {
       const { arguments: args, replyTo } = message

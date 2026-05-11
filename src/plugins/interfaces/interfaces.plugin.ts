@@ -1,4 +1,4 @@
-import { createHttpActor, type HttpActorOptions, type HttpState } from './http.ts'
+import { createHttpActor, type HttpActorOptions } from './http.ts'
 import { createCliActor, CLI_INITIAL_STATE } from './cli.ts'
 import { createSignalActor, type SignalActorOptions } from './signal.ts'
 import type { PluginActorState, PluginDef } from '../../system/types.ts'
@@ -43,13 +43,13 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
       const signalConfig = slice?.signal ?? null
 
       const httpRef = httpConfig
-        ? ctx.spawn('http-0', createHttpActor(httpConfig), { server: null, connections: 0, activeSpans: {}, llmProviderRef: null, identityProviderRef: null } as HttpState)
+        ? ctx.spawn('http-0', createHttpActor(httpConfig))
         : null
       const cliRef = cliConfig
-        ? ctx.spawn('cli-0', createCliActor(), { ...CLI_INITIAL_STATE })
+        ? ctx.spawn('cli-0', createCliActor())
         : null
       const signalRef = signalConfig
-        ? ctx.spawn('signal-0', createSignalActor(signalConfig), { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() })
+        ? ctx.spawn('signal-0', createSignalActor(signalConfig))
         : null
 
       ctx.log.info('interfaces plugin activated')
@@ -80,13 +80,13 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
       const signalGen = state.signal.gen + 1
 
       const httpRef = newHttpConfig
-        ? ctx.spawn(`http-${httpGen}`, createHttpActor(newHttpConfig), { server: null, connections: 0, activeSpans: {}, llmProviderRef: null, identityProviderRef: null } as HttpState)
+        ? ctx.spawn(`http-${httpGen}`, createHttpActor(newHttpConfig))
         : null
       const cliRef = newCliConfig
-        ? ctx.spawn(`cli-${cliGen}`, createCliActor(), { ...CLI_INITIAL_STATE })
+        ? ctx.spawn(`cli-${cliGen}`, createCliActor())
         : null
       const signalRef = newSignalConfig
-        ? ctx.spawn(`signal-${signalGen}`, createSignalActor(newSignalConfig), { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() })
+        ? ctx.spawn(`signal-${signalGen}`, createSignalActor(newSignalConfig))
         : null
 
       return { state: {

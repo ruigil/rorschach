@@ -113,6 +113,7 @@ const searchJournal = async (notebookDir: string, query: string): Promise<string
 // ─── Actor ───
 
 export const createJournalActor = (notebookDir: string): ActorDef<JournalMsg, null> => ({
+  initialState: null,
   handler: onMessage<JournalMsg, null>({
     invoke: (state, msg, ctx) => {
       let promise: Promise<string>

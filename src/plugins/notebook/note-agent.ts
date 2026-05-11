@@ -91,6 +91,7 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
   })
 
   return {
+    initialState: () => ({ loop: initialReactLoopSlice() }),
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
@@ -104,7 +105,3 @@ export const createNoteAgentActor = (options: NoteAgentOptions): ActorDef<NoteAg
     supervision:   { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }
 }
-
-export const createInitialNoteAgentState = (): NoteAgentState => ({
-  loop: initialReactLoopSlice(),
-})

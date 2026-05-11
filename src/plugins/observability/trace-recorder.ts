@@ -52,6 +52,7 @@ export const createTraceRecorderActor = (
   const { tracesDir, flushIntervalMs } = options
 
   return {
+    initialState: { tracesDir, written: 0, buffer: [] },
     handler: onMessage({
       span(state, message) {
         const line = JSON.stringify(message.span)

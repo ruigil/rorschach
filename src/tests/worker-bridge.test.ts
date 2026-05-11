@@ -17,7 +17,7 @@ describe('WorkerBridge: task completion', () => {
   test('task.done is published when the worker replies', async () => {
     const system = await createPluginSystem()
     const bridge = createWorkerBridge<{ op: string; value: unknown }, string>({ scriptPath: WORKER })
-    const ref = system.spawn('bridge', bridge.def, bridge.initialState)
+    const ref = system.spawn('bridge', bridge.def, { state: bridge.initialState })
     await tick()
 
     const received: TaskEvent<string>[] = []
@@ -34,7 +34,7 @@ describe('WorkerBridge: task completion', () => {
       },
     }
 
-    system.spawn('observer', observerDef, null)
+    system.spawn('observer', observerDef)
     await tick()
 
     ref.send({ type: 'request', id: 't1', payload: { op: 'echo', value: 'hello' } })
@@ -48,7 +48,7 @@ describe('WorkerBridge: task completion', () => {
   test('task.progress events arrive before task.done, in order', async () => {
     const system = await createPluginSystem()
     const bridge = createWorkerBridge<{ op: string; value: unknown; steps?: number }, string>({ scriptPath: WORKER })
-    const ref = system.spawn('bridge', bridge.def, bridge.initialState)
+    const ref = system.spawn('bridge', bridge.def, { state: bridge.initialState })
     await tick()
 
     const received: TaskEvent<string>[] = []
@@ -65,7 +65,7 @@ describe('WorkerBridge: task completion', () => {
       },
     }
 
-    system.spawn('observer', observerDef, null)
+    system.spawn('observer', observerDef)
     await tick()
 
     ref.send({ type: 'request', id: 't2', payload: { op: 'progress', value: 'done', steps: 3 } })
@@ -82,7 +82,7 @@ describe('WorkerBridge: task completion', () => {
   test('task.failed is published when the worker throws', async () => {
     const system = await createPluginSystem()
     const bridge = createWorkerBridge<{ op: string; error?: string }, never>({ scriptPath: WORKER })
-    const ref = system.spawn('bridge', bridge.def, bridge.initialState)
+    const ref = system.spawn('bridge', bridge.def, { state: bridge.initialState })
     await tick()
 
     const received: TaskEvent<never>[] = []
@@ -99,7 +99,7 @@ describe('WorkerBridge: task completion', () => {
       },
     }
 
-    system.spawn('observer', observerDef, null)
+    system.spawn('observer', observerDef)
     await tick()
 
     ref.send({ type: 'request', id: 't3', payload: { op: 'fail', error: 'boom' } })
@@ -119,7 +119,7 @@ describe('WorkerBridge: topic lifecycle', () => {
   test('topic is deleted after task.done so no entry accumulates', async () => {
     const system = await createPluginSystem()
     const bridge = createWorkerBridge<{ op: string; value: unknown }, string>({ scriptPath: WORKER })
-    const ref = system.spawn('bridge', bridge.def, bridge.initialState)
+    const ref = system.spawn('bridge', bridge.def, { state: bridge.initialState })
     await tick()
 
     // Verify: after completion, publishing to that topic delivers to nobody
@@ -144,7 +144,7 @@ describe('WorkerBridge: topic lifecycle', () => {
   test('topic is deleted after task.failed', async () => {
     const system = await createPluginSystem()
     const bridge = createWorkerBridge<{ op: string; error?: string }, never>({ scriptPath: WORKER })
-    const ref = system.spawn('bridge', bridge.def, bridge.initialState)
+    const ref = system.spawn('bridge', bridge.def, { state: bridge.initialState })
     await tick()
 
     ref.send({ type: 'request', id: 't5', payload: { op: 'fail', error: 'gone' } })
@@ -168,7 +168,7 @@ describe('WorkerBridge: multiple observers', () => {
   test('two actors subscribed to the same task topic both receive all events', async () => {
     const system = await createPluginSystem()
     const bridge = createWorkerBridge<{ op: string; value: unknown; steps?: number }, string>({ scriptPath: WORKER })
-    const ref = system.spawn('bridge', bridge.def, bridge.initialState)
+    const ref = system.spawn('bridge', bridge.def, { state: bridge.initialState })
     await tick()
 
     const receivedA: TaskEvent<string>[] = []
@@ -187,8 +187,8 @@ describe('WorkerBridge: multiple observers', () => {
       },
     })
 
-    system.spawn('observer-a', makeObserver(receivedA), null)
-    system.spawn('observer-b', makeObserver(receivedB), null)
+    system.spawn('observer-a', makeObserver(receivedA))
+    system.spawn('observer-b', makeObserver(receivedB))
     await tick()
 
     ref.send({ type: 'request', id: 't6', payload: { op: 'progress', value: 'result', steps: 1 } })
@@ -231,7 +231,7 @@ describe('ActorContext: deleteTopic', () => {
       },
     }
 
-    const ref = system.spawn('deleter', def, null)
+    const ref = system.spawn('deleter', def)
     await tick()
 
     ref.send({ type: 'publish', value: 'before' })

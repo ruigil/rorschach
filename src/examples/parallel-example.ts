@@ -51,7 +51,7 @@ const pool = createPoolRouter<WorkerBridgeMsg<ParsePayload, ParseResult>, Worker
   worker: parseBridge.def,
   workerInitialState: parseBridge.initialState,
 })
-const poolRef = system.spawn('pool', pool.def, pool.initialState)
+const poolRef = system.spawn('pool', pool.def)
 
 await Bun.sleep(100) // let actors and worker threads start
 
@@ -103,7 +103,7 @@ type ComputeResult  = number
 const bridge = createWorkerBridge<ComputePayload, ComputeResult>({
   scriptPath: new URL('./workers/compute-worker.ts', import.meta.url).href,
 })
-const bridgeRef = system.spawn('compute-bridge', bridge.def, bridge.initialState)
+const bridgeRef = system.spawn('compute-bridge', bridge.def)
 
 await Bun.sleep(50) // let the worker thread start
 
@@ -113,6 +113,7 @@ let taskDone = false
 
 type ObserverMsg = { type: 'task-event'; event: TaskEvent<ComputeResult> }
 const observerDef: ActorDef<ObserverMsg, null> = {
+  initialState: null,
   lifecycle: (state, event, ctx) => {
     if (event.type === 'start') {
       ctx.subscribe(taskTopic<ComputeResult>(taskId), e => ({ type: 'task-event' as const, event: e }))
@@ -134,7 +135,7 @@ const observerDef: ActorDef<ObserverMsg, null> = {
   },
 }
 
-system.spawn('task-observer', observerDef, null)
+system.spawn('task-observer', observerDef)
 await Bun.sleep(50) // let observer subscribe before sending
 
 // Send the request — the worker thread will compute and report back

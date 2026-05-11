@@ -8,7 +8,7 @@ export type TokenStoreState = {
   tokens: Record<string, GoogleToken>  // userId → token
 }
 
-export const initialTokenStoreState = (): TokenStoreState => ({ tokens: {} })
+const initialTokenStoreState = (): TokenStoreState => ({ tokens: {} })
 
 // ─── JSON persistence ───
 
@@ -30,6 +30,7 @@ const jsonPersistence = (filePath: string): PersistenceAdapter<TokenStoreState> 
 // ─── Actor definition ───
 
 export const createTokenStoreActor = (filePath: string): ActorDef<TokenStoreMsg, TokenStoreState> => ({
+  initialState: initialTokenStoreState,
   persistence: jsonPersistence(filePath),
 
   handler: onMessage<TokenStoreMsg, TokenStoreState>({

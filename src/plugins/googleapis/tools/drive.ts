@@ -154,6 +154,7 @@ export const createDriveActor = (
   clientId:      string,
   clientSecret:  string,
 ): ActorDef<DriveMsg, null> => ({
+  initialState: null,
   handler: onMessage<DriveMsg, null>({
     invoke: (state, msg, ctx) => {
       ctx.pipeToSelf(

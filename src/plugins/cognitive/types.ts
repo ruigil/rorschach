@@ -1,7 +1,8 @@
-import type { ActorIdentity, ActorRef } from '../../system/types.ts'
+import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { createTopic } from '../../system/types.ts'
-import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
-import type { ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolSchema, ToolFilter } from '../../types/tools.ts'
+import type { ApiMessage, LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
+import type { ToolFinalReply, ToolMsg, ToolSchema, ToolFilter } from '../../types/tools.ts'
+import type { HistoryStoreMsg } from './history-store.ts'
 
 // ─── Chatbot actor message protocol ───
 
@@ -13,7 +14,7 @@ export type ChatbotMsg =
   | { type: '_toolResult';          toolName: string; toolCallId: string; reply: ToolFinalReply }
   | { type: '_toolUpdate';          toolName: string; toolCallId: string; reply: ToolFinalReply }
   | { type: '_llmProvider';         ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_userContext';         summary: string }
+  | { type: '_historySnapshot';     messages: ApiMessage[]; userContext: string | null; version: number }
 
 // ─── Planner configuration (used to configure per-session planner instances) ───
 
@@ -42,37 +43,76 @@ export type Plan = {
   tasks:     PlanTask[]
 }
 
-// ─── Planner input message (sent by session-manager) ───
+// ─── Per-(user, mode) agent factory options ──────────────────────────────────
+//
+// The descriptor's `factory` is created at agent-registration time — agent-
+// specific config (model, prompt, tool filter, …) is closed over there. At
+// spawn time, SessionManager hands the factory the per-instance refs.
+//
+export type AgentFactoryOpts = {
+  userId:          string
+  clientId:        string
+  llmRef:          ActorRef<LlmProviderMsg>
+  historyStoreRef: ActorRef<HistoryStoreMsg>
+}
 
-export type PlannerInputMsg = { type: 'userMessage'; clientId: string; text: string }
+// ─── Agent descriptor ────────────────────────────────────────────────────────
 
-// ─── Planner session routing topic ───
+export type AgentDescriptor = {
+  mode:         string                                       // 'chatbot' | 'planner' | …
+  displayName:  string
+  shortDesc:    string                                       // used in the switchMode enum
+  factory:      (opts: AgentFactoryOpts) => ActorDef<any, any>
+  capabilities: { userVisible: boolean }
+}
 
-export type PlannerSessionEvent =
-  | { clientId: string; plannerRef: ActorRef<PlannerInputMsg> }
-  | { clientId: string; plannerRef: null; summary?: string }
+// ─── AgentRegistrationTopic ──────────────────────────────────────────────────
+//
+// Plugins publish to register/unregister agents. Mirrors ToolRegistrationTopic shape.
+//
+export type AgentRegistrationEvent =
+  | { type: 'register';   descriptor: AgentDescriptor }
+  | { type: 'unregister'; mode:       string }
 
-/** Retained topic. Planner publishes when a session starts/ends for a clientId.
- *  Session manager subscribes to re-route user messages to the planner while active. */
-export const PlannerActiveTopic = createTopic<PlannerSessionEvent>('planner.session.active')
+export const AgentRegistrationTopic = createTopic<AgentRegistrationEvent>('agent.registration')
 
-// ─── Planner supervisor / worker message protocols ───
-// Supervisor: receives invoke messages and spawns one worker per planning session.
-// Workers send `_workerDone` to the supervisor when their session terminates.
+// ─── SwitchAgentTopic ────────────────────────────────────────────────────────
+//
+// The single switch event consumed by SessionManager. clientId is the
+// originator; SessionManager resolves to userId via clientIndex. activeMode is
+// keyed by userId (one mode per user across all their clients).
+//
+export type SwitchAgentEvent = {
+  clientId: string
+  mode:     string
+  source:   'user' | 'llm' | 'programmatic'
+  reason?:  string
+}
 
-export type PlannerSupervisorMsg =
-  | ToolInvokeMsg
-  | { type: '_workerDone';      worker: ActorIdentity }
-  | { type: '_llmProvider';     ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
-  | { type: '_toolUnregistered'; name: string }
+export const SwitchAgentTopic = createTopic<SwitchAgentEvent>('agent.switch')
 
-// Worker: one per active planning session, owns the conversational state.
+// ─── AgentCatalogTopic (retained) ────────────────────────────────────────────
+//
+// Snapshot of registered agents for UI discovery. Republished by the registry
+// on every register/unregister. HTTP plugin mirrors locally and pushes a
+// welcome frame to clients.
+//
+export type AgentCatalogEvent = {
+  agents: Array<{ mode: string; displayName: string; shortDesc: string }>
+}
 
-export type PlannerSessionWorkerMsg =
-  | PlannerInputMsg
-  | LlmProviderReply
-  | { type: '_kickoff' }
-  | { type: '_toolResult';     toolCallId: string; toolName: string; reply: ToolFinalReply }
-  | { type: '_planWriteDone';  filepath: string }
-  | { type: '_planWriteError'; error: string }
+export const AgentCatalogTopic = createTopic<AgentCatalogEvent>('agent.catalog')
+
+// ─── HistorySnapshotTopic (retained, keyed by userId) ────────────────────────
+//
+// Single source of truth for shared conversation state. Subscribers filter by
+// userId in their adapter. messages is in store-stripped form (no timestamps).
+//
+export type HistorySnapshotEvent = {
+  userId:      string
+  messages:    ApiMessage[]
+  userContext: string | null
+  version:     number
+}
+
+export const HistorySnapshotTopic = createTopic<HistorySnapshotEvent>('history.snapshot')

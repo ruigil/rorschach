@@ -36,7 +36,7 @@ describe('Interceptors: basic pipeline', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('intercepted', def, null)
+    const ref = system.spawn('intercepted', def)
     await tick()
 
     ref.send('hello')
@@ -72,7 +72,7 @@ describe('Interceptors: basic pipeline', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('multi', def, null)
+    const ref = system.spawn('multi', def)
     await tick()
 
     ref.send('msg')
@@ -99,7 +99,7 @@ describe('Interceptors: basic pipeline', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('no-interceptors', def, null)
+    const ref = system.spawn('no-interceptors', def)
     await tick()
 
     ref.send('a')
@@ -126,7 +126,7 @@ describe('Interceptors: basic pipeline', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('state-inspect', def, { count: 0 })
+    const ref = system.spawn('state-inspect', def, { state: { count: 0 } })
     await tick()
 
     ref.send('inc')
@@ -164,7 +164,7 @@ describe('Interceptors: short-circuit', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('filter', def, null)
+    const ref = system.spawn('filter', def)
     await tick()
 
     ref.send('allowed')
@@ -201,7 +201,7 @@ describe('Interceptors: short-circuit', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('gate', def, null)
+    const ref = system.spawn('gate', def)
     await tick()
 
     ref.send('stop')
@@ -238,7 +238,7 @@ describe('Interceptors: message transformation', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('transform', def, null)
+    const ref = system.spawn('transform', def)
     await tick()
 
     ref.send('hello')
@@ -287,7 +287,7 @@ describe('Interceptors: message transformation', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('modify-result', defWithObserver, { count: 0 })
+    const ref = system.spawn('modify-result', defWithObserver, { state: { count: 0 } })
     await tick()
 
     ref.send('get')
@@ -331,7 +331,7 @@ describe('Interceptors: context access', () => {
       }
     })
 
-    const ref = system.spawn('logging-ctx', def, null)
+    const ref = system.spawn('logging-ctx', def)
     await tick()
 
     ref.send('test-msg')
@@ -372,7 +372,7 @@ describe('Interceptors: behavior switching', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('become-test', def, null)
+    const ref = system.spawn('become-test', def)
     await tick()
 
     ref.send('before')
@@ -418,7 +418,7 @@ describe('Interceptors: supervision restart', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('restart-test', def, null)
+    const ref = system.spawn('restart-test', def)
     await tick()
 
     ref.send('before')
@@ -465,7 +465,7 @@ describe('Interceptors: error propagation', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('error-prop', def, null)
+    const ref = system.spawn('error-prop', def)
     await tick()
 
     ref.send('fail')
@@ -491,7 +491,7 @@ describe('Interceptors: error propagation', () => {
     const system = await createPluginSystem()
     system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
-    const ref = system.spawn('interceptor-fail', def, null)
+    const ref = system.spawn('interceptor-fail', def)
     await tick()
 
     ref.send('boom')
@@ -537,7 +537,7 @@ describe('Interceptors: practical examples', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('rate-limit', def, null)
+    const ref = system.spawn('rate-limit', def)
     await tick()
 
     ref.send('a')
@@ -573,7 +573,7 @@ describe('Interceptors: practical examples', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('validator', def, null)
+    const ref = system.spawn('validator', def)
     await tick()
 
     ref.send({ type: 'data', value: 10 })

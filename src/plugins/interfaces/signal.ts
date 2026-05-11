@@ -287,6 +287,7 @@ export const createSignalActor = (
     attachments.map(a => copyToInbound(a.id, a.contentType))
 
   return {
+    initialState: () => ({ seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() }),
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(OutboundMessageTopic,    e => ({ type: '_send'             as const, clientId: e.clientId, text: e.text }))

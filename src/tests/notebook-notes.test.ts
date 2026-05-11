@@ -22,7 +22,7 @@ describe('notebook notes', () => {
     const sourceFile = join(dir, 'My File #1.pdf')
     await writeFile(sourceFile, 'pdf')
 
-    const notesRef = system.spawn('notes', createNotesActor(dir), null)
+    const notesRef = system.spawn('notes', createNotesActor(dir))
 
     const createReply = await ask<ToolInvokeMsg, ToolReply>(notesRef, replyTo => ({
       type: 'invoke',

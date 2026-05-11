@@ -98,7 +98,6 @@ const spawnMemoryActors = (
   const zettel = ctx.spawn(
     `zettel-notes-${gen}`,
     createZettelNotesActor(kgraphRef, dbPath),
-    { kgraphRef, dbPath },
   )
 
   const ref = zettel as unknown as ActorRef<ToolMsg>
@@ -124,17 +123,16 @@ const spawnMemoryActors = (
   const consolidation = ctx.spawn(
     `memory-consolidation-${gen}`,
     createMemoryConsolidationActor({ model: config.model, intervalMs: config.consolidationIntervalMs, toolFilter: EMPTY_TOOL_FILTER }),
-    { ...INITIAL_CONSOLIDATION_STATE, tools: consolidationTools },
+    { state: { ...INITIAL_CONSOLIDATION_STATE, tools: consolidationTools } },
   )
   const userContext = ctx.spawn(
     `user-context-${gen}`,
     createUserContextActor({ model: config.model, intervalMs: config.contextIntervalMs }),
-    INITIAL_USER_CONTEXT_STATE,
   )
   const memory = ctx.spawn(
     `memory-supervisor-${gen}`,
     createMemorySupervisorActor({ model: config.model }),
-    { ...INITIAL_MEMORY_SUPERVISOR_STATE, recallTools, storeTools },
+    { state: { ...INITIAL_MEMORY_SUPERVISOR_STATE, recallTools, storeTools } },
   ) as ActorRef<MemorySupervisorMsg>
   return { consolidation, memory, zettel, userContext }
 }
@@ -231,7 +229,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           ? { model: kgraphConfig.rerankerModel, topK: kgraphConfig.rerankerTopK }
           : undefined
 
-        const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
+        const kgraphRef = ctx.spawn('kgraph-0', createKgraphActor(dbPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg)) as ActorRef<KgraphMsg>
         refs.kgraphRef = kgraphRef
 
         ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
@@ -303,7 +301,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           ? { model: newKgraphConfig.rerankerModel, topK: newKgraphConfig.rerankerTopK }
           : undefined
 
-        const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, createKgraphActor(dbPath, newEmbeddingCfg, newKgraphConfig.cosineSimilarityThreshold, newRerankerCfg), { userDbs: new Map(), llmRef: null }) as ActorRef<KgraphMsg>
+        const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, createKgraphActor(dbPath, newEmbeddingCfg, newKgraphConfig.cosineSimilarityThreshold, newRerankerCfg)) as ActorRef<KgraphMsg>
         refs.kgraphRef = kgraphRef
 
         // ─── Reconfigure memory actors ───

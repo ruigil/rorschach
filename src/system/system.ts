@@ -94,6 +94,7 @@ export const createPluginSystem = async (
 
   const rootDef: ActorDef<never, null> = {
     handler: (state) => ({ state }),
+    initialState: null,
 
     lifecycle: (state, event) => {
       if (event.type === 'terminated') {
@@ -107,7 +108,7 @@ export const createPluginSystem = async (
       : {}),
   }
 
-  const { handle: rootHandle, context: ctx } = createActor('system', rootDef, null, services)
+  const { handle: rootHandle, context: ctx } = createActor('system', rootDef, services)
 
   // ─── Plugin management state ───
   const plugins = new Map<string, LoadedPlugin>()
@@ -155,7 +156,7 @@ export const createPluginSystem = async (
           return orig?.(state, event, actorCtx) ?? { state }
         },
       }
-      const ref = ctx.spawn(`${def.id}`, wrappedDef, def.initialState, { config: configSlice })
+      const ref = ctx.spawn(`${def.id}`, wrappedDef, { config: configSlice })
       // Store ref so updateConfig() can deliver config-change messages
       plugins.set(def.id, { ...plugins.get(def.id)!, ref })
     })
@@ -225,9 +226,9 @@ export const createPluginSystem = async (
 
   // ─── Public facade ───
 
-  const spawn = <M, S>(name: string, def: ActorDef<M, S>, initialState: S): ActorRef<M> => {
+  const spawn = <M, S>(name: string, def: ActorDef<M, S>, options?: { state?: S }): ActorRef<M> => {
     if (shuttingDown) throw new Error('Cannot spawn actors: system is shutting down')
-    return ctx.spawn(name, def, initialState)
+    return ctx.spawn(name, def, options)
   }
 
   const stop = (child: ActorIdentity): void => {

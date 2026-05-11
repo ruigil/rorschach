@@ -86,7 +86,7 @@ type CallerMsg =
 
 const createCaller = (
   toolRef: ActorRef<ToolMsg>,
-  updatesTo: ActorRef<ToolFinalReply> | null,
+  updatesTo: ActorRef<ToolFinalReply> | null = null,
 ): ActorDef<CallerMsg, null> => ({
   handler: (state, msg, ctx) => {
     if (msg.type === 'go' || msg.type === 'goWithBg') {
@@ -126,10 +126,10 @@ describe('invokeTool primitive', () => {
     const events: JobLifecycleEvent[] = []
     system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
 
-    const tool = system.spawn('tool-sync-ok', createTestTool({ kind: 'syncResult', result: 'hi' }), {
+    const tool = system.spawn('tool-sync-ok', createTestTool({ kind: 'syncResult', result: 'hi' }), { state: {
       mode: { kind: 'syncResult', result: 'hi' }, jobs: {},
-    }) as unknown as ActorRef<ToolMsg>
-    const caller = system.spawn('caller-sync-ok', createCaller(tool, null), null)
+    } }) as unknown as ActorRef<ToolMsg>
+    const caller = system.spawn('caller-sync-ok', createCaller(tool))
     await tick()
 
     const result: ToolFinalReply[] = []
@@ -150,10 +150,10 @@ describe('invokeTool primitive', () => {
     const events: JobLifecycleEvent[] = []
     system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
 
-    const tool = system.spawn('tool-sync-err', createTestTool({ kind: 'syncError', error: 'nope' }), {
+    const tool = system.spawn('tool-sync-err', createTestTool({ kind: 'syncError', error: 'nope' }), { state: {
       mode: { kind: 'syncError', error: 'nope' }, jobs: {},
-    }) as unknown as ActorRef<ToolMsg>
-    const caller = system.spawn('caller-sync-err', createCaller(tool, null), null)
+    } }) as unknown as ActorRef<ToolMsg>
+    const caller = system.spawn('caller-sync-err', createCaller(tool))
     await tick()
 
     const result: ToolFinalReply[] = []
@@ -172,11 +172,11 @@ describe('invokeTool primitive', () => {
     system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
 
     const mode: ToolMode = { kind: 'pending', eventually: { type: 'toolResult', result: { text: 'done' } }, delayMs: 30 }
-    const tool = system.spawn('tool-pending-no-cb', createTestTool(mode), {
+    const tool = system.spawn('tool-pending-no-cb', createTestTool(mode), { state: {
       mode, jobs: {},
-    }) as unknown as ActorRef<ToolMsg>
+    } }) as unknown as ActorRef<ToolMsg>
     // Caller without onCompletion
-    const caller = system.spawn('caller-no-cb', createCaller(tool, null), null)
+    const caller = system.spawn('caller-no-cb', createCaller(tool))
     await tick()
 
     const immediate: ToolFinalReply[] = []
@@ -201,15 +201,15 @@ describe('invokeTool primitive', () => {
       delayMs:    40,
       placeholder: 'WORKING…',
     }
-    const tool = system.spawn('tool-pending-cb', createTestTool(mode), {
+    const tool = system.spawn('tool-pending-cb', createTestTool(mode), { state: {
       mode, jobs: {},
-    }) as unknown as ActorRef<ToolMsg>
+    } }) as unknown as ActorRef<ToolMsg>
 
     const updatesSink: ToolFinalReply[] = []
     const updatesRef: ActorRef<ToolFinalReply> = {
       name: 'updates', isAlive: () => true, send: (r) => { updatesSink.push(r) },
     }
-    const caller = system.spawn('caller-cb', createCaller(tool, updatesRef), null)
+    const caller = system.spawn('caller-cb', createCaller(tool, updatesRef))
     await tick()
 
     const immediate: ToolFinalReply[] = []
@@ -244,15 +244,15 @@ describe('invokeTool primitive', () => {
       eventually: { type: 'toolResult', result: { text: 'ok' } },
       delayMs: 50,
     }
-    const tool = system.spawn('tool-delay', createTestTool(mode), {
+    const tool = system.spawn('tool-delay', createTestTool(mode), { state: {
       mode, jobs: {},
-    }) as unknown as ActorRef<ToolMsg>
+    } }) as unknown as ActorRef<ToolMsg>
 
     const updatesSink: ToolFinalReply[] = []
     const updatesRef: ActorRef<ToolFinalReply> = {
       name: 'updates2', isAlive: () => true, send: (r) => { updatesSink.push(r) },
     }
-    const caller = system.spawn('caller-delay', createCaller(tool, updatesRef), null)
+    const caller = system.spawn('caller-delay', createCaller(tool, updatesRef))
     await tick()
 
     const sink: ActorRef<ToolFinalReply> = { name: 'sink', isAlive: () => true, send: () => {} }
@@ -277,15 +277,15 @@ describe('invokeTool primitive', () => {
       eventually: { type: 'toolError', error: 'something went wrong' },
       delayMs: 20,
     }
-    const tool = system.spawn('tool-err', createTestTool(mode), {
+    const tool = system.spawn('tool-err', createTestTool(mode), { state: {
       mode, jobs: {},
-    }) as unknown as ActorRef<ToolMsg>
+    } }) as unknown as ActorRef<ToolMsg>
 
     const updatesSink: ToolFinalReply[] = []
     const updatesRef: ActorRef<ToolFinalReply> = {
       name: 'updates3', isAlive: () => true, send: (r) => { updatesSink.push(r) },
     }
-    const caller = system.spawn('caller-err', createCaller(tool, updatesRef), null)
+    const caller = system.spawn('caller-err', createCaller(tool, updatesRef))
     await tick()
 
     const immediate: ToolFinalReply[] = []

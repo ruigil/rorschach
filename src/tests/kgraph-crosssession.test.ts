@@ -30,14 +30,14 @@ function spawnSystem() {
 
 function spawnLlm(system: Awaited<ReturnType<typeof createPluginSystem>>): ActorRef<LlmProviderMsg> {
   const adapter = createOpenRouterAdapter({ apiKey: API_KEY })
-  return system.spawn('llm', createLlmProviderActor({ adapter }), null) as ActorRef<LlmProviderMsg>
+  return system.spawn('llm', createLlmProviderActor({ adapter })) as ActorRef<LlmProviderMsg>
 }
 
 function spawnKgraph(system: Awaited<ReturnType<typeof createPluginSystem>>): ActorRef<KgraphMsg> {
   return system.spawn(
     'kgraph',
     createKgraphActor(TEST_DB, { model: EMBED_MODEL, dimensions: DIMS }),
-    { userDbs: new Map(), llmRef: null },
+    { state: { userDbs: new Map(), llmRef: null } },
   ) as ActorRef<KgraphMsg>
 }
 

@@ -86,6 +86,7 @@ export const createJsonlLoggerActor = (
   const minLevelValue = LOG_LEVEL_ORDER[minLevel]
 
   return {
+    initialState: { filePath, resolvedPath: filePath, dateStr: '', written: 0, buffer: [] },
     handler: onMessage({
       log(state, message) {
         // Drop events below the minimum level

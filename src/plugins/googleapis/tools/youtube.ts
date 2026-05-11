@@ -56,6 +56,7 @@ export const createYoutubeActor = (
   clientSecret:  string,
 ): ActorDef<YoutubeMsg, null> => {
   return ({
+    initialState: null,
     handler: onMessage<YoutubeMsg, null>({
       invoke: (state, msg, ctx) => {
         ctx.pipeToSelf(

@@ -22,7 +22,7 @@ const tmpDb = () => `/tmp/kgraph-vs-test-${crypto.randomUUID()}.db`
 
 function spawnRealLlm(system: Awaited<ReturnType<typeof createPluginSystem>>): ActorRef<LlmProviderMsg> {
   const adapter = createOpenRouterAdapter({ apiKey: API_KEY })
-  return system.spawn('llm', createLlmProviderActor({ adapter }), null) as ActorRef<LlmProviderMsg>
+  return system.spawn('llm', createLlmProviderActor({ adapter })) as ActorRef<LlmProviderMsg>
 }
 
 function createNode(
@@ -103,7 +103,7 @@ describe('kgraph vector search (real embeddings)', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
-      { userDbs: new Map(), llmRef: null },
+      { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -135,7 +135,7 @@ describe('kgraph vector search (real embeddings)', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
-      { userDbs: new Map(), llmRef: null },
+      { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -168,7 +168,7 @@ describe('kgraph vector search (real embeddings)', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
-      { userDbs: new Map(), llmRef: null },
+      { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -200,7 +200,7 @@ describe('kgraph vector search (real embeddings)', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
-      { userDbs: new Map(), llmRef: null },
+      { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()

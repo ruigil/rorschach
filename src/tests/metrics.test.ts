@@ -53,7 +53,7 @@ const restartingCounterDef: ActorDef<CounterMsg, number> = {
 describe('Metrics: per-actor counters', () => {
   test('messagesReceived and messagesProcessed are tracked', async () => {
     const { system, events } = await withMetrics()
-    const ref = system.spawn('counter', counterDef, 0)
+    const ref = system.spawn('counter', counterDef, { state: 0 })
 
     ref.send({ type: 'inc' })
     ref.send({ type: 'inc' })
@@ -72,7 +72,7 @@ describe('Metrics: per-actor counters', () => {
 
   test('messagesFailed is incremented on handler error', async () => {
     const { system, events } = await withMetrics()
-    system.spawn('counter', restartingCounterDef, 0).send({ type: 'fail' })
+    system.spawn('counter', restartingCounterDef, { state: 0 }).send({ type: 'fail' })
     await tick(150)
 
     const snap = getSnap(events, 'system/counter')
@@ -84,7 +84,7 @@ describe('Metrics: per-actor counters', () => {
 
   test('restartCount is tracked on supervision restart', async () => {
     const { system, events } = await withMetrics()
-    const ref = system.spawn('counter', restartingCounterDef, 0)
+    const ref = system.spawn('counter', restartingCounterDef, { state: 0 })
 
     ref.send({ type: 'fail' })
     ref.send({ type: 'fail' })
@@ -102,7 +102,7 @@ describe('Metrics: per-actor counters', () => {
 describe('Metrics: processing time', () => {
   test('processingTime tracks min/max/avg/sum/count', async () => {
     const { system, events } = await withMetrics()
-    const ref = system.spawn('counter', counterDef, 0)
+    const ref = system.spawn('counter', counterDef, { state: 0 })
 
     ref.send({ type: 'slow' })
     ref.send({ type: 'slow' })
@@ -121,7 +121,7 @@ describe('Metrics: processing time', () => {
 
   test('processingTime is zero when no messages processed', async () => {
     const { system, events } = await withMetrics()
-    system.spawn('idle', counterDef, 0)
+    system.spawn('idle', counterDef, { state: 0 })
     await tick(150)
 
     const snap = getSnap(events, 'system/idle')
@@ -145,8 +145,8 @@ describe('Metrics: gauges (mailboxSize, stashSize, childCount)', () => {
     const parentDef: ActorDef<string, null> = {
       lifecycle: (state, event, ctx) => {
         if (event.type === 'start') {
-          ctx.spawn('child-a', childDef, null)
-          ctx.spawn('child-b', childDef, null)
+          ctx.spawn('child-a', childDef)
+          ctx.spawn('child-b', childDef)
         }
         return { state }
       },
@@ -154,7 +154,7 @@ describe('Metrics: gauges (mailboxSize, stashSize, childCount)', () => {
     }
 
     const { system, events } = await withMetrics()
-    system.spawn('parent', parentDef, null)
+    system.spawn('parent', parentDef)
     await tick(150)
 
     const snap = getSnap(events, 'system/parent')
@@ -170,7 +170,7 @@ describe('Metrics: gauges (mailboxSize, stashSize, childCount)', () => {
 describe('Metrics: status tracking', () => {
   test('actor status is running while alive', async () => {
     const { system, events } = await withMetrics()
-    system.spawn('counter', counterDef, 0)
+    system.spawn('counter', counterDef, { state: 0 })
     await tick(150)
 
     const snap = getSnap(events, 'system/counter')
@@ -182,7 +182,7 @@ describe('Metrics: status tracking', () => {
 
   test('actor is absent from metrics after stop', async () => {
     const { system, events } = await withMetrics()
-    const ref = system.spawn('counter', counterDef, 0)
+    const ref = system.spawn('counter', counterDef, { state: 0 })
     await tick(150)
 
     expect(getSnap(events, 'system/counter')).toBeDefined()
@@ -202,7 +202,7 @@ describe('Metrics: status tracking', () => {
     }
 
     const { system, events } = await withMetrics()
-    const ref = system.spawn('failer', failingDef, 0)
+    const ref = system.spawn('failer', failingDef, { state: 0 })
     ref.send({ type: 'fail' })
     await tick(150)
 
@@ -215,7 +215,7 @@ describe('Metrics: status tracking', () => {
 describe('Metrics: uptime and lastMessageTimestamp', () => {
   test('uptime increases over time', async () => {
     const { system, events } = await withMetrics()
-    system.spawn('counter', counterDef, 0)
+    system.spawn('counter', counterDef, { state: 0 })
     await tick(200)
 
     const first = events[0]?.actors.find(a => a.name === 'system/counter')
@@ -227,7 +227,7 @@ describe('Metrics: uptime and lastMessageTimestamp', () => {
 
   test('lastMessageTimestamp is null before any message', async () => {
     const { system, events } = await withMetrics()
-    system.spawn('idle', counterDef, 0)
+    system.spawn('idle', counterDef, { state: 0 })
     await tick(150)
 
     const snap = getSnap(events, 'system/idle')
@@ -238,7 +238,7 @@ describe('Metrics: uptime and lastMessageTimestamp', () => {
 
   test('lastMessageTimestamp is updated after processing', async () => {
     const { system, events } = await withMetrics()
-    const ref = system.spawn('counter', counterDef, 0)
+    const ref = system.spawn('counter', counterDef, { state: 0 })
     ref.send({ type: 'inc' })
     await tick(150)
 
@@ -252,8 +252,8 @@ describe('Metrics: uptime and lastMessageTimestamp', () => {
 describe('Metrics: all actors snapshot', () => {
   test('snapshot contains all live actors', async () => {
     const { system, events } = await withMetrics()
-    system.spawn('a', counterDef, 0)
-    system.spawn('b', counterDef, 0)
+    system.spawn('a', counterDef, { state: 0 })
+    system.spawn('b', counterDef, { state: 0 })
     await tick(150)
 
     const names = events[events.length - 1]!.actors.map(s => s.name)
@@ -266,7 +266,7 @@ describe('Metrics: all actors snapshot', () => {
 
   test('stopped actors are absent from the next snapshot', async () => {
     const { system, events } = await withMetrics()
-    const ref = system.spawn('temp', counterDef, 0)
+    const ref = system.spawn('temp', counterDef, { state: 0 })
     await tick(150)
 
     system.stop(ref)
@@ -288,8 +288,8 @@ describe('Metrics: actor hierarchy', () => {
     const parentDef: ActorDef<string, null> = {
       lifecycle: (state, event, ctx) => {
         if (event.type === 'start') {
-          ctx.spawn('child-1', childDef, null)
-          ctx.spawn('child-2', childDef, null)
+          ctx.spawn('child-1', childDef)
+          ctx.spawn('child-2', childDef)
         }
         return { state }
       },
@@ -297,7 +297,7 @@ describe('Metrics: actor hierarchy', () => {
     }
 
     const { system, events } = await withMetrics()
-    system.spawn('parent', parentDef, null)
+    system.spawn('parent', parentDef)
     await tick(150)
 
     const parentSnap = getSnap(events, 'system/parent')
@@ -315,7 +315,7 @@ describe('Metrics: actor hierarchy', () => {
 describe('Metrics: push-based MetricsTopic', () => {
   test('MetricsTopic receives periodic snapshots when configured', async () => {
     const { system, events } = await withMetrics(100)
-    system.spawn('counter', counterDef, 0)
+    system.spawn('counter', counterDef, { state: 0 })
     await tick()
 
     // Wait for at least 2 ticks
@@ -335,7 +335,7 @@ describe('Metrics: push-based MetricsTopic', () => {
 
   test('MetricsTopic is not published when observability plugin is not loaded', async () => {
     const system = await createPluginSystem()
-    system.spawn('counter', counterDef, 0)
+    system.spawn('counter', counterDef, { state: 0 })
 
     const events: unknown[] = []
     system.subscribe(MetricsTopic, (event) => {

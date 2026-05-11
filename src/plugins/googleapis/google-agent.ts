@@ -93,6 +93,7 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
   })
 
   return {
+    initialState: createInitialGoogleAgentState,
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
@@ -107,6 +108,6 @@ export const createGoogleAgentActor = (options: GoogleAgentOptions): ActorDef<Go
   }
 }
 
-export const createInitialGoogleAgentState = (): GoogleAgentState => ({
+const createInitialGoogleAgentState = (): GoogleAgentState => ({
   loop: initialReactLoopSlice(),
 })

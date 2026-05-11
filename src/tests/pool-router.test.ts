@@ -45,7 +45,7 @@ describe('PoolRouter: round-robin distribution', () => {
       workerInitialState: null,
     })
 
-    const ref = system.spawn('pool', router.def, router.initialState)
+    const ref = system.spawn('pool', router.def, { state: router.initialState })
     await tick()
 
     for (let i = 0; i < 9; i++) ref.send(`msg-${i}`)
@@ -81,7 +81,7 @@ describe('PoolRouter: round-robin distribution', () => {
       workerInitialState: null,
     })
 
-    const ref = system.spawn('pool', router.def, router.initialState)
+    const ref = system.spawn('pool', router.def, { state: router.initialState })
     await tick()
 
     ref.send('first')
@@ -103,7 +103,7 @@ describe('PoolRouter: round-robin distribution', () => {
       workerInitialState: null,
     })
 
-    const ref = system.spawn('pool', router.def, router.initialState)
+    const ref = system.spawn('pool', router.def, { state: router.initialState })
     await tick()
 
     // Messages 0,2 → worker-0; messages 1,3 → worker-1
@@ -135,7 +135,7 @@ describe('PoolRouter: worker naming', () => {
       workerInitialState: null,
     })
 
-    system.spawn('pool', router.def, router.initialState)
+    system.spawn('pool', router.def, { state: router.initialState })
     await tick(150)
 
     const workerNames = (events[events.length - 1]?.actors ?? [])
@@ -165,7 +165,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
       workerInitialState: null,
     })
 
-    const ref = system.spawn('pool', router.def, router.initialState)
+    const ref = system.spawn('pool', router.def, { state: router.initialState })
     await tick()
 
     // POISON goes to worker-0 (first message → index 0)
@@ -189,7 +189,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
       workerInitialState: null,
     })
 
-    const ref = system.spawn('pool', router.def, router.initialState)
+    const ref = system.spawn('pool', router.def, { state: router.initialState })
     await tick()
 
     // Kill worker-0
@@ -221,7 +221,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
       workerInitialState: null,
     })
 
-    const ref = system.spawn('pool', router.def, router.initialState)
+    const ref = system.spawn('pool', router.def, { state: router.initialState })
     await tick()
 
     ref.send('POISON') // kills worker-0
@@ -249,7 +249,7 @@ describe("PoolRouter: onWorkerFailure 'replace'", () => {
       workerInitialState: null,
     })
 
-    const ref = system.spawn('pool', router.def, router.initialState)
+    const ref = system.spawn('pool', router.def, { state: router.initialState })
     await tick()
 
     // Kill one worker at a time, waiting for replacement each time
@@ -279,7 +279,7 @@ describe("PoolRouter: onWorkerFailure 'shrink'", () => {
       onWorkerFailure: 'shrink',
     })
 
-    const ref = system.spawn('pool', router.def, router.initialState)
+    const ref = system.spawn('pool', router.def, { state: router.initialState })
     await tick()
 
     ref.send('POISON') // kills worker-0
@@ -302,7 +302,7 @@ describe("PoolRouter: onWorkerFailure 'shrink'", () => {
       onWorkerFailure: 'shrink',
     })
 
-    const ref = system.spawn('pool', router.def, router.initialState)
+    const ref = system.spawn('pool', router.def, { state: router.initialState })
     await tick()
 
     ref.send('POISON') // kills worker-0 → pool shrinks to 1
@@ -331,7 +331,7 @@ describe("PoolRouter: onWorkerFailure 'shrink'", () => {
       onWorkerFailure: 'shrink',
     })
 
-    const ref = system.spawn('pool', router.def, router.initialState)
+    const ref = system.spawn('pool', router.def, { state: router.initialState })
     await tick()
 
     ref.send('POISON') // kills worker-0 → pool is now empty
@@ -363,7 +363,7 @@ describe("PoolRouter: onWorkerFailure 'escalate'", () => {
       onWorkerFailure: 'escalate',
     })
 
-    const ref = system.spawn('pool', router.def, router.initialState)
+    const ref = system.spawn('pool', router.def, { state: router.initialState })
     await tick()
 
     ref.send('POISON') // kills worker-0, router should escalate and die
@@ -420,7 +420,7 @@ describe('PoolRouter: shutdown', () => {
       workerInitialState: null,
     })
 
-    system.spawn('pool', router.def, router.initialState)
+    system.spawn('pool', router.def, { state: router.initialState })
     await tick(150)
 
     // Verify all actors are present before shutdown

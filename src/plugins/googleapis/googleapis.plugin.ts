@@ -7,10 +7,10 @@ import type { ToolCollection, ToolMsg, ToolSchema } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 
 import type { GoogleApisConfig, GoogleAgentMsg, GooglePluginMsg, SharedRefs } from './types.ts'
-import { createTokenStoreActor, initialTokenStoreState } from './token-store.ts'
-import { createOAuthStateActor, initialOAuthStateActorState } from './oauth-state.ts'
+import { createTokenStoreActor } from './token-store.ts'
+import { createOAuthStateActor } from './oauth-state.ts'
 import { buildGoogleOAuthRoutes } from './routes.ts'
-import { createGoogleAgentActor, createInitialGoogleAgentState } from './google-agent.ts'
+import { createGoogleAgentActor } from './google-agent.ts'
 
 import {
   createGmailActor,
@@ -117,10 +117,10 @@ const spawnChildren = (
   const tokenStoreRef = refs.tokenStoreRef!
   const { clientId, clientSecret } = refs
 
-  const gmailRef    = ctx.spawn(`googleapis-gmail-${gen}`,    createGmailActor(tokenStoreRef, clientId, clientSecret),    null) as ActorRef<ToolMsg>
-  const calendarRef = ctx.spawn(`googleapis-calendar-${gen}`, createCalendarActor(tokenStoreRef, clientId, clientSecret), null) as ActorRef<ToolMsg>
-  const driveRef    = ctx.spawn(`googleapis-drive-${gen}`,    createDriveActor(tokenStoreRef, clientId, clientSecret),    null) as ActorRef<ToolMsg>
-  const youtubeRef  = ctx.spawn(`googleapis-youtube-${gen}`,  createYoutubeActor(tokenStoreRef, clientId, clientSecret),  null) as ActorRef<ToolMsg>
+  const gmailRef    = ctx.spawn(`googleapis-gmail-${gen}`,    createGmailActor(tokenStoreRef, clientId, clientSecret))    as ActorRef<ToolMsg>
+  const calendarRef = ctx.spawn(`googleapis-calendar-${gen}`, createCalendarActor(tokenStoreRef, clientId, clientSecret)) as ActorRef<ToolMsg>
+  const driveRef    = ctx.spawn(`googleapis-drive-${gen}`,    createDriveActor(tokenStoreRef, clientId, clientSecret))    as ActorRef<ToolMsg>
+  const youtubeRef  = ctx.spawn(`googleapis-youtube-${gen}`,  createYoutubeActor(tokenStoreRef, clientId, clientSecret))  as ActorRef<ToolMsg>
 
   const tools: ToolCollection = {
     [GMAIL_LIST_MESSAGES_TOOL_NAME]:   { schema: GMAIL_LIST_MESSAGES_SCHEMA,   ref: gmailRef },
@@ -144,7 +144,6 @@ const spawnChildren = (
   const googleAgentRef = ctx.spawn(
     `googleapis-agent-${gen}`,
     createGoogleAgentActor(agentOpts),
-    createInitialGoogleAgentState(),
   ) as ActorRef<GoogleAgentMsg>
 
   ctx.publishRetained(ToolRegistrationTopic, GOOGLE_TOOL_NAME, {
@@ -235,8 +234,8 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
         refs.clientSecret = clientSecret
         refs.baseUrl      = baseUrl
 
-        const tokenStoreRef = ctx.spawn('googleapis-token-store', createTokenStoreActor('workspace/googleapis/tokens.json'), initialTokenStoreState())
-        const oauthStateRef = ctx.spawn('googleapis-oauth-state', createOAuthStateActor(), initialOAuthStateActorState())
+        const tokenStoreRef = ctx.spawn('googleapis-token-store', createTokenStoreActor('workspace/googleapis/tokens.json'))
+        const oauthStateRef = ctx.spawn('googleapis-oauth-state', createOAuthStateActor())
 
         refs.tokenStoreRef = tokenStoreRef
         refs.oauthStateRef = oauthStateRef

@@ -22,14 +22,15 @@ describe('System-as-root-actor: structural symmetry', () => {
       handler: (state, _msg, ctx) => {
         const child = ctx.spawn('nested', {
           handler: (s: null) => ({ state: s }),
-        }, null)
+          initialState: null,
+        })
         childNames.push(child.name)
         return { state }
       },
     }
 
     const system = await createPluginSystem()
-    const parent = system.spawn('parent', parentDef, null)
+    const parent = system.spawn('parent', parentDef)
     await tick()
 
     parent.send('go')
@@ -56,8 +57,8 @@ describe('System-as-root-actor: structural symmetry', () => {
     const parentDef: ActorDef<string, null> = {
       lifecycle: (state, event, ctx) => {
         if (event.type === 'start') {
-          ctx.spawn('child-a', makeLeaf('child-a'), null)
-          ctx.spawn('child-b', makeLeaf('child-b'), null)
+          ctx.spawn('child-a', makeLeaf('child-a'))
+          ctx.spawn('child-b', makeLeaf('child-b'))
         }
         if (event.type === 'stopped') stopOrder.push('parent')
         return { state }
@@ -66,7 +67,7 @@ describe('System-as-root-actor: structural symmetry', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('parent', parentDef, null)
+    system.spawn('parent', parentDef)
     await tick(100)
 
     await system.shutdown()
@@ -83,8 +84,8 @@ describe('System-as-root-actor: structural symmetry', () => {
     const system = await createPluginSystem()
     system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
-    system.spawn('a', { handler: (state: null) => ({ state }) }, null)
-    system.spawn('b', { handler: (state: null) => ({ state }) }, null)
+    system.spawn('a', { handler: (state: null) => ({ state }) })
+    system.spawn('b', { handler: (state: null) => ({ state }) })
     await tick()
 
     await system.shutdown()
@@ -109,7 +110,7 @@ describe('System-as-root-actor: structural symmetry', () => {
 
     const system = await createPluginSystem()
     system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
-    const ref = system.spawn('doomed', failingDef, null)
+    const ref = system.spawn('doomed', failingDef)
     await tick()
 
     ref.send('fail')
@@ -142,13 +143,13 @@ describe('System-as-root-actor: structural symmetry', () => {
     const system = await createPluginSystem()
 
     // Spawn an actor that will fail
-    const ref1 = system.spawn('worker', failDef, null)
+    const ref1 = system.spawn('worker', failDef)
     await tick()
     ref1.send('trigger')
     await tick(200)
 
     // Re-spawn with the same name (terminated child was auto-cleaned from root's children map)
-    const ref2 = system.spawn('worker', def, null)
+    const ref2 = system.spawn('worker', def)
     await tick()
 
     ref2.send('hello')

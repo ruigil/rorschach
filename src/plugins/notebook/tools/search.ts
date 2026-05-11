@@ -92,6 +92,7 @@ const searchAll = async (notebookDir: string, query: string): Promise<string> =>
 // ─── Actor ───
 
 export const createSearchActor = (notebookDir: string): ActorDef<SearchMsg, null> => ({
+  initialState: null,
   handler: onMessage<SearchMsg, null>({
     invoke: (state, msg, ctx) => {
       let promise: Promise<string>

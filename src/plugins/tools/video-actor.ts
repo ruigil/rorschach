@@ -86,6 +86,7 @@ export const createVideoActor = (options: VideoActorOptions): ActorDef<VideoActo
   const videoPollRole = 'video'
 
   return {
+    initialState: { pending: {} },
     handler: onMessage<VideoActorMsg, VideoState>({
 
       invoke: (state, message, context) => {

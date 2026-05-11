@@ -148,16 +148,6 @@ export type ReactBuildTurnResult =
 
 export type ReactSpanPolicy = 'fromHeaders' | 'fromMessage' | 'always' | 'never'
 
-/**
- * Pre-dispatch tool-call hook. Runs after the requestId guard and after the
- * llmSpan is closed, *before* the loop partitions and dispatches calls.
- * - `{ handled: true, result }` short-circuits the turn (caller owns spans, become, unstashAll).
- * - `{ handled: false, events? }` lets the loop dispatch normally; any `events` are emitted alongside the transition (e.g. a `searching` notification).
- */
-export type ReactToolCallInterception<M extends { type: string }, S> =
-  | { handled: true;  result: ActorResult<M, S> }
-  | { handled: false; events?: TypedEvent[] }
-
 /** Result of an `onChunk` / `onReasoningChunk` hook. Either a bare state, or state plus events emitted alongside the chunk. */
 export type ReactChunkResult<S> = S | { state: S; events?: TypedEvent[] }
 
@@ -172,10 +162,7 @@ export type ReactLoopHooks<S, M extends { type: string }, Args = string> = {
   // ─── Per-actor config ───
   /** Either a constant tool collection (immutable) or an accessor that reads from state (dynamic — registered/unregistered at runtime). */
   tools:        ToolCollection | ((s: S) => ToolCollection)
-  /**
-   * Extra schemas to advertise to the LLM that are NOT in `tools` (no dispatch ref).
-   * Use with `interceptToolCalls` to handle them in-actor (e.g. planner control tools).
-   */
+  /** Extra schemas to advertise to the LLM that are NOT in `tools` (no dispatch ref). */
   extraToolSchemas?: (s: S) => Tool[]
   model:        string
   maxToolLoops: number
@@ -218,15 +205,31 @@ export type ReactLoopHooks<S, M extends { type: string }, Args = string> = {
   ) => { state: S; events?: TypedEvent[] }
 
   /**
-   * Optional pre-dispatch hook for `llmToolCalls`. Lets agents handle
-   * synthetic/control tools (e.g. planner's `formalize_plan`) by short-
-   * circuiting the loop. See `ReactToolCallInterception`.
+   * Called once per completed tool batch with the canonical
+   * `[assistant{tool_calls}, tool, tool, ...]` sequence — exactly the shape
+   * the chat-completions API expects to be appended to history. Agents
+   * typically forward this to a HistoryStore. Skip the call (no-op) for
+   * agents that maintain their own scratch and don't share to history.
+   * Fires whether the loop continues or terminates (loopLimit), so agents
+   * can record the batch regardless of how the turn ends.
    */
-  interceptToolCalls?: (
+  onBatchHistoryReady?: (
+    s: S,
+    messages: ApiMessage[],
+    ctx: ActorContext<M>,
+  ) => { state: S; events?: TypedEvent[] }
+
+  /**
+   * Pre-dispatch observer for `llmToolCalls`. Runs after the requestId guard
+   * and after the llmSpan is closed, before the loop partitions and dispatches
+   * calls. Returned events are emitted alongside the transition (e.g. a
+   * `tooling` notification). The loop always proceeds with normal dispatch.
+   */
+  onToolCalls?: (
     s:     S,
     calls: Extract<LlmProviderReply, { type: 'llmToolCalls' }>['calls'],
     ctx:   ActorContext<M>,
-  ) => ReactToolCallInterception<M, S>
+  ) => { events?: TypedEvent[] } | void
 
   /**
    * Long-running tool support. Called when a tool replies with `toolPending`
@@ -480,17 +483,16 @@ export const createReactLoop = <S, M extends { type: string }, Args = string>(
       // Aggregate usage on this turn boundary.
       const accumulatedUsage = addUsage(turn.pendingUsage, msg.usage)
 
-      // Allow agents to short-circuit dispatch (e.g. planner control tools)
-      // or to emit pre-dispatch events (e.g. chatbot's `searching` notification).
+      // Allow agents to emit pre-dispatch events (e.g. chatbot's `tooling`
+      // notification). The hook is observational — the loop always proceeds.
       let advertEvents: TypedEvent[] | undefined
-      if (hooks.interceptToolCalls) {
-        const intercepted = hooks.interceptToolCalls(
+      if (hooks.onToolCalls) {
+        const observed = hooks.onToolCalls(
           withTurn(state, { ...turn, llmSpan: null, pendingUsage: accumulatedUsage }),
           msg.calls,
           ctx,
         )
-        if (intercepted.handled) return intercepted.result
-        advertEvents = intercepted.events
+        advertEvents = observed?.events
       }
 
       const tools = resolveTools(state)
@@ -641,29 +643,50 @@ export const createReactLoop = <S, M extends { type: string }, Args = string>(
         return resultEvents && resultEvents.length > 0 ? { state: next, events: resultEvents } : { state: next }
       }
 
-      const nextLoopCount = turn.toolLoopCount + 1
-      if (nextLoopCount >= maxToolLoops) {
-        ctx.log.warn(`${log}: tool loop limit reached`, { limit: maxToolLoops })
-        turn.requestSpan?.error('Tool loop limit reached')
-        const completion = hooks.onLoopLimit(withResultState, turn.pending, ctx)
-        const merged = resultEvents && resultEvents.length > 0
-          ? { ...completion, events: [...resultEvents, ...(completion.events ?? [])] }
-          : completion
-        return materialize(merged)
-      }
-
+      // Batch complete — build the canonical [assistant shell, tool*] sequence
+      // and let the agent commit it to history (or drop it). Fires regardless
+      // of whether the loop continues (next turn) or terminates (loopLimit).
       const toolResultMsgs: ApiMessage[] = updated.map(r => ({
         role: 'tool', content: r.content, tool_call_id: r.toolCallId,
       }))
-      const nextMessages: ApiMessage[] = [
-        ...batch.messagesAtCall,
+      const batchHistory: ApiMessage[] = [
         { role: 'assistant', content: null, tool_calls: batch.assistantToolCalls },
         ...toolResultMsgs,
       ]
 
-      const nextResult = startNextTurn(withResultState, nextMessages, nextLoopCount, ctx)
-      return resultEvents && resultEvents.length > 0
-        ? { ...nextResult, events: [...resultEvents, ...(('events' in nextResult && nextResult.events) || [])] }
+      let withBatchState = withResultState
+      let batchEvents: TypedEvent[] | undefined
+      if (hooks.onBatchHistoryReady) {
+        const r = hooks.onBatchHistoryReady(withResultState, batchHistory, ctx)
+        withBatchState = r.state
+        batchEvents    = r.events
+      }
+
+      const mergedPriorEvents = (() => {
+        const a = resultEvents ?? []
+        const b = batchEvents ?? []
+        return a.length + b.length > 0 ? [...a, ...b] : undefined
+      })()
+
+      const nextLoopCount = turn.toolLoopCount + 1
+      if (nextLoopCount >= maxToolLoops) {
+        ctx.log.warn(`${log}: tool loop limit reached`, { limit: maxToolLoops })
+        turn.requestSpan?.error('Tool loop limit reached')
+        const completion = hooks.onLoopLimit(withBatchState, turn.pending, ctx)
+        const merged = mergedPriorEvents
+          ? { ...completion, events: [...mergedPriorEvents, ...(completion.events ?? [])] }
+          : completion
+        return materialize(merged)
+      }
+
+      const nextMessages: ApiMessage[] = [
+        ...batch.messagesAtCall,
+        ...batchHistory,
+      ]
+
+      const nextResult = startNextTurn(withBatchState, nextMessages, nextLoopCount, ctx)
+      return mergedPriorEvents
+        ? { ...nextResult, events: [...mergedPriorEvents, ...(('events' in nextResult && nextResult.events) || [])] }
         : nextResult
     },
 

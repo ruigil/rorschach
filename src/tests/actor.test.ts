@@ -27,7 +27,7 @@ describe('Actor: basic message handling', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('basic', def, null)
+    const ref = system.spawn('basic', def)
     await tick()
 
     ref.send('hello')
@@ -55,7 +55,7 @@ describe('Actor: basic message handling', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('counter', def, { count: 0 })
+    const ref = system.spawn('counter', def, { state: { count: 0 } })
     await tick()
 
     ref.send('inc')
@@ -74,7 +74,7 @@ describe('Actor: basic message handling', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('named-actor', def, null)
+    const ref = system.spawn('named-actor', def)
 
     expect(ref.name).toBe('system/named-actor')
     await system.shutdown()
@@ -91,7 +91,7 @@ describe('Actor: basic message handling', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('drop-test', def, null)
+    const ref = system.spawn('drop-test', def)
     await tick()
 
     ref.send('before')
@@ -131,7 +131,7 @@ describe('Actor: start lifecycle', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('start-actor', def, { items: [] })
+    const ref = system.spawn('start-actor', def, { state: { items: [] } })
     await tick()
 
     ref.send('msg1')
@@ -160,7 +160,7 @@ describe('Actor: start lifecycle', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('async-start', def, null)
+    const ref = system.spawn('async-start', def)
     ref.send('early')
     await tick(150)
 
@@ -180,7 +180,7 @@ describe('Actor: start lifecycle', () => {
     }
 
     const system = await createPluginSystem()
-    system.spawn('self-check', def, null)
+    system.spawn('self-check', def)
     await tick()
 
     expect(selfName!).toBe('system/self-check')
@@ -220,7 +220,7 @@ describe('Actor: async via pipeToSelf', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('pipe-handler', def, { total: 0 })
+    const ref = system.spawn('pipe-handler', def, { state: { total: 0 } })
     await tick()
 
     ref.send({ type: 'compute', value: 10 })
@@ -258,7 +258,7 @@ describe('Actor: async via pipeToSelf', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('non-blocking', def, null)
+    const ref = system.spawn('non-blocking', def)
     await tick()
 
     ref.send({ type: 'start', label: 'a' })
@@ -291,7 +291,7 @@ describe('Actor: lifecycle state evolution', () => {
     const parentDef: ActorDef<Msg, { events: string[] }> = {
       handler: (state, msg, ctx) => {
         if (msg === 'spawn') {
-          ctx.spawn('child', childDef, null)
+          ctx.spawn('child', childDef)
           return { state }
         }
         if (msg === 'stop-child') {
@@ -310,7 +310,7 @@ describe('Actor: lifecycle state evolution', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('tracker', parentDef, { events: [] })
+    const ref = system.spawn('tracker', parentDef, { state: { events: [] } })
     await tick(100)
 
     ref.send('spawn')

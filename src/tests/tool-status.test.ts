@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createPluginSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
-import { createToolStatusActor, createInitialToolStatusState, TOOL_STATUS_TOOL_NAME } from '../plugins/tools/tool-status.ts'
+import { createToolStatusActor, TOOL_STATUS_TOOL_NAME } from '../plugins/tools/tool-status.ts'
 import { JobRegistryTopic } from '../types/tools.ts'
 import type { JobLifecycleEvent, ToolMsg, ToolReply } from '../types/tools.ts'
 
@@ -43,14 +43,13 @@ const createFakeTool = (): ActorDef<FakeMsg, FakeToolState> => ({
 describe('tool_status', () => {
   test('status of running job served from cached topic state', async () => {
     const system = await createPluginSystem()
-    const fakeTool = system.spawn('fake-tool', createFakeTool(), {
+    const fakeTool = system.spawn('fake-tool', createFakeTool(), { state: {
       jobs: { 'job-1': { result: 'eventual' } },
-    }) as unknown as ActorRef<ToolMsg>
+    } }) as unknown as ActorRef<ToolMsg>
 
     const statusRef = system.spawn(
-      'tool-status',
+      "tool-status",
       createToolStatusActor(),
-      createInitialToolStatusState(),
     ) as unknown as ActorRef<ToolMsg>
     await tick()
 
@@ -85,14 +84,13 @@ describe('tool_status', () => {
 
   test('completed job status shows result from topic', async () => {
     const system = await createPluginSystem()
-    const fakeTool = system.spawn('fake-tool-c', createFakeTool(), {
+    const fakeTool = system.spawn('fake-tool-c', createFakeTool(), { state: {
       jobs: { 'job-c': { result: 'all done' } },
-    }) as unknown as ActorRef<ToolMsg>
+    } }) as unknown as ActorRef<ToolMsg>
 
     const statusRef = system.spawn(
       'tool-status-c',
-      createToolStatusActor(),
-      createInitialToolStatusState(),
+      createToolStatusActor()
     ) as unknown as ActorRef<ToolMsg>
     await tick()
 
@@ -130,14 +128,13 @@ describe('tool_status', () => {
 
   test('failed job status shows error from topic', async () => {
     const system = await createPluginSystem()
-    const fakeTool = system.spawn('fake-tool-f', createFakeTool(), {
+    const fakeTool = system.spawn('fake-tool-f', createFakeTool(), { state: {
       jobs: { 'job-f': { result: '' } },
-    }) as unknown as ActorRef<ToolMsg>
+    } }) as unknown as ActorRef<ToolMsg>
 
     const statusRef = system.spawn(
       'tool-status-f',
-      createToolStatusActor(),
-      createInitialToolStatusState(),
+      createToolStatusActor()
     ) as unknown as ActorRef<ToolMsg>
     await tick()
 
@@ -173,14 +170,13 @@ describe('tool_status', () => {
 
   test('list mode (no jobId) returns active jobs with age', async () => {
     const system = await createPluginSystem()
-    const fakeTool = system.spawn('fake-tool-2', createFakeTool(), {
+    const fakeTool = system.spawn('fake-tool-2', createFakeTool(), { state: {
       jobs: { 'jA': { result: '' }, 'jB': { result: '' } },
-    }) as unknown as ActorRef<ToolMsg>
+    } }) as unknown as ActorRef<ToolMsg>
 
     const statusRef = system.spawn(
       'tool-status-2',
-      createToolStatusActor(),
-      createInitialToolStatusState(),
+      createToolStatusActor()
     ) as unknown as ActorRef<ToolMsg>
     await tick()
 
@@ -211,14 +207,13 @@ describe('tool_status', () => {
 
   test('cleared job is removed and lookup reports it gone', async () => {
     const system = await createPluginSystem()
-    const fakeTool = system.spawn('fake-tool-3', createFakeTool(), {
+    const fakeTool = system.spawn('fake-tool-3', createFakeTool(), { state: {
       jobs: {},
-    }) as unknown as ActorRef<ToolMsg>
+    } }) as unknown as ActorRef<ToolMsg>
 
     const statusRef = system.spawn(
       'tool-status-3',
-      createToolStatusActor(),
-      createInitialToolStatusState(),
+      createToolStatusActor()
     ) as unknown as ActorRef<ToolMsg>
     await tick()
 
@@ -248,8 +243,7 @@ describe('tool_status', () => {
     const system = await createPluginSystem()
     const statusRef = system.spawn(
       'tool-status-4',
-      createToolStatusActor(),
-      createInitialToolStatusState(),
+      createToolStatusActor()
     ) as unknown as ActorRef<ToolMsg>
     await tick()
 

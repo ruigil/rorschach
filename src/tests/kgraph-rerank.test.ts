@@ -39,7 +39,7 @@ function spawnMockLlm(system: Awaited<ReturnType<typeof createPluginSystem>>): A
       return { state }
     },
   }
-  return system.spawn('mock-llm', def, null) as ActorRef<LlmProviderMsg>
+  return system.spawn('mock-llm', def) as ActorRef<LlmProviderMsg>
 }
 
 function createNode(
@@ -99,7 +99,7 @@ describe('kgraph vector search with reranker', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
-      { userDbs: new Map(), llmRef: null },
+      { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -145,13 +145,13 @@ describe('kgraph vector search with reranker', () => {
         return { state }
       },
     }
-    const errorLlmRef = system.spawn('mock-llm-error', errorDef, null) as ActorRef<LlmProviderMsg>
+    const errorLlmRef = system.spawn('mock-llm-error', errorDef) as ActorRef<LlmProviderMsg>
     system.publishRetained(LlmProviderTopic, 'ref', { ref: errorLlmRef })
 
     const kgraphRef = system.spawn(
       'kgraph',
       createKgraphActor(tmpDb(), { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
-      { userDbs: new Map(), llmRef: null },
+      { state: { userDbs: new Map(), llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()

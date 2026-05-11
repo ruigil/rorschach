@@ -343,6 +343,7 @@ export const createLlmProviderActor = (options: LlmProviderActorOptions): ActorD
   }
 
   return {
+    initialState: null,
     handler: onMessage<LlmProviderMsg, null>({
       stream: (state, message, context) => {
         const { requestId, model, messages, tools, role, clientId, replyTo } = message

@@ -35,7 +35,7 @@ describe('Behavior switching (become)', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('become-basic', def, null)
+    const ref = system.spawn('become-basic', def)
     await tick()
 
     ref.send('a')
@@ -70,7 +70,7 @@ describe('Behavior switching (become)', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('become-chain', def, null)
+    const ref = system.spawn('become-chain', def)
     await tick()
 
     ref.send('1')
@@ -102,7 +102,7 @@ describe('Behavior switching (become)', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('become-return', def, null)
+    const ref = system.spawn('become-return', def)
     await tick()
 
     ref.send('a')
@@ -135,7 +135,7 @@ describe('Behavior switching (become)', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('become-state', def, { count: 0 })
+    const ref = system.spawn('become-state', def, { state: { count: 0 } })
     await tick()
 
     ref.send('inc')    // count: 1
@@ -168,7 +168,7 @@ describe('Behavior switching (become)', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('become-restart', def, null)
+    const ref = system.spawn('become-restart', def)
     await tick()
 
     ref.send('switch')
@@ -212,7 +212,7 @@ describe('Stash', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('stash-basic', def, null)
+    const ref = system.spawn('stash-basic', def)
     await tick()
 
     ref.send({ type: 'data', value: 'a' })
@@ -250,7 +250,7 @@ describe('Stash', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('stash-mixed', def, null)
+    const ref = system.spawn('stash-mixed', def)
     await tick()
 
     ref.send('early-1')
@@ -283,7 +283,7 @@ describe('Stash', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('stash-empty', def, null)
+    const ref = system.spawn('stash-empty', def)
     await tick()
 
     ref.send('trigger')
@@ -316,7 +316,7 @@ describe('Stash', () => {
     const system = await createPluginSystem()
     system.subscribe(DeadLetterTopic, (e) => deadLetters.push(e))
 
-    const ref = system.spawn('stash-overflow', def, null)
+    const ref = system.spawn('stash-overflow', def)
     await tick()
 
     // Send 5 messages — capacity is 3, so 2 oldest will be dropped
@@ -349,7 +349,7 @@ describe('Stash', () => {
     const system = await createPluginSystem()
     system.subscribe(DeadLetterTopic, (e) => deadLetters.push(e))
 
-    const ref = system.spawn('stash-stop', def, null)
+    const ref = system.spawn('stash-stop', def)
     await tick()
 
     ref.send('a')
@@ -383,7 +383,7 @@ describe('Stash', () => {
     const system = await createPluginSystem()
     system.subscribe(DeadLetterTopic, (e) => deadLetters.push(e))
 
-    const ref = system.spawn('stash-restart', def, null)
+    const ref = system.spawn('stash-restart', def)
     await tick()
 
     ref.send('stash-me')
@@ -443,7 +443,7 @@ describe('Become + Stash: initialization pattern', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('init-pattern', def, { connId: null })
+    const ref = system.spawn('init-pattern', def, { state: { connId: null } })
     await tick()
 
     // These arrive before 'connected'

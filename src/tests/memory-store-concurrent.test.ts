@@ -37,15 +37,14 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
         return { state }
       }
     }
-    const llmRef = system.spawn('mock-llm', mockLlmDef, {})
+    const llmRef = system.spawn('mock-llm', mockLlmDef, { state: {} })
     system.publishRetained(LlmProviderTopic, 'llm', { ref: llmRef })
 
     // 2. Spawn Memory Store Supervisor
     const storeRef = system.spawn(
       'memory-supervisor',
       createMemorySupervisorActor({ model: 'test-model' }),
-      { ...INITIAL_MEMORY_SUPERVISOR_STATE, recallTools: {}, storeTools: {} }
-    )
+      { state: { ...INITIAL_MEMORY_SUPERVISOR_STATE, recallTools: {}, storeTools: {} } })
     
     await tick(100) // Wait for subscriptions
 
@@ -93,8 +92,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     const storeRef = system.spawn(
       'memory-supervisor',
       createMemorySupervisorActor({ model: 'test-model' }),
-      { ...INITIAL_MEMORY_SUPERVISOR_STATE, recallTools: {}, storeTools: {} }
-    )
+      { state: { ...INITIAL_MEMORY_SUPERVISOR_STATE, recallTools: {}, storeTools: {} } })
     
     await tick()
 

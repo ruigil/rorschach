@@ -14,7 +14,7 @@ import type { AuthenticatorMsg, AuthSession, UserStoreMsg, User } from './types.
 
 export type IdentityProviderState = Record<string, never>
 
-export const initialIdentityProviderState = (): IdentityProviderState => ({})
+const initialIdentityProviderState = (): IdentityProviderState => ({})
 
 const sessionToIdentity = (s: AuthSession): Identity => ({
   userId:   s.userId,
@@ -35,6 +35,7 @@ export const createIdentityProviderActor = (opts: {
   const { authenticator, userStore } = opts
 
   return {
+    initialState: initialIdentityProviderState,
     handler: onMessage<IdentityProviderMsg, IdentityProviderState>({
       resolveTicket: (state, { ticket, replyTo }) => {
         ask<AuthenticatorMsg, AuthSession | null>(

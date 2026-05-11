@@ -70,6 +70,7 @@ const createUserContextWorkerActor = (options: WorkerOptions): ActorDef<UserCont
   const { model, userId, llmRef, turns } = options
 
   return {
+    initialState: { requestId: null, accumulated: '' },
     handler: onMessage<UserContextWorkerMsg, WorkerState>({
       _start: (state, _, context) => {
         context.pipeToSelf(
@@ -149,6 +150,7 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
   const { model, intervalMs } = options
 
   return {
+    initialState: INITIAL_USER_CONTEXT_STATE,
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(UserStreamTopic, (e) => {
@@ -204,7 +206,6 @@ export const createUserContextActor = (options: UserContextOptions): ActorDef<Us
           const worker = context.spawn(
             `user-context-worker-${userId}`,
             createUserContextWorkerActor({ model, userId, llmRef: state.llmRef, turns }),
-            { requestId: null, accumulated: '' }
           )
           worker.send({ type: '_start' })
           workers[userId] = worker

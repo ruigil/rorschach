@@ -59,7 +59,7 @@ describe('web-search actor', () => {
     stubFetchOk(mockBraveResponse)
 
     const system = await createPluginSystem()
-    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }), null)
+    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }))
     await tick()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -82,7 +82,7 @@ describe('web-search actor', () => {
     stubFetchError(429, 'Rate limit exceeded')
 
     const system = await createPluginSystem()
-    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }), null)
+    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }))
     await tick()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -103,7 +103,7 @@ describe('web-search actor', () => {
     stubFetchThrow('network unreachable')
 
     const system = await createPluginSystem()
-    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }), null)
+    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key' }))
     await tick()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -129,7 +129,7 @@ describe('web-search actor', () => {
     }) as unknown as typeof fetch
 
     const system = await createPluginSystem()
-    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key', count: 7 }), null)
+    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'test-key', count: 7 }))
     await tick()
 
     await ask<ToolInvokeMsg, ToolReply>(
@@ -153,7 +153,7 @@ describe('web-search actor', () => {
     }) as unknown as typeof fetch
 
     const system = await createPluginSystem()
-    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'my-secret-key' }), null)
+    const ref = system.spawn('web-search', createWebSearchActor({ apiKey: 'my-secret-key' }))
     await tick()
 
     await ask<ToolInvokeMsg, ToolReply>(
@@ -213,7 +213,7 @@ describe('tools plugin', () => {
       },
     }
 
-    system.spawn('probe', probeDef, null)
+    system.spawn('probe', probeDef)
     await tick(200)
 
     expect(replies).toHaveLength(1)

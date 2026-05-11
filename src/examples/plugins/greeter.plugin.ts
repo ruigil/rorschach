@@ -12,6 +12,7 @@ type GreeterPluginState = { tickerRef: ActorRef<unknown> | null }
 const spawnTicker = (config: GreeterConfig, ctx: ActorContext<GreeterPluginMsg>): ActorRef<unknown> => {
   type TickMsg = { type: 'tick' }
   const tickerDef: ActorDef<TickMsg, null> = {
+    initialState: null,
     lifecycle: onLifecycle({
       start(s, tickCtx) {
         tickCtx.timers.startPeriodicTimer('tick', { type: 'tick' }, config.intervalMs)
@@ -23,7 +24,7 @@ const spawnTicker = (config: GreeterConfig, ctx: ActorContext<GreeterPluginMsg>)
       return { state: s }
     },
   }
-  return ctx.spawn('ticker', tickerDef, null) as ActorRef<unknown>
+  return ctx.spawn('ticker', tickerDef) as ActorRef<unknown>
 }
 
 const createGreeterPlugin = (config: GreeterConfig): PluginDef<GreeterPluginMsg, GreeterPluginState> => ({

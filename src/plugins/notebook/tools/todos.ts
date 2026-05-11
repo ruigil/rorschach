@@ -232,6 +232,7 @@ const updateTodo = async (
 // ─── Actor ───
 
 export const createTodosActor = (notebookDir: string): ActorDef<TodosMsg, null> => ({
+  initialState: null,
   handler: onMessage<TodosMsg, null>({
     invoke: (state, msg, ctx) => {
       let promise: Promise<string>

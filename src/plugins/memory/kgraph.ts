@@ -140,6 +140,7 @@ export const createKgraphActor = (
   cosineSimilarityThreshold = 0.0,
   reranker?: { model: string; topK?: number },
 ): ActorDef<KgraphMsg, KgraphState> => ({
+  initialState: () => ({ userDbs: new Map(), llmRef: null }),
 
   lifecycle: onLifecycle({
     start: async (_state, ctx) => {

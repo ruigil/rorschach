@@ -74,6 +74,7 @@ export const createCostTrackerActor = (
   const { costsDir, flushIntervalMs } = options
 
   return {
+    initialState: { costsDir, dateStr: '', resolvedPath: '', written: 0, buffer: [], dailyTotals: { totalCost: 0, totalInputTokens: 0, totalOutputTokens: 0, byModel: {} } },
     handler: onMessage({
       cost(state, message) {
         const { event } = message

@@ -57,8 +57,8 @@ describe('EventStream: pub-sub', () => {
       },
     }
 
-    system.spawn('subscriber', subscriberDef, null)
-    const pub = system.spawn('publisher', publisherDef, null)
+    system.spawn('subscriber', subscriberDef)
+    const pub = system.spawn('publisher', publisherDef)
     await tick()
 
     pub.send({ type: 'emit', value: 'hello' })
@@ -91,8 +91,8 @@ describe('EventStream: pub-sub', () => {
       },
     })
 
-    system.spawn('sub-a', makeSub(receivedA), null)
-    system.spawn('sub-b', makeSub(receivedB), null)
+    system.spawn('sub-a', makeSub(receivedA))
+    system.spawn('sub-b', makeSub(receivedB))
     await tick()
 
     // Publish from system level
@@ -129,7 +129,7 @@ describe('EventStream: pub-sub', () => {
       },
     }
 
-    const ref = system.spawn('sub', subDef, null)
+    const ref = system.spawn('sub', subDef)
     await tick()
 
     system.publish('topic', { value: 'before' })
@@ -166,7 +166,7 @@ describe('EventStream: pub-sub', () => {
       },
     }
 
-    system.spawn('sub', subDef, null)
+    system.spawn('sub', subDef)
     await tick()
 
     system.publish('topic', { value: 'alive' })
@@ -232,7 +232,7 @@ describe('EventStream: handler-returned events', () => {
       },
     }
 
-    const ref = system.spawn('producer', producerDef, null)
+    const ref = system.spawn('producer', producerDef)
     await tick()
 
     ref.send({ type: 'produce', value: 'item-1' })
@@ -259,7 +259,7 @@ describe('EventStream: handler-returned events', () => {
       handler: (state) => ({ state }), // no events
     }
 
-    const ref = system.spawn('actor', def, null)
+    const ref = system.spawn('actor', def)
     await tick()
 
     ref.send('hello')
@@ -285,7 +285,8 @@ describe('Dead letters', () => {
 
     const ref = system.spawn('target', {
       handler: (state: null) => ({ state }),
-    }, null)
+      initialState: null,
+    })
     await tick()
 
     system.stop({ name: 'system/target' })
@@ -311,7 +312,8 @@ describe('Dead letters', () => {
 
     const ref = system.spawn('alive', {
       handler: (state: null) => ({ state }),
-    }, null)
+      initialState: null,
+    })
     await tick()
 
     ref.send('hello')
@@ -337,7 +339,8 @@ describe('Logging', () => {
 
     system.spawn('logger-test', {
       handler: (state: null) => ({ state }),
-    }, null)
+      initialState: null,
+    })
     await tick()
 
     system.stop({ name: 'system/logger-test' })
@@ -367,7 +370,7 @@ describe('Logging', () => {
       },
     }
 
-    const ref = system.spawn('failer', def, null)
+    const ref = system.spawn('failer', def)
     await tick()
 
     ref.send('trigger')
@@ -397,7 +400,7 @@ describe('Logging', () => {
       supervision: { type: 'restart', maxRetries: 3 },
     }
 
-    const ref = system.spawn('restarter', def, null)
+    const ref = system.spawn('restarter', def)
     await tick()
 
     ref.send('trigger')
@@ -427,7 +430,7 @@ describe('Logging', () => {
       },
     }
 
-    const ref = system.spawn('custom-logger', def, null)
+    const ref = system.spawn('custom-logger', def)
     await tick()
 
     ref.send({ type: 'do-log' })
@@ -461,7 +464,7 @@ describe('Logging', () => {
       },
     }
 
-    const ref = system.spawn('multi-log', def, null)
+    const ref = system.spawn('multi-log', def)
     await tick()
 
     ref.send('log-all')

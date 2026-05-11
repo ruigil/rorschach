@@ -10,11 +10,12 @@ type OAuthStateActorState = {
   mapping: Record<string, string>  // state token → userId
 }
 
-export const initialOAuthStateActorState = (): OAuthStateActorState => ({ mapping: {} })
+const initialOAuthStateActorState = (): OAuthStateActorState => ({ mapping: {} })
 
 // ─── Actor definition ───
 
 export const createOAuthStateActor = (): ActorDef<OAuthStateMsg, OAuthStateActorState> => ({
+  initialState: initialOAuthStateActorState,
   handler: onMessage<OAuthStateMsg, OAuthStateActorState>({
     createState: (state, msg, ctx) => {
       const token = crypto.randomUUID()

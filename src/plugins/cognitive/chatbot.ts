@@ -1,30 +1,28 @@
 import { emit } from '../../system/types.ts'
-import type { ActorDef, ActorRef, ActorContext, ActorResult, PersistenceAdapter } from '../../system/types.ts'
+import type { ActorDef, ActorRef, ActorContext, ActorResult } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
 import { createReactLoop, initialReactLoopSlice, type ReactLoopSlice } from '../../system/react-loop.ts'
-import { OutboundMessageTopic, UserStreamTopic } from '../../types/events.ts'
+import { OutboundMessageTopic } from '../../types/events.ts'
+import { UserStreamTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type { ApiMessage, LlmProviderMsg, TokenUsage, ToolCall } from '../../types/llm.ts'
+import type { ApiMessage, LlmProviderMsg, TokenUsage } from '../../types/llm.ts'
 import type { ChatbotMsg } from './types.ts'
-import { UserContextTopic } from '../../types/memory.ts'
-
-// ─── Conversation history ───
-
-type ConversationMessage = {
-  timestamp?: number
-} & (
-  | { role: 'user';      content: string }
-  | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
-  | { role: 'tool';      content: string; tool_call_id: string }
-)
+import { HistorySnapshotTopic } from './types.ts'
+import type { HistoryStoreMsg } from './history-store.ts'
 
 // ─── State ───
+//
+// `historyMirror` is a local cache of HistorySnapshotTopic (retained, keyed by
+// userId). The chatbot reads from it when building turn payloads but never
+// mutates it directly — appends go to the HistoryStore which republishes the
+// snapshot, and the mirror updates via the subscription.
 
 export type ChatbotState = {
   loop:           ReactLoopSlice
-  history:        ConversationMessage[]
+  historyMirror:  ApiMessage[]
+  historyVersion: number
   tools:          ToolCollection
   sessionUsage:   TokenUsage
   userContext:    string | null
@@ -44,15 +42,15 @@ const HISTORY_MARKERS_NOTE =
 // ─── Options ───
 
 export type ChatbotActorOptions = {
-  clientId:            string
-  model:               string
-  systemPrompt?:       string
-  historyWindowHours?: number
-  toolFilter?:         ToolFilter
-  maxToolLoops?:       number
-  userId:              string
-  roles?:              string[]
-  llmRef?:             ActorRef<LlmProviderMsg> | null
+  clientId:        string
+  model:           string
+  systemPrompt?:   string
+  toolFilter?:     ToolFilter
+  maxToolLoops?:   number
+  userId:          string
+  roles?:          string[]
+  llmRef?:         ActorRef<LlmProviderMsg> | null
+  historyStoreRef: ActorRef<HistoryStoreMsg>
 }
 
 // ─── Helpers ───
@@ -62,22 +60,7 @@ const buildSystemPrompt = (basePrompt: string | undefined, userContext: string |
   return [basePrompt, todayDateNote, userContext, HISTORY_MARKERS_NOTE].filter(Boolean).join('\n\n---\n\n')
 }
 
-const trimHistory = (history: ConversationMessage[], historyWindowHours: number): ConversationMessage[] => {
-  const cutoffTime = Date.now() - historyWindowHours * 60 * 60 * 1000
-  let earliestValidIndex = history.length
-
-  for (let i = history.length - 1; i >= 0; i--) {
-    const msg = history[i]!
-    const msgTime = msg.timestamp ?? Date.now()
-    if (msgTime < cutoffTime) break
-    if (msg.role === 'user') earliestValidIndex = i
-  }
-
-  return history.slice(earliestValidIndex)
-}
-
-// user file attachments are represented as special text tokens in the user message content, which the LLM can refer to when formulating a response. 
-// This function assembles the final user message content by appending notes about attached files (images, audio, PDFs) to the original text.
+// User file attachments are encoded as text tokens in the user message content.
 const assembleUserText = (
   text:    string,
   images?: string[],
@@ -104,36 +87,17 @@ const assembleUserText = (
   return out
 }
 
-// ─── Persistence ───
+// ─── Initial state ───
 
-type PersistedChatbotState = { userContext: string | null }
-
-const createPersistence = (
-  userId:   string,
-  clientId: string,
-  llmRef:   ActorRef<LlmProviderMsg> | null,
-): PersistenceAdapter<ChatbotState> => {
-  const path = `workspace/history/${userId}.json`
-  return {
-    load: async () => {
-      const file = Bun.file(path)
-      if (!await file.exists()) return undefined
-      const saved = JSON.parse(await file.text()) as PersistedChatbotState
-      return {
-        loop:           { ...initialReactLoopSlice(), llmRef },
-        history:        [],
-        tools:          {},
-        sessionUsage:   { promptTokens: 0, completionTokens: 0 },
-        userContext:    saved.userContext ?? null,
-        activeClientId: clientId,
-      }
-    },
-    save: async (state) => {
-      const data: PersistedChatbotState = { userContext: state.userContext }
-      await Bun.write(path, JSON.stringify(data, null, 2))
-    },
-  }
-}
+const initialChatbotState = (): ChatbotState => ({
+  loop:           initialReactLoopSlice(),
+  historyMirror:  [],
+  historyVersion: 0,
+  tools:          {},
+  sessionUsage:   { promptTokens: 0, completionTokens: 0 },
+  userContext:    null,
+  activeClientId: '',
+})
 
 // ─── Actor ───
 
@@ -142,18 +106,17 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     clientId,
     model,
     systemPrompt,
-    historyWindowHours,
     toolFilter,
     maxToolLoops = 25,
     userId,
-    llmRef: initialLlmRef = null,
+    historyStoreRef,
   } = options
 
   type M   = ChatbotMsg
   type S   = ChatbotState
   type Ctx = ActorContext<M>
 
-  // ─── Shared state-mutation handlers (used in all three states) ──────────
+  // ─── Shared state-mutation handlers ─────────────────────────────────────
 
   const toolRegistered = (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> => {
     return { state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } } } }
@@ -162,34 +125,33 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     const { [msg.name]: _, ...rest } = state.tools
     return { state: { ...state, tools: rest } }
   }
-  const setUserContext = (state: S, msg: Extract<M, { type: '_userContext' }>): ActorResult<M, S> => {
-    return { state: { ...state, userContext: msg.summary } }
+  const historySnapshot = (state: S, msg: Extract<M, { type: '_historySnapshot' }>): ActorResult<M, S> => {
+    if (msg.version <= state.historyVersion && state.historyVersion > 0) return { state }
+    return {
+      state: {
+        ...state,
+        historyMirror:  msg.messages,
+        userContext:    msg.userContext,
+        historyVersion: msg.version,
+      },
+    }
   }
 
-  // ─── ApiMessage projection ──────────────────────────────────────────────
-
-  const toApiMessage = (m: ConversationMessage): ApiMessage => {
-    if (m.role === 'user')      return { role: 'user',      content: m.content }
-    if (m.role === 'assistant') return m.tool_calls
-      ? { role: 'assistant', content: m.content, tool_calls: m.tool_calls }
-      : { role: 'assistant', content: m.content ?? '' }
-    return { role: 'tool', content: m.content, tool_call_id: m.tool_call_id }
-  }
-
-  // ─── React-loop ─────────────────────────────────────────────────────────
-
-  // history must already contain the current user turn (appended by the caller).
-  // For the LLM-form, replace the last entry's content with llmText
-  // (handles cron variant: "[Internal Instruction — do not mention…]" vs
-  // history-form "[Internal Instruction]").
-  const buildTurnMessages = (state: S, llmText: string): ApiMessage[] => {
-    const sysPrompt = buildSystemPrompt(systemPrompt, state.userContext)
+  // ─── Build LLM payload ─────────────────────────────────────────────────
+  //
+  // `history` already includes the current user turn (appended optimistically
+  // by the caller), so we replace its last entry's content with `llmText` to
+  // accommodate cron-vs-history phrasing variants.
+  const buildTurnMessages = (history: ApiMessage[], userContext: string | null, llmText: string): ApiMessage[] => {
+    const sysPrompt = buildSystemPrompt(systemPrompt, userContext)
     return [
       ...(sysPrompt ? [{ role: 'system' as const, content: sysPrompt }] : []),
-      ...state.history.slice(0, -1).map(toApiMessage),
+      ...history.slice(0, -1),
       { role: 'user' as const, content: llmText },
     ]
   }
+
+  // ─── React-loop ────────────────────────────────────────────────────────
 
   const handlers = createReactLoop<S, M>({
     role:         'reasoning',
@@ -216,26 +178,13 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     onToolPending: ({ toolName, toolCallId }, reply) =>
       ({ type: '_toolUpdate', toolName, toolCallId, reply } as unknown as M),
 
-    interceptToolCalls: (state, calls) => ({
-      handled: false,
-      events:  [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'tooling', tools: calls.map(c => c.name) }) })],
+    onToolCalls: (state, calls) => ({
+      events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'tooling', tools: calls.map(c => c.name) }) })],
     }),
 
+    // Streaming UI events only. History bookkeeping moved to onBatchHistoryReady.
     onToolResult: (state, result) => {
-      // Append assistant-tool-call shell on the first result of a batch (when
-      // pendingBatch.results is still empty), then the tool-result entry.
-      // Subsequent results in the same batch only append the tool-result.
-      const batch         = state.loop.turn.pendingBatch!
-      const isFirstResult = batch.results.length === 0
-      const content       = result.reply.type === 'toolResult' ? result.reply.result.text : `Tool error: ${result.reply.error}`
-      const toolEntry: ConversationMessage = {
-        role: 'tool', content, tool_call_id: result.toolCallId, timestamp: Date.now(),
-      }
-      const newHistory: ConversationMessage[] = isFirstResult
-        ? [...state.history, { role: 'assistant', content: null, tool_calls: batch.assistantToolCalls, timestamp: Date.now() }, toolEntry]
-        : [...state.history, toolEntry]
-
-      const payload     = result.reply.type === 'toolResult' ? result.reply.result : undefined
+      const payload = result.reply.type === 'toolResult' ? result.reply.result : undefined
       const events: ReturnType<typeof emit>[] = []
       if (payload?.sources?.length) {
         events.push(emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'sources', sources: payload.sources }) }))
@@ -243,29 +192,31 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       if (payload?.attachments?.length) {
         events.push(emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'attachments', attachments: payload.attachments }) }))
       }
+      return events.length > 0 ? { state, events } : { state }
+    },
 
-      return { state: { ...state, history: newHistory }, events }
+    // Forward the canonical batch sequence to the HistoryStore.
+    onBatchHistoryReady: (state, messages) => {
+      historyStoreRef.send({ type: 'append', messages })
+      return { state }
     },
 
     onComplete: (state, finalText, _ctx) => {
       const turn = state.loop.turn
-      // Append assistant message to history (if any text), trim, fold usage into session.
-      const rawHistory: ConversationMessage[] = finalText
-        ? [...state.history, { role: 'assistant', content: finalText, timestamp: Date.now() }]
-        : state.history
-      const history = historyWindowHours ? trimHistory(rawHistory, historyWindowHours) : rawHistory
+      if (finalText) {
+        historyStoreRef.send({ type: 'append', messages: [{ role: 'assistant', content: finalText }] })
+      }
 
       const sessionUsage: TokenUsage = {
         promptTokens:     state.sessionUsage.promptTokens     + turn.pendingUsage.promptTokens,
         completionTokens: state.sessionUsage.completionTokens + turn.pendingUsage.completionTokens,
       }
 
-      // Recover the original user prompt from turnMessages (last user role) for telemetry.
       const userMsg  = turn.turnMessages?.findLast(m => m.role === 'user')
       const userText = typeof userMsg?.content === 'string' ? userMsg.content : ''
 
       return {
-        state: { ...state, history, sessionUsage, isInjected: undefined },
+        state: { ...state, sessionUsage, isInjected: undefined },
         events: [
           emit(UserStreamTopic, { userId, userText, assistantText: finalText, timestamp: Date.now(), injected: state.isInjected }),
           emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) }),
@@ -288,23 +239,23 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
 
     extraCases: {
       idle: {
-        userMessage: (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => handleUserMessage(state, msg, ctx),
-        _toolUpdate: (state: S, msg: Extract<M, { type: '_toolUpdate' }>, ctx: Ctx): ActorResult<M, S> => handleToolUpdate(state, msg, ctx),
+        userMessage:       (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => handleUserMessage(state, msg, ctx),
+        _toolUpdate:       (state: S, msg: Extract<M, { type: '_toolUpdate' }>, ctx: Ctx): ActorResult<M, S> => handleToolUpdate(state, msg, ctx),
         _toolRegistered:   toolRegistered,
         _toolUnregistered: toolUnregistered,
-        _userContext:      setUserContext,
+        _historySnapshot:  historySnapshot,
       },
       awaitingLlm: {
         _toolUpdate:       (state: S): ActorResult<M, S> => ({ state, stash: true }),
         _toolRegistered:   toolRegistered,
         _toolUnregistered: toolUnregistered,
-        _userContext:      setUserContext,
+        _historySnapshot:  historySnapshot,
       },
       toolLoop: {
         _toolUpdate:       (state: S): ActorResult<M, S> => ({ state, stash: true }),
         _toolRegistered:   toolRegistered,
         _toolUnregistered: toolUnregistered,
-        _userContext:      setUserContext,
+        _historySnapshot:  historySnapshot,
       },
     },
   })
@@ -318,12 +269,21 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
       ? `[Internal Instruction] ${text}`
       : assembleUserText(text, images, audio, pdfs)
 
+    const userMessage: ApiMessage = { role: 'user', content: userText }
+
+    // Optimistically include the user turn in this turn's payload — the
+    // snapshot republish from the HistoryStore will arrive shortly and make
+    // the local mirror consistent.
+    const optimisticHistory: ApiMessage[] = [...state.historyMirror, userMessage]
+
     const stateNext: S = {
       ...state,
       activeClientId: msgClientId,
-      history:        [...state.history, { role: 'user', content: userText, timestamp: Date.now() }],
+      historyMirror:  optimisticHistory,
       isInjected:     isInjected || isCron || false,
     }
+
+    historyStoreRef.send({ type: 'append', messages: [userMessage] })
 
     if (!stateNext.loop.llmRef) {
       ctx.log.warn('chatbot: dropping userMessage, no LLM ref', { clientId: msgClientId })
@@ -331,7 +291,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     }
 
     return handlers.startTurn(stateNext, {
-      messages: buildTurnMessages(stateNext, userText),
+      messages: buildTurnMessages(optimisticHistory, stateNext.userContext, userText),
       userId,
       clientId,
       traceId,
@@ -349,15 +309,19 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     const resultText = msg.reply.type === 'toolResult' ? msg.reply.result.text : `Tool error: ${msg.reply.error}`
     const injection  = `[Background tool result — ${msg.toolName} (toolCallId=${msg.toolCallId})]: ${resultText}`
 
-    // No upstream traceId for background completions — synthesize a fresh one.
     const traceId      = crypto.randomUUID().replace(/-/g, '').slice(0, 32)
     const parentSpanId = '0000000000000000'
 
+    const userMessage: ApiMessage = { role: 'user', content: injection }
+    const optimisticHistory: ApiMessage[] = [...state.historyMirror, userMessage]
+
     const stateNext: S = {
       ...state,
-      history:    [...state.history, { role: 'user', content: injection, timestamp: Date.now() }],
-      isInjected: true,
+      historyMirror: optimisticHistory,
+      isInjected:    true,
     }
+
+    historyStoreRef.send({ type: 'append', messages: [userMessage] })
 
     const payload = msg.reply.type === 'toolResult' ? msg.reply.result : undefined
     if (payload?.sources?.length) {
@@ -368,7 +332,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
     }
 
     return handlers.startTurn(stateNext, {
-      messages: buildTurnMessages(stateNext, injection),
+      messages: buildTurnMessages(optimisticHistory, stateNext.userContext, injection),
       userId,
       clientId,
       traceId,
@@ -377,8 +341,7 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
   }
 
   return {
-    persistence: createPersistence(userId, clientId, initialLlmRef),
-
+    initialState: initialChatbotState,
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(ToolRegistrationTopic, (event) => {
@@ -399,9 +362,14 @@ export const createChatbotActor = (options: ChatbotActorOptions): ActorDef<Chatb
           ({ type: '_llmProvider' as const, ref: event.ref }),
         )
 
-        ctx.subscribe(UserContextTopic, (event) => {
+        ctx.subscribe(HistorySnapshotTopic, (event) => {
           if (event.userId !== userId) return null
-          return { type: '_userContext' as const, summary: event.summary }
+          return {
+            type: '_historySnapshot' as const,
+            messages:    event.messages,
+            userContext: event.userContext,
+            version:     event.version,
+          }
         })
 
         return { state }

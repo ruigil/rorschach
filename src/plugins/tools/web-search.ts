@@ -105,6 +105,7 @@ export const createWebSearchActor = (options: WebSearchActorOptions): ActorDef<W
   const { apiKey, count = 20 } = options
 
   return {
+    initialState: null,
     handler: onMessage<WebSearchMsg, null>({
       invoke: (state, message, ctx) => {
         const { arguments: args, replyTo } = message

@@ -1,164 +1,300 @@
-import type { ActorDef, ActorRef } from '../../system/types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import { emit } from '../../system/types.ts'
+import type { ActorDef, ActorRef, ActorContext, ActorResult } from '../../system/types.ts'
+import { onLifecycle } from '../../system/match.ts'
+import {
+  createReactLoop,
+  initialReactLoopSlice,
+  type ReactLoopHandlers,
+  type ReactLoopSlice,
+} from '../../system/react-loop.ts'
+import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
-import type { LlmProviderMsg } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type { Tool } from '../../types/llm.ts'
-import type { PlannerInputMsg, PlannerSupervisorMsg } from './types.ts'
-import { PlannerActiveTopic } from './types.ts'
+import type { ApiMessage, LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
+import type { ToolFinalReply, ToolMsg, ToolSchema } from '../../types/tools.ts'
+import type { AgentFactoryOpts } from './types.ts'
 import {
-  createPlannerSessionWorkerActor,
-  createInitialPlannerSessionWorkerState,
-  type PlannerSessionWorkerOptions,
-} from './planner-session-worker.ts'
+  FORMALIZE_PLAN_TOOL_NAME,
+  FORMALIZE_PLAN_SCHEMA,
+  createFormalizePlanToolActor,
+} from './formalize-plan-tool.ts'
 
-// ─── Options ───
+// ─── Message protocol ───
 
-export type PlannerToolOptions = {
-  model?:       string
-  plansDir:     string
-  maxToolLoops: number
-  toolFilter:   ToolFilter
-}
-
-// ─── Plan tool schema ───
-
-export const PLAN_TOOL_SCHEMA: Tool = {
-  type: 'function',
-  function: {
-    name: 'plan',
-    description: 'Start a structured planning session for a goal. Use this when the user asks you to create a plan, design a roadmap, or work through a complex multi-step goal.',
-    parameters: {
-      type: 'object',
-      properties: {
-        goal: { type: 'string', description: 'Clear description of what needs to be planned' },
-      },
-      required: ['goal'],
-    },
-  },
-}
+export type PlannerAgentMsg =
+  | { type: 'userMessage';   clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string; isCron?: boolean; isInjected?: boolean }
+  | LlmProviderReply
+  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
+  | { type: '_toolUnregistered'; name: string }
+  | { type: '_toolResult';       toolName: string; toolCallId: string; reply: ToolFinalReply }
+  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── State ───
+//
+// The planner owns a *scratch* conversation history that's distinct from the
+// shared HistoryStore. The shared store only sees a single condensed summary
+// when the user formalizes a plan — keeping the noisy multi-iteration
+// planning chatter out of other agents' context.
 
-export type PlannerSupervisorState = {
-  llmRef:      ActorRef<LlmProviderMsg> | null
-  tools:       ToolCollection
-  workerIdSeq: number
+export type PlannerAgentState = {
+  loop:                    ReactLoopSlice
+  plannerHistory:          ApiMessage[]
+  tools:                   ToolCollection
+  pendingFormalizeSummary: string | null
+  activeClientId:          string
 }
 
-export const createInitialPlannerSupervisorState = (): PlannerSupervisorState => ({
-  llmRef:      null,
-  tools:       {},
-  workerIdSeq: 0,
+const initialPlannerAgentState = (): PlannerAgentState => ({
+  loop:                    initialReactLoopSlice(),
+  plannerHistory:          [],
+  tools:                   {},
+  pendingFormalizeSummary: null,
+  activeClientId:          '',
 })
+
+// ─── Config ───
+
+export type PlannerAgentConfig = {
+  model:        string
+  maxToolLoops: number
+  toolFilter?:  ToolFilter
+  plansDir:     string
+}
+
+// ─── System prompt ───
+
+const buildSystemPrompt = (): string =>
+  `You are a planning assistant. Your role is to help the user create a detailed, actionable plan for their goal.
+Today's date is ${new Date().toDateString()}.
+
+You have access to:
+- Research tools (web_search, fetch_file, etc.) to gather information proactively
+- formalize_plan: save the final plan to disk once the user explicitly accepts it. Requires goal, summary, and tasks.
+
+Process:
+1. Research the goal using available research tools to understand what is involved. Do this before asking the user anything you can look up yourself.
+2. Ask the user clarifying questions directly in your response — be conversational. You do not need a special tool for questions. Ask ONE question at a time, wait for the user's answer, then ask the next question if needed.
+Continue until you have gathered all constraints, preferences, and context required to build a complete plan.
+3. Once you have enough context, describe the full plan to the user in your response. Include every task with its id, name, description, validation criteria, and dependencies.
+4. Wait for the user's feedback. They may:
+   - Accept the plan: call formalize_plan with the goal, summary, and full task list.
+   - Request changes: do more research if needed and describe the revised plan.
+
+After calling formalize_plan, briefly acknowledge the save in one short sentence and stop — do not call any further tools in the same turn.
+
+Task quality guidelines:
+- Each task must have a clear, specific name and description
+- validationCriteria must be concrete and measurable
+- dependencies must reflect genuine ordering constraints — form a valid DAG (no cycles)
+- Prefer granular tasks over vague large ones
+
+Be concise. Research first, then ask only what you genuinely need from the user.`
+
+// ─── Factory ───
+//
+// Curried so cognitive.plugin.ts can register the descriptor with the
+// planner config closed over, while SessionManager supplies per-instance
+// AgentFactoryOpts (userId, clientId, llmRef, historyStoreRef) at spawn time.
+
+export const createPlannerAgentFactory = (config: PlannerAgentConfig) =>
+  (opts: AgentFactoryOpts): ActorDef<PlannerAgentMsg, PlannerAgentState> =>
+    createPlannerAgentActor(config, opts)
 
 // ─── Actor ───
 
-export const createPlannerSupervisorActor = (
-  options: PlannerToolOptions,
-): ActorDef<PlannerSupervisorMsg, PlannerSupervisorState> => {
-  const {
-    model = 'google/gemini-2.5-flash-lite-preview',
-    plansDir,
+const createPlannerAgentActor = (
+  config: PlannerAgentConfig,
+  opts:   AgentFactoryOpts,
+): ActorDef<PlannerAgentMsg, PlannerAgentState> => {
+  const { model, maxToolLoops, toolFilter, plansDir } = config
+  const { userId, historyStoreRef } = opts
+
+  type M   = PlannerAgentMsg
+  type S   = PlannerAgentState
+  type Ctx = ActorContext<M>
+
+  let handlers: ReactLoopHandlers<M, S>
+
+  const buildTurnMessages = (state: S): ApiMessage[] =>
+    [{ role: 'system', content: buildSystemPrompt() }, ...state.plannerHistory]
+
+  const resetScratch = (state: S): S => ({
+    ...state,
+    plannerHistory:          [],
+    pendingFormalizeSummary: null,
+  })
+
+  handlers = createReactLoop<S, M>({
+    role:         'planner',
+    spanName:     'planner-turn',
+    logPrefix:    'planner',
+    model,
     maxToolLoops,
-    toolFilter,
-  } = options
+    tools:        (s) => s.tools,
+    spans:        'fromMessage',
+
+    slice:    (s) => s.loop,
+    setSlice: (s, loop) => ({ ...s, loop }),
+
+    onChunk: (state, text) => ({
+      state,
+      events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'chunk', text }) })],
+    }),
+
+    onComplete: (state, finalText, ctx) => {
+      // Formalize-plan branch: the prior tool result populated
+      // pendingFormalizeSummary. Forward the canonical summary to the shared
+      // HistoryStore, drop the planner scratch, and emit done. The LLM's
+      // closing chatter (finalText) was already streamed via onChunk and
+      // does not need to be retained.
+      if (state.pendingFormalizeSummary) {
+        ctx.log.info('planner: formalized plan, resetting scratch', { userId })
+        historyStoreRef.send({
+          type:     'append',
+          messages: [{ role: 'assistant', content: state.pendingFormalizeSummary }],
+        })
+        return {
+          state:  resetScratch(state),
+          events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) })],
+        }
+      }
+
+      const newPlannerHistory: ApiMessage[] = finalText
+        ? [...state.plannerHistory, { role: 'assistant', content: finalText }]
+        : state.plannerHistory
+      return {
+        state:  { ...state, plannerHistory: newPlannerHistory },
+        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) })],
+      }
+    },
+
+    onLlmError: (state, error, ctx) => {
+      ctx.log.error('planner: LLM error', { userId, error: String(error) })
+      return {
+        state,
+        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'The planner encountered an error. Please try again.' }) })],
+      }
+    },
+
+    onLoopLimit: (state, _finalText, ctx) => {
+      ctx.log.warn('planner: tool loop limit reached', { userId })
+      return {
+        state,
+        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool loop limit reached in planner. Please try again.' }) })],
+      }
+    },
+
+    // Mirror tool batches into local plannerHistory so subsequent turns
+    // include them. The shared HistoryStore only receives the formalized
+    // plan summary (in onComplete).
+    onBatchHistoryReady: (state, messages) => {
+      return { state: { ...state, plannerHistory: [...state.plannerHistory, ...messages] } }
+    },
+
+    // Observe the formalize-plan tool result and stash its summary text.
+    // onComplete consumes the flag at the next turn boundary.
+    onToolResult: (state, result) => {
+      if (result.toolName === FORMALIZE_PLAN_TOOL_NAME && result.reply.type === 'toolResult') {
+        return { state: { ...state, pendingFormalizeSummary: result.reply.result.text } }
+      }
+      return { state }
+    },
+
+    extraCases: {
+      idle: {
+        userMessage: (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
+          const userMsg: ApiMessage = { role: 'user', content: msg.text }
+          const stateNext: S = {
+            ...state,
+            activeClientId: msg.clientId,
+            plannerHistory: [...state.plannerHistory, userMsg],
+          }
+          if (!stateNext.loop.llmRef) {
+            ctx.log.warn('planner: dropping userMessage, no LLM ref', { clientId: msg.clientId })
+            return { state: stateNext }
+          }
+          return handlers.startTurn(stateNext, {
+            messages:     buildTurnMessages(stateNext),
+            userId,
+            clientId:     msg.clientId,
+            traceId:      msg.traceId,
+            parentSpanId: msg.parentSpanId,
+          }, ctx)
+        },
+        _toolRegistered: (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> =>
+          ({ state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } } } }),
+        _toolUnregistered: (state: S, msg: Extract<M, { type: '_toolUnregistered' }>): ActorResult<M, S> => {
+          const { [msg.name]: _, ...rest } = state.tools
+          return { state: { ...state, tools: rest } }
+        },
+      },
+      awaitingLlm: {
+        _toolRegistered: (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> =>
+          ({ state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } } } }),
+        _toolUnregistered: (state: S, msg: Extract<M, { type: '_toolUnregistered' }>): ActorResult<M, S> => {
+          const { [msg.name]: _, ...rest } = state.tools
+          return { state: { ...state, tools: rest } }
+        },
+      },
+      toolLoop: {
+        _toolRegistered: (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> =>
+          ({ state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } } } }),
+        _toolUnregistered: (state: S, msg: Extract<M, { type: '_toolUnregistered' }>): ActorResult<M, S> => {
+          const { [msg.name]: _, ...rest } = state.tools
+          return { state: { ...state, tools: rest } }
+        },
+      },
+    },
+  })
 
   return {
+    initialState: initialPlannerAgentState,
     lifecycle: onLifecycle({
       start: (state, ctx) => {
-        ctx.subscribe(LlmProviderTopic, (event) => ({ type: '_llmProvider' as const, ref: event.ref }))
-
         ctx.subscribe(ToolRegistrationTopic, (event) => {
           if (!applyToolFilter(event.name, toolFilter)) return null
           if ('schema' in event) {
             return {
-              type:             '_toolRegistered' as const,
-              name:             event.name,
-              schema:           event.schema,
-              ref:              event.ref,
+              type: '_toolRegistered' as const,
+              name: event.name,
+              schema: event.schema,
+              ref: event.ref,
               mayBeLongRunning: event.mayBeLongRunning,
             }
           }
           return { type: '_toolUnregistered' as const, name: event.name }
         })
 
-        ctx.log.info('planner-supervisor: started', { model, plansDir, maxToolLoops })
-        return { state }
-      },
-    }),
-
-    handler: onMessage<PlannerSupervisorMsg, PlannerSupervisorState>({
-      _toolRegistered: (state, msg) => ({
-        state: {
-          ...state,
-          tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } },
-        },
-      }),
-
-      _toolUnregistered: (state, msg) => {
-        const { [msg.name]: _, ...tools } = state.tools
-        return { state: { ...state, tools } }
-      },
-
-      invoke: (state, msg, ctx) => {
-        if (state.llmRef === null) {
-          msg.replyTo.send({ type: 'toolError', error: 'Planner not ready' })
-          return { state }
-        }
-
-        let goal: string
-        try { goal = (JSON.parse(msg.arguments) as { goal?: string }).goal ?? msg.arguments }
-        catch { goal = msg.arguments }
-
-        const jobId    = crypto.randomUUID()
-        const clientId = msg.clientId ?? 'unknown'
-        const nextSeq  = state.workerIdSeq + 1
-
-        // Propagate W3C trace context from the invoke headers to the worker.
-        // Each worker turn becomes a child span of this parent.
-        const parent = ctx.trace.fromHeaders()
-
-        const workerOptions: PlannerSessionWorkerOptions = {
-          model, plansDir, maxToolLoops,
-          tools:        state.tools,
-          llmRef:       state.llmRef,
-          clientId, goal, jobId,
-          traceId:      parent?.traceId,
-          parentSpanId: parent?.spanId,
-        }
-
-        const worker = ctx.spawn(
-          `planner-session-worker-${nextSeq}`,
-          createPlannerSessionWorkerActor(ctx.self as ActorRef<PlannerSupervisorMsg>, workerOptions),
-          createInitialPlannerSessionWorkerState(workerOptions),
+        ctx.subscribe(LlmProviderTopic, (event) =>
+          ({ type: '_llmProvider' as const, ref: event.ref }),
         )
 
-        ctx.publishRetained(PlannerActiveTopic, clientId, {
-          clientId,
-          plannerRef: worker as unknown as ActorRef<PlannerInputMsg>,
-        })
+        ctx.log.info('planner-agent: started', { userId })
 
-        msg.replyTo.send({
-          type: 'toolPending',
-          jobId,
-          placeholderText: 'Planning session started.',
-        })
+        // Spawn the planner's private formalize-plan tool as a child actor.
+        // It does not flow through ToolRegistrationTopic — only this planner sees it.
+        const formalizePlanToolRef = ctx.spawn(
+          'formalize-plan-tool',
+          createFormalizePlanToolActor({ plansDir }),
+        ) as ActorRef<ToolMsg>
 
-        ctx.log.info('planner-supervisor: session spawned', { jobId, clientId, worker: worker.name, goal: goal.slice(0, 100) })
-
-        return { state: { ...state, workerIdSeq: nextSeq } }
+        return {
+          state: {
+            ...state,
+            tools: {
+              ...state.tools,
+              [FORMALIZE_PLAN_TOOL_NAME]: {
+                schema: FORMALIZE_PLAN_SCHEMA,
+                ref:    formalizePlanToolRef,
+              },
+            },
+          },
+        }
       },
-
-      _workerDone: (state, msg, ctx) => {
-        ctx.stop(msg.worker)
-        return { state }
-      },
-
-      _llmProvider: (state, msg) =>
-        ({ state: { ...state, llmRef: msg.ref } }),
     }),
+
+    handler: handlers.idle,
 
     supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }

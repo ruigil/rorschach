@@ -43,7 +43,7 @@ describe('Supervision: stop strategy (default)', () => {
     const system = await createPluginSystem()
     system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
-    const ref = system.spawn('stopper', failingActorDef(), { count: 0 })
+    const ref = system.spawn('stopper', failingActorDef(), { state: { count: 0 } })
 
     await tick()
 
@@ -72,7 +72,7 @@ describe('Supervision: stop strategy (default)', () => {
     const ref = system.spawn(
       'drop-after-fail',
       failingActorDef({ onMessage: (m) => received.push(m) }),
-      { count: 0 },
+      { state: { count: 0 } },
     )
 
     await tick()
@@ -103,7 +103,7 @@ describe('Supervision: restart strategy', () => {
         onSetup: () => { setupCount++ },
         onMessage: (m) => received.push(m),
       }),
-      { count: 0 },
+      { state: { count: 0 } },
     )
 
     await tick()
@@ -135,7 +135,7 @@ describe('Supervision: restart strategy', () => {
         onSetup: () => { setupCount++ },
         onMessage: (m) => received.push(m),
       }),
-      { count: 0 },
+      { state: { count: 0 } },
     )
 
     await tick()
@@ -173,7 +173,7 @@ describe('Supervision: restart strategy', () => {
 
     const system = await createPluginSystem()
 
-    const ref = system.spawn('state-reset', def, { count: 0 })
+    const ref = system.spawn('state-reset', def, { state: { count: 0 } })
 
     await tick()
 
@@ -206,7 +206,7 @@ describe('Supervision: restart with maxRetries', () => {
         onSetup: () => { setupCount++ },
         onStopped: () => { stoppedCalled = true },
       }),
-      { count: 0 },
+      { state: { count: 0 } },
     )
 
     await tick()
@@ -247,7 +247,7 @@ describe('Supervision: restart with maxRetries', () => {
         supervision: { type: 'restart', maxRetries: 2, withinMs: 200 },
         onSetup: () => { setupCount++ },
       }),
-      { count: 0 },
+      { state: { count: 0 } },
     )
 
     await tick()
@@ -290,7 +290,7 @@ describe('Supervision: child actor failure propagation via watch', () => {
       handler: (state, message, context) => {
         switch (message.type) {
           case 'spawn-child': {
-            const child = context.spawn('fragile', childDef, {})
+            const child = context.spawn('fragile', childDef, { state: {} })
             return { state: { childRef: child } }
           }
           case 'fail-child': {
@@ -308,7 +308,7 @@ describe('Supervision: child actor failure propagation via watch', () => {
 
     const system = await createPluginSystem()
 
-    const parent = system.spawn('parent', parentDef, { childRef: null })
+    const parent = system.spawn('parent', parentDef, { state: { childRef: null } })
     await tick()
 
     parent.send({ type: 'spawn-child' })
@@ -339,7 +339,7 @@ describe('Supervision: child actor failure propagation via watch', () => {
     const parentDef: ActorDef<'spawn' | 'stop-child', null> = {
       handler: (state, msg, ctx) => {
         if (msg === 'spawn') {
-          ctx.spawn('kid', childDef, null)
+          ctx.spawn('kid', childDef)
         } else if (msg === 'stop-child') {
           ctx.stop({ name: 'system/parent/kid' })
         }
@@ -352,7 +352,7 @@ describe('Supervision: child actor failure propagation via watch', () => {
     }
 
     const system = await createPluginSystem()
-    const ref = system.spawn('parent', parentDef, null)
+    const ref = system.spawn('parent', parentDef)
     await tick()
 
     ref.send('spawn')
@@ -384,7 +384,7 @@ describe('Supervision: normal operation unaffected', () => {
         supervision: { type: 'restart', maxRetries: 3 },
         onMessage: (m) => received.push(m),
       }),
-      { count: 0 },
+      { state: { count: 0 } },
     )
 
     await tick()
@@ -408,7 +408,7 @@ describe('Supervision: normal operation unaffected', () => {
     system.spawn(
       'clean-shutdown',
       failingActorDef({ supervision: { type: 'restart' } }),
-      { count: 0 },
+      { state: { count: 0 } },
     )
 
     await tick()
@@ -453,7 +453,7 @@ describe('Supervision: start lifecycle failure during restart', () => {
       },
     }
 
-    const ref = system.spawn('start-fail-restart', def, null)
+    const ref = system.spawn('start-fail-restart', def)
     await tick()
 
     // Trigger a failure → restart → start lifecycle throws → actor should terminate

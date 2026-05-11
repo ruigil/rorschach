@@ -147,6 +147,7 @@ export const createAudioActor = (options: AudioActorOptions): ActorDef<AudioActo
   const { llmRef, ttsModel, sttModel, voice, ttsFormat = DEFAULT_TTS_FORMAT } = options
 
   return {
+    initialState: { pending: {} },
     handler: onMessage<AudioActorMsg, AudioState>({
 
       invoke: (state, message, context) => {

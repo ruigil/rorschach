@@ -581,6 +581,7 @@ export const createZettelNotesActor = (kgraphRef: ActorRef<KgraphMsg>, dbPath: s
   const queue = makeIndexQueue(dbPath)
 
   return {
+    initialState: () => ({ kgraphRef, dbPath }),
     lifecycle: onLifecycle({
       start: (_state) => ({ state: { kgraphRef, dbPath } }),
     }),
