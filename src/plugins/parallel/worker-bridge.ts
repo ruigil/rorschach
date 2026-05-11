@@ -10,7 +10,7 @@ import { taskTopic } from './types.ts'
  *
  * Returns `{ def, initialState }` — pass both to `system.spawn` or `context.spawn`:
  *
- *   const bridge = createWorkerBridge<Payload, Result>({ scriptPath: './my-worker.ts' })
+ *   const bridge = GenericWorkerBridge<Payload, Result>({ scriptPath: './my-worker.ts' })
  *   const ref = system.spawn('bridge', bridge.def, bridge.initialState)
  *
  * The bridge spawns a single Worker thread and routes messages to/from it.
