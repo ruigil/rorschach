@@ -1,6 +1,6 @@
 import { afterEach, describe, test, expect } from 'bun:test'
 import { rm } from 'node:fs/promises'
-import { SystemPlugin, ask } from '../system/index.ts'
+import { AgentSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { Kgraph } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
@@ -50,7 +50,7 @@ afterEach(async () => {
 describe('zettel-notes unlinked notes', () => {
 
   test('returns orphans, no-outgoing, and single-outgoing notes', async () => {
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
@@ -155,7 +155,7 @@ describe('zettel-notes unlinked notes', () => {
   })
 
   test('does not return well-integrated notes with multiple outgoing links and incoming links', async () => {
-     const system = await SystemPlugin()
+     const system = await AgentSystem()
      const mockLlmRef = spawnMockLlm(system)
      system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
  

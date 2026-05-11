@@ -1,7 +1,7 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { tmpdir } from 'node:os'
 import { mkdirSync } from 'node:fs'
-import { SystemPlugin } from '../system/index.ts'
+import { AgentSystem } from '../system/index.ts'
 import { Signal, renderForSignal } from '../plugins/interfaces/signal.ts'
 import { ClientConnectTopic, InboundMessageTopic, OutboundMessageTopic } from '../types/events.ts'
 import type { ClientConnectEvent, InboundMessageEvent } from '../types/events.ts'
@@ -63,7 +63,7 @@ describe('signal actor: TCP socket', () => {
     const messageEvents: InboundMessageEvent[] = []
 
     daemon = startMockSignalDaemon(17590)
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     system.subscribe(ClientConnectTopic,  e => connectEvents.push(e))
     system.subscribe(InboundMessageTopic,  e => messageEvents.push(e))
 
@@ -86,7 +86,7 @@ describe('signal actor: TCP socket', () => {
     const connectEvents: ClientConnectEvent[] = []
 
     daemon = startMockSignalDaemon(17591)
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     system.subscribe(ClientConnectTopic, e => connectEvents.push(e))
 
     system.spawn('signal', Signal({ host: '127.0.0.1', port: 17591 }),
@@ -105,7 +105,7 @@ describe('signal actor: TCP socket', () => {
   test('sends a JSON-RPC request over TCP when WsSend fires', async () => {
     daemon = startMockSignalDaemon(17592)
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     system.spawn('signal', Signal({ host: '127.0.0.1', port: 17592, account: '+0000000000' }),
       { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
 
@@ -139,7 +139,7 @@ describe('signal actor: TCP socket', () => {
     Bun.write(`${attachmentsDir}/${attachmentId}`, 'dummy image data')
 
     daemon = startMockSignalDaemon(17595)
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     system.subscribe(InboundMessageTopic, e => messageEvents.push(e))
 
     system.spawn('signal', Signal({ host: '127.0.0.1', port: 17595, attachmentsDir }),
@@ -171,7 +171,7 @@ describe('signal actor: TCP socket', () => {
     const messageEvents: InboundMessageEvent[] = []
 
     daemon = startMockSignalDaemon(17593)
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     system.subscribe(InboundMessageTopic, e => messageEvents.push(e))
 
     system.spawn('signal', Signal({ host: '127.0.0.1', port: 17593, reconnectMs: 200 }),
@@ -202,7 +202,7 @@ describe('signal actor: TCP socket', () => {
       },
     })
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const ref = system.spawn('signal', Signal({ host: '127.0.0.1', port: 17594 }),
       { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
 
@@ -218,7 +218,7 @@ describe('signal actor: TCP socket', () => {
   })
 
   test('stays alive when no daemon is listening', async () => {
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const ref = system.spawn('signal', Signal({ host: '127.0.0.1', port: 19998, reconnectMs: 100 }),
       { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
 
@@ -233,7 +233,7 @@ describe('signal actor: TCP socket', () => {
     const connectEvents: ClientConnectEvent[] = []
     const messageEvents: InboundMessageEvent[] = []
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     system.subscribe(ClientConnectTopic, e => connectEvents.push(e))
     system.subscribe(InboundMessageTopic, e => messageEvents.push(e))
 
@@ -261,7 +261,7 @@ describe('signal actor: TCP socket', () => {
   })
 
   test('integration: sends a real message via signal-cli TCP at 127.0.0.1:7583', async () => {
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
 
     const ref = system.spawn('signal', Signal({
       host:    '127.0.0.1',

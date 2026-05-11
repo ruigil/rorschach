@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { SystemPlugin, ask } from '../system/index.ts'
+import { AgentSystem, ask } from '../system/index.ts'
 import { Audio } from '../plugins/tools/audio.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
@@ -10,7 +10,7 @@ const tick = (ms = 50) => Bun.sleep(ms)
 
 describe('audio actor', () => {
   test('text_to_speech saves audio and returns public url', async () => {
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     
     // Mock LLM Provider
     const llmDef = {
@@ -79,7 +79,7 @@ describe('audio actor', () => {
      const dummyData = Buffer.alloc(8)
      await writeFile(testFile, Buffer.concat([header, dummyData]))
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     
     const llmDef = {
       handler: (state: any, msg: LlmProviderMsg) => {

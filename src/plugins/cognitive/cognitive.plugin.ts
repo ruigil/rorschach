@@ -3,7 +3,7 @@ import { LlmProvider, OpenRouterAdapter } from './llm-provider.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { ToolFilter } from '../../types/tools.ts'
-import type { PlannerConfig } from './types.ts'
+import type { PlannerConfig, SessionConfig } from './types.ts'
 import { AgentRegistry } from './agent-registry.ts'
 import {
   AgentRegistrationTopic,
@@ -24,16 +24,16 @@ type LlmProviderConfig = {
 }
 
 type ChatbotConfig = {
-  model:               string
-  systemPrompt?:       string
-  historyWindowHours?: number
-  toolFilter?:         ToolFilter
+  model:         string
+  systemPrompt?: string
+  toolFilter?:   ToolFilter
 }
 
 export type CognitiveConfig = {
   llmProvider?: LlmProviderConfig
   chatbot?:     ChatbotConfig
   planner?:     PlannerConfig
+  session?:     SessionConfig
 }
 
 // ─── Plugin internals ───
@@ -44,18 +44,20 @@ type PluginState = {
   initialized:    boolean
   llmProvider:    { config: LlmProviderConfig | null; ref: ActorRef<LlmProviderMsg> | null; gen: number }
   agentRegistry:  { ref: ActorRef<any>                | null; gen: number }
-  sessionManager: { config: ChatbotConfig | null;     ref: ActorRef<any>                | null; gen: number }
+  sessionManager: { ref: ActorRef<any>                | null; gen: number }
   planner:        { config: PlannerConfig | null;     gen: number }
   chatbot:        { config: ChatbotConfig | null;     gen: number }
+  session:        { config: SessionConfig | null;     gen: number }
 }
 
 const EMPTY_STATE: PluginState = {
   initialized:    true,
   llmProvider:    { config: null, ref: null, gen: 0 },
   agentRegistry:  { ref: null, gen: 0 },
-  sessionManager: { config: null, ref: null, gen: 0 },
+  sessionManager: { ref: null, gen: 0 },
   planner:        { config: null, gen: 0 },
   chatbot:        { config: null, gen: 0 },
+  session:        { config: null, gen: 0 },
 }
 
 type ResolvedPlannerConfig = {
@@ -74,6 +76,18 @@ const PLANNER_DEFAULTS: ResolvedPlannerConfig = {
 
 const resolvePlannerConfig = (cfg: PlannerConfig | null): ResolvedPlannerConfig =>
   cfg ? { ...PLANNER_DEFAULTS, ...cfg } : { ...PLANNER_DEFAULTS }
+
+type ResolvedSessionConfig = {
+  defaultMode:         string
+  historyWindowHours?: number
+}
+
+const DEFAULT_MODE_FALLBACK = 'chatbot'
+
+const resolveSessionConfig = (cfg: SessionConfig | null): ResolvedSessionConfig => ({
+  defaultMode:        cfg?.defaultMode ?? DEFAULT_MODE_FALLBACK,
+  historyWindowHours: cfg?.historyWindowHours,
+})
 
 // ─── Descriptor builders ───
 
@@ -113,9 +127,10 @@ const spawnAll = (
   llmProviderConfig: LlmProviderConfig,
   chatbotConfig: ChatbotConfig | null,
   plannerConfig: PlannerConfig | null,
+  sessionConfig: SessionConfig | null,
   gen: number,
 ): Omit<PluginState, 'initialized'> => {
-  
+
   const llmProviderRef = ctx.spawn(
     `llm-provider-${gen}`,
     LlmProvider({ adapter: OpenRouterAdapter({ apiKey: llmProviderConfig.apiKey, reasoning: llmProviderConfig.reasoning }) }),
@@ -127,12 +142,14 @@ const spawnAll = (
     AgentRegistry(),
   )
 
+  const resolvedSession = resolveSessionConfig(sessionConfig)
   const sessionManagerRef = chatbotConfig
     ? ctx.spawn(
         `session-manager-${gen}`,
         SessionManager({
           llmRef:             llmProviderRef,
-          historyWindowHours: chatbotConfig.historyWindowHours,
+          defaultMode:        resolvedSession.defaultMode,
+          historyWindowHours: resolvedSession.historyWindowHours,
         }),
       )
     : null
@@ -146,9 +163,10 @@ const spawnAll = (
   return {
     llmProvider:    { config: llmProviderConfig, ref: llmProviderRef, gen },
     agentRegistry:  { ref: agentRegistryRef, gen },
-    sessionManager: { config: chatbotConfig, ref: sessionManagerRef, gen },
+    sessionManager: { ref: sessionManagerRef, gen },
     planner:        { config: plannerConfig, gen },
     chatbot:        { config: chatbotConfig, gen },
+    session:        { config: sessionConfig, gen },
   }
 }
 
@@ -165,9 +183,10 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
     initialized:    false,
     llmProvider:    { config: null, ref: null, gen: 0 },
     agentRegistry:  { ref: null, gen: 0 },
-    sessionManager: { config: null, ref: null, gen: 0 },
+    sessionManager: { ref: null, gen: 0 },
     planner:        { config: null, gen: 0 },
     chatbot:        { config: null, gen: 0 },
+    session:        { config: null, gen: 0 },
   },
 
   lifecycle: onLifecycle({
@@ -176,13 +195,14 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
       const llmProviderConfig = slice?.llmProvider ?? null
       const chatbotConfig     = slice?.chatbot     ?? null
       const plannerConfig     = slice?.planner     ?? null
+      const sessionConfig     = slice?.session     ?? null
 
       if (!llmProviderConfig) {
         ctx.log.info('cognitive plugin activated (no llmProvider config)')
         return { state: EMPTY_STATE }
       }
 
-      const children = spawnAll(ctx, llmProviderConfig, chatbotConfig, plannerConfig, 0)
+      const children = spawnAll(ctx, llmProviderConfig, chatbotConfig, plannerConfig, sessionConfig, 0)
       ctx.log.info('cognitive plugin activated')
       return { state: { initialized: true, ...children } }
     },
@@ -207,12 +227,14 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
       const newLlmProviderConfig = msg.slice?.llmProvider ?? null
       const newChatbotConfig     = msg.slice?.chatbot     ?? null
       const newPlannerConfig     = msg.slice?.planner     ?? null
+      const newSessionConfig     = msg.slice?.session     ?? null
 
       const llmProviderChanged = JSON.stringify(newLlmProviderConfig) !== JSON.stringify(state.llmProvider.config)
       const chatbotChanged     = JSON.stringify(newChatbotConfig)     !== JSON.stringify(state.chatbot.config)
       const plannerChanged     = JSON.stringify(newPlannerConfig)     !== JSON.stringify(state.planner.config)
+      const sessionChanged     = JSON.stringify(newSessionConfig)     !== JSON.stringify(state.session.config)
 
-      if (!llmProviderChanged && !chatbotChanged && !plannerChanged) return { state }
+      if (!llmProviderChanged && !chatbotChanged && !plannerChanged && !sessionChanged) return { state }
 
       const gen = state.llmProvider.gen + 1
 
@@ -238,29 +260,36 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
         llmProviderState = { config: newLlmProviderConfig, ref: llmProviderRef, gen }
       }
 
-      // Restart session-manager if chatbot config changed.
+      // Restart session-manager if chatbot OR session config changed.
+      const needsSessionManagerRespawn = chatbotChanged || sessionChanged
       let sessionManagerState = state.sessionManager
       let chatbotState        = state.chatbot
-      if (chatbotChanged) {
+      let sessionState        = state.session
+      if (needsSessionManagerRespawn) {
         if (state.sessionManager.ref) ctx.stop(state.sessionManager.ref)
+        const resolvedSession = resolveSessionConfig(newSessionConfig)
         const sessionManagerRef = newChatbotConfig
           ? ctx.spawn(
               `session-manager-${gen}`,
               SessionManager({
                 llmRef:             llmProviderRef!,
-                historyWindowHours: newChatbotConfig.historyWindowHours,
+                defaultMode:        resolvedSession.defaultMode,
+                historyWindowHours: resolvedSession.historyWindowHours,
               }),
             )
           : null
-        sessionManagerState = { config: newChatbotConfig, ref: sessionManagerRef, gen }
+        sessionManagerState = { ref: sessionManagerRef, gen }
+        sessionState        = { config: newSessionConfig, gen }
 
-        // Re-register chatbot descriptor with new config.
-        if (newChatbotConfig) {
-          ctx.publish(AgentRegistrationTopic, { type: 'register', descriptor: buildChatbotDescriptor(newChatbotConfig) })
-        } else {
-          ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'chatbot' })
+        // Re-register chatbot descriptor only when the chatbot config itself changed.
+        if (chatbotChanged) {
+          if (newChatbotConfig) {
+            ctx.publish(AgentRegistrationTopic, { type: 'register', descriptor: buildChatbotDescriptor(newChatbotConfig) })
+          } else {
+            ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'chatbot' })
+          }
+          chatbotState = { config: newChatbotConfig, gen }
         }
-        chatbotState = { config: newChatbotConfig, gen }
       }
 
       // Re-register planner descriptor with new config. The formalize-plan
@@ -282,6 +311,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
           sessionManager: sessionManagerState,
           planner:        plannerState,
           chatbot:        chatbotState,
+          session:        sessionState,
         },
       }
     },

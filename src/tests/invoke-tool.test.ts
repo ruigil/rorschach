@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { SystemPlugin, invokeTool } from '../system/index.ts'
+import { AgentSystem, invokeTool } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { JobRegistryTopic } from '../types/tools.ts'
 import type {
@@ -122,7 +122,7 @@ const createCaller = (
 
 describe('invokeTool primitive', () => {
   test('sync toolResult: returns result, no polling, no JobRegistry events', async () => {
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const events: JobLifecycleEvent[] = []
     system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
 
@@ -146,7 +146,7 @@ describe('invokeTool primitive', () => {
   })
 
   test('sync toolError: returns error directly, no events', async () => {
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const events: JobLifecycleEvent[] = []
     system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
 
@@ -167,7 +167,7 @@ describe('invokeTool primitive', () => {
   })
 
   test('toolPending without onCompletion → graceful toolError fallback', async () => {
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const events: JobLifecycleEvent[] = []
     system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
 
@@ -191,7 +191,7 @@ describe('invokeTool primitive', () => {
   })
 
   test('toolPending with onCompletion: placeholder now, real result later, registry events emitted', async () => {
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const events: JobLifecycleEvent[] = []
     system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
 
@@ -237,7 +237,7 @@ describe('invokeTool primitive', () => {
   })
 
   test('completion via JobRegistryTopic respects tool timer delay', async () => {
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const start = Date.now()
     const mode: ToolMode = {
       kind: 'pending',
@@ -271,7 +271,7 @@ describe('invokeTool primitive', () => {
   })
 
   test('toolPending error completion via JobRegistryTopic', async () => {
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const mode: ToolMode = {
       kind: 'pending',
       eventually: { type: 'toolError', error: 'something went wrong' },

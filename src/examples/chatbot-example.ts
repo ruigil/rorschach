@@ -1,4 +1,4 @@
-import { PluginSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
+import { AgentSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
 import interfacesPlugin from '../plugins/interfaces/interfaces.plugin.ts'
 import cognitivePlugin from '../plugins/cognitive/cognitive.plugin.ts'
 import type { LifecycleEvent, LogEvent } from '../system/types.ts'
@@ -10,7 +10,7 @@ if (!apiKey) {
 }
 
 // ─── Create the actor system with unified config ───
-const system = await PluginSystem({
+const system = await AgentSystem({
   config: {
     interfaces: { http: { port: 3000 } },
     cognitive: {

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { SystemPlugin, ask } from '../system/index.ts'
+import { AgentSystem, ask } from '../system/index.ts'
 import { Notes, NOTES_ATTACH_FILE_TOOL_NAME, NOTES_CREATE_TOOL_NAME, NOTES_READ_TOOL_NAME } from '../plugins/notebook/tools/notes.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 
@@ -14,7 +14,7 @@ afterEach(async () => {
 
 describe('notebook notes', () => {
   test('returns stable attachment route links when reading notes', async () => {
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const dir = join(tmpdir(), `rorschach-notes-${crypto.randomUUID()}`)
     tempDirs.push(dir)
     await mkdir(dir, { recursive: true })

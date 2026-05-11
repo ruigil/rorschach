@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach } from 'bun:test'
-import { SystemPlugin, ask } from '../system/index.ts'
+import { AgentSystem, ask } from '../system/index.ts'
 import { FetchFile } from '../plugins/tools/fetch-file.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 import { unlink } from 'node:fs/promises'
@@ -22,7 +22,7 @@ describe('fetch-file actor', () => {
       headers: { 'Content-Type': 'text/plain' },
     })) as unknown as typeof fetch
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const ref = system.spawn('fetch-file', FetchFile())
     await tick()
 
@@ -64,7 +64,7 @@ describe('fetch-file actor', () => {
       headers: { 'Content-Type': 'text/plain' },
     })) as unknown as typeof fetch
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const ref = system.spawn('fetch-file', FetchFile())
     await tick()
 
@@ -118,7 +118,7 @@ describe('fetch-file actor', () => {
       headers: { 'Content-Type': 'application/octet-stream' },
     })) as unknown as typeof fetch
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const ref = system.spawn('fetch-file', FetchFile())
     await tick(200)
 
@@ -155,7 +155,7 @@ describe('fetch-file actor', () => {
       status: 404,
     })) as unknown as typeof fetch
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const ref = system.spawn('fetch-file', FetchFile())
     await tick()
 
@@ -184,7 +184,7 @@ describe('fetch-file actor', () => {
       throw new Error('Network failure')
     }) as unknown as typeof fetch
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const ref = system.spawn('fetch-file', FetchFile())
     await tick()
 

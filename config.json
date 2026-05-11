@@ -61,13 +61,15 @@
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
         "model": "deepseek/deepseek-v4-flash",
-        "historyWindowHours": 4,
         "toolFilter": {
           "deny": [
             "bash",
             "write"
           ]
         }
+      },
+      "session": {
+        "historyWindowHours": 4
       },
       "planner": {
         "model": "z-ai/glm-5.1",

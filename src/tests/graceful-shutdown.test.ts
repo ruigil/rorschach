@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { SystemPlugin, DeadLetterTopic, SystemLifecycleTopic } from '../system/index.ts'
+import { AgentSystem, DeadLetterTopic, SystemLifecycleTopic } from '../system/index.ts'
 import { createMailbox } from '../system/mailbox.ts'
 import { STOP } from '../system/types.ts'
 import type {
@@ -28,7 +28,7 @@ describe('Graceful shutdown: drain mode', () => {
       shutdown: { drain: true },
     }
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const ref = system.spawn('drainer', def)
     await tick()
 
@@ -57,7 +57,7 @@ describe('Graceful shutdown: drain mode', () => {
       // No shutdown config — immediate stop (default)
     }
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     system.spawn('no-drain', def)
     await tick()
 
@@ -81,7 +81,7 @@ describe('Graceful shutdown: drain mode', () => {
       shutdown: { drain: true, timeoutMs: 5000 },
     }
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const ref = system.spawn('drain-reject', def)
     await tick()
 
@@ -126,7 +126,7 @@ describe('Graceful shutdown: stopping lifecycle event', () => {
       shutdown: { drain: true },
     }
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     system.spawn('lifecycle-order', def)
     await tick()
 
@@ -149,7 +149,7 @@ describe('Graceful shutdown: stopping lifecycle event', () => {
       // No shutdown config — immediate stop
     }
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     system.spawn('no-stopping', def)
     await tick()
 
@@ -183,7 +183,7 @@ describe('Graceful shutdown: stopping lifecycle event', () => {
       shutdown: { drain: true },
     }
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const ref = system.spawn('cleanup', def, { state: { cleaning: false } })
     await tick()
 
@@ -231,7 +231,7 @@ describe('Graceful shutdown: timeout', () => {
       shutdown: { drain: true, timeoutMs: 100 },
     }
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const ref = system.spawn('timeout-test', def)
     await tick()
 
@@ -261,7 +261,7 @@ describe('Graceful shutdown: timeout', () => {
       shutdown: { drain: true, timeoutMs: 5000 }, // generous timeout
     }
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const ref = system.spawn('fast-drain', def)
     await tick()
 
@@ -306,7 +306,7 @@ describe('Graceful shutdown: parent-child interaction', () => {
       shutdown: { drain: true },
     }
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const ref = system.spawn('parent', parentDef)
     await tick()
 
@@ -335,7 +335,7 @@ describe('Graceful shutdown: system-level options', () => {
   test('SystemLifecycleTopic receives terminated events on shutdown', async () => {
     const events: LifecycleEvent[] = []
 
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     system.subscribe(SystemLifecycleTopic, (e) => events.push(e as LifecycleEvent))
 
     const def: ActorDef<string, null> = {
@@ -355,7 +355,7 @@ describe('Graceful shutdown: system-level options', () => {
   test('PluginSystem with shutdownTimeoutMs enables root drain', async () => {
     const processed: string[] = []
 
-    const system = await SystemPlugin({
+    const system = await AgentSystem({
       shutdownTimeoutMs: 5000,
     })
 

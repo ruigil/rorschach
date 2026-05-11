@@ -1,6 +1,6 @@
 import { afterEach, describe, test, expect } from 'bun:test'
 import { rm } from 'node:fs/promises'
-import { SystemPlugin, ask } from '../system/index.ts'
+import { AgentSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { Kgraph } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
@@ -33,7 +33,7 @@ const embeddingFor = (text: string): number[] => {
   return norm([1, 1, 1, 1])
 }
 
-function spawnMockLlm(system: Awaited<ReturnType<typeof SystemPlugin>>): ActorRef<LlmProviderMsg> {
+function spawnMockLlm(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<LlmProviderMsg> {
   const def: ActorDef<LlmProviderMsg, null> = {
     handler: (state, msg) => {
       if (msg.type === 'embed') {
@@ -68,7 +68,7 @@ afterEach(async () => {
 describe('zettel-notes vector search', () => {
 
   test('returns the most semantically similar note first', async () => {
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
@@ -117,7 +117,7 @@ describe('zettel-notes vector search', () => {
   })
 
   test('falls back to tag filtering when vector search finds no matches above threshold', async () => {
-    const system = await SystemPlugin()
+    const system = await AgentSystem()
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 

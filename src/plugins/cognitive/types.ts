@@ -25,6 +25,13 @@ export type PlannerConfig = {
   toolFilter?:   ToolFilter
 }
 
+// ─── Session configuration (consumed by SessionManager) ───
+
+export type SessionConfig = {
+  defaultMode?:        string   // mode for first-connect, cron routing, crash fallback. Defaults to 'chatbot'.
+  historyWindowHours?: number   // trim HistoryStore records older than this on every append.
+}
+
 // ─── Plan domain types ───
 
 export type PlanTask = {
@@ -116,3 +123,19 @@ export type HistorySnapshotEvent = {
 }
 
 export const HistorySnapshotTopic = createTopic<HistorySnapshotEvent>('history.snapshot')
+
+// ─── SessionLifecycleTopic ───────────────────────────────────────────────────
+//
+// Ephemeral stream of session state transitions, published by SessionManager
+// on every meaningful lifecycle edge. Consumers (cron dispatcher, persistence
+// flushers, presence, analytics) subscribe to react without coupling to
+// SessionManager or re-implementing connection refcounting.
+//
+export type SessionLifecycleEvent =
+  | { type: 'sessionStarted';  userId: string; firstClientId: string; defaultMode: string; timestamp: number }
+  | { type: 'sessionEnded';    userId: string; reason: 'lastDisconnect' | 'historyStoreCrash'; timestamp: number }
+  | { type: 'modeActivated';   userId: string; mode: string; previousMode: string; source: 'user' | 'llm' | 'programmatic' | 'crashFallback'; timestamp: number }
+  | { type: 'clientAttached';  userId: string; clientId: string; clientCount: number; timestamp: number }
+  | { type: 'clientDetached';  userId: string; clientId: string; clientCount: number; timestamp: number }
+
+export const SessionLifecycleTopic = createTopic<SessionLifecycleEvent>('session.lifecycle')

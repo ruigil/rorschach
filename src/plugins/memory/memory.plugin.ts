@@ -18,7 +18,7 @@ import {
   INITIAL_MEMORY_SUPERVISOR_STATE,
 } from './memory-supervisor.ts'
 import {
-  createUserContextActor,
+  UserContextSupervisor,
   INITIAL_USER_CONTEXT_STATE,
 } from './user-context.ts'
 import {
@@ -127,7 +127,7 @@ const spawnMemoryActors = (
   )
   const userContext = ctx.spawn(
     `user-context-${gen}`,
-    createUserContextActor({ model: config.model, intervalMs: config.contextIntervalMs }),
+    UserContextSupervisor({ model: config.model, intervalMs: config.contextIntervalMs }),
   )
   const memory = ctx.spawn(
     `memory-supervisor-${gen}`,
