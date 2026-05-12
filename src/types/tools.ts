@@ -88,6 +88,29 @@ export const JobRegistryTopic = createTopic<JobLifecycleEvent>('tools.jobs')
 
 // ─── Tool filter ───
 
+export type ToolParseResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: string }
+
+export const parseToolArgs = <T>(
+  rawArgs: string,
+  extract: (parsed: Record<string, unknown>) => T | null,
+  missingMsg = 'Missing required arguments',
+): ToolParseResult<T> => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(rawArgs)
+  } catch {
+    return { ok: false, error: 'Invalid arguments: expected JSON object' }
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, error: 'Invalid arguments: expected JSON object' }
+  }
+  const value = extract(parsed as Record<string, unknown>)
+  if (value === null) return { ok: false, error: missingMsg }
+  return { ok: true, value }
+}
+
 export type ToolFilter = { allow: string[] } | { deny: string[] }
 
 export const applyToolFilter = (name: string, filter?: ToolFilter): boolean => {

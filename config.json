@@ -77,7 +77,8 @@
         "toolFilter": {
           "allow": [
             "web_search",
-            "fetch_file"
+            "fetch_file",
+            "switch_mode"
           ]
         }
       }

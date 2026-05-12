@@ -1,6 +1,5 @@
-import type { ActorRef } from '../../system/types.ts'
-import type { ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolSchema } from '../../types/tools.ts'
-import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
+import type { LoopMsg } from '../../system/agent-loop.ts'
+import type { ToolInvokeMsg } from '../../types/tools.ts'
 
 // ─── Domain types ───
 
@@ -49,13 +48,7 @@ export type NotebookConfig = {
 
 // ─── Note agent message protocol ───
 
-export type NoteAgentMsg =
-  | ToolInvokeMsg
-  | LlmProviderReply
-  | { type: '_toolResult';       toolCallId: string; toolName: string; reply: ToolFinalReply }
-  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolMsg> }
-  | { type: '_toolUnregistered'; name: string }
+export type NoteAgentMsg = LoopMsg | ToolInvokeMsg
 
 // ─── Todo reminder message protocol ───
 

@@ -12,7 +12,8 @@ import type {
   ToolCollection,
   ToolEntry,
   ToolFinalReply,
-  ToolReply,
+  ToolMsg,
+  ToolSchema,
 } from '../types/tools.ts'
 import type {
   ApiMessage,
@@ -43,7 +44,6 @@ export type LoopTurn = {
   llmSpan:       SpanHandle | null
   userId:        string
   clientId:      string | undefined
-  replyTo:       ActorRef<ToolReply> | null
   /** Aggregated usage across this turn (chunks + done + toolCalls). Reset on materialize. */
   pendingUsage:  TokenUsage
 }
@@ -58,7 +58,6 @@ export const initialLoopTurn = (): LoopTurn => ({
   llmSpan:       null,
   userId:        '',
   clientId:      undefined,
-  replyTo:       null,
   pendingUsage:  { promptTokens: 0, completionTokens: 0 },
 })
 
@@ -76,36 +75,14 @@ export const initialAgentLoopSlice = (): AgentLoopSlice => ({
 // ─── Base message variants the closure dispatches on ───────────────────────
 
 /**
- * Tool-agent entry message. The LLM hands the agent a JSON `arguments` string;
- * `buildTurn` decodes it. User-facing agents do NOT use this — they call
- * `handlers.startTurn` directly with already-built `ApiMessage[]`.
- */
-export type LoopInvokeMsg<Args = string> = {
-  type:          'invoke'
-  toolName:      string
-  arguments:     string | Args
-  clientId?:     string
-  userId:        string
-  replyTo:       ActorRef<ToolReply>
-  /** When `spans: 'fromMessage'`, the request span is built from these IDs. Ignored otherwise. */
-  traceId?:      string
-  parentSpanId?: string
-}
-
-/**
- * Parameters for `handlers.startTurn` — the in-process entry point used by
- * user-facing agents (chatbot, planner). They construct the turn's
- * `ApiMessage[]` themselves (no `buildTurn` indirection) and omit `replyTo`
- * since they stream completion via topic events rather than a tool reply.
+ * Parameters for `triggers.startTurn` — the in-process entry point used by
+ * all agents. Callers construct the turn's `ApiMessage[]` themselves and
+ * pass them directly.
  */
 export type LoopStartTurnParams = {
   messages:      ApiMessage[]
   userId:        string
   clientId?:     string
-  replyTo?:      ActorRef<ToolReply>
-  /** When `spans: 'fromMessage'`, the request span is built from these IDs. */
-  traceId?:      string
-  parentSpanId?: string
 }
 
 export type LoopToolResultMsg = {
@@ -118,17 +95,49 @@ export type LoopToolResultMsg = {
 export type LoopSubscriptionMsg =
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
 
+export type LoopToolRegistrationMsg =
+  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
+  | { type: '_toolUnregistered'; name: string }
+
+export type LoopBackgroundResultMsg = {
+  type:       '_backgroundToolResult'
+  toolName:   string
+  toolCallId: string
+  reply:      ToolFinalReply
+}
+
 /**
- * Reference shape of variants the closure dispatches on. Agents must include
- * each of these in their own message union (with matching field shapes), and
- * may add additional variants on top — the closure ignores anything it
- * doesn't recognise.
+ * Complete set of message variants the loop dispatches on internally.
+ * Agents should use `LoopMsg<Extra>` to include these plus their own
+ * agent-specific variants, rather than listing them manually.
+ *
+ * Agents must still subscribe to the relevant topics (LlmProviderTopic,
+ * ToolRegistrationTopic) in their lifecycle `start` handler — the loop
+ * does not manage subscriptions.
+ *
+ * Note: `invoke` is NOT included here. Agents that receive `invoke`
+ * messages should union `ToolInvokeMsg` into their message type and add
+ * a handler in `extraCases.idle`.
  */
-export type LoopBaseMsg<Args = string> =
-  | LoopInvokeMsg<Args>
+export type LoopBaseMsg =
   | LlmProviderReply
   | LoopToolResultMsg
   | LoopSubscriptionMsg
+  | LoopToolRegistrationMsg
+  | LoopBackgroundResultMsg
+
+/**
+ * Composite message type for agent actors using the loop.
+ * Includes all loop-internal message variants. Extend with agent-specific
+ * extras via the type parameter.
+ *
+ * Usage:
+ *   type MyAgentMsg = LoopMsg<{ type: 'userMessage'; text: string }>
+ *
+ * When the agent has no extra messages:
+ *   type MyAgentMsg = LoopMsg
+ */
+export type LoopMsg<Extra extends { type: string } = never> = LoopBaseMsg | Extra
 
 // ─── Hook surface ──────────────────────────────────────────────────────────
 
@@ -141,17 +150,10 @@ export type LoopCompletionAction<M extends { type: string }, S> = {
   events?:     TypedEvent[]
 }
 
-/** Result of buildTurn: either reject with error, or accept with the turn's initial messages. */
-export type LoopBuildTurnResult =
-  | { error: string }
-  | { messages: ApiMessage[] }
-
-export type LoopSpanPolicy = 'fromHeaders' | 'fromMessage' | 'always' | 'never'
-
 /** Result of an `onChunk` / `onReasoningChunk` hook. Either a bare state, or state plus events emitted alongside the chunk. */
 export type LoopChunkResult<S> = S | { state: S; events?: TypedEvent[] }
 
-export type AgentLoopHooks<S, M extends { type: string }, Args = string> = {
+export type AgentLoopHooks<S, M extends { type: string }> = {
   /** Role string sent on every LLM stream message (e.g. 'google', 'memory-recall'). */
   role:         string
   /** Operation name used when creating the per-request root span. */
@@ -168,16 +170,16 @@ export type AgentLoopHooks<S, M extends { type: string }, Args = string> = {
   maxToolLoops: number
 
   // ─── Loop state slice ───
-  slice:        (s: S) => AgentLoopSlice
-  setSlice:     (s: S, slice: AgentLoopSlice) => S
-
-  // ─── Entry ───
   /**
-   * Validate the invoke message and produce the turn's initial messages.
-   * Required for tool agents that receive `invoke`. User-facing agents that
-   * only enter via `startTurn` may omit this.
+   * Accessor for the loop's state slice. Defaults to `(s) => s.loop`.
+   * Only override if the loop slice lives at a different field name.
    */
-  buildTurn?:    (s: S, msg: LoopInvokeMsg<Args>, ctx: ActorContext<M>) => LoopBuildTurnResult
+  slice?:        (s: S) => AgentLoopSlice
+  /**
+   * Mutator for the loop's state slice. Defaults to `(s, loop) => ({ ...s, loop })`.
+   * Only override if the loop slice lives at a different field name.
+   */
+  setSlice?:     (s: S, slice: AgentLoopSlice) => S
 
   // ─── Completion handlers ───
   /** Called on `llmDone` after the request span is closed. Returned state is applied and the actor becomes idle (or `action.become`). */
@@ -232,10 +234,41 @@ export type AgentLoopHooks<S, M extends { type: string }, Args = string> = {
   ) => { events?: TypedEvent[] } | void
 
   /**
-   * Long-running tool support. Called when a tool replies with `toolPending`
-   * and later completes/fails. Return the message to enqueue to the actor
-   * inbox carrying the final reply. If omitted, `toolPending` is converted
-   * to `toolError` (current default).
+   * Mutator for the tool collection in state. When provided, the loop handles
+   * `_toolRegistered` and `_toolUnregistered` messages internally across all
+   * three phase handlers — the consumer does not need to list them in
+   * `extraCases`.
+   *
+   * Only meaningful when `tools` is a `(s: S) => ToolCollection` function
+   * (dynamic tools). When `tools` is a static `ToolCollection`, tool
+   * registration has no effect and `setTools` should not be provided.
+   */
+  setTools?: (s: S, tools: ToolCollection) => S
+
+  /**
+   * Called when a background (long-running) tool completes while the agent
+   * is idle. The loop handles stashing when the agent is busy (awaitingLlm
+   * or toolLoop) — the hook is only invoked in the idle phase.
+   *
+   * Returns a standard `ActorResult<M, S>`, so the agent can call
+   * `triggers.startTurn()` from within the hook if desired.
+   *
+   * When provided, the loop passes `onCompletion` to `invokeTool`, producing
+   * `_backgroundToolResult` messages internally. When omitted, `toolPending`
+   * replies are converted to `toolError` (existing default behavior).
+   *
+   * Replaces `onToolPending`. If both are provided, `onBackgroundResult`
+   * takes priority.
+   */
+  onBackgroundResult?: (
+    s: S,
+    result: { toolName: string; toolCallId: string; reply: ToolFinalReply },
+    ctx: ActorContext<M>,
+  ) => ActorResult<M, S>
+
+  /**
+   * @deprecated Use `onBackgroundResult` instead. If both are provided,
+   * `onBackgroundResult` takes priority.
    */
   onToolPending?: (call: { toolName: string; toolCallId: string }, reply: ToolFinalReply) => M
 
@@ -246,50 +279,57 @@ export type AgentLoopHooks<S, M extends { type: string }, Args = string> = {
    * like userMessage, _toolRegistered, _userContext, _planWriteDone, etc.
    */
   extraCases?: {
+    all?:         Record<string, (s: S, msg: any, ctx: ActorContext<M>) => ActorResult<M, S>>
     idle?:        Record<string, (s: S, msg: any, ctx: ActorContext<M>) => ActorResult<M, S>>
     awaitingLlm?: Record<string, (s: S, msg: any, ctx: ActorContext<M>) => ActorResult<M, S>>
     toolLoop?:    Record<string, (s: S, msg: any, ctx: ActorContext<M>) => ActorResult<M, S>>
   }
 
   // ─── Knobs ───
-  /** Stash concurrent `invoke` messages while a turn is in flight. Default: true. */
-  stashConcurrent?:   boolean
   /**
-   * Span policy:
-   * - 'fromHeaders' (default) — adopt parent span from incoming W3C headers
-   * - 'fromMessage' — adopt parent span from `traceId`/`parentSpanId` on the invoke msg
-   * - 'always' — always create a fresh root span
-   * - 'never' — no spans
+   * Stash concurrent `_backgroundToolResult` messages while a turn is in
+   * flight. Default: true.
+   *
+   * Agents that receive external triggers (`invoke`, `userMessage`, etc.)
+   * must add their own stashing logic in `extraCases` if desired.
    */
-  spans?:             LoopSpanPolicy
+  stashConcurrent?:   boolean
 }
 
 // ─── Closure result ────────────────────────────────────────────────────────
 
-export type ReactLoopHandlers<M extends { type: string }, S> = {
+export type AgentLoopPhases<M extends { type: string }, S> = {
   idle:        MessageHandler<M, S>
   awaitingLlm: MessageHandler<M, S>
   toolLoop:    MessageHandler<M, S>
+}
+
+export type AgentLoopTriggers<M extends { type: string }, S> = {
   /**
-   * In-process turn entry for user-facing agents. Bypasses `invoke`/`buildTurn`
-   * and starts a turn directly from already-built `ApiMessage[]`. Caller must
-   * have applied any state mutations (e.g. appending to history) before calling.
+   * In-process turn entry for all agents. Starts a turn directly from
+   * already-built `ApiMessage[]`. Caller must have applied any state
+   * mutations (e.g. appending to history) before calling.
    */
   startTurn:   (state: S, params: LoopStartTurnParams, ctx: ActorContext<M>) => ActorResult<M, S>
 }
 
+/** @deprecated Use the split return `{ phases, triggers }` instead. */
+export type AgentLoopHandlers<M extends { type: string }, S> = AgentLoopPhases<M, S> & AgentLoopTriggers<M, S>
+
 // ─── Implementation ────────────────────────────────────────────────────────
 
-export const AgentLoop = <S, M extends { type: string }, Args = string>(
-  hooks: AgentLoopHooks<S, M, Args>,
-): ReactLoopHandlers<M, S> => {
+export const AgentLoop = <S, M extends { type: string }>(
+  hooks: AgentLoopHooks<S, M>,
+): { phases: AgentLoopPhases<M, S>; triggers: AgentLoopTriggers<M, S> } => {
   const log       = hooks.logPrefix ?? hooks.spanName
-  const stash     = hooks.stashConcurrent !== false
-  const spansMode = hooks.spans ?? 'fromHeaders'
+  const slice    = hooks.slice    ?? ((s: any) => { if (!('loop' in s)) throw new TypeError('AgentLoop default slice expects state.loop'); return s.loop })
+  const setSlice = hooks.setSlice ?? ((s: any, slice: any) => ({ ...s, loop: slice }))
 
   const { tools: toolsCfg, model, maxToolLoops } = hooks
+  
   const resolveTools = (s: S): ToolCollection =>
     typeof toolsCfg === 'function' ? toolsCfg(s) : toolsCfg
+  
   const resolveSchemas = (s: S): Tool[] => {
     const fromTools = Object.values(resolveTools(s)).map((e: ToolEntry) => e.schema as Tool)
     const extras    = hooks.extraToolSchemas ? hooks.extraToolSchemas(s) : []
@@ -302,12 +342,12 @@ export const AgentLoop = <S, M extends { type: string }, Args = string>(
   let toolLoop:    MessageHandler<M, S>
 
   // ── Slice accessors ───────────────────────────────────────────────────────
-  const getTurn   = (s: S): LoopTurn => hooks.slice(s).turn
-  const withTurn  = (s: S, turn: LoopTurn): S => hooks.setSlice(s, { ...hooks.slice(s), turn })
-  const getLlmRef = (s: S): ActorRef<LlmProviderMsg> | null => hooks.slice(s).llmRef
+  const getTurn   = (s: S): LoopTurn => slice(s).turn
+  const withTurn  = (s: S, turn: LoopTurn): S => setSlice(s, { ...slice(s), turn })
+  const getLlmRef = (s: S): ActorRef<LlmProviderMsg> | null => slice(s).llmRef
 
   const materialize = (a: LoopCompletionAction<M, S>): ActorResult<M, S> => {
-    const reset = hooks.setSlice(a.state, { ...hooks.slice(a.state), turn: initialLoopTurn() })
+    const reset = setSlice(a.state, { ...slice(a.state), turn: initialLoopTurn() })
     return {
       state:      reset,
       become:     a.become ?? idle,
@@ -317,12 +357,7 @@ export const AgentLoop = <S, M extends { type: string }, Args = string>(
   }
 
   // ── Helper: send `stream` to LLM and return the new llmSpan ───────────────
-  const sendStream = (
-    state:     S,
-    requestId: string,
-    messages:  ApiMessage[],
-    ctx:       ActorContext<M>,
-  ): SpanHandle | null => {
+  const sendStream = (state:S ,requestId:string, messages:ApiMessage[], ctx:ActorContext<M>): SpanHandle | null => {
     const turn = getTurn(state)
     const llmSpan = turn.requestSpan
       ? ctx.trace.child(turn.requestSpan.traceId, turn.requestSpan.spanId, 'llm-call', { model })
@@ -344,16 +379,37 @@ export const AgentLoop = <S, M extends { type: string }, Args = string>(
   // ── Subscription cases (shared across all three handlers) ─────────────────
   const subscriptionCases = {
     _llmProvider: (state: S, msg: Extract<LoopSubscriptionMsg, { type: '_llmProvider' }>) =>
-      ({ state: hooks.setSlice(state, { ...hooks.slice(state), llmRef: msg.ref }) }),
+      ({ state: setSlice(state, { ...slice(state), llmRef: msg.ref }) }),
   }
 
+  // ── Tool registration cases (shared across all three handlers) ────────────
+  const toolRegistrationCases: Record<
+    string, (state: S, msg: any, ctx: ActorContext<M>) => ActorResult<M, S>
+  > = hooks.setTools ? {
+    _toolRegistered: (state, msg) => ({
+      state: hooks.setTools!(state, {
+        ...resolveTools(state),
+        [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning },
+      }),
+    }),
+    _toolUnregistered: (state, msg) => {
+      const { [msg.name]: _, ...rest } = resolveTools(state)
+      return { state: hooks.setTools!(state, rest) }
+    },
+  } : {}
+
+  // ── Background result cases (idle only; busy phases stash below) ──────────
+  const backgroundResultCases: Record<string, (state: S, msg: any, ctx: ActorContext<M>) => ActorResult<M, S>> = hooks.onBackgroundResult ? {
+    _backgroundToolResult: (state, msg, ctx) =>
+      hooks.onBackgroundResult!(state, {
+        toolName:   msg.toolName,
+        toolCallId: msg.toolCallId,
+        reply:      msg.reply,
+      }, ctx),
+  } : {}
+
   // ── Helper: drive the next turn (used by toolLoop after a complete batch) ──
-  const startNextTurn = (
-    state:        S,
-    nextMessages: ApiMessage[],
-    nextLoopCount: number,
-    ctx:          ActorContext<M>,
-  ): ActorResult<M, S> => {
+  const startNextTurn = (state:S, nextMessages: ApiMessage[], nextLoopCount: number, ctx: ActorContext<M>): ActorResult<M, S> => {
     const requestId = crypto.randomUUID()
     let next = withTurn(state, {
       ...getTurn(state),
@@ -369,24 +425,12 @@ export const AgentLoop = <S, M extends { type: string }, Args = string>(
     return { state: next, become: awaitingLlm }
   }
 
-  // ── startTurn: in-process entry, shared by `invoke` shim and user-facing agents ──
-  const startTurn = (
-    state:  S,
-    params: LoopStartTurnParams,
-    ctx:    ActorContext<M>,
-  ): ActorResult<M, S> => {
+  // ── startTurn: in-process entry, shared by all agents ──
+  const startTurn = (state:S, params: LoopStartTurnParams, ctx: ActorContext<M>): ActorResult<M, S> => {
     let requestSpan: SpanHandle | null = null
-    if (spansMode === 'fromHeaders') {
-      const parent = ctx.trace.fromHeaders()
-      requestSpan = parent
-        ? ctx.trace.child(parent.traceId, parent.spanId, hooks.spanName, {})
-        : null
-    } else if (spansMode === 'fromMessage') {
-      if (params.traceId && params.parentSpanId) {
-        requestSpan = ctx.trace.child(params.traceId, params.parentSpanId, hooks.spanName, {})
-      }
-    } else if (spansMode === 'always') {
-      requestSpan = ctx.trace.start(hooks.spanName, {})
+    const parent = ctx.trace.fromHeaders()
+    if (parent) {
+      requestSpan = ctx.trace.child(parent.traceId, parent.spanId, hooks.spanName, {})
     }
 
     const requestId = crypto.randomUUID()
@@ -401,43 +445,18 @@ export const AgentLoop = <S, M extends { type: string }, Args = string>(
       llmSpan:       null,
       userId:        params.userId,
       clientId:      params.clientId,
-      replyTo:       params.replyTo ?? null,
     })
     const llmSpan = sendStream(next, requestId, params.messages, ctx)
     next = withTurn(next, { ...getTurn(next), llmSpan })
-
-    ctx.log.info(`${log}: request started`, { userId: params.userId })
-
     return { state: next, become: awaitingLlm }
   }
 
   // ── idle ─────────────────────────────────────────────────────────────────
   const idleCases: any = {
-    invoke: (state: S, msg: LoopInvokeMsg<Args>, ctx: ActorContext<M>) => {
-      if (!hooks.buildTurn) {
-        msg.replyTo.send({ type: 'toolError', error: `${log} does not accept invoke (no buildTurn configured).` })
-        return { state }
-      }
-      const built = hooks.buildTurn(state, msg, ctx)
-      if ('error' in built) {
-        msg.replyTo.send({ type: 'toolError', error: built.error })
-        return { state }
-      }
-      if (!getLlmRef(state)) {
-        msg.replyTo.send({ type: 'toolError', error: `${log} not ready (no LLM provider).` })
-        return { state }
-      }
-      return startTurn(state, {
-        messages:     built.messages,
-        userId:       msg.userId,
-        clientId:     msg.clientId,
-        replyTo:      msg.replyTo,
-        traceId:      msg.traceId,
-        parentSpanId: msg.parentSpanId,
-      }, ctx)
-    },
-
     ...subscriptionCases,
+    ...toolRegistrationCases,
+    ...backgroundResultCases,
+    ...(hooks.extraCases?.all ?? {}),
     ...(hooks.extraCases?.idle ?? {}),
   }
 
@@ -544,9 +563,16 @@ export const AgentLoop = <S, M extends { type: string }, Args = string>(
             { toolName: call.name, arguments: call.arguments, clientId, userId },
             {
               headers: toolSpan ? ctx.trace.injectHeaders(toolSpan) : undefined,
-              onCompletion: hooks.onToolPending
-                ? (reply) => hooks.onToolPending!({ toolName: call.name, toolCallId: call.id }, reply)
-                : undefined,
+              onCompletion: hooks.onBackgroundResult
+                ? (reply: ToolFinalReply): M => ({
+                    type:       '_backgroundToolResult',
+                    toolName:   call.name,
+                    toolCallId: call.id,
+                    reply,
+                  } as unknown as M)
+                : hooks.onToolPending
+                  ? (reply: ToolFinalReply): M => hooks.onToolPending!({ toolName: call.name, toolCallId: call.id }, reply)
+                  : undefined,
             },
           ),
           (reply) => ({
@@ -604,9 +630,12 @@ export const AgentLoop = <S, M extends { type: string }, Args = string>(
     ...subscriptionCases,
   }
 
-  if (stash) {
-    awaitingLlmCases.invoke = (state: S) => ({ state, stash: true })
+  Object.assign(awaitingLlmCases, subscriptionCases)
+  Object.assign(awaitingLlmCases, toolRegistrationCases)
+  if (hooks.onBackgroundResult) {
+    awaitingLlmCases._backgroundToolResult = (state: S) => ({ state, stash: true })
   }
+  Object.assign(awaitingLlmCases, hooks.extraCases?.all ?? {})
   Object.assign(awaitingLlmCases, hooks.extraCases?.awaitingLlm ?? {})
 
   awaitingLlm = onMessage<M, S>(awaitingLlmCases) as MessageHandler<M, S>
@@ -693,12 +722,15 @@ export const AgentLoop = <S, M extends { type: string }, Args = string>(
     ...subscriptionCases,
   }
 
-  if (stash) {
-    toolLoopCases.invoke = (state: S) => ({ state, stash: true })
+  Object.assign(toolLoopCases, subscriptionCases)
+  Object.assign(toolLoopCases, toolRegistrationCases)
+  if (hooks.onBackgroundResult) {
+    toolLoopCases._backgroundToolResult = (state: S) => ({ state, stash: true })
   }
+  Object.assign(toolLoopCases, hooks.extraCases?.all ?? {})
   Object.assign(toolLoopCases, hooks.extraCases?.toolLoop ?? {})
 
   toolLoop = onMessage<M, S>(toolLoopCases) as MessageHandler<M, S>
 
-  return { idle, awaitingLlm, toolLoop, startTurn }
+  return { phases: { idle, awaitingLlm, toolLoop }, triggers: { startTurn } }
 }

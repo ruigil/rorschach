@@ -1,6 +1,7 @@
-import type { ActorDef } from '../../system/types.ts'
+import type { ActorDef, ActorContext, ActorRef, ActorResult } from '../../system/types.ts'
+import type { ToolReply } from '../../types/tools.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { AgentLoop as AgentLoop, initialAgentLoopSlice, type AgentLoopSlice } from '../../system/agent-loop.ts'
+import { AgentLoop, initialAgentLoopSlice, type AgentLoopSlice, type AgentLoopPhases, type AgentLoopTriggers } from '../../system/agent-loop.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { GoogleAgentMsg } from './types.ts'
@@ -16,7 +17,8 @@ export type GoogleAgentOptions = {
 // ─── State ───
 
 export type GoogleAgentState = {
-  loop: AgentLoopSlice
+  loop:    AgentLoopSlice
+  replyTo: ActorRef<ToolReply> | null
 }
 
 // ─── Helpers ───
@@ -49,7 +51,36 @@ const buildSystemPrompt = (): string =>
 // ─── Actor ───
 
 export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMsg, GoogleAgentState> => {
-  const handlers = AgentLoop<GoogleAgentState, GoogleAgentMsg>({
+  let loop: { phases: AgentLoopPhases<GoogleAgentMsg, GoogleAgentState>; triggers: AgentLoopTriggers<GoogleAgentMsg, GoogleAgentState> }
+
+  const handleInvoke = (state: GoogleAgentState, msg: Extract<GoogleAgentMsg, { type: 'invoke' }>, ctx: ActorContext<GoogleAgentMsg>): ActorResult<GoogleAgentMsg, GoogleAgentState> => {
+    let request: string
+    try {
+      const args = JSON.parse(msg.arguments) as { request?: string }
+      request = args.request ?? msg.arguments
+    } catch {
+      msg.replyTo.send({ type: 'toolError', error: 'Invalid arguments: expected { request: string }' })
+      return { state }
+    }
+    if (!state.loop.llmRef) {
+      msg.replyTo.send({ type: 'toolError', error: 'Google agent not ready (no LLM provider).' })
+      return { state }
+    }
+    return loop.triggers.startTurn(
+      { ...state, replyTo: msg.replyTo },
+      {
+        messages: [
+          { role: 'system', content: buildSystemPrompt() },
+          { role: 'user',   content: request },
+        ],
+        userId:   msg.userId,
+        clientId: msg.clientId,
+      },
+      ctx,
+    )
+  }
+
+  loop = AgentLoop<GoogleAgentState, GoogleAgentMsg>({
     role:         'google',
     spanName:     'google-agent',
     logPrefix:    'google-agent',
@@ -57,38 +88,31 @@ export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMs
     maxToolLoops: options.maxToolLoops,
     tools:        options.tools,
 
-    slice:    (s) => s.loop,
-    setSlice: (s, loop) => ({ ...s, loop }),
-
-    buildTurn: (_s, msg) => {
-      let request: string
-      try {
-        const args = JSON.parse(msg.arguments) as { request?: string }
-        request = args.request ?? msg.arguments
-      } catch {
-        return { error: 'Invalid arguments: expected { request: string }' }
-      }
-      return {
-        messages: [
-          { role: 'system', content: buildSystemPrompt() },
-          { role: 'user',   content: request },
-        ],
-      }
-    },
-
     onComplete: (state, finalText) => {
-      state.loop.turn.replyTo?.send({ type: 'toolResult', result: { text: finalText || '(done)' } })
+      state.replyTo?.send({ type: 'toolResult', result: { text: finalText || '(done)' } })
       return { state }
     },
 
     onLlmError: (state) => {
-      state.loop.turn.replyTo?.send({ type: 'toolError', error: 'Google agent encountered an LLM error.' })
+      state.replyTo?.send({ type: 'toolError', error: 'Google agent encountered an LLM error.' })
       return { state }
     },
 
     onLoopLimit: (state) => {
-      state.loop.turn.replyTo?.send({ type: 'toolError', error: 'Tool loop limit reached.' })
+      state.replyTo?.send({ type: 'toolError', error: 'Tool loop limit reached.' })
       return { state }
+    },
+
+    extraCases: {
+      idle: {
+        invoke: handleInvoke,
+      },
+      awaitingLlm: {
+        invoke: (state) => ({ state, stash: true }),
+      },
+      toolLoop: {
+        invoke: (state) => ({ state, stash: true }),
+      },
     },
   })
 
@@ -101,7 +125,7 @@ export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMs
       },
     }),
 
-    handler: handlers.idle,
+    handler: loop.phases.idle,
 
     stashCapacity: 50,
     supervision:   { type: 'restart', maxRetries: 3, withinMs: 30_000 },
@@ -110,4 +134,5 @@ export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMs
 
 const createInitialGoogleAgentState = (): GoogleAgentState => ({
   loop: initialAgentLoopSlice(),
+  replyTo: null,
 })

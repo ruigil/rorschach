@@ -1,6 +1,7 @@
-import type { ActorDef, ActorRef } from '../../system/types.ts'
-import { AgentLoop, initialAgentLoopSlice, type AgentLoopSlice } from '../../system/agent-loop.ts'
+import type { ActorDef, ActorContext, ActorRef, ActorResult } from '../../system/types.ts'
+import { AgentLoop, initialAgentLoopSlice, type AgentLoopSlice, type AgentLoopPhases, type AgentLoopTriggers } from '../../system/agent-loop.ts'
 import type { ToolCollection, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { parseToolArgs } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { MemoryStoreMsg, MemorySupervisorMsg } from './types.ts'
 import { zettelStoreSection } from './ontology.ts'
@@ -38,7 +39,8 @@ export type MemoryStoreWorkerOptions = {
 // ─── Worker State ───
 
 export type MemoryStoreWorkerState = {
-  loop: AgentLoopSlice
+  loop:    AgentLoopSlice
+  replyTo: ActorRef<ToolReply> | null
 }
 
 // ─── System prompt ───
@@ -58,7 +60,41 @@ export const createMemoryStoreWorkerActor = (
   parent:  ActorRef<MemorySupervisorMsg>,
   options: MemoryStoreWorkerOptions,
 ): ActorDef<MemoryStoreMsg, MemoryStoreWorkerState> => {
-  const handlers = AgentLoop<MemoryStoreWorkerState, MemoryStoreMsg>({
+  let loop: { phases: AgentLoopPhases<MemoryStoreMsg, MemoryStoreWorkerState>; triggers: AgentLoopTriggers<MemoryStoreMsg, MemoryStoreWorkerState> }
+
+  const handleInvoke = (state: MemoryStoreWorkerState, msg: Extract<MemoryStoreMsg, { type: 'invoke' }>, ctx: ActorContext<MemoryStoreMsg>): ActorResult<MemoryStoreMsg, MemoryStoreWorkerState> => {
+    const parsed = parseToolArgs<{ content: string; topic?: string }>(
+      msg.arguments,
+      (p) => {
+        const content = typeof p.content === 'string' ? p.content : ''
+        const topic = typeof p.topic === 'string' ? p.topic : undefined
+        return content ? { content, topic } : null
+      },
+      'Missing content argument',
+    )
+    if (!parsed.ok) {
+      msg.replyTo.send({ type: 'toolError', error: parsed.error })
+      return { state }
+    }
+    if (!state.loop.llmRef) {
+      msg.replyTo.send({ type: 'toolError', error: 'Memory store not ready (no LLM provider).' })
+      return { state }
+    }
+    return loop.triggers.startTurn(
+      { ...state, replyTo: msg.replyTo },
+      {
+        messages: [
+          { role: 'system', content: buildSystemPrompt(msg.userId, parsed.value.topic) },
+          { role: 'user',   content: parsed.value.content },
+        ],
+        userId:   msg.userId,
+        clientId: msg.clientId,
+      },
+      ctx,
+    )
+  }
+
+  loop = AgentLoop<MemoryStoreWorkerState, MemoryStoreMsg>({
     role:            'memory-store',
     spanName:        'memory-store',
     logPrefix:       'memory store worker',
@@ -67,36 +103,14 @@ export const createMemoryStoreWorkerActor = (
     maxToolLoops:    options.maxToolLoops,
     tools:           options.tools,
 
-    slice:    (s) => s.loop,
-    setSlice: (s, loop) => ({ ...s, loop }),
-
-    buildTurn: (_s, msg) => {
-      let content: string
-      let topic: string | undefined
-      try {
-        const args = JSON.parse(msg.arguments) as { content?: unknown; topic?: unknown }
-        content = typeof args.content === 'string' ? args.content : ''
-        topic   = typeof args.topic   === 'string' ? args.topic   : undefined
-      } catch {
-        return { error: 'Invalid arguments' }
-      }
-      if (!content) return { error: 'Missing content argument' }
-      return {
-        messages: [
-          { role: 'system', content: buildSystemPrompt(msg.userId, topic) },
-          { role: 'user',   content },
-        ],
-      }
-    },
-
     onComplete: (state, finalText, ctx) => {
-      state.loop.turn.replyTo?.send({ type: 'toolResult', result: { text: finalText || 'Memory stored.' } })
+      state.replyTo?.send({ type: 'toolResult', result: { text: finalText || 'Memory stored.' } })
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
     },
 
     onLlmError: (state, error, ctx) => {
-      state.loop.turn.replyTo?.send({ type: 'toolError', error: String(error) })
+      state.replyTo?.send({ type: 'toolError', error: String(error) })
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
     },
@@ -105,14 +119,20 @@ export const createMemoryStoreWorkerActor = (
       const reply: ToolReply = finalText
         ? { type: 'toolResult', result: { text: finalText } }
         : { type: 'toolError',  error:  'Tool loop limit reached' }
-      state.loop.turn.replyTo?.send(reply)
+      state.replyTo?.send(reply)
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
+    },
+
+    extraCases: {
+      idle: {
+        invoke: handleInvoke,
+      },
     },
   })
 
   return {
-    initialState: () => ({ loop: { llmRef: options.llmRef, turn: initialAgentLoopSlice().turn } }),
-    handler: handlers.idle,
+    initialState: () => ({ loop: { llmRef: options.llmRef, turn: initialAgentLoopSlice().turn }, replyTo: null }),
+    handler: loop.phases.idle,
   }
 }

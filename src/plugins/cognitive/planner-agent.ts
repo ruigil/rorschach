@@ -4,15 +4,17 @@ import { onLifecycle } from '../../system/match.ts'
 import {
   AgentLoop,
   initialAgentLoopSlice,
-  type ReactLoopHandlers,
+  type AgentLoopPhases,
+  type AgentLoopTriggers,
   type AgentLoopSlice,
+  type LoopMsg,
 } from '../../system/agent-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type { ApiMessage, LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
-import type { ToolFinalReply, ToolMsg, ToolSchema } from '../../types/tools.ts'
+import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
+import type { ToolMsg } from '../../types/tools.ts'
 import type { AgentFactoryOpts } from './types.ts'
 import {
   FORMALIZE_PLAN_TOOL_NAME,
@@ -22,13 +24,10 @@ import {
 
 // ─── Message protocol ───
 
-export type PlannerAgentMsg =
-  | { type: 'userMessage';   clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string; isCron?: boolean; isInjected?: boolean }
-  | LlmProviderReply
-  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
-  | { type: '_toolUnregistered'; name: string }
-  | { type: '_toolResult';       toolName: string; toolCallId: string; reply: ToolFinalReply }
-  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
+type PlannerExtra =
+  | { type: 'userMessage'; clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; isCron?: boolean; isInjected?: boolean }
+
+export type PlannerAgentMsg = LoopMsg<PlannerExtra>
 
 // ─── State ───
 //
@@ -114,7 +113,7 @@ const PlannerAgent = (
   type S   = PlannerAgentState
   type Ctx = ActorContext<M>
 
-  let handlers: ReactLoopHandlers<M, S>
+  let loop: { phases: AgentLoopPhases<M, S>; triggers: AgentLoopTriggers<M, S> }
 
   const buildTurnMessages = (state: S): ApiMessage[] =>
     [{ role: 'system', content: buildSystemPrompt() }, ...state.plannerHistory]
@@ -125,23 +124,13 @@ const PlannerAgent = (
     pendingFormalizeSummary: null,
   })
 
-  handlers = AgentLoop<S, M>({
+  loop = AgentLoop<S, M>({
     role:         'planner',
     spanName:     'planner-turn',
     logPrefix:    'planner',
     model,
     maxToolLoops,
     tools:        (s) => s.tools,
-    spans:        'fromMessage',
-
-    slice:    (s) => s.loop,
-    setSlice: (s, loop) => ({ ...s, loop }),
-
-    onChunk: (state, text) => ({
-      state,
-      events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'chunk', text }) })],
-    }),
-
     onComplete: (state, finalText, ctx) => {
       // Formalize-plan branch: the prior tool result populated
       // pendingFormalizeSummary. Forward the canonical summary to the shared
@@ -214,35 +203,11 @@ const PlannerAgent = (
             ctx.log.warn('planner: dropping userMessage, no LLM ref', { clientId: msg.clientId })
             return { state: stateNext }
           }
-          return handlers.startTurn(stateNext, {
+          return loop.triggers.startTurn(stateNext, {
             messages:     buildTurnMessages(stateNext),
             userId,
             clientId:     msg.clientId,
-            traceId:      msg.traceId,
-            parentSpanId: msg.parentSpanId,
           }, ctx)
-        },
-        _toolRegistered: (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> =>
-          ({ state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } } } }),
-        _toolUnregistered: (state: S, msg: Extract<M, { type: '_toolUnregistered' }>): ActorResult<M, S> => {
-          const { [msg.name]: _, ...rest } = state.tools
-          return { state: { ...state, tools: rest } }
-        },
-      },
-      awaitingLlm: {
-        _toolRegistered: (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> =>
-          ({ state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } } } }),
-        _toolUnregistered: (state: S, msg: Extract<M, { type: '_toolUnregistered' }>): ActorResult<M, S> => {
-          const { [msg.name]: _, ...rest } = state.tools
-          return { state: { ...state, tools: rest } }
-        },
-      },
-      toolLoop: {
-        _toolRegistered: (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> =>
-          ({ state: { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } } } }),
-        _toolUnregistered: (state: S, msg: Extract<M, { type: '_toolUnregistered' }>): ActorResult<M, S> => {
-          const { [msg.name]: _, ...rest } = state.tools
-          return { state: { ...state, tools: rest } }
         },
       },
     },
@@ -294,7 +259,7 @@ const PlannerAgent = (
       },
     }),
 
-    handler: handlers.idle,
+    handler: loop.phases.idle,
 
     supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }

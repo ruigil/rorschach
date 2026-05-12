@@ -25,7 +25,7 @@ type AgentRegistryState = {
 
 const initialAgentRegistryState = (): AgentRegistryState => ({ descriptors: {} })
 
-const SWITCH_MODE_TOOL_NAME = 'switchMode'
+const SWITCH_MODE_TOOL_NAME = 'switch_mode'
 const CATALOG_KEY = 'global'
 
 // ─── Schema builder ───────────────────────────────────────────────────────

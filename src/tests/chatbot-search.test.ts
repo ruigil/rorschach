@@ -132,7 +132,7 @@ describe('chatbot search integration', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'What is the latest AI news?', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'What is the latest AI news?' })
     await tick(400)
 
     const types = events.map(e => e.type)
@@ -162,7 +162,7 @@ describe('chatbot search integration', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for something' })
     await tick(400)
 
     const sourcesEvent = events.find(e => e.type === 'sources')
@@ -194,7 +194,7 @@ describe('chatbot search integration', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hello' })
     await tick(300)
 
     expect(capturedBody?.tools).toBeUndefined()
@@ -220,7 +220,7 @@ describe('chatbot search integration', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for something', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for something' })
     await tick(400)
 
     const types = events.map(e => e.type)
@@ -249,7 +249,7 @@ describe('chatbot search integration', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hello', traceId: 'test-trace-1', parentSpanId: 'test-span-1' })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hello' })
     await tick(300)
 
     expect(capturedBody?.tools).toBeDefined()

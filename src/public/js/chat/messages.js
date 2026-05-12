@@ -261,7 +261,6 @@ function appendUserMessage(text, images, audio, pdfs = []) {
 // ─── WebSocket message handler ───
 
 export function handleChatMsg(msg) {
-  console.log( 'Chat message received:', msg)
   if (msg.type === 'plannerMode') {
     isPlannerMode = msg.active
   } else if (msg.type === 'tooling') {

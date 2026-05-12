@@ -112,7 +112,7 @@ describe('distributed tracing', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hi', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hi' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
     await tick(300)
 
     const reactStart  = spanFor(spans, 'chatbot',  'started')
@@ -165,7 +165,7 @@ describe('distributed tracing', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for ai news', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for ai news' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
     await tick(400)
 
     const reactStart       = spanFor(spans, 'chatbot',      'started')
@@ -205,7 +205,7 @@ describe('distributed tracing', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hi', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hi' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
     await tick(300)
 
     const reactError = spanFor(spans, 'chatbot',  'error')
@@ -253,7 +253,7 @@ describe('distributed tracing', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search test', traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID })
+    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search test' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
     await tick(400)
 
     // The traceparent header must be present and well-formed (W3C trace context format)

@@ -1,4 +1,5 @@
 import type { ActorIdentity, ActorRef, SpanHandle } from '../../system/types.ts'
+import type { LoopMsg } from '../../system/agent-loop.ts'
 import type { ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 
@@ -82,15 +83,9 @@ export type KgraphMsg =
 // Workers only send `_workerDone` to the supervisor; they never receive it,
 // so it does not appear in the worker-internal unions below.
 
-export type MemoryRecallMsg =
-  | ToolInvokeMsg
-  | { type: '_toolResult';  toolCallId: string; toolName: string; reply: ToolFinalReply }
-  | LlmProviderReply
+export type MemoryRecallMsg = LoopMsg | ToolInvokeMsg
 
-export type MemoryStoreMsg =
-  | ToolInvokeMsg
-  | { type: '_toolResult';  toolCallId: string; toolName: string; reply: ToolFinalReply }
-  | LlmProviderReply
+export type MemoryStoreMsg = LoopMsg | ToolInvokeMsg
 
 // ─── Memory supervisor message protocol ───
 

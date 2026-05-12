@@ -292,7 +292,10 @@ export const SessionManager = (
         const session = state.sessions[userId]
         if (!session) return { state }
         const agent = session.agentRefs[session.activeMode]
-        agent?.send({ type: 'userMessage', clientId, text, images, audio, pdfs, traceId, parentSpanId, isCron, isInjected: isCron })
+        const headers = traceId && parentSpanId
+          ? { traceparent: `00-${traceId}-${parentSpanId}-01` }
+          : undefined
+        agent?.send({ type: 'userMessage', clientId, text, images, audio, pdfs, isCron, isInjected: isCron }, headers)
         return { state }
       },
 
@@ -311,7 +314,10 @@ export const SessionManager = (
           ctx.log.warn('cron job fired but no clientId found for user', { userId })
           return { state }
         }
-        agent.send({ type: 'userMessage', clientId, text, traceId, parentSpanId, isCron: true, isInjected: true })
+        const headers = traceId && parentSpanId
+          ? { traceparent: `00-${traceId}-${parentSpanId}-01` }
+          : undefined
+        agent.send({ type: 'userMessage', clientId, text, isCron: true, isInjected: true }, headers)
         return { state }
       },
 

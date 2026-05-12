@@ -70,7 +70,7 @@ const PLANNER_DEFAULTS: ResolvedPlannerConfig = {
   model:        'google/gemini-2.5-flash-lite-preview',
   plansDir:     'workspace/plans',
   maxToolLoops: 10,
-  toolFilter:   { allow: ['web_search', 'fetch_file'] },
+  toolFilter:   { allow: ['switch_mode','web_search', 'fetch_file'] },
 }
 
 const resolvePlannerConfig = (cfg: PlannerConfig | null): ResolvedPlannerConfig =>

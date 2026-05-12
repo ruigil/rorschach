@@ -1,6 +1,7 @@
-import type { ActorDef, ActorRef } from '../../system/types.ts'
-import { AgentLoop, initialAgentLoopSlice, type AgentLoopSlice } from '../../system/agent-loop.ts'
+import type { ActorDef, ActorContext, ActorRef, ActorResult } from '../../system/types.ts'
+import { AgentLoop, initialAgentLoopSlice, type AgentLoopSlice, type AgentLoopPhases, type AgentLoopTriggers } from '../../system/agent-loop.ts'
 import type { ToolCollection, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { parseToolArgs } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { MemoryRecallMsg, MemorySupervisorMsg } from './types.ts'
 import { zettelRecallSection } from './ontology.ts'
@@ -37,7 +38,8 @@ export type MemoryRecallWorkerOptions = {
 // ─── Worker State ───
 
 export type MemoryRecallWorkerState = {
-  loop: AgentLoopSlice
+  loop:    AgentLoopSlice
+  replyTo: ActorRef<ToolReply> | null
 }
 
 // ─── System prompt ───
@@ -53,7 +55,40 @@ export const createMemoryRecallWorkerActor = (
   parent:  ActorRef<MemorySupervisorMsg>,
   options: MemoryRecallWorkerOptions,
 ): ActorDef<MemoryRecallMsg, MemoryRecallWorkerState> => {
-  const handlers = AgentLoop<MemoryRecallWorkerState, MemoryRecallMsg>({
+  let loop: { phases: AgentLoopPhases<MemoryRecallMsg, MemoryRecallWorkerState>; triggers: AgentLoopTriggers<MemoryRecallMsg, MemoryRecallWorkerState> }
+
+  const handleInvoke = (state: MemoryRecallWorkerState, msg: Extract<MemoryRecallMsg, { type: 'invoke' }>, ctx: ActorContext<MemoryRecallMsg>): ActorResult<MemoryRecallMsg, MemoryRecallWorkerState> => {
+    const parsed = parseToolArgs<{ query: string }>(
+      msg.arguments,
+      (p) => {
+        const query = typeof p.query === 'string' ? p.query : ''
+        return query ? { query } : null
+      },
+      'Missing query argument',
+    )
+    if (!parsed.ok) {
+      msg.replyTo.send({ type: 'toolError', error: parsed.error })
+      return { state }
+    }
+    if (!state.loop.llmRef) {
+      msg.replyTo.send({ type: 'toolError', error: 'Memory recall not ready (no LLM provider).' })
+      return { state }
+    }
+    return loop.triggers.startTurn(
+      { ...state, replyTo: msg.replyTo },
+      {
+        messages: [
+          { role: 'system', content: buildSystemPrompt(msg.userId) },
+          { role: 'user',   content: parsed.value.query },
+        ],
+        userId:   msg.userId,
+        clientId: msg.clientId,
+      },
+      ctx,
+    )
+  }
+
+  loop = AgentLoop<MemoryRecallWorkerState, MemoryRecallMsg>({
     role:            'memory-recall',
     spanName:        'memory-recall',
     logPrefix:       'memory recall',
@@ -62,34 +97,14 @@ export const createMemoryRecallWorkerActor = (
     maxToolLoops:    options.maxToolLoops,
     tools:           options.tools,
 
-    slice:    (s) => s.loop,
-    setSlice: (s, loop) => ({ ...s, loop }),
-
-    buildTurn: (_s, msg) => {
-      let query: string
-      try {
-        const args = JSON.parse(msg.arguments) as { query?: unknown }
-        query = typeof args.query === 'string' ? args.query : ''
-      } catch {
-        return { error: 'Invalid arguments' }
-      }
-      if (!query) return { error: 'Missing query argument' }
-      return {
-        messages: [
-          { role: 'system', content: buildSystemPrompt(msg.userId) },
-          { role: 'user',   content: query },
-        ],
-      }
-    },
-
     onComplete: (state, finalText, ctx) => {
-      state.loop.turn.replyTo?.send({ type: 'toolResult', result: { text: finalText || '(no result)' } })
+      state.replyTo?.send({ type: 'toolResult', result: { text: finalText || '(no result)' } })
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
     },
 
     onLlmError: (state, error, ctx) => {
-      state.loop.turn.replyTo?.send({ type: 'toolError', error: String(error) })
+      state.replyTo?.send({ type: 'toolError', error: String(error) })
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
     },
@@ -98,14 +113,20 @@ export const createMemoryRecallWorkerActor = (
       const reply: ToolReply = finalText
         ? { type: 'toolResult', result: { text: finalText } }
         : { type: 'toolError',  error:  'Tool loop limit reached' }
-      state.loop.turn.replyTo?.send(reply)
+      state.replyTo?.send(reply)
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
+    },
+
+    extraCases: {
+      idle: {
+        invoke: handleInvoke,
+      },
     },
   })
 
   return {
-    initialState: () => ({ loop: { llmRef: options.llmRef, turn: initialAgentLoopSlice().turn } }),
-    handler: handlers.idle,
+    initialState: () => ({ loop: { llmRef: options.llmRef, turn: initialAgentLoopSlice().turn }, replyTo: null }),
+    handler: loop.phases.idle,
   }
 }

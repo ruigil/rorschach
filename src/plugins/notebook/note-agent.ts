@@ -1,6 +1,7 @@
-import type { ActorDef } from '../../system/types.ts'
+import type { ActorDef, ActorContext, ActorRef, ActorResult } from '../../system/types.ts'
+import type { ToolReply } from '../../types/tools.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { AgentLoop, initialAgentLoopSlice, type AgentLoopSlice } from '../../system/agent-loop.ts'
+import { AgentLoop, initialAgentLoopSlice, type AgentLoopSlice, type AgentLoopPhases, type AgentLoopTriggers } from '../../system/agent-loop.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { NoteAgentMsg } from './types.ts'
@@ -17,7 +18,8 @@ export type NoteAgentOptions = {
 // ─── State ───
 
 export type NoteAgentState = {
-  loop: AgentLoopSlice
+  loop:    AgentLoopSlice
+  replyTo: ActorRef<ToolReply> | null
 }
 
 // ─── Helpers ───
@@ -47,7 +49,36 @@ const buildSystemPrompt = (notebookDir: string): string =>
 export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, NoteAgentState> => {
   const systemPrompt = buildSystemPrompt(options.notebookDir)
 
-  const handlers = AgentLoop<NoteAgentState, NoteAgentMsg>({
+  let loop: { phases: AgentLoopPhases<NoteAgentMsg, NoteAgentState>; triggers: AgentLoopTriggers<NoteAgentMsg, NoteAgentState> }
+
+  const handleInvoke = (state: NoteAgentState, msg: Extract<NoteAgentMsg, { type: 'invoke' }>, ctx: ActorContext<NoteAgentMsg>): ActorResult<NoteAgentMsg, NoteAgentState> => {
+    let request: string
+    try {
+      const args = JSON.parse(msg.arguments) as { request?: string }
+      request = args.request ?? msg.arguments
+    } catch {
+      msg.replyTo.send({ type: 'toolError', error: 'Invalid arguments: expected { request: string }' })
+      return { state }
+    }
+    if (!state.loop.llmRef) {
+      msg.replyTo.send({ type: 'toolError', error: 'Notebook agent not ready (no LLM provider).' })
+      return { state }
+    }
+    return loop.triggers.startTurn(
+      { ...state, replyTo: msg.replyTo },
+      {
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: request },
+        ],
+        userId:   msg.userId,
+        clientId: msg.clientId,
+      },
+      ctx,
+    )
+  }
+
+  loop = AgentLoop<NoteAgentState, NoteAgentMsg>({
     role:         'notebook',
     spanName:     'note-agent',
     logPrefix:    'note-agent',
@@ -55,43 +86,36 @@ export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, Not
     maxToolLoops: options.maxToolLoops,
     tools:        options.tools,
 
-    slice:    (s) => s.loop,
-    setSlice: (s, loop) => ({ ...s, loop }),
-
-    buildTurn: (_s, msg) => {
-      let request: string
-      try {
-        const args = JSON.parse(msg.arguments) as { request?: string }
-        request = args.request ?? msg.arguments
-      } catch {
-        return { error: 'Invalid arguments: expected { request: string }' }
-      }
-      return {
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user',   content: request },
-        ],
-      }
-    },
-
     onComplete: (state, finalText) => {
-      state.loop.turn.replyTo?.send({ type: 'toolResult', result: { text: finalText || '(done)' } })
+      state.replyTo?.send({ type: 'toolResult', result: { text: finalText || '(done)' } })
       return { state }
     },
 
     onLlmError: (state) => {
-      state.loop.turn.replyTo?.send({ type: 'toolError', error: 'Notebook agent encountered an LLM error.' })
+      state.replyTo?.send({ type: 'toolError', error: 'Notebook agent encountered an LLM error.' })
       return { state }
     },
 
     onLoopLimit: (state) => {
-      state.loop.turn.replyTo?.send({ type: 'toolError', error: 'Tool loop limit reached.' })
+      state.replyTo?.send({ type: 'toolError', error: 'Tool loop limit reached.' })
       return { state }
+    },
+
+    extraCases: {
+      idle: {
+        invoke: handleInvoke,
+      },
+      awaitingLlm: {
+        invoke: (state) => ({ state, stash: true }),
+      },
+      toolLoop: {
+        invoke: (state) => ({ state, stash: true }),
+      },
     },
   })
 
   return {
-    initialState: () => ({ loop: initialAgentLoopSlice() }),
+    initialState: () => ({ loop: initialAgentLoopSlice(), replyTo: null }),
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
@@ -99,7 +123,7 @@ export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, Not
       },
     }),
 
-    handler: handlers.idle,
+    handler: loop.phases.idle,
 
     stashCapacity: 50,
     supervision:   { type: 'restart', maxRetries: 3, withinMs: 30_000 },
