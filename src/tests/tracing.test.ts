@@ -4,7 +4,6 @@ import type { MessageHeaders } from '../system/index.ts'
 import { Chatbot, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
 import { HistoryStore } from '../plugins/cognitive/history-store.ts'
 import { LlmProvider, OpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
-import { initialAgentLoopSlice } from '../system/agent-loop.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import type { ToolInvokeMsg, ToolMsg } from '../types/tools.ts'
 import { ToolRegistrationTopic } from '../types/tools.ts'
@@ -23,7 +22,7 @@ const LLM_PROVIDER_ADAPTER_OPTS = {
   model: 'openai/gpt-4o-mini',
 }
 
-const INITIAL_CHATBOT_STATE: Omit<ChatbotState, 'loop'> = {
+const INITIAL_CHATBOT_STATE: ChatbotState = {
   historyMirror:  [],
   historyVersion: 0,
   tools:          {},
@@ -95,7 +94,7 @@ const spawnChatbot = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
   return system.spawn(
     'chatbot',
     Chatbot({ model: LLM_PROVIDER_ADAPTER_OPTS.model }, { clientId: CLIENT_ID, userId, historyStoreRef, llmRef }),
-    { state: { ...INITIAL_CHATBOT_STATE, loop: { ...initialAgentLoopSlice(), llmRef } } },
+    { state: INITIAL_CHATBOT_STATE },
   )
 }
 

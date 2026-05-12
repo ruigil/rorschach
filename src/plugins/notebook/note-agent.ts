@@ -1,7 +1,7 @@
 import type { ActorDef, ActorContext, ActorRef, ActorResult } from '../../system/types.ts'
 import type { ToolReply } from '../../types/tools.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { AgentLoop, initialAgentLoopSlice, type AgentLoopSlice, type AgentLoopPhases, type AgentLoopTriggers } from '../../system/agent-loop.ts'
+import { AgentLoop, type AgentLoopHandle } from '../../system/agent-loop.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { NoteAgentMsg } from './types.ts'
@@ -18,7 +18,6 @@ export type NoteAgentOptions = {
 // ─── State ───
 
 export type NoteAgentState = {
-  loop:    AgentLoopSlice
   replyTo: ActorRef<ToolReply> | null
 }
 
@@ -49,7 +48,7 @@ const buildSystemPrompt = (notebookDir: string): string =>
 export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, NoteAgentState> => {
   const systemPrompt = buildSystemPrompt(options.notebookDir)
 
-  let loop: { phases: AgentLoopPhases<NoteAgentMsg, NoteAgentState>; triggers: AgentLoopTriggers<NoteAgentMsg, NoteAgentState> }
+  let loop: AgentLoopHandle<NoteAgentMsg, NoteAgentState>
 
   const handleInvoke = (state: NoteAgentState, msg: Extract<NoteAgentMsg, { type: 'invoke' }>, ctx: ActorContext<NoteAgentMsg>): ActorResult<NoteAgentMsg, NoteAgentState> => {
     let request: string
@@ -60,7 +59,7 @@ export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, Not
       msg.replyTo.send({ type: 'toolError', error: 'Invalid arguments: expected { request: string }' })
       return { state }
     }
-    if (!state.loop.llmRef) {
+    if (!loop.isReady) {
       msg.replyTo.send({ type: 'toolError', error: 'Notebook agent not ready (no LLM provider).' })
       return { state }
     }
@@ -115,7 +114,7 @@ export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, Not
   })
 
   return {
-    initialState: () => ({ loop: initialAgentLoopSlice(), replyTo: null }),
+    initialState: () => ({ replyTo: null }),
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))

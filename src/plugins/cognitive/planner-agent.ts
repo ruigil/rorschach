@@ -3,10 +3,7 @@ import type { ActorDef, ActorRef, ActorContext, ActorResult } from '../../system
 import { onLifecycle } from '../../system/match.ts'
 import {
   AgentLoop,
-  initialAgentLoopSlice,
-  type AgentLoopPhases,
-  type AgentLoopTriggers,
-  type AgentLoopSlice,
+  type AgentLoopHandle,
   type LoopMsg,
 } from '../../system/agent-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
@@ -37,7 +34,6 @@ export type PlannerAgentMsg = LoopMsg<PlannerExtra>
 // planning chatter out of other agents' context.
 
 export type PlannerAgentState = {
-  loop:                    AgentLoopSlice
   plannerHistory:          ApiMessage[]
   tools:                   ToolCollection
   pendingFormalizeSummary: string | null
@@ -45,7 +41,6 @@ export type PlannerAgentState = {
 }
 
 const initialPlannerAgentState = (): PlannerAgentState => ({
-  loop:                    initialAgentLoopSlice(),
   plannerHistory:          [],
   tools:                   {},
   pendingFormalizeSummary: null,
@@ -113,7 +108,7 @@ const PlannerAgent = (
   type S   = PlannerAgentState
   type Ctx = ActorContext<M>
 
-  let loop: { phases: AgentLoopPhases<M, S>; triggers: AgentLoopTriggers<M, S> }
+  let loop: AgentLoopHandle<M, S>
 
   const buildTurnMessages = (state: S): ApiMessage[] =>
     [{ role: 'system', content: buildSystemPrompt() }, ...state.plannerHistory]
@@ -130,8 +125,9 @@ const PlannerAgent = (
     logPrefix:    'planner',
     model,
     maxToolLoops,
+    initialLlmRef: opts.llmRef,
     tools:        (s) => s.tools,
-    onComplete: (state, finalText, ctx) => {
+    onComplete: (state, finalText, _turn, ctx) => {
       // Formalize-plan branch: the prior tool result populated
       // pendingFormalizeSummary. Forward the canonical summary to the shared
       // HistoryStore, drop the planner scratch, and emit done. The LLM's
@@ -198,10 +194,6 @@ const PlannerAgent = (
             ...state,
             activeClientId: msg.clientId,
             plannerHistory: [...state.plannerHistory, userMsg],
-          }
-          if (!stateNext.loop.llmRef) {
-            ctx.log.warn('planner: dropping userMessage, no LLM ref', { clientId: msg.clientId })
-            return { state: stateNext }
           }
           return loop.triggers.startTurn(stateNext, {
             messages:     buildTurnMessages(stateNext),

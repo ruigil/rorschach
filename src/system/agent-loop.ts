@@ -61,17 +61,6 @@ export const initialLoopTurn = (): LoopTurn => ({
   pendingUsage:  { promptTokens: 0, completionTokens: 0 },
 })
 
-/** Loop-internal mutable state. Agents hold this in one field of their state bag. */
-export type AgentLoopSlice = {
-  llmRef: ActorRef<LlmProviderMsg> | null
-  turn:   LoopTurn
-}
-
-export const initialAgentLoopSlice = (): AgentLoopSlice => ({
-  llmRef: null,
-  turn:   initialLoopTurn(),
-})
-
 // ─── Base message variants the closure dispatches on ───────────────────────
 
 /**
@@ -169,21 +158,12 @@ export type AgentLoopHooks<S, M extends { type: string }> = {
   model:        string
   maxToolLoops: number
 
-  // ─── Loop state slice ───
-  /**
-   * Accessor for the loop's state slice. Defaults to `(s) => s.loop`.
-   * Only override if the loop slice lives at a different field name.
-   */
-  slice?:        (s: S) => AgentLoopSlice
-  /**
-   * Mutator for the loop's state slice. Defaults to `(s, loop) => ({ ...s, loop })`.
-   * Only override if the loop slice lives at a different field name.
-   */
-  setSlice?:     (s: S, slice: AgentLoopSlice) => S
+  // ─── Optional initial LLM ref (agents that receive it via constructor rather than subscription) ───
+  initialLlmRef?: ActorRef<LlmProviderMsg> | null
 
   // ─── Completion handlers ───
   /** Called on `llmDone` after the request span is closed. Returned state is applied and the actor becomes idle (or `action.become`). */
-  onComplete:    (s: S, finalText: string, ctx: ActorContext<M>) => LoopCompletionAction<M, S>
+  onComplete:    (s: S, finalText: string, turn: LoopTurn, ctx: ActorContext<M>) => LoopCompletionAction<M, S>
   /** Called on `llmError`. Spans are already closed by the closure. */
   onLlmError:    (s: S, error: unknown,  ctx: ActorContext<M>) => LoopCompletionAction<M, S>
   /** Called when the tool-loop ceiling is hit. The current `pending` text is passed in. */
@@ -313,6 +293,12 @@ export type AgentLoopTriggers<M extends { type: string }, S> = {
   startTurn:   (state: S, params: LoopStartTurnParams, ctx: ActorContext<M>) => ActorResult<M, S>
 }
 
+export type AgentLoopHandle<M extends { type: string }, S> = {
+  phases: AgentLoopPhases<M, S>
+  triggers: AgentLoopTriggers<M, S>
+  readonly isReady: boolean
+}
+
 /** @deprecated Use the split return `{ phases, triggers }` instead. */
 export type AgentLoopHandlers<M extends { type: string }, S> = AgentLoopPhases<M, S> & AgentLoopTriggers<M, S>
 
@@ -320,16 +306,17 @@ export type AgentLoopHandlers<M extends { type: string }, S> = AgentLoopPhases<M
 
 export const AgentLoop = <S, M extends { type: string }>(
   hooks: AgentLoopHooks<S, M>,
-): { phases: AgentLoopPhases<M, S>; triggers: AgentLoopTriggers<M, S> } => {
+): AgentLoopHandle<M, S> => {
   const log       = hooks.logPrefix ?? hooks.spanName
-  const slice    = hooks.slice    ?? ((s: any) => { if (!('loop' in s)) throw new TypeError('AgentLoop default slice expects state.loop'); return s.loop })
-  const setSlice = hooks.setSlice ?? ((s: any, slice: any) => ({ ...s, loop: slice }))
-
   const { tools: toolsCfg, model, maxToolLoops } = hooks
-  
+
+  // ── Closure state (mutable, actor-single-threaded) ────────────────────────
+  let turn: LoopTurn = initialLoopTurn()
+  let llmRef: ActorRef<LlmProviderMsg> | null = hooks.initialLlmRef ?? null
+
   const resolveTools = (s: S): ToolCollection =>
     typeof toolsCfg === 'function' ? toolsCfg(s) : toolsCfg
-  
+
   const resolveSchemas = (s: S): Tool[] => {
     const fromTools = Object.values(resolveTools(s)).map((e: ToolEntry) => e.schema as Tool)
     const extras    = hooks.extraToolSchemas ? hooks.extraToolSchemas(s) : []
@@ -341,15 +328,10 @@ export const AgentLoop = <S, M extends { type: string }>(
   let awaitingLlm: MessageHandler<M, S>
   let toolLoop:    MessageHandler<M, S>
 
-  // ── Slice accessors ───────────────────────────────────────────────────────
-  const getTurn   = (s: S): LoopTurn => slice(s).turn
-  const withTurn  = (s: S, turn: LoopTurn): S => setSlice(s, { ...slice(s), turn })
-  const getLlmRef = (s: S): ActorRef<LlmProviderMsg> | null => slice(s).llmRef
-
   const materialize = (a: LoopCompletionAction<M, S>): ActorResult<M, S> => {
-    const reset = setSlice(a.state, { ...slice(a.state), turn: initialLoopTurn() })
+    turn = initialLoopTurn()
     return {
-      state:      reset,
+      state:      a.state,
       become:     a.become ?? idle,
       unstashAll: a.unstashAll ?? true,
       ...(a.events ? { events: a.events } : {}),
@@ -358,12 +340,11 @@ export const AgentLoop = <S, M extends { type: string }>(
 
   // ── Helper: send `stream` to LLM and return the new llmSpan ───────────────
   const sendStream = (state:S ,requestId:string, messages:ApiMessage[], ctx:ActorContext<M>): SpanHandle | null => {
-    const turn = getTurn(state)
     const llmSpan = turn.requestSpan
       ? ctx.trace.child(turn.requestSpan.traceId, turn.requestSpan.spanId, 'llm-call', { model })
       : null
     const schemas = resolveSchemas(state)
-    getLlmRef(state)!.send({
+    llmRef!.send({
       type:     'stream',
       requestId,
       model,
@@ -378,8 +359,10 @@ export const AgentLoop = <S, M extends { type: string }>(
 
   // ── Subscription cases (shared across all three handlers) ─────────────────
   const subscriptionCases = {
-    _llmProvider: (state: S, msg: Extract<LoopSubscriptionMsg, { type: '_llmProvider' }>) =>
-      ({ state: setSlice(state, { ...slice(state), llmRef: msg.ref }) }),
+    _llmProvider: (state: S, msg: Extract<LoopSubscriptionMsg, { type: '_llmProvider' }>) => {
+      llmRef = msg.ref
+      return { state }
+    },
   }
 
   // ── Tool registration cases (shared across all three handlers) ────────────
@@ -411,18 +394,18 @@ export const AgentLoop = <S, M extends { type: string }>(
   // ── Helper: drive the next turn (used by toolLoop after a complete batch) ──
   const startNextTurn = (state:S, nextMessages: ApiMessage[], nextLoopCount: number, ctx: ActorContext<M>): ActorResult<M, S> => {
     const requestId = crypto.randomUUID()
-    let next = withTurn(state, {
-      ...getTurn(state),
+    turn = {
+      ...turn,
       requestId,
       turnMessages:  nextMessages,
       pending:       '',
       pendingBatch:  null,
       toolLoopCount: nextLoopCount,
       llmSpan:       null,
-    })
-    const llmSpan = sendStream(next, requestId, nextMessages, ctx)
-    next = withTurn(next, { ...getTurn(next), llmSpan })
-    return { state: next, become: awaitingLlm }
+    }
+    const llmSpan = sendStream(state, requestId, nextMessages, ctx)
+    turn = { ...turn, llmSpan }
+    return { state, become: awaitingLlm }
   }
 
   // ── startTurn: in-process entry, shared by all agents ──
@@ -434,8 +417,8 @@ export const AgentLoop = <S, M extends { type: string }>(
     }
 
     const requestId = crypto.randomUUID()
-    let next = withTurn(state, {
-      ...getTurn(state),
+    turn = {
+      ...turn,
       requestId,
       turnMessages:  params.messages,
       pending:       '',
@@ -445,10 +428,11 @@ export const AgentLoop = <S, M extends { type: string }>(
       llmSpan:       null,
       userId:        params.userId,
       clientId:      params.clientId,
-    })
-    const llmSpan = sendStream(next, requestId, params.messages, ctx)
-    next = withTurn(next, { ...getTurn(next), llmSpan })
-    return { state: next, become: awaitingLlm }
+      pendingUsage:  { promptTokens: 0, completionTokens: 0 },
+    }
+    const llmSpan = sendStream(state, requestId, params.messages, ctx)
+    turn = { ...turn, llmSpan }
+    return { state, become: awaitingLlm }
   }
 
   // ── idle ─────────────────────────────────────────────────────────────────
@@ -474,9 +458,9 @@ export const AgentLoop = <S, M extends { type: string }>(
   // ── awaitingLlm ──────────────────────────────────────────────────────────
   const awaitingLlmCases: any = {
     llmChunk: (state: S, msg: Extract<LlmProviderReply, { type: 'llmChunk' }>, ctx: ActorContext<M>) => {
-      const turn = getTurn(state)
       if (msg.requestId !== turn.requestId) return { state }
-      let next = withTurn(state, { ...turn, pending: turn.pending + msg.text })
+      let next = state
+      turn = { ...turn, pending: turn.pending + msg.text }
       let events: TypedEvent[] | undefined
       if (hooks.onChunk) {
         const r = normalizeChunkResult(hooks.onChunk(next, msg.text, msg.requestId, ctx))
@@ -493,7 +477,6 @@ export const AgentLoop = <S, M extends { type: string }>(
     },
 
     llmToolCalls: (state: S, msg: Extract<LlmProviderReply, { type: 'llmToolCalls' }>, ctx: ActorContext<M>) => {
-      const turn = getTurn(state)
       if (msg.requestId !== turn.requestId) return { state }
 
       turn.llmSpan?.done({ toolCalls: msg.calls.map(c => c.name) })
@@ -507,7 +490,7 @@ export const AgentLoop = <S, M extends { type: string }>(
       let advertEvents: TypedEvent[] | undefined
       if (hooks.onToolCalls) {
         const observed = hooks.onToolCalls(
-          withTurn(state, { ...turn, llmSpan: null, pendingUsage: accumulatedUsage }),
+          state,
           msg.calls,
           ctx,
         )
@@ -602,24 +585,22 @@ export const AgentLoop = <S, M extends { type: string }>(
         ctx.self.send(synthetic)
       }
 
-      const next = withTurn(state, { ...turn, requestId: null, llmSpan: null, pendingBatch: batch, pendingUsage: accumulatedUsage })
+      turn = { ...turn, requestId: null, llmSpan: null, pendingBatch: batch, pendingUsage: accumulatedUsage }
       return advertEvents && advertEvents.length > 0
-        ? { state: next, become: toolLoop, events: advertEvents }
-        : { state: next, become: toolLoop }
+        ? { state, become: toolLoop, events: advertEvents }
+        : { state, become: toolLoop }
     },
 
     llmDone: (state: S, msg: Extract<LlmProviderReply, { type: 'llmDone' }>, ctx: ActorContext<M>) => {
-      const turn = getTurn(state)
       if (msg.requestId !== turn.requestId) return { state }
       turn.llmSpan?.done()
       turn.requestSpan?.done()
       ctx.log.info(`${log}: done`, { chars: turn.pending.length })
-      const stateWithUsage = withTurn(state, { ...turn, pendingUsage: addUsage(turn.pendingUsage, msg.usage) })
-      return materialize(hooks.onComplete(stateWithUsage, turn.pending, ctx))
+      turn = { ...turn, pendingUsage: addUsage(turn.pendingUsage, msg.usage) }
+      return materialize(hooks.onComplete(state, turn.pending, turn, ctx))
     },
 
     llmError: (state: S, msg: Extract<LlmProviderReply, { type: 'llmError' }>, ctx: ActorContext<M>) => {
-      const turn = getTurn(state)
       if (msg.requestId !== turn.requestId) return { state }
       turn.llmSpan?.error(msg.error)
       turn.requestSpan?.error(msg.error)
@@ -643,7 +624,6 @@ export const AgentLoop = <S, M extends { type: string }>(
   // ── toolLoop ─────────────────────────────────────────────────────────────
   const toolLoopCases: any = {
     _toolResult: (state: S, msg: LoopToolResultMsg, ctx: ActorContext<M>) => {
-      const turn  = getTurn(state)
       const batch = turn.pendingBatch!
       const span  = batch.spans[msg.toolCallId]
       if (msg.reply.type === 'toolResult') {
@@ -668,8 +648,8 @@ export const AgentLoop = <S, M extends { type: string }>(
       }
 
       if (remaining > 0) {
-        const next = withTurn(withResultState, { ...turn, pendingBatch: { ...batch, remaining, results: updated } })
-        return resultEvents && resultEvents.length > 0 ? { state: next, events: resultEvents } : { state: next }
+        turn = { ...turn, pendingBatch: { ...batch, remaining, results: updated } }
+        return resultEvents && resultEvents.length > 0 ? { state: withResultState, events: resultEvents } : { state: withResultState }
       }
 
       // Batch complete — build the canonical [assistant shell, tool*] sequence
@@ -732,5 +712,5 @@ export const AgentLoop = <S, M extends { type: string }>(
 
   toolLoop = onMessage<M, S>(toolLoopCases) as MessageHandler<M, S>
 
-  return { phases: { idle, awaitingLlm, toolLoop }, triggers: { startTurn } }
+  return { phases: { idle, awaitingLlm, toolLoop }, triggers: { startTurn }, get isReady() { return llmRef !== null } }
 }

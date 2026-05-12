@@ -1,5 +1,5 @@
 import type { ActorDef, ActorContext, ActorRef, ActorResult } from '../../system/types.ts'
-import { AgentLoop, initialAgentLoopSlice, type AgentLoopSlice, type AgentLoopPhases, type AgentLoopTriggers } from '../../system/agent-loop.ts'
+import { AgentLoop, type AgentLoopHandle } from '../../system/agent-loop.ts'
 import type { ToolCollection, ToolReply, ToolSchema } from '../../types/tools.ts'
 import { parseToolArgs } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
@@ -39,7 +39,6 @@ export type MemoryStoreWorkerOptions = {
 // ─── Worker State ───
 
 export type MemoryStoreWorkerState = {
-  loop:    AgentLoopSlice
   replyTo: ActorRef<ToolReply> | null
 }
 
@@ -60,7 +59,7 @@ export const createMemoryStoreWorkerActor = (
   parent:  ActorRef<MemorySupervisorMsg>,
   options: MemoryStoreWorkerOptions,
 ): ActorDef<MemoryStoreMsg, MemoryStoreWorkerState> => {
-  let loop: { phases: AgentLoopPhases<MemoryStoreMsg, MemoryStoreWorkerState>; triggers: AgentLoopTriggers<MemoryStoreMsg, MemoryStoreWorkerState> }
+  let loop: AgentLoopHandle<MemoryStoreMsg, MemoryStoreWorkerState>
 
   const handleInvoke = (state: MemoryStoreWorkerState, msg: Extract<MemoryStoreMsg, { type: 'invoke' }>, ctx: ActorContext<MemoryStoreMsg>): ActorResult<MemoryStoreMsg, MemoryStoreWorkerState> => {
     const parsed = parseToolArgs<{ content: string; topic?: string }>(
@@ -74,10 +73,6 @@ export const createMemoryStoreWorkerActor = (
     )
     if (!parsed.ok) {
       msg.replyTo.send({ type: 'toolError', error: parsed.error })
-      return { state }
-    }
-    if (!state.loop.llmRef) {
-      msg.replyTo.send({ type: 'toolError', error: 'Memory store not ready (no LLM provider).' })
       return { state }
     }
     return loop.triggers.startTurn(
@@ -102,8 +97,9 @@ export const createMemoryStoreWorkerActor = (
     model:           options.model,
     maxToolLoops:    options.maxToolLoops,
     tools:           options.tools,
+    initialLlmRef:   options.llmRef,
 
-    onComplete: (state, finalText, ctx) => {
+    onComplete: (state, finalText, _, ctx) => {
       state.replyTo?.send({ type: 'toolResult', result: { text: finalText || 'Memory stored.' } })
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
@@ -132,7 +128,7 @@ export const createMemoryStoreWorkerActor = (
   })
 
   return {
-    initialState: () => ({ loop: { llmRef: options.llmRef, turn: initialAgentLoopSlice().turn }, replyTo: null }),
+    initialState: () => ({ replyTo: null }),
     handler: loop.phases.idle,
   }
 }

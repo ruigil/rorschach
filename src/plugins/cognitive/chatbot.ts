@@ -1,7 +1,7 @@
 import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, ActorContext, ActorResult } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { AgentLoop, initialAgentLoopSlice, type AgentLoopSlice, type AgentLoopPhases, type AgentLoopTriggers } from '../../system/agent-loop.ts'
+import { AgentLoop, type AgentLoopHandle, type LoopTurn } from '../../system/agent-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import { UserStreamTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
@@ -21,7 +21,6 @@ import type { HistoryStoreMsg } from './history-store.ts'
 // snapshot, and the mirror updates via the subscription.
 
 export type ChatbotState = {
-  loop:           AgentLoopSlice
   historyMirror:  ApiMessage[]
   historyVersion: number
   tools:          ToolCollection
@@ -66,7 +65,7 @@ const assembleUserText = (
   let out = text
   if (images && images.length > 0) {
     const note = images.length === 1
-      ? `[Image attached: "${images[0]}"]`
+      ? `[Image attached: "${images[0]}"] `
       : `[Images attached: ${images.map(p => `"${p}"`).join(', ')}]`
     out = out ? `${out}\n\n${note}` : note
   }
@@ -76,7 +75,7 @@ const assembleUserText = (
   }
   if (pdfs && pdfs.length > 0) {
     const note = pdfs.length === 1
-      ? `[PDF attached: "${pdfs[0]}"]`
+      ? `[PDF attached: "${pdfs[0]}"] `
       : `[PDFs attached: ${pdfs.map(p => `"${p}"`).join(', ')}]`
     out = out ? `${out}\n\n${note}` : note
   }
@@ -86,7 +85,6 @@ const assembleUserText = (
 // ─── Initial state ───
 
 const initialChatbotState = (): ChatbotState => ({
-  loop:           initialAgentLoopSlice(),
   historyMirror:  [],
   historyVersion: 0,
   tools:          {},
@@ -146,7 +144,7 @@ export const Chatbot = (
 
   // ─── React-loop ────────────────────────────────────────────────────────
 
-  let loop: { phases: AgentLoopPhases<M, S>; triggers: AgentLoopTriggers<M, S> }
+  let loop: AgentLoopHandle<M, S>
 
   loop = AgentLoop<S, M>({
     role:         'reasoning',
@@ -154,6 +152,7 @@ export const Chatbot = (
     logPrefix:    'chatbot',
     model,
     maxToolLoops,
+    initialLlmRef: opts.llmRef,
     tools:        (s) => s.tools,
     setTools: (s, tools) => ({ ...s, tools }),
 
@@ -189,11 +188,11 @@ export const Chatbot = (
       }
       const optimisticHistory = [...state.historyMirror, userMessage]
       const stateNext = { ...state, historyMirror: optimisticHistory, isInjected: true }
-    return loop.triggers.startTurn(stateNext, {
-      messages: buildTurnMessages(optimisticHistory, stateNext.userContext, injection),
-      userId,
-      clientId: state.activeClientId,
-    }, ctx)
+      return loop.triggers.startTurn(stateNext, {
+        messages: buildTurnMessages(optimisticHistory, stateNext.userContext, injection),
+        userId,
+        clientId: state.activeClientId,
+      }, ctx)
     },
 
     onToolCalls: (state, calls) => ({
@@ -219,8 +218,7 @@ export const Chatbot = (
       return { state }
     },
 
-    onComplete: (state, finalText, _ctx) => {
-      const turn = state.loop.turn
+    onComplete: (state, finalText, turn, _ctx) => {
       if (finalText) {
         historyStoreRef.send({ type: 'append', messages: [{ role: 'assistant', content: finalText }] })
       }
@@ -287,11 +285,6 @@ export const Chatbot = (
     }
 
     historyStoreRef.send({ type: 'append', messages: [userMessage] })
-
-    if (!stateNext.loop.llmRef) {
-      ctx.log.warn('chatbot: dropping userMessage, no LLM ref', { clientId: msgClientId })
-      return { state: stateNext }
-    }
 
     return loop.triggers.startTurn(stateNext, {
       messages: buildTurnMessages(optimisticHistory, stateNext.userContext, userText),

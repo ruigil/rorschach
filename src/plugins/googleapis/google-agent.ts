@@ -1,7 +1,7 @@
 import type { ActorDef, ActorContext, ActorRef, ActorResult } from '../../system/types.ts'
 import type { ToolReply } from '../../types/tools.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { AgentLoop, initialAgentLoopSlice, type AgentLoopSlice, type AgentLoopPhases, type AgentLoopTriggers } from '../../system/agent-loop.ts'
+import { AgentLoop, type AgentLoopHandle } from '../../system/agent-loop.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { GoogleAgentMsg } from './types.ts'
@@ -17,7 +17,6 @@ export type GoogleAgentOptions = {
 // ─── State ───
 
 export type GoogleAgentState = {
-  loop:    AgentLoopSlice
   replyTo: ActorRef<ToolReply> | null
 }
 
@@ -51,7 +50,7 @@ const buildSystemPrompt = (): string =>
 // ─── Actor ───
 
 export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMsg, GoogleAgentState> => {
-  let loop: { phases: AgentLoopPhases<GoogleAgentMsg, GoogleAgentState>; triggers: AgentLoopTriggers<GoogleAgentMsg, GoogleAgentState> }
+  let loop: AgentLoopHandle<GoogleAgentMsg, GoogleAgentState>
 
   const handleInvoke = (state: GoogleAgentState, msg: Extract<GoogleAgentMsg, { type: 'invoke' }>, ctx: ActorContext<GoogleAgentMsg>): ActorResult<GoogleAgentMsg, GoogleAgentState> => {
     let request: string
@@ -62,7 +61,7 @@ export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMs
       msg.replyTo.send({ type: 'toolError', error: 'Invalid arguments: expected { request: string }' })
       return { state }
     }
-    if (!state.loop.llmRef) {
+    if (!loop.isReady) {
       msg.replyTo.send({ type: 'toolError', error: 'Google agent not ready (no LLM provider).' })
       return { state }
     }
@@ -133,6 +132,5 @@ export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMs
 }
 
 const createInitialGoogleAgentState = (): GoogleAgentState => ({
-  loop: initialAgentLoopSlice(),
   replyTo: null,
 })
