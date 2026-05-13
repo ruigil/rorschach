@@ -48,8 +48,6 @@ const buildSystemPrompt = (notebookDir: string): string =>
 export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, NoteAgentState> => {
   const systemPrompt = buildSystemPrompt(options.notebookDir)
 
-  let loop: AgentLoopHandle<NoteAgentMsg, NoteAgentState>
-
   const handleInvoke = (state: NoteAgentState, msg: Extract<NoteAgentMsg, { type: 'invoke' }>, ctx: ActorContext<NoteAgentMsg>): ActorResult<NoteAgentMsg, NoteAgentState> => {
     let request: string
     try {
@@ -63,7 +61,7 @@ export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, Not
       msg.replyTo.send({ type: 'toolError', error: 'Notebook agent not ready (no LLM provider).' })
       return { state }
     }
-    return loop.triggers.startTurn(
+    return loop.startTurn(
       { ...state, replyTo: msg.replyTo },
       {
         messages: [
@@ -77,7 +75,7 @@ export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, Not
     )
   }
 
-  loop = AgentLoop<NoteAgentState, NoteAgentMsg>({
+  const loop = AgentLoop<NoteAgentState, NoteAgentMsg>({
     role:         'notebook',
     spanName:     'note-agent',
     logPrefix:    'note-agent',
@@ -122,7 +120,7 @@ export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, Not
       },
     }),
 
-    handler: loop.phases.idle,
+    handler: loop.idle,
 
     stashCapacity: 50,
     supervision:   { type: 'restart', maxRetries: 3, withinMs: 30_000 },

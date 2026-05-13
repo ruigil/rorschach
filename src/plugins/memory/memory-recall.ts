@@ -63,7 +63,7 @@ export const createMemoryRecallWorkerActor = (parent:  ActorRef<MemorySupervisor
       return { state }
     }
 
-    return loop.triggers.startTurn(
+    return loop.startTurn(
       { ...state, replyTo: msg.replyTo },
       {
         messages: [
@@ -81,7 +81,6 @@ export const createMemoryRecallWorkerActor = (parent:  ActorRef<MemorySupervisor
     role:            'memory-recall',
     spanName:        'memory-recall',
     logPrefix:       'memory recall',
-    stashConcurrent: false,
     model:           options.model,
     maxToolLoops:    options.maxToolLoops,
     tools:           options.tools,
@@ -117,6 +116,6 @@ export const createMemoryRecallWorkerActor = (parent:  ActorRef<MemorySupervisor
 
   return {
     initialState: () => ({ replyTo: null }),
-    handler: loop.phases.idle,
+    handler: loop.idle,
   }
 }

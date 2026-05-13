@@ -1,0 +1,788 @@
+import { describe, test, expect } from 'bun:test'
+import { AgentSystem } from '../system/index.ts'
+import { AgentLoop, type LoopMsg, type LoopStartTurnParams } from '../system/agent-loop.ts'
+import type { ActorDef, ActorContext, ActorRef } from '../system/types.ts'
+import type { LlmProviderMsg, LlmProviderReply, ApiMessage, TokenUsage } from '../types/llm.ts'
+import type { ToolMsg, ToolFinalReply, ToolSchema } from '../types/tools.ts'
+
+const tick = (ms = 50) => Bun.sleep(ms)
+
+// ═══════════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════════
+
+type TestExtra = { type: 'start'; params: LoopStartTurnParams }
+
+type TestMsg = LoopMsg<TestExtra>
+
+type TestState = {
+  log: string[]
+  finalText: string
+  streamEvents: Array<{ kind: 'text' | 'reasoning'; text: string }>
+  toolCallsEvents: string[]
+  toolResults: Array<{ name: string; reply: ToolFinalReply }>
+  batchHistory: ApiMessage[][]
+  backgroundResults: Array<{ name: string; reply: ToolFinalReply }>
+}
+
+const emptyState = (): TestState => ({
+  log: [],
+  finalText: '',
+  streamEvents: [],
+  toolCallsEvents: [],
+  toolResults: [],
+  batchHistory: [],
+  backgroundResults: [],
+})
+
+const SEARCH_SCHEMA: ToolSchema = {
+  type: 'function',
+  function: { name: 'search', description: 'search', parameters: {} },
+}
+
+const makeToolMock = (name: string, result: ToolFinalReply): ActorDef<ToolMsg, null> => ({
+  initialState: null,
+  handler: (state, msg) => {
+    if (msg.type === 'invoke' && msg.toolName === name) {
+      msg.replyTo.send(result)
+    }
+    return { state }
+  },
+})
+
+const makeAgentDef = <S, M extends { type: string }>(
+  loop: { idle: any; startTurn: any; awaitingLlm: any; toolLoop: any },
+  initialState: S,
+): ActorDef<M, S> => ({
+  initialState,
+  handler: (state, msg, ctx) => {
+    if ((msg as any).type === 'start') {
+      return loop.startTurn(state, (msg as any).params, ctx)
+    }
+    return loop.idle(state, msg, ctx)
+  },
+})
+
+// ═══════════════════════════════════════════════════════════════════
+// Tests
+// ═══════════════════════════════════════════════════════════════════
+
+describe('AgentLoop: startTurn + streaming', () => {
+  test('startTurn sends stream to LLM and transitions to awaitingLlm', async () => {
+    const system = await AgentSystem()
+    const streams: LlmProviderMsg[] = []
+
+    const llmDef: ActorDef<LlmProviderMsg, null> = {
+      initialState: null,
+      handler: (state, msg) => {
+        if (msg.type === 'stream') streams.push(msg)
+        return { state }
+      },
+    }
+    const llmRef = system.spawn('llm', llmDef)
+
+    const loop = AgentLoop<TestState, TestMsg>({
+      role: 'test',
+      spanName: 'test',
+      model: 'test-model',
+      maxToolLoops: 3,
+      initialLlmRef: llmRef,
+      tools: {},
+      onComplete: (state, finalText) => ({
+        state: { ...state, finalText, log: [...state.log, 'complete'] },
+      }),
+      onLlmError: (state, error) => ({
+        state: { ...state, log: [...state.log, `error:${String(error)}`] },
+      }),
+      onLoopLimit: (state, finalText) => ({
+        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      }),
+    })
+
+    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    await tick()
+
+    agentRef.send({
+      type: 'start',
+      params: {
+        messages: [{ role: 'user', content: 'hello' }],
+        userId: 'u1',
+        clientId: 'c1',
+      },
+    })
+    await tick()
+
+    expect(streams.length).toBe(1)
+    expect(streams[0]!.type).toBe('stream')
+    expect(streams[0]!.messages).toEqual([{ role: 'user', content: 'hello' }])
+    expect(streams[0]!.role).toBe('test')
+    expect(streams[0]!.clientId).toBe('c1')
+
+    await system.shutdown()
+  })
+
+  test('llmChunk accumulates text and calls onStream', async () => {
+    const system = await AgentSystem()
+    const streams: Array<{ msg: LlmProviderMsg }> = []
+
+    const llmDef: ActorDef<LlmProviderMsg, null> = {
+      initialState: null,
+      handler: (state, msg) => {
+        if (msg.type === 'stream') streams.push({ msg })
+        return { state }
+      },
+    }
+    const llmRef = system.spawn('llm', llmDef)
+
+    const completions: TestState[] = []
+
+    const loop = AgentLoop<TestState, TestMsg>({
+      role: 'test',
+      spanName: 'test',
+      model: 'test-model',
+      maxToolLoops: 3,
+      initialLlmRef: llmRef,
+      tools: {},
+      onStream: (state, chunk, requestId) => {
+        state.streamEvents.push({ ...chunk, text: `${chunk.text}:${requestId}` })
+        return state
+      },
+      onComplete: (state, finalText) => {
+        completions.push({ ...state, finalText, log: [...state.log, 'complete'] })
+        return { state: { ...state, finalText, log: [...state.log, 'complete'] } }
+      },
+      onLlmError: (state, error) => ({
+        state: { ...state, log: [...state.log, `error:${String(error)}`] },
+      }),
+      onLoopLimit: (state, finalText) => ({
+        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      }),
+    })
+
+    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    await tick()
+
+    agentRef.send({
+      type: 'start',
+      params: { messages: [{ role: 'user', content: 'hi' }], userId: 'u1' },
+    })
+    await tick()
+
+    expect(streams.length).toBe(1)
+    const { msg } = streams[0]!
+    msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'hello ' })
+    msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'world' })
+    msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 2 } })
+    await tick(100)
+
+    expect(completions.length).toBe(1)
+    expect(completions[0]!.finalText).toBe('hello world')
+    expect(completions[0]!.streamEvents).toEqual([
+      { kind: 'text', text: 'hello :' + msg.requestId },
+      { kind: 'text', text: 'world:' + msg.requestId },
+    ])
+
+    await system.shutdown()
+  })
+})
+
+describe('AgentLoop: full integration', () => {
+  test('complete turn: stream → done', async () => {
+    const system = await AgentSystem()
+    const streams: Array<{ msg: LlmProviderMsg }> = []
+
+    const llmDef: ActorDef<LlmProviderMsg, null> = {
+      initialState: null,
+      handler: (state, msg) => {
+        if (msg.type === 'stream') streams.push({ msg })
+        return { state }
+      },
+    }
+    const llmRef = system.spawn('llm', llmDef)
+
+    const completions: TestState[] = []
+
+    const loop = AgentLoop<TestState, TestMsg>({
+      role: 'test',
+      spanName: 'test',
+      model: 'test-model',
+      maxToolLoops: 3,
+      initialLlmRef: llmRef,
+      tools: {},
+      onComplete: (state, finalText) => {
+        completions.push({ ...state, finalText, log: [...state.log, 'complete'] })
+        return { state: { ...state, finalText, log: [...state.log, 'complete'] } }
+      },
+      onLlmError: (state, error) => ({
+        state: { ...state, log: [...state.log, `error:${String(error)}`] },
+      }),
+      onLoopLimit: (state, finalText) => ({
+        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      }),
+    })
+
+    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    await tick()
+
+    agentRef.send({
+      type: 'start',
+      params: { messages: [{ role: 'user', content: 'hello' }], userId: 'u1' },
+    })
+    await tick()
+
+    const { msg } = streams[0]!
+    msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+    await tick(100)
+
+    expect(completions.length).toBe(1)
+    expect(completions[0]!.finalText).toBe('')
+    expect(completions[0]!.log).toContain('complete')
+
+    await system.shutdown()
+  })
+
+  test('tool turn: stream → toolCalls → toolResult → done', async () => {
+    const system = await AgentSystem()
+    const streams: Array<{ msg: LlmProviderMsg }> = []
+
+    const toolRef = system.spawn('tool', makeToolMock('search', {
+      type: 'toolResult',
+      result: { text: 'found it' },
+    }))
+
+    const llmDef: ActorDef<LlmProviderMsg, null> = {
+      initialState: null,
+      handler: (state, msg) => {
+        if (msg.type === 'stream') streams.push({ msg })
+        return { state }
+      },
+    }
+    const llmRef = system.spawn('llm', llmDef)
+
+    const completions: TestState[] = []
+    const batchHistories: ApiMessage[][] = []
+
+    const loop = AgentLoop<TestState, TestMsg>({
+      role: 'test',
+      spanName: 'test',
+      model: 'test-model',
+      maxToolLoops: 3,
+      initialLlmRef: llmRef,
+      tools: { search: { schema: SEARCH_SCHEMA, ref: toolRef } },
+      onComplete: (state, finalText) => {
+        completions.push({ ...state, finalText, log: [...state.log, 'complete'] })
+        return { state: { ...state, finalText, log: [...state.log, 'complete'] } }
+      },
+      onBatchHistoryReady: (state, messages) => {
+        batchHistories.push([...messages])
+        return { state }
+      },
+      onLlmError: (state, error) => ({
+        state: { ...state, log: [...state.log, `error:${String(error)}`] },
+      }),
+      onLoopLimit: (state, finalText) => ({
+        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      }),
+    })
+
+    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    await tick()
+
+    agentRef.send({
+      type: 'start',
+      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
+    })
+    await tick()
+
+    // First turn: tool calls
+    const msg1 = streams[0]!.msg
+    msg1.replyTo.send({
+      type: 'llmToolCalls',
+      requestId: msg1.requestId,
+      calls: [{ id: 'c1', name: 'search', arguments: '{}' }],
+      usage: { promptTokens: 2, completionTokens: 3 },
+    })
+    await tick(150)
+
+    expect(batchHistories.length).toBe(1)
+    expect(batchHistories[0]!.length).toBe(2)
+    expect(batchHistories[0]![0]!.role).toBe('assistant')
+    expect(batchHistories[0]![1]!.role).toBe('tool')
+
+    // Second turn: done
+    expect(streams.length).toBe(2)
+    const msg2 = streams[1]!.msg
+    msg2.replyTo.send({
+      type: 'llmDone',
+      requestId: msg2.requestId,
+      usage: { promptTokens: 1, completionTokens: 1 },
+    })
+    await tick(100)
+
+    expect(completions.length).toBe(1)
+    expect(completions[0]!.log).toContain('complete')
+
+    await system.shutdown()
+  })
+
+  test('unknown tool produces synthetic error and loop continues', async () => {
+    const system = await AgentSystem()
+    const streams: Array<{ msg: LlmProviderMsg }> = []
+
+    const llmDef: ActorDef<LlmProviderMsg, null> = {
+      initialState: null,
+      handler: (state, msg) => {
+        if (msg.type === 'stream') streams.push({ msg })
+        return { state }
+      },
+    }
+    const llmRef = system.spawn('llm', llmDef)
+
+    const completions: TestState[] = []
+
+    const loop = AgentLoop<TestState, TestMsg>({
+      role: 'test',
+      spanName: 'test',
+      model: 'test-model',
+      maxToolLoops: 3,
+      initialLlmRef: llmRef,
+      tools: {},
+      onComplete: (state, finalText) => {
+        completions.push({ ...state, finalText, log: [...state.log, 'complete'] })
+        return { state: { ...state, finalText, log: [...state.log, 'complete'] } }
+      },
+      onLlmError: (state, error) => ({
+        state: { ...state, log: [...state.log, `error:${String(error)}`] },
+      }),
+      onLoopLimit: (state, finalText) => ({
+        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      }),
+    })
+
+    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    await tick()
+
+    agentRef.send({
+      type: 'start',
+      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
+    })
+    await tick()
+
+    const msg1 = streams[0]!.msg
+    msg1.replyTo.send({
+      type: 'llmToolCalls',
+      requestId: msg1.requestId,
+      calls: [{ id: 'c1', name: 'missing_tool', arguments: '{}' }],
+      usage: { promptTokens: 1, completionTokens: 1 },
+    })
+    await tick(150)
+
+    // Synthetic error causes immediate next turn (no real tool to wait for)
+    expect(streams.length).toBe(2)
+    const msg2 = streams[1]!.msg
+    msg2.replyTo.send({
+      type: 'llmDone',
+      requestId: msg2.requestId,
+      usage: { promptTokens: 1, completionTokens: 1 },
+    })
+    await tick(100)
+
+    expect(completions.length).toBe(1)
+    expect(completions[0]!.log).toContain('complete')
+
+    await system.shutdown()
+  })
+
+  test('loop limit triggers onLoopLimit', async () => {
+    const system = await AgentSystem()
+    const streams: Array<{ msg: LlmProviderMsg }> = []
+
+    const toolRef = system.spawn('tool', makeToolMock('search', {
+      type: 'toolResult',
+      result: { text: 'found' },
+    }))
+
+    const llmDef: ActorDef<LlmProviderMsg, null> = {
+      initialState: null,
+      handler: (state, msg) => {
+        if (msg.type === 'stream') streams.push({ msg })
+        return { state }
+      },
+    }
+    const llmRef = system.spawn('llm', llmDef)
+
+    const limits: string[] = []
+
+    const loop = AgentLoop<TestState, TestMsg>({
+      role: 'test',
+      spanName: 'test',
+      model: 'test-model',
+      maxToolLoops: 1,
+      initialLlmRef: llmRef,
+      tools: { search: { schema: SEARCH_SCHEMA, ref: toolRef } },
+      onComplete: (state, finalText) => ({
+        state: { ...state, finalText, log: [...state.log, 'complete'] },
+      }),
+      onLlmError: (state, error) => ({
+        state: { ...state, log: [...state.log, `error:${String(error)}`] },
+      }),
+      onLoopLimit: (state, finalText) => {
+        limits.push(finalText)
+        return { state: { ...state, log: [...state.log, `limit:${finalText}`] } }
+      },
+    })
+
+    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    await tick()
+
+    agentRef.send({
+      type: 'start',
+      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
+    })
+    await tick()
+
+    const msg1 = streams[0]!.msg
+    msg1.replyTo.send({
+      type: 'llmToolCalls',
+      requestId: msg1.requestId,
+      calls: [{ id: 'c1', name: 'search', arguments: '{}' }],
+      usage: { promptTokens: 1, completionTokens: 1 },
+    })
+    await tick(150)
+
+    expect(limits.length).toBe(1)
+
+    await system.shutdown()
+  })
+
+  test('_toolRegistered and _toolUnregistered mutate tools', async () => {
+    const system = await AgentSystem()
+    const streams: Array<{ msg: LlmProviderMsg }> = []
+
+    const toolRef = system.spawn('t', makeToolMock('newTool', {
+      type: 'toolResult',
+      result: { text: 'ok' },
+    }))
+
+    const llmDef: ActorDef<LlmProviderMsg, null> = {
+      initialState: null,
+      handler: (state, msg) => {
+        if (msg.type === 'stream') streams.push({ msg })
+        return { state }
+      },
+    }
+    const llmRef = system.spawn('llm', llmDef)
+
+    const loop = AgentLoop<TestState, TestMsg>({
+      role: 'test',
+      spanName: 'test',
+      model: 'test-model',
+      maxToolLoops: 3,
+      initialLlmRef: llmRef,
+      tools: (s) => s.tools,
+      setTools: (s, tools) => ({ ...s, tools }),
+      onComplete: (state, finalText) => ({
+        state: { ...state, finalText, log: [...state.log, 'complete'] },
+      }),
+      onLlmError: (state, error) => ({
+        state: { ...state, log: [...state.log, `error:${String(error)}`] },
+      }),
+      onLoopLimit: (state, finalText) => ({
+        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      }),
+    })
+
+    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    await tick()
+
+    // Register a tool
+    agentRef.send({
+      type: '_toolRegistered',
+      name: 'newTool',
+      schema: { type: 'function', function: { name: 'newTool', description: 'd', parameters: {} } },
+      ref: toolRef as ActorRef<ToolMsg>,
+    })
+    await tick()
+
+    // Now use it in a turn
+    agentRef.send({
+      type: 'start',
+      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
+    })
+    await tick()
+
+    const msg1 = streams[0]!.msg
+    msg1.replyTo.send({
+      type: 'llmToolCalls',
+      requestId: msg1.requestId,
+      calls: [{ id: 'c1', name: 'newTool', arguments: '{}' }],
+      usage: { promptTokens: 1, completionTokens: 1 },
+    })
+    await tick(150)
+
+    // Tool was dispatched and replied, causing startNextTurn
+    expect(streams.length).toBe(2)
+
+    await system.shutdown()
+  })
+
+  test('_backgroundToolResult in idle calls onBackgroundResult', async () => {
+    const system = await AgentSystem()
+    const llmRef = system.spawn('llm', {
+      initialState: null,
+      handler: (s) => ({ state: s }),
+    })
+
+    const bg: Array<{ name: string; reply: ToolFinalReply }> = []
+
+    const loop = AgentLoop<TestState, TestMsg>({
+      role: 'test',
+      spanName: 'test',
+      model: 'test-model',
+      maxToolLoops: 3,
+      initialLlmRef: llmRef,
+      tools: {},
+      onComplete: (state, finalText) => ({
+        state: { ...state, finalText, log: [...state.log, 'complete'] },
+      }),
+      onLlmError: (state, error) => ({
+        state: { ...state, log: [...state.log, `error:${String(error)}`] },
+      }),
+      onLoopLimit: (state, finalText) => ({
+        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      }),
+      onBackgroundResult: (state, result) => {
+        bg.push({ name: result.toolName, reply: result.reply })
+        return { state }
+      },
+    })
+
+    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    await tick()
+
+    agentRef.send({
+      type: '_backgroundToolResult',
+      toolName: 'bg',
+      toolCallId: 'tc1',
+      reply: { type: 'toolResult', result: { text: 'done' } },
+    })
+    await tick()
+
+    expect(bg.length).toBe(1)
+    expect(bg[0]!.name).toBe('bg')
+
+    await system.shutdown()
+  })
+
+  test('extraCases override built-ins', async () => {
+    const system = await AgentSystem()
+    const llmRef = system.spawn('llm', {
+      initialState: null,
+      handler: (s) => ({ state: s }),
+    })
+
+    let customHandled = false
+
+    const loop = AgentLoop<TestState, TestMsg>({
+      role: 'test',
+      spanName: 'test',
+      model: 'test-model',
+      maxToolLoops: 3,
+      initialLlmRef: llmRef,
+      tools: {},
+      onComplete: (state, finalText) => ({
+        state: { ...state, finalText, log: [...state.log, 'complete'] },
+      }),
+      onLlmError: (state, error) => ({
+        state: { ...state, log: [...state.log, `error:${String(error)}`] },
+      }),
+      onLoopLimit: (state, finalText) => ({
+        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      }),
+      extraCases: {
+        idle: {
+          _llmProvider: (state) => {
+            customHandled = true
+            return { state }
+          },
+        },
+      },
+    })
+
+    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    await tick()
+
+    agentRef.send({ type: '_llmProvider', ref: null })
+    await tick()
+
+    expect(customHandled).toBe(true)
+
+    await system.shutdown()
+  })
+
+  test('llmError calls onLlmError and resets to idle', async () => {
+    const system = await AgentSystem()
+    const streams: Array<{ msg: LlmProviderMsg }> = []
+
+    const llmDef: ActorDef<LlmProviderMsg, null> = {
+      initialState: null,
+      handler: (state, msg) => {
+        if (msg.type === 'stream') streams.push({ msg })
+        return { state }
+      },
+    }
+    const llmRef = system.spawn('llm', llmDef)
+
+    const errors: string[] = []
+
+    const loop = AgentLoop<TestState, TestMsg>({
+      role: 'test',
+      spanName: 'test',
+      model: 'test-model',
+      maxToolLoops: 3,
+      initialLlmRef: llmRef,
+      tools: {},
+      onComplete: (state, finalText) => ({
+        state: { ...state, finalText, log: [...state.log, 'complete'] },
+      }),
+      onLlmError: (state, error) => {
+        errors.push(String(error))
+        return { state: { ...state, log: [...state.log, `error:${String(error)}`] } }
+      },
+      onLoopLimit: (state, finalText) => ({
+        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      }),
+    })
+
+    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    await tick()
+
+    agentRef.send({
+      type: 'start',
+      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
+    })
+    await tick()
+
+    const { msg } = streams[0]!
+    msg.replyTo.send({ type: 'llmError', requestId: msg.requestId, error: 'boom' })
+    await tick(100)
+
+    expect(errors.length).toBe(1)
+    expect(errors[0]).toBe('boom')
+
+    await system.shutdown()
+  })
+
+  test('requestId guard ignores stale llmChunk', async () => {
+    const system = await AgentSystem()
+    const streams: Array<{ msg: LlmProviderMsg }> = []
+
+    const llmDef: ActorDef<LlmProviderMsg, null> = {
+      initialState: null,
+      handler: (state, msg) => {
+        if (msg.type === 'stream') streams.push({ msg })
+        return { state }
+      },
+    }
+    const llmRef = system.spawn('llm', llmDef)
+
+    const completions: TestState[] = []
+
+    const loop = AgentLoop<TestState, TestMsg>({
+      role: 'test',
+      spanName: 'test',
+      model: 'test-model',
+      maxToolLoops: 3,
+      initialLlmRef: llmRef,
+      tools: {},
+      onComplete: (state, finalText) => {
+        completions.push({ ...state, finalText, log: [...state.log, 'complete'] })
+        return { state: { ...state, finalText, log: [...state.log, 'complete'] } }
+      },
+      onLlmError: (state, error) => ({
+        state: { ...state, log: [...state.log, `error:${String(error)}`] },
+      }),
+      onLoopLimit: (state, finalText) => ({
+        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      }),
+    })
+
+    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    await tick()
+
+    agentRef.send({
+      type: 'start',
+      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
+    })
+    await tick()
+
+    const { msg } = streams[0]!
+    // Send chunk with WRONG requestId, then done with correct one
+    msg.replyTo.send({ type: 'llmChunk', requestId: 'wrong-id', text: 'x' })
+    msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+    await tick(100)
+
+    expect(completions.length).toBe(1)
+    expect(completions[0]!.finalText).toBe('')
+
+    await system.shutdown()
+  })
+
+  test('reasoning chunk calls onStream with kind reasoning', async () => {
+    const system = await AgentSystem()
+    const streams: Array<{ msg: LlmProviderMsg }> = []
+
+    const llmDef: ActorDef<LlmProviderMsg, null> = {
+      initialState: null,
+      handler: (state, msg) => {
+        if (msg.type === 'stream') streams.push({ msg })
+        return { state }
+      },
+    }
+    const llmRef = system.spawn('llm', llmDef)
+
+    const events: Array<{ kind: string; text: string }> = []
+
+    const loop = AgentLoop<TestState, TestMsg>({
+      role: 'test',
+      spanName: 'test',
+      model: 'test-model',
+      maxToolLoops: 3,
+      initialLlmRef: llmRef,
+      tools: {},
+      onStream: (state, chunk) => {
+        events.push(chunk)
+        return state
+      },
+      onComplete: (state, finalText) => ({
+        state: { ...state, finalText, log: [...state.log, 'complete'] },
+      }),
+      onLlmError: (state, error) => ({
+        state: { ...state, log: [...state.log, `error:${String(error)}`] },
+      }),
+      onLoopLimit: (state, finalText) => ({
+        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      }),
+    })
+
+    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    await tick()
+
+    agentRef.send({
+      type: 'start',
+      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
+    })
+    await tick()
+
+    const { msg } = streams[0]!
+    msg.replyTo.send({ type: 'llmReasoningChunk', requestId: msg.requestId, text: 'thinking' })
+    msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+    await tick(100)
+
+    expect(events.length).toBe(1)
+    expect(events[0]!.kind).toBe('reasoning')
+    expect(events[0]!.text).toBe('thinking')
+
+    await system.shutdown()
+  })
+})

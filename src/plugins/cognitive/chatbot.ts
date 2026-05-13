@@ -156,14 +156,12 @@ export const Chatbot = (
     tools:        (s) => s.tools,
     setTools: (s, tools) => ({ ...s, tools }),
 
-    onChunk: (state, text) => ({
+    onStream: (state, { kind, text }) => ({
       state,
-      events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'chunk', text }) })],
-    }),
-
-    onReasoningChunk: (state, text) => ({
-      state,
-      events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'reasoningChunk', text }) })],
+      events: [emit(OutboundMessageTopic, {
+        clientId: state.activeClientId,
+        text: JSON.stringify({ type: kind === 'reasoning' ? 'reasoningChunk' : 'chunk', text }),
+      })],
     }),
 
     onBackgroundResult: (state, result, ctx) => {
@@ -188,7 +186,7 @@ export const Chatbot = (
       }
       const optimisticHistory = [...state.historyMirror, userMessage]
       const stateNext = { ...state, historyMirror: optimisticHistory, isInjected: true }
-      return loop.triggers.startTurn(stateNext, {
+      return loop.startTurn(stateNext, {
         messages: buildTurnMessages(optimisticHistory, stateNext.userContext, injection),
         userId,
         clientId: state.activeClientId,
@@ -284,7 +282,7 @@ export const Chatbot = (
 
     historyStoreRef.send({ type: 'append', messages: [userMessage] })
 
-    return loop.triggers.startTurn(stateNext, {
+    return loop.startTurn(stateNext, {
       messages: buildTurnMessages(optimisticHistory, stateNext.userContext, userText),
       userId,
       clientId: msgClientId,
@@ -323,7 +321,7 @@ export const Chatbot = (
       },
     }),
 
-    handler: loop.phases.idle,
+    handler: loop.idle,
 
     supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }

@@ -50,7 +50,6 @@ const buildSystemPrompt = (): string =>
 // ─── Actor ───
 
 export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMsg, GoogleAgentState> => {
-  let loop: AgentLoopHandle<GoogleAgentMsg, GoogleAgentState>
 
   const handleInvoke = (state: GoogleAgentState, msg: Extract<GoogleAgentMsg, { type: 'invoke' }>, ctx: ActorContext<GoogleAgentMsg>): ActorResult<GoogleAgentMsg, GoogleAgentState> => {
     let request: string
@@ -65,7 +64,7 @@ export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMs
       msg.replyTo.send({ type: 'toolError', error: 'Google agent not ready (no LLM provider).' })
       return { state }
     }
-    return loop.triggers.startTurn(
+    return loop.startTurn(
       { ...state, replyTo: msg.replyTo },
       {
         messages: [
@@ -79,7 +78,7 @@ export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMs
     )
   }
 
-  loop = AgentLoop<GoogleAgentState, GoogleAgentMsg>({
+  const loop = AgentLoop<GoogleAgentState, GoogleAgentMsg>({
     role:         'google',
     spanName:     'google-agent',
     logPrefix:    'google-agent',
@@ -116,7 +115,7 @@ export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMs
   })
 
   return {
-    initialState: createInitialGoogleAgentState,
+    initialState: () => ({ replyTo: null }),
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
@@ -124,13 +123,10 @@ export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMs
       },
     }),
 
-    handler: loop.phases.idle,
+    handler: loop.idle,
 
     stashCapacity: 50,
     supervision:   { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }
 }
 
-const createInitialGoogleAgentState = (): GoogleAgentState => ({
-  replyTo: null,
-})

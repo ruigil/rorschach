@@ -121,7 +121,7 @@ const PlannerAgent = (config: PlannerAgentConfig, opts:   AgentFactoryOpts): Act
       activeClientId: msg.clientId,
       plannerHistory: [...state.plannerHistory, userMsg],
     }
-    return loop.triggers.startTurn(stateNext, {
+    return loop.startTurn(stateNext, {
       messages:     buildTurnMessages(stateNext),
       userId,
       clientId:     msg.clientId,
@@ -224,10 +224,7 @@ const PlannerAgent = (config: PlannerAgentConfig, opts:   AgentFactoryOpts): Act
 
         // Spawn the planner's private formalize-plan tool as a child actor.
         // It does not flow through ToolRegistrationTopic — only this planner sees it.
-        const formalizePlanToolRef = ctx.spawn(
-          'formalize-plan-tool',
-          FormalizePlanTool({ plansDir }),
-        ) as ActorRef<ToolMsg>
+        const formalizePlanToolRef = ctx.spawn('formalize-plan-tool', FormalizePlanTool({ plansDir })) as ActorRef<ToolMsg>
 
         return {
           state: {
@@ -244,7 +241,7 @@ const PlannerAgent = (config: PlannerAgentConfig, opts:   AgentFactoryOpts): Act
       },
     }),
 
-    handler: loop.phases.idle,
+    handler: loop.idle,
 
     supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }

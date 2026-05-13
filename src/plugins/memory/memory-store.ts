@@ -71,7 +71,7 @@ export const createMemoryStoreWorkerActor = (parent:  ActorRef<MemorySupervisorM
       msg.replyTo.send({ type: 'toolError', error: parsed.error })
       return { state }
     }
-    return loop.triggers.startTurn(
+    return loop.startTurn(
       { ...state, replyTo: msg.replyTo },
       {
         messages: [
@@ -89,7 +89,6 @@ export const createMemoryStoreWorkerActor = (parent:  ActorRef<MemorySupervisorM
     role:            'memory-store',
     spanName:        'memory-store',
     logPrefix:       'memory store worker',
-    stashConcurrent: false,
     model:           options.model,
     maxToolLoops:    options.maxToolLoops,
     tools:           options.tools,
@@ -125,6 +124,6 @@ export const createMemoryStoreWorkerActor = (parent:  ActorRef<MemorySupervisorM
 
   return {
     initialState: () => ({ replyTo: null }),
-    handler: loop.phases.idle,
+    handler: loop.idle,
   }
 }
