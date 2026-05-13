@@ -50,25 +50,19 @@ const buildSystemPrompt = (userId: string): string =>
 
 // ─── Worker Actor ───
 
-export const createMemoryRecallWorkerActor = (
-  parent:  ActorRef<MemorySupervisorMsg>,
-  options: MemoryRecallWorkerOptions,
-): ActorDef<MemoryRecallMsg, MemoryRecallWorkerState> => {
-  let loop: AgentLoopHandle<MemoryRecallMsg, MemoryRecallWorkerState>
+export const createMemoryRecallWorkerActor = (parent:  ActorRef<MemorySupervisorMsg>, options: MemoryRecallWorkerOptions): ActorDef<MemoryRecallMsg, MemoryRecallWorkerState> => {
 
   const handleInvoke = (state: MemoryRecallWorkerState, msg: Extract<MemoryRecallMsg, { type: 'invoke' }>, ctx: ActorContext<MemoryRecallMsg>): ActorResult<MemoryRecallMsg, MemoryRecallWorkerState> => {
-    const parsed = parseToolArgs<{ query: string }>(
-      msg.arguments,
-      (p) => {
-        const query = typeof p.query === 'string' ? p.query : ''
-        return query ? { query } : null
-      },
-      'Missing query argument',
-    )
+    const parsed = parseToolArgs<{ query: string }>(msg.arguments, (p) => {
+      const query = typeof p.query === 'string' ? p.query : ''
+      return query ? { query } : null
+    },'Missing query argument')
+
     if (!parsed.ok) {
       msg.replyTo.send({ type: 'toolError', error: parsed.error })
       return { state }
     }
+
     return loop.triggers.startTurn(
       { ...state, replyTo: msg.replyTo },
       {
@@ -83,7 +77,7 @@ export const createMemoryRecallWorkerActor = (
     )
   }
 
-  loop = AgentLoop<MemoryRecallWorkerState, MemoryRecallMsg>({
+  const loop = AgentLoop<MemoryRecallWorkerState, MemoryRecallMsg>({
     role:            'memory-recall',
     spanName:        'memory-recall',
     logPrefix:       'memory recall',

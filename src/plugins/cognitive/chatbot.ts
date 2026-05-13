@@ -167,12 +167,12 @@ export const Chatbot = (
     }),
 
     onBackgroundResult: (state, result, ctx) => {
-      const resultText = result.reply.type === 'toolResult'
-        ? result.reply.result.text
-        : `Tool error: ${result.reply.error}`
+      const resultText = result.reply.type === 'toolResult' ? result.reply.result.text : `Tool error: ${result.reply.error}`
       const injection = `[Background tool result — ${result.toolName} (toolCallId=${result.toolCallId})]: ${resultText}`
       const userMessage: ApiMessage = { role: 'user', content: injection }
+      
       historyStoreRef.send({ type: 'append', messages: [userMessage] })
+
       const payload = result.reply.type === 'toolResult' ? result.reply.result : undefined
       if (payload?.sources?.length) {
         ctx.publish(OutboundMessageTopic, {
@@ -266,9 +266,7 @@ export const Chatbot = (
   const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
     const { clientId: msgClientId, text, images, audio, pdfs, isCron, isInjected } = msg
 
-    const userText = isCron
-      ? `[Internal Instruction] ${text}`
-      : assembleUserText(text, images, audio, pdfs)
+    const userText = isCron ? `[Internal Instruction] ${text}` : assembleUserText(text, images, audio, pdfs)
 
     const userMessage: ApiMessage = { role: 'user', content: userText }
 
@@ -310,8 +308,6 @@ export const Chatbot = (
           }
           return { type: '_toolUnregistered' as const, name: event.name }
         })
-
-        ctx.subscribe(LlmProviderTopic, (event) => ({ type: '_llmProvider' as const, ref: event.ref }))
 
         ctx.subscribe(HistorySnapshotTopic, (event) => {
           if (event.userId !== userId) return null

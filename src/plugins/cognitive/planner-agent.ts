@@ -97,10 +97,7 @@ export const PlannerAgentFactory = (config: PlannerAgentConfig) =>
 
 // ─── Actor ───
 
-const PlannerAgent = (
-  config: PlannerAgentConfig,
-  opts:   AgentFactoryOpts,
-): ActorDef<PlannerAgentMsg, PlannerAgentState> => {
+const PlannerAgent = (config: PlannerAgentConfig, opts:   AgentFactoryOpts): ActorDef<PlannerAgentMsg, PlannerAgentState> => {
   const { model, maxToolLoops, toolFilter, plansDir } = config
   const { userId, historyStoreRef } = opts
 
@@ -108,9 +105,7 @@ const PlannerAgent = (
   type S   = PlannerAgentState
   type Ctx = ActorContext<M>
 
-  let loop: AgentLoopHandle<M, S>
-
-  const buildTurnMessages = (state: S): ApiMessage[] =>
+  const buildTurnMessages = (state: PlannerAgentState): ApiMessage[] =>
     [{ role: 'system', content: buildSystemPrompt() }, ...state.plannerHistory]
 
   const resetScratch = (state: S): S => ({
@@ -119,7 +114,21 @@ const PlannerAgent = (
     pendingFormalizeSummary: null,
   })
 
-  loop = AgentLoop<S, M>({
+  const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
+    const userMsg: ApiMessage = { role: 'user', content: msg.text }
+    const stateNext: S = {
+      ...state,
+      activeClientId: msg.clientId,
+      plannerHistory: [...state.plannerHistory, userMsg],
+    }
+    return loop.triggers.startTurn(stateNext, {
+      messages:     buildTurnMessages(stateNext),
+      userId,
+      clientId:     msg.clientId,
+    }, ctx)
+  }
+
+  const loop = AgentLoop<PlannerAgentState, PlannerAgentMsg>({
     role:         'planner',
     spanName:     'planner-turn',
     logPrefix:    'planner',
@@ -188,19 +197,7 @@ const PlannerAgent = (
 
     extraCases: {
       idle: {
-        userMessage: (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
-          const userMsg: ApiMessage = { role: 'user', content: msg.text }
-          const stateNext: S = {
-            ...state,
-            activeClientId: msg.clientId,
-            plannerHistory: [...state.plannerHistory, userMsg],
-          }
-          return loop.triggers.startTurn(stateNext, {
-            messages:     buildTurnMessages(stateNext),
-            userId,
-            clientId:     msg.clientId,
-          }, ctx)
-        },
+        userMessage: (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => handleUserMessage(state, msg, ctx),
       },
     },
   })
@@ -222,10 +219,6 @@ const PlannerAgent = (
           }
           return { type: '_toolUnregistered' as const, name: event.name }
         })
-
-        ctx.subscribe(LlmProviderTopic, (event) =>
-          ({ type: '_llmProvider' as const, ref: event.ref }),
-        )
 
         ctx.log.info('planner-agent: started', { userId })
 

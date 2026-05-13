@@ -55,11 +55,7 @@ const buildSystemPrompt = (userId: string, topic?: string): string => {
 
 // ─── Worker Actor ───
 
-export const createMemoryStoreWorkerActor = (
-  parent:  ActorRef<MemorySupervisorMsg>,
-  options: MemoryStoreWorkerOptions,
-): ActorDef<MemoryStoreMsg, MemoryStoreWorkerState> => {
-  let loop: AgentLoopHandle<MemoryStoreMsg, MemoryStoreWorkerState>
+export const createMemoryStoreWorkerActor = (parent:  ActorRef<MemorySupervisorMsg>, options: MemoryStoreWorkerOptions): ActorDef<MemoryStoreMsg, MemoryStoreWorkerState> => {
 
   const handleInvoke = (state: MemoryStoreWorkerState, msg: Extract<MemoryStoreMsg, { type: 'invoke' }>, ctx: ActorContext<MemoryStoreMsg>): ActorResult<MemoryStoreMsg, MemoryStoreWorkerState> => {
     const parsed = parseToolArgs<{ content: string; topic?: string }>(
@@ -89,7 +85,7 @@ export const createMemoryStoreWorkerActor = (
     )
   }
 
-  loop = AgentLoop<MemoryStoreWorkerState, MemoryStoreMsg>({
+  const loop = AgentLoop<MemoryStoreWorkerState, MemoryStoreMsg>({
     role:            'memory-store',
     spanName:        'memory-store',
     logPrefix:       'memory store worker',
