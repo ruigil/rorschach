@@ -1,4 +1,4 @@
-import type { ActorDef, ActorContext, ActorRef, ActorResult } from '../../system/types.ts'
+import type { ActorDef, ActorContext, ActorRef, ActorResult, Interceptor } from '../../system/types.ts'
 import { AgentLoop, type AgentLoopHandle } from '../../system/agent-loop.ts'
 import type { ToolCollection, ToolReply, ToolSchema } from '../../types/tools.ts'
 import { parseToolArgs } from '../../types/tools.ts'
@@ -39,6 +39,7 @@ export type MemoryRecallWorkerOptions = {
 
 export type MemoryRecallWorkerState = {
   replyTo: ActorRef<ToolReply> | null
+  llmRef:  ActorRef<LlmProviderMsg> | null
 }
 
 // ─── System prompt ───
@@ -83,8 +84,8 @@ export const createMemoryRecallWorkerActor = (parent:  ActorRef<MemorySupervisor
     logPrefix:       'memory recall',
     model:           options.model,
     maxToolLoops:    options.maxToolLoops,
+    llmRef:          (s) => s.llmRef,
     tools:           options.tools,
-    initialLlmRef:   options.llmRef,
 
     onComplete: (state, finalText, _, ctx) => {
       state.replyTo?.send({ type: 'toolResult', result: { text: finalText || '(no result)' } })
@@ -106,16 +107,26 @@ export const createMemoryRecallWorkerActor = (parent:  ActorRef<MemorySupervisor
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
     },
-
-    extraCases: {
-      idle: {
-        invoke: handleInvoke,
-      },
-    },
   })
 
+  const hostInterceptor: Interceptor<MemoryRecallMsg, MemoryRecallWorkerState> = (state, msg, ctx, next) => {
+    const m = msg as MemoryRecallMsg
+
+    if (m.type === 'invoke') {
+      if (loop.phase !== 'idle') return { state, stash: true }
+      return handleInvoke(state, m as Extract<MemoryRecallMsg, { type: 'invoke' }>, ctx)
+    }
+
+    if (m.type === '_llmProvider') {
+      return { state: { ...state, llmRef: m.ref } }
+    }
+
+    return next(state, msg)
+  }
+
   return {
-    initialState: () => ({ replyTo: null }),
-    handler: loop.idle,
+    initialState: () => ({ replyTo: null, llmRef: options.llmRef }),
+    handler:      loop.idle,
+    interceptors: [hostInterceptor],
   }
 }

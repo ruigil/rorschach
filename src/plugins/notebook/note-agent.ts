@@ -1,9 +1,10 @@
-import type { ActorDef, ActorContext, ActorRef, ActorResult } from '../../system/types.ts'
+import type { ActorDef, ActorContext, ActorRef, ActorResult, Interceptor } from '../../system/types.ts'
 import type { ToolReply } from '../../types/tools.ts'
 import { onLifecycle } from '../../system/match.ts'
 import { AgentLoop, type AgentLoopHandle } from '../../system/agent-loop.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
+import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { NoteAgentMsg } from './types.ts'
 
 // ─── Options ───
@@ -19,6 +20,7 @@ export type NoteAgentOptions = {
 
 export type NoteAgentState = {
   replyTo: ActorRef<ToolReply> | null
+  llmRef:  ActorRef<LlmProviderMsg> | null
 }
 
 // ─── Helpers ───
@@ -57,7 +59,7 @@ export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, Not
       msg.replyTo.send({ type: 'toolError', error: 'Invalid arguments: expected { request: string }' })
       return { state }
     }
-    if (!loop.isReady) {
+    if (!state.llmRef) {
       msg.replyTo.send({ type: 'toolError', error: 'Notebook agent not ready (no LLM provider).' })
       return { state }
     }
@@ -81,6 +83,7 @@ export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, Not
     logPrefix:    'note-agent',
     model:        options.model,
     maxToolLoops: options.maxToolLoops,
+    llmRef:       (s) => s.llmRef,
     tools:        options.tools,
 
     onComplete: (state, finalText) => {
@@ -97,22 +100,25 @@ export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, Not
       state.replyTo?.send({ type: 'toolError', error: 'Tool loop limit reached.' })
       return { state }
     },
-
-    extraCases: {
-      idle: {
-        invoke: handleInvoke,
-      },
-      awaitingLlm: {
-        invoke: (state) => ({ state, stash: true }),
-      },
-      toolLoop: {
-        invoke: (state) => ({ state, stash: true }),
-      },
-    },
   })
 
+  const hostInterceptor: Interceptor<NoteAgentMsg, NoteAgentState> = (state, msg, ctx, next) => {
+    const m = msg as NoteAgentMsg
+
+    if (m.type === 'invoke') {
+      if (loop.phase !== 'idle') return { state, stash: true }
+      return handleInvoke(state, m as Extract<NoteAgentMsg, { type: 'invoke' }>, ctx)
+    }
+
+    if (m.type === '_llmProvider') {
+      return { state: { ...state, llmRef: m.ref } }
+    }
+
+    return next(state, msg)
+  }
+
   return {
-    initialState: () => ({ replyTo: null }),
+    initialState: () => ({ replyTo: null, llmRef: null }),
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
@@ -120,7 +126,8 @@ export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, Not
       },
     }),
 
-    handler: loop.idle,
+    handler:      loop.idle,
+    interceptors: [hostInterceptor],
 
     stashCapacity: 50,
     supervision:   { type: 'restart', maxRetries: 3, withinMs: 30_000 },

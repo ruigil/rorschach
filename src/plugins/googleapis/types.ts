@@ -2,6 +2,7 @@ import type { ActorRef } from '../../system/types.ts'
 import type { LoopMsg } from '../../system/agent-loop.ts'
 import type { ToolInvokeMsg } from '../../types/tools.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
+import type { LlmProviderMsg } from '../../types/llm.ts'
 
 // ─── Domain types ───
 
@@ -37,7 +38,7 @@ export type GooglePluginMsg =
   | { type: 'config';            slice: GoogleApisConfig | undefined }
   | { type: '_identityProvider'; ref: ActorRef<IdentityProviderMsg> | null }
 
-export type GoogleAgentMsg = LoopMsg | ToolInvokeMsg
+export type GoogleAgentMsg = LoopMsg | ToolInvokeMsg | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── Shared closure state (passed into route handlers and tool actors) ───
 

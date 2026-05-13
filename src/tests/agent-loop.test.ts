@@ -1,9 +1,9 @@
 import { describe, test, expect } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
-import { AgentLoop, type LoopMsg, type LoopStartTurnParams } from '../system/agent-loop.ts'
-import type { ActorDef, ActorContext, ActorRef } from '../system/types.ts'
+import { AgentLoop, type AgentLoopHandle, type LoopMsg, type LoopStartTurnParams } from '../system/agent-loop.ts'
+import type { ActorDef, ActorContext, ActorRef, Interceptor } from '../system/types.ts'
 import type { LlmProviderMsg, LlmProviderReply, ApiMessage, TokenUsage } from '../types/llm.ts'
-import type { ToolMsg, ToolFinalReply, ToolSchema } from '../types/tools.ts'
+import type { ToolMsg, ToolFinalReply, ToolSchema, ToolCollection } from '../types/tools.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -11,7 +11,10 @@ const tick = (ms = 50) => Bun.sleep(ms)
 // Helpers
 // ═══════════════════════════════════════════════════════════════════
 
-type TestExtra = { type: 'start'; params: LoopStartTurnParams }
+type TestExtra =
+  | { type: 'start'; params: LoopStartTurnParams }
+  | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
+  | { type: '_toolUnregistered'; name: string }
 
 type TestMsg = LoopMsg<TestExtra>
 
@@ -22,7 +25,8 @@ type TestState = {
   toolCallsEvents: string[]
   toolResults: Array<{ name: string; reply: ToolFinalReply }>
   batchHistory: ApiMessage[][]
-  backgroundResults: Array<{ name: string; reply: ToolFinalReply }>
+  llmRef: ActorRef<LlmProviderMsg> | null
+  tools: ToolCollection
 }
 
 const emptyState = (): TestState => ({
@@ -32,7 +36,8 @@ const emptyState = (): TestState => ({
   toolCallsEvents: [],
   toolResults: [],
   batchHistory: [],
-  backgroundResults: [],
+  llmRef: null,
+  tools: {},
 })
 
 const SEARCH_SCHEMA: ToolSchema = {
@@ -50,8 +55,32 @@ const makeToolMock = (name: string, result: ToolFinalReply): ActorDef<ToolMsg, n
   },
 })
 
-const makeAgentDef = <S, M extends { type: string }>(
-  loop: { idle: any; startTurn: any; awaitingLlm: any; toolLoop: any },
+const makeHostInterceptor = <S extends TestState, M extends { type: string }>(): Interceptor<M, S> =>
+  (state, msg, _ctx, next) => {
+    const m = msg as any
+    if (m.type === '_llmProvider') {
+      return { state: { ...state, llmRef: m.ref } as S }
+    }
+    if (m.type === '_toolRegistered') {
+      return {
+        state: {
+          ...state,
+          tools: {
+            ...state.tools,
+            [m.name]: { schema: m.schema, ref: m.ref, mayBeLongRunning: m.mayBeLongRunning },
+          },
+        } as S,
+      }
+    }
+    if (m.type === '_toolUnregistered') {
+      const { [m.name]: _, ...rest } = state.tools
+      return { state: { ...state, tools: rest } as S }
+    }
+    return next(state, msg)
+  }
+
+const makeAgentDef = <S extends TestState, M extends { type: string }>(
+  loop: AgentLoopHandle<M, S>,
   initialState: S,
 ): ActorDef<M, S> => ({
   initialState,
@@ -61,6 +90,7 @@ const makeAgentDef = <S, M extends { type: string }>(
     }
     return loop.idle(state, msg, ctx)
   },
+  interceptors: [makeHostInterceptor<S, M>()],
 })
 
 // ═══════════════════════════════════════════════════════════════════
@@ -70,7 +100,7 @@ const makeAgentDef = <S, M extends { type: string }>(
 describe('AgentLoop: startTurn + streaming', () => {
   test('startTurn sends stream to LLM and transitions to awaitingLlm', async () => {
     const system = await AgentSystem()
-    const streams: LlmProviderMsg[] = []
+    const streams: Array<Extract<LlmProviderMsg, { type: "stream" }>> = []
 
     const llmDef: ActorDef<LlmProviderMsg, null> = {
       initialState: null,
@@ -86,8 +116,8 @@ describe('AgentLoop: startTurn + streaming', () => {
       spanName: 'test',
       model: 'test-model',
       maxToolLoops: 3,
-      initialLlmRef: llmRef,
-      tools: {},
+      llmRef: (s) => s.llmRef,
+      tools: (s) => s.tools,
       onComplete: (state, finalText) => ({
         state: { ...state, finalText, log: [...state.log, 'complete'] },
       }),
@@ -99,7 +129,7 @@ describe('AgentLoop: startTurn + streaming', () => {
       }),
     })
 
-    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef }))
     await tick()
 
     agentRef.send({
@@ -123,7 +153,7 @@ describe('AgentLoop: startTurn + streaming', () => {
 
   test('llmChunk accumulates text and calls onStream', async () => {
     const system = await AgentSystem()
-    const streams: Array<{ msg: LlmProviderMsg }> = []
+    const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
     const llmDef: ActorDef<LlmProviderMsg, null> = {
       initialState: null,
@@ -141,8 +171,8 @@ describe('AgentLoop: startTurn + streaming', () => {
       spanName: 'test',
       model: 'test-model',
       maxToolLoops: 3,
-      initialLlmRef: llmRef,
-      tools: {},
+      llmRef: (s) => s.llmRef,
+      tools: (s) => s.tools,
       onStream: (state, chunk, requestId) => {
         state.streamEvents.push({ ...chunk, text: `${chunk.text}:${requestId}` })
         return state
@@ -159,7 +189,7 @@ describe('AgentLoop: startTurn + streaming', () => {
       }),
     })
 
-    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef }))
     await tick()
 
     agentRef.send({
@@ -189,7 +219,7 @@ describe('AgentLoop: startTurn + streaming', () => {
 describe('AgentLoop: full integration', () => {
   test('complete turn: stream → done', async () => {
     const system = await AgentSystem()
-    const streams: Array<{ msg: LlmProviderMsg }> = []
+    const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
     const llmDef: ActorDef<LlmProviderMsg, null> = {
       initialState: null,
@@ -207,8 +237,8 @@ describe('AgentLoop: full integration', () => {
       spanName: 'test',
       model: 'test-model',
       maxToolLoops: 3,
-      initialLlmRef: llmRef,
-      tools: {},
+      llmRef: (s) => s.llmRef,
+      tools: (s) => s.tools,
       onComplete: (state, finalText) => {
         completions.push({ ...state, finalText, log: [...state.log, 'complete'] })
         return { state: { ...state, finalText, log: [...state.log, 'complete'] } }
@@ -221,7 +251,7 @@ describe('AgentLoop: full integration', () => {
       }),
     })
 
-    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef }))
     await tick()
 
     agentRef.send({
@@ -243,7 +273,7 @@ describe('AgentLoop: full integration', () => {
 
   test('tool turn: stream → toolCalls → toolResult → done', async () => {
     const system = await AgentSystem()
-    const streams: Array<{ msg: LlmProviderMsg }> = []
+    const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
     const toolRef = system.spawn('tool', makeToolMock('search', {
       type: 'toolResult',
@@ -267,8 +297,8 @@ describe('AgentLoop: full integration', () => {
       spanName: 'test',
       model: 'test-model',
       maxToolLoops: 3,
-      initialLlmRef: llmRef,
-      tools: { search: { schema: SEARCH_SCHEMA, ref: toolRef } },
+      llmRef: (s) => s.llmRef,
+      tools: (s) => s.tools,
       onComplete: (state, finalText) => {
         completions.push({ ...state, finalText, log: [...state.log, 'complete'] })
         return { state: { ...state, finalText, log: [...state.log, 'complete'] } }
@@ -285,7 +315,7 @@ describe('AgentLoop: full integration', () => {
       }),
     })
 
-    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef, tools: { search: { schema: SEARCH_SCHEMA, ref: toolRef } } }))
     await tick()
 
     agentRef.send({
@@ -327,7 +357,7 @@ describe('AgentLoop: full integration', () => {
 
   test('unknown tool produces synthetic error and loop continues', async () => {
     const system = await AgentSystem()
-    const streams: Array<{ msg: LlmProviderMsg }> = []
+    const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
     const llmDef: ActorDef<LlmProviderMsg, null> = {
       initialState: null,
@@ -345,8 +375,8 @@ describe('AgentLoop: full integration', () => {
       spanName: 'test',
       model: 'test-model',
       maxToolLoops: 3,
-      initialLlmRef: llmRef,
-      tools: {},
+      llmRef: (s) => s.llmRef,
+      tools: (s) => s.tools,
       onComplete: (state, finalText) => {
         completions.push({ ...state, finalText, log: [...state.log, 'complete'] })
         return { state: { ...state, finalText, log: [...state.log, 'complete'] } }
@@ -359,7 +389,7 @@ describe('AgentLoop: full integration', () => {
       }),
     })
 
-    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef }))
     await tick()
 
     agentRef.send({
@@ -395,7 +425,7 @@ describe('AgentLoop: full integration', () => {
 
   test('loop limit triggers onLoopLimit', async () => {
     const system = await AgentSystem()
-    const streams: Array<{ msg: LlmProviderMsg }> = []
+    const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
     const toolRef = system.spawn('tool', makeToolMock('search', {
       type: 'toolResult',
@@ -418,8 +448,8 @@ describe('AgentLoop: full integration', () => {
       spanName: 'test',
       model: 'test-model',
       maxToolLoops: 1,
-      initialLlmRef: llmRef,
-      tools: { search: { schema: SEARCH_SCHEMA, ref: toolRef } },
+      llmRef: (s) => s.llmRef,
+      tools: (s) => s.tools,
       onComplete: (state, finalText) => ({
         state: { ...state, finalText, log: [...state.log, 'complete'] },
       }),
@@ -432,7 +462,7 @@ describe('AgentLoop: full integration', () => {
       },
     })
 
-    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef, tools: { search: { schema: SEARCH_SCHEMA, ref: toolRef } } }))
     await tick()
 
     agentRef.send({
@@ -455,9 +485,9 @@ describe('AgentLoop: full integration', () => {
     await system.shutdown()
   })
 
-  test('_toolRegistered and _toolUnregistered mutate tools', async () => {
+  test('_toolRegistered and _toolUnregistered mutate tools via interceptor', async () => {
     const system = await AgentSystem()
-    const streams: Array<{ msg: LlmProviderMsg }> = []
+    const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
     const toolRef = system.spawn('t', makeToolMock('newTool', {
       type: 'toolResult',
@@ -478,9 +508,8 @@ describe('AgentLoop: full integration', () => {
       spanName: 'test',
       model: 'test-model',
       maxToolLoops: 3,
-      initialLlmRef: llmRef,
+      llmRef: (s) => s.llmRef,
       tools: (s) => s.tools,
-      setTools: (s, tools) => ({ ...s, tools }),
       onComplete: (state, finalText) => ({
         state: { ...state, finalText, log: [...state.log, 'complete'] },
       }),
@@ -492,7 +521,7 @@ describe('AgentLoop: full integration', () => {
       }),
     })
 
-    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef }))
     await tick()
 
     // Register a tool
@@ -526,103 +555,9 @@ describe('AgentLoop: full integration', () => {
     await system.shutdown()
   })
 
-  test('_backgroundToolResult in idle calls onBackgroundResult', async () => {
-    const system = await AgentSystem()
-    const llmRef = system.spawn('llm', {
-      initialState: null,
-      handler: (s) => ({ state: s }),
-    })
-
-    const bg: Array<{ name: string; reply: ToolFinalReply }> = []
-
-    const loop = AgentLoop<TestState, TestMsg>({
-      role: 'test',
-      spanName: 'test',
-      model: 'test-model',
-      maxToolLoops: 3,
-      initialLlmRef: llmRef,
-      tools: {},
-      onComplete: (state, finalText) => ({
-        state: { ...state, finalText, log: [...state.log, 'complete'] },
-      }),
-      onLlmError: (state, error) => ({
-        state: { ...state, log: [...state.log, `error:${String(error)}`] },
-      }),
-      onLoopLimit: (state, finalText) => ({
-        state: { ...state, log: [...state.log, `limit:${finalText}`] },
-      }),
-      onBackgroundResult: (state, result) => {
-        bg.push({ name: result.toolName, reply: result.reply })
-        return { state }
-      },
-    })
-
-    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
-    await tick()
-
-    agentRef.send({
-      type: '_backgroundToolResult',
-      toolName: 'bg',
-      toolCallId: 'tc1',
-      reply: { type: 'toolResult', result: { text: 'done' } },
-    })
-    await tick()
-
-    expect(bg.length).toBe(1)
-    expect(bg[0]!.name).toBe('bg')
-
-    await system.shutdown()
-  })
-
-  test('extraCases override built-ins', async () => {
-    const system = await AgentSystem()
-    const llmRef = system.spawn('llm', {
-      initialState: null,
-      handler: (s) => ({ state: s }),
-    })
-
-    let customHandled = false
-
-    const loop = AgentLoop<TestState, TestMsg>({
-      role: 'test',
-      spanName: 'test',
-      model: 'test-model',
-      maxToolLoops: 3,
-      initialLlmRef: llmRef,
-      tools: {},
-      onComplete: (state, finalText) => ({
-        state: { ...state, finalText, log: [...state.log, 'complete'] },
-      }),
-      onLlmError: (state, error) => ({
-        state: { ...state, log: [...state.log, `error:${String(error)}`] },
-      }),
-      onLoopLimit: (state, finalText) => ({
-        state: { ...state, log: [...state.log, `limit:${finalText}`] },
-      }),
-      extraCases: {
-        idle: {
-          _llmProvider: (state) => {
-            customHandled = true
-            return { state }
-          },
-        },
-      },
-    })
-
-    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
-    await tick()
-
-    agentRef.send({ type: '_llmProvider', ref: null })
-    await tick()
-
-    expect(customHandled).toBe(true)
-
-    await system.shutdown()
-  })
-
   test('llmError calls onLlmError and resets to idle', async () => {
     const system = await AgentSystem()
-    const streams: Array<{ msg: LlmProviderMsg }> = []
+    const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
     const llmDef: ActorDef<LlmProviderMsg, null> = {
       initialState: null,
@@ -640,8 +575,8 @@ describe('AgentLoop: full integration', () => {
       spanName: 'test',
       model: 'test-model',
       maxToolLoops: 3,
-      initialLlmRef: llmRef,
-      tools: {},
+      llmRef: (s) => s.llmRef,
+      tools: (s) => s.tools,
       onComplete: (state, finalText) => ({
         state: { ...state, finalText, log: [...state.log, 'complete'] },
       }),
@@ -654,7 +589,7 @@ describe('AgentLoop: full integration', () => {
       }),
     })
 
-    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef }))
     await tick()
 
     agentRef.send({
@@ -675,7 +610,7 @@ describe('AgentLoop: full integration', () => {
 
   test('requestId guard ignores stale llmChunk', async () => {
     const system = await AgentSystem()
-    const streams: Array<{ msg: LlmProviderMsg }> = []
+    const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
     const llmDef: ActorDef<LlmProviderMsg, null> = {
       initialState: null,
@@ -693,8 +628,8 @@ describe('AgentLoop: full integration', () => {
       spanName: 'test',
       model: 'test-model',
       maxToolLoops: 3,
-      initialLlmRef: llmRef,
-      tools: {},
+      llmRef: (s) => s.llmRef,
+      tools: (s) => s.tools,
       onComplete: (state, finalText) => {
         completions.push({ ...state, finalText, log: [...state.log, 'complete'] })
         return { state: { ...state, finalText, log: [...state.log, 'complete'] } }
@@ -707,7 +642,7 @@ describe('AgentLoop: full integration', () => {
       }),
     })
 
-    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef }))
     await tick()
 
     agentRef.send({
@@ -730,7 +665,7 @@ describe('AgentLoop: full integration', () => {
 
   test('reasoning chunk calls onStream with kind reasoning', async () => {
     const system = await AgentSystem()
-    const streams: Array<{ msg: LlmProviderMsg }> = []
+    const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
     const llmDef: ActorDef<LlmProviderMsg, null> = {
       initialState: null,
@@ -748,8 +683,8 @@ describe('AgentLoop: full integration', () => {
       spanName: 'test',
       model: 'test-model',
       maxToolLoops: 3,
-      initialLlmRef: llmRef,
-      tools: {},
+      llmRef: (s) => s.llmRef,
+      tools: (s) => s.tools,
       onStream: (state, chunk) => {
         events.push(chunk)
         return state
@@ -765,7 +700,7 @@ describe('AgentLoop: full integration', () => {
       }),
     })
 
-    const agentRef = system.spawn('agent', makeAgentDef(loop, emptyState()))
+    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef }))
     await tick()
 
     agentRef.send({

@@ -1,5 +1,7 @@
 import type { LoopMsg } from '../../system/agent-loop.ts'
 import type { ToolInvokeMsg } from '../../types/tools.ts'
+import type { ActorRef } from '../../system/types.ts'
+import type { LlmProviderMsg } from '../../types/llm.ts'
 
 // ─── Domain types ───
 
@@ -48,7 +50,7 @@ export type NotebookConfig = {
 
 // ─── Note agent message protocol ───
 
-export type NoteAgentMsg = LoopMsg | ToolInvokeMsg
+export type NoteAgentMsg = LoopMsg | ToolInvokeMsg | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── Todo reminder message protocol ───
 

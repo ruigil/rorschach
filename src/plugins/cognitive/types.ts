@@ -2,7 +2,8 @@ import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { createTopic } from '../../system/types.ts'
 import type { LoopMsg } from '../../system/agent-loop.ts'
 import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
-import type { ToolFilter } from '../../types/tools.ts'
+import type { ToolFilter, ToolSchema, ToolFinalReply } from '../../types/tools.ts'
+import type { ToolMsg } from '../../types/tools.ts'
 import type { HistoryStoreMsg } from './history-store.ts'
 
 // ─── Chatbot actor message protocol ───
@@ -10,6 +11,10 @@ import type { HistoryStoreMsg } from './history-store.ts'
 type ChatbotExtra =
   | { type: 'userMessage';      clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; isCron?: boolean; isInjected?: boolean }
   | { type: '_historySnapshot'; messages: ApiMessage[]; userContext: string | null; version: number }
+  | { type: '_llmProvider';     ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_toolRegistered';  name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
+  | { type: '_toolUnregistered'; name: string }
+  | { type: '_bgToolDone';      toolName: string; toolCallId: string; reply: ToolFinalReply }
 
 export type ChatbotMsg = LoopMsg<ChatbotExtra>
 

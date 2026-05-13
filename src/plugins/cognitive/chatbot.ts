@@ -1,5 +1,5 @@
 import { emit } from '../../system/types.ts'
-import type { ActorDef, ActorRef, ActorContext, ActorResult } from '../../system/types.ts'
+import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
 import { AgentLoop, type AgentLoopHandle, type LoopTurn } from '../../system/agent-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
@@ -14,23 +14,17 @@ import type { AgentFactoryOpts } from './types.ts'
 import type { HistoryStoreMsg } from './history-store.ts'
 
 // ─── State ───
-//
-// `historyMirror` is a local cache of HistorySnapshotTopic (retained, keyed by
-// userId). The chatbot reads from it when building turn payloads but never
-// mutates it directly — appends go to the HistoryStore which republishes the
-// snapshot, and the mirror updates via the subscription.
 
 export type ChatbotState = {
   historyMirror:  ApiMessage[]
   historyVersion: number
   tools:          ToolCollection
+  llmRef:         ActorRef<LlmProviderMsg> | null
   sessionUsage:   TokenUsage
   userContext:    string | null
   activeClientId: string
   isInjected?:    boolean
 }
-
-// ─── History markers ───
 
 const HISTORY_MARKERS_NOTE =
   'Messages prefixed with [Internal Instruction] in the conversation history are past internal ' +
@@ -39,8 +33,6 @@ const HISTORY_MARKERS_NOTE =
   'tools whose work has now completed. Use them to inform your reply to the user — relay the ' +
   'result naturally rather than restating the bracketed prefix.'
 
-// ─── Options ───
-
 export type ChatbotAgentConfig = {
   model:         string
   systemPrompt?: string
@@ -48,14 +40,11 @@ export type ChatbotAgentConfig = {
   maxToolLoops?: number
 }
 
-// ─── Helpers ───
-
 const buildSystemPrompt = (basePrompt: string | undefined, userContext: string | null): string => {
   const todayDateNote = `Today's date is ${new Date().toDateString()}.`
   return [basePrompt, todayDateNote, userContext, HISTORY_MARKERS_NOTE].filter(Boolean).join('\n\n---\n\n')
 }
 
-// User file attachments are encoded as text tokens in the user message content.
 const assembleUserText = (
   text:    string,
   images?: string[],
@@ -82,22 +71,15 @@ const assembleUserText = (
   return out
 }
 
-// ─── Initial state ───
-
 const initialChatbotState = (): ChatbotState => ({
   historyMirror:  [],
   historyVersion: 0,
   tools:          {},
+  llmRef:         null,
   sessionUsage:   { promptTokens: 0, completionTokens: 0 },
   userContext:    null,
   activeClientId: '',
 })
-
-// ─── Factory ───
-//
-// Curried so cognitive.plugin.ts can register the descriptor with the
-// chatbot config closed over, while SessionManager supplies per-instance
-// AgentFactoryOpts (userId, clientId, llmRef, historyStoreRef) at spawn time.
 
 export const ChatbotAgentFactory = (config: ChatbotAgentConfig) =>
   (opts: AgentFactoryOpts): ActorDef<ChatbotMsg, ChatbotState> =>
@@ -114,8 +96,6 @@ export const Chatbot = (
   type S   = ChatbotState
   type Ctx = ActorContext<M>
 
-  // ─── Shared state-mutation handlers ─────────────────────────────────────
-
   const historySnapshot = (state: S, msg: Extract<M, { type: '_historySnapshot' }>): ActorResult<M, S> => {
     if (msg.version <= state.historyVersion && state.historyVersion > 0) return { state }
     return {
@@ -128,11 +108,6 @@ export const Chatbot = (
     }
   }
 
-  // ─── Build LLM payload ─────────────────────────────────────────────────
-  //
-  // `history` already includes the current user turn (appended optimistically
-  // by the caller), so we replace its last entry's content with `llmText` to
-  // accommodate cron-vs-history phrasing variants.
   const buildTurnMessages = (history: ApiMessage[], userContext: string | null, llmText: string): ApiMessage[] => {
     const sysPrompt = buildSystemPrompt(systemPrompt, userContext)
     return [
@@ -142,19 +117,23 @@ export const Chatbot = (
     ]
   }
 
-  // ─── React-loop ────────────────────────────────────────────────────────
-
   let loop: AgentLoopHandle<M, S>
 
   loop = AgentLoop<S, M>({
-    role:         'reasoning',
-    spanName:     'chatbot',
-    logPrefix:    'chatbot',
+    role:          'reasoning',
+    spanName:      'chatbot',
+    logPrefix:     'chatbot',
     model,
     maxToolLoops,
-    initialLlmRef: opts.llmRef,
-    tools:        (s) => s.tools,
-    setTools: (s, tools) => ({ ...s, tools }),
+    llmRef:        (s) => s.llmRef,
+    tools:         (s) => s.tools,
+
+    backgroundCompletionMessage: (toolName, toolCallId, reply) => ({
+      type: '_bgToolDone',
+      toolName,
+      toolCallId,
+      reply,
+    } as M),
 
     onStream: (state, { kind, text }) => ({
       state,
@@ -164,40 +143,10 @@ export const Chatbot = (
       })],
     }),
 
-    onBackgroundResult: (state, result, ctx) => {
-      const resultText = result.reply.type === 'toolResult' ? result.reply.result.text : `Tool error: ${result.reply.error}`
-      const injection = `[Background tool result — ${result.toolName} (toolCallId=${result.toolCallId})]: ${resultText}`
-      const userMessage: ApiMessage = { role: 'user', content: injection }
-      
-      historyStoreRef.send({ type: 'append', messages: [userMessage] })
-
-      const payload = result.reply.type === 'toolResult' ? result.reply.result : undefined
-      if (payload?.sources?.length) {
-        ctx.publish(OutboundMessageTopic, {
-          clientId: state.activeClientId,
-          text: JSON.stringify({ type: 'sources', sources: payload.sources }),
-        })
-      }
-      if (payload?.attachments?.length) {
-        ctx.publish(OutboundMessageTopic, {
-          clientId: state.activeClientId,
-          text: JSON.stringify({ type: 'attachments', attachments: payload.attachments }),
-        })
-      }
-      const optimisticHistory = [...state.historyMirror, userMessage]
-      const stateNext = { ...state, historyMirror: optimisticHistory, isInjected: true }
-      return loop.startTurn(stateNext, {
-        messages: buildTurnMessages(optimisticHistory, stateNext.userContext, injection),
-        userId,
-        clientId: state.activeClientId,
-      }, ctx)
-    },
-
     onToolCalls: (state, calls) => ({
       events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'tooling', tools: calls.map(c => c.name) }) })],
     }),
 
-    // Streaming UI events only. History bookkeeping moved to onBatchHistoryReady.
     onToolResult: (state, result) => {
       const payload = result.reply.type === 'toolResult' ? result.reply.result : undefined
       const events: ReturnType<typeof emit>[] = []
@@ -210,7 +159,6 @@ export const Chatbot = (
       return events.length > 0 ? { state, events } : { state }
     },
 
-    // Forward the canonical batch sequence to the HistoryStore.
     onBatchHistoryReady: (state, messages) => {
       historyStoreRef.send({ type: 'append', messages })
       return { state }
@@ -250,16 +198,7 @@ export const Chatbot = (
         events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool loop limit reached. Please try again.' }) })],
       }
     },
-
-    extraCases: {
-      all: { _historySnapshot: historySnapshot },
-      idle: {
-        userMessage: (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => handleUserMessage(state, msg, ctx),
-      },
-    },
   })
-
-  // ─── Adapter: userMessage → startTurn ───────────────────────────────────
 
   const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
     const { clientId: msgClientId, text, images, audio, pdfs, isCron, isInjected } = msg
@@ -268,9 +207,6 @@ export const Chatbot = (
 
     const userMessage: ApiMessage = { role: 'user', content: userText }
 
-    // Optimistically include the user turn in this turn's payload — the
-    // snapshot republish from the HistoryStore will arrive shortly and make
-    // the local mirror consistent.
     const optimisticHistory: ApiMessage[] = [...state.historyMirror, userMessage]
 
     const stateNext: S = {
@@ -287,6 +223,75 @@ export const Chatbot = (
       userId,
       clientId: msgClientId,
     }, ctx)
+  }
+
+  const handleBackgroundResult = (state: S, msg: Extract<M, { type: '_bgToolDone' }>, ctx: Ctx): ActorResult<M, S> => {
+    const resultText = msg.reply.type === 'toolResult' ? msg.reply.result.text : `Tool error: ${msg.reply.error}`
+    const injection = `[Background tool result — ${msg.toolName} (toolCallId=${msg.toolCallId})]: ${resultText}`
+    const userMessage: ApiMessage = { role: 'user', content: injection }
+
+    historyStoreRef.send({ type: 'append', messages: [userMessage] })
+
+    const payload = msg.reply.type === 'toolResult' ? msg.reply.result : undefined
+    if (payload?.sources?.length) {
+      ctx.publish(OutboundMessageTopic, {
+        clientId: state.activeClientId,
+        text: JSON.stringify({ type: 'sources', sources: payload.sources }),
+      })
+    }
+    if (payload?.attachments?.length) {
+      ctx.publish(OutboundMessageTopic, {
+        clientId: state.activeClientId,
+        text: JSON.stringify({ type: 'attachments', attachments: payload.attachments }),
+      })
+    }
+    const optimisticHistory = [...state.historyMirror, userMessage]
+    const stateNext = { ...state, historyMirror: optimisticHistory, isInjected: true }
+    return loop.startTurn(stateNext, {
+      messages: buildTurnMessages(optimisticHistory, stateNext.userContext, injection),
+      userId,
+      clientId: state.activeClientId,
+    }, ctx)
+  }
+
+  const hostInterceptor: Interceptor<M, S> = (state, msg, ctx, next) => {
+    const m = msg as M
+
+    if (m.type === '_historySnapshot') {
+      return historySnapshot(state, m as Extract<M, { type: '_historySnapshot' }>)
+    }
+
+    if (m.type === 'userMessage') {
+      if (loop.phase !== 'idle') return { state, stash: true }
+      return handleUserMessage(state, m as Extract<M, { type: 'userMessage' }>, ctx)
+    }
+
+    if (m.type === '_bgToolDone') {
+      return handleBackgroundResult(state, m as Extract<M, { type: '_bgToolDone' }>, ctx)
+    }
+
+    if (m.type === '_llmProvider') {
+      return { state: { ...state, llmRef: m.ref } }
+    }
+
+    if (m.type === '_toolRegistered') {
+      return {
+        state: {
+          ...state,
+          tools: {
+            ...state.tools,
+            [m.name]: { schema: m.schema, ref: m.ref, mayBeLongRunning: m.mayBeLongRunning },
+          },
+        },
+      }
+    }
+
+    if (m.type === '_toolUnregistered') {
+      const { [m.name]: _, ...rest } = state.tools
+      return { state: { ...state, tools: rest } }
+    }
+
+    return next(state, msg)
   }
 
   return {
@@ -317,11 +322,17 @@ export const Chatbot = (
           }
         })
 
+        ctx.subscribe(LlmProviderTopic, (e) => ({
+          type: '_llmProvider' as const,
+          ref: e.ref,
+        }))
+
         return { state }
       },
     }),
 
-    handler: loop.idle,
+    handler:      loop.idle,
+    interceptors: [hostInterceptor],
 
     supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }
