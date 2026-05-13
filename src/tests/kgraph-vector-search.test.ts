@@ -12,8 +12,8 @@ import { LlmProvider, OpenRouterAdapter } from '../plugins/cognitive/llm-provide
 // ─── Config ───
 
 const API_KEY = process.env.OPENROUTER_API_KEY ?? ''
-const EMBED_MODEL = 'qwen/qwen3-embedding-8b'
-const DIMS = 4096
+const EMBED_MODEL = 'perplexity/pplx-embed-v1-0.6b'
+const DIMS = 768
 
 const tick = (ms = 300) => Bun.sleep(ms)
 const tmpDb = () => `/tmp/kgraph-vs-test-${crypto.randomUUID()}.db`
