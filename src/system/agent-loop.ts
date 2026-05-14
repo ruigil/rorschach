@@ -169,9 +169,10 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
     Object.values(resolveTools(s)).map((e: ToolEntry) => e.schema as Tool)
 
   const addUsage = (a: TokenUsage, b: TokenUsage | null | undefined): TokenUsage =>
-    b
-      ? { promptTokens: a.promptTokens + b.promptTokens, completionTokens: a.completionTokens + b.completionTokens }
-      : a
+    b ? { 
+      promptTokens: a.promptTokens + b.promptTokens, 
+      completionTokens: a.completionTokens + b.completionTokens }
+    : a
 
   const materialize = (state: S): ActorResult<M, S> => ({
     state: { ...state, loop: idleLoopState() } as S,
@@ -194,9 +195,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
     requestSpan: SpanHandle | null,
     ctx: ActorContext<M>,
   ): SpanHandle | null => {
-    const llmSpan = requestSpan
-      ? ctx.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
-      : null
+    const llmSpan = requestSpan ? ctx.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model }) : null
     const schemas = resolveSchemas(state)
     const llmRef = hooks.llmRef(state)
     if (!llmRef) throw new Error(`${log}: llmRef is null`)
