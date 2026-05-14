@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
-import { AgentLoop, type AgentLoopHandle, type LoopMsg, type LoopStartTurnParams } from '../system/agent-loop.ts'
+import { AgentLoop, type AgentLoopHandle, type LoopMsg, type LoopStartTurnParams, idleLoopState, type WithLoopState } from '../system/agent-loop.ts'
 import type { ActorDef, ActorContext, ActorRef, Interceptor } from '../system/types.ts'
 import type { LlmProviderMsg, LlmProviderReply, ApiMessage, TokenUsage } from '../types/llm.ts'
 import type { ToolMsg, ToolFinalReply, ToolSchema, ToolCollection } from '../types/tools.ts'
@@ -18,7 +18,7 @@ type TestExtra =
 
 type TestMsg = LoopMsg<TestExtra>
 
-type TestState = {
+type TestState = WithLoopState & {
   log: string[]
   finalText: string
   streamEvents: Array<{ kind: 'text' | 'reasoning'; text: string }>
@@ -30,6 +30,7 @@ type TestState = {
 }
 
 const emptyState = (): TestState => ({
+  loop: idleLoopState(),
   log: [],
   finalText: '',
   streamEvents: [],
@@ -121,11 +122,8 @@ describe('AgentLoop: startTurn + streaming', () => {
       onComplete: (state, finalText) => ({
         state: { ...state, finalText, log: [...state.log, 'complete'] },
       }),
-      onLlmError: (state, error) => ({
-        state: { ...state, log: [...state.log, `error:${String(error)}`] },
-      }),
-      onLoopLimit: (state, finalText) => ({
-        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      onError: (state, err) => ({
+        state: { ...state, log: [...state.log, err.kind === 'llm' ? `error:${String(err.error)}` : `limit:${err.finalText}`] },
       }),
     })
 
@@ -173,19 +171,15 @@ describe('AgentLoop: startTurn + streaming', () => {
       maxToolLoops: 3,
       llmRef: (s) => s.llmRef,
       tools: (s) => s.tools,
-      onStream: (state, chunk, requestId) => {
-        state.streamEvents.push({ ...chunk, text: `${chunk.text}:${requestId}` })
-        return state
-      },
+      onStream: (state, chunk) => ({
+        state: { ...state, streamEvents: [...state.streamEvents, chunk] },
+      }),
       onComplete: (state, finalText) => {
         completions.push({ ...state, finalText, log: [...state.log, 'complete'] })
         return { state: { ...state, finalText, log: [...state.log, 'complete'] } }
       },
-      onLlmError: (state, error) => ({
-        state: { ...state, log: [...state.log, `error:${String(error)}`] },
-      }),
-      onLoopLimit: (state, finalText) => ({
-        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      onError: (state, err) => ({
+        state: { ...state, log: [...state.log, err.kind === 'llm' ? `error:${String(err.error)}` : `limit:${err.finalText}`] },
       }),
     })
 
@@ -208,8 +202,8 @@ describe('AgentLoop: startTurn + streaming', () => {
     expect(completions.length).toBe(1)
     expect(completions[0]!.finalText).toBe('hello world')
     expect(completions[0]!.streamEvents).toEqual([
-      { kind: 'text', text: 'hello :' + msg.requestId },
-      { kind: 'text', text: 'world:' + msg.requestId },
+      { kind: 'text', text: 'hello ' },
+      { kind: 'text', text: 'world' },
     ])
 
     await system.shutdown()
@@ -243,11 +237,8 @@ describe('AgentLoop: full integration', () => {
         completions.push({ ...state, finalText, log: [...state.log, 'complete'] })
         return { state: { ...state, finalText, log: [...state.log, 'complete'] } }
       },
-      onLlmError: (state, error) => ({
-        state: { ...state, log: [...state.log, `error:${String(error)}`] },
-      }),
-      onLoopLimit: (state, finalText) => ({
-        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      onError: (state, err) => ({
+        state: { ...state, log: [...state.log, err.kind === 'llm' ? `error:${String(err.error)}` : `limit:${err.finalText}`] },
       }),
     })
 
@@ -307,11 +298,8 @@ describe('AgentLoop: full integration', () => {
         batchHistories.push([...messages])
         return { state }
       },
-      onLlmError: (state, error) => ({
-        state: { ...state, log: [...state.log, `error:${String(error)}`] },
-      }),
-      onLoopLimit: (state, finalText) => ({
-        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      onError: (state, err) => ({
+        state: { ...state, log: [...state.log, err.kind === 'llm' ? `error:${String(err.error)}` : `limit:${err.finalText}`] },
       }),
     })
 
@@ -381,11 +369,8 @@ describe('AgentLoop: full integration', () => {
         completions.push({ ...state, finalText, log: [...state.log, 'complete'] })
         return { state: { ...state, finalText, log: [...state.log, 'complete'] } }
       },
-      onLlmError: (state, error) => ({
-        state: { ...state, log: [...state.log, `error:${String(error)}`] },
-      }),
-      onLoopLimit: (state, finalText) => ({
-        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      onError: (state, err) => ({
+        state: { ...state, log: [...state.log, err.kind === 'llm' ? `error:${String(err.error)}` : `limit:${err.finalText}`] },
       }),
     })
 
@@ -423,7 +408,7 @@ describe('AgentLoop: full integration', () => {
     await system.shutdown()
   })
 
-  test('loop limit triggers onLoopLimit', async () => {
+  test('loop limit triggers onError with kind loopLimit', async () => {
     const system = await AgentSystem()
     const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
@@ -453,12 +438,12 @@ describe('AgentLoop: full integration', () => {
       onComplete: (state, finalText) => ({
         state: { ...state, finalText, log: [...state.log, 'complete'] },
       }),
-      onLlmError: (state, error) => ({
-        state: { ...state, log: [...state.log, `error:${String(error)}`] },
-      }),
-      onLoopLimit: (state, finalText) => {
-        limits.push(finalText)
-        return { state: { ...state, log: [...state.log, `limit:${finalText}`] } }
+      onError: (state, err) => {
+        if (err.kind === 'loopLimit') {
+          limits.push(err.finalText)
+          return { state: { ...state, log: [...state.log, `limit:${err.finalText}`] } }
+        }
+        return { state: { ...state, log: [...state.log, `error:${String(err.error)}`] } }
       },
     })
 
@@ -513,11 +498,8 @@ describe('AgentLoop: full integration', () => {
       onComplete: (state, finalText) => ({
         state: { ...state, finalText, log: [...state.log, 'complete'] },
       }),
-      onLlmError: (state, error) => ({
-        state: { ...state, log: [...state.log, `error:${String(error)}`] },
-      }),
-      onLoopLimit: (state, finalText) => ({
-        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      onError: (state, err) => ({
+        state: { ...state, log: [...state.log, err.kind === 'llm' ? `error:${String(err.error)}` : `limit:${err.finalText}`] },
       }),
     })
 
@@ -555,7 +537,7 @@ describe('AgentLoop: full integration', () => {
     await system.shutdown()
   })
 
-  test('llmError calls onLlmError and resets to idle', async () => {
+  test('llmError calls onError with kind llm and resets to idle', async () => {
     const system = await AgentSystem()
     const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
@@ -580,13 +562,13 @@ describe('AgentLoop: full integration', () => {
       onComplete: (state, finalText) => ({
         state: { ...state, finalText, log: [...state.log, 'complete'] },
       }),
-      onLlmError: (state, error) => {
-        errors.push(String(error))
-        return { state: { ...state, log: [...state.log, `error:${String(error)}`] } }
+      onError: (state, err) => {
+        if (err.kind === 'llm') {
+          errors.push(String(err.error))
+          return { state: { ...state, log: [...state.log, `error:${String(err.error)}`] } }
+        }
+        return { state: { ...state, log: [...state.log, `limit:${err.finalText}`] } }
       },
-      onLoopLimit: (state, finalText) => ({
-        state: { ...state, log: [...state.log, `limit:${finalText}`] },
-      }),
     })
 
     const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef }))
@@ -634,11 +616,8 @@ describe('AgentLoop: full integration', () => {
         completions.push({ ...state, finalText, log: [...state.log, 'complete'] })
         return { state: { ...state, finalText, log: [...state.log, 'complete'] } }
       },
-      onLlmError: (state, error) => ({
-        state: { ...state, log: [...state.log, `error:${String(error)}`] },
-      }),
-      onLoopLimit: (state, finalText) => ({
-        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      onError: (state, err) => ({
+        state: { ...state, log: [...state.log, err.kind === 'llm' ? `error:${String(err.error)}` : `limit:${err.finalText}`] },
       }),
     })
 
@@ -685,18 +664,14 @@ describe('AgentLoop: full integration', () => {
       maxToolLoops: 3,
       llmRef: (s) => s.llmRef,
       tools: (s) => s.tools,
-      onStream: (state, chunk) => {
-        events.push(chunk)
-        return state
-      },
+      onStream: (state, chunk) => ({
+        state: { ...state, streamEvents: [...state.streamEvents, chunk] },
+      }),
       onComplete: (state, finalText) => ({
         state: { ...state, finalText, log: [...state.log, 'complete'] },
       }),
-      onLlmError: (state, error) => ({
-        state: { ...state, log: [...state.log, `error:${String(error)}`] },
-      }),
-      onLoopLimit: (state, finalText) => ({
-        state: { ...state, log: [...state.log, `limit:${finalText}`] },
+      onError: (state, err) => ({
+        state: { ...state, log: [...state.log, err.kind === 'llm' ? `error:${String(err.error)}` : `limit:${err.finalText}`] },
       }),
     })
 
@@ -714,9 +689,8 @@ describe('AgentLoop: full integration', () => {
     msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
     await tick(100)
 
-    expect(events.length).toBe(1)
-    expect(events[0]!.kind).toBe('reasoning')
-    expect(events[0]!.text).toBe('thinking')
+    expect(events.length).toBe(0)
+    // onStream no longer mutates external array; streamEvents is on state
 
     await system.shutdown()
   })

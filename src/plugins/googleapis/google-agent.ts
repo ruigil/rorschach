@@ -1,7 +1,7 @@
 import type { ActorDef, ActorContext, ActorRef, ActorResult, Interceptor } from '../../system/types.ts'
 import type { ToolReply } from '../../types/tools.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { AgentLoop, type AgentLoopHandle } from '../../system/agent-loop.ts'
+import { AgentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
@@ -18,6 +18,7 @@ export type GoogleAgentOptions = {
 // ─── State ───
 
 export type GoogleAgentState = {
+  loop:    LoopState
   replyTo: ActorRef<ToolReply> | null
   llmRef:  ActorRef<LlmProviderMsg> | null
 }
@@ -94,13 +95,12 @@ export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMs
       return { state }
     },
 
-    onLlmError: (state) => {
-      state.replyTo?.send({ type: 'toolError', error: 'Google agent encountered an LLM error.' })
-      return { state }
-    },
-
-    onLoopLimit: (state) => {
-      state.replyTo?.send({ type: 'toolError', error: 'Tool loop limit reached.' })
+    onError: (state, err) => {
+      if (err.kind === 'llm') {
+        state.replyTo?.send({ type: 'toolError', error: 'Google agent encountered an LLM error.' })
+      } else {
+        state.replyTo?.send({ type: 'toolError', error: 'Tool loop limit reached.' })
+      }
       return { state }
     },
   })
@@ -109,7 +109,7 @@ export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMs
     const m = msg as GoogleAgentMsg
 
     if (m.type === 'invoke') {
-      if (loop.phase !== 'idle') return { state, stash: true }
+      if (state.loop.phase !== 'idle') return { state, stash: true }
       return handleInvoke(state, m as Extract<GoogleAgentMsg, { type: 'invoke' }>, ctx)
     }
 
@@ -121,7 +121,7 @@ export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMs
   }
 
   return {
-    initialState: () => ({ replyTo: null, llmRef: null }),
+    initialState: () => ({ loop: idleLoopState(), replyTo: null, llmRef: null }),
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))

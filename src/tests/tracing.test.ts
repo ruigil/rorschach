@@ -22,7 +22,10 @@ const LLM_PROVIDER_ADAPTER_OPTS = {
   model: 'openai/gpt-4o-mini',
 }
 
+import { idleLoopState } from '../system/agent-loop.ts'
+
 const INITIAL_CHATBOT_STATE: ChatbotState = {
+  loop:           idleLoopState(),
   historyMirror:  [],
   historyVersion: 0,
   tools:          {},

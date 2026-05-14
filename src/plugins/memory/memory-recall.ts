@@ -1,5 +1,5 @@
 import type { ActorDef, ActorContext, ActorRef, ActorResult, Interceptor } from '../../system/types.ts'
-import { AgentLoop, type AgentLoopHandle } from '../../system/agent-loop.ts'
+import { AgentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
 import type { ToolCollection, ToolReply, ToolSchema } from '../../types/tools.ts'
 import { parseToolArgs } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
@@ -38,6 +38,7 @@ export type MemoryRecallWorkerOptions = {
 // ─── Worker State ───
 
 export type MemoryRecallWorkerState = {
+  loop:    LoopState
   replyTo: ActorRef<ToolReply> | null
   llmRef:  ActorRef<LlmProviderMsg> | null
 }
@@ -87,23 +88,21 @@ export const createMemoryRecallWorkerActor = (parent:  ActorRef<MemorySupervisor
     llmRef:          (s) => s.llmRef,
     tools:           options.tools,
 
-    onComplete: (state, finalText, _, ctx) => {
+    onComplete: (state, finalText, _usage, ctx) => {
       state.replyTo?.send({ type: 'toolResult', result: { text: finalText || '(no result)' } })
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
     },
 
-    onLlmError: (state, error, ctx) => {
-      state.replyTo?.send({ type: 'toolError', error: String(error) })
-      parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
-      return { state }
-    },
-
-    onLoopLimit: (state, finalText, ctx) => {
-      const reply: ToolReply = finalText
-        ? { type: 'toolResult', result: { text: finalText } }
-        : { type: 'toolError',  error:  'Tool loop limit reached' }
-      state.replyTo?.send(reply)
+    onError: (state, err, ctx) => {
+      if (err.kind === 'llm') {
+        state.replyTo?.send({ type: 'toolError', error: String(err.error) })
+      } else {
+        const reply: ToolReply = err.finalText
+          ? { type: 'toolResult', result: { text: err.finalText } }
+          : { type: 'toolError', error: 'Tool loop limit reached' }
+        state.replyTo?.send(reply)
+      }
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
     },
@@ -113,19 +112,15 @@ export const createMemoryRecallWorkerActor = (parent:  ActorRef<MemorySupervisor
     const m = msg as MemoryRecallMsg
 
     if (m.type === 'invoke') {
-      if (loop.phase !== 'idle') return { state, stash: true }
+      if (state.loop.phase !== 'idle') return { state, stash: true }
       return handleInvoke(state, m as Extract<MemoryRecallMsg, { type: 'invoke' }>, ctx)
-    }
-
-    if (m.type === '_llmProvider') {
-      return { state: { ...state, llmRef: m.ref } }
     }
 
     return next(state, msg)
   }
 
   return {
-    initialState: () => ({ replyTo: null, llmRef: options.llmRef }),
+    initialState: () => ({ loop: idleLoopState(), replyTo: null, llmRef: options.llmRef }),
     handler:      loop.idle,
     interceptors: [hostInterceptor],
   }

@@ -83,9 +83,9 @@ export type KgraphMsg =
 // Workers only send `_workerDone` to the supervisor; they never receive it,
 // so it does not appear in the worker-internal unions below.
 
-export type MemoryRecallMsg = LoopMsg | ToolInvokeMsg | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
+export type MemoryRecallMsg = LoopMsg | ToolInvokeMsg
 
-export type MemoryStoreMsg = LoopMsg | ToolInvokeMsg | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
+export type MemoryStoreMsg = LoopMsg | ToolInvokeMsg
 
 // ─── Memory supervisor message protocol ───
 

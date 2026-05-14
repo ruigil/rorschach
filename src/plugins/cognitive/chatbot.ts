@@ -1,12 +1,11 @@
 import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { AgentLoop, type AgentLoopHandle, type LoopTurn } from '../../system/agent-loop.ts'
+import { AgentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import { UserStreamTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
-import { LlmProviderTopic } from '../../types/llm.ts'
 import type { ApiMessage, LlmProviderMsg, TokenUsage } from '../../types/llm.ts'
 import type { ChatbotMsg } from './types.ts'
 import { HistorySnapshotTopic } from './types.ts'
@@ -16,6 +15,7 @@ import type { HistoryStoreMsg } from './history-store.ts'
 // ─── State ───
 
 export type ChatbotState = {
+  loop:           LoopState
   historyMirror:  ApiMessage[]
   historyVersion: number
   tools:          ToolCollection
@@ -72,6 +72,7 @@ const assembleUserText = (
 }
 
 const initialChatbotState = (): ChatbotState => ({
+  loop:           idleLoopState(),
   historyMirror:  [],
   historyVersion: 0,
   tools:          {},
@@ -82,8 +83,7 @@ const initialChatbotState = (): ChatbotState => ({
 })
 
 export const ChatbotAgentFactory = (config: ChatbotAgentConfig) =>
-  (opts: AgentFactoryOpts): ActorDef<ChatbotMsg, ChatbotState> =>
-    Chatbot(config, opts)
+  (opts: AgentFactoryOpts): ActorDef<ChatbotMsg, ChatbotState> => Chatbot(config, opts)
 
 export const Chatbot = (
   config: ChatbotAgentConfig,
@@ -117,9 +117,8 @@ export const Chatbot = (
     ]
   }
 
-  let loop: AgentLoopHandle<M, S>
 
-  loop = AgentLoop<S, M>({
+  const loop = AgentLoop<S, M>({
     role:          'reasoning',
     spanName:      'chatbot',
     logPrefix:     'chatbot',
@@ -128,6 +127,12 @@ export const Chatbot = (
     llmRef:        (s) => s.llmRef,
     tools:         (s) => s.tools,
 
+    uiEvents:      OutboundMessageTopic,
+    errorMessages: {
+      llm:      'Something went wrong. Please try again.',
+      loopLimit: 'Tool loop limit reached. Please try again.',
+    },
+
     backgroundCompletionMessage: (toolName, toolCallId, reply) => ({
       type: '_bgToolDone',
       toolName,
@@ -135,85 +140,54 @@ export const Chatbot = (
       reply,
     } as M),
 
-    onStream: (state, { kind, text }) => ({
-      state,
-      events: [emit(OutboundMessageTopic, {
-        clientId: state.activeClientId,
-        text: JSON.stringify({ type: kind === 'reasoning' ? 'reasoningChunk' : 'chunk', text }),
-      })],
-    }),
-
-    onToolCalls: (state, calls) => ({
-      events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'tooling', tools: calls.map(c => c.name) }) })],
-    }),
-
-    onToolResult: (state, result) => {
-      const payload = result.reply.type === 'toolResult' ? result.reply.result : undefined
-      const events: ReturnType<typeof emit>[] = []
-      if (payload?.sources?.length) {
-        events.push(emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'sources', sources: payload.sources }) }))
-      }
-      if (payload?.attachments?.length) {
-        events.push(emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'attachments', attachments: payload.attachments }) }))
-      }
-      return events.length > 0 ? { state, events } : { state }
-    },
-
     onBatchHistoryReady: (state, messages) => {
       historyStoreRef.send({ type: 'append', messages })
       return { state }
     },
 
-    onComplete: (state, finalText, turn, _ctx) => {
+    onComplete: (state, finalText, usage, ctx) => {
       if (finalText) {
         historyStoreRef.send({ type: 'append', messages: [{ role: 'assistant', content: finalText }] })
       }
 
       const sessionUsage: TokenUsage = {
-        promptTokens:     state.sessionUsage.promptTokens     + turn.pendingUsage.promptTokens,
-        completionTokens: state.sessionUsage.completionTokens + turn.pendingUsage.completionTokens,
+        promptTokens:     state.sessionUsage.promptTokens     + usage.promptTokens,
+        completionTokens: state.sessionUsage.completionTokens + usage.completionTokens,
       }
 
-      const userMsg  = turn.turnMessages?.findLast(m => m.role === 'user')
+      const userMsg  = [...state.historyMirror].reverse().find(m => m.role === 'user')
       const userText = typeof userMsg?.content === 'string' ? userMsg.content : ''
+
+      ctx.publish(UserStreamTopic, { userId, userText, assistantText: finalText, timestamp: Date.now(), injected: state.isInjected })
 
       return {
         state: { ...state, sessionUsage, isInjected: undefined },
-        events: [
-          emit(UserStreamTopic, { userId, userText, assistantText: finalText, timestamp: Date.now(), injected: state.isInjected }),
-          emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) }),
-        ],
       }
     },
 
-    onLlmError: (state) => ({
-      state: { ...state, isInjected: undefined },
-      events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Something went wrong. Please try again.' }) })],
-    }),
-
-    onLoopLimit: (state, _finalText, ctx) => {
-      ctx.log.warn('chatbot: tool loop limit reached', { clientId: state.activeClientId })
-      return {
-        state:  { ...state, isInjected: undefined },
-        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool loop limit reached. Please try again.' }) })],
+    onError: (state, err, ctx) => {
+      if (err.kind === 'loopLimit') {
+        ctx.log.warn('chatbot: tool loop limit reached', { clientId: state.activeClientId })
       }
+      return { state: { ...state, isInjected: undefined } }
     },
   })
 
-  const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
-    const { clientId: msgClientId, text, images, audio, pdfs, isCron, isInjected } = msg
-
-    const userText = isCron ? `[Internal Instruction] ${text}` : assembleUserText(text, images, audio, pdfs)
-
+  const doStartTurn = (
+    state: S,
+    userText: string,
+    clientId: string,
+    isInjected: boolean,
+    ctx: Ctx,
+  ): ActorResult<M, S> => {
     const userMessage: ApiMessage = { role: 'user', content: userText }
-
     const optimisticHistory: ApiMessage[] = [...state.historyMirror, userMessage]
 
     const stateNext: S = {
       ...state,
-      activeClientId: msgClientId,
+      activeClientId: clientId,
       historyMirror:  optimisticHistory,
-      isInjected:     isInjected || isCron || false,
+      isInjected,
     }
 
     historyStoreRef.send({ type: 'append', messages: [userMessage] })
@@ -221,16 +195,19 @@ export const Chatbot = (
     return loop.startTurn(stateNext, {
       messages: buildTurnMessages(optimisticHistory, stateNext.userContext, userText),
       userId,
-      clientId: msgClientId,
+      clientId,
     }, ctx)
+  }
+
+  const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
+    const { clientId: msgClientId, text, images, audio, pdfs, isCron, isInjected } = msg
+    const userText = isCron ? `[Internal Instruction] ${text}` : assembleUserText(text, images, audio, pdfs)
+    return doStartTurn(state, userText, msgClientId, isInjected || isCron || false, ctx)
   }
 
   const handleBackgroundResult = (state: S, msg: Extract<M, { type: '_bgToolDone' }>, ctx: Ctx): ActorResult<M, S> => {
     const resultText = msg.reply.type === 'toolResult' ? msg.reply.result.text : `Tool error: ${msg.reply.error}`
-    const injection = `[Background tool result — ${msg.toolName} (toolCallId=${msg.toolCallId})]: ${resultText}`
-    const userMessage: ApiMessage = { role: 'user', content: injection }
-
-    historyStoreRef.send({ type: 'append', messages: [userMessage] })
+    const userText = `[Background tool result — ${msg.toolName} (toolCallId=${msg.toolCallId})]: ${resultText}`
 
     const payload = msg.reply.type === 'toolResult' ? msg.reply.result : undefined
     if (payload?.sources?.length) {
@@ -245,13 +222,8 @@ export const Chatbot = (
         text: JSON.stringify({ type: 'attachments', attachments: payload.attachments }),
       })
     }
-    const optimisticHistory = [...state.historyMirror, userMessage]
-    const stateNext = { ...state, historyMirror: optimisticHistory, isInjected: true }
-    return loop.startTurn(stateNext, {
-      messages: buildTurnMessages(optimisticHistory, stateNext.userContext, injection),
-      userId,
-      clientId: state.activeClientId,
-    }, ctx)
+
+    return doStartTurn(state, userText, state.activeClientId, true, ctx)
   }
 
   const hostInterceptor: Interceptor<M, S> = (state, msg, ctx, next) => {
@@ -262,16 +234,12 @@ export const Chatbot = (
     }
 
     if (m.type === 'userMessage') {
-      if (loop.phase !== 'idle') return { state, stash: true }
+      if (state.loop.phase !== 'idle') return { state, stash: true }
       return handleUserMessage(state, m as Extract<M, { type: 'userMessage' }>, ctx)
     }
 
     if (m.type === '_bgToolDone') {
       return handleBackgroundResult(state, m as Extract<M, { type: '_bgToolDone' }>, ctx)
-    }
-
-    if (m.type === '_llmProvider') {
-      return { state: { ...state, llmRef: m.ref } }
     }
 
     if (m.type === '_toolRegistered') {
@@ -321,11 +289,6 @@ export const Chatbot = (
             version:     event.version,
           }
         })
-
-        ctx.subscribe(LlmProviderTopic, (e) => ({
-          type: '_llmProvider' as const,
-          ref: e.ref,
-        }))
 
         return { state }
       },

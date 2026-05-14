@@ -1,11 +1,9 @@
-import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { AgentLoop, type AgentLoopHandle } from '../../system/agent-loop.ts'
+import { AgentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
-import { LlmProviderTopic } from '../../types/llm.ts'
 import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
 import type { ToolMsg } from '../../types/tools.ts'
 import type { AgentFactoryOpts } from './types.ts'
@@ -19,7 +17,6 @@ import {
 
 type PlannerExtra =
   | { type: 'userMessage'; clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; isCron?: boolean; isInjected?: boolean }
-  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_toolRegistered'; name: string; schema: import('../../types/tools.ts').ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
 
@@ -28,6 +25,7 @@ export type PlannerAgentMsg = import('../../system/agent-loop.ts').LoopMsg<Plann
 // ─── State ───
 
 export type PlannerAgentState = {
+  loop:                    LoopState
   plannerHistory:          ApiMessage[]
   tools:                   ToolCollection
   llmRef:                  ActorRef<LlmProviderMsg> | null
@@ -36,6 +34,7 @@ export type PlannerAgentState = {
 }
 
 const initialPlannerAgentState = (): PlannerAgentState => ({
+  loop:                    idleLoopState(),
   plannerHistory:          [],
   tools:                   {},
   llmRef:                  null,
@@ -84,8 +83,7 @@ Be concise. Research first, then ask only what you genuinely need from the user.
 // ─── Factory ───
 
 export const PlannerAgentFactory = (config: PlannerAgentConfig) =>
-  (opts: AgentFactoryOpts): ActorDef<PlannerAgentMsg, PlannerAgentState> =>
-    PlannerAgent(config, opts)
+  (opts: AgentFactoryOpts): ActorDef<PlannerAgentMsg, PlannerAgentState> => PlannerAgent(config, opts)
 
 // ─── Actor ───
 
@@ -129,42 +127,35 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
     llmRef:       (s) => s.llmRef,
     tools:        (s) => s.tools,
 
-    onComplete: (state, finalText, _turn, ctx) => {
+    uiEvents:      OutboundMessageTopic,
+    errorMessages: {
+      llm:      'The planner encountered an error. Please try again.',
+      loopLimit: 'Tool loop limit reached in planner. Please try again.',
+    },
+
+    onComplete: (state, finalText, _usage, ctx) => {
       if (state.pendingFormalizeSummary) {
         ctx.log.info('planner: formalized plan, resetting scratch', { userId })
         historyStoreRef.send({
           type:     'append',
           messages: [{ role: 'assistant', content: state.pendingFormalizeSummary }],
         })
-        return {
-          state:  resetScratch(state),
-          events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) })],
-        }
+        return { state: resetScratch(state) }
       }
 
       const newPlannerHistory: ApiMessage[] = finalText
         ? [...state.plannerHistory, { role: 'assistant', content: finalText }]
         : state.plannerHistory
-      return {
-        state:  { ...state, plannerHistory: newPlannerHistory },
-        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'done' }) })],
-      }
+      return { state: { ...state, plannerHistory: newPlannerHistory } }
     },
 
-    onLlmError: (state, error, ctx) => {
-      ctx.log.error('planner: LLM error', { userId, error: String(error) })
-      return {
-        state,
-        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'The planner encountered an error. Please try again.' }) })],
+    onError: (state, err, ctx) => {
+      if (err.kind === 'llm') {
+        ctx.log.error('planner: LLM error', { userId, error: String(err.error) })
+      } else {
+        ctx.log.warn('planner: tool loop limit reached', { userId })
       }
-    },
-
-    onLoopLimit: (state, _finalText, ctx) => {
-      ctx.log.warn('planner: tool loop limit reached', { userId })
-      return {
-        state,
-        events: [emit(OutboundMessageTopic, { clientId: state.activeClientId, text: JSON.stringify({ type: 'error', text: 'Tool loop limit reached in planner. Please try again.' }) })],
-      }
+      return { state }
     },
 
     onBatchHistoryReady: (state, messages) => {
@@ -183,12 +174,8 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
     const m = msg as M
 
     if (m.type === 'userMessage') {
-      if (loop.phase !== 'idle') return { state, stash: true }
+      if (state.loop.phase !== 'idle') return { state, stash: true }
       return handleUserMessage(state, m as Extract<M, { type: 'userMessage' }>, ctx)
-    }
-
-    if (m.type === '_llmProvider') {
-      return { state: { ...state, llmRef: m.ref } }
     }
 
     if (m.type === '_toolRegistered') {
@@ -228,11 +215,6 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
           }
           return { type: '_toolUnregistered' as const, name: event.name }
         })
-
-        ctx.subscribe(LlmProviderTopic, (e) => ({
-          type: '_llmProvider' as const,
-          ref: e.ref,
-        }))
 
         ctx.log.info('planner-agent: started', { userId })
 

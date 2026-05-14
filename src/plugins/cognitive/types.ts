@@ -11,7 +11,6 @@ import type { HistoryStoreMsg } from './history-store.ts'
 type ChatbotExtra =
   | { type: 'userMessage';      clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; isCron?: boolean; isInjected?: boolean }
   | { type: '_historySnapshot'; messages: ApiMessage[]; userContext: string | null; version: number }
-  | { type: '_llmProvider';     ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_toolRegistered';  name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
   | { type: '_bgToolDone';      toolName: string; toolCallId: string; reply: ToolFinalReply }
