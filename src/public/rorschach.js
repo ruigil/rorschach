@@ -12,15 +12,11 @@ import './js/observe/topics.js'
 import './js/observe/graph.js'
 import './js/observe/tabs.js'
 import './js/config/form.js'
-import './js/config/models.js'
 import { connect } from './js/connection.js'
 import { state } from './js/state.js'
-import { fetchServerConfig, applyToForm } from './js/config/form.js'
-import { initModelSelects } from './js/config/models.js'
+import { initConfigForms } from './js/config/form.js'
 
-fetchServerConfig().then(cfg => {
-  initModelSelects(cfg).then(() => applyToForm(cfg))
-})
+initConfigForms()
 
 fetch(new URL('me', location.href))
   .then(r => r.json())

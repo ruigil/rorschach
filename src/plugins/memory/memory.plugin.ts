@@ -3,6 +3,7 @@ import { defineConfig, createSlot, stopSlot, type ActorSlot } from '../../system
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
+import { ConfigSchemaTopic } from '../../types/config.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 import type { KgraphMsg, MemoryConsolidationMsg, MemorySupervisorMsg, UserContextMsg } from './types.ts'
@@ -15,7 +16,7 @@ import {
   type ZettelNoteMsg,
   zettelCreateTool, zettelUpdateTool, zettelSearchTool, zettelLinksTool, zettelUnlinkedTool, zettelLinkTool,
 } from './zettel-notes.ts'
-import { buildMemoryRoutes, KGRAPH_ROUTE_ID } from './routes.ts'
+import { buildMemoryRoutes, memorySchemas, buildMemoryConfigRoute, KGRAPH_ROUTE_ID } from './routes.ts'
 
 // ─── Config ───
 
@@ -149,6 +150,14 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       const dbPath      = slice?.dbPath ?? './workspace/memory'
       const kgraphConfig = slice?.kgraph ?? {}
 
+      // Publish config schemas and config route
+      for (const section of memorySchemas) {
+        ctx.publishRetained(ConfigSchemaTopic, section.id, section)
+      }
+      for (const reg of buildMemoryConfigRoute(() => slice)) {
+        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
+      }
+
       const embeddingCfg = kgraphConfig.embeddingModel && kgraphConfig.embeddingDimensions
         ? { model: kgraphConfig.embeddingModel, dimensions: kgraphConfig.embeddingDimensions }
         : undefined
@@ -198,6 +207,15 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       }
       stopMemoryActors(ctx, state)
       if (state.kgraph.ref) ctx.stop(state.kgraph.ref)
+
+      // Tombstone config schemas and config route
+      for (const section of memorySchemas) {
+        ctx.deleteRetained(ConfigSchemaTopic, section.id, { ...section, schema: null })
+      }
+      for (const reg of buildMemoryConfigRoute(() => undefined)) {
+        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
+      }
+
       ctx.log.info('memory plugin deactivating')
       return { state }
     },

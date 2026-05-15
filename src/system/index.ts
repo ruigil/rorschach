@@ -33,6 +33,9 @@ export {
   emit,
 } from './types.ts'
 
+export { ConfigSchemaTopic, ConfigUpdateRequestTopic } from '../types/config.ts'
+export type { ConfigSchemaSection, ConfigUpdateRequest } from '../types/config.ts'
+
 export type {
   ActorRef,
   MessageHeaders,

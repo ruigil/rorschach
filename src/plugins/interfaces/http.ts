@@ -4,9 +4,8 @@ import type { Server, ServerWebSocket } from 'bun'
 import { emit } from '../../system/types.ts'
 import {
   InboundMessageTopic, ClientConnectTopic, ClientDisconnectTopic,
-  OutboundMessageTopic, OutboundBroadcastTopic, HttpConfigTopic, ConfigSnapshotTopic,
+  OutboundMessageTopic, OutboundBroadcastTopic,
 } from '../../types/events.ts'
-import type { HttpConfigPayload, ConfigSnapshotEvent } from '../../types/events.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
@@ -14,6 +13,8 @@ import { LlmProviderTopic, CostTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg, CostEvent } from '../../types/llm.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { RouteHandler, RouteMatch, RouteRegistration } from '../../types/routes.ts'
+import { ConfigSchemaTopic, ConfigUpdateRequestTopic } from '../../types/config.ts'
+import type { ConfigSchemaSection } from '../../types/config.ts'
 import { IdentityProviderTopic, resolveIdentity, resolveCookieIdentity, ANONYMOUS_USER_ID } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 import { AgentCatalogTopic, SwitchAgentTopic } from '../cognitive/types.ts'
@@ -47,8 +48,8 @@ export type HttpMessage =
   | { type: 'closed'; clientId: string }
   | { type: 'broadcast'; text: string }
   | { type: 'send'; clientId: string; text: string }
-  | { type: 'config'; data: unknown }
-  | { type: '_configSnapshot'; data: Record<string, unknown> }
+  | { type: '_configSchemaChanged'; section: ConfigSchemaSection }
+  | { type: '_configUpdate'; pluginId: string; patch: Record<string, unknown> }
   | { type: '_llmProviderChanged'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
   | { type: '_routeChanged'; reg: RouteRegistration }
@@ -169,7 +170,7 @@ export const HTTP = (
   let selfRef:             ActorRef<HttpMessage>         | null = null
   let llmProviderRef:      ActorRef<LlmProviderMsg>      | null = null
   let identityProviderRef: ActorRef<IdentityProviderMsg> | null = null
-  let configSnapshot:      Record<string, unknown>       | null = null
+  const configSchemas = new Map<string, ConfigSchemaSection>()
   type RouteRecord = { method: string; path: string; match: RouteMatch; handler: RouteHandler }
 
   const routes = new Map<string, RouteRecord>()
@@ -329,16 +330,20 @@ export const HTTP = (
         return { state }
       },
 
-      config: (state, message, context) => {
-        context.log.debug('config update received via POST /config')
-        return {
-          state,
-          events: [emit(HttpConfigTopic, message.data as HttpConfigPayload)],
+      _configSchemaChanged: (state, message) => {
+        if (message.section.schema === null) {
+          configSchemas.delete(message.section.id)
+        } else {
+          configSchemas.set(message.section.id, message.section)
         }
+        return { state }
       },
 
-      _configSnapshot: (state, message) => {
-        configSnapshot = message.data
+      _configUpdate: (state, message, context) => {
+        context.publish(ConfigUpdateRequestTopic, {
+          pluginId: message.pluginId,
+          patch: message.patch,
+        })
         return { state }
       },
 
@@ -390,9 +395,9 @@ export const HTTP = (
           ref: e.ref,
         }))
 
-        context.subscribe(ConfigSnapshotTopic, (e: ConfigSnapshotEvent) => ({
-          type: '_configSnapshot' as const,
-          data: e.config,
+        context.subscribe(ConfigSchemaTopic, (section) => ({
+          type: '_configSchemaChanged' as const,
+          section,
         }))
 
         context.subscribe(IdentityProviderTopic, (e) => ({
@@ -439,19 +444,24 @@ export const HTTP = (
               return new Response(JSON.stringify({ userId: session?.userId ?? null }), { headers: { 'Content-Type': 'application/json' } })
             }
 
-            // Config API — GET returns current server config, POST applies changes
-            if (req.method === 'GET' && url.pathname === '/config') {
-              if (!configSnapshot) return new Response('Not ready', { status: 503 })
-              return new Response(JSON.stringify(configSnapshot), { headers: { 'Content-Type': 'application/json' } })
+            // Config schema API
+            if (req.method === 'GET' && url.pathname === '/config/schema') {
+              return new Response(JSON.stringify([...configSchemas.values()]), {
+                headers: { 'Content-Type': 'application/json' },
+              })
             }
 
-            if (req.method === 'POST' && url.pathname === '/config') {
-              try {
-                const data = await req.json()
-                selfRef?.send({ type: 'config', data })
-                return new Response(null, { status: 204 })
-              } catch {
-                return new Response('Invalid JSON', { status: 400 })
+            // Per-plugin config update
+            if (req.method === 'POST' && url.pathname.startsWith('/config/')) {
+              const pluginId = url.pathname.slice('/config/'.length)
+              if (pluginId && !pluginId.includes('/')) {
+                try {
+                  const patch = await req.json()
+                  selfRef?.send({ type: '_configUpdate', pluginId, patch })
+                  return new Response(null, { status: 204 })
+                } catch {
+                  return new Response('Invalid JSON', { status: 400 })
+                }
               }
             }
 

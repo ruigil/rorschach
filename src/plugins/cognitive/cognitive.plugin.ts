@@ -15,6 +15,9 @@ import { defineConfig, createSlot, stopSlot, type ActorSlot } from '../../system
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'
+import { ConfigSchemaTopic } from '../../types/config.ts'
+import { RouteRegistrationTopic } from '../../types/routes.ts'
+import { cognitiveSchemas, buildCognitiveConfigRoute } from './routes.ts'
 
 // ─── Config types ───
 
@@ -184,6 +187,14 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
       const plannerConfig     = slice?.planner     ?? null
       const sessionConfig     = slice?.session     ?? null
 
+      // Publish config schemas and config route
+      for (const section of cognitiveSchemas) {
+        ctx.publishRetained(ConfigSchemaTopic, section.id, section)
+      }
+      for (const reg of buildCognitiveConfigRoute(() => slice)) {
+        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
+      }
+
       if (!llmProviderConfig) {
         ctx.log.info('cognitive plugin activated (no llmProvider config)')
         return { state: EMPTY_STATE }
@@ -197,6 +208,13 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
     stopped: (state, ctx) => {
       ctx.log.info('cognitive plugin deactivating')
       ctx.deleteRetained(LlmProviderTopic, 'ref', { ref: null })
+      // Tombstone config schemas and config route
+      for (const section of cognitiveSchemas) {
+        ctx.deleteRetained(ConfigSchemaTopic, section.id, { ...section, schema: null })
+      }
+      for (const reg of buildCognitiveConfigRoute(() => undefined)) {
+        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
+      }
       // AgentRegistry's own stopped lifecycle clears AgentCatalogTopic + switchMode tool registration.
       return { state }
     },

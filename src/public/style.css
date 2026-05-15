@@ -869,10 +869,16 @@ button[type="submit"] svg { pointer-events: none; }
 .config-pane {
   display: none;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 2.25rem;
 }
 
 .config-pane.active { display: flex; }
+
+.config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
 
 .pane-header {
   display: flex;

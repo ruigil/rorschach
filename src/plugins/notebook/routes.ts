@@ -1,9 +1,41 @@
 import { resolve, sep } from 'node:path'
 import type { ActorRef } from '../../system/types.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
+import type { ConfigSchemaSection } from '../../types/config.ts'
 import { resolveCookieIdentity } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
-import type { NoteEntry } from './types.ts'
+import type { NoteEntry, NotebookConfig } from './types.ts'
+
+// ─── Config Schema Sections ──────────────────────────────────────────────────
+
+export const notebookSchema: ConfigSchemaSection = {
+  id: 'notebook.config',
+  title: 'Notebook',
+  subtitle: 'notebook · notes, journal, todos, and tracker',
+  tab: 'notebook',
+  configKey: '',
+  routeId: 'config.notebook',
+  schema: {
+    type: 'object',
+    properties: {
+      notebookDir: { type: 'string', default: 'workspace/notebook', 'x-ui': { label: 'Notebook directory' } },
+      agentModel: { type: 'string', 'x-ui': { widget: 'model-select', label: 'Agent model' } },
+      maxToolLoops: { type: 'number', default: 10, minimum: 1, maximum: 50 },
+    },
+  },
+}
+
+export const notebookSchemas = [notebookSchema]
+
+export const buildNotebookConfigRoute = (getConfig: () => NotebookConfig | undefined): RouteRegistration[] => [{
+  id: 'config.notebook',
+  method: 'GET',
+  path: '/config/notebook',
+  handler: () => {
+    const slice = getConfig()
+    return new Response(JSON.stringify(slice ?? {}), { headers: { 'Content-Type': 'application/json' } })
+  },
+}]
 
 const ATTACHMENT_ROUTE_ID = 'notebook.attachments.api'
 const ATTACHMENT_ROUTE_PREFIX = '/notebook/attachments/'

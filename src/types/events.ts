@@ -54,17 +54,3 @@ export type UserStreamEvent = {
 
 /** Topic emitted when a chatbot LLM turn completes. Subscribe to persist conversation history. */
 export const UserStreamTopic = createTopic<UserStreamEvent>('user.stream')
-
-// ─── Domain event: emitted when a POST /config request is received ───
-
-export type HttpConfigPayload = Record<string, unknown>
-
-/** Topic emitted when the browser POSTs new config. Subscribe in your app to apply config changes. */
-export const HttpConfigTopic = createTopic<HttpConfigPayload>('http.config.post')
-
-// ─── Domain event: publish to push the current flat config to the HTTP actor ───
-
-export type ConfigSnapshotEvent = { config: Record<string, unknown> }
-
-/** Publish to update the flat config snapshot served at GET /config. */
-export const ConfigSnapshotTopic = createTopic<ConfigSnapshotEvent>('http.config.snapshot')

@@ -1,145 +1,330 @@
-const configForm = document.getElementById('config-form')
-const saveStatus = document.getElementById('save-status')
-const saveError  = document.getElementById('save-error')
-const resetBtn   = document.getElementById('reset-btn')
+// ─── Dynamic Config Form Renderer ───────────────────────────────────────────
+//
+// Fetches config schemas from the server, renders forms dynamically from
+// JSON Schema definitions, and submits changes per plugin.
 
-const configDefaults = {
-  logPath:                        'logs/app.jsonl',
-  minLevel:                       'debug',
-  flushIntervalMs:                3000,
-  metricsIntervalMs:              5000,
-  metricsEnabled:                 true,
-  model:                          'openai/gpt-4o-mini',
-  systemPrompt:                   '',
-  historyWindowHours:                      4,
-  reasoningEnabled:               false,
-  reasoningEffort:                'medium',
-  visionModel:                    'google/gemini-flash-1.5',
-  audioModel:                     '',
-  audioVoice:                     'alloy',
-  bashCwd:                        '/workspace',
-  webSearchCount:                 20,
-  kgraphDbPath:                    './workspace/memory/kgraph',
-  kgraphEmbeddingModel:            '',
-  kgraphEmbeddingDimensions:       1536,
-  memoryModel:                     '',
-  memoryConsolidationIntervalMs:   30000,
-  notebookDir:                     './workspace/notebook',
-  notebookAgentModel:              '',
-  notebookMaxToolLoops:            10,
-  googleApisAgentModel:            '',
-  googleApisMaxToolLoops:          10,
-}
+let schemas = []
+let currentValues = {}
+let models = []
 
-export async function fetchServerConfig() {
+// ─── Data Fetching ──────────────────────────────────────────────────────────
+
+export async function fetchConfigSchema() {
   try {
-    const res = await fetch(new URL('config', location.href))
-    if (res.ok) return { ...configDefaults, ...await res.json() }
+    const res = await fetch(new URL('config/schema', location.href))
+    if (res.ok) schemas = await res.json()
   } catch {}
-  return { ...configDefaults }
+  return schemas
 }
 
-export function applyToForm(cfg) {
-  configForm.logPath.value                       = cfg.logPath
-  configForm.minLevel.value                      = cfg.minLevel
-  configForm.flushIntervalMs.value               = cfg.flushIntervalMs
-  configForm.metricsIntervalMs.value             = cfg.metricsIntervalMs
-  configForm.metricsEnabled.checked              = cfg.metricsEnabled
-  configForm.model.value                         = cfg.model
-  configForm.systemPrompt.value                  = cfg.systemPrompt ?? ''
-  configForm.historyWindowHours.value                 = cfg.historyWindowHours ?? 4
-  configForm.reasoningEnabled.checked            = cfg.reasoningEnabled
-  configForm.reasoningEffort.value               = cfg.reasoningEffort
-  configForm.visionModel.value                   = cfg.visionModel
-  configForm.audioModel.value                    = cfg.audioModel ?? ''
-  configForm.audioVoice.value                    = cfg.audioVoice ?? 'alloy'
-  configForm.bashCwd.value                       = cfg.bashCwd ?? '/workspace'
-  configForm.webSearchCount.value                = cfg.webSearchCount ?? 20
-  configForm.kgraphDbPath.value                    = cfg.kgraphDbPath ?? './workspace/memory/kgraph'
-  configForm.kgraphEmbeddingModel.value            = cfg.kgraphEmbeddingModel ?? ''
-  configForm.kgraphEmbeddingDimensions.value       = cfg.kgraphEmbeddingDimensions ?? 1536
-  configForm.memoryModel.value                     = cfg.memoryModel ?? ''
-  configForm.memoryConsolidationIntervalMs.value   = cfg.memoryConsolidationIntervalMs ?? 30000
-  configForm.memoryContextIntervalMs.value         = cfg.memoryContextIntervalMs ?? 60000
-  configForm.notebookDir.value                     = cfg.notebookDir ?? './workspace/notebook'
-  configForm.notebookAgentModel.value              = cfg.notebookAgentModel ?? ''
-  configForm.notebookMaxToolLoops.value            = cfg.notebookMaxToolLoops ?? 10
-  configForm.googleApisAgentModel.value            = cfg.googleApisAgentModel ?? ''
-  configForm.googleApisMaxToolLoops.value          = cfg.googleApisMaxToolLoops ?? 10
-  updateGoogleConnectionStatus()
-}
+async function fetchCurrentValues() {
+  const pluginPaths = [...new Set(schemas.map(s => {
+    const pluginId = s.id.split('.')[0]
+    return `/config/${pluginId}`
+  }))]
 
-function readFromForm() {
-  return {
-    logPath:                       configForm.logPath.value.trim(),
-    minLevel:                      configForm.minLevel.value,
-    flushIntervalMs:               Number(configForm.flushIntervalMs.value),
-    metricsIntervalMs:             Number(configForm.metricsIntervalMs.value),
-    metricsEnabled:                configForm.metricsEnabled.checked,
-    model:                         configForm.model.value,
-    systemPrompt:                  configForm.systemPrompt.value,
-    historyWindowHours:                     Number(configForm.historyWindowHours.value),
-    reasoningEnabled:              String(configForm.reasoningEnabled.checked),
-    reasoningEffort:               configForm.reasoningEffort.value,
-    visionModel:                   configForm.visionModel.value,
-    audioModel:                    configForm.audioModel.value,
-    audioVoice:                    configForm.audioVoice.value,
-    bashCwd:                       configForm.bashCwd.value.trim(),
-    webSearchCount:                Number(configForm.webSearchCount.value),
-    kgraphDbPath:                    configForm.kgraphDbPath.value.trim(),
-    kgraphEmbeddingModel:            configForm.kgraphEmbeddingModel.value.trim(),
-    kgraphEmbeddingDimensions:       Number(configForm.kgraphEmbeddingDimensions.value),
-    memoryModel:                     configForm.memoryModel.value,
-    memoryConsolidationIntervalMs:   Number(configForm.memoryConsolidationIntervalMs.value),
-    notebookDir:                     configForm.notebookDir.value.trim(),
-    notebookAgentModel:              configForm.notebookAgentModel.value,
-    notebookMaxToolLoops:            Number(configForm.notebookMaxToolLoops.value),
-    googleApisAgentModel:            configForm.googleApisAgentModel.value,
-    googleApisMaxToolLoops:          Number(configForm.googleApisMaxToolLoops.value),
+  for (const path of pluginPaths) {
+    try {
+      const res = await fetch(new URL(path.slice(1), location.href))
+      if (res.ok) {
+        const pluginId = path.split('/').pop()
+        currentValues[pluginId] = await res.json()
+      }
+    } catch {}
   }
 }
 
-async function updateGoogleConnectionStatus() {
-  const statusEl     = document.getElementById('google-connection-status')
-  const connectBtn   = document.getElementById('google-connect-btn')
-  const disconnectBtn = document.getElementById('google-disconnect-btn')
-  if (!statusEl) return
+async function fetchModels() {
   try {
-    const res  = await fetch(new URL('googleapis/auth/status', location.href))
-    const data = res.ok ? await res.json() : { connected: false }
-    if (data.connected) {
-      statusEl.textContent = 'Connected'
-      connectBtn.style.display    = 'none'
-      disconnectBtn.style.display = ''
-    } else {
-      statusEl.textContent = 'Not connected'
-      connectBtn.style.display    = ''
-      disconnectBtn.style.display = 'none'
-    }
-  } catch {
-    statusEl.textContent = 'Status unavailable'
-  }
+    const res = await fetch(new URL('models', location.href))
+    if (res.ok) models = await res.json()
+  } catch {}
 }
 
-document.getElementById('google-connect-btn')?.addEventListener('click', () => {
-  const popup = window.open(new URL('googleapis/auth/start', location.href), '_blank', 'width=520,height=640')
-  const poll  = setInterval(() => {
-    if (popup?.closed) {
-      clearInterval(poll)
-      updateGoogleConnectionStatus()
-    }
-  }, 500)
-})
+// ─── Form Rendering ─────────────────────────────────────────────────────────
 
-document.getElementById('google-disconnect-btn')?.addEventListener('click', async () => {
-  await fetch(new URL('googleapis/auth/revoke', location.href), { method: 'POST' })
-  updateGoogleConnectionStatus()
-})
+export async function initConfigForms() {
+  const configForm = document.getElementById('config-form')
+  const resetBtn   = document.getElementById('reset-btn')
+  if (!configForm || !resetBtn) return
+
+  configForm.addEventListener('submit', async (e) => {
+    e.preventDefault()
+    await saveConfig()
+  })
+
+  resetBtn.addEventListener('click', () => {
+    loadAndRender()
+  })
+
+  await loadAndRender()
+}
+
+async function loadAndRender() {
+  await fetchConfigSchema()
+  if (schemas.length === 0) return
+
+  await Promise.all([fetchCurrentValues(), fetchModels()])
+  renderForms()
+}
+
+function renderForms() {
+  const container = document.getElementById('config-form-container')
+  const tabsContainer = document.getElementById('config-tabs')
+  container.innerHTML = ''
+  tabsContainer.innerHTML = ''
+
+  const byTab = {}
+  for (const s of schemas) {
+    ;(byTab[s.tab] ??= []).push(s)
+  }
+
+  const tabNames = Object.keys(byTab)
+
+  for (const [i, tab] of tabNames.entries()) {
+    const btn = document.createElement('button')
+    btn.className = `config-subtab${i === 0 ? ' active' : ''}`
+    btn.dataset.configTab = tab
+    btn.textContent = tab
+    tabsContainer.appendChild(btn)
+  }
+
+  for (const [i, tab] of tabNames.entries()) {
+    const pane = document.createElement('div')
+    pane.className = `config-pane${i === 0 ? ' active' : ''}`
+    pane.dataset.configPane = tab
+
+    for (const section of byTab[tab]) {
+      pane.appendChild(renderSection(section))
+    }
+    container.appendChild(pane)
+  }
+
+  tabsContainer.querySelectorAll('[data-config-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabsContainer.querySelectorAll('.config-subtab').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      container.querySelectorAll('.config-pane').forEach(p => p.classList.remove('active'))
+      container.querySelector(`[data-config-pane="${btn.dataset.configTab}"]`).classList.add('active')
+    })
+  })
+
+  initGoogleAccountWidgets()
+}
+
+function renderSection(section) {
+  const el = document.createElement('div')
+  el.className = 'config-section'
+  const pluginId = section.id.split('.')[0]
+  const pluginValues = currentValues[pluginId] ?? {}
+
+  // Navigate to the config sub-object using configKey path
+  const configKey = section.configKey ?? ''
+  let values = pluginValues
+  if (configKey) {
+    for (const part of configKey.split('.')) {
+      values = values?.[part] ?? {}
+    }
+  }
+
+  const header = document.createElement('div')
+  header.className = 'pane-header'
+  header.innerHTML = `<span class="pane-title">${section.title}</span>`
+  if (section.subtitle) {
+    header.innerHTML += `<span class="pane-sub">${section.subtitle}</span>`
+  }
+  el.appendChild(header)
+
+  const props = section.schema.properties ?? {}
+  for (const [key, fieldSchema] of Object.entries(props)) {
+    el.appendChild(renderField(section.id, configKey, key, fieldSchema, values[key]))
+  }
+  return el
+}
+
+function renderField(sectionId, configKey, key, schema, value) {
+  const widget = schema['x-ui']?.widget ?? inferWidget(schema)
+  const secret = schema['x-ui']?.secret ?? false
+  const label = schema['x-ui']?.label ?? key
+  const resolvedValue = value ?? schema.default ?? ''
+
+  const wrapper = document.createElement('div')
+  wrapper.className = 'field'
+  wrapper.dataset.sectionId = sectionId
+  wrapper.dataset.configKey = configKey
+  wrapper.dataset.fieldKey = key
+
+  if (widget === 'toggle') {
+    wrapper.innerHTML = `
+      <div class="field-row">
+        <div>
+          <div class="field-label">${label}</div>
+          ${schema.description ? `<div class="field-hint">${schema.description}</div>` : ''}
+        </div>
+        <label class="toggle">
+          <input type="checkbox" name="${key}" ${resolvedValue ? 'checked' : ''} data-section="${sectionId}" data-config-key="${configKey}">
+          <span class="toggle-track"></span>
+        </label>
+      </div>`
+  } else if (widget === 'select') {
+    const options = (schema.enum ?? []).map(v => `<option value="${v}" ${v === resolvedValue ? 'selected' : ''}>${v}</option>`).join('')
+    wrapper.innerHTML = `
+      <label class="field-label" for="${sectionId}-${key}">${label}</label>
+      <select id="${sectionId}-${key}" name="${key}" data-section="${sectionId}" data-config-key="${configKey}">${options}</select>
+      ${schema.description ? `<span class="field-hint">${schema.description}</span>` : ''}`
+  } else if (widget === 'model-select') {
+    const optHtml = models.map(m => `<option value="${m}" ${m === resolvedValue ? 'selected' : ''}>${m}</option>`).join('')
+    wrapper.innerHTML = `
+      <label class="field-label" for="${sectionId}-${key}">${label}</label>
+      <select id="${sectionId}-${key}" name="${key}" data-section="${sectionId}" data-config-key="${configKey}" data-widget="model-select">
+        <option value="">— none —</option>
+        ${optHtml}
+      </select>
+      ${schema.description ? `<span class="field-hint">${schema.description}</span>` : ''}`
+  } else if (widget === 'textarea') {
+    const rows = schema['x-ui']?.rows ?? 3
+    wrapper.innerHTML = `
+      <label class="field-label" for="${sectionId}-${key}">${label}</label>
+      <textarea id="${sectionId}-${key}" name="${key}" rows="${rows}" data-section="${sectionId}" data-config-key="${configKey}">${resolvedValue}</textarea>
+      ${schema.description ? `<span class="field-hint">${schema.description}</span>` : ''}`
+  } else if (widget === 'google-account') {
+    wrapper.innerHTML = `
+      <div class="field-row">
+        <div>
+          <div class="field-label">Google account</div>
+          <div class="field-hint" data-google-status>checking…</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="button" class="btn-save" data-google-connect style="display:none">Connect</button>
+          <button type="button" class="btn-reset" data-google-disconnect style="display:none">Disconnect</button>
+        </div>
+      </div>`
+    wrapper.dataset.widget = 'google-account'
+  } else {
+    const inputType = secret ? 'password' : widget === 'number' ? 'number' : 'text'
+    const attrs = []
+    if (schema.minimum != null) attrs.push(`min="${schema.minimum}"`)
+    if (schema.maximum != null) attrs.push(`max="${schema.maximum}"`)
+    if (schema.default != null) attrs.push(`placeholder="${schema.default}"`)
+    wrapper.innerHTML = `
+      <label class="field-label" for="${sectionId}-${key}">${label}</label>
+      <input type="${inputType}" id="${sectionId}-${key}" name="${key}" value="${resolvedValue}" data-section="${sectionId}" data-config-key="${configKey}" ${attrs.join(' ')}>
+      ${schema.description ? `<span class="field-hint">${schema.description}</span>` : ''}`
+  }
+  return wrapper
+}
+
+function inferWidget(schema) {
+  if (schema.type === 'boolean') return 'toggle'
+  if (schema.type === 'number') return 'number'
+  if (schema.enum) return 'select'
+  return 'text'
+}
+
+// ─── Google Account OAuth ───────────────────────────────────────────────────
+
+function initGoogleAccountWidgets() {
+  document.querySelectorAll('[data-widget="google-account"]').forEach(wrapper => {
+    const statusEl = wrapper.querySelector('[data-google-status]')
+    const connectBtn = wrapper.querySelector('[data-google-connect]')
+    const disconnectBtn = wrapper.querySelector('[data-google-disconnect]')
+
+    const updateStatus = async () => {
+      try {
+        const res = await fetch(new URL('googleapis/auth/status', location.href))
+        const data = res.ok ? await res.json() : { connected: false }
+        if (data.connected) {
+          statusEl.textContent = 'Connected'
+          connectBtn.style.display = 'none'
+          disconnectBtn.style.display = ''
+        } else {
+          statusEl.textContent = 'Not connected'
+          connectBtn.style.display = ''
+          disconnectBtn.style.display = 'none'
+        }
+      } catch {
+        statusEl.textContent = 'Status unavailable'
+      }
+    }
+
+    connectBtn.addEventListener('click', () => {
+      const popup = window.open(new URL('googleapis/auth/start', location.href), '_blank', 'width=520,height=640')
+      const poll = setInterval(() => {
+        if (popup?.closed) {
+          clearInterval(poll)
+          updateStatus()
+        }
+      }, 500)
+    })
+
+    disconnectBtn.addEventListener('click', async () => {
+      await fetch(new URL('googleapis/auth/revoke', location.href), { method: 'POST' })
+      updateStatus()
+    })
+
+    updateStatus()
+  })
+}
+
+// ─── Form Submission ────────────────────────────────────────────────────────
+
+function gatherValuesByPlugin() {
+  const byPlugin = {}
+  document.querySelectorAll('#config-form [data-config-key]').forEach(el => {
+    if (el.dataset.widget === 'google-account') return
+    const pluginId = el.dataset.section.split('.')[0]
+    const configKey = el.dataset.configKey
+    const key = el.name
+    if (!key) return
+
+    const value = el.type === 'checkbox' ? el.checked
+      : el.type === 'number' ? Number(el.value)
+      : el.value
+
+    ;(byPlugin[pluginId] ??= {})
+
+    if (configKey) {
+      const parts = configKey.split('.')
+      let target = byPlugin[pluginId]
+      for (let i = 0; i < parts.length; i++) {
+        target = target[parts[i]] ??= {}
+      }
+      target[key] = value
+    } else {
+      byPlugin[pluginId][key] = value
+    }
+  })
+  return byPlugin
+}
+
+async function saveConfig() {
+  const byPlugin = gatherValuesByPlugin()
+
+  for (const [pluginId, patch] of Object.entries(byPlugin)) {
+    try {
+      const res = await fetch(new URL(`config/${pluginId}`, location.href), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      if (!res.ok) throw new Error(`server error ${res.status}`)
+    } catch (err) {
+      flashError(`Failed to save ${pluginId}: ${err.message}`)
+      return
+    }
+  }
+  flashSaved()
+}
+
+// ─── Flash Messages ─────────────────────────────────────────────────────────
 
 let saveTimer  = null
 let errorTimer = null
 
 function flashSaved() {
+  const saveStatus = document.getElementById('save-status')
+  const saveError  = document.getElementById('save-error')
+  if (!saveStatus || !saveError) return
   saveError.classList.remove('visible')
   saveStatus.classList.add('visible')
   clearTimeout(saveTimer)
@@ -147,6 +332,9 @@ function flashSaved() {
 }
 
 function flashError(msg) {
+  const saveStatus = document.getElementById('save-status')
+  const saveError  = document.getElementById('save-error')
+  if (!saveStatus || !saveError) return
   saveStatus.classList.remove('visible')
   saveError.textContent = msg
   saveError.classList.add('visible')
@@ -154,33 +342,5 @@ function flashError(msg) {
   errorTimer = setTimeout(() => saveError.classList.remove('visible'), 4000)
 }
 
-configForm.addEventListener('submit', async (e) => {
-  e.preventDefault()
-  const cfg = readFromForm()
-  try {
-    const res = await fetch(new URL('config', location.href), {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(cfg),
-    })
-    if (!res.ok) throw new Error(`server error ${res.status}`)
-    flashSaved()
-  } catch (err) {
-    flashError(err.message)
-  }
-})
-
-resetBtn.addEventListener('click', () => applyToForm(configDefaults))
-
-// Config subtab switching
-const configTabBtns = document.querySelectorAll('[data-config-tab]')
-const configPanes   = document.querySelectorAll('[data-config-pane]')
-
-configTabBtns.forEach(btn => {
-  btn.addEventListener('click', () => {
-    configTabBtns.forEach(b => b.classList.remove('active'))
-    btn.classList.add('active')
-    configPanes.forEach(p => p.classList.remove('active'))
-    document.querySelector(`[data-config-pane="${btn.dataset.configTab}"]`).classList.add('active')
-  })
-})
+// ─── Event Listeners ────────────────────────────────────────────────────────
+// Set up inside initConfigForms() after DOM is ready.

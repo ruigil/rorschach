@@ -1,6 +1,8 @@
 import type { ActorRef } from '../../system/types.ts'
 import { ask } from '../../system/ask.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
+import type { ConfigSchemaSection } from '../../types/config.ts'
+import type { AuthConfig } from './authenticator.ts'
 import type {
   AuthenticatorMsg,
   RegistrationOptions,
@@ -9,6 +11,38 @@ import type {
   AuthenticationBeginResult,
   WebAuthnCredential,
 } from './types.ts'
+
+// ─── Config Schema Sections ──────────────────────────────────────────────────
+
+export const authSchema: ConfigSchemaSection = {
+  id: 'auth.config',
+  title: 'Authentication',
+  subtitle: 'auth · WebAuthn and session settings',
+  tab: 'auth',
+  configKey: '',
+  routeId: 'config.auth',
+  schema: {
+    type: 'object',
+    properties: {
+      rpId: { type: 'string', default: 'localhost', 'x-ui': { label: 'Relying party ID' } },
+      rpName: { type: 'string', default: 'Rorschach', 'x-ui': { label: 'Relying party name' } },
+      origin: { type: 'string', default: 'http://localhost:3000', 'x-ui': { label: 'Origin URL' } },
+      baseUrl: { type: 'string', default: 'http://localhost:3000', 'x-ui': { label: 'Base URL' } },
+    },
+  },
+}
+
+export const authSchemas = [authSchema]
+
+export const buildAuthConfigRoute = (getConfig: () => AuthConfig | undefined): RouteRegistration[] => [{
+  id: 'config.auth',
+  method: 'GET',
+  path: '/config/auth',
+  handler: () => {
+    const slice = getConfig()
+    return new Response(JSON.stringify(slice ?? {}), { headers: { 'Content-Type': 'application/json' } })
+  },
+}]
 
 // ─── Cookie helpers ───
 

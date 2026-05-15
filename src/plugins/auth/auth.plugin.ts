@@ -4,10 +4,11 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
+import { ConfigSchemaTopic } from '../../types/config.ts'
 import { UserStore } from './user-store.ts'
 import { Authenticator, type AuthConfig } from './authenticator.ts'
 import { IdentityProvider } from './identity-provider.ts'
-import { buildAuthRoutes } from './routes.ts'
+import { buildAuthRoutes, authSchemas, buildAuthConfigRoute } from './routes.ts'
 import type { AuthenticatorMsg, UserStoreMsg } from './types.ts'
 
 const config = defineConfig<AuthConfig>('auth', {
@@ -45,6 +46,15 @@ const authPlugin: PluginDef<AuthPluginMsg, AuthPluginState, AuthConfig> = {
   lifecycle: onLifecycle({
     start: (state, ctx) => {
       const authConfig = ctx.initialConfig() as AuthConfig
+
+      // Publish config schemas and config route
+      for (const section of authSchemas) {
+        ctx.publishRetained(ConfigSchemaTopic, section.id, section)
+      }
+      for (const reg of buildAuthConfigRoute(() => authConfig)) {
+        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
+      }
+
       const storePath = './workspace/auth/users.json'
       const userStoreRef = ctx.spawn('user-store-0', UserStore(storePath))
       const authenticatorRef = ctx.spawn('authenticator-0', Authenticator({ userStore: userStoreRef as ActorRef<UserStoreMsg>, config: authConfig }))
@@ -75,6 +85,14 @@ const authPlugin: PluginDef<AuthPluginMsg, AuthPluginState, AuthConfig> = {
         for (const reg of buildAuthRoutes(state.authenticator.ref as ActorRef<AuthenticatorMsg>)) {
           ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
         }
+      }
+
+      // Tombstone config schemas and config route
+      for (const section of authSchemas) {
+        ctx.deleteRetained(ConfigSchemaTopic, section.id, { ...section, schema: null })
+      }
+      for (const reg of buildAuthConfigRoute(() => undefined)) {
+        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
       }
 
       stopSlot(ctx, state.userStore)
