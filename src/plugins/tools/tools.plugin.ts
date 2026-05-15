@@ -10,7 +10,8 @@ import { ToolStatus, toolStatusTool } from './tool-status.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { BashOptions as BashConfig } from 'just-bash'
-import type { ActorRef, PluginActorState, PluginDef } from '../../system/types.ts'
+import { defineConfig, createSlot, stopSlot, type ActorSlot } from '../../system/config.ts'
+import type { ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'
 import type { ToolMsg } from '../../types/tools.ts'
@@ -45,6 +46,16 @@ export type ToolsConfig = {
   videoActor?: VideoActorConfig
 }
 
+const config = defineConfig<ToolsConfig>('tools', {
+  webSearch: {
+    apiKey: process.env.BRAVESEARCH_API_KEY ?? '',
+    count: 20,
+  },
+  bash: {
+    cwd: process.cwd(),
+  },
+})
+
 // ─── Plugin internals ───
 
 type PluginMsg =
@@ -53,15 +64,15 @@ type PluginMsg =
 
 type PluginState = {
   initialized: boolean
-  webSearch: PluginActorState<WebSearchActorConfig>
-  bash: PluginActorState<BashConfig>
-  vision: PluginActorState<VisionActorConfig>
-  audio: PluginActorState<AudioActorConfig>
-  video: PluginActorState<VideoActorConfig>
-  cron: { ref: ActorRef<ToolMsg> | null }
-  pdf: { ref: ActorRef<ToolMsg> | null }
-  fetchFile: { ref: ActorRef<ToolMsg> | null }
-  toolStatus: { ref: ActorRef<ToolMsg> | null }
+  webSearch: ActorSlot<WebSearchActorConfig>
+  bash:      ActorSlot<BashConfig>
+  vision:    ActorSlot<VisionActorConfig>
+  audio:     ActorSlot<AudioActorConfig>
+  video:     ActorSlot<VideoActorConfig>
+  cron:      ActorSlot<never>
+  pdf:       ActorSlot<never>
+  fetchFile: ActorSlot<never>
+  toolStatus: ActorSlot<never>
   llmRef: ActorRef<LlmProviderMsg> | null
 }
 
@@ -71,30 +82,19 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
   version: '1.0.0',
   description: 'Tool actors: web search, bash execution, and vision analysis',
 
-  configDescriptor: {
-    defaults: {
-      webSearch: {
-        apiKey: process.env.BRAVESEARCH_API_KEY ?? '',
-        count: 20,
-      },
-      bash:{
-        cwd: process.cwd(),
-      },
-    },
-    onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
-  },
+  configDescriptor: config,
 
   initialState: {
     initialized: false,
-    webSearch: { config: null, ref: null, gen: 0 },
-    bash:      { config: null, ref: null, gen: 0 },
-    vision:    { config: null, ref: null, gen: 0 },
-    audio:     { config: null, ref: null, gen: 0 },
-    video:     { config: null, ref: null, gen: 0 },
-    cron:       { ref: null },
-    pdf:        { ref: null },
-    fetchFile:  { ref: null },
-    toolStatus: { ref: null },
+    webSearch:  createSlot(),
+    bash:       createSlot(),
+    vision:     createSlot(),
+    audio:      createSlot(),
+    video:      createSlot(),
+    cron:       createSlot(),
+    pdf:        createSlot(),
+    fetchFile:  createSlot(),
+    toolStatus: createSlot(),
     llmRef:     null,
   },
 
@@ -136,15 +136,15 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       ctx.log.info('tools plugin activated')
       return { state: {
         initialized: true,
-        webSearch: { config: webSearchConfig, ref: webSearchRef, gen: 0 },
-        bash:      { config: bashConfig, ref: bashRef, gen: 0 },
-        vision:    { config: slice?.visionActor ?? null, ref: null, gen: 0 },
-        audio:     { config: slice?.audioActor ?? null, ref: null, gen: 0 },
-        video:     { config: slice?.videoActor ?? null, ref: null, gen: 0 },
-        cron:       { ref: cronRef },
-        pdf:        { ref: pdfRef },
-        fetchFile:  { ref: fetchFileRef },
-        toolStatus: { ref: toolStatusRef },
+        webSearch:  { config: webSearchConfig, ref: webSearchRef,  gen: 0 },
+        bash:       { config: bashConfig,      ref: bashRef,       gen: 0 },
+        vision:     { config: slice?.visionActor ?? null, ref: null, gen: 0 },
+        audio:      { config: slice?.audioActor ?? null,  ref: null, gen: 0 },
+        video:      { config: slice?.videoActor ?? null,  ref: null, gen: 0 },
+        cron:       { config: null, ref: cronRef,       gen: 0 },
+        pdf:        { config: null, ref: pdfRef,        gen: 0 },
+        fetchFile:  { config: null, ref: fetchFileRef,  gen: 0 },
+        toolStatus: { config: null, ref: toolStatusRef, gen: 0 },
         llmRef:     null,
       } }
     },
@@ -183,6 +183,17 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       if (state.toolStatus.ref) {
         ctx.deleteRetained(ToolRegistrationTopic, toolStatusTool.name, { name: toolStatusTool.name, ref: null })
       }
+
+      stopSlot(ctx, state.webSearch)
+      stopSlot(ctx, state.bash)
+      stopSlot(ctx, state.vision)
+      stopSlot(ctx, state.audio)
+      stopSlot(ctx, state.video)
+      stopSlot(ctx, state.cron)
+      stopSlot(ctx, state.pdf)
+      stopSlot(ctx, state.fetchFile)
+      stopSlot(ctx, state.toolStatus)
+
       ctx.log.info('tools plugin deactivating')
       return { state }
     },
@@ -200,105 +211,109 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
 
   handler: onMessage<PluginMsg, PluginState>({
     config: (state, msg, ctx) => {
+      // Unregister all tools
       if (state.webSearch.ref) {
-        ctx.stop(state.webSearch.ref)
         ctx.deleteRetained(ToolRegistrationTopic, webSearchTool.name, { name: webSearchTool.name, ref: null })
       }
       if (state.bash.ref) {
-        ctx.stop(state.bash.ref)
         ctx.deleteRetained(ToolRegistrationTopic, bashTool.name,  { name: bashTool.name,  ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, writeTool.name, { name: writeTool.name, ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, readTool.name,  { name: readTool.name,  ref: null })
       }
       if (state.vision.ref) {
-        ctx.stop(state.vision.ref)
         ctx.deleteRetained(ToolRegistrationTopic, analyzeImageTool.name,  { name: analyzeImageTool.name,  ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, generateImageTool.name, { name: generateImageTool.name, ref: null })
       }
       if (state.audio.ref) {
-        ctx.stop(state.audio.ref)
         ctx.deleteRetained(ToolRegistrationTopic, transcribeAudioTool.name, { name: transcribeAudioTool.name, ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, textToSpeechTool.name,   { name: textToSpeechTool.name,   ref: null })
       }
       if (state.video.ref) {
-        ctx.stop(state.video.ref)
         ctx.deleteRetained(ToolRegistrationTopic, generateVideoTool.name, { name: generateVideoTool.name, ref: null })
       }
+      if (state.cron.ref) {
+        ctx.deleteRetained(ToolRegistrationTopic, cronCreateTool.name, { name: cronCreateTool.name, ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, cronDeleteTool.name, { name: cronDeleteTool.name, ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, cronListTool.name,   { name: cronListTool.name,   ref: null })
+      }
       if (state.pdf.ref) {
-        ctx.stop(state.pdf.ref)
         ctx.deleteRetained(ToolRegistrationTopic, pdfTool.name, { name: pdfTool.name, ref: null })
       }
       if (state.fetchFile.ref) {
-        ctx.stop(state.fetchFile.ref)
         ctx.deleteRetained(ToolRegistrationTopic, fetchFileTool.name, { name: fetchFileTool.name, ref: null })
       }
 
+      // Stop all actors
+      stopSlot(ctx, state.webSearch)
+      stopSlot(ctx, state.bash)
+      stopSlot(ctx, state.vision)
+      stopSlot(ctx, state.audio)
+      stopSlot(ctx, state.video)
+      stopSlot(ctx, state.cron)
+      stopSlot(ctx, state.pdf)
+      stopSlot(ctx, state.fetchFile)
+
       const newWebSearchConfig = msg.slice?.webSearch ?? null
-      const webSearchGen = state.webSearch.gen + 1
       const newBashConfig = msg.slice?.bash ?? null
-      const bashGen = state.bash.gen + 1
       const newVisionConfig = msg.slice?.visionActor ?? null
-      const visionGen = state.vision.gen + 1
       const newAudioConfig = msg.slice?.audioActor ?? null
-      const audioGen = state.audio.gen + 1
       const newVideoConfig = msg.slice?.videoActor ?? null
-      const videoGen = state.video.gen + 1
 
       let webSearchRef: ActorRef<ToolMsg> | null = null
-
       if (newWebSearchConfig) {
-        webSearchRef = ctx.spawn(`web-search-${webSearchGen}`, WebSearch(newWebSearchConfig)) as ActorRef<ToolMsg>
+        webSearchRef = ctx.spawn(`web-search-${state.webSearch.gen + 1}`, WebSearch(newWebSearchConfig)) as ActorRef<ToolMsg>
         ctx.publishRetained(ToolRegistrationTopic, webSearchTool.name, { ...webSearchTool, ref: webSearchRef })
       }
 
-      const bashRef = ctx.spawn(`bash-${bashGen}`, JustBash(newBashConfig ?? undefined)) as ActorRef<ToolMsg>
+      const bashRef = ctx.spawn(`bash-${state.bash.gen + 1}`, JustBash(newBashConfig ?? undefined)) as ActorRef<ToolMsg>
       ctx.publishRetained(ToolRegistrationTopic, bashTool.name,  { ...bashTool,  ref: bashRef })
       ctx.publishRetained(ToolRegistrationTopic, writeTool.name, { ...writeTool, ref: bashRef })
       ctx.publishRetained(ToolRegistrationTopic, readTool.name,  { ...readTool,  ref: bashRef })
 
       let visionRef: ActorRef<ToolMsg> | null = null
       if (state.llmRef && newVisionConfig) {
-        const ref = ctx.spawn(`vision-actor-${visionGen}`, Vision({ llmRef: state.llmRef, model: newVisionConfig.model }))
-        const visionRefTyped = ref as unknown as ActorRef<ToolMsg>
-        ctx.publishRetained(ToolRegistrationTopic, analyzeImageTool.name,  { ...analyzeImageTool,  ref: visionRefTyped })
-        ctx.publishRetained(ToolRegistrationTopic, generateImageTool.name, { ...generateImageTool, ref: visionRefTyped })
-        visionRef = visionRefTyped
+        const ref = ctx.spawn(`vision-actor-${state.vision.gen + 1}`, Vision({ llmRef: state.llmRef, model: newVisionConfig.model }))
+        visionRef = ref as unknown as ActorRef<ToolMsg>
+        ctx.publishRetained(ToolRegistrationTopic, analyzeImageTool.name,  { ...analyzeImageTool,  ref: visionRef })
+        ctx.publishRetained(ToolRegistrationTopic, generateImageTool.name, { ...generateImageTool, ref: visionRef })
       }
 
       let audioRef: ActorRef<ToolMsg> | null = null
       if (state.llmRef && newAudioConfig) {
-        const ref = ctx.spawn(`audio-actor-${audioGen}`, Audio({ llmRef: state.llmRef, ttsModel: newAudioConfig.ttsModel, sttModel: newAudioConfig.sttModel, voice: newAudioConfig.voice ?? 'alloy' }))
-        const audioRefTyped = ref as unknown as ActorRef<ToolMsg>
-        ctx.publishRetained(ToolRegistrationTopic, transcribeAudioTool.name, { ...transcribeAudioTool, ref: audioRefTyped })
-        ctx.publishRetained(ToolRegistrationTopic, textToSpeechTool.name,   { ...textToSpeechTool,   ref: audioRefTyped })
-        audioRef = audioRefTyped
+        const ref = ctx.spawn(`audio-actor-${state.audio.gen + 1}`, Audio({ llmRef: state.llmRef, ttsModel: newAudioConfig.ttsModel, sttModel: newAudioConfig.sttModel, voice: newAudioConfig.voice ?? 'alloy' }))
+        audioRef = ref as unknown as ActorRef<ToolMsg>
+        ctx.publishRetained(ToolRegistrationTopic, transcribeAudioTool.name, { ...transcribeAudioTool, ref: audioRef })
+        ctx.publishRetained(ToolRegistrationTopic, textToSpeechTool.name,   { ...textToSpeechTool,   ref: audioRef })
       }
 
       let videoRef: ActorRef<ToolMsg> | null = null
       if (state.llmRef && newVideoConfig) {
-        const ref = ctx.spawn(`video-actor-${videoGen}`, Video({ llmRef: state.llmRef, model: newVideoConfig.model, aspectRatio: newVideoConfig.aspectRatio, duration: newVideoConfig.duration, resolution: newVideoConfig.resolution, pollIntervalMs: newVideoConfig.pollIntervalMs, pollTimeoutMs: newVideoConfig.pollTimeoutMs }))
-        const videoRefTyped = ref as unknown as ActorRef<ToolMsg>
-        ctx.publishRetained(ToolRegistrationTopic, generateVideoTool.name, { ...generateVideoTool, ref: videoRefTyped, mayBeLongRunning: true })
-        videoRef = videoRefTyped
+        const ref = ctx.spawn(`video-actor-${state.video.gen + 1}`, Video({ llmRef: state.llmRef, model: newVideoConfig.model, aspectRatio: newVideoConfig.aspectRatio, duration: newVideoConfig.duration, resolution: newVideoConfig.resolution, pollIntervalMs: newVideoConfig.pollIntervalMs, pollTimeoutMs: newVideoConfig.pollTimeoutMs }))
+        videoRef = ref as unknown as ActorRef<ToolMsg>
+        ctx.publishRetained(ToolRegistrationTopic, generateVideoTool.name, { ...generateVideoTool, ref: videoRef, mayBeLongRunning: true })
       }
 
-      const pdfGen = (state.pdf.ref ? 1 : 0) + 1
-      const newPdfRef = ctx.spawn(`pdf-${pdfGen}`, PDF()) as ActorRef<ToolMsg>
-      ctx.publishRetained(ToolRegistrationTopic, pdfTool.name, { ...pdfTool, ref: newPdfRef })
+      const cronRef = ctx.spawn(`cron-${state.cron.gen + 1}`, Cron()) as unknown as ActorRef<ToolMsg>
+      ctx.publishRetained(ToolRegistrationTopic, cronCreateTool.name, { ...cronCreateTool, ref: cronRef })
+      ctx.publishRetained(ToolRegistrationTopic, cronDeleteTool.name, { ...cronDeleteTool, ref: cronRef })
+      ctx.publishRetained(ToolRegistrationTopic, cronListTool.name,   { ...cronListTool,   ref: cronRef })
 
-      const fetchFileGen = (state.fetchFile.ref ? 1 : 0) + 1
-      const newFetchFileRef = ctx.spawn(`fetch-file-${fetchFileGen}`, FetchFile()) as ActorRef<ToolMsg>
-      ctx.publishRetained(ToolRegistrationTopic, fetchFileTool.name, { ...fetchFileTool, ref: newFetchFileRef })
+      const pdfRef = ctx.spawn(`pdf-${state.pdf.gen + 1}`, PDF()) as ActorRef<ToolMsg>
+      ctx.publishRetained(ToolRegistrationTopic, pdfTool.name, { ...pdfTool, ref: pdfRef })
+
+      const fetchFileRef = ctx.spawn(`fetch-file-${state.fetchFile.gen + 1}`, FetchFile()) as ActorRef<ToolMsg>
+      ctx.publishRetained(ToolRegistrationTopic, fetchFileTool.name, { ...fetchFileTool, ref: fetchFileRef })
 
       return { state: {
         ...state,
-        webSearch: { config: newWebSearchConfig, ref: webSearchRef, gen: webSearchGen },
-        bash:      { config: newBashConfig, ref: bashRef, gen: bashGen },
-        vision:    { config: newVisionConfig, ref: visionRef, gen: visionGen },
-        audio:     { config: newAudioConfig,  ref: audioRef,  gen: audioGen  },
-        video:     { config: newVideoConfig,  ref: videoRef,  gen: videoGen  },
-        pdf:       { ref: newPdfRef },
-        fetchFile: { ref: newFetchFileRef },
+        webSearch: { config: newWebSearchConfig, ref: webSearchRef, gen: state.webSearch.gen + 1 },
+        bash:      { config: newBashConfig,      ref: bashRef,      gen: state.bash.gen + 1 },
+        vision:    { config: newVisionConfig,    ref: visionRef,    gen: state.vision.gen + 1 },
+        audio:     { config: newAudioConfig,     ref: audioRef,     gen: state.audio.gen + 1 },
+        video:     { config: newVideoConfig,     ref: videoRef,     gen: state.video.gen + 1 },
+        cron:      { config: null, ref: cronRef,      gen: state.cron.gen + 1 },
+        pdf:       { config: null, ref: pdfRef,       gen: state.pdf.gen + 1 },
+        fetchFile: { config: null, ref: fetchFileRef, gen: state.fetchFile.gen + 1 },
       } }
     },
 
@@ -328,10 +343,9 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
 
       if (msg.ref && state.vision.config) {
         const ref = ctx.spawn(`vision-actor-${visionGen}`, Vision({ llmRef: msg.ref, model: state.vision.config.model }))
-        const visionRefTyped = ref as unknown as ActorRef<ToolMsg>
-        ctx.publishRetained(ToolRegistrationTopic, analyzeImageTool.name,  { ...analyzeImageTool,  ref: visionRefTyped })
-        ctx.publishRetained(ToolRegistrationTopic, generateImageTool.name, { ...generateImageTool, ref: visionRefTyped })
-        visionRef = visionRefTyped
+        visionRef = ref as unknown as ActorRef<ToolMsg>
+        ctx.publishRetained(ToolRegistrationTopic, analyzeImageTool.name,  { ...analyzeImageTool,  ref: visionRef })
+        ctx.publishRetained(ToolRegistrationTopic, generateImageTool.name, { ...generateImageTool, ref: visionRef })
       }
 
       const audioGen = state.audio.gen
@@ -339,10 +353,9 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
 
       if (msg.ref && state.audio.config) {
         const ref = ctx.spawn(`audio-actor-${audioGen}`, Audio({ llmRef: msg.ref, ttsModel: state.audio.config.ttsModel, sttModel: state.audio.config.sttModel, voice: state.audio.config.voice ?? 'alloy' }))
-        const audioRefTyped = ref as unknown as ActorRef<ToolMsg>
-        ctx.publishRetained(ToolRegistrationTopic, transcribeAudioTool.name, { ...transcribeAudioTool, ref: audioRefTyped })
-        ctx.publishRetained(ToolRegistrationTopic, textToSpeechTool.name,   { ...textToSpeechTool,   ref: audioRefTyped })
-        audioRef = audioRefTyped
+        audioRef = ref as unknown as ActorRef<ToolMsg>
+        ctx.publishRetained(ToolRegistrationTopic, transcribeAudioTool.name, { ...transcribeAudioTool, ref: audioRef })
+        ctx.publishRetained(ToolRegistrationTopic, textToSpeechTool.name,   { ...textToSpeechTool,   ref: audioRef })
       }
 
       const videoGen = state.video.gen
@@ -350,9 +363,8 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
 
       if (msg.ref && state.video.config) {
         const ref = ctx.spawn(`video-actor-${videoGen}`, Video({ llmRef: msg.ref, model: state.video.config.model, aspectRatio: state.video.config.aspectRatio, duration: state.video.config.duration, resolution: state.video.config.resolution, pollIntervalMs: state.video.config.pollIntervalMs, pollTimeoutMs: state.video.config.pollTimeoutMs }))
-        const videoRefTyped = ref as unknown as ActorRef<ToolMsg>
-        ctx.publishRetained(ToolRegistrationTopic, generateVideoTool.name, { ...generateVideoTool, ref: videoRefTyped, mayBeLongRunning: true })
-        videoRef = videoRefTyped
+        videoRef = ref as unknown as ActorRef<ToolMsg>
+        ctx.publishRetained(ToolRegistrationTopic, generateVideoTool.name, { ...generateVideoTool, ref: videoRef, mayBeLongRunning: true })
       }
 
       return { state: {

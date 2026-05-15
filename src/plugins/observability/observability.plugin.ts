@@ -2,7 +2,8 @@ import { JsonlLogger, type JsonlLoggerOptions } from './jsonl-logger.ts'
 import { Metrics, type MetricsActorOptions } from './metrics.ts'
 import { TraceRecorder, type TraceRecorderOptions } from './trace-recorder.ts'
 import { CostTracker, type CostTrackerOptions } from './cost-tracker.ts'
-import type { PluginActorState, PluginDef } from '../../system/types.ts'
+import { defineConfig, createSlot, stopSlot, type ActorSlot } from '../../system/config.ts'
+import type { PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 
 export type ObservabilityConfig = {
@@ -12,13 +13,15 @@ export type ObservabilityConfig = {
   costTracker?: CostTrackerOptions
 }
 
+const config = defineConfig<ObservabilityConfig>('observability', {})
+
 type PluginMsg = { type: 'config'; slice: ObservabilityConfig | undefined }
 type PluginState = {
   initialized: boolean
-  logger:         PluginActorState<JsonlLoggerOptions>
-  metrics:        PluginActorState<MetricsActorOptions>
-  traceRecorder:  PluginActorState<TraceRecorderOptions>
-  costTracker:    PluginActorState<CostTrackerOptions>
+  logger:        ActorSlot<JsonlLoggerOptions>
+  metrics:       ActorSlot<MetricsActorOptions>
+  traceRecorder: ActorSlot<TraceRecorderOptions>
+  costTracker:   ActorSlot<CostTrackerOptions>
 }
 
 const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig> = {
@@ -26,51 +29,47 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig
   version: '1.0.0',
   description: 'Observability actors: JSONL log persistence and metrics publishing',
 
-  configDescriptor: {
-    defaults: {},
-    onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
-  },
+  configDescriptor: config,
 
   initialState: {
     initialized: false,
-    logger:        { config: null, ref: null, gen: 0 },
-    metrics:       { config: null, ref: null, gen: 0 },
-    traceRecorder: { config: null, ref: null, gen: 0 },
-    costTracker:   { config: null, ref: null, gen: 0 },
+    logger:        createSlot(),
+    metrics:       createSlot(),
+    traceRecorder: createSlot(),
+    costTracker:   createSlot(),
   },
 
   lifecycle: onLifecycle({
     start: (_state, ctx) => {
       const slice = ctx.initialConfig() as ObservabilityConfig | undefined
 
-      const loggerConfig        = slice?.jsonlLogger ?? null
-      const metricsConfig       = slice?.metrics ?? null
-      const traceRecorderConfig = slice?.traceRecorder ?? null
-      const costTrackerConfig   = slice?.costTracker ?? null
-
-      const loggerRef = loggerConfig
-        ? ctx.spawn('jsonl-logger-0', JsonlLogger(loggerConfig))
+      const loggerRef = slice?.jsonlLogger
+        ? ctx.spawn('jsonl-logger-0', JsonlLogger(slice.jsonlLogger))
         : null
-      const metricsRef = metricsConfig
-        ? ctx.spawn('metrics-0', Metrics(metricsConfig))
+      const metricsRef = slice?.metrics
+        ? ctx.spawn('metrics-0', Metrics(slice.metrics))
         : null
-      const traceRecorderRef = traceRecorderConfig
-        ? ctx.spawn('trace-recorder-0', TraceRecorder(traceRecorderConfig))
+      const traceRecorderRef = slice?.traceRecorder
+        ? ctx.spawn('trace-recorder-0', TraceRecorder(slice.traceRecorder))
         : null
-      const costTrackerRef = costTrackerConfig
-        ? ctx.spawn('cost-tracker-0', CostTracker(costTrackerConfig))
+      const costTrackerRef = slice?.costTracker
+        ? ctx.spawn('cost-tracker-0', CostTracker(slice.costTracker))
         : null
 
       ctx.log.info('observability plugin activated')
       return { state: {
         initialized: true,
-        logger:        { config: loggerConfig,        ref: loggerRef,        gen: 0 },
-        metrics:       { config: metricsConfig,       ref: metricsRef,       gen: 0 },
-        traceRecorder: { config: traceRecorderConfig, ref: traceRecorderRef, gen: 0 },
-        costTracker:   { config: costTrackerConfig,   ref: costTrackerRef,   gen: 0 },
+        logger:        { config: slice?.jsonlLogger ?? null, ref: loggerRef,        gen: 0 },
+        metrics:       { config: slice?.metrics      ?? null, ref: metricsRef,       gen: 0 },
+        traceRecorder: { config: slice?.traceRecorder ?? null, ref: traceRecorderRef, gen: 0 },
+        costTracker:   { config: slice?.costTracker   ?? null, ref: costTrackerRef,   gen: 0 },
       } }
     },
     stopped: (state, ctx) => {
+      stopSlot(ctx, state.logger)
+      stopSlot(ctx, state.metrics)
+      stopSlot(ctx, state.traceRecorder)
+      stopSlot(ctx, state.costTracker)
       ctx.log.info('observability plugin deactivating')
       return { state }
     },
@@ -78,40 +77,35 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig
 
   handler: onMessage<PluginMsg, PluginState>({
     config: (state, msg, ctx) => {
-      const newLoggerConfig        = msg.slice?.jsonlLogger ?? null
-      const newMetricsConfig       = msg.slice?.metrics ?? null
+      stopSlot(ctx, state.logger)
+      stopSlot(ctx, state.metrics)
+      stopSlot(ctx, state.traceRecorder)
+      stopSlot(ctx, state.costTracker)
+
+      const newLoggerConfig = msg.slice?.jsonlLogger ?? null
+      const newMetricsConfig = msg.slice?.metrics ?? null
       const newTraceRecorderConfig = msg.slice?.traceRecorder ?? null
-      const newCostTrackerConfig   = msg.slice?.costTracker ?? null
-
-      if (state.logger.ref)        ctx.stop(state.logger.ref)
-      if (state.metrics.ref)       ctx.stop(state.metrics.ref)
-      if (state.traceRecorder.ref) ctx.stop(state.traceRecorder.ref)
-      if (state.costTracker.ref)   ctx.stop(state.costTracker.ref)
-
-      const loggerGen        = state.logger.gen        + 1
-      const metricsGen       = state.metrics.gen       + 1
-      const traceRecorderGen = state.traceRecorder.gen + 1
-      const costTrackerGen   = state.costTracker.gen   + 1
+      const newCostTrackerConfig = msg.slice?.costTracker ?? null
 
       const loggerRef = newLoggerConfig
-        ? ctx.spawn(`jsonl-logger-${loggerGen}`, JsonlLogger(newLoggerConfig))
+        ? ctx.spawn(`jsonl-logger-${state.logger.gen + 1}`, JsonlLogger(newLoggerConfig))
         : null
       const metricsRef = newMetricsConfig
-        ? ctx.spawn(`metrics-${metricsGen}`, Metrics(newMetricsConfig))
+        ? ctx.spawn(`metrics-${state.metrics.gen + 1}`, Metrics(newMetricsConfig))
         : null
       const traceRecorderRef = newTraceRecorderConfig
-        ? ctx.spawn(`trace-recorder-${traceRecorderGen}`, TraceRecorder(newTraceRecorderConfig))
+        ? ctx.spawn(`trace-recorder-${state.traceRecorder.gen + 1}`, TraceRecorder(newTraceRecorderConfig))
         : null
       const costTrackerRef = newCostTrackerConfig
-        ? ctx.spawn(`cost-tracker-${costTrackerGen}`, CostTracker(newCostTrackerConfig))
+        ? ctx.spawn(`cost-tracker-${state.costTracker.gen + 1}`, CostTracker(newCostTrackerConfig))
         : null
 
       return { state: {
         ...state,
-        logger:        { config: newLoggerConfig,        ref: loggerRef,        gen: loggerGen        },
-        metrics:       { config: newMetricsConfig,       ref: metricsRef,       gen: metricsGen       },
-        traceRecorder: { config: newTraceRecorderConfig, ref: traceRecorderRef, gen: traceRecorderGen },
-        costTracker:   { config: newCostTrackerConfig,   ref: costTrackerRef,   gen: costTrackerGen   },
+        logger:        { config: newLoggerConfig,        ref: loggerRef,        gen: state.logger.gen + 1        },
+        metrics:       { config: newMetricsConfig,       ref: metricsRef,       gen: state.metrics.gen + 1       },
+        traceRecorder: { config: newTraceRecorderConfig, ref: traceRecorderRef, gen: state.traceRecorder.gen + 1 },
+        costTracker:   { config: newCostTrackerConfig,   ref: costTrackerRef,   gen: state.costTracker.gen + 1   },
       } }
     },
   }),

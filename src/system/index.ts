@@ -9,6 +9,19 @@ export type { InvokeToolArgs, InvokeToolOptions } from './invoke-tool.ts'
 export { onLifecycle, onMessage } from './match.ts'
 export { watchTopic } from './services.ts'
 
+// ─── Config utilities ───
+export {
+  defineConfig,
+  createSlot,
+  spawnSlot,
+  stopSlot,
+  stopAllSlots,
+  createSharedRefs,
+  type ConfigDescriptor,
+  type ActorSlot,
+  type SharedRefs,
+} from './config.ts'
+
 export { TraceTopic } from '../types/trace.ts'
 export type { TraceSpan } from '../types/trace.ts'
 export type { SpanHandle } from './types.ts'

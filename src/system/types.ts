@@ -555,6 +555,8 @@ export type ActorServices = {
  * Tracks the lifecycle state of a single child actor managed by a plugin.
  * Stores the current config slice, a reference to the running actor, and a
  * generation counter used to produce unique spawn names on reconfiguration.
+ *
+ * @deprecated Use ActorSlot from './config.ts' instead.
  */
 export type PluginActorState<C> = {
   config: C | null

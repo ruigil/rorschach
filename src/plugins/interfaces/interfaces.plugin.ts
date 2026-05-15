@@ -1,7 +1,8 @@
 import { HTTP, type HTTPOptions } from './http.ts'
 import { CLI } from './cli.ts'
 import { Signal, type SignalOptions } from './signal.ts'
-import type { PluginActorState, PluginDef } from '../../system/types.ts'
+import { defineConfig, createSlot, stopSlot, type ActorSlot } from '../../system/config.ts'
+import type { PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 
 export type InterfacesConfig = {
@@ -10,57 +11,56 @@ export type InterfacesConfig = {
   signal?: SignalOptions
 }
 
+const config = defineConfig<InterfacesConfig>('interfaces', {})
+
 type PluginMsg = { type: 'config'; slice: InterfacesConfig | undefined }
 type PluginState = {
   initialized: boolean
-  http:   PluginActorState<HTTPOptions>
-  cli:    PluginActorState<Record<string, never>>
-  signal: PluginActorState<SignalOptions>
+  http:   ActorSlot<HTTPOptions>
+  cli:    ActorSlot<Record<string, never>>
+  signal: ActorSlot<SignalOptions>
 }
 
 const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
   id: 'interfaces',
   version: '1.0.0',
   description: 'External interfaces: HTTP server and WebSocket',
-  configDescriptor: {
-    defaults: {},
-    onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
-  },
+
+  configDescriptor: config,
 
   initialState: {
     initialized: false,
-    http:   { config: null, ref: null, gen: 0 },
-    cli:    { config: null, ref: null, gen: 0 },
-    signal: { config: null, ref: null, gen: 0 },
+    http:   createSlot(),
+    cli:    createSlot(),
+    signal: createSlot(),
   },
 
   lifecycle: onLifecycle({
     start: (_state, ctx) => {
       const slice = ctx.initialConfig() as InterfacesConfig | undefined
 
-      const httpConfig   = slice?.http   ?? null
-      const cliConfig    = slice?.cli    ?? null
-      const signalConfig = slice?.signal ?? null
-
-      const httpRef = httpConfig
-        ? ctx.spawn('http-0', HTTP(httpConfig))
+      const httpRef = slice?.http
+        ? ctx.spawn('http-0', HTTP(slice.http))
         : null
-      const cliRef = cliConfig
+      const cliRef = slice?.cli
         ? ctx.spawn('cli-0', CLI())
         : null
-      const signalRef = signalConfig
-        ? ctx.spawn('signal-0', Signal(signalConfig))
+      const signalRef = slice?.signal
+        ? ctx.spawn('signal-0', Signal(slice.signal))
         : null
 
       ctx.log.info('interfaces plugin activated')
       return { state: {
         initialized: true,
-        http:   { config: httpConfig,   ref: httpRef,   gen: 0 },
-        cli:    { config: cliConfig,    ref: cliRef,    gen: 0 },
-        signal: { config: signalConfig, ref: signalRef, gen: 0 },
+        http:   { config: slice?.http   ?? null, ref: httpRef,   gen: 0 },
+        cli:    { config: slice?.cli    ?? null, ref: cliRef,    gen: 0 },
+        signal: { config: slice?.signal ?? null, ref: signalRef, gen: 0 },
       } }
     },
     stopped: (state, ctx) => {
+      stopSlot(ctx, state.http)
+      stopSlot(ctx, state.cli)
+      stopSlot(ctx, state.signal)
       ctx.log.info('interfaces plugin deactivating')
       return { state }
     },
@@ -68,32 +68,29 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
 
   handler: onMessage<PluginMsg, PluginState>({
     config: (state, msg, ctx) => {
-      if (state.http.ref)   ctx.stop(state.http.ref)
-      if (state.cli.ref)    ctx.stop(state.cli.ref)
-      if (state.signal.ref) ctx.stop(state.signal.ref)
+      stopSlot(ctx, state.http)
+      stopSlot(ctx, state.cli)
+      stopSlot(ctx, state.signal)
 
-      const newHttpConfig   = msg.slice?.http   ?? null
-      const newCliConfig    = msg.slice?.cli    ?? null
+      const newHttpConfig = msg.slice?.http ?? null
+      const newCliConfig = msg.slice?.cli ?? null
       const newSignalConfig = msg.slice?.signal ?? null
-      const httpGen   = state.http.gen   + 1
-      const cliGen    = state.cli.gen    + 1
-      const signalGen = state.signal.gen + 1
 
       const httpRef = newHttpConfig
-        ? ctx.spawn(`http-${httpGen}`, HTTP(newHttpConfig))
+        ? ctx.spawn(`http-${state.http.gen + 1}`, HTTP(newHttpConfig))
         : null
       const cliRef = newCliConfig
-        ? ctx.spawn(`cli-${cliGen}`, CLI())
+        ? ctx.spawn(`cli-${state.cli.gen + 1}`, CLI())
         : null
       const signalRef = newSignalConfig
-        ? ctx.spawn(`signal-${signalGen}`, Signal(newSignalConfig))
+        ? ctx.spawn(`signal-${state.signal.gen + 1}`, Signal(newSignalConfig))
         : null
 
       return { state: {
         ...state,
-        http:   { config: newHttpConfig,   ref: httpRef,   gen: httpGen   },
-        cli:    { config: newCliConfig,    ref: cliRef,    gen: cliGen    },
-        signal: { config: newSignalConfig, ref: signalRef, gen: signalGen },
+        http:   { config: newHttpConfig,   ref: httpRef,   gen: state.http.gen + 1   },
+        cli:    { config: newCliConfig,    ref: cliRef,    gen: state.cli.gen + 1    },
+        signal: { config: newSignalConfig, ref: signalRef, gen: state.signal.gen + 1 },
       } }
     },
   }),

@@ -1,4 +1,5 @@
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
+import { defineConfig, createSharedRefs, type SharedRefs } from '../../system/config.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
@@ -6,7 +7,7 @@ import type { IdentityProviderMsg } from '../../types/identity.ts'
 import { defineTool, ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 
-import type { GoogleApisConfig, GoogleAgentMsg, GooglePluginMsg, SharedRefs } from './types.ts'
+import type { GoogleApisConfig, GoogleAgentMsg, GooglePluginMsg } from './types.ts'
 import { TokenStore } from './token-store.ts'
 import { OAuthState } from './oauth-state.ts'
 import { buildGoogleOAuthRoutes } from './routes.ts'
@@ -83,6 +84,14 @@ type PluginState = {
   googleAgentRef: ActorRef<GoogleAgentMsg> | null
 }
 
+const config = defineConfig<GoogleApisConfig>('googleapis', {
+  clientId:     '',
+  clientSecret: '',
+  baseUrl:      '',
+  agentModel:   'google/gemini-2.5-flash',
+  maxToolLoops: 10,
+})
+
 // ─── Helpers ───
 
 type SpawnResult = Pick<PluginState, 'gmailRef' | 'calendarRef' | 'driveRef' | 'youtubeRef' | 'googleAgentRef'>
@@ -91,11 +100,18 @@ const spawnChildren = (
   gen:          number,
   model:        string,
   maxToolLoops: number,
-  refs:         SharedRefs,
+  refs:         SharedRefs<{
+    identityProviderRef: ActorRef<IdentityProviderMsg> | null
+    tokenStoreRef:       ActorRef<any> | null
+    oauthStateRef:       ActorRef<any> | null
+    clientId:            string
+    clientSecret:        string
+    baseUrl:             string
+  }>,
   ctx:          ActorContext<GooglePluginMsg>,
 ): SpawnResult => {
-  const tokenStoreRef = refs.tokenStoreRef!
-  const { clientId, clientSecret } = refs
+  const tokenStoreRef = refs.current.tokenStoreRef!
+  const { clientId, clientSecret } = refs.current
 
   const gmailRef    = ctx.spawn(`googleapis-gmail-${gen}`,    Gmail(tokenStoreRef, clientId, clientSecret))    as ActorRef<ToolMsg>
   const calendarRef = ctx.spawn(`googleapis-calendar-${gen}`, Calendar(tokenStoreRef, clientId, clientSecret)) as ActorRef<ToolMsg>
@@ -146,23 +162,30 @@ const stopChildren = (state: PluginState, ctx: ActorContext<GooglePluginMsg>): v
 // ─── Plugin definition ───
 
 const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig> = (() => {
-  const refs: SharedRefs = {
+  const refs = createSharedRefs<{
+    identityProviderRef: ActorRef<IdentityProviderMsg> | null
+    tokenStoreRef:       ActorRef<any> | null
+    oauthStateRef:       ActorRef<any> | null
+    clientId:            string
+    clientSecret:        string
+    baseUrl:             string
+  }>({
     identityProviderRef: null,
     tokenStoreRef:       null,
     oauthStateRef:       null,
     clientId:            '',
     clientSecret:        '',
     baseUrl:             '',
-  }
+  })
 
   const registerRoutes = (ctx: ActorContext<GooglePluginMsg>): void => {
-    for (const reg of buildGoogleOAuthRoutes(refs)) {
+    for (const reg of buildGoogleOAuthRoutes(refs.current)) {
       ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
     }
   }
 
   const deregisterRoutes = (ctx: ActorContext<GooglePluginMsg>): void => {
-    for (const reg of buildGoogleOAuthRoutes(refs)) {
+    for (const reg of buildGoogleOAuthRoutes(refs.current)) {
       ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
     }
   }
@@ -172,16 +195,7 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
     version:     '1.0.0',
     description: 'Google Workspace integration: Gmail, Calendar, Drive, and YouTube via a single "google" tool.',
 
-    configDescriptor: {
-      defaults: {
-        clientId:     '',
-        clientSecret: '',
-        baseUrl:      '',
-        agentModel:   '',
-        maxToolLoops: 10,
-      },
-      onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
-    },
+    configDescriptor: config,
 
     initialState: {
       initialized:    false,
@@ -202,22 +216,19 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
 
     lifecycle: onLifecycle({
       start: (state, ctx) => {
-        const config       = ctx.initialConfig() as GoogleApisConfig | undefined
-        const clientId     = config?.clientId     ?? ''
-        const clientSecret = config?.clientSecret ?? ''
-        const baseUrl      = (config?.baseUrl     ?? '').replace(/\/$/, '')
-        const model        = config?.agentModel   ?? 'google/gemini-2.5-flash'
-        const maxToolLoops = config?.maxToolLoops ?? 10
+        const cfg          = ctx.initialConfig() as GoogleApisConfig | undefined
+        const clientId     = cfg?.clientId     ?? ''
+        const clientSecret = cfg?.clientSecret ?? ''
+        const baseUrl      = (cfg?.baseUrl     ?? '').replace(/\/$/, '')
+        const model        = cfg?.agentModel   ?? 'google/gemini-2.5-flash'
+        const maxToolLoops = cfg?.maxToolLoops ?? 10
 
-        refs.clientId     = clientId
-        refs.clientSecret = clientSecret
-        refs.baseUrl      = baseUrl
+        refs.update({ clientId, clientSecret, baseUrl })
 
         const tokenStoreRef = ctx.spawn('googleapis-token-store', TokenStore('workspace/googleapis/tokens.json'))
         const oauthStateRef = ctx.spawn('googleapis-oauth-state', OAuthState())
 
-        refs.tokenStoreRef = tokenStoreRef
-        refs.oauthStateRef = oauthStateRef
+        refs.update({ tokenStoreRef, oauthStateRef })
 
         ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
         registerRoutes(ctx)
@@ -233,7 +244,7 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
       stopped: (state, ctx) => {
         deregisterRoutes(ctx)
         stopChildren(state, ctx)
-        refs.identityProviderRef = null
+        refs.update({ identityProviderRef: null })
         ctx.log.info('googleapis plugin deactivated')
         return { state }
       },
@@ -241,7 +252,7 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
 
     handler: onMessage<GooglePluginMsg, PluginState>({
       _identityProvider: (state, msg) => {
-        refs.identityProviderRef = msg.ref
+        refs.update({ identityProviderRef: msg.ref })
         return { state }
       },
 
@@ -256,9 +267,7 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
         const maxToolLoops = cfg?.maxToolLoops ?? 10
         const gen          = state.gen + 1
 
-        refs.clientId     = clientId
-        refs.clientSecret = clientSecret
-        refs.baseUrl      = baseUrl
+        refs.update({ clientId, clientSecret, baseUrl })
 
         registerRoutes(ctx)
 

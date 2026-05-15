@@ -1,6 +1,7 @@
 import { PoolRouter, type PoolRouterOptions } from './pool-router.ts'
 import { GenericWorkerBridge } from './worker-bridge.ts'
 import type { WorkerBridgeOptions } from './types.ts'
+import { defineConfig } from '../../system/config.ts'
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 
@@ -18,6 +19,8 @@ export type ParallelConfig = {
   poolRouters?: PoolRouterEntry[]
   workerBridges?: WorkerBridgeEntry[]
 }
+
+const config = defineConfig<ParallelConfig>('parallel', {})
 
 type PluginMsg = { type: 'config'; slice: ParallelConfig | undefined }
 type PluginState = { initialized: boolean; routerRefs: ActorRef<unknown>[]; bridgeRefs: ActorRef<unknown>[] }
@@ -43,10 +46,7 @@ const parallelPlugin: PluginDef<PluginMsg, PluginState, ParallelConfig> = {
   version: '1.0.0',
   description: 'Parallel actors: pool routers and worker thread bridges',
 
-  configDescriptor: {
-    defaults: {},
-    onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
-  },
+  configDescriptor: config,
 
   initialState: { initialized: false, routerRefs: [], bridgeRefs: [] },
 
@@ -64,6 +64,8 @@ const parallelPlugin: PluginDef<PluginMsg, PluginState, ParallelConfig> = {
       return { state: { initialized: true, routerRefs: [], bridgeRefs: [] } }
     },
     stopped: (state, ctx) => {
+      for (const ref of state.routerRefs) ctx.stop(ref)
+      for (const ref of state.bridgeRefs) ctx.stop(ref)
       ctx.log.info('parallel plugin deactivating')
       return { state }
     },

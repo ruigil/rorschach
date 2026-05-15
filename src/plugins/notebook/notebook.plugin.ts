@@ -1,5 +1,6 @@
 import { resolve, sep } from 'node:path'
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
+import { defineConfig, createSlot, stopSlot, createSharedRefs, type ActorSlot, type SharedRefs } from '../../system/config.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { defineTool, ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
@@ -94,58 +95,16 @@ type PluginState = {
   reminderRef:  ActorRef<TodoReminderMsg> | null
 }
 
-type SharedRefs = {
-  identityProviderRef: ActorRef<IdentityProviderMsg> | null
-  notebookDir:         string
-}
+const config = defineConfig<NotebookConfig>('notebook', {
+  notebookDir:  'workspace/notebook',
+  agentModel:   'google/gemini-3.1-pro-preview',
+  maxToolLoops: 10,
+})
 
 const resolveUnder = (baseDir: string, relPath: string): string | null => {
   const base = resolve(baseDir)
   const filePath = resolve(base, relPath)
   return filePath === base || filePath.startsWith(base + sep) ? filePath : null
-}
-
-const registerRoutes = (ctx: ActorContext<PluginMsg>, refs: SharedRefs): void => {
-  ctx.publishRetained(RouteRegistrationTopic, ATTACHMENT_ROUTE_ID, {
-    id: ATTACHMENT_ROUTE_ID,
-    method: 'GET',
-    path: ATTACHMENT_ROUTE_PREFIX,
-    match: 'prefix',
-    handler: async (req: Request, url: URL) => {
-      const session = await resolveCookieIdentity(refs.identityProviderRef, req)
-
-      if (!session) return new Response('Unauthorized', { status: 401 })
-
-      let attachmentId: string
-      try {
-        attachmentId = decodeURIComponent(url.pathname.slice(ATTACHMENT_ROUTE_PREFIX.length))
-      } catch {
-        return new Response('Bad request', { status: 400 })
-      }
-
-      if (!attachmentId || attachmentId.includes('/')) return new Response('Not Found', { status: 404 })
-
-      const indexFile = Bun.file(`${refs.notebookDir}/notes/index.json`)
-      if (!await indexFile.exists()) return new Response('Not Found', { status: 404 })
-
-      const index = JSON.parse(await indexFile.text()) as { notes: NoteEntry[] }
-      const attachment = index.notes.flatMap(n => n.attachments ?? []).find(a => a.id === attachmentId)
-      if (!attachment) return new Response('Not Found', { status: 404 })
-
-      const filePath = resolveUnder(MEDIA_DIR, attachment.path)
-      if (!filePath) return new Response('Not Found', { status: 404 })
-
-      const file = Bun.file(filePath)
-      if (!await file.exists()) return new Response('Not Found', { status: 404 })
-
-      return new Response(file, {
-        headers: {
-          'Content-Type': attachment.mimeType,
-          'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(attachment.originalName)}`,
-        },
-      })
-    },
-  })
 }
 
 // ─── Tool collection builder ───
@@ -238,20 +197,60 @@ const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void =>
 // ─── Plugin definition ───
 
 const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = (() => {
-  const refs: SharedRefs = { identityProviderRef: null, notebookDir: 'workspace/notebook' }
+  const refs = createSharedRefs<{
+    identityProviderRef: ActorRef<IdentityProviderMsg> | null
+    notebookDir:         string
+  }>({ identityProviderRef: null, notebookDir: 'workspace/notebook' })
+
+  const registerRoutes = (ctx: ActorContext<PluginMsg>): void => {
+    ctx.publishRetained(RouteRegistrationTopic, ATTACHMENT_ROUTE_ID, {
+      id: ATTACHMENT_ROUTE_ID,
+      method: 'GET',
+      path: ATTACHMENT_ROUTE_PREFIX,
+      match: 'prefix',
+      handler: async (req: Request, url: URL) => {
+        const session = await resolveCookieIdentity(refs.current.identityProviderRef, req)
+
+        if (!session) return new Response('Unauthorized', { status: 401 })
+
+        let attachmentId: string
+        try {
+          attachmentId = decodeURIComponent(url.pathname.slice(ATTACHMENT_ROUTE_PREFIX.length))
+        } catch {
+          return new Response('Bad request', { status: 400 })
+        }
+
+        if (!attachmentId || attachmentId.includes('/')) return new Response('Not Found', { status: 404 })
+
+        const indexFile = Bun.file(`${refs.current.notebookDir}/notes/index.json`)
+        if (!await indexFile.exists()) return new Response('Not Found', { status: 404 })
+
+        const index = JSON.parse(await indexFile.text()) as { notes: NoteEntry[] }
+        const attachment = index.notes.flatMap(n => n.attachments ?? []).find(a => a.id === attachmentId)
+        if (!attachment) return new Response('Not Found', { status: 404 })
+
+        const filePath = resolveUnder(MEDIA_DIR, attachment.path)
+        if (!filePath) return new Response('Not Found', { status: 404 })
+
+        const file = Bun.file(filePath)
+        if (!await file.exists()) return new Response('Not Found', { status: 404 })
+
+        return new Response(file, {
+          headers: {
+            'Content-Type': attachment.mimeType,
+            'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(attachment.originalName)}`,
+          },
+        })
+      },
+    })
+  }
 
   return {
     id:          'notebook',
     version:     '1.0.0',
     description: 'Personal notebook: journal, notes, tracker (habits, expenses, or any numeric metric), todos — exposed as a single "note" tool.',
 
-    configDescriptor: {
-      defaults: {
-        notebookDir:  'workspace/notebook',
-        maxToolLoops: 10,
-      },
-      onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
-    },
+    configDescriptor: config,
 
     initialState: {
       initialized:  false,
@@ -270,14 +269,14 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = (() =>
 
     lifecycle: onLifecycle({
       start: (state, ctx) => {
-        const config       = ctx.initialConfig() as NotebookConfig | undefined
-        const notebookDir  = config?.notebookDir  ?? 'workspace/notebook'
-        const model        = config?.agentModel   ?? 'google/gemini-3.1-pro-preview'
-        const maxToolLoops = config?.maxToolLoops ?? 10
+        const cfg       = ctx.initialConfig() as NotebookConfig | undefined
+        const notebookDir  = cfg?.notebookDir  ?? 'workspace/notebook'
+        const model        = cfg?.agentModel   ?? 'google/gemini-3.1-pro-preview'
+        const maxToolLoops = cfg?.maxToolLoops ?? 10
 
-        refs.notebookDir = notebookDir
+        refs.update({ notebookDir })
         ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
-        registerRoutes(ctx, refs)
+        registerRoutes(ctx)
 
         const children = spawnChildren(0, notebookDir, model, maxToolLoops, ctx)
 
@@ -299,7 +298,7 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = (() =>
       stopped: (state, ctx) => {
         stopChildren(state, ctx)
         ctx.deleteRetained(RouteRegistrationTopic, ATTACHMENT_ROUTE_ID, { id: ATTACHMENT_ROUTE_ID, method: 'GET', path: ATTACHMENT_ROUTE_PREFIX, match: 'prefix', handler: null })
-        refs.identityProviderRef = null
+        refs.update({ identityProviderRef: null })
         ctx.log.info('notebook plugin deactivating')
         return { state }
       },
@@ -307,7 +306,7 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = (() =>
 
     handler: onMessage<PluginMsg, PluginState>({
       _identityProvider: (state, msg) => {
-        refs.identityProviderRef = msg.ref
+        refs.update({ identityProviderRef: msg.ref })
         return { state }
       },
 
@@ -319,8 +318,8 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = (() =>
         const maxToolLoops = cfg?.maxToolLoops ?? 10
         const gen          = state.gen + 1
 
-        refs.notebookDir = notebookDir
-        registerRoutes(ctx, refs)
+        refs.update({ notebookDir })
+        registerRoutes(ctx)
 
         const children = spawnChildren(gen, notebookDir, model, maxToolLoops, ctx)
 

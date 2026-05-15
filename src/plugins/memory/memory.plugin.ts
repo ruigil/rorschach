@@ -1,4 +1,5 @@
-import type { ActorRef, PluginActorState, PluginDef } from '../../system/types.ts'
+import type { ActorRef, PluginDef } from '../../system/types.ts'
+import { defineConfig, createSlot, stopSlot, createSharedRefs, type ActorSlot, type SharedRefs } from '../../system/config.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
@@ -36,6 +37,10 @@ export type MemoryConfig = {
   system?: MemoryActorConfig
 }
 
+const config = defineConfig<MemoryConfig>('memory', {
+  dbPath: './workspace/memory/kgraph',
+})
+
 // ─── Internal types ───
 
 const KGRAPH_ROUTE_ID = 'memory.kgraph.api'
@@ -49,7 +54,7 @@ type MemoryActors = {
 
 type MemoryPluginState = {
   initialized:         boolean
-  kgraph:              PluginActorState<Exclude<MemoryConfig['kgraph'], undefined>>
+  kgraph:              ActorSlot<Exclude<MemoryConfig['kgraph'], undefined>>
   consolidation:       ActorRef<MemoryConsolidationMsg> | null
   memory:              ActorRef<MemorySupervisorMsg>    | null
   zettel:              ActorRef<ZettelNoteMsg>          | null
@@ -120,40 +125,6 @@ const stopMemoryActors = (
   if (state.userContext)   ctx.stop(state.userContext)
 }
 
-/**
- * Shared references used by the route handler to avoid stale closures.
- */
-type SharedRefs = {
-  identityProviderRef: ActorRef<IdentityProviderMsg> | null
-  kgraphRef:           ActorRef<KgraphMsg>           | null
-}
-
-const registerRoutes = (
-  ctx: Parameters<NonNullable<PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig>['lifecycle']>>[2],
-  refs: SharedRefs,
-): void => {
-  ctx.publishRetained(RouteRegistrationTopic, KGRAPH_ROUTE_ID, {
-    id: KGRAPH_ROUTE_ID,
-    method: 'GET',
-    path: '/kgraph',
-    handler: async (req: Request) => {
-      const session = await resolveCookieIdentity(refs.identityProviderRef, req)
-      
-      if (!session) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
-      }
-
-      const kgraphRef = refs.kgraphRef
-      if (!kgraphRef) {
-        return new Response(JSON.stringify({ nodes: [], edges: [] }), { headers: { 'Content-Type': 'application/json' } })
-      }
-
-      const graph: KgraphGraph = await ask(kgraphRef, replyTo => ({ type: 'dump' as const, replyTo, userId: session.userId }), { timeoutMs: 5_000 })
-      return new Response(JSON.stringify(graph), { headers: { 'Content-Type': 'application/json' } })
-    }
-  })
-}
-
 // ─── Plugin definition ───
 
 /**
@@ -161,23 +132,46 @@ const registerRoutes = (
  * It dynamically registers the /kgraph HTTP route to expose the graph visualization.
  */
 const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> = (() => {
-  const refs: SharedRefs = { identityProviderRef: null, kgraphRef: null }
+  const refs = createSharedRefs<{
+    identityProviderRef: ActorRef<IdentityProviderMsg> | null
+    kgraphRef:           ActorRef<KgraphMsg>           | null
+  }>({ identityProviderRef: null, kgraphRef: null })
+
+  const registerRoutes = (
+    ctx: Parameters<NonNullable<PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig>['lifecycle']>>[2],
+  ): void => {
+    ctx.publishRetained(RouteRegistrationTopic, KGRAPH_ROUTE_ID, {
+      id: KGRAPH_ROUTE_ID,
+      method: 'GET',
+      path: '/kgraph',
+      handler: async (req: Request) => {
+        const session = await resolveCookieIdentity(refs.current.identityProviderRef, req)
+        
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
+        }
+
+        const kgraphRef = refs.current.kgraphRef
+        if (!kgraphRef) {
+          return new Response(JSON.stringify({ nodes: [], edges: [] }), { headers: { 'Content-Type': 'application/json' } })
+        }
+
+        const graph: KgraphGraph = await ask(kgraphRef, replyTo => ({ type: 'dump' as const, replyTo, userId: session.userId }), { timeoutMs: 5_000 })
+        return new Response(JSON.stringify(graph), { headers: { 'Content-Type': 'application/json' } })
+      }
+    })
+  }
 
   return {
     id: 'memory',
     version: '1.0.0',
     description: 'Persistent knowledge graph and user memory tools',
 
-    configDescriptor: {
-      defaults: {
-        dbPath: './workspace/memory/kgraph',
-      },
-      onConfigChange: (config) => ({ type: 'config' as const, slice: config }),
-    },
+    configDescriptor: config,
 
     initialState: {
       initialized:         false,
-      kgraph:              { config: null, ref: null, gen: 0 },
+      kgraph:              createSlot(),
       consolidation:       null,
       memory:              null,
       zettel:              null,
@@ -201,7 +195,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           : undefined
 
         const kgraphRef = ctx.spawn('kgraph-0', Kgraph(dbPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg)) as ActorRef<KgraphMsg>
-        refs.kgraphRef = kgraphRef
+        refs.update({ kgraphRef })
 
         ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
 
@@ -230,7 +224,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           identityProviderRef: null,
         }
 
-        registerRoutes(ctx, refs)
+        registerRoutes(ctx)
 
         ctx.log.info('memory plugin activated', { dbPath })
         return { state: nextState }
@@ -239,8 +233,8 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       stopped: (state, ctx) => {
         ctx.deleteRetained(RouteRegistrationTopic, KGRAPH_ROUTE_ID, { id: KGRAPH_ROUTE_ID, method: 'GET', path: '/kgraph', handler: null })
         stopMemoryActors(ctx, state)
-        refs.kgraphRef = null
-        refs.identityProviderRef = null
+        if (state.kgraph.ref) ctx.stop(state.kgraph.ref)
+        refs.update({ kgraphRef: null, identityProviderRef: null })
         ctx.log.info('memory plugin deactivating')
         return { state }
       },
@@ -248,7 +242,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
 
     handler: onMessage<MemoryPluginMsg, MemoryPluginState>({
       _identityProvider: (state, msg) => {
-        refs.identityProviderRef = msg.ref
+        refs.update({ identityProviderRef: msg.ref })
         return {
           state: { ...state, identityProviderRef: msg.ref }
         }
@@ -273,7 +267,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
           : undefined
 
         const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, Kgraph(dbPath, newEmbeddingCfg, newKgraphConfig.cosineSimilarityThreshold, newRerankerCfg)) as ActorRef<KgraphMsg>
-        refs.kgraphRef = kgraphRef
+        refs.update({ kgraphRef })
 
         // ─── Reconfigure memory actors ───
         stopMemoryActors(ctx, state)
@@ -305,7 +299,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
 
         // Re-registration isn't strictly necessary as the path and refs object are stable,
         // but it doesn't hurt and ensures the handler captures the intent.
-        registerRoutes(ctx, refs)
+        registerRoutes(ctx)
 
         ctx.log.info('memory plugin reconfigured', { dbPath, kgraphGen })
 
