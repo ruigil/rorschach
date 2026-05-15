@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
-import { AgentLoop, type AgentLoopHandle, type LoopMsg, type LoopStartTurnParams, idleLoopState, type WithLoopState } from '../system/agent-loop.ts'
+import { agentLoop, type AgentLoopHandle, type LoopMsg, type LoopStartTurnParams, idleLoopState, type WithLoopState } from '../system/agent-loop.ts'
 import type { ActorDef, ActorContext, ActorRef, Interceptor } from '../system/types.ts'
 import type { LlmProviderMsg, LlmProviderReply, ApiMessage, TokenUsage } from '../types/llm.ts'
 import type { ToolMsg, ToolFinalReply, ToolSchema, ToolCollection } from '../types/tools.ts'
@@ -112,7 +112,7 @@ describe('AgentLoop: startTurn + streaming', () => {
     }
     const llmRef = system.spawn('llm', llmDef)
 
-    const loop = AgentLoop<TestState, TestMsg>({
+    const loop = agentLoop<TestState, TestMsg>({
       role: 'test',
       spanName: 'test',
       model: 'test-model',
@@ -164,7 +164,7 @@ describe('AgentLoop: startTurn + streaming', () => {
 
     const completions: TestState[] = []
 
-    const loop = AgentLoop<TestState, TestMsg>({
+    const loop = agentLoop<TestState, TestMsg>({
       role: 'test',
       spanName: 'test',
       model: 'test-model',
@@ -226,7 +226,7 @@ describe('AgentLoop: full integration', () => {
 
     const completions: TestState[] = []
 
-    const loop = AgentLoop<TestState, TestMsg>({
+    const loop = agentLoop<TestState, TestMsg>({
       role: 'test',
       spanName: 'test',
       model: 'test-model',
@@ -283,7 +283,7 @@ describe('AgentLoop: full integration', () => {
     const completions: TestState[] = []
     const batchHistories: ApiMessage[][] = []
 
-    const loop = AgentLoop<TestState, TestMsg>({
+    const loop = agentLoop<TestState, TestMsg>({
       role: 'test',
       spanName: 'test',
       model: 'test-model',
@@ -303,7 +303,7 @@ describe('AgentLoop: full integration', () => {
       }),
     })
 
-    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef, tools: { search: { schema: SEARCH_SCHEMA, ref: toolRef } } }))
+    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef, tools: { search: { name: 'search', schema: SEARCH_SCHEMA, ref: toolRef } } }))
     await tick()
 
     agentRef.send({
@@ -358,7 +358,7 @@ describe('AgentLoop: full integration', () => {
 
     const completions: TestState[] = []
 
-    const loop = AgentLoop<TestState, TestMsg>({
+    const loop = agentLoop<TestState, TestMsg>({
       role: 'test',
       spanName: 'test',
       model: 'test-model',
@@ -428,7 +428,7 @@ describe('AgentLoop: full integration', () => {
 
     const limits: string[] = []
 
-    const loop = AgentLoop<TestState, TestMsg>({
+    const loop = agentLoop<TestState, TestMsg>({
       role: 'test',
       spanName: 'test',
       model: 'test-model',
@@ -447,7 +447,7 @@ describe('AgentLoop: full integration', () => {
       },
     })
 
-    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef, tools: { search: { schema: SEARCH_SCHEMA, ref: toolRef } } }))
+    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef, tools: { search: { name: 'search', schema: SEARCH_SCHEMA, ref: toolRef } } }))
     await tick()
 
     agentRef.send({
@@ -488,7 +488,7 @@ describe('AgentLoop: full integration', () => {
     }
     const llmRef = system.spawn('llm', llmDef)
 
-    const loop = AgentLoop<TestState, TestMsg>({
+    const loop = agentLoop<TestState, TestMsg>({
       role: 'test',
       spanName: 'test',
       model: 'test-model',
@@ -552,7 +552,7 @@ describe('AgentLoop: full integration', () => {
 
     const errors: string[] = []
 
-    const loop = AgentLoop<TestState, TestMsg>({
+    const loop = agentLoop<TestState, TestMsg>({
       role: 'test',
       spanName: 'test',
       model: 'test-model',
@@ -605,7 +605,7 @@ describe('AgentLoop: full integration', () => {
 
     const completions: TestState[] = []
 
-    const loop = AgentLoop<TestState, TestMsg>({
+    const loop = agentLoop<TestState, TestMsg>({
       role: 'test',
       spanName: 'test',
       model: 'test-model',
@@ -657,7 +657,7 @@ describe('AgentLoop: full integration', () => {
 
     const events: Array<{ kind: string; text: string }> = []
 
-    const loop = AgentLoop<TestState, TestMsg>({
+    const loop = agentLoop<TestState, TestMsg>({
       role: 'test',
       spanName: 'test',
       model: 'test-model',

@@ -24,12 +24,7 @@ import {
 import {
   ZettelNotes,
   type ZettelNoteMsg,
-  ZETTEL_CREATE_TOOL,  ZETTEL_CREATE_SCHEMA,
-  ZETTEL_UPDATE_TOOL,  ZETTEL_UPDATE_SCHEMA,
-  ZETTEL_SEARCH_TOOL,  ZETTEL_SEARCH_SCHEMA,
-  ZETTEL_LINKS_TOOL,   ZETTEL_LINKS_SCHEMA,
-  ZETTEL_UNLINKED_TOOL, ZETTEL_UNLINKED_SCHEMA,
-  ZETTEL_LINK_TOOL,     ZETTEL_LINK_SCHEMA,
+  zettelCreateTool, zettelUpdateTool, zettelSearchTool, zettelLinksTool, zettelUnlinkedTool, zettelLinkTool,
 } from './zettel-notes.ts'
 
 // ─── Config ───
@@ -103,21 +98,21 @@ const spawnMemoryActors = (
   const ref = zettel as unknown as ActorRef<ToolMsg>
 
   const storeTools: ToolCollection = {
-    [ZETTEL_SEARCH_TOOL]: { schema: ZETTEL_SEARCH_SCHEMA, ref },
-    [ZETTEL_CREATE_TOOL]: { schema: ZETTEL_CREATE_SCHEMA, ref },
-    [ZETTEL_UPDATE_TOOL]: { schema: ZETTEL_UPDATE_SCHEMA, ref },
-    [ZETTEL_LINK_TOOL]:   { schema: ZETTEL_LINK_SCHEMA,   ref },
+    [zettelSearchTool.name]: { ...zettelSearchTool, ref },
+    [zettelCreateTool.name]: { ...zettelCreateTool, ref },
+    [zettelUpdateTool.name]: { ...zettelUpdateTool, ref },
+    [zettelLinkTool.name]:   { ...zettelLinkTool,   ref },
   }
 
   const consolidationTools: ToolCollection = {
-    [ZETTEL_SEARCH_TOOL]:   { schema: ZETTEL_SEARCH_SCHEMA, ref },
-    [ZETTEL_UNLINKED_TOOL]: { schema: ZETTEL_UNLINKED_SCHEMA, ref },
-    [ZETTEL_LINK_TOOL]:     { schema: ZETTEL_LINK_SCHEMA,   ref },
+    [zettelSearchTool.name]:   { ...zettelSearchTool, ref },
+    [zettelUnlinkedTool.name]: { ...zettelUnlinkedTool, ref },
+    [zettelLinkTool.name]:     { ...zettelLinkTool,   ref },
   }
 
   const recallTools: ToolCollection = {
-    [ZETTEL_SEARCH_TOOL]: { schema: ZETTEL_SEARCH_SCHEMA, ref },
-    [ZETTEL_LINKS_TOOL]:  { schema: ZETTEL_LINKS_SCHEMA,  ref },
+    [zettelSearchTool.name]: { ...zettelSearchTool, ref },
+    [zettelLinksTool.name]:  { ...zettelLinksTool,  ref },
   }
 
   const consolidation = ctx.spawn(

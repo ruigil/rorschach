@@ -1,6 +1,6 @@
 import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { AgentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
+import { agentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
@@ -8,8 +8,7 @@ import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
 import type { ToolMsg } from '../../types/tools.ts'
 import type { AgentFactoryOpts } from './types.ts'
 import {
-  FORMALIZE_PLAN_TOOL_NAME,
-  FORMALIZE_PLAN_SCHEMA,
+  formalizePlanTool,
   FormalizePlanTool,
 } from './formalize-plan-tool.ts'
 
@@ -118,7 +117,7 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
     }, ctx)
   }
 
-  const loop = AgentLoop<PlannerAgentState, PlannerAgentMsg>({
+  const loop = agentLoop<PlannerAgentState, PlannerAgentMsg>({
     role:         'planner',
     spanName:     'planner-turn',
     logPrefix:    'planner',
@@ -163,7 +162,7 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
     },
 
     onToolResult: (state, result) => {
-      if (result.toolName === FORMALIZE_PLAN_TOOL_NAME && result.reply.type === 'toolResult') {
+      if (result.toolName === formalizePlanTool.name && result.reply.type === 'toolResult') {
         return { state: { ...state, pendingFormalizeSummary: result.reply.result.text } }
       }
       return { state }
@@ -184,7 +183,7 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
           ...state,
           tools: {
             ...state.tools,
-            [m.name]: { schema: m.schema, ref: m.ref, mayBeLongRunning: m.mayBeLongRunning },
+            [m.name]: { name: m.name, schema: m.schema, ref: m.ref, mayBeLongRunning: m.mayBeLongRunning },
           },
         },
       }
@@ -225,9 +224,9 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
             ...state,
             tools: {
               ...state.tools,
-              [FORMALIZE_PLAN_TOOL_NAME]: {
-                schema: FORMALIZE_PLAN_SCHEMA,
-                ref:    formalizePlanToolRef,
+              [formalizePlanTool.name]: {
+                ...formalizePlanTool,
+                ref: formalizePlanToolRef,
               },
             },
           },

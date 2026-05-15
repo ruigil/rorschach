@@ -1,74 +1,45 @@
 import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef, SpanHandle } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../../types/tools.ts'
+import { defineTool } from '../../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { HabitDef } from '../types.ts'
 
 // ─── Tool names & schemas ───
 
-export const TRACKER_LOG_TOOL_NAME          = 'tracker_log'
-export const TRACKER_STATS_TOOL_NAME        = 'tracker_stats'
-export const TRACKER_DEFINE_HABIT_TOOL_NAME = 'tracker_define_habit'
-export const TRACKER_LIST_HABITS_TOOL_NAME  = 'tracker_list_habits'
-
-export const TRACKER_LOG_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: TRACKER_LOG_TOOL_NAME,
-    description: 'Log a numeric value for a tracked habit or any recurring metric (e.g. expenses, weight, steps, mood).',
-    parameters: {
-      type: 'object',
-      properties: {
-        habit:       { type: 'string', description: 'Habit name (must exist in habits.json).' },
-        value:       { type: 'number', description: 'Numeric value to log.' },
-        date:        { type: 'string', description: 'Date in YYYY-MM-DD format. Defaults to today.' },
-        description: { type: 'string', description: 'Optional note describing the expense or entry.' },
-      },
-      required: ['habit', 'value'],
-    },
+export const trackerLogTool = defineTool('tracker_log', 'Log a numeric value for a tracked habit or any recurring metric (e.g. expenses, weight, steps, mood).', {
+  type: 'object',
+  properties: {
+    habit:       { type: 'string', description: 'Habit name (must exist in habits.json).' },
+    value:       { type: 'number', description: 'Numeric value to log.' },
+    date:        { type: 'string', description: 'Date in YYYY-MM-DD format. Defaults to today.' },
+    description: { type: 'string', description: 'Optional note describing the expense or entry.' },
   },
-}
+  required: ['habit', 'value'],
+})
 
-export const TRACKER_STATS_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: TRACKER_STATS_TOOL_NAME,
-    description: 'Get statistics for a tracked metric: weekly/monthly totals and averages, current streak, and personal best. Works for habits, expenses, or any numeric series.',
-    parameters: {
-      type: 'object',
-      properties: {
-        habit: { type: 'string', description: 'Habit name.' },
-      },
-      required: ['habit'],
-    },
+export const trackerStatsTool = defineTool('tracker_stats', 'Get statistics for a tracked metric: weekly/monthly totals and averages, current streak, and personal best. Works for habits, expenses, or any numeric series.', {
+  type: 'object',
+  properties: {
+    habit: { type: 'string', description: 'Habit name.' },
   },
-}
+  required: ['habit'],
+})
 
-export const TRACKER_DEFINE_HABIT_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: TRACKER_DEFINE_HABIT_TOOL_NAME,
-    description: 'Create or update a tracked metric definition (habit, expense category, or any numeric series).',
-    parameters: {
-      type: 'object',
-      properties: {
-        name:        { type: 'string', description: 'Habit name (used as identifier).' },
-        unit:        { type: 'string', description: 'Unit of measurement (e.g. "steps", "glasses", "sessions").' },
-        dailyTarget: { type: 'number', description: 'Optional daily target value.' },
-      },
-      required: ['name', 'unit'],
-    },
+export const trackerDefineHabitTool = defineTool('tracker_define_habit', 'Create or update a tracked metric definition (habit, expense category, or any numeric series).', {
+  type: 'object',
+  properties: {
+    name:        { type: 'string', description: 'Habit name (used as identifier).' },
+    unit:        { type: 'string', description: 'Unit of measurement (e.g. "steps", "glasses", "sessions").' },
+    dailyTarget: { type: 'number', description: 'Optional daily target value.' },
   },
-}
+  required: ['name', 'unit'],
+})
 
-export const TRACKER_LIST_HABITS_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: TRACKER_LIST_HABITS_TOOL_NAME,
-    description: 'List all defined tracked metrics (habits, expense categories, or any numeric series).',
-    parameters: { type: 'object', properties: {} },
-  },
-}
+export const trackerListHabitsTool = defineTool('tracker_list_habits', 'List all defined tracked metrics (habits, expense categories, or any numeric series).', {
+  type: 'object',
+  properties: {},
+})
 
 // ─── Internal message type ───
 
@@ -250,17 +221,16 @@ export const Tracker = (notebookDir: string): ActorDef<TrackerMsg, null> => ({
       try {
         const args = JSON.parse(msg.arguments) as Record<string, unknown>
 
-        if (msg.toolName === TRACKER_LOG_TOOL_NAME) {
-          ctx.log.info('tracker: log', { habit: args.habit, value: args.value })
-          promise = logHabit(notebookDir, args.habit as string, args.value as number, (args.date as string | undefined) ?? todayISO(), args.description as string | undefined)
-        } else if (msg.toolName === TRACKER_STATS_TOOL_NAME) {
-          ctx.log.info('tracker: stats', { habit: args.habit })
-          promise = computeStats(notebookDir, args.habit as string)
-        } else if (msg.toolName === TRACKER_DEFINE_HABIT_TOOL_NAME) {
-          ctx.log.info('tracker: define habit', { name: args.name, unit: args.unit })
-          promise = defineHabit(notebookDir, args.name as string, args.unit as string, args.dailyTarget as number | undefined)
-        } else if (msg.toolName === TRACKER_LIST_HABITS_TOOL_NAME) {
-          ctx.log.info('tracker: list habits')
+        if (msg.toolName === trackerLogTool.name) {
+          const args = JSON.parse(msg.arguments) as { habit: string; value: number; date?: string; description?: string }
+          promise = logHabit(notebookDir, args.habit, args.value, args.date ?? todayISO(), args.description)
+        } else if (msg.toolName === trackerStatsTool.name) {
+          const args = JSON.parse(msg.arguments) as { habit: string }
+          promise = computeStats(notebookDir, args.habit)
+        } else if (msg.toolName === trackerDefineHabitTool.name) {
+          const args = JSON.parse(msg.arguments) as { name: string; unit: string; dailyTarget?: number }
+          promise = defineHabit(notebookDir, args.name, args.unit, args.dailyTarget)
+        } else if (msg.toolName === trackerListHabitsTool.name) {
           promise = listHabits(notebookDir)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))

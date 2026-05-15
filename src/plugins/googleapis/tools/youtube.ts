@@ -2,44 +2,28 @@ import { google } from 'googleapis'
 import type { ActorDef, ActorRef } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
 import { ask } from '../../../system/ask.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../../types/tools.ts'
+import { defineTool } from '../../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { GoogleToken, TokenStoreMsg } from '../types.ts'
 
 // ─── Tool names & schemas ───
 
-export const YOUTUBE_SEARCH_VIDEOS_TOOL_NAME = 'youtube_search_videos'
-export const YOUTUBE_VIDEO_DETAILS_TOOL_NAME = 'youtube_video_details'
-
-export const YOUTUBE_SEARCH_VIDEOS_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: YOUTUBE_SEARCH_VIDEOS_TOOL_NAME,
-    description: 'Search for YouTube videos by keyword or query.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query:      { type: 'string', description: 'The search term or query.' },
-        maxResults: { type: 'number', description: 'Maximum number of results to return (default 5, max 50).' },
-      },
-      required: ['query'],
-    },
+export const youtubeSearchVideosTool = defineTool('youtube_search_videos', 'Search for YouTube videos by keyword or query.', {
+  type: 'object',
+  properties: {
+    query:      { type: 'string', description: 'The search term or query.' },
+    maxResults: { type: 'number', description: 'Maximum number of results to return (default 5, max 50).' },
   },
-}
+  required: ['query'],
+})
 
-export const YOUTUBE_VIDEO_DETAILS_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: YOUTUBE_VIDEO_DETAILS_TOOL_NAME,
-    description: 'Get details and statistics for a specific YouTube video.',
-    parameters: {
-      type: 'object',
-      properties: {
-        videoId: { type: 'string', description: 'The ID of the YouTube video.' },
-      },
-      required: ['videoId'],
-    },
+export const youtubeVideoDetailsTool = defineTool('youtube_video_details', 'Get details and statistics for a specific YouTube video.', {
+  type: 'object',
+  properties: {
+    videoId: { type: 'string', description: 'The ID of the YouTube video.' },
   },
-}
+  required: ['videoId'],
+})
 
 // ─── Internal message type ───
 
@@ -75,24 +59,25 @@ export const Youtube = (
             const youtube = google.youtube({ version: 'v3', auth })
             const args    = JSON.parse(msg.arguments) as Record<string, any>
 
-            if (msg.toolName === YOUTUBE_SEARCH_VIDEOS_TOOL_NAME) {
+            if (msg.toolName === youtubeSearchVideosTool.name) {
               const res = await youtube.search.list({
                 q: args.query,
-                maxResults: args.maxResults ?? 5,
                 part: ['snippet'],
                 type: ['video'],
+                maxResults: args.maxResults ?? 5,
               })
-              return JSON.stringify((res.data.items ?? []).map(item => ({
-                videoId:     item.id?.videoId,
-                title:       item.snippet?.title,
-                description: item.snippet?.description,
-                channelId:   item.snippet?.channelId,
-                channelTitle:item.snippet?.channelTitle,
-                publishedAt: item.snippet?.publishedAt,
-              })))
+              return JSON.stringify(res.data.items)
             }
 
-            if (msg.toolName === YOUTUBE_VIDEO_DETAILS_TOOL_NAME) {
+            if (msg.toolName === youtubeVideoDetailsTool.name) {
+              const res = await youtube.videos.list({
+                id: [args.videoId],
+                part: ['snippet', 'statistics', 'contentDetails'],
+              })
+              return JSON.stringify(res.data.items)
+            }
+
+            if (msg.toolName === youtubeVideoDetailsTool.name) {
               const res = await youtube.videos.list({
                 id:   [args.videoId],
                 part: ['snippet', 'statistics'],

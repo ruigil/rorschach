@@ -2,13 +2,13 @@ import type { ActorContext, ActorDef, ActorRef, ActorResult, MessageHandler, Spa
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { UserStreamTopic } from '../../types/events.ts'
 import type { UserStreamEvent } from '../../types/events.ts'
-import type { ToolCollection, ToolEntry, ToolFilter, ToolInvokeMsg, ToolMsg } from '../../types/tools.ts'
+import type { ToolCollection, ToolFilter, ToolInvokeMsg, ToolMsg } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
   LlmProviderReply,
-  Tool,
+  LlmTool,
   ToolCall,
 } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
@@ -112,7 +112,7 @@ const UserConsolidationWorker = (options: WorkerOptions): ActorDef<UserConsolida
     const snapshotTurns = state.buffer
     const requestId     = crypto.randomUUID()
     const messages      = buildMessages(userId, snapshotTurns)
-    const toolSchemas   = Object.values(tools).map((e: ToolEntry) => e.schema as Tool)
+    const toolSchemas   = Object.values(tools).map((e) => e.schema as LlmTool)
 
     const requestSpan = context.trace.start('memory-consolidation', { userId, turns: snapshotTurns.length })
     const llmSpan     = context.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
@@ -287,7 +287,7 @@ const UserConsolidationWorker = (options: WorkerOptions): ActorDef<UserConsolida
       context.log.debug(JSON.stringify(toolResultMsgs))
 
       const requestId   = crypto.randomUUID()
-      const toolSchemas = Object.values(tools).map((e: ToolEntry) => e.schema as Tool)
+      const toolSchemas = Object.values(tools).map((e) => e.schema as LlmTool)
 
       const llmSpan = state.requestSpan
         ? context.trace.child(state.requestSpan.traceId, state.requestSpan.spanId, 'llm-call', { model })
@@ -418,7 +418,7 @@ export const MemoryConsolidation = (options: MemoryConsolidationOptions): ActorD
       },
 
       _toolRegistered: (state, msg, context) => {
-        const updated = { ...state, tools: { ...state.tools, [msg.name]: { schema: msg.schema, ref: msg.ref } } }
+        const updated = { ...state, tools: { ...state.tools, [msg.name]: { name: msg.name, schema: msg.schema, ref: msg.ref } } }
         return { state: stopAllWorkers(updated, context) }
       },
 

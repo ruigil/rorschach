@@ -3,7 +3,7 @@ import { rm, mkdir } from 'node:fs/promises'
 import { GrafeoDB } from '@grafeo-db/js'
 import { AgentSystem, ask } from '../system/index.ts'
 import type { ActorRef } from '../system/index.ts'
-import { Kgraph, KGRAPH_CREATE_NODE_TOOL_NAME } from '../plugins/memory/kgraph.ts'
+import { Kgraph, kgraphCreateNodeTool } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
 import type { VectorSearchMatch, VectorSearchReply } from '../plugins/memory/types.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
@@ -46,7 +46,7 @@ function createNode(kgraphRef: ActorRef<KgraphMsg>, name: string, synopsis: stri
   const args = JSON.stringify({ label: 'Note', name, properties: { description: synopsis }, embeddingText, userId: USER_ID })
   return ask<KgraphMsg, ToolReply>(
     kgraphRef,
-    (replyTo) => ({ type: 'invoke', toolName: KGRAPH_CREATE_NODE_TOOL_NAME, arguments: args, replyTo, userId: USER_ID }),
+    (replyTo) => ({ type: 'invoke', toolName: kgraphCreateNodeTool.name, arguments: args, replyTo, userId: USER_ID }),
     { timeoutMs: 30_000 },
   )
 }

@@ -2,141 +2,84 @@ import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { defineTool } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { ZETTEL_LINK_TYPES } from './types.ts'
 import type { KgraphMsg, ZettelLink, ZettelLinkType, ZettelNote, ZettelIndex, VectorSearchReply } from './types.ts'
 
-// ─── Tool names ───
-
-export const ZETTEL_CREATE_TOOL = 'zettel_create'
-export const ZETTEL_UPDATE_TOOL = 'zettel_update'
-export const ZETTEL_SEARCH_TOOL = 'zettel_search'
-export const ZETTEL_LINKS_TOOL = 'zettel_links'
-export const ZETTEL_UNLINKED_TOOL = 'zettel_unlinked_notes'
-
-// ─── Tool schemas ───
-
-export const ZETTEL_CREATE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: ZETTEL_CREATE_TOOL,
-    description: 'Create a new atomic Zettelkasten note capturing a self-contained unit of knowledge.',
-    parameters: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Short note title (2-5 words, Title Case).' },
-        synopsis: { type: 'string', description: "Comma-separated list of query topics that would find this note. Used for semantic search." },
-        content: { type: 'string', description: 'Full markdown content.' },
-        tags: { type: 'array', items: { type: 'string' }, description: 'Lowercase tags e.g. ["typescript", "work", "preference"].' },
-        eventTime: { type: 'string', description: 'Optional ISO 8601 timestamp for when the event occurred (if different from now).' },
-        userId: { type: 'string' },
-      },
-      required: ['name', 'synopsis', 'content', 'tags'],
-    },
+export const zettelCreateTool = defineTool('zettel_create', 'Create a new atomic Zettelkasten note capturing a self-contained unit of knowledge.', {
+  type: 'object',
+  properties: {
+    name: { type: 'string', description: 'Short note title (2-5 words, Title Case).' },
+    synopsis: { type: 'string', description: "Comma-separated list of query topics that would find this note. Used for semantic search." },
+    content: { type: 'string', description: 'Full markdown content.' },
+    tags: { type: 'array', items: { type: 'string' }, description: 'Lowercase tags e.g. ["typescript", "work", "preference"].' },
+    eventTime: { type: 'string', description: 'Optional ISO 8601 timestamp for when the event occurred (if different from now).' },
+    userId: { type: 'string' },
   },
-}
+  required: ['name', 'synopsis', 'content', 'tags'],
+})
 
-export const ZETTEL_UPDATE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: ZETTEL_UPDATE_TOOL,
-    description: 'Update an existing Zettelkasten note. Only pass fields that should change. Re-embeds with fresh synopsis.',
-    parameters: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', description: 'Note UUID.' },
-        name: { type: 'string', description: 'Updated title (optional).' },
-        synopsis: { type: 'string', description: 'Updated comma-separated list of query topics (optional).' },
-        content: { type: 'string', description: 'Full updated markdown content (optional).' },
-        tags: { type: 'array', items: { type: 'string' }, description: 'Updated tags (optional).' },
-        eventTime: { type: 'string', description: 'Updated ISO 8601 timestamp (optional).' },
-        userId: { type: 'string' },
-      },
-      required: ['id'],
-    },
+export const zettelUpdateTool = defineTool('zettel_update', 'Update an existing Zettelkasten note. Only pass fields that should change. Re-embeds with fresh synopsis.', {
+  type: 'object',
+  properties: {
+    id: { type: 'string', description: 'Note UUID.' },
+    name: { type: 'string', description: 'Updated title (optional).' },
+    synopsis: { type: 'string', description: 'Updated comma-separated list of query topics (optional).' },
+    content: { type: 'string', description: 'Full updated markdown content (optional).' },
+    tags: { type: 'array', items: { type: 'string' }, description: 'Updated tags (optional).' },
+    eventTime: { type: 'string', description: 'Updated ISO 8601 timestamp (optional).' },
+    userId: { type: 'string' },
   },
-}
+  required: ['id'],
+})
 
-export const ZETTEL_SEARCH_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: ZETTEL_SEARCH_TOOL,
-    description: 'Semantic search via vector embeddings and re-ranking. Finds notes similar to the given text and re-ranks by similarity. Each result includes a score (0-1) indicating semantic closeness.',
-    parameters: {
-      type: 'object',
-      properties: {
-        text: { type: 'string', description: 'Comma-separated list of query topics to search for. Must be a declarative summary, not a question.' },
-        tags: { type: 'array', items: { type: 'string' }, description: 'Required tags to enrich the vector query and filter results. Must match ALL provided tags.' },
-        after: { type: 'string', description: 'Optional. Filter results to notes on or after this ISO 8601 timestamp.' },
-        before: { type: 'string', description: 'Optional. Filter results to notes on or before this ISO 8601 timestamp.' },
-        timeProperty: {
-          type: 'string',
-          enum: ['eventTime', 'createdAt', 'updatedAt'],
-          default: 'eventTime',
-          description: 'Which timestamp to use for the before/after filter.',
-        },
-        userId: { type: 'string' },
-      },
-      required: ['text', 'tags'],
+export const zettelSearchTool = defineTool('zettel_search', 'Semantic search via vector embeddings and re-ranking. Finds notes similar to the given text and re-ranks by similarity. Each result includes a score (0-1) indicating semantic closeness.', {
+  type: 'object',
+  properties: {
+    text: { type: 'string', description: 'Comma-separated list of query topics to search for. Must be a declarative summary, not a question.' },
+    tags: { type: 'array', items: { type: 'string' }, description: 'Required tags to enrich the vector query and filter results. Must match ALL provided tags.' },
+    after: { type: 'string', description: 'Optional. Filter results to notes on or after this ISO 8601 timestamp.' },
+    before: { type: 'string', description: 'Optional. Filter results to notes on or before this ISO 8601 timestamp.' },
+    timeProperty: {
+      type: 'string',
+      enum: ['eventTime', 'createdAt', 'updatedAt'],
+      default: 'eventTime',
+      description: 'Which timestamp to use for the before/after filter.',
     },
+    userId: { type: 'string' },
   },
-}
+  required: ['text', 'tags'],
+})
 
-export const ZETTEL_LINKS_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: ZETTEL_LINKS_TOOL,
-    description: 'Return the notes linked from a given note. Returns id, name, synopsis, tags, links, and full content for each linked note that exists.',
-    parameters: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', description: 'Note UUID.' },
-        name: { type: 'string', description: 'Note title (used if id is not provided).' },
-        userId: { type: 'string' },
-      },
-    },
+export const zettelLinksTool = defineTool('zettel_links', 'Return the notes linked from a given note. Returns id, name, synopsis, tags, links, and full content for each linked note that exists.', {
+  type: 'object',
+  properties: {
+    id: { type: 'string', description: 'Note UUID.' },
+    name: { type: 'string', description: 'Note title (used if id is not provided).' },
+    userId: { type: 'string' },
   },
-}
+})
 
-export const ZETTEL_UNLINKED_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: ZETTEL_UNLINKED_TOOL,
-    description: 'Get all notes that have no incoming links (orphans) or exactly one outgoing link. Useful for consolidation to find notes that need to be connected to the broader knowledge graph.',
-    parameters: {
-      type: 'object',
-      properties: {
-        userId: { type: 'string' },
-      },
-    },
+export const zettelUnlinkedTool = defineTool('zettel_unlinked_notes', 'Get all notes that have no incoming links (orphans) or exactly one outgoing link. Useful for consolidation to find notes that need to be connected to the broader knowledge graph.', {
+  type: 'object',
+  properties: {
+    userId: { type: 'string' },
   },
-}
+})
 
-export const ZETTEL_LINK_TOOL = 'zettel_link'
-
-export const ZETTEL_LINK_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: ZETTEL_LINK_TOOL,
-    description: 'Create a typed directional link from one Zettelkasten note to another. Updates the source note links metadata and the knowledge graph. Both notes must already exist.',
-    parameters: {
-      type: 'object',
-      properties: {
-        sourceId:   { type: 'string', description: 'UUID of the source note.' },
-        sourceName: { type: 'string', description: 'Title of the source note (used if sourceId not provided).' },
-        targetId:   { type: 'string', description: 'UUID of the target note.' },
-        targetName: { type: 'string', description: 'Title of the target note (used if targetId not provided).' },
-        linkType: {
-          type: 'string',
-          enum: ZETTEL_LINK_TYPES as unknown as string[],
-          description: 'Semantic relationship type. causes/caused_by=causal, depends_on/requires=dependency, contains/part_of=composition, supports/contradicts=evidential, precedes/follows=temporal.',
-        },
-        userId: { type: 'string' },
-      },
-      required: ['linkType'],
-    },
+export const zettelLinkTool = defineTool('zettel_link', 'Create a link between two notes in the knowledge graph. If a note does not exist, it will be created automatically.', {
+  type: 'object',
+  properties: {
+    fromId: { type: 'string', description: 'UUID of the source note.' },
+    toId: { type: 'string', description: 'UUID of the target note.' },
+    linkType: { type: 'string', enum: ZETTEL_LINK_TYPES, description: 'Type of relationship.' },
+    userId: { type: 'string' },
   },
-}
+  required: ['fromId', 'toId', 'linkType'],
+})
+
+
 
 // ─── State & messages ───
 
@@ -595,12 +538,12 @@ export const ZettelNotes = (kgraphRef: ActorRef<KgraphMsg>, dbPath: string): Act
           const args = JSON.parse(rawArgs) as Record<string, unknown>
           const effectiveUserId = (args.userId as string | undefined) ?? userId
           switch (toolName) {
-            case ZETTEL_CREATE_TOOL: return handleCreate(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
-            case ZETTEL_UPDATE_TOOL: return handleUpdate(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
-            case ZETTEL_SEARCH_TOOL: return handleSearch(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
-            case ZETTEL_LINKS_TOOL:  return handleLinks(effectiveUserId, args, queue, state.dbPath, ctx.log)
-            case ZETTEL_UNLINKED_TOOL: return handleUnlinkedNotes(effectiveUserId, queue, ctx.log)
-            case ZETTEL_LINK_TOOL:  return handleLink(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case zettelCreateTool.name: return handleCreate(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case zettelUpdateTool.name: return handleUpdate(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case zettelSearchTool.name: return handleSearch(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case zettelLinksTool.name:  return handleLinks(effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case zettelUnlinkedTool.name: return handleUnlinkedNotes(effectiveUserId, queue, ctx.log)
+            case zettelLinkTool.name:  return handleLink(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
             default: throw new Error(`Unknown tool: ${toolName}`)
           }
         }

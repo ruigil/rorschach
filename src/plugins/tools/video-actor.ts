@@ -1,8 +1,8 @@
 import { join } from 'node:path'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
-import { JobRegistryTopic } from '../../types/tools.ts'
+import { defineTool, JobRegistryTopic } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, VideoSubmitReply, VideoPollReply, VideoDownloadReply } from '../../types/llm.ts'
 
 // ─── Output directory for generated videos ───
@@ -12,22 +12,13 @@ const GENERATED_PUBLIC_PREFIX = 'generated'
 
 // ─── Tool schema ───
 
-export const GENERATE_VIDEO_TOOL_NAME = 'generate_video'
-
-export const GENERATE_VIDEO_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: GENERATE_VIDEO_TOOL_NAME,
-    description: 'Generate a video from a text description. Use when the user asks to create, animate, or render video content. This is a long-running operation — it may take several minutes.',
-    parameters: {
-      type: 'object',
-      properties: {
-        prompt: { type: 'string', description: 'Detailed description of the video to generate.' },
-      },
-      required: ['prompt'],
-    },
+export const generateVideoTool = defineTool('generate_video', 'Generate a video from a text description. Use when the user asks to create, animate, or render video content. This is a long-running operation — it may take several minutes.', {
+  type: 'object',
+  properties: {
+    prompt: { type: 'string', description: 'Detailed description of the video to generate.' },
   },
-}
+  required: ['prompt'],
+})
 
 // ─── Messages ───
 
@@ -92,7 +83,7 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
       invoke: (state, message, context) => {
         const { toolName, arguments: args, replyTo, clientId } = message
 
-        if (toolName !== GENERATE_VIDEO_TOOL_NAME) {
+        if (toolName !== generateVideoTool.name) {
           replyTo.send({ type: 'toolError', error: `Unknown tool: ${toolName}` })
           return { state }
         }

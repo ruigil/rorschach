@@ -2,7 +2,8 @@ import { join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { defineTool } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply, VisionProviderReply } from '../../types/llm.ts'
 
 // ─── Output directory for generated images ───
@@ -12,40 +13,22 @@ const GENERATED_PUBLIC_PREFIX = 'generated'
 
 // ─── Tool schemas ───
 
-export const ANALYZE_IMAGE_TOOL_NAME = 'analyze_image'
-
-export const ANALYZE_IMAGE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: ANALYZE_IMAGE_TOOL_NAME,
-    description: 'Analyze and describe the content of an image. Use when the user uploads an image or asks about a visual.',
-    parameters: {
-      type: 'object',
-      properties: {
-        image_url: { type: 'string', description: 'An image ID (e.g. "img_0") from the current turn, a base64 data URL, or an HTTP URL.' },
-        prompt: { type: 'string', description: 'Specific question or instruction about the image. Defaults to a general description.' },
-      },
-      required: ['image_url'],
-    },
+export const analyzeImageTool = defineTool('analyze_image', 'Analyze and describe the content of an image. Use when the user uploads an image or asks about a visual.', {
+  type: 'object',
+  properties: {
+    image_url: { type: 'string', description: 'An image ID (e.g. "img_0") from the current turn, a base64 data URL, or an HTTP URL.' },
+    prompt: { type: 'string', description: 'Specific question or instruction about the image. Defaults to a general description.' },
   },
-}
+  required: ['image_url'],
+})
 
-export const GENERATE_IMAGE_TOOL_NAME = 'generate_image'
-
-export const GENERATE_IMAGE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: GENERATE_IMAGE_TOOL_NAME,
-    description: 'Generate an image from a text description. Use when the user asks to create, draw, or visualize something.',
-    parameters: {
-      type: 'object',
-      properties: {
-        prompt: { type: 'string', description: 'Detailed description of the image to generate.' },
-      },
-      required: ['prompt'],
-    },
+export const generateImageTool = defineTool('generate_image', 'Generate an image from a text description. Use when the user asks to create, draw, or visualize something.', {
+  type: 'object',
+  properties: {
+    prompt: { type: 'string', description: 'Detailed description of the image to generate.' },
   },
-}
+  required: ['prompt'],
+})
 
 // ─── Messages ───
 
@@ -122,7 +105,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
       invoke: (state, message, context) => {
         const { toolName, arguments: args, replyTo, clientId } = message
 
-        if (toolName === GENERATE_IMAGE_TOOL_NAME) {
+        if (toolName === generateImageTool.name) {
           let prompt = ''
           try {
             const parsed = JSON.parse(args) as { prompt: string }

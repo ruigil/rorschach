@@ -3,8 +3,8 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
-import type { ToolCollection, ToolMsg, ToolSchema } from '../../types/tools.ts'
-import { ToolRegistrationTopic } from '../../types/tools.ts'
+import { defineTool, ToolRegistrationTopic } from '../../types/tools.ts'
+import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 
 import type { GoogleApisConfig, GoogleAgentMsg, GooglePluginMsg, SharedRefs } from './types.ts'
 import { TokenStore } from './token-store.ts'
@@ -14,41 +14,24 @@ import { GoogleAgent } from './google-agent.ts'
 
 import {
   Gmail,
-  GMAIL_LIST_MESSAGES_TOOL_NAME, GMAIL_LIST_MESSAGES_SCHEMA,
-  GMAIL_GET_MESSAGE_TOOL_NAME,   GMAIL_GET_MESSAGE_SCHEMA,
-  GMAIL_SEND_MESSAGE_TOOL_NAME,  GMAIL_SEND_MESSAGE_SCHEMA,
-  GMAIL_SEARCH_TOOL_NAME,        GMAIL_SEARCH_SCHEMA,
+  gmailListMessagesTool, gmailGetMessageTool, gmailSendMessageTool, gmailSearchTool,
 } from './tools/gmail.ts'
 import {
   Calendar,
-  CALENDAR_LIST_EVENTS_TOOL_NAME,  CALENDAR_LIST_EVENTS_SCHEMA,
-  CALENDAR_CREATE_EVENT_TOOL_NAME, CALENDAR_CREATE_EVENT_SCHEMA,
-  CALENDAR_UPDATE_EVENT_TOOL_NAME, CALENDAR_UPDATE_EVENT_SCHEMA,
-  CALENDAR_DELETE_EVENT_TOOL_NAME, CALENDAR_DELETE_EVENT_SCHEMA,
+  calendarListEventsTool, calendarCreateEventTool, calendarUpdateEventTool, calendarDeleteEventTool,
 } from './tools/calendar.ts'
 import {
   Drive,
-  DRIVE_LIST_FILES_TOOL_NAME,    DRIVE_LIST_FILES_SCHEMA,
-  DRIVE_SEARCH_FILES_TOOL_NAME,  DRIVE_SEARCH_FILES_SCHEMA,
-  DRIVE_GET_FILE_TOOL_NAME,      DRIVE_GET_FILE_SCHEMA,
-  DRIVE_DOWNLOAD_FILE_TOOL_NAME, DRIVE_DOWNLOAD_FILE_SCHEMA,
-  DRIVE_UPLOAD_FILE_TOOL_NAME,   DRIVE_UPLOAD_FILE_SCHEMA,
+  driveListFilesTool, driveSearchFilesTool, driveGetFileTool, driveDownloadFileTool, driveUploadFileTool,
 } from './tools/drive.ts'
 import {
   Youtube,
-  YOUTUBE_SEARCH_VIDEOS_TOOL_NAME, YOUTUBE_SEARCH_VIDEOS_SCHEMA,
-  YOUTUBE_VIDEO_DETAILS_TOOL_NAME, YOUTUBE_VIDEO_DETAILS_SCHEMA,
+  youtubeSearchVideosTool, youtubeVideoDetailsTool,
 } from './tools/youtube.ts'
 
 // ─── Public tool schema ───
 
-export const GOOGLE_TOOL_NAME = 'google'
-
-export const GOOGLE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: GOOGLE_TOOL_NAME,
-    description: `Interact with the user's Google Workspace (Gmail, Calendar, Drive, YouTube) via a natural language request. A sub-agent handles the request and returns a summary.
+export const googleTool = defineTool('google', `Interact with the user's Google Workspace (Gmail, Calendar, Drive, YouTube) via a natural language request. A sub-agent handles the request and returns a summary.
 
 This tool is for the user only — only call it when explicitly asked by the user.
 
@@ -75,19 +58,16 @@ This tool is for the user only — only call it when explicitly asked by the use
 - "Search YouTube for recent AI news"
 - "Get stats and details for YouTube video id xyz"
 
-When uploading a local file, always include its full absolute path in the request (e.g. a path returned by fetch_file or drive_download_file). Never pass just a filename — the sub-agent needs the absolute path to read the file.`,
-    parameters: {
-      type: 'object',
-      properties: {
-        request: {
-          type: 'string',
-          description: 'A natural language instruction describing what to do in Gmail, Calendar, or Drive.',
-        },
-      },
-      required: ['request'],
+When uploading a local file, always include its full absolute path in the request (e.g. a path returned by fetch_file or drive_download_file). Never pass just a filename — the sub-agent needs the absolute path to read the file.`, {
+  type: 'object',
+  properties: {
+    request: {
+      type: 'string',
+      description: 'A natural language instruction describing what to do in Gmail, Calendar, or Drive.',
     },
   },
-}
+  required: ['request'],
+})
 
 // ─── Plugin state ───
 
@@ -123,21 +103,21 @@ const spawnChildren = (
   const youtubeRef  = ctx.spawn(`googleapis-youtube-${gen}`,  Youtube(tokenStoreRef, clientId, clientSecret))  as ActorRef<ToolMsg>
 
   const tools: ToolCollection = {
-    [GMAIL_LIST_MESSAGES_TOOL_NAME]:   { schema: GMAIL_LIST_MESSAGES_SCHEMA,   ref: gmailRef },
-    [GMAIL_GET_MESSAGE_TOOL_NAME]:     { schema: GMAIL_GET_MESSAGE_SCHEMA,     ref: gmailRef },
-    [GMAIL_SEND_MESSAGE_TOOL_NAME]:    { schema: GMAIL_SEND_MESSAGE_SCHEMA,    ref: gmailRef },
-    [GMAIL_SEARCH_TOOL_NAME]:          { schema: GMAIL_SEARCH_SCHEMA,          ref: gmailRef },
-    [CALENDAR_LIST_EVENTS_TOOL_NAME]:  { schema: CALENDAR_LIST_EVENTS_SCHEMA,  ref: calendarRef },
-    [CALENDAR_CREATE_EVENT_TOOL_NAME]: { schema: CALENDAR_CREATE_EVENT_SCHEMA, ref: calendarRef },
-    [CALENDAR_UPDATE_EVENT_TOOL_NAME]: { schema: CALENDAR_UPDATE_EVENT_SCHEMA, ref: calendarRef },
-    [CALENDAR_DELETE_EVENT_TOOL_NAME]: { schema: CALENDAR_DELETE_EVENT_SCHEMA, ref: calendarRef },
-    [DRIVE_LIST_FILES_TOOL_NAME]:      { schema: DRIVE_LIST_FILES_SCHEMA,      ref: driveRef },
-    [DRIVE_SEARCH_FILES_TOOL_NAME]:    { schema: DRIVE_SEARCH_FILES_SCHEMA,    ref: driveRef },
-    [DRIVE_GET_FILE_TOOL_NAME]:        { schema: DRIVE_GET_FILE_SCHEMA,        ref: driveRef },
-    [DRIVE_DOWNLOAD_FILE_TOOL_NAME]:   { schema: DRIVE_DOWNLOAD_FILE_SCHEMA,   ref: driveRef },
-    [DRIVE_UPLOAD_FILE_TOOL_NAME]:     { schema: DRIVE_UPLOAD_FILE_SCHEMA,     ref: driveRef },
-    [YOUTUBE_SEARCH_VIDEOS_TOOL_NAME]: { schema: YOUTUBE_SEARCH_VIDEOS_SCHEMA, ref: youtubeRef },
-    [YOUTUBE_VIDEO_DETAILS_TOOL_NAME]: { schema: YOUTUBE_VIDEO_DETAILS_SCHEMA, ref: youtubeRef },
+    [gmailListMessagesTool.name]:   { ...gmailListMessagesTool,   ref: gmailRef },
+    [gmailGetMessageTool.name]:     { ...gmailGetMessageTool,     ref: gmailRef },
+    [gmailSendMessageTool.name]:    { ...gmailSendMessageTool,    ref: gmailRef },
+    [gmailSearchTool.name]:          { ...gmailSearchTool,          ref: gmailRef },
+    [calendarListEventsTool.name]:  { ...calendarListEventsTool,  ref: calendarRef },
+    [calendarCreateEventTool.name]: { ...calendarCreateEventTool, ref: calendarRef },
+    [calendarUpdateEventTool.name]: { ...calendarUpdateEventTool, ref: calendarRef },
+    [calendarDeleteEventTool.name]: { ...calendarDeleteEventTool, ref: calendarRef },
+    [driveListFilesTool.name]:      { ...driveListFilesTool,      ref: driveRef },
+    [driveSearchFilesTool.name]:    { ...driveSearchFilesTool,    ref: driveRef },
+    [driveGetFileTool.name]:        { ...driveGetFileTool,        ref: driveRef },
+    [driveDownloadFileTool.name]:   { ...driveDownloadFileTool,   ref: driveRef },
+    [driveUploadFileTool.name]:     { ...driveUploadFileTool,     ref: driveRef },
+    [youtubeSearchVideosTool.name]: { ...youtubeSearchVideosTool, ref: youtubeRef },
+    [youtubeVideoDetailsTool.name]: { ...youtubeVideoDetailsTool, ref: youtubeRef },
   }
 
   const agentOpts     = { model, maxToolLoops, tools }
@@ -146,10 +126,9 @@ const spawnChildren = (
     GoogleAgent(agentOpts),
   ) as ActorRef<GoogleAgentMsg>
 
-  ctx.publishRetained(ToolRegistrationTopic, GOOGLE_TOOL_NAME, {
-    name:   GOOGLE_TOOL_NAME,
-    schema: GOOGLE_SCHEMA,
-    ref:    googleAgentRef as unknown as ActorRef<ToolMsg>,
+  ctx.publishRetained(ToolRegistrationTopic, googleTool.name, {
+    ...googleTool,
+    ref: googleAgentRef as unknown as ActorRef<ToolMsg>,
   })
 
   return { gmailRef, calendarRef, driveRef, youtubeRef, googleAgentRef }
@@ -161,7 +140,7 @@ const stopChildren = (state: PluginState, ctx: ActorContext<GooglePluginMsg>): v
   if (state.driveRef)       ctx.stop(state.driveRef)
   if (state.youtubeRef)     ctx.stop(state.youtubeRef)
   if (state.googleAgentRef) ctx.stop(state.googleAgentRef)
-  ctx.deleteRetained(ToolRegistrationTopic, GOOGLE_TOOL_NAME, { name: GOOGLE_TOOL_NAME, ref: null })
+  ctx.deleteRetained(ToolRegistrationTopic, googleTool.name, { name: googleTool.name, ref: null })
 }
 
 // ─── Plugin definition ───

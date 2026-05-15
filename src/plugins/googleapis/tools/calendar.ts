@@ -2,89 +2,57 @@ import { google } from 'googleapis'
 import type { ActorDef, ActorRef } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
 import { ask } from '../../../system/ask.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../../types/tools.ts'
+import { defineTool } from '../../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { GoogleToken, TokenStoreMsg } from '../types.ts'
 
 // ─── Tool names & schemas ───
 
-export const CALENDAR_LIST_EVENTS_TOOL_NAME   = 'calendar_list_events'
-export const CALENDAR_CREATE_EVENT_TOOL_NAME  = 'calendar_create_event'
-export const CALENDAR_UPDATE_EVENT_TOOL_NAME  = 'calendar_update_event'
-export const CALENDAR_DELETE_EVENT_TOOL_NAME  = 'calendar_delete_event'
-
-export const CALENDAR_LIST_EVENTS_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: CALENDAR_LIST_EVENTS_TOOL_NAME,
-    description: 'List upcoming events from Google Calendar.',
-    parameters: {
-      type: 'object',
-      properties: {
-        maxResults:  { type: 'number', description: 'Maximum number of events to return (default 10).' },
-        timeMin:     { type: 'string', description: 'Start of time range in RFC3339 format (default: now).' },
-        timeMax:     { type: 'string', description: 'End of time range in RFC3339 format (optional).' },
-        calendarId:  { type: 'string', description: 'Calendar to query (default: "primary").' },
-      },
-    },
+export const calendarListEventsTool = defineTool('calendar_list_events', 'List upcoming events from Google Calendar.', {
+  type: 'object',
+  properties: {
+    maxResults:  { type: 'number', description: 'Maximum number of events to return (default 10).' },
+    timeMin:     { type: 'string', description: 'Start of time range in RFC3339 format (default: now).' },
+    timeMax:     { type: 'string', description: 'End of time range in RFC3339 format (optional).' },
+    calendarId:  { type: 'string', description: 'Calendar to query (default: "primary").' },
   },
-}
+})
 
-export const CALENDAR_CREATE_EVENT_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: CALENDAR_CREATE_EVENT_TOOL_NAME,
-    description: 'Create a new event in Google Calendar.',
-    parameters: {
-      type: 'object',
-      properties: {
-        summary:     { type: 'string', description: 'Event title.' },
-        start:       { type: 'string', description: 'Start time as a naive local datetime without offset (e.g. "2025-04-30T14:00:00"). The user\'s Google Calendar timezone is applied automatically.' },
-        end:         { type: 'string', description: 'End time as a naive local datetime without offset (e.g. "2025-04-30T15:00:00").' },
-        description: { type: 'string', description: 'Event description (optional).' },
-        location:    { type: 'string', description: 'Event location (optional).' },
-        calendarId:  { type: 'string', description: 'Calendar to create the event in (default: "primary").' },
-      },
-      required: ['summary', 'start', 'end'],
-    },
+export const calendarCreateEventTool = defineTool('calendar_create_event', 'Create a new event in Google Calendar.', {
+  type: 'object',
+  properties: {
+    summary:     { type: 'string', description: 'Event title.' },
+    start:       { type: 'string', description: 'Start time as a naive local datetime without offset (e.g. "2025-04-30T14:00:00"). The user\'s Google Calendar timezone is applied automatically.' },
+    end:         { type: 'string', description: 'End time as a naive local datetime without offset (e.g. "2025-04-30T15:00:00").' },
+    description: { type: 'string', description: 'Event description (optional).' },
+    location:    { type: 'string', description: 'Event location (optional).' },
+    calendarId:  { type: 'string', description: 'Calendar to create the event in (default: "primary").' },
   },
-}
+  required: ['summary', 'start', 'end'],
+})
 
-export const CALENDAR_UPDATE_EVENT_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: CALENDAR_UPDATE_EVENT_TOOL_NAME,
-    description: 'Update an existing Google Calendar event.',
-    parameters: {
-      type: 'object',
-      properties: {
-        eventId:     { type: 'string', description: 'Event id from calendar_list_events.' },
-        summary:     { type: 'string', description: 'New event title (optional).' },
-        start:       { type: 'string', description: 'New start time as a naive local datetime without offset (e.g. "2025-04-30T14:00:00"), optional.' },
-        end:         { type: 'string', description: 'New end time as a naive local datetime without offset, optional.' },
-        description: { type: 'string', description: 'New description (optional).' },
-        location:    { type: 'string', description: 'New location (optional).' },
-        calendarId:  { type: 'string', description: 'Calendar the event belongs to (default: "primary").' },
-      },
-      required: ['eventId'],
-    },
+export const calendarUpdateEventTool = defineTool('calendar_update_event', 'Update an existing Google Calendar event.', {
+  type: 'object',
+  properties: {
+    eventId:     { type: 'string', description: 'Event id from calendar_list_events.' },
+    summary:     { type: 'string', description: 'New event title (optional).' },
+    start:       { type: 'string', description: 'New start time as a naive local datetime without offset (e.g. "2025-04-30T14:00:00"), optional.' },
+    end:         { type: 'string', description: 'New end time as a naive local datetime without offset, optional.' },
+    description: { type: 'string', description: 'New description (optional).' },
+    location:    { type: 'string', description: 'New location (optional).' },
+    calendarId:  { type: 'string', description: 'Calendar the event belongs to (default: "primary").' },
   },
-}
+  required: ['eventId'],
+})
 
-export const CALENDAR_DELETE_EVENT_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: CALENDAR_DELETE_EVENT_TOOL_NAME,
-    description: 'Delete an event from Google Calendar.',
-    parameters: {
-      type: 'object',
-      properties: {
-        eventId:    { type: 'string', description: 'Event id from calendar_list_events.' },
-        calendarId: { type: 'string', description: 'Calendar the event belongs to (default: "primary").' },
-      },
-      required: ['eventId'],
-    },
+export const calendarDeleteEventTool = defineTool('calendar_delete_event', 'Delete an event from Google Calendar.', {
+  type: 'object',
+  properties: {
+    eventId:    { type: 'string', description: 'Event id from calendar_list_events.' },
+    calendarId: { type: 'string', description: 'Calendar the event belongs to (default: "primary").' },
   },
-}
+  required: ['eventId'],
+})
 
 // ─── Internal message type ───
 
@@ -132,55 +100,54 @@ export const Calendar = (
           }
           const tz = cachedTimezone
 
-          if (msg.toolName === CALENDAR_LIST_EVENTS_TOOL_NAME) {
+          if (msg.toolName === calendarListEventsTool.name) {
             const res = await calendar.events.list({
-              calendarId: calId,
+              calendarId: args.calendarId ?? 'primary',
+              timeMin: args.timeMin ?? new Date().toISOString(),
+              timeMax: args.timeMax,
               maxResults: args.maxResults ?? 10,
-              timeMin:    args.timeMin ?? new Date().toISOString(),
-              timeMax:    args.timeMax,
               singleEvents: true,
-              orderBy:    'startTime',
+              orderBy: 'startTime',
             })
-            return JSON.stringify((res.data.items ?? []).map(e => ({
-              id:       e.id,
-              summary:  e.summary,
-              start:    e.start?.dateTime ?? e.start?.date,
-              end:      e.end?.dateTime   ?? e.end?.date,
-              timeZone: e.start?.timeZone ?? null,
-              location: e.location,
-              description: e.description,
-            })))
+            return JSON.stringify(res.data.items)
           }
 
-          if (msg.toolName === CALENDAR_CREATE_EVENT_TOOL_NAME) {
-            const res = await calendar.events.insert({
-              calendarId:  calId,
-              requestBody: {
-                summary:     args.summary,
-                description: args.description,
-                location:    args.location,
-                start: { dateTime: args.start, timeZone: tz },
-                end:   { dateTime: args.end,   timeZone: tz },
-              },
-            })
-            return `Event created: ${res.data.summary} (id: ${res.data.id})`
+          if (msg.toolName === calendarCreateEventTool.name) {
+            if (!cachedTimezone) {
+              const settings = await calendar.calendarList.get({ calendarId: args.calendarId ?? 'primary' })
+              cachedTimezone = settings.data.timeZone ?? 'UTC'
+            }
+            const tz = cachedTimezone
+            const event = {
+              summary: args.summary,
+              description: args.description,
+              location: args.location,
+              start: { dateTime: args.start, timeZone: tz },
+              end:   { dateTime: args.end,   timeZone: tz },
+            }
+            const res = await calendar.events.insert({ calendarId: args.calendarId ?? 'primary', requestBody: event })
+            return `Created event ${res.data.id}`
           }
 
-          if (msg.toolName === CALENDAR_UPDATE_EVENT_TOOL_NAME) {
-            const existing = await calendar.events.get({ calendarId: calId, eventId: args.eventId })
-            const body     = existing.data
-            if (args.summary)     body.summary     = args.summary
-            if (args.description) body.description = args.description
-            if (args.location)    body.location    = args.location
-            if (args.start)       body.start       = { dateTime: args.start, timeZone: tz }
-            if (args.end)         body.end         = { dateTime: args.end,   timeZone: tz }
-            const res = await calendar.events.update({ calendarId: calId, eventId: args.eventId, requestBody: body })
-            return `Event updated: ${res.data.summary}`
+          if (msg.toolName === calendarUpdateEventTool.name) {
+            if (!cachedTimezone) {
+              const settings = await calendar.calendarList.get({ calendarId: args.calendarId ?? 'primary' })
+              cachedTimezone = settings.data.timeZone ?? 'UTC'
+            }
+            const tz = cachedTimezone
+            const patch: any = {}
+            if (args.summary !== undefined) patch.summary = args.summary
+            if (args.description !== undefined) patch.description = args.description
+            if (args.location !== undefined) patch.location = args.location
+            if (args.start !== undefined) patch.start = { dateTime: args.start, timeZone: tz }
+            if (args.end !== undefined) patch.end = { dateTime: args.end, timeZone: tz }
+            await calendar.events.patch({ calendarId: args.calendarId ?? 'primary', eventId: args.eventId, requestBody: patch })
+            return `Updated event ${args.eventId}`
           }
 
-          if (msg.toolName === CALENDAR_DELETE_EVENT_TOOL_NAME) {
-            await calendar.events.delete({ calendarId: calId, eventId: args.eventId })
-            return `Event ${args.eventId} deleted.`
+          if (msg.toolName === calendarDeleteEventTool.name) {
+            await calendar.events.delete({ calendarId: args.calendarId ?? 'primary', eventId: args.eventId })
+            return `Deleted event ${args.eventId}`
           }
 
           throw new Error(`Unknown Calendar tool: ${msg.toolName}`)

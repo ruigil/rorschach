@@ -4,7 +4,7 @@ import { AgentSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { Kgraph } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
-import { ZettelNotes, ZETTEL_CREATE_TOOL, ZETTEL_LINK_TOOL, ZETTEL_UNLINKED_TOOL } from '../plugins/memory/zettel-notes.ts'
+import { ZettelNotes, zettelCreateTool, zettelLinkTool, zettelUnlinkedTool } from '../plugins/memory/zettel-notes.ts'
 import type { ZettelNoteMsg } from '../plugins/memory/zettel-notes.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
@@ -63,7 +63,7 @@ describe('zettel-notes unlinked notes', () => {
     await tick()
 
     // 1. Orphan (No in, No out)
-    await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
+    await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'Orphan Note',
       synopsis: 'synopsis',
       content: 'content',
@@ -71,7 +71,7 @@ describe('zettel-notes unlinked notes', () => {
     })
 
     // 2. No Outgoing (Has in, No out)
-    await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
+    await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'Target Note',
       synopsis: 'synopsis',
       content: 'content',
@@ -79,7 +79,7 @@ describe('zettel-notes unlinked notes', () => {
     })
 
     // 3. Single Outgoing (Has in, 1 out)
-    await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
+    await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'Intermediate Note',
       synopsis: 'synopsis',
       content: 'content',
@@ -87,7 +87,7 @@ describe('zettel-notes unlinked notes', () => {
     })
 
     // 4. Source Note (Has > 1 out, No in)
-    await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
+    await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'Source Note',
       synopsis: 'synopsis',
       content: 'content',
@@ -98,21 +98,21 @@ describe('zettel-notes unlinked notes', () => {
 
     // Create links
     // Source -> Target
-    await invokeZettel(zettelRef, ZETTEL_LINK_TOOL, {
+    await invokeZettel(zettelRef, zettelLinkTool.name, {
       sourceName: 'Source Note',
       targetName: 'Target Note',
       linkType: 'supports',
     })
 
     // Source -> Intermediate
-    await invokeZettel(zettelRef, ZETTEL_LINK_TOOL, {
+    await invokeZettel(zettelRef, zettelLinkTool.name, {
       sourceName: 'Source Note',
       targetName: 'Intermediate Note',
       linkType: 'supports',
     })
 
     // Intermediate -> Target
-    await invokeZettel(zettelRef, ZETTEL_LINK_TOOL, {
+    await invokeZettel(zettelRef, zettelLinkTool.name, {
       sourceName: 'Intermediate Note',
       targetName: 'Target Note',
       linkType: 'supports',
@@ -120,7 +120,7 @@ describe('zettel-notes unlinked notes', () => {
 
     await tick()
 
-    const reply = await invokeZettel(zettelRef, ZETTEL_UNLINKED_TOOL, {})
+    const reply = await invokeZettel(zettelRef, zettelUnlinkedTool.name, {})
     expect(reply.type).toBe('toolResult')
     
     const results = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text) as Array<{
@@ -167,26 +167,26 @@ describe('zettel-notes unlinked notes', () => {
  
      await tick()
  
-     await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, { name: 'Note A', synopsis: 's', content: 'c', tags: ['t'] })
-     await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, { name: 'Note B', synopsis: 's', content: 'c', tags: ['t'] })
-     await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, { name: 'Note C', synopsis: 's', content: 'c', tags: ['t'] })
-     await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, { name: 'Note D', synopsis: 's', content: 'c', tags: ['t'] })
+     await invokeZettel(zettelRef, zettelCreateTool.name, { name: 'Note A', synopsis: 's', content: 'c', tags: ['t'] })
+     await invokeZettel(zettelRef, zettelCreateTool.name, { name: 'Note B', synopsis: 's', content: 'c', tags: ['t'] })
+     await invokeZettel(zettelRef, zettelCreateTool.name, { name: 'Note C', synopsis: 's', content: 'c', tags: ['t'] })
+     await invokeZettel(zettelRef, zettelCreateTool.name, { name: 'Note D', synopsis: 's', content: 'c', tags: ['t'] })
  
      await tick()
  
      // Note B -> Note A
-     await invokeZettel(zettelRef, ZETTEL_LINK_TOOL, { sourceName: 'Note B', targetName: 'Note A', linkType: 'supports' })
+     await invokeZettel(zettelRef, zettelLinkTool.name, { sourceName: 'Note B', targetName: 'Note A', linkType: 'supports' })
      // Note C -> Note A
-     await invokeZettel(zettelRef, ZETTEL_LINK_TOOL, { sourceName: 'Note C', targetName: 'Note A', linkType: 'supports' })
+     await invokeZettel(zettelRef, zettelLinkTool.name, { sourceName: 'Note C', targetName: 'Note A', linkType: 'supports' })
      // Note A -> Note B
-     await invokeZettel(zettelRef, ZETTEL_LINK_TOOL, { sourceName: 'Note A', targetName: 'Note B', linkType: 'supports' })
+     await invokeZettel(zettelRef, zettelLinkTool.name, { sourceName: 'Note A', targetName: 'Note B', linkType: 'supports' })
      // Note A -> Note C
-     await invokeZettel(zettelRef, ZETTEL_LINK_TOOL, { sourceName: 'Note A', targetName: 'Note C', linkType: 'supports' })
+     await invokeZettel(zettelRef, zettelLinkTool.name, { sourceName: 'Note A', targetName: 'Note C', linkType: 'supports' })
  
      await tick()
  
      // Note A has in=2, out=2 -> SHOULD NOT BE RETURNED
-     const reply = await invokeZettel(zettelRef, ZETTEL_UNLINKED_TOOL, {})
+     const reply = await invokeZettel(zettelRef, zettelUnlinkedTool.name, {})
      const results = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text) as Array<{ name: string }>
  
      expect(results.map(r => r.name)).not.toContain('Note A')

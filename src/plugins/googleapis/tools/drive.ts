@@ -4,105 +4,59 @@ import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
 import { ask } from '../../../system/ask.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../../types/tools.ts'
+import { defineTool } from '../../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { GoogleToken, TokenStoreMsg } from '../types.ts'
 
 // ─── Tool names & schemas ───
 
-export const DRIVE_LIST_FILES_TOOL_NAME     = 'drive_list_files'
-export const DRIVE_SEARCH_FILES_TOOL_NAME   = 'drive_search_files'
-export const DRIVE_GET_FILE_TOOL_NAME       = 'drive_get_file'
-export const DRIVE_DOWNLOAD_FILE_TOOL_NAME  = 'drive_download_file'
-export const DRIVE_UPLOAD_FILE_TOOL_NAME    = 'drive_upload_file'
+export const driveListFilesTool = defineTool('drive_list_files', 'List files in Google Drive, optionally filtered to a specific folder.', {
+  type: 'object',
+  properties: {
+    maxResults: { type: 'number', description: 'Maximum number of files to return (default 20).' },
+    folderId:   { type: 'string', description: 'Return only files in this folder id (optional).' },
+  },
+})
 
-export const DRIVE_LIST_FILES_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: DRIVE_LIST_FILES_TOOL_NAME,
-    description: 'List files in Google Drive, optionally filtered to a specific folder.',
-    parameters: {
-      type: 'object',
-      properties: {
-        maxResults: { type: 'number', description: 'Maximum number of files to return (default 20).' },
-        folderId:   { type: 'string', description: 'Return only files in this folder id (optional).' },
-      },
+export const driveSearchFilesTool = defineTool('drive_search_files', "Search Google Drive using Drive query syntax (e.g. 'name contains budget' or 'mimeType=application/pdf').", {
+  type: 'object',
+  properties: {
+    query:      { type: 'string', description: 'Drive search query string.' },
+    maxResults: { type: 'number', description: 'Maximum results to return (default 20).' },
+  },
+  required: ['query'],
+})
+
+export const driveGetFileTool = defineTool('drive_get_file', 'Get metadata for a Google Drive file by its id.', {
+  type: 'object',
+  properties: {
+    fileId: { type: 'string', description: 'File id from drive_list_files or drive_search_files.' },
+  },
+  required: ['fileId'],
+})
+
+export const driveDownloadFileTool = defineTool('drive_download_file', 'Download a Google Drive file to workspace/media/inbound/ and return its absolute path. Google Docs → text (default) or pdf. Sheets → csv (default) or pdf. Slides → always pdf. Binary files (PDF, images, etc.) are downloaded as-is. Use the returned path with extract_pdf_text or analyze_image.', {
+  type: 'object',
+  properties: {
+    fileId: { type: 'string', description: 'File id from drive_list_files or drive_search_files.' },
+    exportFormat: {
+      type: 'string',
+      enum: ['text', 'pdf', 'csv'],
+      description: 'For Google Workspace files only: "text" (default for Docs), "pdf", "csv" (Sheets only).',
     },
   },
-}
+  required: ['fileId'],
+})
 
-export const DRIVE_SEARCH_FILES_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: DRIVE_SEARCH_FILES_TOOL_NAME,
-    description: 'Search Google Drive using Drive query syntax (e.g. "name contains \'budget\'" or "mimeType=\'application/pdf\'").',
-    parameters: {
-      type: 'object',
-      properties: {
-        query:      { type: 'string', description: 'Drive search query string.' },
-        maxResults: { type: 'number', description: 'Maximum results to return (default 20).' },
-      },
-      required: ['query'],
-    },
+export const driveUploadFileTool = defineTool('drive_upload_file', 'Upload a file to Google Drive. Provide either inline text content or the absolute path to a local file (from workspace/media/inbound/ or workspace/media/generated/). MIME type is inferred from file extension.', {
+  type: 'object',
+  properties: {
+    name:     { type: 'string', description: 'Drive file name. When filePath is given, defaults to the local filename.' },
+    content:  { type: 'string', description: 'Inline text content. Use this OR filePath, not both.' },
+    filePath: { type: 'string', description: 'Absolute path to a local file to upload. Use this OR content.' },
+    folderId: { type: 'string', description: 'Parent folder id (optional; defaults to Drive root).' },
   },
-}
-
-export const DRIVE_GET_FILE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: DRIVE_GET_FILE_TOOL_NAME,
-    description: 'Get metadata for a Google Drive file by its id.',
-    parameters: {
-      type: 'object',
-      properties: {
-        fileId: { type: 'string', description: 'File id from drive_list_files or drive_search_files.' },
-      },
-      required: ['fileId'],
-    },
-  },
-}
-
-export const DRIVE_DOWNLOAD_FILE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: DRIVE_DOWNLOAD_FILE_TOOL_NAME,
-    description:
-      'Download a Google Drive file to workspace/media/inbound/ and return its absolute path. ' +
-      'Google Docs → text (default) or pdf. Sheets → csv (default) or pdf. Slides → always pdf. ' +
-      'Binary files (PDF, images, etc.) are downloaded as-is. ' +
-      'Use the returned path with extract_pdf_text or analyze_image.',
-    parameters: {
-      type: 'object',
-      properties: {
-        fileId: { type: 'string', description: 'File id from drive_list_files or drive_search_files.' },
-        exportFormat: {
-          type: 'string',
-          enum: ['text', 'pdf', 'csv'],
-          description: 'For Google Workspace files only: "text" (default for Docs), "pdf", "csv" (Sheets only).',
-        },
-      },
-      required: ['fileId'],
-    },
-  },
-}
-
-export const DRIVE_UPLOAD_FILE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: DRIVE_UPLOAD_FILE_TOOL_NAME,
-    description:
-      'Upload a file to Google Drive. Provide either inline text content or the absolute path to a local file ' +
-      '(from workspace/media/inbound/ or workspace/media/generated/). MIME type is inferred from file extension.',
-    parameters: {
-      type: 'object',
-      properties: {
-        name:     { type: 'string', description: 'Drive file name. When filePath is given, defaults to the local filename.' },
-        content:  { type: 'string', description: 'Inline text content. Use this OR filePath, not both.' },
-        filePath: { type: 'string', description: 'Absolute path to a local file to upload. Use this OR content.' },
-        folderId: { type: 'string', description: 'Parent folder id (optional; defaults to Drive root).' },
-      },
-    },
-  },
-}
+})
 
 // ─── Internal message type ───
 
@@ -173,23 +127,19 @@ export const Drive = (
           const drive = google.drive({ version: 'v3', auth })
           const args  = JSON.parse(msg.arguments) as Record<string, any>
 
-          if (msg.toolName === DRIVE_LIST_FILES_TOOL_NAME) {
-            const q = args.folderId ? `'${args.folderId}' in parents and trashed=false` : 'trashed=false'
-            const res = await drive.files.list({ q, pageSize: args.maxResults ?? 20, fields: `files(${FILE_FIELDS})` })
-            return JSON.stringify(res.data.files ?? [])
+          if (msg.toolName === driveListFilesTool.name) {
+            const res = await drive.files.list({ pageSize: args.maxResults ?? 20, q: args.folderId ? `'${args.folderId}' in parents and trashed=false` : 'trashed=false', fields: `files(${FILE_FIELDS})` })
+            return JSON.stringify(res.data.files)
           }
-
-          if (msg.toolName === DRIVE_SEARCH_FILES_TOOL_NAME) {
-            const res = await drive.files.list({ q: args.query, pageSize: args.maxResults ?? 20, fields: `files(${FILE_FIELDS})` })
-            return JSON.stringify(res.data.files ?? [])
+          if (msg.toolName === driveSearchFilesTool.name) {
+            const res = await drive.files.list({ pageSize: args.maxResults ?? 20, q: `${args.query} and trashed=false`, fields: `files(${FILE_FIELDS})` })
+            return JSON.stringify(res.data.files)
           }
-
-          if (msg.toolName === DRIVE_GET_FILE_TOOL_NAME) {
-            const res = await drive.files.get({ fileId: args.fileId, fields: FILE_FIELDS + ', description, parents' })
+          if (msg.toolName === driveGetFileTool.name) {
+            const res = await drive.files.get({ fileId: args.fileId, fields: FILE_FIELDS })
             return JSON.stringify(res.data)
           }
-
-          if (msg.toolName === DRIVE_DOWNLOAD_FILE_TOOL_NAME) {
+          if (msg.toolName === driveDownloadFileTool.name) {
             const meta = await drive.files.get({ fileId: args.fileId, fields: 'mimeType, name' })
             const mime = meta.data.mimeType ?? ''
             const originalName = meta.data.name ?? `drive-file-${args.fileId}`
@@ -228,8 +178,7 @@ export const Drive = (
             await Bun.write(filePath, res.data as ArrayBuffer)
             return `Downloaded to: ${filePath}`
           }
-
-          if (msg.toolName === DRIVE_UPLOAD_FILE_TOOL_NAME) {
+          if (msg.toolName === driveUploadFileTool.name) {
             const { Readable } = await import('node:stream')
             let uploadName: string, uploadMime: string, body: NodeJS.ReadableStream
 

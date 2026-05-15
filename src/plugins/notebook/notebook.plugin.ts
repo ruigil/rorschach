@@ -1,36 +1,30 @@
 import { resolve, sep } from 'node:path'
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import type { ToolCollection, ToolMsg, ToolSchema } from '../../types/tools.ts'
-import { ToolRegistrationTopic } from '../../types/tools.ts'
+import { defineTool, ToolRegistrationTopic } from '../../types/tools.ts'
+import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { IdentityProviderTopic, resolveIdentity } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 
 import type { NoteEntry, NotebookConfig, NoteAgentMsg, TodoReminderMsg } from './types.ts'
 
-import { Journal, JOURNAL_WRITE_TOOL_NAME, JOURNAL_WRITE_SCHEMA, JOURNAL_READ_TOOL_NAME, JOURNAL_READ_SCHEMA, JOURNAL_SEARCH_TOOL_NAME, JOURNAL_SEARCH_SCHEMA } from './tools/journal.ts'
-import { Notes, NOTES_CREATE_TOOL_NAME, NOTES_CREATE_SCHEMA, NOTES_UPDATE_TOOL_NAME, NOTES_UPDATE_SCHEMA, NOTES_READ_TOOL_NAME, NOTES_READ_SCHEMA, NOTES_LIST_TOOL_NAME, NOTES_LIST_SCHEMA, NOTES_SEARCH_TOOL_NAME, NOTES_SEARCH_SCHEMA, NOTES_ATTACH_FILE_TOOL_NAME, NOTES_ATTACH_FILE_SCHEMA, NOTES_DELETE_TOOL_NAME, NOTES_DELETE_SCHEMA } from './tools/notes.ts'
-import { Tracker, TRACKER_LOG_TOOL_NAME, TRACKER_LOG_SCHEMA, TRACKER_STATS_TOOL_NAME, TRACKER_STATS_SCHEMA, TRACKER_DEFINE_HABIT_TOOL_NAME, TRACKER_DEFINE_HABIT_SCHEMA, TRACKER_LIST_HABITS_TOOL_NAME, TRACKER_LIST_HABITS_SCHEMA } from './tools/tracker.ts'
-import { Todos, TODOS_CREATE_TOOL_NAME, TODOS_CREATE_SCHEMA, TODOS_COMPLETE_TOOL_NAME, TODOS_COMPLETE_SCHEMA, TODOS_LIST_TOOL_NAME, TODOS_LIST_SCHEMA, TODOS_DELETE_TOOL_NAME, TODOS_DELETE_SCHEMA, TODOS_UPDATE_TOOL_NAME, TODOS_UPDATE_SCHEMA } from './tools/todos.ts'
-import { Search, NOTEBOOK_SEARCH_TOOL_NAME, NOTEBOOK_SEARCH_SCHEMA } from './tools/search.ts'
+import { Journal, journalWriteTool, journalReadTool, journalSearchTool } from './tools/journal.ts'
+import { Notes, notesCreateTool, notesUpdateTool, notesReadTool, notesListTool, notesSearchTool, notesAttachFileTool, notesDeleteTool } from './tools/notes.ts'
+import { Tracker, trackerLogTool, trackerStatsTool, trackerDefineHabitTool, trackerListHabitsTool } from './tools/tracker.ts'
+import { Todos, todosCreateTool, todosCompleteTool, todosListTool, todosDeleteTool, todosUpdateTool } from './tools/todos.ts'
+import { Search, notebookSearchTool } from './tools/search.ts'
 import { NoteAgent } from './note-agent.ts'
 import { TodoReminder } from './todo-reminder.ts'
 
 // ─── Public tool schema ───
 
-export const NOTE_TOOL_NAME = 'note'
-
 const ATTACHMENT_ROUTE_ID = 'notebook.attachments.api'
 const ATTACHMENT_ROUTE_PREFIX = '/notebook/attachments/'
 const MEDIA_DIR = resolve(import.meta.dir, '../../..', 'workspace/media')
 
-export const NOTE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: NOTE_TOOL_NAME,
-    description: `Interact with your personal notebook via a natural language request. A sub-agent handles the request and returns a summary of what was done.
-  
+export const noteTool = defineTool('note', `Interact with your personal notebook via a natural language request. A sub-agent handles the request and returns a summary of what was done.
+
 This tool is for the user only — only call it when explicitly asked by the user. Never use it to take notes for yourself.
 
 The notebook has four areas — use the request field to describe exactly what you want:
@@ -68,19 +62,16 @@ The notebook has four areas — use the request field to describe exactly what y
 **Cross-area search**:
 - "Search the entire notebook for 'budget'"
 
-Always include enough detail in the request so the sub-agent can act without ambiguity (e.g. specify note titles, habit names, dates, file paths).`,
-    parameters: {
-      type: 'object',
-      properties: {
-        request: {
-          type: 'string',
-          description: 'A natural language instruction describing what to do in the notebook. Be specific: include titles, tags, dates, file paths, or content as needed.',
-        },
-      },
-      required: ['request'],
+Always include enough detail in the request so the sub-agent can act without ambiguity (e.g. specify note titles, habit names, dates, file paths).`, {
+  type: 'object',
+  properties: {
+    request: {
+      type: 'string',
+      description: 'A natural language instruction describing what to do in the notebook. Be specific: include titles, tags, dates, file paths, or content as needed.',
     },
   },
-}
+  required: ['request'],
+})
 
 // ─── Plugin message & state types ───
 
@@ -174,26 +165,26 @@ const buildToolCollection = (
   todosRef:    ActorRef<ToolMsg>,
   searchRef:   ActorRef<ToolMsg>,
 ): ToolCollection => ({
-  [JOURNAL_WRITE_TOOL_NAME]:        { schema: JOURNAL_WRITE_SCHEMA,        ref: journalRef },
-  [JOURNAL_READ_TOOL_NAME]:         { schema: JOURNAL_READ_SCHEMA,         ref: journalRef },
-  [JOURNAL_SEARCH_TOOL_NAME]:       { schema: JOURNAL_SEARCH_SCHEMA,       ref: journalRef },
-  [NOTES_CREATE_TOOL_NAME]:         { schema: NOTES_CREATE_SCHEMA,         ref: notesRef   },
-  [NOTES_UPDATE_TOOL_NAME]:         { schema: NOTES_UPDATE_SCHEMA,         ref: notesRef   },
-  [NOTES_READ_TOOL_NAME]:           { schema: NOTES_READ_SCHEMA,           ref: notesRef   },
-  [NOTES_LIST_TOOL_NAME]:           { schema: NOTES_LIST_SCHEMA,           ref: notesRef   },
-  [NOTES_SEARCH_TOOL_NAME]:         { schema: NOTES_SEARCH_SCHEMA,         ref: notesRef   },
-  [NOTES_ATTACH_FILE_TOOL_NAME]:    { schema: NOTES_ATTACH_FILE_SCHEMA,    ref: notesRef   },
-  [NOTES_DELETE_TOOL_NAME]:         { schema: NOTES_DELETE_SCHEMA,         ref: notesRef   },
-  [TRACKER_LOG_TOOL_NAME]:          { schema: TRACKER_LOG_SCHEMA,          ref: trackerRef  },
-  [TRACKER_STATS_TOOL_NAME]:        { schema: TRACKER_STATS_SCHEMA,        ref: trackerRef  },
-  [TRACKER_DEFINE_HABIT_TOOL_NAME]: { schema: TRACKER_DEFINE_HABIT_SCHEMA, ref: trackerRef  },
-  [TRACKER_LIST_HABITS_TOOL_NAME]:  { schema: TRACKER_LIST_HABITS_SCHEMA,  ref: trackerRef  },
-  [TODOS_CREATE_TOOL_NAME]:         { schema: TODOS_CREATE_SCHEMA,         ref: todosRef    },
-  [TODOS_COMPLETE_TOOL_NAME]:       { schema: TODOS_COMPLETE_SCHEMA,       ref: todosRef    },
-  [TODOS_LIST_TOOL_NAME]:           { schema: TODOS_LIST_SCHEMA,           ref: todosRef    },
-  [TODOS_DELETE_TOOL_NAME]:         { schema: TODOS_DELETE_SCHEMA,         ref: todosRef    },
-  [TODOS_UPDATE_TOOL_NAME]:         { schema: TODOS_UPDATE_SCHEMA,         ref: todosRef    },
-  [NOTEBOOK_SEARCH_TOOL_NAME]:      { schema: NOTEBOOK_SEARCH_SCHEMA,      ref: searchRef   },
+  [journalWriteTool.name]:        { ...journalWriteTool,        ref: journalRef },
+  [journalReadTool.name]:         { ...journalReadTool,         ref: journalRef },
+  [journalSearchTool.name]:       { ...journalSearchTool,       ref: journalRef },
+  [notesCreateTool.name]:         { ...notesCreateTool,         ref: notesRef   },
+  [notesUpdateTool.name]:         { ...notesUpdateTool,         ref: notesRef   },
+  [notesReadTool.name]:           { ...notesReadTool,           ref: notesRef   },
+  [notesListTool.name]:           { ...notesListTool,           ref: notesRef   },
+  [notesSearchTool.name]:         { ...notesSearchTool,         ref: notesRef   },
+  [notesAttachFileTool.name]:     { ...notesAttachFileTool,     ref: notesRef   },
+  [notesDeleteTool.name]:         { ...notesDeleteTool,         ref: notesRef   },
+  [trackerLogTool.name]:          { ...trackerLogTool,          ref: trackerRef  },
+  [trackerStatsTool.name]:        { ...trackerStatsTool,        ref: trackerRef  },
+  [trackerDefineHabitTool.name]:  { ...trackerDefineHabitTool,  ref: trackerRef  },
+  [trackerListHabitsTool.name]:   { ...trackerListHabitsTool,   ref: trackerRef  },
+  [todosCreateTool.name]:         { ...todosCreateTool,         ref: todosRef    },
+  [todosCompleteTool.name]:       { ...todosCompleteTool,       ref: todosRef    },
+  [todosListTool.name]:           { ...todosListTool,           ref: todosRef    },
+  [todosDeleteTool.name]:         { ...todosDeleteTool,         ref: todosRef    },
+  [todosUpdateTool.name]:         { ...todosUpdateTool,         ref: todosRef    },
+  [notebookSearchTool.name]:      { ...notebookSearchTool,      ref: searchRef   },
 })
 
 // ─── Spawn helpers (typed with ActorContext<PluginMsg>) ───
@@ -227,10 +218,9 @@ const spawnChildren = (
   ) as ActorRef<NoteAgentMsg>
 
   // Register the single public tool
-  ctx.publishRetained(ToolRegistrationTopic, NOTE_TOOL_NAME, {
-    name:   NOTE_TOOL_NAME,
-    schema: NOTE_SCHEMA,
-    ref:    noteAgentRef as unknown as ActorRef<ToolMsg>,
+  ctx.publishRetained(ToolRegistrationTopic, noteTool.name, {
+    ...noteTool,
+    ref: noteAgentRef as unknown as ActorRef<ToolMsg>,
   })
 
   // Spawn todo reminder
@@ -250,7 +240,7 @@ const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void =>
   if (state.searchRef)    ctx.stop(state.searchRef)
   if (state.noteAgentRef) ctx.stop(state.noteAgentRef)
   if (state.reminderRef)  ctx.stop(state.reminderRef)
-  ctx.deleteRetained(ToolRegistrationTopic, NOTE_TOOL_NAME, { name: NOTE_TOOL_NAME, ref: null })
+  ctx.deleteRetained(ToolRegistrationTopic, noteTool.name, { name: noteTool.name, ref: null })
 }
 
 // ─── Plugin definition ───

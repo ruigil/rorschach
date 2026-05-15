@@ -1,30 +1,20 @@
 import type { ActorDef, ActorContext, ActorRef, ActorResult, Interceptor } from '../../system/types.ts'
-import { AgentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
-import type { ToolCollection, ToolReply, ToolSchema } from '../../types/tools.ts'
-import { parseToolArgs } from '../../types/tools.ts'
+import { agentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
+import { defineTool, parseToolArgs } from '../../types/tools.ts'
+import type { ToolCollection, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { MemoryRecallMsg, MemorySupervisorMsg } from './types.ts'
 import { zettelRecallSection } from './ontology.ts'
 
 // ─── Tool registration ───
 
-export const MEMORY_RECALL_TOOL_NAME = 'recall_memory'
-
-export const MEMORY_RECALL_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: 'recall_memory',
-    description:
-      'Retrieve relevant memories from past conversations. Use when the user references something you no longer have in context — past decisions, preferences, projects, or events.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'What to look up. Be specific.' },
-      },
-      required: ['query'],
-    },
+export const memoryRecallTool = defineTool('recall_memory', 'Retrieve relevant memories from past conversations. Use when the user references something you no longer have in context — past decisions, preferences, projects, or events.', {
+  type: 'object',
+  properties: {
+    query: { type: 'string', description: 'What to look up. Be specific.' },
   },
-}
+  required: ['query'],
+})
 
 // ─── Options ───
 
@@ -79,7 +69,7 @@ export const createMemoryRecallWorkerActor = (parent:  ActorRef<MemorySupervisor
     )
   }
 
-  const loop = AgentLoop<MemoryRecallWorkerState, MemoryRecallMsg>({
+  const loop = agentLoop<MemoryRecallWorkerState, MemoryRecallMsg>({
     role:            'memory-recall',
     spanName:        'memory-recall',
     logPrefix:       'memory recall',

@@ -1,7 +1,7 @@
 import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { AgentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
+import { agentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import { UserStreamTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
@@ -118,7 +118,7 @@ export const Chatbot = (
   }
 
 
-  const loop = AgentLoop<S, M>({
+  const loop = agentLoop<S, M>({
     role:          'reasoning',
     spanName:      'chatbot',
     logPrefix:     'chatbot',
@@ -248,7 +248,7 @@ export const Chatbot = (
           ...state,
           tools: {
             ...state.tools,
-            [m.name]: { schema: m.schema, ref: m.ref, mayBeLongRunning: m.mayBeLongRunning },
+            [m.name]: { name: m.name, schema: m.schema, ref: m.ref, mayBeLongRunning: m.mayBeLongRunning },
           },
         },
       }

@@ -2,55 +2,34 @@ import { CronExpressionParser } from 'cron-parser'
 import type { ActorDef, PersistenceAdapter } from '../../system/types.ts'
 import { emit } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg, ToolSchema } from '../../types/tools.ts'
+import { defineTool } from '../../types/tools.ts'
+import type { ToolInvokeMsg } from '../../types/tools.ts'
 import { CronTriggerTopic } from '../../types/events.ts'
 
 // ─── Tool names & schemas ───
 
-export const CRON_CREATE_TOOL_NAME = 'cron_create'
-export const CRON_DELETE_TOOL_NAME = 'cron_delete'
-export const CRON_LIST_TOOL_NAME   = 'cron_list'
-
-export const CRON_CREATE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: CRON_CREATE_TOOL_NAME,
-    description: 'Schedule a prompt to be sent on a recurring cron schedule. Returns the job ID.',
-    parameters: {
-      type: 'object',
-      properties: {
-        expression: { type: 'string', description: 'Standard 5-field cron expression (e.g. "0 9 * * 1-5" for weekdays at 9am).' },
-        prompt:     { type: 'string', description: 'The prompt to send when the schedule fires.' },
-        run_once:   { type: 'boolean', description: 'If true, the job is deleted after firing once. Defaults to false.' },
-      },
-      required: ['expression', 'prompt'],
-    },
+export const cronCreateTool = defineTool('cron_create', 'Schedule a prompt to be sent on a recurring cron schedule. Returns the job ID.', {
+  type: 'object',
+  properties: {
+    expression: { type: 'string', description: 'Standard 5-field cron expression (e.g. "0 9 * * 1-5" for weekdays at 9am).' },
+    prompt:     { type: 'string', description: 'The prompt to send when the schedule fires.' },
+    run_once:   { type: 'boolean', description: 'If true, the job is deleted after firing once. Defaults to false.' },
   },
-}
+  required: ['expression', 'prompt'],
+})
 
-export const CRON_DELETE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: CRON_DELETE_TOOL_NAME,
-    description: 'Delete a scheduled cron job by ID.',
-    parameters: {
-      type: 'object',
-      properties: {
-        jobId: { type: 'string', description: 'The job ID returned by cron_create.' },
-      },
-      required: ['jobId'],
-    },
+export const cronDeleteTool = defineTool('cron_delete', 'Delete a scheduled cron job by ID.', {
+  type: 'object',
+  properties: {
+    jobId: { type: 'string', description: 'The job ID returned by cron_create.' },
   },
-}
+  required: ['jobId'],
+})
 
-export const CRON_LIST_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: CRON_LIST_TOOL_NAME,
-    description: 'List all scheduled cron jobs with their IDs, expressions, prompts, and next scheduled run time.',
-    parameters: { type: 'object', properties: {} },
-  },
-}
+export const cronListTool = defineTool('cron_list', 'List all scheduled cron jobs with their IDs, expressions, prompts, and next scheduled run time.', {
+  type: 'object',
+  properties: {},
+})
 
 // ─── Types ───
 
@@ -133,7 +112,7 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
     invoke: (state, msg, ctx) => {
       const { toolName, arguments: rawArgs, replyTo } = msg
 
-      if (toolName === CRON_CREATE_TOOL_NAME) {
+      if (toolName === cronCreateTool.name) {
         let args: { expression: string; prompt: string; run_once?: boolean }
         try { args = JSON.parse(rawArgs) } catch {
           replyTo.send({ type: 'toolError', error: 'Invalid JSON arguments' })
@@ -156,7 +135,7 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
         return { state: { ...state, jobs: { ...state.jobs, [id]: job } } }
       }
 
-      if (toolName === CRON_DELETE_TOOL_NAME) {
+      if (toolName === cronDeleteTool.name) {
         let args: { jobId: string }
         try { args = JSON.parse(rawArgs) } catch {
           replyTo.send({ type: 'toolError', error: 'Invalid JSON arguments' })
@@ -176,7 +155,7 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
         return { state: { ...state, jobs: remaining } }
       }
 
-      if (toolName === CRON_LIST_TOOL_NAME) {
+      if (toolName === cronListTool.name) {
         const jobs = Object.values(state.jobs)
         if (jobs.length === 0) {
           replyTo.send({ type: 'toolResult', result: { text: 'No scheduled cron jobs.' } })

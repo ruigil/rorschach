@@ -1,31 +1,21 @@
 import type { ActorDef, ActorContext, ActorRef, ActorResult, Interceptor } from '../../system/types.ts'
-import { AgentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
-import type { ToolCollection, ToolReply, ToolSchema } from '../../types/tools.ts'
-import { parseToolArgs } from '../../types/tools.ts'
+import { agentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
+import { defineTool, parseToolArgs } from '../../types/tools.ts'
+import type { ToolCollection, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { MemoryStoreMsg, MemorySupervisorMsg } from './types.ts'
 import { zettelStoreSection } from './ontology.ts'
 
 // ─── Tool registration ───
 
-export const MEMORY_STORE_TOOL_NAME = 'store_memory'
-
-export const MEMORY_STORE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: 'store_memory',
-    description:
-      'Explicitly store a piece of information about the user into long-term memory. Use when the user shares a fact, preference, goal, or decision they want remembered.',
-    parameters: {
-      type: 'object',
-      properties: {
-        content: { type: 'string', description: 'The information to store. Be specific and factual.' },
-        topic:   { type: 'string', description: 'Optional hint for which knowledge base topic to file this under (e.g. "preferences", "projects", "goals").' },
-      },
-      required: ['content'],
-    },
+export const memoryStoreTool = defineTool('store_memory', 'Explicitly store a piece of information about the user into long-term memory. Use when the user shares a fact, preference, goal, or decision they want remembered.', {
+  type: 'object',
+  properties: {
+    content: { type: 'string', description: 'The information to store. Be specific and factual.' },
+    topic:   { type: 'string', description: 'Optional hint for which knowledge base topic to file this under (e.g. "preferences", "projects", "goals").' },
   },
-}
+  required: ['content'],
+})
 
 // ─── Options ───
 
@@ -87,7 +77,7 @@ export const createMemoryStoreWorkerActor = (parent:  ActorRef<MemorySupervisorM
     )
   }
 
-  const loop = AgentLoop<MemoryStoreWorkerState, MemoryStoreMsg>({
+  const loop = agentLoop<MemoryStoreWorkerState, MemoryStoreMsg>({
     role:            'memory-store',
     spanName:        'memory-store',
     logPrefix:       'memory store worker',

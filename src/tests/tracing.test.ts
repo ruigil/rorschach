@@ -7,7 +7,7 @@ import { LlmProvider, OpenRouterAdapter } from '../plugins/cognitive/llm-provide
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import type { ToolInvokeMsg, ToolMsg } from '../types/tools.ts'
 import { ToolRegistrationTopic } from '../types/tools.ts'
-import { WEB_SEARCH_SCHEMA, WEB_SEARCH_TOOL_NAME } from '../plugins/tools/web-search.ts'
+import { webSearchTool } from '../plugins/tools/web-search.ts'
 
 // ─── Helpers ───
 
@@ -252,7 +252,7 @@ describe('distributed tracing', () => {
     const system = await AgentSystem()
     const spans = collectSpans(system)
     // Retain the tool before spawning chatbot — replayed on subscribe during chatbot's start lifecycle
-    system.publishRetained(ToolRegistrationTopic, WEB_SEARCH_TOOL_NAME, { name: WEB_SEARCH_TOOL_NAME, schema: WEB_SEARCH_SCHEMA, ref: fakeToolRef })
+    system.publishRetained(ToolRegistrationTopic, webSearchTool.name, { ...webSearchTool, ref: fakeToolRef })
     const react = spawnChatbot(system)
 
     await tick()

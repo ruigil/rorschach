@@ -1,26 +1,18 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../../types/tools.ts'
+import { defineTool } from '../../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { Todo } from '../types.ts'
 
 // ─── Tool name & schema ───
 
-export const NOTEBOOK_SEARCH_TOOL_NAME = 'notebook_search'
-
-export const NOTEBOOK_SEARCH_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: NOTEBOOK_SEARCH_TOOL_NAME,
-    description: 'Full-text search across all notebook content: journal entries, notes, and todo text.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Text to search for (case-insensitive).' },
-      },
-      required: ['query'],
-    },
+export const notebookSearchTool = defineTool('notebook_search', 'Full-text search across all notebook content: journal entries, notes, and todo text.', {
+  type: 'object',
+  properties: {
+    query: { type: 'string', description: 'Text to search for (case-insensitive).' },
   },
-}
+  required: ['query'],
+})
 
 // ─── Internal message type ───
 
@@ -98,9 +90,9 @@ export const Search = (notebookDir: string): ActorDef<SearchMsg, null> => ({
       let promise: Promise<string>
       try {
         const args = JSON.parse(msg.arguments) as Record<string, string>
-        if (msg.toolName === NOTEBOOK_SEARCH_TOOL_NAME) {
-          ctx.log.info('notebook-search', { query: args.query })
-          promise = searchAll(notebookDir, args.query!)
+        if (msg.toolName === notebookSearchTool.name) {
+          const args = JSON.parse(msg.arguments) as { query: string }
+          promise = searchAll(notebookDir, args.query)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }

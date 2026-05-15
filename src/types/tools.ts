@@ -8,6 +8,18 @@ export type ToolSchema = {
   function: { name: string; description: string; parameters: object }
 }
 
+export const defineTool = (
+  name: string,
+  description: string,
+  parameters: object,
+): { name: string; schema: ToolSchema } => ({
+  name,
+  schema: {
+    type: 'function',
+    function: { name, description, parameters },
+  },
+})
+
 // ─── Generic tool protocol ───
 
 export type ToolSource = { title: string; url: string; snippet: string }
@@ -47,17 +59,18 @@ export type ToolFinalReply =
 
 // ─── Registry types ───
 
-export type ToolEntry = {
+export type Tool = {
+  name: string
   schema: ToolSchema
   ref: ActorRef<ToolMsg>
   /** Tool MAY reply with toolPending. Agents that don't support background completion
    *  should filter these out of their LLM tool list. Default false. */
   mayBeLongRunning?: boolean
 }
-export type ToolCollection = Record<string, ToolEntry>
+export type ToolCollection = Record<string, Tool>
 
 export type ToolRegistrationEvent =
-  | { name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
+  | Tool
   | { name: string; ref: null }
 
 export const ToolRegistrationTopic = createTopic<ToolRegistrationEvent>('tools.registration')

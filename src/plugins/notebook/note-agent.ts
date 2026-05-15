@@ -1,7 +1,7 @@
 import type { ActorDef, ActorContext, ActorRef, ActorResult, Interceptor } from '../../system/types.ts'
 import type { ToolReply } from '../../types/tools.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { AgentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
+import { agentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
@@ -78,7 +78,7 @@ export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, Not
     )
   }
 
-  const loop = AgentLoop<NoteAgentState, NoteAgentMsg>({
+  const loop = agentLoop<NoteAgentState, NoteAgentMsg>({
     role:         'notebook',
     spanName:     'note-agent',
     logPrefix:    'note-agent',

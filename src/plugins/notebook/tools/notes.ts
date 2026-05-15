@@ -2,128 +2,72 @@ import { mkdir, unlink } from 'node:fs/promises'
 import { extname, basename } from 'node:path'
 import type { ActorDef, ActorRef, SpanHandle } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../../types/tools.ts'
+import { defineTool } from '../../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { Attachment, NoteEntry } from '../types.ts'
 
 // ─── Tool names & schemas ───
 
-export const NOTES_CREATE_TOOL_NAME       = 'notes_create'
-export const NOTES_UPDATE_TOOL_NAME       = 'notes_update'
-export const NOTES_READ_TOOL_NAME         = 'notes_read'
-export const NOTES_LIST_TOOL_NAME         = 'notes_list'
-export const NOTES_SEARCH_TOOL_NAME       = 'notes_search'
-export const NOTES_ATTACH_FILE_TOOL_NAME = 'notes_attach_file'
-export const NOTES_DELETE_TOOL_NAME      = 'notes_delete'
-
-export const NOTES_CREATE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: NOTES_CREATE_TOOL_NAME,
-    description: 'Create a new note with a title, markdown content, and optional tags. Wiki-style [[links]] to other notes are supported. IMPORTANT: Only use this tool when the user explicitly requests to create or manage a note. Do NOT use this tool to remember random facts or general user context; rely on the memory store instead.',
-    parameters: {
-      type: 'object',
-      properties: {
-        title:   { type: 'string', description: 'Note title.' },
-        content: { type: 'string', description: 'Note body in markdown.' },
-        tags:    { type: 'array', items: { type: 'string' }, description: 'Optional list of subject tags.' },
-      },
-      required: ['title', 'content'],
-    },
+export const notesCreateTool = defineTool('notes_create', 'Create a new note with a title, markdown content, and optional tags. Wiki-style [[links]] to other notes are supported. IMPORTANT: Only use this tool when the user explicitly requests to create or manage a note. Do NOT use this tool to remember random facts or general user context; rely on the memory store instead.', {
+  type: 'object',
+  properties: {
+    title:   { type: 'string', description: 'Note title.' },
+    content: { type: 'string', description: 'Note body in markdown.' },
+    tags:    { type: 'array', items: { type: 'string' }, description: 'Optional list of subject tags.' },
   },
-}
+  required: ['title', 'content'],
+})
 
-export const NOTES_UPDATE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: NOTES_UPDATE_TOOL_NAME,
-    description: 'Update an existing note by id. IMPORTANT: Only use this tool for explicit user notes. Do not use for general facts or memory context.',
-    parameters: {
-      type: 'object',
-      properties: {
-        id:      { type: 'string', description: 'Note id.' },
-        content: { type: 'string', description: 'New markdown content (replaces existing).' },
-        tags:    { type: 'array', items: { type: 'string' }, description: 'New tags (replaces existing).' },
-      },
-      required: ['id'],
-    },
+export const notesUpdateTool = defineTool('notes_update', 'Update an existing note by id. IMPORTANT: Only use this tool for explicit user notes. Do not use for general facts or memory context.', {
+  type: 'object',
+  properties: {
+    id:      { type: 'string', description: 'Note id.' },
+    content: { type: 'string', description: 'New markdown content (replaces existing).' },
+    tags:    { type: 'array', items: { type: 'string' }, description: 'New tags (replaces existing).' },
   },
-}
+  required: ['id'],
+})
 
-export const NOTES_READ_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: NOTES_READ_TOOL_NAME,
-    description: 'Read a note by id or title.',
-    parameters: {
-      type: 'object',
-      properties: {
-        id:    { type: 'string', description: 'Note id.' },
-        title: { type: 'string', description: 'Note title (used if id is not provided).' },
-      },
-    },
+export const notesReadTool = defineTool('notes_read', 'Read a note by id or title.', {
+  type: 'object',
+  properties: {
+    id:    { type: 'string', description: 'Note id.' },
+    title: { type: 'string', description: 'Note title (used if id is not provided).' },
   },
-}
+})
 
-export const NOTES_LIST_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: NOTES_LIST_TOOL_NAME,
-    description: 'List notes, optionally filtered by tags.',
-    parameters: {
-      type: 'object',
-      properties: {
-        tags: { type: 'array', items: { type: 'string' }, description: 'Filter to notes that have ALL of these tags.' },
-      },
-    },
+export const notesListTool = defineTool('notes_list', 'List notes, optionally filtered by tags.', {
+  type: 'object',
+  properties: {
+    tags: { type: 'array', items: { type: 'string' }, description: 'Filter to notes that have ALL of these tags.' },
   },
-}
+})
 
-export const NOTES_SEARCH_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: NOTES_SEARCH_TOOL_NAME,
-    description: 'Full-text search across all note content.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Text to search for (case-insensitive).' },
-      },
-      required: ['query'],
-    },
+export const notesSearchTool = defineTool('notes_search', 'Full-text search across all note content.', {
+  type: 'object',
+  properties: {
+    query: { type: 'string', description: 'Text to search for (case-insensitive).' },
   },
-}
+  required: ['query'],
+})
 
-export const NOTES_DELETE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: NOTES_DELETE_TOOL_NAME,
-    description: 'Permanently delete a note by id.',
-    parameters: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', description: 'Note id.' },
-      },
-      required: ['id'],
-    },
+export const notesDeleteTool = defineTool('notes_delete', 'Permanently delete a note by id.', {
+  type: 'object',
+  properties: {
+    id: { type: 'string', description: 'Note id.' },
   },
-}
+  required: ['id'],
+})
 
-export const NOTES_ATTACH_FILE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: NOTES_ATTACH_FILE_TOOL_NAME,
-    description: 'Attach a file (image, PDF, or other) to a note. The file must be in the inbound directory. A reference is added to the note body.',
-    parameters: {
-      type: 'object',
-      properties: {
-        id:       { type: 'string', description: 'Note id.' },
-        filePath: { type: 'string', description: 'Absolute path to the file to attach.' },
-        caption:  { type: 'string', description: 'Optional caption or label for the attachment.' },
-      },
-      required: ['id', 'filePath'],
-    },
+export const notesAttachFileTool = defineTool('notes_attach_file', 'Attach a file (image, PDF, or other) to a note. The file must be in the inbound directory. A reference is added to the note body.', {
+  type: 'object',
+  properties: {
+    id:       { type: 'string', description: 'Note id.' },
+    filePath: { type: 'string', description: 'Absolute path to the file to attach.' },
+    caption:  { type: 'string', description: 'Optional caption or label for the attachment.' },
   },
-}
+  required: ['id', 'filePath'],
+})
 
 // ─── Internal message type ───
 
@@ -338,27 +282,27 @@ export const Notes = (notebookDir: string): ActorDef<NotesMsg, null> => ({
       try {
         const args = JSON.parse(msg.arguments) as Record<string, unknown>
 
-        if (msg.toolName === NOTES_CREATE_TOOL_NAME) {
-          ctx.log.info('notes: create', { title: args.title })
-          promise = createNote(notebookDir, args.title as string, args.content as string, (args.tags as string[] | undefined) ?? [])
-        } else if (msg.toolName === NOTES_UPDATE_TOOL_NAME) {
-          ctx.log.info('notes: update', { id: args.id })
-          promise = updateNote(notebookDir, args.id as string, args.content as string | undefined, args.tags as string[] | undefined)
-        } else if (msg.toolName === NOTES_READ_TOOL_NAME) {
-          ctx.log.info('notes: read', { id: args.id, title: args.title })
-          promise = readNote(notebookDir, args.id as string | undefined, args.title as string | undefined)
-        } else if (msg.toolName === NOTES_LIST_TOOL_NAME) {
-          ctx.log.info('notes: list', { tags: args.tags })
-          promise = listNotes(notebookDir, args.tags as string[] | undefined)
-        } else if (msg.toolName === NOTES_SEARCH_TOOL_NAME) {
-          ctx.log.info('notes: search', { query: args.query })
-          promise = searchNotes(notebookDir, args.query as string)
-        } else if (msg.toolName === NOTES_ATTACH_FILE_TOOL_NAME) {
-          ctx.log.info('notes: attach file', { id: args.id, filePath: args.filePath })
-          promise = attachFile(notebookDir, args.id as string, args.filePath as string, args.caption as string | undefined)
-        } else if (msg.toolName === NOTES_DELETE_TOOL_NAME) {
-          ctx.log.info('notes: delete', { id: args.id })
-          promise = deleteNote(notebookDir, args.id as string)
+        if (msg.toolName === notesCreateTool.name) {
+          const args = JSON.parse(msg.arguments) as { title: string; content: string; tags?: string[] }
+          promise = createNote(notebookDir, args.title, args.content, args.tags ?? [])
+        } else if (msg.toolName === notesUpdateTool.name) {
+          const args = JSON.parse(msg.arguments) as { id: string; content?: string; tags?: string[] }
+          promise = updateNote(notebookDir, args.id, args.content, args.tags)
+        } else if (msg.toolName === notesReadTool.name) {
+          const args = JSON.parse(msg.arguments) as { id?: string; title?: string }
+          promise = readNote(notebookDir, args.id, args.title)
+        } else if (msg.toolName === notesListTool.name) {
+          const args = JSON.parse(msg.arguments) as { tags?: string[] }
+          promise = listNotes(notebookDir, args.tags)
+        } else if (msg.toolName === notesSearchTool.name) {
+          const args = JSON.parse(msg.arguments) as { query: string }
+          promise = searchNotes(notebookDir, args.query)
+        } else if (msg.toolName === notesAttachFileTool.name) {
+          const args = JSON.parse(msg.arguments) as { id: string; filePath: string }
+          promise = attachFile(notebookDir, args.id, args.filePath)
+        } else if (msg.toolName === notesDeleteTool.name) {
+          const args = JSON.parse(msg.arguments) as { id: string }
+          promise = deleteNote(notebookDir, args.id)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }

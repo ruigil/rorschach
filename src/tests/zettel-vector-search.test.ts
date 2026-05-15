@@ -4,7 +4,7 @@ import { AgentSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { Kgraph } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
-import { ZettelNotes, ZETTEL_CREATE_TOOL, ZETTEL_SEARCH_TOOL, ZETTEL_LINK_TOOL } from '../plugins/memory/zettel-notes.ts'
+import { ZettelNotes, zettelCreateTool, zettelSearchTool, zettelLinkTool } from '../plugins/memory/zettel-notes.ts'
 import type { ZettelNoteMsg } from '../plugins/memory/zettel-notes.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
@@ -80,21 +80,21 @@ describe('zettel-notes vector search', () => {
 
     await tick()
 
-    await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
+    await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'TypeScript Types',
       synopsis: 'TypeScript static type checking improves developer experience.',
       content: 'TypeScript adds static types to JavaScript.',
       tags: ['typescript', 'programming'],
     })
 
-    await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
+    await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'French Cuisine',
       synopsis: 'French cooking relies on butter, cream, and technique.',
       content: 'Classic French dishes include boeuf bourguignon and ratatouille.',
       tags: ['cooking', 'food'],
     })
 
-    await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
+    await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'Neural Networks',
       synopsis: 'Machine learning neural networks learn patterns from training data.',
       content: 'Deep learning uses layered neural networks.',
@@ -103,7 +103,7 @@ describe('zettel-notes vector search', () => {
 
     await tick()
 
-    const reply = await invokeZettel(zettelRef, ZETTEL_SEARCH_TOOL, {
+    const reply = await invokeZettel(zettelRef, zettelSearchTool.name, {
       text: 'TypeScript static typing for programming',
     })
 
@@ -129,14 +129,14 @@ describe('zettel-notes vector search', () => {
 
     await tick()
 
-    await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
+    await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'TypeScript Types',
       synopsis: 'TypeScript static type checking.',
       content: 'TypeScript adds types to JavaScript.',
       tags: ['typescript'],
     })
 
-    await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
+    await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'French Cuisine',
       synopsis: 'French cooking techniques.',
       content: 'Classic French dishes.',
@@ -147,7 +147,7 @@ describe('zettel-notes vector search', () => {
 
     // Search for machine learning (orthogonal topic) with cooking tag.
     // Kgraph returns nothing, so zettel falls back to tag filtering.
-    const reply = await invokeZettel(zettelRef, ZETTEL_SEARCH_TOOL, {
+    const reply = await invokeZettel(zettelRef, zettelSearchTool.name, {
       text: 'Machine learning algorithms',
       tags: ['cooking'],
     })

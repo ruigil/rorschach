@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { AgentSystem, ask } from '../system/index.ts'
-import { Notes, NOTES_ATTACH_FILE_TOOL_NAME, NOTES_CREATE_TOOL_NAME, NOTES_READ_TOOL_NAME } from '../plugins/notebook/tools/notes.ts'
+import { Notes, notesAttachFileTool, notesCreateTool, notesReadTool } from '../plugins/notebook/tools/notes.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 
 const tempDirs: string[] = []
@@ -26,7 +26,7 @@ describe('notebook notes', () => {
 
     const createReply = await ask<ToolInvokeMsg, ToolReply>(notesRef, replyTo => ({
       type: 'invoke',
-      toolName: NOTES_CREATE_TOOL_NAME,
+      toolName: notesCreateTool.name,
       arguments: JSON.stringify({ title: 'Attachment Test', content: 'See attachment.', tags: ['test'] }),
       replyTo,
       userId: 'test-user',
@@ -39,7 +39,7 @@ describe('notebook notes', () => {
 
     const attachReply = await ask<ToolInvokeMsg, ToolReply>(notesRef, replyTo => ({
       type: 'invoke',
-      toolName: NOTES_ATTACH_FILE_TOOL_NAME,
+      toolName: notesAttachFileTool.name,
       arguments: JSON.stringify({ id, filePath: sourceFile }),
       replyTo,
       userId: 'test-user',
@@ -48,7 +48,7 @@ describe('notebook notes', () => {
 
     const readReply = await ask<ToolInvokeMsg, ToolReply>(notesRef, replyTo => ({
       type: 'invoke',
-      toolName: NOTES_READ_TOOL_NAME,
+      toolName: notesReadTool.name,
       arguments: JSON.stringify({ id }),
       replyTo,
       userId: 'test-user',

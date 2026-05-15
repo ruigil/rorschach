@@ -1,7 +1,7 @@
 import type { ActorDef, ActorContext, ActorRef, ActorResult, Interceptor } from '../../system/types.ts'
 import type { ToolReply } from '../../types/tools.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { AgentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
+import { agentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
@@ -81,7 +81,7 @@ export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMs
     )
   }
 
-  const loop = AgentLoop<GoogleAgentState, GoogleAgentMsg>({
+  const loop = agentLoop<GoogleAgentState, GoogleAgentMsg>({
     role:         'google',
     spanName:     'google-agent',
     logPrefix:    'google-agent',

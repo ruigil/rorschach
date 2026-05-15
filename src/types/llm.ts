@@ -24,7 +24,7 @@ export type ApiMessage =
   | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
   | { role: 'tool';      content: string; tool_call_id: string }
 
-export type Tool = {
+export type LlmTool = {
   type: 'function'
   function: { name: string; description: string; parameters: object }
 }
@@ -100,7 +100,7 @@ export type VideoDownloadReply =
 // ─── Incoming messages ───
 
 export type LlmProviderMsg =
-  | { type: 'stream';            requestId: string; model: string; messages: ApiMessage[]; tools?: Tool[]; role: string; clientId?: string; replyTo: ActorRef<LlmProviderReply> }
+  | { type: 'stream';            requestId: string; model: string; messages: ApiMessage[]; tools?: LlmTool[]; role: string; clientId?: string; replyTo: ActorRef<LlmProviderReply> }
   | { type: 'streamImage';       requestId: string; model: string; messages: ApiMessage[]; role: string; clientId?: string; replyTo: ActorRef<VisionProviderReply> }
   | { type: 'streamAudio';       requestId: string; model: string; messages: ApiMessage[]; voice?: string; role: string; clientId?: string; replyTo: ActorRef<AudioProviderReply> }
   | { type: 'transcribe';        requestId: string; model: string; audio: { data: string; format: string }; role: string; clientId?: string; replyTo: ActorRef<TranscriptionProviderReply> }
@@ -157,7 +157,7 @@ export type LlmProviderAdapter = {
   stream(
     model: string,
     messages: ApiMessage[],
-    tools: Tool[] | undefined,
+    tools: LlmTool[] | undefined,
     onChunk: (text: string) => void,
     onReasoningChunk: (text: string) => void,
   ): Promise<AdapterStreamResult>

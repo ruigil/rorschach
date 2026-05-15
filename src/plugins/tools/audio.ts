@@ -2,7 +2,8 @@ import { join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { defineTool } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, SpeechProviderReply, TranscriptionProviderReply } from '../../types/llm.ts'
 
 // ─── Output directory for generated audio ───
@@ -12,42 +13,26 @@ const GENERATED_PUBLIC_PREFIX = 'generated'
 
 // ─── Tool schemas ───
 
-export const TRANSCRIBE_AUDIO_TOOL_NAME = 'transcribe_audio'
-
-export const TRANSCRIBE_AUDIO_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: TRANSCRIBE_AUDIO_TOOL_NAME,
-    description: 'Transcribe an audio file to text. Use when the user attaches or references an audio recording.',
-    parameters: {
-      type: 'object',
-      properties: {
-        audio:  { type: 'string', description: 'File path to the audio file (e.g. from [Audio attached: "..."]).' },
-        format: { type: 'string', enum: ['mp3', 'wav', 'aac', 'm4a', 'ogg'], description: 'Audio format of the file.' },
-      },
-      required: ['audio', 'format'],
-    },
+export const transcribeAudioTool = defineTool('transcribe_audio', 'Transcribe an audio file to text. Use when the user attaches or references an audio recording.', {
+  type: 'object',
+  properties: {
+    audio:  { type: 'string', description: 'File path to the audio file (e.g. from [Audio attached: "]).' },
+    format: { type: 'string', enum: ['mp3', 'wav', 'aac', 'm4a', 'ogg'], description: 'Audio format of the file.' },
   },
-}
+  required: ['audio', 'format'],
+})
 
-export const TEXT_TO_SPEECH_TOOL_NAME = 'text_to_speech'
-
-export const TEXT_TO_SPEECH_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: TEXT_TO_SPEECH_TOOL_NAME,
-    description: 'Convert text to speech and save it as an audio file. Use when the user asks to speak, say, or read something aloud.',
-    parameters: {
-      type: 'object',
-      properties: {
-        text:         { type: 'string', description: 'The text to convert to speech.' },
-        voice:        { type: 'string', enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'], description: 'Voice to use. Defaults to alloy.' },
-        instructions: { type: 'string', description: 'Speaking style or tone instructions (e.g. "speak slowly and dramatically"). Derived from the user\'s request.' },
-      },
-      required: ['text'],
-    },
+export const textToSpeechTool = defineTool('text_to_speech', 'Convert text to speech and save it as an audio file. Use when the user asks to speak, say, or read something aloud.', {
+  type: 'object',
+  properties: {
+    text:         { type: 'string', description: 'The text to convert to speech.' },
+    voice:        { type: 'string', enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'], description: 'Voice to use. Defaults to alloy.' },
+    instructions: { type: 'string', description: 'Speaking style or tone instructions (e.g. "speak slowly and dramatically"). Derived from the user\'s request.' },
   },
-}
+  required: ['text'],
+})
+
+
 
 // ─── Messages ───
 
@@ -153,7 +138,7 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
       invoke: (state, message, context) => {
         const { toolName, arguments: args, replyTo, clientId } = message
 
-        if (toolName === TEXT_TO_SPEECH_TOOL_NAME) {
+        if (toolName === textToSpeechTool.name) {
           let text = ''
           let ttsVoice = voice
           let instructions = ''

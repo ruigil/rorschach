@@ -2,99 +2,59 @@ import { mkdir } from 'node:fs/promises'
 import { CronExpressionParser } from 'cron-parser'
 import type { ActorDef, ActorRef, SpanHandle } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../../types/tools.ts'
+import { defineTool } from '../../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { Todo } from '../types.ts'
 
 // ─── Tool names & schemas ───
 
-export const TODOS_CREATE_TOOL_NAME   = 'todos_create'
-export const TODOS_COMPLETE_TOOL_NAME = 'todos_complete'
-export const TODOS_LIST_TOOL_NAME     = 'todos_list'
-export const TODOS_DELETE_TOOL_NAME   = 'todos_delete'
-export const TODOS_UPDATE_TOOL_NAME   = 'todos_update'
+export const todosCreateTool = defineTool('todos_create', 'Create a new todo item.', {
+  type: 'object',
+  properties: {
+    text:       { type: 'string', description: 'Task description.' },
+    dueDate:    { type: 'string', description: 'Due date in YYYY-MM-DD format (optional).' },
+    recurrence: { type: 'string', description: 'Cron expression for recurring tasks, e.g. "0 9 * * 1" for Monday 9am (optional).' },
+  },
+  required: ['text'],
+})
 
-export const TODOS_CREATE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: TODOS_CREATE_TOOL_NAME,
-    description: 'Create a new todo item.',
-    parameters: {
-      type: 'object',
-      properties: {
-        text:       { type: 'string', description: 'Task description.' },
-        dueDate:    { type: 'string', description: 'Due date in YYYY-MM-DD format (optional).' },
-        recurrence: { type: 'string', description: 'Cron expression for recurring tasks, e.g. "0 9 * * 1" for Monday 9am (optional).' },
-      },
-      required: ['text'],
+export const todosCompleteTool = defineTool('todos_complete', 'Mark a todo as done. If the todo has a recurrence, a new instance is automatically created for the next occurrence.', {
+  type: 'object',
+  properties: {
+    id: { type: 'string', description: 'Todo id.' },
+  },
+  required: ['id'],
+})
+
+export const todosListTool = defineTool('todos_list', 'List todos.', {
+  type: 'object',
+  properties: {
+    filter: {
+      type: 'string',
+      enum: ['all', 'pending', 'done', 'due_today'],
+      description: 'Filter: all, pending (not done), done, or due_today. Defaults to pending.',
     },
   },
-}
+})
 
-export const TODOS_COMPLETE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: TODOS_COMPLETE_TOOL_NAME,
-    description: 'Mark a todo as done. If the todo has a recurrence, a new instance is automatically created for the next occurrence.',
-    parameters: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', description: 'Todo id.' },
-      },
-      required: ['id'],
-    },
+export const todosDeleteTool = defineTool('todos_delete', 'Delete a todo item permanently.', {
+  type: 'object',
+  properties: {
+    id: { type: 'string', description: 'Todo id.' },
   },
-}
+  required: ['id'],
+})
 
-export const TODOS_LIST_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: TODOS_LIST_TOOL_NAME,
-    description: 'List todos.',
-    parameters: {
-      type: 'object',
-      properties: {
-        filter: {
-          type: 'string',
-          enum: ['all', 'pending', 'done', 'due_today'],
-          description: 'Filter: all, pending (not done), done, or due_today. Defaults to pending.',
-        },
-      },
-    },
+export const todosUpdateTool = defineTool('todos_update', "Update a todo item's text, due date, or recurrence.", {
+  type: 'object',
+  properties: {
+    id:         { type: 'string', description: 'Todo id.' },
+    text:       { type: 'string', description: 'New task description.' },
+    dueDate:    { type: 'string', description: 'New due date in YYYY-MM-DD format.' },
+    recurrence: { type: 'string', description: 'New cron expression (empty string to remove).' },
   },
-}
-
-export const TODOS_DELETE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: TODOS_DELETE_TOOL_NAME,
-    description: 'Delete a todo item permanently.',
-    parameters: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', description: 'Todo id.' },
-      },
-      required: ['id'],
-    },
-  },
-}
-
-export const TODOS_UPDATE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: TODOS_UPDATE_TOOL_NAME,
-    description: 'Update a todo item\'s text, due date, or recurrence.',
-    parameters: {
-      type: 'object',
-      properties: {
-        id:         { type: 'string', description: 'Todo id.' },
-        text:       { type: 'string', description: 'New task description.' },
-        dueDate:    { type: 'string', description: 'New due date in YYYY-MM-DD format.' },
-        recurrence: { type: 'string', description: 'New cron expression (empty string to remove).' },
-      },
-      required: ['id'],
-    },
-  },
-}
+  required: ['id'],
+})
 
 // ─── Internal message type ───
 
@@ -239,21 +199,21 @@ export const Todos = (notebookDir: string): ActorDef<TodosMsg, null> => ({
       try {
         const args = JSON.parse(msg.arguments) as Record<string, unknown>
 
-        if (msg.toolName === TODOS_CREATE_TOOL_NAME) {
-          ctx.log.info('todos: create', { text: args.text })
-          promise = createTodo(notebookDir, args.text as string, args.dueDate as string | undefined, args.recurrence as string | undefined)
-        } else if (msg.toolName === TODOS_COMPLETE_TOOL_NAME) {
-          ctx.log.info('todos: complete', { id: args.id })
-          promise = completeTodo(notebookDir, args.id as string)
-        } else if (msg.toolName === TODOS_LIST_TOOL_NAME) {
-          ctx.log.info('todos: list', { filter: args.filter })
-          promise = listTodos(notebookDir, (args.filter as string | undefined) ?? 'pending')
-        } else if (msg.toolName === TODOS_DELETE_TOOL_NAME) {
-          ctx.log.info('todos: delete', { id: args.id })
-          promise = deleteTodo(notebookDir, args.id as string)
-        } else if (msg.toolName === TODOS_UPDATE_TOOL_NAME) {
-          ctx.log.info('todos: update', { id: args.id })
-          promise = updateTodo(notebookDir, args.id as string, args.text as string | undefined, args.dueDate as string | undefined, args.recurrence as string | undefined)
+        if (msg.toolName === todosCreateTool.name) {
+          const args = JSON.parse(msg.arguments) as { text: string; dueDate?: string; recurrence?: string }
+          promise = createTodo(notebookDir, args.text, args.dueDate, args.recurrence)
+        } else if (msg.toolName === todosCompleteTool.name) {
+          const args = JSON.parse(msg.arguments) as { id: string }
+          promise = completeTodo(notebookDir, args.id)
+        } else if (msg.toolName === todosListTool.name) {
+          const args = JSON.parse(msg.arguments) as { filter?: string }
+          promise = listTodos(notebookDir, args.filter ?? 'pending')
+        } else if (msg.toolName === todosDeleteTool.name) {
+          const args = JSON.parse(msg.arguments) as { id: string }
+          promise = deleteTodo(notebookDir, args.id)
+        } else if (msg.toolName === todosUpdateTool.name) {
+          const args = JSON.parse(msg.arguments) as { id: string; text?: string; dueDate?: string; recurrence?: string }
+          promise = updateTodo(notebookDir, args.id, args.text, args.dueDate, args.recurrence)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }

@@ -4,7 +4,7 @@ import { AgentSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { Kgraph } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
-import { ZettelNotes, ZETTEL_CREATE_TOOL, ZETTEL_SEARCH_TOOL } from '../plugins/memory/zettel-notes.ts'
+import { ZettelNotes, zettelCreateTool, zettelSearchTool } from '../plugins/memory/zettel-notes.ts'
 import type { ZettelNoteMsg } from '../plugins/memory/zettel-notes.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
@@ -81,7 +81,7 @@ describe('zettel-notes time-based search', () => {
     // Today is "2026-05-01"
     
     // Movie seen "last week" (2026-04-24)
-    await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
+    await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'The Matrix',
       synopsis: 'User watched The Matrix',
       content: 'I watched The Matrix last week.',
@@ -90,7 +90,7 @@ describe('zettel-notes time-based search', () => {
     })
 
     // Movie seen "yesterday" (2026-04-30)
-    await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
+    await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'Inception',
       synopsis: 'User watched Inception',
       content: 'I watched Inception yesterday.',
@@ -99,7 +99,7 @@ describe('zettel-notes time-based search', () => {
     })
 
     // Book read "last month" (2026-04-01)
-    await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
+    await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'The Hobbit',
       synopsis: 'User read The Hobbit',
       content: 'I read The Hobbit last month.',
@@ -110,7 +110,7 @@ describe('zettel-notes time-based search', () => {
     await tick()
 
     // Search for movies "last week" (between April 19 and April 25)
-    const replyLastWeek = await invokeZettel(zettelRef, ZETTEL_SEARCH_TOOL, {
+    const replyLastWeek = await invokeZettel(zettelRef, zettelSearchTool.name, {
       text: 'watched a movie',
       after: '2026-04-19T00:00:00Z',
       before: '2026-04-25T23:59:59Z',
@@ -123,7 +123,7 @@ describe('zettel-notes time-based search', () => {
     expect(resultsLastWeek[0]!.name).toBe('The Matrix')
 
     // Search for movies "yesterday" (April 30)
-    const replyYesterday = await invokeZettel(zettelRef, ZETTEL_SEARCH_TOOL, {
+    const replyYesterday = await invokeZettel(zettelRef, zettelSearchTool.name, {
       text: 'watched a movie',
       after: '2026-04-30T00:00:00Z',
       before: '2026-04-30T23:59:59Z',
@@ -152,7 +152,7 @@ describe('zettel-notes time-based search', () => {
     await tick()
 
     // Create a note now
-    await invokeZettel(zettelRef, ZETTEL_CREATE_TOOL, {
+    await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'Recent Note',
       synopsis: 'A very recent note',
       content: 'Content of recent note.',
@@ -165,7 +165,7 @@ describe('zettel-notes time-based search', () => {
     const oneMinuteAgo = new Date(now.getTime() - 60000).toISOString()
     const oneMinuteFromNow = new Date(now.getTime() + 60000).toISOString()
 
-    const reply = await invokeZettel(zettelRef, ZETTEL_SEARCH_TOOL, {
+    const reply = await invokeZettel(zettelRef, zettelSearchTool.name, {
       text: 'recent note',
       after: oneMinuteAgo,
       before: oneMinuteFromNow,

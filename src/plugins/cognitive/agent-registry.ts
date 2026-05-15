@@ -1,6 +1,6 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import type { Tool } from '../../types/llm.ts'
+import type { LlmTool } from '../../types/llm.ts'
 import { ToolRegistrationTopic, type ToolInvokeMsg, type ToolMsg } from '../../types/tools.ts'
 import {
   AgentRegistrationTopic,
@@ -30,7 +30,7 @@ const CATALOG_KEY = 'global'
 
 // ─── Schema builder ───────────────────────────────────────────────────────
 
-const buildSwitchModeSchema = (descriptors: Record<string, AgentDescriptor>): Tool => {
+const buildSwitchModeSchema = (descriptors: Record<string, AgentDescriptor>): LlmTool => {
   const modes = Object.values(descriptors).filter(d => d.capabilities.userVisible !== false)
   return {
     type: 'function',

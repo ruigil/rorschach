@@ -1,59 +1,35 @@
 import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef, SpanHandle } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../../types/tools.ts'
+import { defineTool } from '../../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 
 // ─── Tool names & schemas ───
 
-export const JOURNAL_WRITE_TOOL_NAME  = 'journal_write'
-export const JOURNAL_READ_TOOL_NAME   = 'journal_read'
-export const JOURNAL_SEARCH_TOOL_NAME = 'journal_search'
-
-export const JOURNAL_WRITE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: JOURNAL_WRITE_TOOL_NAME,
-    description: 'Append a new entry to the daily journal. Creates the file if it does not exist.',
-    parameters: {
-      type: 'object',
-      properties: {
-        entry: { type: 'string', description: 'The journal entry text (markdown supported).' },
-        date:  { type: 'string', description: 'Date to write to in YYYY-MM-DD format. Defaults to today.' },
-      },
-      required: ['entry'],
-    },
+export const journalWriteTool = defineTool('journal_write', 'Append a new entry to the daily journal. Creates the file if it does not exist.', {
+  type: 'object',
+  properties: {
+    entry: { type: 'string', description: 'The journal entry text (markdown supported).' },
+    date:  { type: 'string', description: 'Date to write to in YYYY-MM-DD format. Defaults to today.' },
   },
-}
+  required: ['entry'],
+})
 
-export const JOURNAL_READ_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: JOURNAL_READ_TOOL_NAME,
-    description: 'Read the journal entry for a specific date.',
-    parameters: {
-      type: 'object',
-      properties: {
-        date: { type: 'string', description: 'Date to read in YYYY-MM-DD format.' },
-      },
-      required: ['date'],
-    },
+export const journalReadTool = defineTool('journal_read', 'Read the journal entry for a specific date.', {
+  type: 'object',
+  properties: {
+    date: { type: 'string', description: 'Date to read in YYYY-MM-DD format.' },
   },
-}
+  required: ['date'],
+})
 
-export const JOURNAL_SEARCH_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: JOURNAL_SEARCH_TOOL_NAME,
-    description: 'Search across all journal entries for a given query string.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Text to search for (case-insensitive).' },
-      },
-      required: ['query'],
-    },
+export const journalSearchTool = defineTool('journal_search', 'Search across all journal entries for a given query string.', {
+  type: 'object',
+  properties: {
+    query: { type: 'string', description: 'Text to search for (case-insensitive).' },
   },
-}
+  required: ['query'],
+})
 
 // ─── Internal message type ───
 
@@ -119,15 +95,15 @@ export const Journal = (notebookDir: string): ActorDef<JournalMsg, null> => ({
       let promise: Promise<string>
       try {
         const args = JSON.parse(msg.arguments) as Record<string, string>
-        if (msg.toolName === JOURNAL_WRITE_TOOL_NAME) {
-          ctx.log.info('journal: write', { date: args.date ?? todayISO() })
-          promise = writeEntry(notebookDir, args.entry!, args.date ?? todayISO())
-        } else if (msg.toolName === JOURNAL_READ_TOOL_NAME) {
-          ctx.log.info('journal: read', { date: args.date })
-          promise = readEntry(notebookDir, args.date!)
-        } else if (msg.toolName === JOURNAL_SEARCH_TOOL_NAME) {
-          ctx.log.info('journal: search', { query: args.query })
-          promise = searchJournal(notebookDir, args.query!)
+        if (msg.toolName === journalWriteTool.name) {
+          const args = JSON.parse(msg.arguments) as { entry: string; date?: string }
+          promise = writeEntry(notebookDir, args.entry, args.date ?? todayISO())
+        } else if (msg.toolName === journalReadTool.name) {
+          const args = JSON.parse(msg.arguments) as { date: string }
+          promise = readEntry(notebookDir, args.date)
+        } else if (msg.toolName === journalSearchTool.name) {
+          const args = JSON.parse(msg.arguments) as { query: string }
+          promise = searchJournal(notebookDir, args.query)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }

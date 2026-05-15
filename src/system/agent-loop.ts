@@ -10,10 +10,8 @@ import type {
 import { invokeTool } from './invoke-tool.ts'
 import type {
   ToolCollection,
-  ToolEntry,
   ToolFinalReply,
   ToolMsg,
-  ToolSchema,
   ToolFilter,
 } from '../types/tools.ts'
 import type {
@@ -21,7 +19,7 @@ import type {
   LlmProviderMsg,
   LlmProviderReply,
   TokenUsage,
-  Tool,
+  LlmTool,
   ToolCall,
 } from '../types/llm.ts'
 
@@ -108,7 +106,7 @@ export type StreamChunk =
 
 // ─── Hook surface ───────────────────────────────────────────────────────────
 
-export type AgentLoopHooks<S extends WithLoopState, M extends { type: string }> = {
+export type AgentLoopHooks<S extends WithLoopState, M> = {
   role: string
   spanName: string
   logPrefix?: string
@@ -151,22 +149,22 @@ export type AgentLoopHooks<S extends WithLoopState, M extends { type: string }> 
 
 // ─── Exported handle ────────────────────────────────────────────────────────
 
-export type AgentLoopHandle<M extends { type: string }, S extends WithLoopState> = {
+export type AgentLoopHandle<M , S extends WithLoopState> = {
   idle: MessageHandler<M, S>
   startTurn: (state: S, params: LoopStartTurnParams, ctx: ActorContext<M>) => ActorResult<M, S>
 }
 
 // ─── Internal engine ────────────────────────────────────────────────────────
 
-const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(hooks: AgentLoopHooks<S, M>) => {
+const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, M>) => {
   const log = hooks.logPrefix ?? hooks.spanName
   const { tools: toolsCfg, model, maxToolLoops } = hooks
 
   const resolveTools = (s: S): ToolCollection =>
     typeof toolsCfg === 'function' ? toolsCfg(s) : toolsCfg
 
-  const resolveSchemas = (s: S): Tool[] =>
-    Object.values(resolveTools(s)).map((e: ToolEntry) => e.schema as Tool)
+  const resolveSchemas = (s: S): LlmTool[] =>
+    Object.values(resolveTools(s)).map((e) => e.schema as LlmTool)
 
   const addUsage = (a: TokenUsage, b: TokenUsage | null | undefined): TokenUsage =>
     b ? { 
@@ -513,8 +511,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
   }
 }
 
-export const AgentLoop = <S extends WithLoopState, M extends { type: string }>(hooks: AgentLoopHooks<S, M>): AgentLoopHandle<M, S> =>
-  createLoopEngine(hooks)
+export const agentLoop = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, M>): AgentLoopHandle<M, S> => createLoopEngine(hooks)
 
 // ─── Reusable interceptors ──────────────────────────────────────────────────
 

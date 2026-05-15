@@ -1,24 +1,16 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { defineTool } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { getDocumentProxy, extractText } from 'unpdf'
 
 // ─── Tool schema ───
 
-export const PDF_TOOL_NAME = 'extract_pdf_text'
-
-export const PDF_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: PDF_TOOL_NAME,
-    description: 'Extract text content from a PDF file. Provide the absolute path to the PDF file.',
-    parameters: {
-      type: 'object',
-      properties: { path: { type: 'string', description: 'Absolute path to the PDF file' } },
-      required: ['path'],
-    },
-  },
-}
+export const pdfTool = defineTool('extract_pdf_text', 'Extract text content from a PDF file. Provide the absolute path to the PDF file.', {
+  type: 'object',
+  properties: { path: { type: 'string', description: 'Absolute path to the PDF file' } },
+  required: ['path'],
+})
 
 // ─── Internal message protocol ───
 

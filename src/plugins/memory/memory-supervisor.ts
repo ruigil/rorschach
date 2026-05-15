@@ -6,13 +6,11 @@ import type { LlmProviderMsg } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { MemorySupervisorMsg } from './types.ts'
 import {
-  MEMORY_RECALL_TOOL_NAME,
-  MEMORY_RECALL_SCHEMA,
+  memoryRecallTool,
   createMemoryRecallWorkerActor,
 } from './memory-recall.ts'
 import {
-  MEMORY_STORE_TOOL_NAME,
-  MEMORY_STORE_SCHEMA,
+  memoryStoreTool,
   createMemoryStoreWorkerActor,
 } from './memory-store.ts'
 
@@ -52,26 +50,24 @@ export const MemorySupervisor = (
       start: (state, context) => {
         context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
         const selfAsTool = context.self as unknown as ActorRef<ToolMsg>
-        context.publishRetained(ToolRegistrationTopic, MEMORY_RECALL_TOOL_NAME, {
-          name:   MEMORY_RECALL_TOOL_NAME,
-          schema: MEMORY_RECALL_SCHEMA,
-          ref:    selfAsTool,
+        context.publishRetained(ToolRegistrationTopic, memoryRecallTool.name, {
+          ...memoryRecallTool,
+          ref: selfAsTool,
         })
-        context.publishRetained(ToolRegistrationTopic, MEMORY_STORE_TOOL_NAME, {
-          name:   MEMORY_STORE_TOOL_NAME,
-          schema: MEMORY_STORE_SCHEMA,
-          ref:    selfAsTool,
+        context.publishRetained(ToolRegistrationTopic, memoryStoreTool.name, {
+          ...memoryStoreTool,
+          ref: selfAsTool,
         })
         return { state }
       },
 
       stopped: (state, context) => {
-        context.deleteRetained(ToolRegistrationTopic, MEMORY_RECALL_TOOL_NAME, {
-          name: MEMORY_RECALL_TOOL_NAME,
+        context.deleteRetained(ToolRegistrationTopic, memoryRecallTool.name, {
+          name: memoryRecallTool.name,
           ref:  null,
         })
-        context.deleteRetained(ToolRegistrationTopic, MEMORY_STORE_TOOL_NAME, {
-          name: MEMORY_STORE_TOOL_NAME,
+        context.deleteRetained(ToolRegistrationTopic, memoryStoreTool.name, {
+          name: memoryStoreTool.name,
           ref:  null,
         })
         return { state }
@@ -88,7 +84,7 @@ export const MemorySupervisor = (
         const nextSeq = state.workerIdSeq + 1
         const self    = context.self as ActorRef<MemorySupervisorMsg>
 
-        if (msg.toolName === MEMORY_RECALL_TOOL_NAME) {
+        if (msg.toolName === memoryRecallTool.name) {
           const opts = { model, maxToolLoops, tools: state.recallTools, llmRef: state.llmRef }
           const worker = context.spawn(
             `memory-recall-worker-${nextSeq}`,
@@ -98,7 +94,7 @@ export const MemorySupervisor = (
           return { state: { ...state, workerIdSeq: nextSeq } }
         }
 
-        if (msg.toolName === MEMORY_STORE_TOOL_NAME) {
+        if (msg.toolName === memoryStoreTool.name) {
           const opts = { model, maxToolLoops, tools: state.storeTools, llmRef: state.llmRef }
           const worker = context.spawn(
             `memory-store-worker-${nextSeq}`,

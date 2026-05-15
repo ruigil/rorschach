@@ -1,43 +1,35 @@
 import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { defineTool } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { Plan, PlanTask } from './types.ts'
 
 // ─── Schema ───
 
-export const FORMALIZE_PLAN_TOOL_NAME = 'formalize_plan'
-
-export const FORMALIZE_PLAN_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: FORMALIZE_PLAN_TOOL_NAME,
-    description: 'Finalize and save the accepted plan to disk. Call this only when the user has explicitly approved the plan you described conversationally.',
-    parameters: {
-      type: 'object',
-      properties: {
-        goal:    { type: 'string', description: 'The user-stated goal the plan addresses' },
-        summary: { type: 'string', description: 'Brief narrative summary of the context gathered and key decisions made' },
-        tasks: {
-          type: 'array',
-          description: 'Ordered list of tasks forming a DAG. Use "dependencies" to express ordering.',
-          items: {
-            type: 'object',
-            properties: {
-              id:                 { type: 'string', description: 'Short unique identifier' },
-              name:               { type: 'string', description: 'Short task name' },
-              description:        { type: 'string', description: 'What needs to be done' },
-              validationCriteria: { type: 'string', description: 'How to verify this task is complete' },
-              dependencies:       { type: 'array', items: { type: 'string' }, description: 'IDs of tasks that must complete before this one' },
-            },
-            required: ['id', 'name', 'description', 'validationCriteria', 'dependencies'],
-          },
+export const formalizePlanTool = defineTool('formalize_plan', 'Finalize and save the accepted plan to disk. Call this only when the user has explicitly approved the plan you described conversationally.', {
+  type: 'object',
+  properties: {
+    goal:    { type: 'string', description: 'The user-stated goal the plan addresses' },
+    summary: { type: 'string', description: 'Brief narrative summary of the context gathered and key decisions made' },
+    tasks: {
+      type: 'array',
+      description: 'Ordered list of tasks forming a DAG. Use "dependencies" to express ordering.',
+      items: {
+        type: 'object',
+        properties: {
+          id:                 { type: 'string', description: 'Short unique identifier' },
+          name:               { type: 'string', description: 'Short task name' },
+          description:        { type: 'string', description: 'What needs to be done' },
+          validationCriteria: { type: 'string', description: 'How to verify this task is complete' },
+          dependencies:       { type: 'array', items: { type: 'string' }, description: 'IDs of tasks that must complete before this one' },
         },
+        required: ['id', 'name', 'description', 'validationCriteria', 'dependencies'],
       },
-      required: ['goal', 'summary', 'tasks'],
     },
   },
-}
+  required: ['goal', 'summary', 'tasks'],
+})
 
 // ─── Internal message protocol ───
 
@@ -68,7 +60,7 @@ export const FormalizePlanTool = (
 
         const parent = ctx.trace.fromHeaders()
         const span: SpanHandle | null = parent
-          ? ctx.trace.child(parent.traceId, parent.spanId, FORMALIZE_PLAN_TOOL_NAME, { toolName: FORMALIZE_PLAN_TOOL_NAME })
+          ? ctx.trace.child(parent.traceId, parent.spanId, formalizePlanTool.name, { toolName: formalizePlanTool.name })
           : null
 
         let goal:    string

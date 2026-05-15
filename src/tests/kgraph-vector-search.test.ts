@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { AgentSystem, type PluginSystem, ask } from '../system/index.ts'
 import type { ActorRef } from '../system/index.ts'
-import { Kgraph, KGRAPH_CREATE_NODE_TOOL_NAME } from '../plugins/memory/kgraph.ts'
+import { Kgraph, kgraphCreateNodeTool } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
 import type { VectorSearchMatch, VectorSearchReply } from '../plugins/memory/types.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
@@ -35,7 +35,7 @@ function createNode(
   const args = JSON.stringify({ label: 'Note', name, properties: { description }, embeddingText })
   return ask<KgraphMsg, ToolReply>(
     kgraphRef,
-    (replyTo) => ({ type: 'invoke', toolName: KGRAPH_CREATE_NODE_TOOL_NAME, arguments: args, replyTo, userId }),
+    (replyTo) => ({ type: 'invoke', toolName: kgraphCreateNodeTool.name, arguments: args, replyTo, userId }),
     { timeoutMs: 30_000 },
   )
 }

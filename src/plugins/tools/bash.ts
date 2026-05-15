@@ -2,62 +2,36 @@ import { Bash, InMemoryFs, MountableFs, OverlayFs, ReadWriteFs } from 'just-bash
 import type { BashOptions, BashExecResult } from 'just-bash'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { defineTool } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 
 // ─── Tool schemas ───
 
-export const BASH_TOOL_NAME = 'bash'
-
-export const BASH_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: BASH_TOOL_NAME,
-    description: 'Execute a bash command in a sandboxed virtual shell. The filesystem persists across calls within the same session.',
-    parameters: {
-      type: 'object',
-      properties: {
-        command: { type: 'string', description: 'The shell command to execute.' },
-        stdin: { type: 'string', description: 'Optional stdin to pipe to the command.' },
-      },
-      required: ['command'],
-    },
+export const bashTool = defineTool('bash', 'Execute a bash command in a sandboxed virtual shell. The filesystem persists across calls within the same session.', {
+  type: 'object',
+  properties: {
+    command: { type: 'string', description: 'The shell command to execute.' },
+    stdin: { type: 'string', description: 'Optional stdin to pipe to the command.' },
   },
-}
+  required: ['command'],
+})
 
-export const WRITE_TOOL_NAME = 'write'
-
-export const WRITE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: WRITE_TOOL_NAME,
-    description: 'Write text content to a file in the virtual filesystem.',
-    parameters: {
-      type: 'object',
-      properties: {
-        path: { type: 'string', description: 'Path to the file to write.' },
-        content: { type: 'string', description: 'UTF-8 text content to write.' },
-      },
-      required: ['path', 'content'],
-    },
+export const writeTool = defineTool('write', 'Write text content to a file in the virtual filesystem.', {
+  type: 'object',
+  properties: {
+    path: { type: 'string', description: 'Path to the file to write.' },
+    content: { type: 'string', description: 'UTF-8 text content to write.' },
   },
-}
+  required: ['path', 'content'],
+})
 
-export const READ_TOOL_NAME = 'read'
-
-export const READ_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: READ_TOOL_NAME,
-    description: 'Read text content from a file in the virtual filesystem.',
-    parameters: {
-      type: 'object',
-      properties: {
-        path: { type: 'string', description: 'Path to the file to read.' },
-      },
-      required: ['path'],
-    },
+export const readTool = defineTool('read', 'Read text content from a file in the virtual filesystem.', {
+  type: 'object',
+  properties: {
+    path: { type: 'string', description: 'Path to the file to read.' },
   },
-}
+  required: ['path'],
+})
 
 // ─── Internal message protocol ───
 
@@ -100,7 +74,7 @@ export const JustBash = (options?: BashOptions): ActorDef<BashToolMsg, null> => 
 
         const parent = ctx.trace.fromHeaders()
 
-        if (toolName === BASH_TOOL_NAME) {
+        if (toolName === bashTool.name) {
           let args: { command: string; stdin?: string } = { command: '' }
           try { args = JSON.parse(rawArgs) } catch { args = { command: rawArgs } }
 
@@ -114,7 +88,7 @@ export const JustBash = (options?: BashOptions): ActorDef<BashToolMsg, null> => 
             (result) => ({ type: '_bashDone' as const, result, replyTo, span }),
             (error) => ({ type: '_bashErr' as const, error: String(error), replyTo, span }),
           )
-        } else if (toolName === WRITE_TOOL_NAME) {
+        } else if (toolName === writeTool.name) {
           const args = JSON.parse(rawArgs) as { path: string; content: string }
 
           ctx.log.info('bash write', { path: args.path })
@@ -127,7 +101,7 @@ export const JustBash = (options?: BashOptions): ActorDef<BashToolMsg, null> => 
             (_) => ({ type: '_writeDone' as const, path: args.path, replyTo, span }),
             (error) => ({ type: '_writeErr' as const, error: String(error), replyTo, span }),
           )
-        } else if (toolName === READ_TOOL_NAME) {
+        } else if (toolName === readTool.name) {
           const args = JSON.parse(rawArgs) as { path: string }
 
           ctx.log.info('bash read', { path: args.path })

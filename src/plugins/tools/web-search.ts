@@ -1,6 +1,7 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema, ToolSource } from '../../types/tools.ts'
+import { defineTool } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply, ToolSource } from '../../types/tools.ts'
 
 // ─── Brave API types ───
 
@@ -27,20 +28,11 @@ export type BraveLlmContextResponse = {
 
 // ─── Tool schema ───
 
-export const WEB_SEARCH_TOOL_NAME = 'web_search'
-
-export const WEB_SEARCH_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: WEB_SEARCH_TOOL_NAME,
-    description: 'Search the web for current information. Use when the user asks about recent events, live data, or facts you may not know.',
-    parameters: {
-      type: 'object',
-      properties: { query: { type: 'string', description: 'The search query' } },
-      required: ['query'],
-    },
-  },
-}
+export const webSearchTool = defineTool('web_search', 'Search the web for current information. Use when the user asks about recent events, live data, or facts you may not know.', {
+  type: 'object',
+  properties: { query: { type: 'string', description: 'The search query' } },
+  required: ['query'],
+})
 
 // ─── Internal message protocol ───
 

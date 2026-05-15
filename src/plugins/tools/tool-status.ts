@@ -1,31 +1,20 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { JobRegistryTopic } from '../../types/tools.ts'
-import type { ToolMsg, ToolReply, ToolResultPayload, ToolSchema } from '../../types/tools.ts'
+import { defineTool } from '../../types/tools.ts'
+import type { ToolMsg, ToolReply, ToolResultPayload } from '../../types/tools.ts'
 
 // ─── Schema ───
 
-export const TOOL_STATUS_TOOL_NAME = 'tool_status'
-
-export const TOOL_STATUS_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: TOOL_STATUS_TOOL_NAME,
-    description:
-      'Check the status of a long-running tool job by jobId, or list all currently active jobs ' +
-      'when no jobId is supplied. Use this when the user asks whether a previously started ' +
-      'background task is still running, has completed, or to enumerate in-flight jobs.',
-    parameters: {
-      type: 'object',
-      properties: {
-        jobId: {
-          type: 'string',
-          description: 'Optional. The jobId returned by an earlier long-running tool call. Omit to list all active jobs.',
-        },
-      },
+export const toolStatusTool = defineTool('tool_status', 'Check the status of a long-running tool job by jobId, or list all currently active jobs when no jobId is supplied. Use this when the user asks whether a previously started background task is still running, has completed, or to enumerate in-flight jobs.', {
+  type: 'object',
+  properties: {
+    jobId: {
+      type: 'string',
+      description: 'Optional. The jobId returned by an earlier long-running tool call. Omit to list all active jobs.',
     },
   },
-}
+})
 
 // ─── State ───
 

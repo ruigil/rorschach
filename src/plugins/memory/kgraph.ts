@@ -1,7 +1,7 @@
 import { GrafeoDB } from '@grafeo-db/js'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import type { ToolSchema } from '../../types/tools.ts'
+import { defineTool } from '../../types/tools.ts'
 import type { EmbeddingReply, LlmProviderMsg, RerankReply } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { KgraphGraph, KgraphMsg, CreateNodeResult, VectorSearchMatch } from './types.ts'
@@ -15,104 +15,67 @@ const INDEXED_LABELS = ['Note'] as const
 
 // ─── Tool names & schemas ───
 
-export const KGRAPH_QUERY_TOOL_NAME = 'kgraph_query'
-
-export const KGRAPH_QUERY_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: KGRAPH_QUERY_TOOL_NAME,
-    description:
-      'Run a read-only Cypher query against the persistent knowledge graph. ' +
-      'Use MATCH/RETURN clauses only. Returns a JSON array of row objects. ' +
-      'Example: MATCH (n:Note {name: "Bun Runtime"}) RETURN n.name, n.description',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: 'A Cypher MATCH/RETURN query. Must not contain INSERT, MERGE, SET, or DELETE.',
-        },
-        userId: {
-          type: 'string',
-          description: "If provided, operates on this user's isolated knowledge graph at workspace/memory/<userId>/kgraph.",
-        },
-      },
-      required: ['query'],
+export const kgraphQueryTool = defineTool('kgraph_query', 'Run a read-only Cypher query against the persistent knowledge graph. Use MATCH/RETURN clauses only. Returns a JSON array of row objects. Example: MATCH (n:Note {name: "Bun Runtime"}) RETURN n.name, n.description', {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      description: 'A Cypher MATCH/RETURN query. Must not contain INSERT, MERGE, SET, or DELETE.',
+    },
+    userId: {
+      type: 'string',
+      description: "If provided, operates on this user's isolated knowledge graph at workspace/memory/<userId>/kgraph.",
     },
   },
-}
+  required: ['query'],
+})
 
-export const KGRAPH_CREATE_LINK_TOOL_NAME = 'kgraph_create_link'
-
-export const KGRAPH_CREATE_LINK_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: KGRAPH_CREATE_LINK_TOOL_NAME,
-    description:
-      'Execute a Cypher write statement to store or update relationships in the knowledge graph. ' +
-      'Use for relationships (MERGE/SET/DELETE) only — use kgraph_create_node to create nodes. ' +
-      'Returns "ok" on success. ' +
-      'Node constraint: when referencing nodes inline, only "name" and "description" properties are allowed. ' +
-      'Example: MERGE (a:Note {name:"Bun Runtime"})-[:LINKS_TO]->(b:Note {name:"TypeScript Preferences"})',
-    parameters: {
-      type: 'object',
-      properties: {
-        statement: {
-          type: 'string',
-          description: 'A Cypher write statement using MERGE, SET, or DELETE for relationships.',
-        },
-        userId: {
-          type: 'string',
-          description: "If provided, operates on this user's isolated knowledge graph at workspace/memory/<userId>/kgraph.",
-        },
-      },
-      required: ['statement'],
+export const kgraphCreateLinkTool = defineTool('kgraph_create_link', 'Execute a Cypher write statement to store or update relationships in the knowledge graph. Use for relationships (MERGE/SET/DELETE) only — use kgraph_create_node to create nodes. Returns "ok" on success. Node constraint: when referencing nodes inline, only "name" and "description" properties are allowed. Example: MERGE (a:Note {name:"Bun Runtime"})-[:LINKS_TO]->(b:Note {name:"TypeScript Preferences"})', {
+  type: 'object',
+  properties: {
+    statement: {
+      type: 'string',
+      description: 'A Cypher write statement using MERGE, SET, or DELETE for relationships.',
+    },
+    userId: {
+      type: 'string',
+      description: "If provided, operates on this user's isolated knowledge graph at workspace/memory/<userId>/kgraph.",
     },
   },
-}
+  required: ['statement'],
+})
 
-export const KGRAPH_CREATE_NODE_TOOL_NAME = 'kgraph_create_node'
-
-export const KGRAPH_CREATE_NODE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: KGRAPH_CREATE_NODE_TOOL_NAME,
-    description:
-    'Create a new node in the knowledge graph. ' +
-    'Returns { name, nodeId }. Use nodeId in subsequent kgraph_create_link calls. ' +
-    'Node constraint: nodes store "name", "description", and optional "eventTime" (ISO 8601). Put all other detail in the description.',
-    parameters: {
-    type: 'object',
+export const kgraphCreateNodeTool = defineTool('kgraph_create_node', 'Create a new node in the knowledge graph. Returns { name, nodeId }. Use nodeId in subsequent kgraph_create_link calls. Node constraint: nodes store "name", "description", and optional "eventTime" (ISO 8601). Put all other detail in the description.', {
+  type: 'object',
+  properties: {
+    label: {
+      type: 'string',
+      description: 'Node label. Use "Note" for Zettelkasten notes.',
+    },
+    name: {
+      type: 'string',
+      description: 'Short node name in Title Case (e.g. "Bun Runtime"). Used as the display name.',
+    },
     properties: {
-      label: {
-        type: 'string',
-        description: 'Node label. Use "Note" for Zettelkasten notes.',
-      },
-      name: {
-        type: 'string',
-        description: 'Short node name in Title Case (e.g. "Bun Runtime"). Used as the display name.',
-      },
+      type: 'object',
+      description: 'Pass "description" and optional "eventTime" (ISO 8601). For notes, description format is "noteId:{uuid}\\n{synopsis}".',
       properties: {
-        type: 'object',
-        description: 'Pass "description" and optional "eventTime" (ISO 8601). For notes, description format is "noteId:{uuid}\\n{synopsis}".',
-        properties: {
-          description: { type: 'string' },
-          eventTime: { type: 'string', format: 'date-time' },
-        },
-        additionalProperties: false,
-      },        embeddingText: {
-          type: 'string',
-          description: 'Optional. If provided, this text is embedded instead of name. Use for richer semantic search (e.g. "{name} {tags} {synopsis}").',
-        },
-        userId: {
-          type: 'string',
-          description: "If provided, operates on this user's isolated knowledge graph at workspace/memory/<userId>/kgraph.",
-        },
+        description: { type: 'string' },
+        eventTime: { type: 'string', format: 'date-time' },
       },
-      required: ['label', 'name'],
+      additionalProperties: false,
+    },
+    embeddingText: {
+      type: 'string',
+      description: 'Optional. If provided, this text is embedded instead of name. Use for richer semantic search (e.g. "{name} {tags} {synopsis}").',
+    },
+    userId: {
+      type: 'string',
+      description: "If provided, operates on this user's isolated knowledge graph at workspace/memory/<userId>/kgraph.",
     },
   },
-}
+  required: ['label', 'name'],
+})
 
 // ─── State ───
 
@@ -169,12 +132,12 @@ export const Kgraph = (
       const { toolName, arguments: rawArgs, replyTo } = message
       const parent = ctx.trace.fromHeaders()
 
-      if (toolName === KGRAPH_QUERY_TOOL_NAME) {
+      if (toolName === kgraphQueryTool.name) {
         const args = JSON.parse(rawArgs) as { query: string; userId?: string }
         const effectiveUserId = args.userId ?? message.userId
         ctx.log.info('kgraph query', { query: args.query, userId: effectiveUserId })
         const span = parent
-          ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_QUERY_TOOL_NAME, { query: args.query })
+          ? ctx.trace.child(parent.traceId, parent.spanId, kgraphQueryTool.name, { query: args.query })
           : null
         const db = resolveDb(state, effectiveUserId, basePath)
 
@@ -184,12 +147,12 @@ export const Kgraph = (
           (error) => ({ type: '_queryErr'  as const, error: String(error), replyTo, span }),
         )
 
-      } else if (toolName === KGRAPH_CREATE_LINK_TOOL_NAME) {
+      } else if (toolName === kgraphCreateLinkTool.name) {
         const args = JSON.parse(rawArgs) as { statement: string; userId?: string }
         const effectiveUserId = args.userId ?? message.userId
         ctx.log.info('kgraph create_link', { statement: args.statement, userId: effectiveUserId })
         const span = parent
-          ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_CREATE_LINK_TOOL_NAME, { statement: args.statement })
+          ? ctx.trace.child(parent.traceId, parent.spanId, kgraphCreateLinkTool.name, { statement: args.statement })
           : null
         const db = resolveDb(state, effectiveUserId, basePath)
 
@@ -214,7 +177,7 @@ export const Kgraph = (
           (error)   => ({ type: '_writeErr'  as const, error: String(error), replyTo, span }),
         )
 
-      } else if (toolName === KGRAPH_CREATE_NODE_TOOL_NAME) {
+      } else if (toolName === kgraphCreateNodeTool.name) {
         const args = JSON.parse(rawArgs) as { label: string; name: string; properties?: Record<string, unknown>; embeddingText?: string; userId?: string }
         const { label, name, embeddingText } = args
         const effectiveUserId = args.userId ?? message.userId
@@ -228,7 +191,7 @@ export const Kgraph = (
         }
         ctx.log.info('kgraph create_node', { label, name, userId: effectiveUserId })
         const span = parent
-          ? ctx.trace.child(parent.traceId, parent.spanId, KGRAPH_CREATE_NODE_TOOL_NAME, { label, name })
+          ? ctx.trace.child(parent.traceId, parent.spanId, kgraphCreateNodeTool.name, { label, name })
           : null
 
         if (!embedding || !state.llmRef) {

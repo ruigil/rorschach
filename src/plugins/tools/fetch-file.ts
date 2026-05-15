@@ -2,29 +2,18 @@ import { join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import { defineTool } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 
 const INBOUND_DIR = join(import.meta.dir, '../../..', 'workspace/media/inbound')
 
-export const FETCH_FILE_TOOL_NAME = 'fetch_file'
-
-export const FETCH_FILE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: FETCH_FILE_TOOL_NAME,
-    description:
-      'Download a file from a URL to a local temp path and return the path. ' +
-      'Works with PDFs, images (jpeg, png, gif, webp, …), audio, and any other binary or text file. ' +
-      'Use the returned path with other tools such as extract_pdf_text or analyze_image.',
-    parameters: {
-      type: 'object',
-      properties: {
-        url: { type: 'string', description: 'The URL of the file to download' },
-      },
-      required: ['url'],
-    },
+export const fetchFileTool = defineTool('fetch_file', 'Download a file from a URL to a local temp path and return the path. Works with PDFs, images (jpeg, png, gif, webp, …), audio, and any other binary or text file. Use the returned path with other tools such as extract_pdf_text or analyze_image.', {
+  type: 'object',
+  properties: {
+    url: { type: 'string', description: 'The URL of the file to download' },
   },
-}
+  required: ['url'],
+})
 
 export type FetchFileMsg =
   | ToolInvokeMsg

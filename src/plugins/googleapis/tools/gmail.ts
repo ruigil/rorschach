@@ -2,79 +2,47 @@ import { google } from 'googleapis'
 import type { ActorDef, ActorRef } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
 import { ask } from '../../../system/ask.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSchema } from '../../../types/tools.ts'
+import { defineTool } from '../../../types/tools.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { GoogleToken, TokenStoreMsg } from '../types.ts'
 
 // ─── Tool names & schemas ───
 
-export const GMAIL_LIST_MESSAGES_TOOL_NAME = 'gmail_list_messages'
-export const GMAIL_GET_MESSAGE_TOOL_NAME   = 'gmail_get_message'
-export const GMAIL_SEND_MESSAGE_TOOL_NAME  = 'gmail_send_message'
-export const GMAIL_SEARCH_TOOL_NAME        = 'gmail_search'
-
-export const GMAIL_LIST_MESSAGES_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: GMAIL_LIST_MESSAGES_TOOL_NAME,
-    description: 'List recent Gmail messages. Returns id, subject, sender, date and snippet for each.',
-    parameters: {
-      type: 'object',
-      properties: {
-        maxResults: { type: 'number', description: 'Maximum number of messages to return (default 10, max 50).' },
-        labelIds:   { type: 'array', items: { type: 'string' }, description: 'Only return messages with these label IDs (e.g. ["INBOX", "UNREAD"]).' },
-      },
-    },
+export const gmailListMessagesTool = defineTool('gmail_list_messages', 'List recent Gmail messages. Returns id, subject, sender, date and snippet for each.', {
+  type: 'object',
+  properties: {
+    maxResults: { type: 'number', description: 'Maximum number of messages to return (default 10, max 50).' },
+    labelIds:   { type: 'array', items: { type: 'string' }, description: 'Only return messages with these label IDs (e.g. ["INBOX", "UNREAD"]).' },
   },
-}
+})
 
-export const GMAIL_GET_MESSAGE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: GMAIL_GET_MESSAGE_TOOL_NAME,
-    description: 'Get the full content of a Gmail message by its id.',
-    parameters: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', description: 'The message id from gmail_list_messages or gmail_search.' },
-      },
-      required: ['id'],
-    },
+export const gmailGetMessageTool = defineTool('gmail_get_message', 'Get the full content of a Gmail message by its id.', {
+  type: 'object',
+  properties: {
+    id: { type: 'string', description: 'The message id from gmail_list_messages or gmail_search.' },
   },
-}
+  required: ['id'],
+})
 
-export const GMAIL_SEND_MESSAGE_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: GMAIL_SEND_MESSAGE_TOOL_NAME,
-    description: 'Send an email via Gmail.',
-    parameters: {
-      type: 'object',
-      properties: {
-        to:      { type: 'string', description: 'Recipient email address.' },
-        subject: { type: 'string', description: 'Email subject line.' },
-        body:    { type: 'string', description: 'Plain-text email body.' },
-        cc:      { type: 'string', description: 'CC email address (optional).' },
-      },
-      required: ['to', 'subject', 'body'],
-    },
+export const gmailSendMessageTool = defineTool('gmail_send_message', 'Send an email via Gmail.', {
+  type: 'object',
+  properties: {
+    to:      { type: 'string', description: 'Recipient email address.' },
+    subject: { type: 'string', description: 'Email subject line.' },
+    body:    { type: 'string', description: 'Plain-text email body.' },
+    cc:      { type: 'string', description: 'CC email address (optional).' },
   },
-}
+  required: ['to', 'subject', 'body'],
+})
 
-export const GMAIL_SEARCH_SCHEMA: ToolSchema = {
-  type: 'function',
-  function: {
-    name: GMAIL_SEARCH_TOOL_NAME,
-    description: 'Search Gmail messages using Gmail query syntax (e.g. "from:alice subject:report after:2024/01/01").',
-    parameters: {
-      type: 'object',
-      properties: {
-        query:      { type: 'string', description: 'Gmail search query.' },
-        maxResults: { type: 'number', description: 'Maximum results to return (default 10, max 50).' },
-      },
-      required: ['query'],
-    },
+export const gmailSearchTool = defineTool('gmail_search', 'Search Gmail messages using Gmail query syntax (e.g. "from:alice subject:report after:2024/01/01").', {
+  type: 'object',
+  properties: {
+    query:      { type: 'string', description: 'Gmail search query.' },
+    maxResults: { type: 'number', description: 'Maximum results to return (default 10, max 50).' },
   },
-}
+  required: ['query'],
+})
 
 // ─── Internal message type ───
 
@@ -142,46 +110,32 @@ export const Gmail = (
           const gmail = google.gmail({ version: 'v1', auth })
           const args  = JSON.parse(msg.arguments) as Record<string, any>
 
-          if (msg.toolName === GMAIL_LIST_MESSAGES_TOOL_NAME) {
-            const res = await gmail.users.messages.list({
-              userId:     'me',
-              maxResults: args.maxResults ?? 10,
-              labelIds:   args.labelIds,
-            })
-            const messages = await Promise.all(
-              (res.data.messages ?? []).map(m =>
-                gmail.users.messages.get({ userId: 'me', id: m.id!, format: 'metadata', metadataHeaders: ['Subject', 'From', 'Date'] })
-              )
-            )
-            return JSON.stringify(messages.map(m => ({
-              id:      m.data.id,
-              subject: header(m.data, 'Subject'),
-              from:    header(m.data, 'From'),
-              date:    header(m.data, 'Date'),
-              snippet: m.data.snippet,
-            })))
-          }
+            if (msg.toolName === gmailListMessagesTool.name) {
+              const res = await gmail.users.messages.list({ userId: 'me', maxResults: args.maxResults ?? 10, labelIds: args.labelIds })
+              const msgs = res.data.messages ?? []
+              const details = await Promise.all(msgs.slice(0, 50).map(async (m) => {
+                const d = await gmail.users.messages.get({ userId: 'me', id: m.id!, format: 'metadata', metadataHeaders: ['Subject', 'From', 'Date'] })
+                return { id: m.id, subject: header(d.data, 'Subject'), from: header(d.data, 'From'), date: header(d.data, 'Date'), snippet: d.data.snippet }
+              }))
+              return JSON.stringify(details)
+            }
 
-          if (msg.toolName === GMAIL_GET_MESSAGE_TOOL_NAME) {
-            const res = await gmail.users.messages.get({ userId: 'me', id: args.id, format: 'full' })
-            return JSON.stringify({
-              id:      res.data.id,
-              subject: header(res.data, 'Subject'),
-              from:    header(res.data, 'From'),
-              date:    header(res.data, 'Date'),
-              body:    extractBody(res.data.payload),
-            })
-          }
+            if (msg.toolName === gmailGetMessageTool.name) {
+              const res = await gmail.users.messages.get({ userId: 'me', id: args.id, format: 'full' })
+              const body = extractBody(res.data.payload)
+              const subject = header(res.data, 'Subject')
+              const from = header(res.data, 'From')
+              const date = header(res.data, 'Date')
+              return `From: ${from}\nDate: ${date}\nSubject: ${subject}\n\n${body}`
+            }
 
-          if (msg.toolName === GMAIL_SEND_MESSAGE_TOOL_NAME) {
-            await gmail.users.messages.send({
-              userId:      'me',
-              requestBody: { raw: buildRawEmail(args.to, args.subject, args.body, args.cc) },
-            })
-            return `Email sent to ${args.to}.`
-          }
+            if (msg.toolName === gmailSendMessageTool.name) {
+              const raw = buildRawEmail(args.to, args.subject, args.body, args.cc)
+              await gmail.users.messages.send({ userId: 'me', requestBody: { raw } })
+              return `Sent email to ${args.to}`
+            }
 
-          if (msg.toolName === GMAIL_SEARCH_TOOL_NAME) {
+            if (msg.toolName === gmailSearchTool.name) {
             const res = await gmail.users.messages.list({ userId: 'me', q: args.query, maxResults: args.maxResults ?? 10 })
             const messages = await Promise.all(
               (res.data.messages ?? []).map(m =>

@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { AgentSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
-import { ToolStatus, TOOL_STATUS_TOOL_NAME } from '../plugins/tools/tool-status.ts'
+import { ToolStatus, toolStatusTool } from '../plugins/tools/tool-status.ts'
 import { JobRegistryTopic } from '../types/tools.ts'
 import type { JobLifecycleEvent, ToolMsg, ToolReply } from '../types/tools.ts'
 
@@ -67,7 +67,7 @@ describe('tool_status', () => {
       statusRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: TOOL_STATUS_TOOL_NAME,
+        toolName: toolStatusTool.name,
         arguments: JSON.stringify({ jobId: 'job-1' }),
         replyTo,
         userId: 'tester',
@@ -112,7 +112,7 @@ describe('tool_status', () => {
       statusRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: TOOL_STATUS_TOOL_NAME,
+        toolName: toolStatusTool.name,
         arguments: JSON.stringify({ jobId: 'job-c' }),
         replyTo,
         userId: 'tester',
@@ -154,7 +154,7 @@ describe('tool_status', () => {
       statusRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: TOOL_STATUS_TOOL_NAME,
+        toolName: toolStatusTool.name,
         arguments: JSON.stringify({ jobId: 'job-f' }),
         replyTo,
         userId: 'tester',
@@ -188,7 +188,7 @@ describe('tool_status', () => {
       statusRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: TOOL_STATUS_TOOL_NAME,
+        toolName: toolStatusTool.name,
         arguments: '{}',
         replyTo,
         userId: 'tester',
@@ -226,7 +226,7 @@ describe('tool_status', () => {
       statusRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: TOOL_STATUS_TOOL_NAME,
+        toolName: toolStatusTool.name,
         arguments: JSON.stringify({ jobId: 'jX' }),
         replyTo,
         userId: 'tester',
@@ -251,7 +251,7 @@ describe('tool_status', () => {
       statusRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: TOOL_STATUS_TOOL_NAME,
+        toolName: toolStatusTool.name,
         arguments: '{}',
         replyTo,
         userId: 'tester',
