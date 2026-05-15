@@ -4,7 +4,7 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { defineTool, ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { IdentityProviderTopic, resolveIdentity } from '../../types/identity.ts'
+import { IdentityProviderTopic, resolveCookieIdentity } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 
 import type { NoteEntry, NotebookConfig, NoteAgentMsg, TodoReminderMsg } from './types.ts'
@@ -99,12 +99,6 @@ type SharedRefs = {
   notebookDir:         string
 }
 
-const readCookieToken = (r: Request): string =>
-  r.headers.get('cookie')?.split(';').reduce<string>((found, pair) => {
-    const [k, v] = pair.trim().split('=')
-    return k === 'session' ? (v ?? '') : found
-  }, '') ?? ''
-
 const resolveUnder = (baseDir: string, relPath: string): string | null => {
   const base = resolve(baseDir)
   const filePath = resolve(base, relPath)
@@ -118,9 +112,7 @@ const registerRoutes = (ctx: ActorContext<PluginMsg>, refs: SharedRefs): void =>
     path: ATTACHMENT_ROUTE_PREFIX,
     match: 'prefix',
     handler: async (req: Request, url: URL) => {
-      const cookie = readCookieToken(req)
-      const session = await resolveIdentity(refs.identityProviderRef,
-        r => ({ type: 'resolveCookie', cookie, replyTo: r }))
+      const session = await resolveCookieIdentity(refs.identityProviderRef, req)
 
       if (!session) return new Response('Unauthorized', { status: 401 })
 

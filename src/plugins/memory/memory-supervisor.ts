@@ -18,6 +18,8 @@ import {
 
 export type MemorySupervisorOptions = {
   model:         string
+  recallTools:   ToolCollection
+  storeTools:    ToolCollection
   maxToolLoops?: number
 }
 
@@ -30,22 +32,20 @@ export type MemorySupervisorState = {
   workerIdSeq: number
 }
 
-export const INITIAL_MEMORY_SUPERVISOR_STATE: MemorySupervisorState = {
-  llmRef:      null,
-  recallTools: {},
-  storeTools:  {},
-  workerIdSeq: 0,
-}
-
 // ─── Actor ───
 
 export const MemorySupervisor = (
   options: MemorySupervisorOptions,
 ): ActorDef<MemorySupervisorMsg, MemorySupervisorState> => {
-  const { model, maxToolLoops = 25 } = options
+  const { model, recallTools, storeTools, maxToolLoops = 25 } = options
 
   return {
-    initialState: INITIAL_MEMORY_SUPERVISOR_STATE,
+    initialState: {
+      llmRef:      null,
+      recallTools,
+      storeTools,
+      workerIdSeq: 0,
+    },
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))

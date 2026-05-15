@@ -45,3 +45,21 @@ export const resolveIdentity = async (
   query: (replyTo: ActorRef<Identity | null>) => IdentityProviderMsg,
 ): Promise<Identity | null> =>
   ref === null ? ANONYMOUS_IDENTITY : ask(ref, query, { timeoutMs: 3_000 })
+
+// ─── Cookie convenience ───
+//
+// Common one-liner for HTTP routes that authenticate via session cookie.
+
+const SESSION_COOKIE = 'session'
+
+const parseSessionCookie = (req: Request): string =>
+  req.headers.get('cookie')?.split(';').reduce<string>((found, pair) => {
+    const [k, v] = pair.trim().split('=')
+    return k === SESSION_COOKIE ? (v ?? '') : found
+  }, '') ?? ''
+
+export const resolveCookieIdentity = async (
+  ref: ActorRef<IdentityProviderMsg> | null,
+  req: Request,
+): Promise<Identity | null> =>
+  resolveIdentity(ref, r => ({ type: 'resolveCookie', cookie: parseSessionCookie(req), replyTo: r }))

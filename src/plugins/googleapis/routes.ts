@@ -1,7 +1,7 @@
 import { google } from 'googleapis'
 import type { RouteRegistration } from '../../types/routes.ts'
 import { ask } from '../../system/ask.ts'
-import { resolveIdentity } from '../../types/identity.ts'
+import { resolveCookieIdentity } from '../../types/identity.ts'
 import type { GoogleToken, OAuthStateMsg, SharedRefs } from './types.ts'
 
 const SCOPES = [
@@ -18,20 +18,13 @@ const closeWindowHtml = (message: string): Response =>
     { headers: { 'Content-Type': 'text/html' } },
   )
 
-const getCookieToken = (req: Request): string =>
-  req.headers.get('cookie')?.split(';').reduce<string>((found, pair) => {
-    const [k, v] = pair.trim().split('=')
-    return k === 'session' ? (v ?? '') : found
-  }, '') ?? ''
-
 export const buildGoogleOAuthRoutes = (refs: SharedRefs): RouteRegistration[] => [
   {
     id:     'googleapis.auth.start',
     method: 'GET',
     path:   '/googleapis/auth/start',
     handler: async (req) => {
-      const cookie   = getCookieToken(req)
-      const identity = await resolveIdentity(refs.identityProviderRef, r => ({ type: 'resolveCookie', cookie, replyTo: r }))
+      const identity = await resolveCookieIdentity(refs.identityProviderRef, req)
       if (!identity) return new Response('Unauthorized', { status: 401 })
 
       if (!refs.oauthStateRef || !refs.clientId || !refs.clientSecret)
@@ -90,8 +83,7 @@ export const buildGoogleOAuthRoutes = (refs: SharedRefs): RouteRegistration[] =>
     method: 'GET',
     path:   '/googleapis/auth/status',
     handler: async (req) => {
-      const cookie   = getCookieToken(req)
-      const identity = await resolveIdentity(refs.identityProviderRef, r => ({ type: 'resolveCookie', cookie, replyTo: r }))
+      const identity = await resolveCookieIdentity(refs.identityProviderRef, req)
       if (!identity) return new Response('Unauthorized', { status: 401 })
 
       if (!refs.tokenStoreRef)
@@ -114,8 +106,7 @@ export const buildGoogleOAuthRoutes = (refs: SharedRefs): RouteRegistration[] =>
     method: 'POST',
     path:   '/googleapis/auth/revoke',
     handler: async (req) => {
-      const cookie   = getCookieToken(req)
-      const identity = await resolveIdentity(refs.identityProviderRef, r => ({ type: 'resolveCookie', cookie, replyTo: r }))
+      const identity = await resolveCookieIdentity(refs.identityProviderRef, req)
       if (!identity) return new Response('Unauthorized', { status: 401 })
 
       refs.tokenStoreRef?.send({ type: 'deleteToken', userId: identity.userId })

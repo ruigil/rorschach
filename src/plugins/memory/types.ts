@@ -1,6 +1,6 @@
 import type { ActorIdentity, ActorRef, SpanHandle } from '../../system/types.ts'
 import type { LoopMsg } from '../../system/agent-loop.ts'
-import type { ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import type { ToolFinalReply, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 
 export type CreateNodeResult = { name: string; nodeId: number }
@@ -101,8 +101,6 @@ export type MemoryConsolidationMsg =
   | { type: '_turn';             userId: string; userText: string; assistantText: string; timestamp: number }
   | { type: '_consolidate' }
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_toolRegistered';   name: string; schema: ToolSchema; ref: ActorRef<ToolMsg> }
-  | { type: '_toolUnregistered'; name: string }
 
 // Worker: one per user, runs the agentic loop over a local buffer.
 export type UserConsolidationWorkerMsg =

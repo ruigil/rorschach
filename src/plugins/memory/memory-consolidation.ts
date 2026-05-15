@@ -3,8 +3,7 @@ import { agentLoop, idleLoopState, type LoopState } from '../../system/agent-loo
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { UserStreamTopic } from '../../types/events.ts'
 import type { UserStreamEvent } from '../../types/events.ts'
-import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
-import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
+import type { ToolCollection } from '../../types/tools.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
@@ -18,7 +17,7 @@ import { zettelConsolidationSection } from './ontology.ts'
 export type MemoryConsolidationOptions = {
   model:         string
   intervalMs:    number
-  toolFilter?:   ToolFilter
+  tools:         ToolCollection
   maxToolLoops?: number
 }
 
@@ -153,22 +152,19 @@ export type ConsolidationState = {
 }
 
 export const MemoryConsolidation = (options: MemoryConsolidationOptions): ActorDef<MemoryConsolidationMsg, ConsolidationState> => {
-  const { model, intervalMs, toolFilter, maxToolLoops } = options
+  const { model, intervalMs, tools, maxToolLoops } = options
 
-  const stopAllWorkers = (
-    state:   ConsolidationState,
-    context: ActorContext<MemoryConsolidationMsg>,
-  ): ConsolidationState => {
+  const stopAllWorkers = (state:   ConsolidationState, context: ActorContext<MemoryConsolidationMsg> ): ConsolidationState => {
     for (const ref of Object.values(state.workers)) context.stop(ref)
     return { ...state, workers: {} }
   }
 
   return {
     initialState: {
-      llmRef:           null,
-      tools:            {},
-      workers:          {},
-      workerSeq:        0,
+      llmRef:    null,
+      tools,
+      workers:   {},
+      workerSeq: 0,
     },
     lifecycle: onLifecycle({
       start: (state, context) => {
@@ -186,12 +182,6 @@ export const MemoryConsolidation = (options: MemoryConsolidationOptions): ActorD
           type: '_llmProvider' as const,
           ref: e.ref,
         }))
-        context.subscribe(ToolRegistrationTopic, (e) => {
-          if (!applyToolFilter(e.name, toolFilter)) return null
-          return e.ref === null
-            ? { type: '_toolUnregistered' as const, name: e.name }
-            : { type: '_toolRegistered' as const, name: e.name, schema: e.schema, ref: e.ref }
-        })
         context.timers.startPeriodicTimer('consolidation', { type: '_consolidate' }, intervalMs)
         return { state }
       },
@@ -246,17 +236,6 @@ export const MemoryConsolidation = (options: MemoryConsolidationOptions): ActorD
 
       _llmProvider: (state, msg, context) => {
         const updated = { ...state, llmRef: msg.ref }
-        return { state: stopAllWorkers(updated, context) }
-      },
-
-      _toolRegistered: (state, msg, context) => {
-        const updated = { ...state, tools: { ...state.tools, [msg.name]: { name: msg.name, schema: msg.schema, ref: msg.ref } } }
-        return { state: stopAllWorkers(updated, context) }
-      },
-
-      _toolUnregistered: (state, msg, context) => {
-        const { [msg.name]: _, ...rest } = state.tools
-        const updated = { ...state, tools: rest }
         return { state: stopAllWorkers(updated, context) }
       },
     }),

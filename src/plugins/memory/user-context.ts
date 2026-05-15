@@ -222,7 +222,7 @@ export const UserContextSupervisor = (options: UserContextOptions): ActorDef<Use
   }
 }
 
-export const INITIAL_USER_CONTEXT_STATE: UserContextState = {
+const INITIAL_USER_CONTEXT_STATE: UserContextState = {
   llmRef:  null,
   buffers: {},
   workers: {},

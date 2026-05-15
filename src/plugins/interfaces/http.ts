@@ -14,7 +14,7 @@ import { LlmProviderTopic, CostTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg, CostEvent } from '../../types/llm.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { RouteHandler, RouteMatch, RouteRegistration } from '../../types/routes.ts'
-import { IdentityProviderTopic, resolveIdentity, ANONYMOUS_USER_ID } from '../../types/identity.ts'
+import { IdentityProviderTopic, resolveIdentity, resolveCookieIdentity, ANONYMOUS_USER_ID } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 import { AgentCatalogTopic, SwitchAgentTopic } from '../cognitive/types.ts'
 import type { AgentCatalogEvent } from '../cognitive/types.ts'
@@ -433,18 +433,9 @@ export const HTTP = (
               return new Response(JSON.stringify(FALLBACK_MODELS), { headers: { 'Content-Type': 'application/json' } })
             }
 
-            // Cookie reader (used by /me)
-            const readCookieToken = (r: Request): string =>
-              r.headers.get('cookie')?.split(';').reduce<string>((found, pair) => {
-                const [k, v] = pair.trim().split('=')
-                return k === 'session' ? (v ?? '') : found
-              }, '') ?? ''
-
             // Current user identity
             if (req.method === 'GET' && url.pathname === '/me') {
-              const cookie = readCookieToken(req)
-              const session = await resolveIdentity(identityProviderRef,
-                r => ({ type: 'resolveCookie', cookie, replyTo: r }))
+              const session = await resolveCookieIdentity(identityProviderRef, req)
               return new Response(JSON.stringify({ userId: session?.userId ?? null }), { headers: { 'Content-Type': 'application/json' } })
             }
 

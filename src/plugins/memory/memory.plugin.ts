@@ -3,24 +3,13 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { ask } from '../../system/ask.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { IdentityProviderTopic, resolveIdentity } from '../../types/identity.ts'
+import { IdentityProviderTopic, resolveCookieIdentity } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 import type { KgraphGraph, KgraphMsg, MemoryConsolidationMsg, MemorySupervisorMsg, UserContextMsg } from './types.ts'
-import {
-  Kgraph,
-} from './kgraph.ts'
-import {
-  MemoryConsolidation,
-  INITIAL_CONSOLIDATION_STATE,
-} from './memory-consolidation.ts'
-import {
-  MemorySupervisor,
-  INITIAL_MEMORY_SUPERVISOR_STATE,
-} from './memory-supervisor.ts'
-import {
-  UserContextSupervisor,
-  INITIAL_USER_CONTEXT_STATE,
-} from './user-context.ts'
+import { Kgraph } from './kgraph.ts'
+import { MemoryConsolidation } from './memory-consolidation.ts'
+import { MemorySupervisor } from './memory-supervisor.ts'
+import { UserContextSupervisor } from './user-context.ts'
 import {
   ZettelNotes,
   type ZettelNoteMsg,
@@ -49,8 +38,6 @@ export type MemoryConfig = {
 
 // ─── Internal types ───
 
-const EMPTY_TOOL_FILTER = { allow: [] as string[] }
-
 const KGRAPH_ROUTE_ID = 'memory.kgraph.api'
 
 type MemoryActors = {
@@ -77,12 +64,6 @@ type MemoryPluginMsg =
 
 // ─── Helpers ───
 
-const readCookieToken = (r: Request): string =>
-  r.headers.get('cookie')?.split(';').reduce<string>((found, pair) => {
-    const [k, v] = pair.trim().split('=')
-    return k === 'session' ? (v ?? '') : found
-  }, '') ?? ''
-
 const spawnMemoryActors = (
   ctx: Parameters<NonNullable<PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig>['lifecycle']>>[2],
   config: MemoryActorConfig,
@@ -90,10 +71,8 @@ const spawnMemoryActors = (
   kgraphRef: ActorRef<KgraphMsg>,
   dbPath: string,
 ): MemoryActors => {
-  const zettel = ctx.spawn(
-    `zettel-notes-${gen}`,
-    ZettelNotes(kgraphRef, dbPath),
-  )
+  
+  const zettel = ctx.spawn(`zettel-notes-${gen}`, ZettelNotes(kgraphRef, dbPath) )
 
   const ref = zettel as unknown as ActorRef<ToolMsg>
 
@@ -117,8 +96,7 @@ const spawnMemoryActors = (
 
   const consolidation = ctx.spawn(
     `memory-consolidation-${gen}`,
-    MemoryConsolidation({ model: config.model, intervalMs: config.consolidationIntervalMs, toolFilter: EMPTY_TOOL_FILTER }),
-    { state: { ...INITIAL_CONSOLIDATION_STATE, tools: consolidationTools } },
+    MemoryConsolidation({ model: config.model, intervalMs: config.consolidationIntervalMs, tools: consolidationTools }),
   )
   const userContext = ctx.spawn(
     `user-context-${gen}`,
@@ -126,9 +104,9 @@ const spawnMemoryActors = (
   )
   const memory = ctx.spawn(
     `memory-supervisor-${gen}`,
-    MemorySupervisor({ model: config.model }),
-    { state: { ...INITIAL_MEMORY_SUPERVISOR_STATE, recallTools, storeTools } },
-  ) as ActorRef<MemorySupervisorMsg>
+    MemorySupervisor({ model: config.model, recallTools, storeTools }),
+  ) 
+  
   return { consolidation, memory, zettel, userContext }
 }
 
@@ -159,9 +137,7 @@ const registerRoutes = (
     method: 'GET',
     path: '/kgraph',
     handler: async (req: Request) => {
-      const cookie = readCookieToken(req)
-      const session = await resolveIdentity(refs.identityProviderRef,
-        r => ({ type: 'resolveCookie', cookie, replyTo: r }))
+      const session = await resolveCookieIdentity(refs.identityProviderRef, req)
       
       if (!session) {
         return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
