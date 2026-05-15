@@ -1,6 +1,4 @@
-import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
-import type { ToolsConfig } from './tools.plugin.ts'
 
 // ─── Config Schema Sections ──────────────────────────────────────────────────
 
@@ -82,15 +80,3 @@ export const videoSchema: ConfigSchemaSection = {
 }
 
 export const toolsSchemas = [bashSchema, webSearchSchema, visionSchema, audioSchema, videoSchema]
-
-// ─── Config Route ────────────────────────────────────────────────────────────
-
-export const buildToolsConfigRoute = (getConfig: () => ToolsConfig | undefined): RouteRegistration[] => [{
-  id: 'config.tools',
-  method: 'GET',
-  path: '/config/tools',
-  handler: () => {
-    const slice = getConfig()
-    return new Response(JSON.stringify(slice ?? {}), { headers: { 'Content-Type': 'application/json' } })
-  },
-}]

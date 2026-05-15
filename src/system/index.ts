@@ -12,13 +12,17 @@ export { watchTopic } from './services.ts'
 // ─── Config utilities ───
 export {
   defineConfig,
+  buildConfigRoute,
+  publishConfigSurface,
+  deleteConfigSurface,
   createSlot,
   spawnSlot,
   stopSlot,
   stopAllSlots,
+  type ConfigOptions,
   type ConfigDescriptor,
   type ActorSlot,
-} from './config.ts'
+} from './plugin-config.ts'
 
 export { TraceTopic } from '../types/trace.ts'
 export type { TraceSpan } from '../types/trace.ts'

@@ -1,6 +1,4 @@
-import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
-import type { CognitiveConfig } from './cognitive.plugin.ts'
 
 // ─── Config Schema Sections ──────────────────────────────────────────────────
 
@@ -69,15 +67,3 @@ export const plannerSchema: ConfigSchemaSection = {
 }
 
 export const cognitiveSchemas = [chatbotSchema, sessionSchema, llmSchema, plannerSchema]
-
-// ─── Config Route ────────────────────────────────────────────────────────────
-
-export const buildCognitiveConfigRoute = (getConfig: () => CognitiveConfig | undefined): RouteRegistration[] => [{
-  id: 'config.cognitive',
-  method: 'GET',
-  path: '/config/cognitive',
-  handler: () => {
-    const slice = getConfig()
-    return new Response(JSON.stringify(slice ?? {}), { headers: { 'Content-Type': 'application/json' } })
-  },
-}]

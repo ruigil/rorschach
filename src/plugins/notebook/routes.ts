@@ -4,7 +4,7 @@ import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import { resolveCookieIdentity } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
-import type { NoteEntry, NotebookConfig } from './types.ts'
+import type { NoteEntry } from './types.ts'
 
 // ─── Config Schema Sections ──────────────────────────────────────────────────
 
@@ -26,16 +26,6 @@ export const notebookSchema: ConfigSchemaSection = {
 }
 
 export const notebookSchemas = [notebookSchema]
-
-export const buildNotebookConfigRoute = (getConfig: () => NotebookConfig | undefined): RouteRegistration[] => [{
-  id: 'config.notebook',
-  method: 'GET',
-  path: '/config/notebook',
-  handler: () => {
-    const slice = getConfig()
-    return new Response(JSON.stringify(slice ?? {}), { headers: { 'Content-Type': 'application/json' } })
-  },
-}]
 
 const ATTACHMENT_ROUTE_ID = 'notebook.attachments.api'
 const ATTACHMENT_ROUTE_PREFIX = '/notebook/attachments/'

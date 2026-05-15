@@ -1,6 +1,4 @@
-import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
-import type { ObservabilityConfig } from './observability.plugin.ts'
 
 // ─── Config Schema Sections ──────────────────────────────────────────────────
 
@@ -68,15 +66,3 @@ export const costsSchema: ConfigSchemaSection = {
 }
 
 export const observabilitySchemas = [loggingSchema, metricsSchema, tracesSchema, costsSchema]
-
-// ─── Config Route ────────────────────────────────────────────────────────────
-
-export const buildObservabilityConfigRoute = (getConfig: () => ObservabilityConfig | undefined): RouteRegistration[] => [{
-  id: 'config.observability',
-  method: 'GET',
-  path: '/config/observability',
-  handler: () => {
-    const slice = getConfig()
-    return new Response(JSON.stringify(slice ?? {}), { headers: { 'Content-Type': 'application/json' } })
-  },
-}]

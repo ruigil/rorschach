@@ -551,19 +551,6 @@ export type ActorServices = {
 // user-supplied overrides and injects the result into the plugin actor's
 // ctx.initialConfig() at spawn time. Use `ctx.initialConfig() as C` inside lifecycle.start.
 //
-/**
- * Tracks the lifecycle state of a single child actor managed by a plugin.
- * Stores the current config slice, a reference to the running actor, and a
- * generation counter used to produce unique spawn names on reconfiguration.
- *
- * @deprecated Use ActorSlot from './config.ts' instead.
- */
-export type PluginActorState<C> = {
-  config: C | null
-  ref: ActorIdentity | null
-  gen: number
-}
-
 export type PluginDef<M, S = unknown, C = unknown> = ActorDef<M, S> & {
   readonly id: string
   readonly version: string
@@ -573,6 +560,8 @@ export type PluginDef<M, S = unknown, C = unknown> = ActorDef<M, S> & {
     readonly defaults: C
     /** Key in the global config tree. Defaults to the plugin's id. */
     readonly key?: string
+    /** Config schema sections published by plugin config-surface helpers. */
+    readonly schemas?: readonly import('../types/config.ts').ConfigSchemaSection[]
     /**
      * Maps an updated config slice to a plugin message, enabling reactive config updates.
      * Called by `system.updateConfig()` when the plugin's config slice changes.

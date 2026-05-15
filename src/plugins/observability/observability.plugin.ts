@@ -2,12 +2,10 @@ import { JsonlLogger, type JsonlLoggerOptions } from './jsonl-logger.ts'
 import { Metrics, type MetricsActorOptions } from './metrics.ts'
 import { TraceRecorder, type TraceRecorderOptions } from './trace-recorder.ts'
 import { CostTracker, type CostTrackerOptions } from './cost-tracker.ts'
-import { defineConfig, createSlot, stopSlot, type ActorSlot } from '../../system/config.ts'
+import { defineConfig, createSlot, stopSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/plugin-config.ts'
 import type { PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { ConfigSchemaTopic } from '../../types/config.ts'
-import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { observabilitySchemas, buildObservabilityConfigRoute } from './routes.ts'
+import { observabilitySchemas } from './routes.ts'
 
 export type ObservabilityConfig = {
   jsonlLogger?: JsonlLoggerOptions
@@ -16,7 +14,9 @@ export type ObservabilityConfig = {
   costTracker?: CostTrackerOptions
 }
 
-const config = defineConfig<ObservabilityConfig>('observability', {})
+const config = defineConfig<ObservabilityConfig>('observability', {}, {
+  schemas: observabilitySchemas,
+})
 
 type PluginMsg = { type: 'config'; slice: ObservabilityConfig | undefined }
 type PluginState = {
@@ -46,13 +46,7 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig
     start: (_state, ctx) => {
       const slice = ctx.initialConfig() as ObservabilityConfig | undefined
 
-      // Publish config schemas and config route
-      for (const section of observabilitySchemas) {
-        ctx.publishRetained(ConfigSchemaTopic, section.id, section)
-      }
-      for (const reg of buildObservabilityConfigRoute(() => slice)) {
-        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
-      }
+      publishConfigSurface(ctx, config, () => slice)
 
       const loggerRef = slice?.jsonlLogger
         ? ctx.spawn('jsonl-logger-0', JsonlLogger(slice.jsonlLogger))
@@ -82,13 +76,7 @@ const observabilityPlugin: PluginDef<PluginMsg, PluginState, ObservabilityConfig
       stopSlot(ctx, state.traceRecorder)
       stopSlot(ctx, state.costTracker)
 
-      // Tombstone config schemas and config route
-      for (const section of observabilitySchemas) {
-        ctx.deleteRetained(ConfigSchemaTopic, section.id, { ...section, schema: null })
-      }
-      for (const reg of buildObservabilityConfigRoute(() => undefined)) {
-        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
-      }
+      deleteConfigSurface(ctx, config)
 
       ctx.log.info('observability plugin deactivating')
       return { state }

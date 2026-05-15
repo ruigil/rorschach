@@ -1,8 +1,7 @@
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
-import { defineConfig } from '../../system/config.ts'
+import { defineConfig, publishConfigSurface, deleteConfigSurface } from '../../system/plugin-config.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { ConfigSchemaTopic } from '../../types/config.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 import { defineTool, ToolRegistrationTopic } from '../../types/tools.ts'
@@ -11,7 +10,7 @@ import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import type { GoogleApisConfig, GooglePluginMsg, GoogleAgentMsg, TokenStoreMsg, OAuthStateMsg } from './types.ts'
 import { TokenStore } from './token-store.ts'
 import { OAuthState } from './oauth-state.ts'
-import { buildGoogleOAuthRoutes, googleapisSchemas, buildGoogleapisConfigRoute } from './routes.ts'
+import { buildGoogleOAuthRoutes, googleapisSchemas } from './routes.ts'
 import { GoogleAgent } from './google-agent.ts'
 
 import {
@@ -97,6 +96,8 @@ const config = defineConfig<GoogleApisConfig>('googleapis', {
   baseUrl:      '',
   agentModel:   'google/gemini-2.5-flash',
   maxToolLoops: 10,
+}, {
+  schemas: googleapisSchemas,
 })
 
 // ─── Helpers ───
@@ -199,13 +200,7 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
       const model        = cfg?.agentModel   ?? 'google/gemini-2.5-flash'
       const maxToolLoops = cfg?.maxToolLoops ?? 10
 
-      // Publish config schemas and config route
-      for (const section of googleapisSchemas) {
-        ctx.publishRetained(ConfigSchemaTopic, section.id, section)
-      }
-      for (const reg of buildGoogleapisConfigRoute(() => cfg)) {
-        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
-      }
+      publishConfigSurface(ctx, config, () => cfg)
 
       const tokenStoreRef = ctx.spawn('googleapis-token-store', TokenStore('workspace/googleapis/tokens.json'))
       const oauthStateRef = ctx.spawn('googleapis-oauth-state', OAuthState())
@@ -256,13 +251,7 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
       }
       stopChildren(state, ctx)
 
-      // Tombstone config schemas and config route
-      for (const section of googleapisSchemas) {
-        ctx.deleteRetained(ConfigSchemaTopic, section.id, { ...section, schema: null })
-      }
-      for (const reg of buildGoogleapisConfigRoute(() => undefined)) {
-        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
-      }
+      deleteConfigSurface(ctx, config)
 
       ctx.log.info('googleapis plugin deactivated')
       return { state }

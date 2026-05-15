@@ -1,6 +1,4 @@
-import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
-import type { InterfacesConfig } from './interfaces.plugin.ts'
 
 // ─── Config Schema Sections ──────────────────────────────────────────────────
 
@@ -36,15 +34,3 @@ export const signalSchema: ConfigSchemaSection = {
 }
 
 export const interfacesSchemas = [httpSchema, signalSchema]
-
-// ─── Config Route ────────────────────────────────────────────────────────────
-
-export const buildInterfacesConfigRoute = (getConfig: () => InterfacesConfig | undefined): RouteRegistration[] => [{
-  id: 'config.interfaces',
-  method: 'GET',
-  path: '/config/interfaces',
-  handler: () => {
-    const slice = getConfig()
-    return new Response(JSON.stringify(slice ?? {}), { headers: { 'Content-Type': 'application/json' } })
-  },
-}]

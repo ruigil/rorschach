@@ -1,14 +1,13 @@
 import type { ActorRef, PluginDef } from '../../system/types.ts'
-import { defineConfig, createSlot, stopSlot, type ActorSlot } from '../../system/config.ts'
+import { defineConfig, createSlot, stopSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/plugin-config.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { ConfigSchemaTopic } from '../../types/config.ts'
 import { UserStore } from './user-store.ts'
 import { Authenticator, type AuthConfig } from './authenticator.ts'
 import { IdentityProvider } from './identity-provider.ts'
-import { buildAuthRoutes, authSchemas, buildAuthConfigRoute } from './routes.ts'
+import { buildAuthRoutes, authSchemas } from './routes.ts'
 import type { AuthenticatorMsg, UserStoreMsg } from './types.ts'
 
 const config = defineConfig<AuthConfig>('auth', {
@@ -19,6 +18,8 @@ const config = defineConfig<AuthConfig>('auth', {
   sessionTtlMs:   7 * 24 * 60 * 60 * 1000,
   challengeTtlMs: 5 * 60 * 1000,
   ticketTtlMs:    30 * 1000,
+}, {
+  schemas: authSchemas,
 })
 
 type AuthPluginMsg = { type: 'config'; slice: AuthConfig | undefined }
@@ -47,13 +48,7 @@ const authPlugin: PluginDef<AuthPluginMsg, AuthPluginState, AuthConfig> = {
     start: (state, ctx) => {
       const authConfig = ctx.initialConfig() as AuthConfig
 
-      // Publish config schemas and config route
-      for (const section of authSchemas) {
-        ctx.publishRetained(ConfigSchemaTopic, section.id, section)
-      }
-      for (const reg of buildAuthConfigRoute(() => authConfig)) {
-        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
-      }
+      publishConfigSurface(ctx, config, () => authConfig)
 
       const storePath = './workspace/auth/users.json'
       const userStoreRef = ctx.spawn('user-store-0', UserStore(storePath))
@@ -87,13 +82,7 @@ const authPlugin: PluginDef<AuthPluginMsg, AuthPluginState, AuthConfig> = {
         }
       }
 
-      // Tombstone config schemas and config route
-      for (const section of authSchemas) {
-        ctx.deleteRetained(ConfigSchemaTopic, section.id, { ...section, schema: null })
-      }
-      for (const reg of buildAuthConfigRoute(() => undefined)) {
-        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
-      }
+      deleteConfigSurface(ctx, config)
 
       stopSlot(ctx, state.userStore)
       stopSlot(ctx, state.authenticator)

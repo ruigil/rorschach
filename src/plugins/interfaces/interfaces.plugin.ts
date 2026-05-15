@@ -1,12 +1,10 @@
 import { HTTP, type HTTPOptions } from './http.ts'
 import { CLI } from './cli.ts'
 import { Signal, type SignalOptions } from './signal.ts'
-import { defineConfig, createSlot, stopSlot, type ActorSlot } from '../../system/config.ts'
+import { defineConfig, createSlot, stopSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/plugin-config.ts'
 import type { PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { ConfigSchemaTopic } from '../../types/config.ts'
-import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { interfacesSchemas, buildInterfacesConfigRoute } from './routes.ts'
+import { interfacesSchemas } from './routes.ts'
 
 export type InterfacesConfig = {
   http?:   HTTPOptions
@@ -14,7 +12,9 @@ export type InterfacesConfig = {
   signal?: SignalOptions
 }
 
-const config = defineConfig<InterfacesConfig>('interfaces', {})
+const config = defineConfig<InterfacesConfig>('interfaces', {}, {
+  schemas: interfacesSchemas,
+})
 
 type PluginMsg = { type: 'config'; slice: InterfacesConfig | undefined }
 type PluginState = {
@@ -42,13 +42,7 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
     start: (_state, ctx) => {
       const slice = ctx.initialConfig() as InterfacesConfig | undefined
 
-      // Publish config schemas and config route
-      for (const section of interfacesSchemas) {
-        ctx.publishRetained(ConfigSchemaTopic, section.id, section)
-      }
-      for (const reg of buildInterfacesConfigRoute(() => slice)) {
-        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
-      }
+      publishConfigSurface(ctx, config, () => slice)
 
       const httpRef = slice?.http
         ? ctx.spawn('http-0', HTTP(slice.http))
@@ -73,13 +67,7 @@ const interfacesPlugin: PluginDef<PluginMsg, PluginState, InterfacesConfig> = {
       stopSlot(ctx, state.cli)
       stopSlot(ctx, state.signal)
 
-      // Tombstone config schemas and config route
-      for (const section of interfacesSchemas) {
-        ctx.deleteRetained(ConfigSchemaTopic, section.id, { ...section, schema: null })
-      }
-      for (const reg of buildInterfacesConfigRoute(() => undefined)) {
-        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
-      }
+      deleteConfigSurface(ctx, config)
 
       ctx.log.info('interfaces plugin deactivating')
       return { state }

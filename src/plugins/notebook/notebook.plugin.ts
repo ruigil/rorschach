@@ -1,10 +1,9 @@
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
-import { defineConfig, createSlot, type ActorSlot } from '../../system/config.ts'
+import { defineConfig, createSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/plugin-config.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { defineTool, ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { ConfigSchemaTopic } from '../../types/config.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 
@@ -17,7 +16,7 @@ import { Todos, todosCreateTool, todosCompleteTool, todosListTool, todosDeleteTo
 import { Search, notebookSearchTool } from './tools/search.ts'
 import { NoteAgent } from './note-agent.ts'
 import { TodoReminder } from './todo-reminder.ts'
-import { buildNotebookRoutes, notebookSchemas, buildNotebookConfigRoute, ATTACHMENT_ROUTE_ID, ATTACHMENT_ROUTE_PREFIX } from './routes.ts'
+import { buildNotebookRoutes, notebookSchemas, ATTACHMENT_ROUTE_ID, ATTACHMENT_ROUTE_PREFIX } from './routes.ts'
 
 // ─── Public tool schema ───
 
@@ -97,6 +96,8 @@ const config = defineConfig<NotebookConfig>('notebook', {
   notebookDir:  'workspace/notebook',
   agentModel:   'google/gemini-3.1-pro-preview',
   maxToolLoops: 10,
+}, {
+  schemas: notebookSchemas,
 })
 
 // ─── Tool collection builder ───
@@ -218,13 +219,7 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
       const model        = cfg?.agentModel   ?? 'google/gemini-3.1-pro-preview'
       const maxToolLoops = cfg?.maxToolLoops ?? 10
 
-      // Publish config schemas and config route
-      for (const section of notebookSchemas) {
-        ctx.publishRetained(ConfigSchemaTopic, section.id, section)
-      }
-      for (const reg of buildNotebookConfigRoute(() => cfg)) {
-        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
-      }
+      publishConfigSurface(ctx, config, () => cfg)
 
       ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
 
@@ -255,13 +250,7 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
         ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, match: reg.match, handler: null })
       }
 
-      // Tombstone config schemas and config route
-      for (const section of notebookSchemas) {
-        ctx.deleteRetained(ConfigSchemaTopic, section.id, { ...section, schema: null })
-      }
-      for (const reg of buildNotebookConfigRoute(() => undefined)) {
-        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
-      }
+      deleteConfigSurface(ctx, config)
 
       ctx.log.info('notebook plugin deactivating')
       return { state }

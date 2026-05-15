@@ -2,7 +2,6 @@ import type { ActorRef } from '../../system/types.ts'
 import { ask } from '../../system/ask.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
-import type { AuthConfig } from './authenticator.ts'
 import type {
   AuthenticatorMsg,
   RegistrationOptions,
@@ -33,16 +32,6 @@ export const authSchema: ConfigSchemaSection = {
 }
 
 export const authSchemas = [authSchema]
-
-export const buildAuthConfigRoute = (getConfig: () => AuthConfig | undefined): RouteRegistration[] => [{
-  id: 'config.auth',
-  method: 'GET',
-  path: '/config/auth',
-  handler: () => {
-    const slice = getConfig()
-    return new Response(JSON.stringify(slice ?? {}), { headers: { 'Content-Type': 'application/json' } })
-  },
-}]
 
 // ─── Cookie helpers ───
 

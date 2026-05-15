@@ -10,15 +10,13 @@ import { ToolStatus, toolStatusTool } from './tool-status.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { BashOptions as BashConfig } from 'just-bash'
-import { defineConfig, createSlot, stopSlot, type ActorSlot } from '../../system/config.ts'
+import { defineConfig, createSlot, stopSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/plugin-config.ts'
 import type { ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'
 import type { ToolMsg } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
-import { ConfigSchemaTopic } from '../../types/config.ts'
-import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { toolsSchemas, buildToolsConfigRoute } from './routes.ts'
+import { toolsSchemas } from './routes.ts'
 
 // ─── Config types ───
 
@@ -57,6 +55,8 @@ const config = defineConfig<ToolsConfig>('tools', {
   bash: {
     cwd: process.cwd(),
   },
+}, {
+  schemas: toolsSchemas,
 })
 
 // ─── Plugin internals ───
@@ -105,13 +105,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
     start: (_state, ctx) => {
       const slice = ctx.initialConfig() as ToolsConfig | undefined
 
-      // Publish config schemas and config route
-      for (const section of toolsSchemas) {
-        ctx.publishRetained(ConfigSchemaTopic, section.id, section)
-      }
-      for (const reg of buildToolsConfigRoute(() => slice)) {
-        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
-      }
+      publishConfigSurface(ctx, config, () => slice)
 
       const webSearchConfig = slice?.webSearch ?? null
 
@@ -206,13 +200,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       stopSlot(ctx, state.fetchFile)
       stopSlot(ctx, state.toolStatus)
 
-      // Tombstone config schemas and config route
-      for (const section of toolsSchemas) {
-        ctx.deleteRetained(ConfigSchemaTopic, section.id, { ...section, schema: null })
-      }
-      for (const reg of buildToolsConfigRoute(() => undefined)) {
-        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
-      }
+      deleteConfigSurface(ctx, config)
 
       ctx.log.info('tools plugin deactivating')
       return { state }

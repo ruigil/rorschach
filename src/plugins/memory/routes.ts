@@ -5,7 +5,6 @@ import type { ConfigSchemaSection } from '../../types/config.ts'
 import { resolveCookieIdentity } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 import type { KgraphGraph, KgraphMsg } from './types.ts'
-import type { MemoryConfig } from './memory.plugin.ts'
 
 // ─── Config Schema Sections ──────────────────────────────────────────────────
 
@@ -60,16 +59,6 @@ export const memorySystemSchema: ConfigSchemaSection = {
 }
 
 export const memorySchemas = [dbPathSchema, graphSchema, memorySystemSchema]
-
-export const buildMemoryConfigRoute = (getConfig: () => MemoryConfig | undefined): RouteRegistration[] => [{
-  id: 'config.memory',
-  method: 'GET',
-  path: '/config/memory',
-  handler: () => {
-    const slice = getConfig()
-    return new Response(JSON.stringify(slice ?? {}), { headers: { 'Content-Type': 'application/json' } })
-  },
-}]
 
 const KGRAPH_ROUTE_ID = 'memory.kgraph.api'
 

@@ -1,4 +1,6 @@
 import type { ActorContext, ActorDef, ActorRef } from './types.ts'
+import { ConfigSchemaTopic, type ConfigSchemaSection } from '../types/config.ts'
+import { RouteRegistrationTopic, type RouteRegistration } from '../types/routes.ts'
 
 // ─── Config Descriptor ──────────────────────────────────────────────────────
 //
@@ -13,19 +15,75 @@ import type { ActorContext, ActorDef, ActorRef } from './types.ts'
 export type ConfigDescriptor<C> = {
   readonly key: string
   readonly defaults: C
+  readonly schemas?: readonly ConfigSchemaSection[]
   readonly onConfigChange: (config: C) => { type: 'config'; slice: C }
 }
 
-export const defineConfig = <C>(id: string, defaults: C): ConfigDescriptor<C> => ({
+export type ConfigOptions = {
+  readonly schemas?: readonly ConfigSchemaSection[]
+}
+
+export const defineConfig = <C>(
+  id: string,
+  defaults: C,
+  options?: ConfigOptions,
+): ConfigDescriptor<C> => ({
   key: id,
   defaults,
+  ...(options?.schemas !== undefined ? { schemas: options.schemas } : {}),
   onConfigChange: (config: C) => ({ type: 'config' as const, slice: config }),
 })
+
+export const buildConfigRoute = <C>(
+  descriptor: ConfigDescriptor<C>,
+  getConfig: () => C | undefined,
+): RouteRegistration[] => [{
+  id: `config.${descriptor.key}`,
+  method: 'GET',
+  path: `/config/${descriptor.key}`,
+  handler: () => {
+    const slice = getConfig()
+    return new Response(JSON.stringify(slice ?? {}), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  },
+}]
+
+export const publishConfigSurface = <C>(
+  ctx: ActorContext<any>,
+  descriptor: ConfigDescriptor<C>,
+  getConfig: () => C | undefined,
+): void => {
+  for (const section of descriptor.schemas ?? []) {
+    ctx.publishRetained(ConfigSchemaTopic, section.id, section)
+  }
+  for (const reg of buildConfigRoute(descriptor, getConfig)) {
+    ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
+  }
+}
+
+export const deleteConfigSurface = <C>(
+  ctx: ActorContext<any>,
+  descriptor: ConfigDescriptor<C>,
+): void => {
+  for (const section of descriptor.schemas ?? []) {
+    ctx.deleteRetained(ConfigSchemaTopic, section.id, { ...section, schema: null })
+  }
+  for (const reg of buildConfigRoute(descriptor, () => undefined)) {
+    ctx.deleteRetained(RouteRegistrationTopic, reg.id, {
+      id: reg.id,
+      method: reg.method,
+      path: reg.path,
+      ...(reg.match !== undefined ? { match: reg.match } : {}),
+      handler: null,
+    })
+  }
+}
 
 // ─── Actor Slot ─────────────────────────────────────────────────────────────
 //
 // Tracks a single config-managed child actor: its config, ref, and generation
-// counter. Replaces the inconsistent PluginActorState<C> pattern.
+// counter. Provides a uniform shape for plugin-managed child actors.
 //
 // Use ActorSlot<never> for actors with no config (uniform pattern).
 //
@@ -73,5 +131,3 @@ export const stopAllSlots = (
     if (slot.ref) ctx.stop(slot.ref)
   }
 }
-
-
