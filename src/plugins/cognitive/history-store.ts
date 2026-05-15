@@ -36,7 +36,7 @@ export type HistoryStoreOptions = {
 
 // ─── On-disk format (backward compatible with chatbot's createPersistence) ───
 
-type PersistedHistoryStore = { userContext: string | null }
+type PersistedHistoryStore = { userContext: string | null; records: Record_[] }
 
 const createPersistence = (userId: string): PersistenceAdapter<HistoryStoreState> => {
   const path = `workspace/history/${userId}.json`
@@ -46,13 +46,13 @@ const createPersistence = (userId: string): PersistenceAdapter<HistoryStoreState
       if (!await file.exists()) return undefined
       const saved = JSON.parse(await file.text()) as PersistedHistoryStore
       return {
-        records:     [],
+        records:     saved.records ?? [],
         userContext: saved.userContext ?? null,
         version:     0,
       }
     },
     save: async (state) => {
-      const data: PersistedHistoryStore = { userContext: state.userContext }
+      const data: PersistedHistoryStore = { userContext: state.userContext, records: state.records }
       await Bun.write(path, JSON.stringify(data, null, 2))
     },
   }
