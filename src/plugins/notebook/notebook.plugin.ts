@@ -1,14 +1,13 @@
-import { resolve, sep } from 'node:path'
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
-import { defineConfig, createSlot, stopSlot, createSharedRefs, type ActorSlot, type SharedRefs } from '../../system/config.ts'
+import { defineConfig, createSlot, type ActorSlot } from '../../system/config.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { defineTool, ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { IdentityProviderTopic, resolveCookieIdentity } from '../../types/identity.ts'
+import { IdentityProviderTopic } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 
-import type { NoteEntry, NotebookConfig, NoteAgentMsg, TodoReminderMsg } from './types.ts'
+import type { NotebookConfig, NoteAgentMsg, TodoReminderMsg } from './types.ts'
 
 import { Journal, journalWriteTool, journalReadTool, journalSearchTool } from './tools/journal.ts'
 import { Notes, notesCreateTool, notesUpdateTool, notesReadTool, notesListTool, notesSearchTool, notesAttachFileTool, notesDeleteTool } from './tools/notes.ts'
@@ -17,12 +16,9 @@ import { Todos, todosCreateTool, todosCompleteTool, todosListTool, todosDeleteTo
 import { Search, notebookSearchTool } from './tools/search.ts'
 import { NoteAgent } from './note-agent.ts'
 import { TodoReminder } from './todo-reminder.ts'
+import { buildNotebookRoutes, ATTACHMENT_ROUTE_ID, ATTACHMENT_ROUTE_PREFIX } from './routes.ts'
 
 // ─── Public tool schema ───
-
-const ATTACHMENT_ROUTE_ID = 'notebook.attachments.api'
-const ATTACHMENT_ROUTE_PREFIX = '/notebook/attachments/'
-const MEDIA_DIR = resolve(import.meta.dir, '../../..', 'workspace/media')
 
 export const noteTool = defineTool('note', `Interact with your personal notebook via a natural language request. A sub-agent handles the request and returns a summary of what was done.
 
@@ -81,18 +77,19 @@ type PluginMsg =
   | { type: '_identityProvider'; ref: ActorRef<IdentityProviderMsg> | null }
 
 type PluginState = {
-  initialized:  boolean
-  gen:          number
-  notebookDir:  string
-  model:        string
-  maxToolLoops: number
-  journalRef:   ActorRef<ToolMsg> | null
-  notesRef:     ActorRef<ToolMsg> | null
-  trackerRef:   ActorRef<ToolMsg> | null
-  todosRef:     ActorRef<ToolMsg> | null
-  searchRef:    ActorRef<ToolMsg> | null
-  noteAgentRef: ActorRef<NoteAgentMsg>  | null
-  reminderRef:  ActorRef<TodoReminderMsg> | null
+  initialized:          boolean
+  gen:                  number
+  notebookDir:          string
+  model:                string
+  maxToolLoops:         number
+  journalRef:           ActorRef<ToolMsg> | null
+  notesRef:             ActorRef<ToolMsg> | null
+  trackerRef:           ActorRef<ToolMsg> | null
+  todosRef:             ActorRef<ToolMsg> | null
+  searchRef:            ActorRef<ToolMsg> | null
+  noteAgentRef:         ActorRef<NoteAgentMsg>  | null
+  reminderRef:          ActorRef<TodoReminderMsg> | null
+  identityProviderRef:  ActorRef<IdentityProviderMsg> | null
 }
 
 const config = defineConfig<NotebookConfig>('notebook', {
@@ -100,12 +97,6 @@ const config = defineConfig<NotebookConfig>('notebook', {
   agentModel:   'google/gemini-3.1-pro-preview',
   maxToolLoops: 10,
 })
-
-const resolveUnder = (baseDir: string, relPath: string): string | null => {
-  const base = resolve(baseDir)
-  const filePath = resolve(base, relPath)
-  return filePath === base || filePath.startsWith(base + sep) ? filePath : null
-}
 
 // ─── Tool collection builder ───
 
@@ -196,146 +187,116 @@ const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void =>
 
 // ─── Plugin definition ───
 
-const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = (() => {
-  const refs = createSharedRefs<{
-    identityProviderRef: ActorRef<IdentityProviderMsg> | null
-    notebookDir:         string
-  }>({ identityProviderRef: null, notebookDir: 'workspace/notebook' })
+const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
+  id:          'notebook',
+  version:     '1.0.0',
+  description: 'Personal notebook: journal, notes, tracker (habits, expenses, or any numeric metric), todos — exposed as a single "note" tool.',
 
-  const registerRoutes = (ctx: ActorContext<PluginMsg>): void => {
-    ctx.publishRetained(RouteRegistrationTopic, ATTACHMENT_ROUTE_ID, {
-      id: ATTACHMENT_ROUTE_ID,
-      method: 'GET',
-      path: ATTACHMENT_ROUTE_PREFIX,
-      match: 'prefix',
-      handler: async (req: Request, url: URL) => {
-        const session = await resolveCookieIdentity(refs.current.identityProviderRef, req)
+  configDescriptor: config,
 
-        if (!session) return new Response('Unauthorized', { status: 401 })
+  initialState: {
+    initialized:         false,
+    gen:                 0,
+    notebookDir:         'workspace/notebook',
+    model:               '',
+    maxToolLoops:        10,
+    journalRef:          null,
+    notesRef:            null,
+    trackerRef:          null,
+    todosRef:            null,
+    searchRef:           null,
+    noteAgentRef:        null,
+    reminderRef:         null,
+    identityProviderRef: null,
+  },
 
-        let attachmentId: string
-        try {
-          attachmentId = decodeURIComponent(url.pathname.slice(ATTACHMENT_ROUTE_PREFIX.length))
-        } catch {
-          return new Response('Bad request', { status: 400 })
-        }
+  lifecycle: onLifecycle({
+    start: (state, ctx) => {
+      const cfg          = ctx.initialConfig() as NotebookConfig | undefined
+      const notebookDir  = cfg?.notebookDir  ?? 'workspace/notebook'
+      const model        = cfg?.agentModel   ?? 'google/gemini-3.1-pro-preview'
+      const maxToolLoops = cfg?.maxToolLoops ?? 10
 
-        if (!attachmentId || attachmentId.includes('/')) return new Response('Not Found', { status: 404 })
+      ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
 
-        const indexFile = Bun.file(`${refs.current.notebookDir}/notes/index.json`)
-        if (!await indexFile.exists()) return new Response('Not Found', { status: 404 })
+      for (const reg of buildNotebookRoutes(null, notebookDir)) {
+        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
+      }
 
-        const index = JSON.parse(await indexFile.text()) as { notes: NoteEntry[] }
-        const attachment = index.notes.flatMap(n => n.attachments ?? []).find(a => a.id === attachmentId)
-        if (!attachment) return new Response('Not Found', { status: 404 })
+      const children = spawnChildren(0, notebookDir, model, maxToolLoops, ctx)
 
-        const filePath = resolveUnder(MEDIA_DIR, attachment.path)
-        if (!filePath) return new Response('Not Found', { status: 404 })
+      ctx.log.info('notebook plugin activated', { notebookDir })
 
-        const file = Bun.file(filePath)
-        if (!await file.exists()) return new Response('Not Found', { status: 404 })
-
-        return new Response(file, {
-          headers: {
-            'Content-Type': attachment.mimeType,
-            'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(attachment.originalName)}`,
-          },
-        })
-      },
-    })
-  }
-
-  return {
-    id:          'notebook',
-    version:     '1.0.0',
-    description: 'Personal notebook: journal, notes, tracker (habits, expenses, or any numeric metric), todos — exposed as a single "note" tool.',
-
-    configDescriptor: config,
-
-    initialState: {
-      initialized:  false,
-      gen:          0,
-      notebookDir:  'workspace/notebook',
-      model:        '',
-      maxToolLoops: 10,
-      journalRef:   null,
-      notesRef:     null,
-      trackerRef:   null,
-      todosRef:     null,
-      searchRef:    null,
-      noteAgentRef: null,
-      reminderRef:  null,
+      return {
+        state: {
+          ...state,
+          initialized: true,
+          gen: 0,
+          notebookDir,
+          model,
+          maxToolLoops,
+          ...children,
+        },
+      }
     },
 
-    lifecycle: onLifecycle({
-      start: (state, ctx) => {
-        const cfg       = ctx.initialConfig() as NotebookConfig | undefined
-        const notebookDir  = cfg?.notebookDir  ?? 'workspace/notebook'
-        const model        = cfg?.agentModel   ?? 'google/gemini-3.1-pro-preview'
-        const maxToolLoops = cfg?.maxToolLoops ?? 10
+    stopped: (state, ctx) => {
+      stopChildren(state, ctx)
+      for (const reg of buildNotebookRoutes(state.identityProviderRef, state.notebookDir)) {
+        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, match: reg.match, handler: null })
+      }
+      ctx.log.info('notebook plugin deactivating')
+      return { state }
+    },
+  }),
 
-        refs.update({ notebookDir })
-        ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
-        registerRoutes(ctx)
+  handler: onMessage<PluginMsg, PluginState>({
+    _identityProvider: (state, msg, ctx) => {
+      for (const reg of buildNotebookRoutes(state.identityProviderRef, state.notebookDir)) {
+        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, match: reg.match, handler: null })
+      }
 
-        const children = spawnChildren(0, notebookDir, model, maxToolLoops, ctx)
+      const nextState = { ...state, identityProviderRef: msg.ref }
 
-        ctx.log.info('notebook plugin activated', { notebookDir })
+      for (const reg of buildNotebookRoutes(msg.ref, state.notebookDir)) {
+        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
+      }
 
-        return {
-          state: {
-            ...state,
-            initialized: true,
-            gen: 0,
-            notebookDir,
-            model,
-            maxToolLoops,
-            ...children,
-          },
-        }
-      },
+      return { state: nextState }
+    },
 
-      stopped: (state, ctx) => {
-        stopChildren(state, ctx)
-        ctx.deleteRetained(RouteRegistrationTopic, ATTACHMENT_ROUTE_ID, { id: ATTACHMENT_ROUTE_ID, method: 'GET', path: ATTACHMENT_ROUTE_PREFIX, match: 'prefix', handler: null })
-        refs.update({ identityProviderRef: null })
-        ctx.log.info('notebook plugin deactivating')
-        return { state }
-      },
-    }),
+    config: (state, msg, ctx) => {
+      // Tombstone old routes
+      for (const reg of buildNotebookRoutes(state.identityProviderRef, state.notebookDir)) {
+        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, match: reg.match, handler: null })
+      }
 
-    handler: onMessage<PluginMsg, PluginState>({
-      _identityProvider: (state, msg) => {
-        refs.update({ identityProviderRef: msg.ref })
-        return { state }
-      },
+      stopChildren(state, ctx)
+      const cfg          = msg.slice
+      const notebookDir  = cfg?.notebookDir  ?? 'workspace/notebook'
+      const model        = cfg?.agentModel   ?? 'google/gemini-3.1-pro-preview'
+      const maxToolLoops = cfg?.maxToolLoops ?? 10
+      const gen          = state.gen + 1
 
-      config: (state, msg, ctx) => {
-        stopChildren(state, ctx)
-        const cfg          = msg.slice
-        const notebookDir  = cfg?.notebookDir  ?? 'workspace/notebook'
-        const model        = cfg?.agentModel   ?? 'google/gemini-3.1-pro-preview'
-        const maxToolLoops = cfg?.maxToolLoops ?? 10
-        const gen          = state.gen + 1
+      // Re-register routes with new notebookDir
+      for (const reg of buildNotebookRoutes(state.identityProviderRef, notebookDir)) {
+        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
+      }
 
-        refs.update({ notebookDir })
-        registerRoutes(ctx)
+      const children = spawnChildren(gen, notebookDir, model, maxToolLoops, ctx)
 
-        const children = spawnChildren(gen, notebookDir, model, maxToolLoops, ctx)
-
-        return {
-          state: {
-            ...state,
-            gen,
-            notebookDir,
-            model,
-            maxToolLoops,
-            ...children,
-          },
-        }
-      },
-    }),
-  }
-})()
+      return {
+        state: {
+          ...state,
+          gen,
+          notebookDir,
+          model,
+          maxToolLoops,
+          ...children,
+        },
+      }
+    },
+  }),
+}
 
 export default notebookPlugin

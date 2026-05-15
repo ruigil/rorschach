@@ -74,29 +74,4 @@ export const stopAllSlots = (
   }
 }
 
-// ─── Shared Refs ────────────────────────────────────────────────────────────
-//
-// Formalizes the closure-captured mutable refs pattern used by plugins that
-// register HTTP routes (memory, notebook, googleapis). Route handlers are
-// plain async functions — they need stable references to actor refs that
-// survive actor restarts.
-//
-// Usage:
-//   const refs = createSharedRefs({ kgraphRef: null as ActorRef<KgraphMsg> | null })
-//   // In lifecycle.start:
-//   refs.update({ kgraphRef: newRef })
-//   // In route handler:
-//   const kgraphRef = refs.current.kgraphRef
-//
-export type SharedRefs<T extends Record<string, any>> = {
-  readonly current: T
-  readonly update: (patch: Partial<T>) => void
-}
 
-export const createSharedRefs = <T extends Record<string, any>>(initial: T): SharedRefs<T> => {
-  const refs = { ...initial }
-  return {
-    get current() { return refs },
-    update(patch: Partial<T>) { Object.assign(refs, patch) },
-  }
-}

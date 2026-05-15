@@ -40,9 +40,9 @@ export type GooglePluginMsg =
 
 export type GoogleAgentMsg = LoopMsg | ToolInvokeMsg | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
 
-// ─── Shared closure state (passed into route handlers and tool actors) ───
+// ─── Route handler options (passed into route factories) ───
 
-export type SharedRefs = {
+export type GoogleOAuthRouteOpts = {
   identityProviderRef: ActorRef<IdentityProviderMsg> | null
   tokenStoreRef:       ActorRef<TokenStoreMsg>       | null
   oauthStateRef:       ActorRef<OAuthStateMsg>       | null

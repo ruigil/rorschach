@@ -1,5 +1,5 @@
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
-import { defineConfig, createSharedRefs, type SharedRefs } from '../../system/config.ts'
+import { defineConfig } from '../../system/config.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
@@ -7,7 +7,7 @@ import type { IdentityProviderMsg } from '../../types/identity.ts'
 import { defineTool, ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 
-import type { GoogleApisConfig, GoogleAgentMsg, GooglePluginMsg } from './types.ts'
+import type { GoogleApisConfig, GooglePluginMsg, GoogleAgentMsg, TokenStoreMsg, OAuthStateMsg } from './types.ts'
 import { TokenStore } from './token-store.ts'
 import { OAuthState } from './oauth-state.ts'
 import { buildGoogleOAuthRoutes } from './routes.ts'
@@ -73,15 +73,21 @@ When uploading a local file, always include its full absolute path in the reques
 // ─── Plugin state ───
 
 type PluginState = {
-  initialized:    boolean
-  gen:            number
-  model:          string
-  maxToolLoops:   number
-  gmailRef:       ActorRef<ToolMsg> | null
-  calendarRef:    ActorRef<ToolMsg> | null
-  driveRef:       ActorRef<ToolMsg> | null
-  youtubeRef:     ActorRef<ToolMsg> | null
-  googleAgentRef: ActorRef<GoogleAgentMsg> | null
+  initialized:         boolean
+  gen:                 number
+  model:               string
+  maxToolLoops:        number
+  gmailRef:            ActorRef<ToolMsg> | null
+  calendarRef:         ActorRef<ToolMsg> | null
+  driveRef:            ActorRef<ToolMsg> | null
+  youtubeRef:          ActorRef<ToolMsg> | null
+  googleAgentRef:      ActorRef<GoogleAgentMsg> | null
+  identityProviderRef: ActorRef<IdentityProviderMsg> | null
+  tokenStoreRef:       ActorRef<TokenStoreMsg> | null
+  oauthStateRef:       ActorRef<OAuthStateMsg> | null
+  clientId:            string
+  clientSecret:        string
+  baseUrl:             string
 }
 
 const config = defineConfig<GoogleApisConfig>('googleapis', {
@@ -97,22 +103,14 @@ const config = defineConfig<GoogleApisConfig>('googleapis', {
 type SpawnResult = Pick<PluginState, 'gmailRef' | 'calendarRef' | 'driveRef' | 'youtubeRef' | 'googleAgentRef'>
 
 const spawnChildren = (
-  gen:          number,
-  model:        string,
-  maxToolLoops: number,
-  refs:         SharedRefs<{
-    identityProviderRef: ActorRef<IdentityProviderMsg> | null
-    tokenStoreRef:       ActorRef<any> | null
-    oauthStateRef:       ActorRef<any> | null
-    clientId:            string
-    clientSecret:        string
-    baseUrl:             string
-  }>,
-  ctx:          ActorContext<GooglePluginMsg>,
+  gen:            number,
+  model:          string,
+  maxToolLoops:   number,
+  tokenStoreRef:  ActorRef<TokenStoreMsg>,
+  clientId:       string,
+  clientSecret:   string,
+  ctx:            ActorContext<GooglePluginMsg>,
 ): SpawnResult => {
-  const tokenStoreRef = refs.current.tokenStoreRef!
-  const { clientId, clientSecret } = refs.current
-
   const gmailRef    = ctx.spawn(`googleapis-gmail-${gen}`,    Gmail(tokenStoreRef, clientId, clientSecret))    as ActorRef<ToolMsg>
   const calendarRef = ctx.spawn(`googleapis-calendar-${gen}`, Calendar(tokenStoreRef, clientId, clientSecret)) as ActorRef<ToolMsg>
   const driveRef    = ctx.spawn(`googleapis-drive-${gen}`,    Drive(tokenStoreRef, clientId, clientSecret))    as ActorRef<ToolMsg>
@@ -161,124 +159,171 @@ const stopChildren = (state: PluginState, ctx: ActorContext<GooglePluginMsg>): v
 
 // ─── Plugin definition ───
 
-const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig> = (() => {
-  const refs = createSharedRefs<{
-    identityProviderRef: ActorRef<IdentityProviderMsg> | null
-    tokenStoreRef:       ActorRef<any> | null
-    oauthStateRef:       ActorRef<any> | null
-    clientId:            string
-    clientSecret:        string
-    baseUrl:             string
-  }>({
+const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig> = {
+  id:          'googleapis',
+  version:     '1.0.0',
+  description: 'Google Workspace integration: Gmail, Calendar, Drive, and YouTube via a single "google" tool.',
+
+  configDescriptor: config,
+
+  initialState: {
+    initialized:         false,
+    gen:                 0,
+    model:               '',
+    maxToolLoops:        10,
+    gmailRef:            null,
+    calendarRef:         null,
+    driveRef:            null,
+    youtubeRef:          null,
+    googleAgentRef:      null,
     identityProviderRef: null,
     tokenStoreRef:       null,
     oauthStateRef:       null,
     clientId:            '',
     clientSecret:        '',
     baseUrl:             '',
-  })
+  },
 
-  const registerRoutes = (ctx: ActorContext<GooglePluginMsg>): void => {
-    for (const reg of buildGoogleOAuthRoutes(refs.current)) {
-      ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
-    }
-  }
+  maskState: (state: PluginState) => {
+    const { ...safe } = state
+    return safe
+  },
 
-  const deregisterRoutes = (ctx: ActorContext<GooglePluginMsg>): void => {
-    for (const reg of buildGoogleOAuthRoutes(refs.current)) {
-      ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
-    }
-  }
+  lifecycle: onLifecycle({
+    start: (state, ctx) => {
+      const cfg          = ctx.initialConfig() as GoogleApisConfig | undefined
+      const clientId     = cfg?.clientId     ?? ''
+      const clientSecret = cfg?.clientSecret ?? ''
+      const baseUrl      = (cfg?.baseUrl     ?? '').replace(/\/$/, '')
+      const model        = cfg?.agentModel   ?? 'google/gemini-2.5-flash'
+      const maxToolLoops = cfg?.maxToolLoops ?? 10
 
-  return {
-    id:          'googleapis',
-    version:     '1.0.0',
-    description: 'Google Workspace integration: Gmail, Calendar, Drive, and YouTube via a single "google" tool.',
+      const tokenStoreRef = ctx.spawn('googleapis-token-store', TokenStore('workspace/googleapis/tokens.json'))
+      const oauthStateRef = ctx.spawn('googleapis-oauth-state', OAuthState())
 
-    configDescriptor: config,
+      ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
 
-    initialState: {
-      initialized:    false,
-      gen:            0,
-      model:          '',
-      maxToolLoops:   10,
-      gmailRef:       null,
-      calendarRef:    null,
-      driveRef:       null,
-      youtubeRef:     null,
-      googleAgentRef: null,
+      for (const reg of buildGoogleOAuthRoutes({
+        identityProviderRef: null,
+        tokenStoreRef,
+        oauthStateRef,
+        clientId,
+        clientSecret,
+        baseUrl,
+      })) {
+        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
+      }
+
+      const children = clientId && clientSecret
+        ? spawnChildren(0, model, maxToolLoops, tokenStoreRef, clientId, clientSecret, ctx)
+        : { gmailRef: null, calendarRef: null, driveRef: null, youtubeRef: null, googleAgentRef: null }
+
+      ctx.log.info('googleapis plugin activated', { configured: !!(clientId && clientSecret) })
+      return { state: {
+        ...state,
+        initialized: true,
+        gen: 0,
+        model,
+        maxToolLoops,
+        tokenStoreRef,
+        oauthStateRef,
+        clientId,
+        clientSecret,
+        baseUrl,
+        ...children,
+      } }
     },
 
-    maskState: (state: PluginState) => {
-      const { ...safe } = state
-      return safe
+    stopped: (state, ctx) => {
+      for (const reg of buildGoogleOAuthRoutes({
+        identityProviderRef: state.identityProviderRef,
+        tokenStoreRef: state.tokenStoreRef,
+        oauthStateRef: state.oauthStateRef,
+        clientId: state.clientId,
+        clientSecret: state.clientSecret,
+        baseUrl: state.baseUrl,
+      })) {
+        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
+      }
+      stopChildren(state, ctx)
+      ctx.log.info('googleapis plugin deactivated')
+      return { state }
+    },
+  }),
+
+  handler: onMessage<GooglePluginMsg, PluginState>({
+    _identityProvider: (state, msg, ctx) => {
+      // Tombstone old routes
+      for (const reg of buildGoogleOAuthRoutes({
+        identityProviderRef: state.identityProviderRef,
+        tokenStoreRef: state.tokenStoreRef,
+        oauthStateRef: state.oauthStateRef,
+        clientId: state.clientId,
+        clientSecret: state.clientSecret,
+        baseUrl: state.baseUrl,
+      })) {
+        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
+      }
+
+      const nextState = { ...state, identityProviderRef: msg.ref }
+
+      // Re-register routes with new identity provider ref
+      for (const reg of buildGoogleOAuthRoutes({
+        identityProviderRef: msg.ref,
+        tokenStoreRef: state.tokenStoreRef,
+        oauthStateRef: state.oauthStateRef,
+        clientId: state.clientId,
+        clientSecret: state.clientSecret,
+        baseUrl: state.baseUrl,
+      })) {
+        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
+      }
+
+      return { state: nextState }
     },
 
-    lifecycle: onLifecycle({
-      start: (state, ctx) => {
-        const cfg          = ctx.initialConfig() as GoogleApisConfig | undefined
-        const clientId     = cfg?.clientId     ?? ''
-        const clientSecret = cfg?.clientSecret ?? ''
-        const baseUrl      = (cfg?.baseUrl     ?? '').replace(/\/$/, '')
-        const model        = cfg?.agentModel   ?? 'google/gemini-2.5-flash'
-        const maxToolLoops = cfg?.maxToolLoops ?? 10
+    config: (state, msg, ctx) => {
+      // Tombstone old routes
+      for (const reg of buildGoogleOAuthRoutes({
+        identityProviderRef: state.identityProviderRef,
+        tokenStoreRef: state.tokenStoreRef,
+        oauthStateRef: state.oauthStateRef,
+        clientId: state.clientId,
+        clientSecret: state.clientSecret,
+        baseUrl: state.baseUrl,
+      })) {
+        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
+      }
 
-        refs.update({ clientId, clientSecret, baseUrl })
+      stopChildren(state, ctx)
 
-        const tokenStoreRef = ctx.spawn('googleapis-token-store', TokenStore('workspace/googleapis/tokens.json'))
-        const oauthStateRef = ctx.spawn('googleapis-oauth-state', OAuthState())
+      const cfg          = msg.slice
+      const clientId     = cfg?.clientId     ?? ''
+      const clientSecret = cfg?.clientSecret ?? ''
+      const baseUrl      = (cfg?.baseUrl     ?? '').replace(/\/$/, '')
+      const model        = cfg?.agentModel   ?? 'google/gemini-2.5-flash'
+      const maxToolLoops = cfg?.maxToolLoops ?? 10
+      const gen          = state.gen + 1
 
-        refs.update({ tokenStoreRef, oauthStateRef })
+      // Re-register routes with new config
+      for (const reg of buildGoogleOAuthRoutes({
+        identityProviderRef: state.identityProviderRef,
+        tokenStoreRef: state.tokenStoreRef,
+        oauthStateRef: state.oauthStateRef,
+        clientId,
+        clientSecret,
+        baseUrl,
+      })) {
+        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
+      }
 
-        ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
-        registerRoutes(ctx)
+      const children = clientId && clientSecret
+        ? spawnChildren(gen, model, maxToolLoops, state.tokenStoreRef!, clientId, clientSecret, ctx)
+        : { gmailRef: null, calendarRef: null, driveRef: null, youtubeRef: null, googleAgentRef: null }
 
-        const children = clientId && clientSecret
-          ? spawnChildren(0, model, maxToolLoops, refs, ctx)
-          : { gmailRef: null, calendarRef: null, driveRef: null, youtubeRef: null, googleAgentRef: null }
-
-        ctx.log.info('googleapis plugin activated', { configured: !!(clientId && clientSecret) })
-        return { state: { ...state, initialized: true, gen: 0, model, maxToolLoops, ...children } }
-      },
-
-      stopped: (state, ctx) => {
-        deregisterRoutes(ctx)
-        stopChildren(state, ctx)
-        refs.update({ identityProviderRef: null })
-        ctx.log.info('googleapis plugin deactivated')
-        return { state }
-      },
-    }),
-
-    handler: onMessage<GooglePluginMsg, PluginState>({
-      _identityProvider: (state, msg) => {
-        refs.update({ identityProviderRef: msg.ref })
-        return { state }
-      },
-
-      config: (state, msg, ctx) => {
-        stopChildren(state, ctx)
-
-        const cfg          = msg.slice
-        const clientId     = cfg?.clientId     ?? ''
-        const clientSecret = cfg?.clientSecret ?? ''
-        const baseUrl      = (cfg?.baseUrl     ?? '').replace(/\/$/, '')
-        const model        = cfg?.agentModel   ?? 'google/gemini-2.5-flash'
-        const maxToolLoops = cfg?.maxToolLoops ?? 10
-        const gen          = state.gen + 1
-
-        refs.update({ clientId, clientSecret, baseUrl })
-
-        registerRoutes(ctx)
-
-        const children = clientId && clientSecret
-          ? spawnChildren(gen, model, maxToolLoops, refs, ctx)
-          : { gmailRef: null, calendarRef: null, driveRef: null, youtubeRef: null, googleAgentRef: null }
-
-        return { state: { ...state, gen, model, maxToolLoops, ...children } }
-      },
-    }),
-  }
-})()
+      return { state: { ...state, gen, model, maxToolLoops, clientId, clientSecret, baseUrl, ...children } }
+    },
+  }),
+}
 
 export default googleApisPlugin

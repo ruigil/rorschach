@@ -16,10 +16,8 @@ export {
   spawnSlot,
   stopSlot,
   stopAllSlots,
-  createSharedRefs,
   type ConfigDescriptor,
   type ActorSlot,
-  type SharedRefs,
 } from './config.ts'
 
 export { TraceTopic } from '../types/trace.ts'
