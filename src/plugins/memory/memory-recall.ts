@@ -42,7 +42,7 @@ const buildSystemPrompt = (userId: string): string =>
 
 // ─── Worker Actor ───
 
-export const createMemoryRecallWorkerActor = (parent:  ActorRef<MemorySupervisorMsg>, options: MemoryRecallWorkerOptions): ActorDef<MemoryRecallMsg, MemoryRecallWorkerState> => {
+export const MemoryRecallWorker = (parent:  ActorRef<MemorySupervisorMsg>, options: MemoryRecallWorkerOptions): ActorDef<MemoryRecallMsg, MemoryRecallWorkerState> => {
 
   const handleInvoke = (state: MemoryRecallWorkerState, msg: Extract<MemoryRecallMsg, { type: 'invoke' }>, ctx: ActorContext<MemoryRecallMsg>): ActorResult<MemoryRecallMsg, MemoryRecallWorkerState> => {
     const parsed = parseToolArgs<{ query: string }>(msg.arguments, (p) => {

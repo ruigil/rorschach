@@ -79,6 +79,7 @@ export type LoopStartTurnParams = {
   messages: ApiMessage[]
   userId: string
   clientId?: string
+  requestSpan?: SpanHandle | null
 }
 
 export type LoopToolResultMsg = {
@@ -218,10 +219,12 @@ const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, 
       return { state }
     }
 
-    let requestSpan: SpanHandle | null = null
-    const parent = ctx.trace.fromHeaders()
-    if (parent) {
-      requestSpan = ctx.trace.child(parent.traceId, parent.spanId, hooks.spanName, {})
+    let requestSpan: SpanHandle | null = params.requestSpan ?? null
+    if (!requestSpan) {
+      const parent = ctx.trace.fromHeaders()
+      if (parent) {
+        requestSpan = ctx.trace.child(parent.traceId, parent.spanId, hooks.spanName, {})
+      }
     }
 
     const requestId = crypto.randomUUID()

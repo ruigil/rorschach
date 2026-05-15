@@ -7,11 +7,11 @@ import { LlmProviderTopic } from '../../types/llm.ts'
 import type { MemorySupervisorMsg } from './types.ts'
 import {
   memoryRecallTool,
-  createMemoryRecallWorkerActor,
+  MemoryRecallWorker,
 } from './memory-recall.ts'
 import {
   memoryStoreTool,
-  createMemoryStoreWorkerActor,
+  MemoryStoreWorker,
 } from './memory-store.ts'
 
 // ─── Options ───
@@ -88,7 +88,7 @@ export const MemorySupervisor = (
           const opts = { model, maxToolLoops, tools: state.recallTools, llmRef: state.llmRef }
           const worker = context.spawn(
             `memory-recall-worker-${nextSeq}`,
-            createMemoryRecallWorkerActor(self, opts),
+            MemoryRecallWorker(self, opts),
           )
           worker.send(msg, context.messageHeaders())
           return { state: { ...state, workerIdSeq: nextSeq } }
@@ -98,7 +98,7 @@ export const MemorySupervisor = (
           const opts = { model, maxToolLoops, tools: state.storeTools, llmRef: state.llmRef }
           const worker = context.spawn(
             `memory-store-worker-${nextSeq}`,
-            createMemoryStoreWorkerActor(self, opts),
+            MemoryStoreWorker(self, opts),
           )
           worker.send(msg, context.messageHeaders())
           return { state: { ...state, workerIdSeq: nextSeq } }

@@ -106,10 +106,9 @@ export type MemoryConsolidationMsg =
 
 // Worker: one per user, runs the agentic loop over a local buffer.
 export type UserConsolidationWorkerMsg =
+  | LoopMsg
   | { type: '_turn';        userText: string; assistantText: string; timestamp: number }
   | { type: '_consolidate' }
-  | { type: '_toolResult';  toolCallId: string; toolName: string; reply: ToolFinalReply }
-  | LlmProviderReply
 
 // ─── User context message protocol ───
 
