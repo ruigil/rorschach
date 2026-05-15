@@ -1,4 +1,3 @@
-import { emit } from '../../system/types.ts'
 import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
 import { agentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
@@ -6,7 +5,7 @@ import { OutboundMessageTopic } from '../../types/events.ts'
 import { UserStreamTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
-import type { ApiMessage, LlmProviderMsg, TokenUsage } from '../../types/llm.ts'
+import type { ApiMessage, TokenUsage } from '../../types/llm.ts'
 import type { ChatbotMsg } from './types.ts'
 import { HistorySnapshotTopic } from './types.ts'
 import type { AgentFactoryOpts } from './types.ts'
@@ -19,7 +18,6 @@ export type ChatbotState = {
   historyMirror:  ApiMessage[]
   historyVersion: number
   tools:          ToolCollection
-  llmRef:         ActorRef<LlmProviderMsg> | null
   sessionUsage:   TokenUsage
   userContext:    string | null
   activeClientId: string
@@ -76,7 +74,6 @@ const initialChatbotState = (): ChatbotState => ({
   historyMirror:  [],
   historyVersion: 0,
   tools:          {},
-  llmRef:         null,
   sessionUsage:   { promptTokens: 0, completionTokens: 0 },
   userContext:    null,
   activeClientId: '',
@@ -90,7 +87,7 @@ export const Chatbot = (
   opts:   AgentFactoryOpts,
 ): ActorDef<ChatbotMsg, ChatbotState> => {
   const { model, systemPrompt, toolFilter, maxToolLoops = 25 } = config
-  const { userId, historyStoreRef } = opts
+  const { userId, historyStoreRef, llmRef } = opts
 
   type M   = ChatbotMsg
   type S   = ChatbotState
@@ -124,7 +121,7 @@ export const Chatbot = (
     logPrefix:     'chatbot',
     model,
     maxToolLoops,
-    llmRef:        (s) => s.llmRef,
+    llmRef:        () => llmRef,
     tools:         (s) => s.tools,
 
     uiEvents:      OutboundMessageTopic,

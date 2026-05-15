@@ -4,7 +4,7 @@ import { agentLoop, idleLoopState, type LoopState } from '../../system/agent-loo
 import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
-import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
+import type { ApiMessage } from '../../types/llm.ts'
 import type { ToolMsg } from '../../types/tools.ts'
 import type { AgentFactoryOpts } from './types.ts'
 import {
@@ -27,7 +27,6 @@ export type PlannerAgentState = {
   loop:                    LoopState
   plannerHistory:          ApiMessage[]
   tools:                   ToolCollection
-  llmRef:                  ActorRef<LlmProviderMsg> | null
   pendingFormalizeSummary: string | null
   activeClientId:          string
 }
@@ -36,7 +35,6 @@ const initialPlannerAgentState = (): PlannerAgentState => ({
   loop:                    idleLoopState(),
   plannerHistory:          [],
   tools:                   {},
-  llmRef:                  null,
   pendingFormalizeSummary: null,
   activeClientId:          '',
 })
@@ -88,7 +86,7 @@ export const PlannerAgentFactory = (config: PlannerAgentConfig) =>
 
 const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): ActorDef<PlannerAgentMsg, PlannerAgentState> => {
   const { model, maxToolLoops, toolFilter, plansDir } = config
-  const { userId, historyStoreRef } = opts
+  const { userId, historyStoreRef, llmRef } = opts
 
   type M   = PlannerAgentMsg
   type S   = PlannerAgentState
@@ -123,7 +121,7 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
     logPrefix:    'planner',
     model,
     maxToolLoops,
-    llmRef:       (s) => s.llmRef,
+    llmRef:       () => llmRef,
     tools:        (s) => s.tools,
 
     uiEvents:      OutboundMessageTopic,

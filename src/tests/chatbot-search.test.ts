@@ -26,7 +26,6 @@ const INITIAL_CHATBOT_STATE: ChatbotState = {
   historyMirror:  [],
   historyVersion: 0,
   tools:          {},
-  llmRef:         null,
   sessionUsage:   { promptTokens: 0, completionTokens: 0 },
   userContext:    null,
   activeClientId: '',
@@ -109,7 +108,7 @@ const spawnChatbot = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
   return system.spawn(
     'chatbot',
     Chatbot({ model: LLM_PROVIDER_ADAPTER_OPTS.model }, { clientId: CLIENT_ID, userId, historyStoreRef, llmRef }),
-    { state: { ...INITIAL_CHATBOT_STATE, llmRef } },
+    { state: { ...INITIAL_CHATBOT_STATE } },
   )
 }
 
