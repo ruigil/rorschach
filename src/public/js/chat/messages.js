@@ -7,6 +7,7 @@ const emptyEl         = document.getElementById('empty')
 const chatForm        = document.getElementById('chat-form')
 const input           = document.getElementById('input')
 const send            = document.getElementById('send')
+const modeSelect      = document.getElementById('mode-select')
 
 let thinkingEl            = null
 let streamWrap            = null
@@ -20,11 +21,62 @@ let pendingAttachments    = null
 let attachmentsWrap       = null
 let isPlannerMode         = false
 
+function modeLabel(mode, displayName = '') {
+  if (displayName) return displayName
+  if (!mode) return 'Mode'
+  return mode.charAt(0).toUpperCase() + mode.slice(1)
+}
+
+function syncModeSelect() {
+  if (!modeSelect) return
+  const selectedMode = state.currentMode
+  modeSelect.innerHTML = ''
+
+  const agents = state.agents.length > 0
+    ? state.agents
+    : selectedMode ? [{ mode: selectedMode, displayName: state.currentModeDisplayName || modeLabel(selectedMode), shortDesc: '' }] : []
+
+  if (agents.length === 0) {
+    const opt = document.createElement('option')
+    opt.value = ''
+    opt.textContent = 'loading'
+    modeSelect.appendChild(opt)
+    modeSelect.disabled = true
+    return
+  }
+
+  for (const agent of agents) {
+    const opt = document.createElement('option')
+    opt.value = agent.mode
+    opt.textContent = agent.displayName || modeLabel(agent.mode)
+    if (agent.shortDesc) opt.title = agent.shortDesc
+    modeSelect.appendChild(opt)
+  }
+
+  if (selectedMode && !agents.some(agent => agent.mode === selectedMode)) {
+    const opt = document.createElement('option')
+    opt.value = selectedMode
+    opt.textContent = state.currentModeDisplayName || modeLabel(selectedMode)
+    modeSelect.appendChild(opt)
+  }
+
+  modeSelect.value = selectedMode || agents[0].mode
+  modeSelect.disabled = !state.isConnected || state.isWaiting || agents.length < 2
+}
+
+function setMode(mode, displayName = '') {
+  state.currentMode = mode
+  state.currentModeDisplayName = displayName || modeLabel(mode)
+  isPlannerMode = mode === 'planner'
+  syncModeSelect()
+}
+
 // ─── Input state ───
 
 export function setChatInputEnabled(connected) {
   input.disabled = !connected || state.isWaiting
   send.disabled  = !connected || state.isWaiting
+  syncModeSelect()
 }
 
 export function setWaiting(waiting) {
@@ -33,6 +85,7 @@ export function setWaiting(waiting) {
   send.disabled   = waiting || !state.isConnected
   document.querySelector('header').classList.toggle('streaming', waiting)
   if (!waiting && document.querySelector('[data-tab="chat"].active')) input.focus()
+  syncModeSelect()
 }
 
 export function focusChatInput() {
@@ -261,8 +314,15 @@ function appendUserMessage(text, images, audio, pdfs = []) {
 // ─── WebSocket message handler ───
 
 export function handleChatMsg(msg) {
-  if (msg.type === 'plannerMode') {
+  if (msg.type === 'agents') {
+    state.agents = Array.isArray(msg.agents) ? msg.agents : []
+    syncModeSelect()
+  } else if (msg.type === 'modeChanged') {
+    setMode(msg.mode, msg.displayName)
+  } else if (msg.type === 'plannerMode') {
     isPlannerMode = msg.active
+    if (msg.active) setMode('planner', 'Planner')
+    else if (state.currentMode === 'planner') setMode('chatbot', 'Chatbot')
   } else if (msg.type === 'tooling') {
     removeThinking()
     const tools = msg.tools ?? []
@@ -392,6 +452,16 @@ input.addEventListener('keydown', (e) => {
     e.preventDefault()
     chatForm.dispatchEvent(new Event('submit'))
   }
+})
+
+modeSelect?.addEventListener('change', () => {
+  const mode = modeSelect.value
+  if (!mode || mode === state.currentMode || state.ws?.readyState !== WebSocket.OPEN) {
+    syncModeSelect()
+    return
+  }
+  state.ws.send(JSON.stringify({ type: 'switchMode', mode }))
+  modeSelect.disabled = true
 })
 
 chatForm.addEventListener('submit', (e) => {

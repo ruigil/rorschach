@@ -204,6 +204,38 @@ header.streaming::after {
   gap: 0.5rem;
 }
 
+.mode-select-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--text-dim);
+}
+
+.mode-select-wrap span {
+  letter-spacing: 0.06em;
+}
+
+#mode-select {
+  min-width: 6.5rem;
+  max-width: 9rem;
+  height: 1.75rem;
+  padding: 0 1.7rem 0 0.6rem;
+  border: 1px solid var(--border-mid);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-mid);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+#mode-select:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
 /* ─── Logout button ─── */
 .logout-btn {
   background: none;

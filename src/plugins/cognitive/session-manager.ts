@@ -118,6 +118,27 @@ const ensureAgent = (
 const userIdOfClient = (state: SessionManagerState, clientId: string): string | undefined =>
   state.clientIndex[clientId]
 
+const clientIdsForUser = (state: SessionManagerState, userId: string): string[] =>
+  Object.entries(state.clientIndex)
+    .filter(([, uid]) => uid === userId)
+    .map(([clientId]) => clientId)
+
+const publishModeChanged = (
+  state: SessionManagerState,
+  clientIds: string[],
+  mode: string,
+  ctx: any,
+) => {
+  const descriptor = state.descriptors[mode]
+  const displayName = descriptor?.displayName ?? mode
+  for (const clientId of clientIds) {
+    ctx.publish(OutboundMessageTopic, {
+      clientId,
+      text: JSON.stringify({ type: 'modeChanged', mode, displayName }),
+    })
+  }
+}
+
 // ─── Actor ─────────────────────────────────────────────────────────────────
 
 export const SessionManager = (
@@ -164,6 +185,7 @@ export const SessionManager = (
               const patch: Partial<Session> = { agentRefs: remaining }
               if (session.activeMode === mode) {
                 patch.activeMode = defaultMode
+                publishModeChanged(state, clientIdsForUser(state, userId), defaultMode, ctx)
                 ctx.publish(SessionLifecycleTopic, {
                   type:         'modeActivated',
                   userId,
@@ -208,6 +230,7 @@ export const SessionManager = (
             clientCount: newCount,
             timestamp:   ts,
           })
+          publishModeChanged(next, [clientId], existing.activeMode, ctx)
           return {
             state: { ...next, clientIndex: { ...next.clientIndex, [clientId]: userId } },
           }
@@ -238,6 +261,7 @@ export const SessionManager = (
           clientCount: 1,
           timestamp:   ts,
         })
+        publishModeChanged(afterAgent.state, [clientId], defaultMode, ctx)
 
         return {
           state: {
@@ -347,10 +371,7 @@ export const SessionManager = (
 
         const next = updateSession(afterAgent.state, userId, { activeMode: mode })
 
-        ctx.publish(OutboundMessageTopic, {
-          clientId,
-          text: JSON.stringify({ type: 'modeChanged', mode, displayName: descriptor.displayName }),
-        })
+        publishModeChanged(next, clientIdsForUser(next, userId), mode, ctx)
         ctx.publish(SessionLifecycleTopic, {
           type:         'modeActivated',
           userId,
