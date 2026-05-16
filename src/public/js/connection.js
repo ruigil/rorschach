@@ -5,6 +5,7 @@ import { appendLog } from './observe/logs.js'
 import { updateMetrics } from './observe/actors.js'
 import { onTraceSpan } from './observe/traces.js'
 import { onToolRegistered, onToolUnregistered } from './observe/tools.js'
+import { openPlanGraph } from './chat/plan-workspace.js'
 
 const dot         = document.getElementById('dot')
 const statusLabel = document.getElementById('status-label')
@@ -64,6 +65,7 @@ export async function connect() {
 
     const chatTypes = ['chunk', 'done', 'error', 'tooling', 'sources', 'attachments', 'reasoningChunk', 'plannerMode', 'modeChanged', 'agents']
     if      (chatTypes.includes(msg.type))        handleChatMsg(msg)
+    else if (msg.type === 'planGraph')            openPlanGraph(msg.planId)
     else if (msg.type === 'usage')                onUsageMsg(msg)
     else if (msg.type === 'log')                  appendLog(msg)
     else if (msg.type === 'metrics')              updateMetrics(msg)

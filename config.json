@@ -5,6 +5,7 @@
     "./src/plugins/tools/tools.plugin.ts",
     "./src/plugins/memory/memory.plugin.ts",
     "./src/plugins/cognitive/cognitive.plugin.ts",
+    "./src/plugins/executor/executor.plugin.ts",
     "./src/plugins/observability/observability.plugin.ts",
     "./src/plugins/notebook/notebook.plugin.ts",
     "./src/plugins/googleapis/googleapis.plugin.ts"
@@ -97,6 +98,11 @@
         "consolidationIntervalMs": 3600000,
         "contextIntervalMs": 3600000
       }
+    },
+    "executor": {
+      "plansDir": "workspace/plans",
+      "model": "z-ai/glm-5.1",
+      "maxToolLoops": 10
     },
     "notebook": {
       "notebookDir": "workspace/notebook",

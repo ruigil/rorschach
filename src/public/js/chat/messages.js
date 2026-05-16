@@ -1,6 +1,7 @@
 import { state } from '../state.js'
 import { renderMarkdown } from '../markdown.js'
 import { getPendingImages, getPendingAudio, getPendingPdfs, clearPendingImages, clearPendingAudio, clearPendingPdfs } from './media.js'
+import { openPlanList, closePlanWorkspace } from './plan-workspace.js'
 
 const messagesEl      = document.getElementById('messages')
 const emptyEl         = document.getElementById('empty')
@@ -68,6 +69,8 @@ function setMode(mode, displayName = '') {
   state.currentMode = mode
   state.currentModeDisplayName = displayName || modeLabel(mode)
   isPlannerMode = mode === 'planner'
+  if (mode === 'executor') openPlanList()
+  else closePlanWorkspace()
   syncModeSelect()
 }
 
@@ -155,7 +158,9 @@ function createMessageWrap() {
   bubble.className = 'bubble'
   const label  = document.createElement('div')
   label.className = 'message-label'
-  label.textContent = isPlannerMode ? 'Rorschach — Plan Mode' : 'Rorschach'
+  label.textContent = state.currentMode
+    ? `Rorschach — ${modeLabel(state.currentMode, state.currentModeDisplayName)} Mode`
+    : 'Rorschach'
   bubble.appendChild(label)
   wrap.appendChild(bubble)
   return { wrap, bubble }

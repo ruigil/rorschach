@@ -50,49 +50,62 @@
 
   <!-- ─── Chat panel ─── -->
   <div id="panel-chat" class="panel active">
-    <div id="messages">
-      <div class="empty-state" id="empty">
-        <svg class="empty-icon" width="48" height="48" viewBox="0 0 48 48" fill="none">
-          <ellipse cx="24" cy="24" rx="20" ry="7" stroke="currentColor" stroke-width="0.5" opacity="0.15"/>
-          <ellipse cx="24" cy="24" rx="13" ry="4.5" stroke="currentColor" stroke-width="0.5" opacity="0.3"/>
-          <ellipse cx="24" cy="24" rx="7" ry="2.5" stroke="currentColor" stroke-width="0.5" opacity="0.5"/>
-          <circle cx="24" cy="24" r="1.5" fill="currentColor" opacity="0.9"/>
-        </svg>
-        <span class="empty-title">Signal detected</span>
-        <span class="empty-sub">awaiting transmission</span>
+    <div class="chat-main">
+      <div id="messages">
+        <div class="empty-state" id="empty">
+          <svg class="empty-icon" width="48" height="48" viewBox="0 0 48 48" fill="none">
+            <ellipse cx="24" cy="24" rx="20" ry="7" stroke="currentColor" stroke-width="0.5" opacity="0.15"/>
+            <ellipse cx="24" cy="24" rx="13" ry="4.5" stroke="currentColor" stroke-width="0.5" opacity="0.3"/>
+            <ellipse cx="24" cy="24" rx="7" ry="2.5" stroke="currentColor" stroke-width="0.5" opacity="0.5"/>
+            <circle cx="24" cy="24" r="1.5" fill="currentColor" opacity="0.9"/>
+          </svg>
+          <span class="empty-title">Signal detected</span>
+          <span class="empty-sub">awaiting transmission</span>
+        </div>
+      </div>
+      <div class="chat-dock">
+        <div class="input-area">
+          <div id="image-previews" class="image-previews hidden"></div>
+          <form id="chat-form">
+            <input type="file" id="file-input" accept="image/*,audio/*,.mp3,.wav,application/pdf,.pdf" multiple style="display:none">
+            <button type="button" id="attach-btn" aria-label="Attach file">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+              </svg>
+            </button>
+            <button type="button" id="mic-btn" aria-label="Record audio">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+            </button>
+            <textarea
+              id="input"
+              placeholder="Message…"
+              autocomplete="off"
+              rows="1"
+              disabled
+            ></textarea>
+            <button type="submit" id="send" disabled aria-label="Send">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            </button>
+          </form>
+          <p class="input-hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</p>
+        </div>
       </div>
     </div>
-    <div class="chat-dock">
-      <div class="input-area">
-        <div id="image-previews" class="image-previews hidden"></div>
-        <form id="chat-form">
-          <input type="file" id="file-input" accept="image/*,audio/*,.mp3,.wav,application/pdf,.pdf" multiple style="display:none">
-          <button type="button" id="attach-btn" aria-label="Attach file">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-            </svg>
-          </button>
-          <button type="button" id="mic-btn" aria-label="Record audio">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-            </svg>
-          </button>
-          <textarea
-            id="input"
-            placeholder="Message…"
-            autocomplete="off"
-            rows="1"
-            disabled
-          ></textarea>
-          <button type="submit" id="send" disabled aria-label="Send">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M5 12h14M12 5l7 7-7 7"/>
-            </svg>
-          </button>
-        </form>
-        <p class="input-hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</p>
+    <div id="plan-workspace-resizer" class="plan-workspace-resizer" role="separator" aria-orientation="vertical" aria-label="Resize plan workspace"></div>
+    <aside id="plan-workspace" class="plan-workspace" aria-label="Plan workspace">
+      <div class="plan-workspace-header">
+        <div>
+          <div class="plan-workspace-kicker">Executor</div>
+          <h2 id="plan-workspace-title">Plans</h2>
+        </div>
+        <button id="plan-workspace-close" class="plan-workspace-close" aria-label="Close plan workspace">×</button>
       </div>
-    </div>
+      <div id="plan-workspace-body" class="plan-workspace-body"></div>
+    </aside>
   </div>
 
   <!-- ─── Config panel ─── -->
