@@ -74,6 +74,7 @@
       "planner": {
         "model": "z-ai/glm-5.1",
         "plansDir": "workspace/plans",
+        "maxToolLoops": 10,
         "toolFilter": {
           "allow": [
             "web_search",

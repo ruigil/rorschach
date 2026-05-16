@@ -1,15 +1,13 @@
 import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { agentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
+import { agentLoop, idleLoopState, type LoopMsg, type LoopState } from '../../system/agent-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import { UserStreamTopic } from '../../types/events.ts'
-import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
+import type { ToolCollection, ToolFilter, ToolFinalReply, ToolMsg, ToolSchema } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage, TokenUsage } from '../../types/llm.ts'
-import type { ChatbotMsg } from './types.ts'
 import { HistorySnapshotTopic } from './types.ts'
 import type { AgentFactoryOpts } from './types.ts'
-import type { HistoryStoreMsg } from './history-store.ts'
 
 // ─── State ───
 
@@ -23,6 +21,16 @@ export type ChatbotState = {
   activeClientId: string
   isInjected?:    boolean
 }
+// ─── Chatbot actor message protocol ───
+
+type ChatbotExtra =
+  | { type: 'userMessage';      clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; isCron?: boolean; isInjected?: boolean }
+  | { type: '_historySnapshot'; messages: ApiMessage[]; userContext: string | null; version: number }
+  | { type: '_toolRegistered';  name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
+  | { type: '_toolUnregistered'; name: string }
+  | { type: '_bgToolDone';      toolName: string; toolCallId: string; reply: ToolFinalReply }
+
+export type ChatbotMsg = LoopMsg<ChatbotExtra>
 
 const HISTORY_MARKERS_NOTE =
   'Messages prefixed with [Internal Instruction] in the conversation history are past internal ' +
@@ -37,6 +45,8 @@ export type ChatbotAgentConfig = {
   toolFilter?:   ToolFilter
   maxToolLoops?: number
 }
+
+
 
 const buildSystemPrompt = (basePrompt: string | undefined, userContext: string | null): string => {
   const todayDateNote = `Today's date is ${new Date().toDateString()}.`

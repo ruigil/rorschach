@@ -1,7 +1,7 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { AgentSystem, TraceTopic, type TraceSpan } from '../system/index.ts'
 import type { MessageHeaders } from '../system/index.ts'
-import { Chatbot, type ChatbotState } from '../plugins/cognitive/chatbot.ts'
+import { Chatbot, type ChatbotState } from '../plugins/cognitive/chatbot-agent.ts'
 import { HistoryStore } from '../plugins/cognitive/history-store.ts'
 import { LlmProvider, OpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'

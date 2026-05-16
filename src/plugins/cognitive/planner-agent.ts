@@ -1,6 +1,6 @@
 import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { agentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
+import { agentLoop, idleLoopState, type LoopState, type LoopMsg } from '../../system/agent-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
@@ -19,7 +19,16 @@ type PlannerExtra =
   | { type: '_toolRegistered'; name: string; schema: import('../../types/tools.ts').ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
 
-export type PlannerAgentMsg = import('../../system/agent-loop.ts').LoopMsg<PlannerExtra>
+export type PlannerAgentMsg = LoopMsg<PlannerExtra>
+
+// ─── Planner configuration (used to configure per-session planner instances) ───
+
+export type PlannerAgentConfig = {
+  model:        string
+  plansDir:     string
+  maxToolLoops: number
+  toolFilter?:   ToolFilter
+}
 
 // ─── State ───
 
@@ -39,14 +48,6 @@ const initialPlannerAgentState = (): PlannerAgentState => ({
   activeClientId:          '',
 })
 
-// ─── Config ───
-
-export type PlannerAgentConfig = {
-  model:        string
-  maxToolLoops: number
-  toolFilter?:  ToolFilter
-  plansDir:     string
-}
 
 // ─── System prompt ───
 

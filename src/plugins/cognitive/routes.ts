@@ -58,6 +58,7 @@ export const plannerSchema: ConfigSchemaSection = {
   routeId: 'config.cognitive',
   schema: {
     type: 'object',
+    required: ['model', 'plansDir', 'maxToolLoops'],
     properties: {
       model: { type: 'string', default: 'z-ai/glm-5.1', 'x-ui': { widget: 'model-select', label: 'Planner model' } },
       plansDir: { type: 'string', default: 'workspace/plans' },

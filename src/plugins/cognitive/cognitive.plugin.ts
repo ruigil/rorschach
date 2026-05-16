@@ -2,12 +2,12 @@ import { SessionManager } from './session-manager.ts'
 import { LlmProvider, OpenRouterAdapter } from './llm-provider.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import type { ToolFilter } from '../../types/tools.ts'
-import type { PlannerConfig, SessionConfig, AgentDescriptor } from './types.ts'
+import type { SessionConfig, AgentDescriptor } from './types.ts'
 import { AgentRegistry } from './agent-registry.ts'
 import { AgentRegistrationTopic } from './types.ts'
-import { ChatbotAgentFactory } from './chatbot.ts'
+import { ChatbotAgentFactory, type ChatbotAgentConfig } from './chatbot-agent.ts'
 import { PlannerAgentFactory, type PlannerAgentConfig } from './planner-agent.ts'
-import { defineConfig, createSlot, stopSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/plugin-config.ts'
+import { defineConfig, createSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/plugin-config.ts'
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { redact } from '../../system/types.ts'
@@ -20,20 +20,30 @@ type LlmProviderConfig = {
   reasoning?: { enabled?: boolean; effort?: 'high' | 'medium' | 'low' | 'minimal' }
 }
 
-type ChatbotConfig = {
-  model:         string
-  systemPrompt?: string
-  toolFilter?:   ToolFilter
-}
 
 export type CognitiveConfig = {
   llmProvider?: LlmProviderConfig
-  chatbot?:     ChatbotConfig
-  planner?:     PlannerConfig
+  chatbot?:     ChatbotAgentConfig
+  planner?:     PlannerAgentConfig
   session?:     SessionConfig
 }
 
-const config = defineConfig<CognitiveConfig>('cognitive', {}, {
+type ResolvedCognitiveConfig = CognitiveConfig & {
+  chatbot: ChatbotAgentConfig
+  session: SessionConfig
+}
+
+const defaultConfig: CognitiveConfig = {
+  chatbot: {
+    model: 'deepseek/deepseek-v4-flash',
+  },
+  session: {
+    defaultMode:        'chatbot',
+    historyWindowHours: 4,
+  },
+}
+
+const config = defineConfig<CognitiveConfig>('cognitive', defaultConfig, {
   schemas: cognitiveSchemas,
 })
 
@@ -46,12 +56,12 @@ type PluginState = {
   llmProvider:    ActorSlot<LlmProviderConfig>
   agentRegistry:  ActorSlot<never>
   sessionManager: ActorSlot<never>
-  planner:        ActorSlot<PlannerConfig>
-  chatbot:        ActorSlot<ChatbotConfig>
+  planner:        ActorSlot<PlannerAgentConfig>
+  chatbot:        ActorSlot<ChatbotAgentConfig>
   session:        ActorSlot<SessionConfig>
 }
 
-const EMPTY_STATE: PluginState = {
+const initialState: PluginState = {
   initialized:    true,
   llmProvider:    createSlot(),
   agentRegistry:  createSlot(),
@@ -61,32 +71,9 @@ const EMPTY_STATE: PluginState = {
   session:        createSlot(),
 }
 
-type ResolvedPlannerConfig = {
-  model:        string
-  plansDir:     string
-  maxToolLoops: number
-  toolFilter?:  PlannerAgentConfig['toolFilter']
-}
-
-const PLANNER_DEFAULTS: ResolvedPlannerConfig = {
-  model:        'google/gemini-2.5-flash-lite-preview',
-  plansDir:     'workspace/plans',
-  maxToolLoops: 10,
-  toolFilter:   { allow: ['switch_mode','web_search', 'fetch_file'] },
-}
-
-const resolvePlannerConfig = (cfg: PlannerConfig | null): ResolvedPlannerConfig =>
-  cfg ? { ...PLANNER_DEFAULTS, ...cfg } : { ...PLANNER_DEFAULTS }
-
-
-const resolveSessionConfig = (cfg: SessionConfig | null): SessionConfig => ({
-  defaultMode:        cfg?.defaultMode ?? 'chatbot',
-  historyWindowHours: cfg?.historyWindowHours ?? 4,
-})
-
 // ─── Descriptor builders ───
 
-const buildChatbotDescriptor = (cfg: ChatbotConfig): AgentDescriptor => ({
+const buildChatbotDescriptor = (cfg: ChatbotAgentConfig): AgentDescriptor => ({
   mode:         'chatbot',
   displayName:  'Chatbot',
   shortDesc:    'General-purpose conversational assistant',
@@ -98,7 +85,7 @@ const buildChatbotDescriptor = (cfg: ChatbotConfig): AgentDescriptor => ({
   capabilities: { userVisible: true },
 })
 
-const buildPlannerDescriptor = (cfg: ResolvedPlannerConfig): AgentDescriptor => ({
+const buildPlannerDescriptor = (cfg: PlannerAgentConfig): AgentDescriptor => ({
   mode:         'planner',
   displayName:  'Planner',
   shortDesc:    'Structured planning of multi-step goals',
@@ -116,9 +103,9 @@ const buildPlannerDescriptor = (cfg: ResolvedPlannerConfig): AgentDescriptor => 
 const spawnAll = (
   ctx: ActorContext<PluginMsg>,
   llmProviderConfig: LlmProviderConfig,
-  chatbotConfig: ChatbotConfig | null,
-  plannerConfig: PlannerConfig | null,
-  sessionConfig: SessionConfig | null,
+  chatbotConfig: ChatbotAgentConfig,
+  plannerConfig: PlannerAgentConfig | null,
+  sessionConfig: SessionConfig,
   gen: number,
 ): Omit<PluginState, 'initialized'> => {
 
@@ -130,23 +117,20 @@ const spawnAll = (
 
   const agentRegistryRef = ctx.spawn(`agent-registry-${gen}`, AgentRegistry())
 
-  const resolvedSession = resolveSessionConfig(sessionConfig)
-  const sessionManagerRef = chatbotConfig
-    ? ctx.spawn(
-        `session-manager-${gen}`,
-        SessionManager({
-          llmRef:             llmProviderRef,
-          defaultMode:        resolvedSession.defaultMode,
-          historyWindowHours: resolvedSession.historyWindowHours,
-        }),
-      )
-    : null
+  const sessionManagerRef = ctx.spawn(
+    `session-manager-${gen}`,
+    SessionManager({
+      llmRef:             llmProviderRef,
+      defaultMode:        sessionConfig.defaultMode,
+      historyWindowHours: sessionConfig.historyWindowHours,
+    }),
+  )
 
   // Register built-in agents.
-  if (chatbotConfig) {
-    ctx.publish(AgentRegistrationTopic, { type: 'register', descriptor: buildChatbotDescriptor(chatbotConfig) })
+  ctx.publish(AgentRegistrationTopic, { type: 'register', descriptor: buildChatbotDescriptor(chatbotConfig) })
+  if (plannerConfig) {
+    ctx.publish(AgentRegistrationTopic, { type: 'register', descriptor: buildPlannerDescriptor(plannerConfig) })
   }
-  ctx.publish(AgentRegistrationTopic, { type: 'register', descriptor: buildPlannerDescriptor(resolvePlannerConfig(plannerConfig)) })
 
   return {
     llmProvider:    { config: llmProviderConfig, ref: llmProviderRef, gen },
@@ -177,20 +161,18 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
 
   lifecycle: onLifecycle({
     start: (_state, ctx) => {
-      const slice = ctx.initialConfig() as CognitiveConfig | undefined
-      const llmProviderConfig = slice?.llmProvider ?? null
-      const chatbotConfig     = slice?.chatbot     ?? null
-      const plannerConfig     = slice?.planner     ?? null
-      const sessionConfig     = slice?.session     ?? null
+      const slice = ctx.initialConfig() as ResolvedCognitiveConfig
+      const llmProviderConfig = slice.llmProvider ?? null
+      const plannerConfig     = slice.planner ?? null
 
       publishConfigSurface(ctx, config, () => slice)
 
       if (!llmProviderConfig) {
         ctx.log.info('cognitive plugin activated (no llmProvider config)')
-        return { state: EMPTY_STATE }
+        return { state: initialState }
       }
 
-      const children = spawnAll(ctx, llmProviderConfig, chatbotConfig, plannerConfig, sessionConfig, 0)
+      const children = spawnAll(ctx, llmProviderConfig, slice.chatbot, plannerConfig, slice.session, 0)
       ctx.log.info('cognitive plugin activated')
       return { state: { initialized: true, ...children } }
     },
@@ -213,10 +195,9 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
 
   handler: onMessage<PluginMsg, PluginState>({
     config: (state, msg, ctx) => {
-      const newLlmProviderConfig = msg.slice?.llmProvider ?? null
-      const newChatbotConfig     = msg.slice?.chatbot     ?? null
-      const newPlannerConfig     = msg.slice?.planner     ?? null
-      const newSessionConfig     = msg.slice?.session     ?? null
+      const slice = msg.slice as ResolvedCognitiveConfig | undefined
+      const newLlmProviderConfig = slice?.llmProvider ?? null
+      const newPlannerConfig     = slice?.planner ?? null
 
       // Stop all existing actors
       if (state.llmProvider.ref)    ctx.stop(state.llmProvider.ref)
@@ -227,12 +208,13 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
 
       // No LLM provider → tear everything down.
       if (!newLlmProviderConfig) {
-        return { state: { ...EMPTY_STATE, initialized: true } }
+        return { state: { ...initialState, initialized: true } }
       }
 
       // Respawn everything with new config
       const gen = state.llmProvider.gen + 1
-      const children = spawnAll(ctx, newLlmProviderConfig, newChatbotConfig, newPlannerConfig, newSessionConfig, gen)
+      const resolvedSlice = slice as ResolvedCognitiveConfig
+      const children = spawnAll(ctx, newLlmProviderConfig, resolvedSlice.chatbot, newPlannerConfig, resolvedSlice.session, gen)
 
       return { state: { initialized: true, ...children } }
     },
