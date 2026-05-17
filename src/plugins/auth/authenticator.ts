@@ -285,7 +285,7 @@ function generateToken(): string {
 // ─── Actor factory ───
 
 export const Authenticator = (opts: {
-  userStore: ActorRef<UserStoreMsg>
+  userStore: ActorRef<UserStoreMsg>,
   config:    AuthConfig
 }): ActorDef<AuthenticatorMsg, AuthenticatorState> => {
   const { userStore, config } = opts
