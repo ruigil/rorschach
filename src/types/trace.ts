@@ -20,8 +20,3 @@ export type TraceSpan = {
 }
 
 export const TraceTopic = createTopic<TraceSpan>('system.trace')
-
-// ─── ID generation ───
-
-let _seq = 0
-export const newId = (): string => `${Date.now().toString(36)}${(++_seq).toString(36)}`

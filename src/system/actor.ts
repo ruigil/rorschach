@@ -26,7 +26,12 @@ import {
   type SupervisionStrategy,
   type TraceContext,
 } from './types.ts'
-import { TraceTopic, newId } from '../types/trace.ts'
+import { TraceTopic } from '../types/trace.ts'
+
+// ─── Trace ID generation ───────────────────────────────────────────────────
+
+let traceSeq = 0
+const newTraceId = (): string => `${Date.now().toString(36)}${(++traceSeq).toString(36)}`
 
 // ─── Internal envelope: unifies user messages and lifecycle events ───
 type Envelope<M> =
@@ -208,8 +213,8 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
   }
 
   const traceCtx: TraceContext = {
-    start: (operation, data) => makeSpan(newId(), newId(), undefined, operation, data),
-    child: (traceId, parentSpanId, operation, data) => makeSpan(traceId, newId(), parentSpanId, operation, data),
+    start: (operation, data) => makeSpan(newTraceId(), newTraceId(), undefined, operation, data),
+    child: (traceId, parentSpanId, operation, data) => makeSpan(traceId, newTraceId(), parentSpanId, operation, data),
     fromHeaders: () => {
       const traceparent = getHeaders()['traceparent']
       if (!traceparent) return null

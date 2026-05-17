@@ -8,7 +8,7 @@ import {
   InboundMessageTopic, OutboundMessageTopic, OutboundBroadcastTopic,
 } from '../src/types/events.ts'
 import type { OutboundMessageEvent } from '../src/types/events.ts'
-import { TraceTopic, newId } from '../src/types/trace.ts'
+import { TraceTopic } from '../src/types/trace.ts'
 import type { TraceSpan } from '../src/types/trace.ts'
 import { CostTopic } from '../src/types/llm.ts'
 import type { CostEvent } from '../src/types/llm.ts'
@@ -45,6 +45,9 @@ const factualStatements: string[] = dataset.statements
 console.log(`Loaded dataset for injection: ${dataset.name} (${factualStatements.length} statements)`)
 
 // ─── Helpers ───
+
+let benchmarkSeq = 0
+const newBenchmarkId = (): string => `${Date.now().toString(36)}${(++benchmarkSeq).toString(36)}`
 
 async function setupDir() {
   console.log(`Cleaning database directory: ${DB_DIR}`)
@@ -118,7 +121,7 @@ system.subscribe(MetricsTopic, (event) => {
 
 const sendTurn = async (text: string, clientId: string, traceId: string): Promise<{ reply: string; latency: number }> => {
   const start = Date.now()
-  const spanId = newId()
+  const spanId = newBenchmarkId()
   let reply = ''
 
   // Publish "started" event for the root 'request' span to satisfy UI
@@ -195,7 +198,7 @@ await new Promise(resolve => setTimeout(resolve, 500))
 const injectionResults: Array<{ latency: number; storedMemory: boolean; toolCalls: string[] }> = []
 
 for (const statement of factualStatements) {
-  const traceId = newId()
+  const traceId = newBenchmarkId()
   console.log(`User: ${statement}`)
   process.stdout.write('Assistant: ')
   const result     = await sendTurn(statement, INJECT_CLIENT_ID, traceId)

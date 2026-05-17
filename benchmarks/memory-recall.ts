@@ -8,7 +8,7 @@ import {
   InboundMessageTopic, OutboundMessageTopic, OutboundBroadcastTopic,
 } from '../src/types/events.ts'
 import type { OutboundMessageEvent } from '../src/types/events.ts'
-import { TraceTopic, newId } from '../src/types/trace.ts'
+import { TraceTopic } from '../src/types/trace.ts'
 import type { TraceSpan } from '../src/types/trace.ts'
 import { CostTopic, LlmProviderTopic } from '../src/types/llm.ts'
 import type { CostEvent, LlmProviderMsg, LlmProviderReply, LlmProviderEvent } from '../src/types/llm.ts'
@@ -45,6 +45,9 @@ const recallQuestions: Array<{ q: string; a: string[] }> = dataset.questions
 console.log(`Loaded dataset for recall: ${dataset.name} (${recallQuestions.length} questions)`)
 
 // ─── Helpers ───
+
+let benchmarkSeq = 0
+const newBenchmarkId = (): string => `${Date.now().toString(36)}${(++benchmarkSeq).toString(36)}`
 
 function computeStats(values: number[]) {
   const sorted = [...values].sort((a, b) => a - b)
@@ -118,7 +121,7 @@ async function collectJudgeReply(question: string, groundTruth: string[], reply:
 
   return new Promise((resolve) => {
     let fullText = ''
-    const requestId = newId()
+    const requestId = newBenchmarkId()
     
     const replyTo: ActorRef<LlmProviderReply> = {
       name: `judge-collector-${requestId}`,
@@ -160,7 +163,7 @@ async function collectJudgeReply(question: string, groundTruth: string[], reply:
 
 const sendTurn = async (text: string, clientId: string, traceId: string): Promise<{ reply: string; latency: number }> => {
   const start = Date.now()
-  const spanId = newId()
+  const spanId = newBenchmarkId()
   let reply = ''
 
   // Publish "started" event for the root 'request' span to satisfy UI
@@ -242,7 +245,7 @@ for (let run = 0; run < RUNS; run++) {
 
   const runResults: RecallResult[] = []
   for (const { q, a } of recallQuestions) {
-    const traceId = newId()
+    const traceId = newBenchmarkId()
     console.log(`Question: ${q}`)
     process.stdout.write('Assistant: ')
     const result    = await sendTurn(q, RECALL_CLIENT_ID, traceId)
