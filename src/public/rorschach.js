@@ -16,12 +16,23 @@ import './js/config/form.js'
 import { connect } from './js/connection.js'
 import { state } from './js/state.js'
 import { initConfigForms } from './js/config/form.js'
-
-initConfigForms()
+import { setTabVisible } from './js/tabs.js'
 
 fetch(new URL('me', location.href))
   .then(r => r.json())
-  .then(({ userId }) => { state.currentUserId = userId })
-  .catch(() => {})
+  .then(({ userId, roles }) => {
+    state.currentUserId = userId
+    state.currentUserRoles = roles ?? []
+    const isAdmin = state.currentUserRoles.includes('admin')
+    const isAnonymousMode = userId === 'anonymous'
+    const canUseAdminSurface = isAnonymousMode || isAdmin
+    setTabVisible('config', canUseAdminSurface)
+    setTabVisible('observe', canUseAdminSurface)
+    if (canUseAdminSurface) initConfigForms()
+  })
+  .catch(() => {
+    setTabVisible('config', false)
+    setTabVisible('observe', false)
+  })
 
 connect()

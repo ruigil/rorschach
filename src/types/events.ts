@@ -35,6 +35,9 @@ export type OutboundBroadcastEvent = { text: string }
 /** Topic for broadcasting a message to all connected clients across all interfaces. */
 export const OutboundBroadcastTopic = createTopic<OutboundBroadcastEvent>('client.outbound.broadcast')
 
+/** Topic for broadcasting admin-only observability messages to privileged clients. */
+export const OutboundAdminBroadcastTopic = createTopic<OutboundBroadcastEvent>('client.outbound.admin.broadcast')
+
 // ─── Domain event: emitted by cron actor to trigger a user-specific proactive message ───
 
 export type CronTriggerEvent = { userId: string; text: string; traceId: string; parentSpanId: string }

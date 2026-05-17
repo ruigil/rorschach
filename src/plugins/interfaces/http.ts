@@ -4,7 +4,7 @@ import type { Server, ServerWebSocket } from 'bun'
 import { emit } from '../../system/types.ts'
 import {
   InboundMessageTopic, ClientConnectTopic, ClientDisconnectTopic,
-  OutboundMessageTopic, OutboundBroadcastTopic,
+  OutboundMessageTopic, OutboundBroadcastTopic, OutboundAdminBroadcastTopic,
 } from '../../types/events.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
@@ -15,7 +15,7 @@ import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
 import { ConfigSchemaTopic, ConfigUpdateRequestTopic } from '../../types/config.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
-import { IdentityProviderTopic, resolveIdentity, resolveCookieIdentity, ANONYMOUS_USER_ID } from '../../types/identity.ts'
+import { IdentityProviderTopic, resolveIdentity, resolveCookieIdentity } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 import { AgentCatalogTopic, SwitchAgentTopic, type AgentCatalogEvent } from '../../types/agents.ts'
 
@@ -46,6 +46,7 @@ export type HttpMessage =
   | { type: '_mediaSaved'; clientId: string; text: string; imagePaths: string[]; audioPath?: string; pdfPaths?: string[] }
   | { type: 'closed'; clientId: string }
   | { type: 'broadcast'; text: string }
+  | { type: 'adminBroadcast'; text: string }
   | { type: 'send'; clientId: string; text: string }
   | { type: '_configSchemaChanged'; section: ConfigSchemaSection }
   | { type: '_configUpdate'; pluginId: string; patch: Record<string, unknown> }
@@ -143,6 +144,41 @@ const safeJoinUrlPath = (baseDir: string, pathname: string): string | null => {
   return filePath === base || filePath.startsWith(base + sep) ? filePath : null
 }
 
+const hasAdminRole = (roles: readonly string[]): boolean =>
+  roles.includes('admin')
+
+export const canAccessAdminSurface = (
+  identityProviderRef: ActorRef<IdentityProviderMsg> | null,
+  roles: readonly string[],
+): boolean =>
+  identityProviderRef === null || hasAdminRole(roles)
+
+const isSameOriginRequest = (req: Request, url: URL): boolean => {
+  const origin = req.headers.get('origin')
+  if (!origin) return true
+  try {
+    return new URL(origin).origin === url.origin
+  } catch {
+    return false
+  }
+}
+
+export const authorizeConfigAccess = async (
+  identityProviderRef: ActorRef<IdentityProviderMsg> | null,
+  req: Request,
+  url: URL,
+  options?: { requireSameOrigin?: boolean },
+): Promise<Response | null> => {
+  if (options?.requireSameOrigin && !isSameOriginRequest(req, url)) {
+    return new Response('Forbidden', { status: 403 })
+  }
+
+  const session = await resolveCookieIdentity(identityProviderRef, req)
+  if (!session) return new Response('Unauthorized', { status: 401 })
+  if (!canAccessAdminSurface(identityProviderRef, session.roles)) return new Response('Forbidden', { status: 403 })
+  return null
+}
+
 /**
  * Creates an HTTP + WebSocket actor definition.
  *
@@ -164,6 +200,7 @@ export const HTTP = (
 ): ActorDef<HttpMessage, HttpState> => {
   const port = options?.port ?? 3000
   const CHANNEL = 'broadcast'
+  const ADMIN_CHANNEL = 'admin:broadcast'
 
   // Mutable refs captured by Bun's server callbacks (which run outside the actor message loop)
   let selfRef:             ActorRef<HttpMessage>         | null = null
@@ -297,6 +334,11 @@ export const HTTP = (
         return { state }
       },
 
+      adminBroadcast: (state, message) => {
+        state.server?.publish(ADMIN_CHANNEL, message.text)
+        return { state }
+      },
+
       _cost: (state, message) => {
         const { event } = message
         const text = JSON.stringify({
@@ -307,11 +349,7 @@ export const HTTP = (
           outputTokens: event.outputTokens,
           cost:         event.cost,
         })
-        if (event.clientId) {
-          state.server?.publish(`client:${event.clientId}`, text)
-        } else {
-          state.server?.publish(CHANNEL, text)
-        }
+        state.server?.publish(ADMIN_CHANNEL, text)
         return { state }
       },
 
@@ -386,6 +424,11 @@ export const HTTP = (
           text: e.text,
         }))
 
+        context.subscribe(OutboundAdminBroadcastTopic, (e) => ({
+          type: 'adminBroadcast' as const,
+          text: e.text,
+        }))
+
         context.subscribe(CostTopic, (event) => ({
           type: '_cost' as const,
           event,
@@ -424,6 +467,13 @@ export const HTTP = (
           async fetch(req, server) {
             const url = new URL(req.url)
 
+            if (url.pathname === '/config/schema' || url.pathname.startsWith('/config/') || url.pathname === '/kgraph') {
+              const denied = await authorizeConfigAccess(identityProviderRef, req, url, {
+                requireSameOrigin: req.method !== 'GET',
+              })
+              if (denied) return denied
+            }
+
             // Plugin-registered routes (auth, etc.) win over inline handlers.
             const registered = resolveRegisteredRoute(req.method, url.pathname)
             if (registered) return await registered(req, url)
@@ -442,7 +492,7 @@ export const HTTP = (
             // Current user identity
             if (req.method === 'GET' && url.pathname === '/me') {
               const session = await resolveCookieIdentity(identityProviderRef, req)
-              return new Response(JSON.stringify({ userId: session?.userId ?? null }), { headers: { 'Content-Type': 'application/json' } })
+              return new Response(JSON.stringify({ userId: session?.userId ?? null, roles: session?.roles ?? [] }), { headers: { 'Content-Type': 'application/json' } })
             }
 
             // Config schema API
@@ -504,6 +554,9 @@ export const HTTP = (
           websocket: {
             open: (ws: ServerWebSocket<WsData>) => {
               ws.subscribe(CHANNEL)
+              if (canAccessAdminSurface(identityProviderRef, ws.data.roles)) {
+                ws.subscribe(ADMIN_CHANNEL)
+              }
               ws.subscribe(`client:${ws.data.clientId}`)
               selfRef?.send({ type: 'connected', clientId: ws.data.clientId, userId: ws.data.userId, roles: ws.data.roles })
             },
@@ -542,6 +595,7 @@ export const HTTP = (
             },
             close: (ws: ServerWebSocket<WsData>) => {
               ws.unsubscribe(CHANNEL)
+              ws.unsubscribe(ADMIN_CHANNEL)
               selfRef?.send({ type: 'closed', clientId: ws.data.clientId })
             },
           },

@@ -43,7 +43,7 @@ export const UserStore = (filePath: string): ActorDef<UserStoreMsg, UserStoreSta
   persistence: jsonPersistence(filePath),
 
   handler: onMessage<UserStoreMsg, UserStoreState>({
-    createUser: (state, { username, phone, replyTo }) => {
+    createUser: (state, { username, phone, roles, replyTo }) => {
       if (state.usernameIndex[username]) {
         replyTo.send({ error: 'username already taken' })
         return { state }
@@ -57,7 +57,7 @@ export const UserStore = (filePath: string): ActorDef<UserStoreMsg, UserStoreSta
         username,
         phone,
         createdAt:  Date.now(),
-        roles:      [],
+        roles:      roles ?? [],
         deviceKeys: [],
       }
       replyTo.send({ ok: user })

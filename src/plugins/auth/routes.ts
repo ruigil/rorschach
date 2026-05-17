@@ -31,7 +31,39 @@ export const authSchema: ConfigSchemaSection = {
   },
 }
 
-export const authSchemas = [authSchema]
+export const authAdminsSchema: ConfigSchemaSection = {
+  id: 'auth.admins',
+  title: 'Admins',
+  subtitle: 'auth · privileged runtime configuration access',
+  tab: 'auth',
+  configKey: 'admins',
+  routeId: 'config.auth',
+  schema: {
+    type: 'object',
+    properties: {
+      usernames: {
+        type: 'string',
+        default: '',
+        description: 'Comma- or newline-separated usernames granted the admin role.',
+        'x-ui': { label: 'Usernames', widget: 'textarea', rows: 3 },
+      },
+      phones: {
+        type: 'string',
+        default: '',
+        description: 'Comma- or newline-separated phone numbers granted the admin role.',
+        'x-ui': { label: 'Phones', widget: 'textarea', rows: 3 },
+      },
+      userIds: {
+        type: 'string',
+        default: '',
+        description: 'Comma- or newline-separated user IDs granted the admin role.',
+        'x-ui': { label: 'User IDs', widget: 'textarea', rows: 3 },
+      },
+    },
+  },
+}
+
+export const authSchemas = [authSchema, authAdminsSchema]
 
 // ─── Cookie helpers ───
 

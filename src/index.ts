@@ -5,7 +5,7 @@ import {
   TraceTopic,
   ConfigUpdateRequestTopic,
 } from './system/index.ts'
-import { OutboundBroadcastTopic, ClientConnectTopic, OutboundMessageTopic } from './types/events.ts'
+import { OutboundAdminBroadcastTopic, ClientConnectTopic, OutboundMessageTopic } from './types/events.ts'
 import { loadConfig, saveConfig } from './config.ts'
 import type { LogEvent, MetricsEvent, LifecycleEvent, TraceSpan } from './system/index.ts'
 import type { ConfigUpdateRequest } from './system/index.ts'
@@ -31,7 +31,7 @@ const system = await AgentSystem({ plugins, config })
 // ─── Forward logs to the observability page via WebSocket broadcast ───
 
 system.subscribe(LogTopic, (event: LogEvent) => {
-  system.publish(OutboundBroadcastTopic, {
+  system.publish(OutboundAdminBroadcastTopic, {
     text: JSON.stringify({ type: 'log', ...event }),
   })
 })
@@ -39,7 +39,7 @@ system.subscribe(LogTopic, (event: LogEvent) => {
 // ─── Forward metrics snapshots to the observability page ───
 
 system.subscribe(MetricsTopic, (event: MetricsEvent) => {
-  system.publish(OutboundBroadcastTopic, {
+  system.publish(OutboundAdminBroadcastTopic, {
     text: JSON.stringify({ type: 'metrics', ...event }),
   })
 })
@@ -52,12 +52,12 @@ const toolsSnapshot: Record<string, Extract<ToolRegistrationEvent, { schema: unk
 system.subscribe(ToolRegistrationTopic, (event: ToolRegistrationEvent) => {
   if (event.ref === null) {
     delete toolsSnapshot[event.name]
-    system.publish(OutboundBroadcastTopic, {
+    system.publish(OutboundAdminBroadcastTopic, {
       text: JSON.stringify({ type: 'tool_unregistered', name: event.name }),
     })
   } else {
     toolsSnapshot[event.name] = event
-    system.publish(OutboundBroadcastTopic, {
+    system.publish(OutboundAdminBroadcastTopic, {
       text: JSON.stringify({ type: 'tool_registered', name: event.name, schema: event.schema }),
     })
   }
@@ -65,7 +65,8 @@ system.subscribe(ToolRegistrationTopic, (event: ToolRegistrationEvent) => {
 
 // ─── Replay current tools to each newly connected client ───
 
-system.subscribe(ClientConnectTopic, ({ clientId }) => {
+system.subscribe(ClientConnectTopic, ({ clientId, userId, roles }) => {
+  if (userId !== 'anonymous' && !roles.includes('admin')) return
   for (const event of Object.values(toolsSnapshot)) {
     system.publish(OutboundMessageTopic, {
       clientId,
@@ -77,7 +78,7 @@ system.subscribe(ClientConnectTopic, ({ clientId }) => {
 // ─── Forward trace spans to the observability page ───
 
 system.subscribe(TraceTopic, (span: TraceSpan) => {
-  system.publish(OutboundBroadcastTopic, {
+  system.publish(OutboundAdminBroadcastTopic, {
     text: JSON.stringify({ type: 'trace', ...span }),
   })
 })

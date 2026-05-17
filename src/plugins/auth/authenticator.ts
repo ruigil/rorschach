@@ -17,6 +17,11 @@ export type AuthConfig = {
   sessionTtlMs:   number
   challengeTtlMs: number
   ticketTtlMs:    number
+  admins?: {
+    usernames?: string[] | string
+    phones?:    string[] | string
+    userIds?:   string[] | string
+  }
 }
 
 // ─── State ───
@@ -282,6 +287,29 @@ function generateToken(): string {
   return bytesToBase64url(crypto.getRandomValues(new Uint8Array(32)))
 }
 
+const uniqueRoles = (roles: readonly string[]): string[] => [...new Set(roles)]
+
+const adminList = (value: string[] | string | undefined): string[] => {
+  if (Array.isArray(value)) return value
+  if (typeof value !== 'string') return []
+  return value.split(/[\n,]/).map(item => item.trim()).filter(Boolean)
+}
+
+export const rolesForIdentity = (
+  config: AuthConfig,
+  identity: { userId?: string; username: string; phone?: string; roles?: readonly string[] },
+): string[] => {
+  const roles = [...(identity.roles ?? [])]
+  const admins = config.admins
+  const matched =
+    adminList(admins?.usernames).includes(identity.username) ||
+    (identity.phone ? adminList(admins?.phones).includes(identity.phone) : false) ||
+    (identity.userId ? adminList(admins?.userIds).includes(identity.userId) : false)
+
+  if (matched) roles.push('admin')
+  return uniqueRoles(roles)
+}
+
 // ─── Actor factory ───
 
 export const Authenticator = (opts: {
@@ -345,9 +373,10 @@ export const Authenticator = (opts: {
               credential as Extract<typeof credential, { type: 'registration' }>,
               config,
             )
+            const roles = rolesForIdentity(config, { username: phone, phone })
             const createResult = await ask<UserStoreMsg, { ok: User } | { error: string }>(
               userStore,
-              (r) => ({ type: 'createUser' as const, username: phone, phone, replyTo: r }),
+              (r) => ({ type: 'createUser' as const, username: phone, phone, roles, replyTo: r }),
               { timeoutMs: 5_000 },
             )
             if ('error' in createResult) throw new Error(createResult.error)
@@ -364,9 +393,9 @@ export const Authenticator = (opts: {
               { timeoutMs: 5_000 },
             )
             if ('error' in addResult) throw new Error(addResult.error)
-            return { userId: createResult.ok.id, username: phone }
+            return { userId: createResult.ok.id, username: phone, roles: rolesForIdentity(config, createResult.ok) }
           })(),
-          ({ userId, username: uname }): AuthenticatorMsg => ({ type: '_regDone', userId, username: uname, roles: [], challengeId, replyTo }),
+          ({ userId, username: uname, roles }): AuthenticatorMsg => ({ type: '_regDone', userId, username: uname, roles, challengeId, replyTo }),
           (err): AuthenticatorMsg => ({ type: '_regFailed', error: String(err), replyTo }),
         )
 
@@ -452,7 +481,7 @@ export const Authenticator = (opts: {
               deviceKey,
               config,
             )
-            return { userId: user.id, username: user.username, roles: user.roles, newCounter }
+            return { userId: user.id, username: user.username, roles: rolesForIdentity(config, user), newCounter }
           })(),
           ({ userId, username, roles, newCounter }): AuthenticatorMsg =>
             ({ type: '_authDone', userId, username, roles, challengeId, credentialId, newCounter, replyTo }),

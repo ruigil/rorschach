@@ -18,6 +18,7 @@ const config = defineConfig<AuthConfig>('auth', {
   sessionTtlMs:   7 * 24 * 60 * 60 * 1000,
   challengeTtlMs: 5 * 60 * 1000,
   ticketTtlMs:    30 * 1000,
+  admins:         {},
 }, {
   schemas: authSchemas,
 })

@@ -3,6 +3,7 @@ export const state = {
   isConnected:   false,
   isWaiting:     false,
   currentUserId: null,
+  currentUserRoles: [],
   agents:        [],
   currentMode:   '',
   currentModeDisplayName: '',

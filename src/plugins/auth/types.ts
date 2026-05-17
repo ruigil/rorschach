@@ -99,7 +99,7 @@ export type AuthLogoutEvent = { userId: UserId }
 // ─── UserStore messages ───
 
 export type UserStoreMsg =
-  | { type: 'createUser';          username: string; phone?: string; replyTo: ActorRef<{ ok: User } | { error: string }> }
+  | { type: 'createUser';          username: string; phone?: string; roles?: string[]; replyTo: ActorRef<{ ok: User } | { error: string }> }
   | { type: 'getUser';             userId: UserId;       replyTo: ActorRef<User | null> }
   | { type: 'getUserByCredential'; credentialId: string; replyTo: ActorRef<User | null> }
   | { type: 'getUserByPhone';      phone: string;        replyTo: ActorRef<User | null> }
