@@ -1,4 +1,5 @@
 import { createTopic } from '../system/types.ts'
+import type { Identity } from './identity.ts'
 
 // ─── HTTP route registration ───
 //
@@ -10,7 +11,7 @@ import { createTopic } from '../system/types.ts'
 // `id` identifies the publisher's registration so it can be revoked
 // (publish the same id with handler: null on plugin stop).
 
-type RouteHandler = (req: Request, url: URL) => Promise<Response> | Response
+export type RouteHandler = (req: Request, url: URL, identity: Identity | null) => Promise<Response> | Response
 
 type RouteMatch = 'exact' | 'prefix'
 

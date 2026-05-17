@@ -42,7 +42,7 @@ describe('cognitive planner config', () => {
     const route = routes.at(-1)
     expect(route?.handler).not.toBeNull()
     if (!route || route.handler === null) throw new Error('expected cognitive config route handler')
-    const response = await route.handler(new Request('http://localhost/config/cognitive'), new URL('http://localhost/config/cognitive'))
+    const response = await route.handler(new Request('http://localhost/config/cognitive'), new URL('http://localhost/config/cognitive'), null)
     expect(await response.json()).toMatchObject({
       chatbot: { model: 'deepseek/deepseek-v4-flash' },
       session: { defaultMode: 'chatbot', historyWindowHours: 4 },

@@ -1,11 +1,9 @@
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
-import { defineConfig, createSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/plugin-config.ts'
+import { defineConfig, publishConfigSurface, deleteConfigSurface } from '../../system/plugin-config.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { defineTool, ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { IdentityProviderTopic } from '../../types/identity.ts'
-import type { IdentityProviderMsg } from '../../types/identity.ts'
 
 import type { NotebookConfig, NoteAgentMsg, TodoReminderMsg } from './types.ts'
 
@@ -16,7 +14,7 @@ import { Todos, todosCreateTool, todosCompleteTool, todosListTool, todosDeleteTo
 import { Search, notebookSearchTool } from './tools/search.ts'
 import { NoteAgent } from './note-agent.ts'
 import { TodoReminder } from './todo-reminder.ts'
-import { buildNotebookRoutes, notebookSchemas, ATTACHMENT_ROUTE_ID, ATTACHMENT_ROUTE_PREFIX } from './routes.ts'
+import { buildNotebookRoutes, notebookSchemas } from './routes.ts'
 
 // ─── Public tool schema ───
 
@@ -74,7 +72,6 @@ Always include enough detail in the request so the sub-agent can act without amb
 
 type PluginMsg =
   | { type: 'config'; slice: NotebookConfig | undefined }
-  | { type: '_identityProvider'; ref: ActorRef<IdentityProviderMsg> | null }
 
 type PluginState = {
   initialized:          boolean
@@ -89,7 +86,6 @@ type PluginState = {
   searchRef:            ActorRef<ToolMsg> | null
   noteAgentRef:         ActorRef<NoteAgentMsg>  | null
   reminderRef:          ActorRef<TodoReminderMsg> | null
-  identityProviderRef:  ActorRef<IdentityProviderMsg> | null
 }
 
 const config = defineConfig<NotebookConfig>('notebook', {
@@ -209,7 +205,6 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
     searchRef:           null,
     noteAgentRef:        null,
     reminderRef:         null,
-    identityProviderRef: null,
   },
 
   lifecycle: onLifecycle({
@@ -221,9 +216,7 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
 
       publishConfigSurface(ctx, config, () => cfg)
 
-      ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
-
-      for (const reg of buildNotebookRoutes(null, notebookDir)) {
+      for (const reg of buildNotebookRoutes(notebookDir)) {
         ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
       }
 
@@ -246,7 +239,7 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
 
     stopped: (state, ctx) => {
       stopChildren(state, ctx)
-      for (const reg of buildNotebookRoutes(state.identityProviderRef, state.notebookDir)) {
+      for (const reg of buildNotebookRoutes(state.notebookDir)) {
         ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, match: reg.match, handler: null })
       }
 
@@ -258,23 +251,9 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
   }),
 
   handler: onMessage<PluginMsg, PluginState>({
-    _identityProvider: (state, msg, ctx) => {
-      for (const reg of buildNotebookRoutes(state.identityProviderRef, state.notebookDir)) {
-        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, match: reg.match, handler: null })
-      }
-
-      const nextState = { ...state, identityProviderRef: msg.ref }
-
-      for (const reg of buildNotebookRoutes(msg.ref, state.notebookDir)) {
-        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
-      }
-
-      return { state: nextState }
-    },
-
     config: (state, msg, ctx) => {
       // Tombstone old routes
-      for (const reg of buildNotebookRoutes(state.identityProviderRef, state.notebookDir)) {
+      for (const reg of buildNotebookRoutes(state.notebookDir)) {
         ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, match: reg.match, handler: null })
       }
 
@@ -286,7 +265,7 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
       const gen          = state.gen + 1
 
       // Re-register routes with new notebookDir
-      for (const reg of buildNotebookRoutes(state.identityProviderRef, notebookDir)) {
+      for (const reg of buildNotebookRoutes(notebookDir)) {
         ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
       }
 

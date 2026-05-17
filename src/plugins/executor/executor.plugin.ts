@@ -2,8 +2,6 @@ import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { defineConfig, publishConfigSurface, deleteConfigSurface } from '../../system/plugin-config.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { IdentityProviderTopic } from '../../types/identity.ts'
-import type { IdentityProviderMsg } from '../../types/identity.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
 import { ExecutorAgentFactory } from './executor-agent.ts'
@@ -14,7 +12,6 @@ import type { ExecutorConfig, ExecutorToolsMsg, PlanStoreMsg } from './types.ts'
 
 type PluginMsg =
   | { type: 'config'; slice: ExecutorConfig | undefined }
-  | { type: '_identityProvider'; ref: ActorRef<IdentityProviderMsg> | null }
 
 type PluginState = {
   initialized: boolean
@@ -24,7 +21,6 @@ type PluginState = {
   maxToolLoops: number
   planStoreRef: ActorRef<PlanStoreMsg> | null
   toolsRef: ActorRef<ExecutorToolsMsg> | null
-  identityProviderRef: ActorRef<IdentityProviderMsg> | null
 }
 
 const defaultConfig: ExecutorConfig = {
@@ -63,20 +59,18 @@ const buildDescriptor = (
 
 const publishRoutes = (
   ctx: ActorContext<PluginMsg>,
-  identityProviderRef: ActorRef<IdentityProviderMsg> | null,
   planStoreRef: ActorRef<PlanStoreMsg> | null,
 ): void => {
-  for (const reg of buildExecutorRoutes(identityProviderRef, planStoreRef)) {
+  for (const reg of buildExecutorRoutes(planStoreRef)) {
     ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
   }
 }
 
 const deleteRoutes = (
   ctx: ActorContext<PluginMsg>,
-  identityProviderRef: ActorRef<IdentityProviderMsg> | null,
   planStoreRef: ActorRef<PlanStoreMsg> | null,
 ): void => {
-  for (const reg of buildExecutorRoutes(identityProviderRef, planStoreRef)) {
+  for (const reg of buildExecutorRoutes(planStoreRef)) {
     ctx.deleteRetained(RouteRegistrationTopic, reg.id, {
       id:      reg.id,
       method:  reg.method,
@@ -118,7 +112,6 @@ const executorPlugin: PluginDef<PluginMsg, PluginState, ExecutorConfig> = {
     maxToolLoops:        defaultConfig.maxToolLoops,
     planStoreRef:        null,
     toolsRef:            null,
-    identityProviderRef: null,
   },
 
   lifecycle: onLifecycle({
@@ -127,16 +120,15 @@ const executorPlugin: PluginDef<PluginMsg, PluginState, ExecutorConfig> = {
 
       publishConfigSurface(ctx, config, () => cfg)
 
-      ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
       const children = spawnChildren(ctx, cfg, 0)
-      publishRoutes(ctx, null, children.planStoreRef)
+      publishRoutes(ctx, children.planStoreRef)
 
       ctx.log.info('executor plugin activated', { plansDir: cfg.plansDir })
-      return { state: { initialized: true, gen: 0, ...cfg, ...children, identityProviderRef: null } }
+      return { state: { initialized: true, gen: 0, ...cfg, ...children } }
     },
 
     stopped: (state, ctx) => {
-      deleteRoutes(ctx, state.identityProviderRef, state.planStoreRef)
+      deleteRoutes(ctx, state.planStoreRef)
       stopChildren(state, ctx)
       ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'executor' })
       deleteConfigSurface(ctx, config)
@@ -146,21 +138,15 @@ const executorPlugin: PluginDef<PluginMsg, PluginState, ExecutorConfig> = {
   }),
 
   handler: onMessage<PluginMsg, PluginState>({
-    _identityProvider: (state, msg, ctx) => {
-      deleteRoutes(ctx, state.identityProviderRef, state.planStoreRef)
-      publishRoutes(ctx, msg.ref, state.planStoreRef)
-      return { state: { ...state, identityProviderRef: msg.ref } }
-    },
-
     config: (state, msg, ctx) => {
-      deleteRoutes(ctx, state.identityProviderRef, state.planStoreRef)
+      deleteRoutes(ctx, state.planStoreRef)
       stopChildren(state, ctx)
       ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'executor' })
 
       const cfg = { ...defaultConfig, ...(msg.slice ?? {}) }
       const gen = state.gen + 1
       const children = spawnChildren(ctx, cfg, gen)
-      publishRoutes(ctx, state.identityProviderRef, children.planStoreRef)
+      publishRoutes(ctx, children.planStoreRef)
 
       return {
         state: {

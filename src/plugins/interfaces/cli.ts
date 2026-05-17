@@ -6,7 +6,7 @@ import {
   InboundMessageTopic,
   OutboundMessageTopic,
 } from '../../types/events.ts'
-import { ANONYMOUS_USER_ID } from '../../types/identity.ts'
+import { ANONYMOUS_USER_ID } from './types.ts'
 
 // ─── ANSI codes ───
 const C = {

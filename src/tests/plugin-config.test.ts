@@ -23,7 +23,7 @@ describe('plugin config surface helpers', () => {
 
     expect(route?.handler).not.toBeNull()
     if (!route || route.handler === null) throw new Error('expected config route handler')
-    const response = await route.handler(new Request('http://localhost/config/sample'), new URL('http://localhost/config/sample'))
+    const response = await route.handler(new Request('http://localhost/config/sample'), new URL('http://localhost/config/sample'), null)
     expect(response.headers.get('Content-Type')).toBe('application/json')
     expect(await response.json()).toEqual({ enabled: false })
   })

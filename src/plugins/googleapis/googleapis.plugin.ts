@@ -2,8 +2,6 @@ import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { defineConfig, publishConfigSurface, deleteConfigSurface } from '../../system/plugin-config.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { IdentityProviderTopic } from '../../types/identity.ts'
-import type { IdentityProviderMsg } from '../../types/identity.ts'
 import { defineTool, ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 
@@ -82,7 +80,6 @@ type PluginState = {
   driveRef:            ActorRef<ToolMsg> | null
   youtubeRef:          ActorRef<ToolMsg> | null
   googleAgentRef:      ActorRef<GoogleAgentMsg> | null
-  identityProviderRef: ActorRef<IdentityProviderMsg> | null
   tokenStoreRef:       ActorRef<TokenStoreMsg> | null
   oauthStateRef:       ActorRef<OAuthStateMsg> | null
   clientId:            string
@@ -178,7 +175,6 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
     driveRef:            null,
     youtubeRef:          null,
     googleAgentRef:      null,
-    identityProviderRef: null,
     tokenStoreRef:       null,
     oauthStateRef:       null,
     clientId:            '',
@@ -205,10 +201,7 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
       const tokenStoreRef = ctx.spawn('googleapis-token-store', TokenStore('workspace/googleapis/tokens.json'))
       const oauthStateRef = ctx.spawn('googleapis-oauth-state', OAuthState())
 
-      ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
-
       for (const reg of buildGoogleOAuthRoutes({
-        identityProviderRef: null,
         tokenStoreRef,
         oauthStateRef,
         clientId,
@@ -240,7 +233,6 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
 
     stopped: (state, ctx) => {
       for (const reg of buildGoogleOAuthRoutes({
-        identityProviderRef: state.identityProviderRef,
         tokenStoreRef: state.tokenStoreRef,
         oauthStateRef: state.oauthStateRef,
         clientId: state.clientId,
@@ -259,40 +251,9 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
   }),
 
   handler: onMessage<GooglePluginMsg, PluginState>({
-    _identityProvider: (state, msg, ctx) => {
-      // Tombstone old routes
-      for (const reg of buildGoogleOAuthRoutes({
-        identityProviderRef: state.identityProviderRef,
-        tokenStoreRef: state.tokenStoreRef,
-        oauthStateRef: state.oauthStateRef,
-        clientId: state.clientId,
-        clientSecret: state.clientSecret,
-        baseUrl: state.baseUrl,
-      })) {
-        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
-      }
-
-      const nextState = { ...state, identityProviderRef: msg.ref }
-
-      // Re-register routes with new identity provider ref
-      for (const reg of buildGoogleOAuthRoutes({
-        identityProviderRef: msg.ref,
-        tokenStoreRef: state.tokenStoreRef,
-        oauthStateRef: state.oauthStateRef,
-        clientId: state.clientId,
-        clientSecret: state.clientSecret,
-        baseUrl: state.baseUrl,
-      })) {
-        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
-      }
-
-      return { state: nextState }
-    },
-
     config: (state, msg, ctx) => {
       // Tombstone old routes
       for (const reg of buildGoogleOAuthRoutes({
-        identityProviderRef: state.identityProviderRef,
         tokenStoreRef: state.tokenStoreRef,
         oauthStateRef: state.oauthStateRef,
         clientId: state.clientId,
@@ -314,7 +275,6 @@ const googleApisPlugin: PluginDef<GooglePluginMsg, PluginState, GoogleApisConfig
 
       // Re-register routes with new config
       for (const reg of buildGoogleOAuthRoutes({
-        identityProviderRef: state.identityProviderRef,
         tokenStoreRef: state.tokenStoreRef,
         oauthStateRef: state.oauthStateRef,
         clientId,

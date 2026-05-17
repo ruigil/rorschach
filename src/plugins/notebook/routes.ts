@@ -1,9 +1,6 @@
 import { resolve, sep } from 'node:path'
-import type { ActorRef } from '../../system/types.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
-import { resolveCookieIdentity } from '../../types/identity.ts'
-import type { IdentityProviderMsg } from '../../types/identity.ts'
 import type { NoteEntry } from './types.ts'
 
 // ─── Config Schema Sections ──────────────────────────────────────────────────
@@ -40,7 +37,6 @@ const resolveUnder = (baseDir: string, relPath: string): string | null => {
 }
 
 export const buildNotebookRoutes = (
-  identityProviderRef: ActorRef<IdentityProviderMsg> | null,
   notebookDir: string,
 ): RouteRegistration[] => [
   {
@@ -48,10 +44,8 @@ export const buildNotebookRoutes = (
     method: 'GET',
     path: ATTACHMENT_ROUTE_PREFIX,
     match: 'prefix',
-    handler: async (req: Request, url: URL) => {
-      const session = await resolveCookieIdentity(identityProviderRef, req)
-
-      if (!session) return new Response('Unauthorized', { status: 401 })
+    handler: async (_req, url, identity) => {
+      if (!identity) return new Response('Unauthorized', { status: 401 })
 
       let attachmentId: string
       try {
@@ -73,14 +67,16 @@ export const buildNotebookRoutes = (
       if (!filePath) return new Response('Not Found', { status: 404 })
 
       const file = Bun.file(filePath)
-      if (!await file.exists()) return new Response('Not Found', { status: 404 })
+      if (await file.exists()) {
+        return new Response(file, {
+          headers: {
+            'Content-Type': attachment.mimeType,
+            'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(attachment.originalName)}`,
+          },
+        })
+      }
 
-      return new Response(file, {
-        headers: {
-          'Content-Type': attachment.mimeType,
-          'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(attachment.originalName)}`,
-        },
-      })
+      return new Response('Not Found', { status: 404 })
     },
   },
 ]

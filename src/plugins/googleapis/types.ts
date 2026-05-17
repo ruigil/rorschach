@@ -1,7 +1,6 @@
 import type { ActorRef } from '../../system/types.ts'
 import type { LoopMsg } from '../../system/agent-loop.ts'
 import type { ToolInvokeMsg } from '../../types/tools.ts'
-import type { IdentityProviderMsg } from '../../types/identity.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 
 // ─── Domain types ───
@@ -36,14 +35,12 @@ export type OAuthStateMsg =
 
 export type GooglePluginMsg =
   | { type: 'config';            slice: GoogleApisConfig | undefined }
-  | { type: '_identityProvider'; ref: ActorRef<IdentityProviderMsg> | null }
 
 export type GoogleAgentMsg = LoopMsg | ToolInvokeMsg | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── Route handler options (passed into route factories) ───
 
 export type GoogleOAuthRouteOpts = {
-  identityProviderRef: ActorRef<IdentityProviderMsg> | null
   tokenStoreRef:       ActorRef<TokenStoreMsg>       | null
   oauthStateRef:       ActorRef<OAuthStateMsg>       | null
   clientId:            string

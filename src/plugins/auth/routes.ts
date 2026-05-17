@@ -239,7 +239,8 @@ export const buildAuthRoutes = (authenticator: ActorRef<AuthenticatorMsg>): Rout
     id: 'auth.ticket',
     method: 'POST',
     path: '/auth/ticket',
-    handler: async (req) => {
+    handler: async (req, _url, identity) => {
+      if (!identity) return new Response('Unauthorized', { status: 401 })
       const token = getCookieToken(req)
       if (!token) return new Response('Unauthorized', { status: 401 })
       const result = await ask<AuthenticatorMsg, { ticket: string } | { error: string }>(

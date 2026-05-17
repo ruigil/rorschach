@@ -2,7 +2,6 @@ import { google } from 'googleapis'
 import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import { ask } from '../../system/ask.ts'
-import { resolveCookieIdentity } from '../../types/identity.ts'
 import type { GoogleToken, GoogleOAuthRouteOpts, OAuthStateMsg } from './types.ts'
 
 // ─── Config Schema Sections ──────────────────────────────────────────────────
@@ -45,8 +44,7 @@ export const buildGoogleOAuthRoutes = (opts: GoogleOAuthRouteOpts): RouteRegistr
     id:     'googleapis.auth.start',
     method: 'GET',
     path:   '/googleapis/auth/start',
-    handler: async (req) => {
-      const identity = await resolveCookieIdentity(opts.identityProviderRef, req)
+    handler: async (_req, _url, identity) => {
       if (!identity) return new Response('Unauthorized', { status: 401 })
 
       if (!opts.oauthStateRef || !opts.clientId || !opts.clientSecret)
@@ -104,8 +102,7 @@ export const buildGoogleOAuthRoutes = (opts: GoogleOAuthRouteOpts): RouteRegistr
     id:     'googleapis.auth.status',
     method: 'GET',
     path:   '/googleapis/auth/status',
-    handler: async (req) => {
-      const identity = await resolveCookieIdentity(opts.identityProviderRef, req)
+    handler: async (_req, _url, identity) => {
       if (!identity) return new Response('Unauthorized', { status: 401 })
 
       if (!opts.tokenStoreRef)
@@ -127,8 +124,7 @@ export const buildGoogleOAuthRoutes = (opts: GoogleOAuthRouteOpts): RouteRegistr
     id:     'googleapis.auth.revoke',
     method: 'POST',
     path:   '/googleapis/auth/revoke',
-    handler: async (req) => {
-      const identity = await resolveCookieIdentity(opts.identityProviderRef, req)
+    handler: async (_req, _url, identity) => {
       if (!identity) return new Response('Unauthorized', { status: 401 })
 
       opts.tokenStoreRef?.send({ type: 'deleteToken', userId: identity.userId })

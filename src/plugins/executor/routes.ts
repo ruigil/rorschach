@@ -2,8 +2,7 @@ import type { ActorRef } from '../../system/types.ts'
 import { ask } from '../../system/ask.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
-import { resolveCookieIdentity } from '../../types/identity.ts'
-import type { IdentityProviderMsg } from '../../types/identity.ts'
+import type { Identity } from '../../types/identity.ts'
 import type { PlanStoreMsg, PlanStoreReply } from './types.ts'
 
 export const executorStorageSchema: ConfigSchemaSection = {
@@ -57,24 +56,18 @@ const planIdFromPath = (pathname: string, suffix = ''): string | null => {
   }
 }
 
-const requireSession = async (
-  identityProviderRef: ActorRef<IdentityProviderMsg> | null,
-  req: Request,
-): Promise<Response | null> => {
-  const session = await resolveCookieIdentity(identityProviderRef, req)
-  return session ? null : json({ error: 'Unauthorized' }, 401)
-}
+const requireSession = (identity: Identity | null): Response | null =>
+  identity ? null : json({ error: 'Unauthorized' }, 401)
 
 export const buildExecutorRoutes = (
-  identityProviderRef: ActorRef<IdentityProviderMsg> | null,
   planStoreRef: ActorRef<PlanStoreMsg> | null,
 ): RouteRegistration[] => [
   {
     id:     'executor.plans.list',
     method: 'GET',
     path:   '/plans',
-    handler: async (req) => {
-      const unauthorized = await requireSession(identityProviderRef, req)
+    handler: async (_req, _url, identity) => {
+      const unauthorized = requireSession(identity)
       if (unauthorized) return unauthorized
       if (!planStoreRef) return json([])
       const reply = await ask<PlanStoreMsg, PlanStoreReply>(planStoreRef, replyTo => ({ type: 'list', replyTo }), { timeoutMs: 5_000 })
@@ -88,8 +81,8 @@ export const buildExecutorRoutes = (
     method: 'GET',
     path:   '/plans/',
     match:  'prefix',
-    handler: async (req, url) => {
-      const unauthorized = await requireSession(identityProviderRef, req)
+    handler: async (_req, url, identity) => {
+      const unauthorized = requireSession(identity)
       if (unauthorized) return unauthorized
       if (!planStoreRef) return json({ error: 'Plan store unavailable' }, 503)
 

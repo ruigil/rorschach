@@ -15,7 +15,8 @@ import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
 import { ConfigSchemaTopic, ConfigUpdateRequestTopic } from '../../types/config.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
-import { IdentityProviderTopic, resolveIdentity, resolveCookieIdentity } from '../../types/identity.ts'
+import { IdentityProviderTopic, type Identity } from '../../types/identity.ts'
+import { resolveIdentity, resolveCookieIdentity } from './types.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 import { AgentCatalogTopic, SwitchAgentTopic, type AgentCatalogEvent } from '../../types/agents.ts'
 
@@ -167,15 +168,15 @@ export const authorizeConfigAccess = async (
   identityProviderRef: ActorRef<IdentityProviderMsg> | null,
   req: Request,
   url: URL,
+  identity: Identity | null,
   options?: { requireSameOrigin?: boolean },
 ): Promise<Response | null> => {
   if (options?.requireSameOrigin && !isSameOriginRequest(req, url)) {
     return new Response('Forbidden', { status: 403 })
   }
 
-  const session = await resolveCookieIdentity(identityProviderRef, req)
-  if (!session) return new Response('Unauthorized', { status: 401 })
-  if (!canAccessAdminSurface(identityProviderRef, session.roles)) return new Response('Forbidden', { status: 403 })
+  if (!identity) return new Response('Unauthorized', { status: 401 })
+  if (!canAccessAdminSurface(identityProviderRef, identity.roles)) return new Response('Forbidden', { status: 403 })
   return null
 }
 
@@ -467,8 +468,16 @@ export const HTTP = (
           async fetch(req, server) {
             const url = new URL(req.url)
 
+            // Resolve identity once at the boundary for all non-static requests.
+            // WebSocket upgrade handles its own resolution via ticket.
+            const isMedia = url.pathname.startsWith('/inbound/') || url.pathname.startsWith('/generated/')
+            const isStatic = url.pathname === '/' || url.pathname.endsWith('.html') || url.pathname.endsWith('.css') || url.pathname.endsWith('.js') || url.pathname.endsWith('.ico')
+            const identity = (!isMedia && !isStatic && url.pathname !== '/ws')
+              ? await resolveCookieIdentity(identityProviderRef, req)
+              : null
+
             if (url.pathname === '/config/schema' || url.pathname.startsWith('/config/') || url.pathname === '/kgraph') {
-              const denied = await authorizeConfigAccess(identityProviderRef, req, url, {
+              const denied = await authorizeConfigAccess(identityProviderRef, req, url, identity, {
                 requireSameOrigin: req.method !== 'GET',
               })
               if (denied) return denied
@@ -476,7 +485,7 @@ export const HTTP = (
 
             // Plugin-registered routes (auth, etc.) win over inline handlers.
             const registered = resolveRegisteredRoute(req.method, url.pathname)
-            if (registered) return await registered(req, url)
+            if (registered) return await registered(req, url, identity)
 
             // Models API
             if (req.method === 'GET' && url.pathname === '/models') {
@@ -491,8 +500,7 @@ export const HTTP = (
 
             // Current user identity
             if (req.method === 'GET' && url.pathname === '/me') {
-              const session = await resolveCookieIdentity(identityProviderRef, req)
-              return new Response(JSON.stringify({ userId: session?.userId ?? null, roles: session?.roles ?? [] }), { headers: { 'Content-Type': 'application/json' } })
+              return new Response(JSON.stringify({ userId: identity?.userId ?? null, roles: identity?.roles ?? [] }), { headers: { 'Content-Type': 'application/json' } })
             }
 
             // Config schema API
@@ -531,7 +539,6 @@ export const HTTP = (
             }
 
             // Static file serving
-            const isMedia = url.pathname.startsWith('/inbound/') || url.pathname.startsWith('/generated/')
             const filePath = url.pathname === '/'
               ? join(PUBLIC_DIR, 'index.html')
               : isMedia

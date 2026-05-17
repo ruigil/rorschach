@@ -8,7 +8,8 @@ import { join } from 'node:path'
 import { ask } from '../../system/ask.ts'
 
 import { ClientConnectTopic, InboundMessageTopic, OutboundMessageTopic } from '../../types/events.ts'
-import { IdentityProviderTopic, resolveIdentity } from '../../types/identity.ts'
+import { IdentityProviderTopic } from '../../types/identity.ts'
+import { resolveIdentity } from './types.ts'
 import type { IdentityProviderMsg, Identity } from '../../types/identity.ts'
 import type { ToolAttachment, ToolSource } from '../../types/tools.ts'
 

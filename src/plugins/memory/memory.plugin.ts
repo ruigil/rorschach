@@ -3,8 +3,6 @@ import { defineConfig, createSlot, stopSlot, publishConfigSurface, deleteConfigS
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { IdentityProviderTopic } from '../../types/identity.ts'
-import type { IdentityProviderMsg } from '../../types/identity.ts'
 import type { KgraphMsg, MemoryConsolidationMsg, MemorySupervisorMsg, UserContextMsg } from './types.ts'
 import { Kgraph } from './kgraph.ts'
 import { MemoryConsolidation } from './memory-consolidation.ts'
@@ -60,12 +58,10 @@ type MemoryPluginState = {
   zettel:              ActorRef<ZettelNoteMsg>          | null
   userContext:         ActorRef<UserContextMsg>         | null
   memoryGen:           number
-  identityProviderRef: ActorRef<IdentityProviderMsg>    | null
 }
 
 type MemoryPluginMsg =
   | { type: 'config'; slice: MemoryConfig | undefined }
-  | { type: '_identityProvider'; ref: ActorRef<IdentityProviderMsg> | null }
 
 // ─── Helpers ───
 
@@ -142,7 +138,6 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
     zettel:              null,
     userContext:         null,
     memoryGen:           0,
-    identityProviderRef: null,
   },
 
   lifecycle: onLifecycle({
@@ -163,8 +158,6 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
 
       const kgraphRef = ctx.spawn('kgraph-0', Kgraph(dbPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg)) as ActorRef<KgraphMsg>
 
-      ctx.subscribe(IdentityProviderTopic, (e) => ({ type: '_identityProvider' as const, ref: e.ref }))
-
       let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
       let memory:        ActorRef<MemorySupervisorMsg>    | null = null
       let zettel:        ActorRef<ZettelNoteMsg>          | null = null
@@ -179,7 +172,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         ctx.log.info('memory actors activated', { model: slice.system.model })
       }
 
-      for (const reg of buildMemoryRoutes(null, kgraphRef)) {
+      for (const reg of buildMemoryRoutes(kgraphRef)) {
         ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
       }
 
@@ -192,12 +185,11 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         zettel,
         userContext,
         memoryGen: 0,
-        identityProviderRef: null,
       } }
     },
 
     stopped: (state, ctx) => {
-      for (const reg of buildMemoryRoutes(state.identityProviderRef, state.kgraph.ref as ActorRef<KgraphMsg> | null)) {
+      for (const reg of buildMemoryRoutes(state.kgraph.ref as ActorRef<KgraphMsg> | null)) {
         ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
       }
       stopMemoryActors(ctx, state)
@@ -211,23 +203,9 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
   }),
 
   handler: onMessage<MemoryPluginMsg, MemoryPluginState>({
-    _identityProvider: (state, msg, ctx) => {
-      for (const reg of buildMemoryRoutes(state.identityProviderRef, state.kgraph.ref as ActorRef<KgraphMsg> | null)) {
-        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
-      }
-
-      const nextState = { ...state, identityProviderRef: msg.ref }
-
-      for (const reg of buildMemoryRoutes(msg.ref, state.kgraph.ref as ActorRef<KgraphMsg> | null)) {
-        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
-      }
-
-      return { state: nextState }
-    },
-
     config: (state, msg, ctx) => {
       // Tombstone old routes
-      for (const reg of buildMemoryRoutes(state.identityProviderRef, state.kgraph.ref as ActorRef<KgraphMsg> | null)) {
+      for (const reg of buildMemoryRoutes(state.kgraph.ref as ActorRef<KgraphMsg> | null)) {
         ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, handler: null })
       }
 
@@ -269,7 +247,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       }
 
       // Re-register routes with new refs
-      for (const reg of buildMemoryRoutes(state.identityProviderRef, kgraphRef)) {
+      for (const reg of buildMemoryRoutes(kgraphRef)) {
         ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
       }
 

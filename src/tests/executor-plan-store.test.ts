@@ -10,6 +10,7 @@ import type { Plan } from '../types/plans.ts'
 import type { PlanStoreMsg, PlanStoreReply } from '../plugins/executor/types.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 import { OutboundMessageTopic } from '../types/events.ts'
+import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
 
 const tempDirs: string[] = []
 
@@ -89,18 +90,18 @@ describe('executor plan store', () => {
 
     const system = await AgentSystem()
     const store = system.spawn('plan-store', PlanStore(dir))
-    const routes = buildExecutorRoutes(null, store)
+    const routes = buildExecutorRoutes(store)
 
     const listRoute = routes.find(route => route.id === 'executor.plans.list')
     expect(listRoute?.handler).not.toBeNull()
     if (!listRoute || listRoute.handler === null) throw new Error('missing list route')
-    const listRes = await listRoute.handler(new Request('http://localhost/plans'), new URL('http://localhost/plans'))
+    const listRes = await listRoute.handler(new Request('http://localhost/plans'), new URL('http://localhost/plans'), ANONYMOUS_IDENTITY)
     expect(await listRes.json()).toMatchObject([{ id: 'plan-1', taskCount: 2 }])
 
     const itemRoute = routes.find(route => route.id === 'executor.plans.item')
     expect(itemRoute?.handler).not.toBeNull()
     if (!itemRoute || itemRoute.handler === null) throw new Error('missing item route')
-    const graphRes = await itemRoute.handler(new Request('http://localhost/plans/plan-1/graph'), new URL('http://localhost/plans/plan-1/graph'))
+    const graphRes = await itemRoute.handler(new Request('http://localhost/plans/plan-1/graph'), new URL('http://localhost/plans/plan-1/graph'), ANONYMOUS_IDENTITY)
     const graph = await graphRes.json()
     expect(graph.edges).toEqual([{ source: 'design', target: 'build', type: 'depends_on' }])
 

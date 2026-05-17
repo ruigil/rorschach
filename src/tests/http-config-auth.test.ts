@@ -5,6 +5,7 @@ import { authorizeConfigAccess, canAccessAdminSurface } from '../plugins/interfa
 import { rolesForIdentity, type AuthConfig } from '../plugins/auth/authenticator.ts'
 import type { ActorRef } from '../system/types.ts'
 import type { Identity, IdentityProviderMsg } from '../types/identity.ts'
+import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -22,7 +23,7 @@ const fakeIdentityProvider = (sessions: Record<string, Identity>): ActorDef<Iden
   initialState: null,
   handler: (state, msg) => {
     if (msg.type === 'resolveCookie') msg.replyTo.send(sessions[msg.cookie] ?? null)
-    if (msg.type === 'resolveTicket') msg.replyTo.send(sessions[msg.ticket] ?? null)
+    if (msg.type === 'resolveTicket') msg.replyTo.send(msg.ticket ? (sessions[msg.ticket] ?? null) : null)
     if (msg.type === 'resolvePhone') msg.replyTo.send(Object.values(sessions).find(identity => identity.username === msg.phone) ?? null)
     return { state }
   },
@@ -39,14 +40,14 @@ const startIdentityProvider = async (
 
 describe('HTTP config update authorization', () => {
   test('allows anonymous config access when no auth provider is loaded', async () => {
-    const denied = await authorizeConfigAccess(null, configRequest(), new URL(configUrl), { requireSameOrigin: true })
+    const denied = await authorizeConfigAccess(null, configRequest(), new URL(configUrl), ANONYMOUS_IDENTITY, { requireSameOrigin: true })
     expect(denied).toBeNull()
   })
 
   test('rejects config writes without a valid session when auth is loaded', async () => {
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({}))
 
-    const denied = await authorizeConfigAccess(ref, configRequest(), new URL(configUrl), { requireSameOrigin: true })
+    const denied = await authorizeConfigAccess(ref, configRequest(), new URL(configUrl), null, { requireSameOrigin: true })
 
     expect(denied?.status).toBe(401)
 
@@ -54,13 +55,14 @@ describe('HTTP config update authorization', () => {
   })
 
   test('rejects authenticated config writes without a privileged role', async () => {
+    const identity: Identity = { userId: 'u1', username: 'user', roles: [] }
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
-      plain: { userId: 'u1', username: 'user', roles: [] },
+      plain: identity,
     }))
 
     const denied = await authorizeConfigAccess(ref, configRequest({
       headers: { Cookie: 'session=plain' },
-    }), new URL(configUrl), { requireSameOrigin: true })
+    }), new URL(configUrl), identity, { requireSameOrigin: true })
 
     expect(denied?.status).toBe(403)
 
@@ -68,13 +70,14 @@ describe('HTTP config update authorization', () => {
   })
 
   test('allows authenticated config writes with admin role', async () => {
+    const identity: Identity = { userId: 'u1', username: 'admin-user', roles: ['admin'] }
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
-      privileged: { userId: 'u1', username: 'admin-user', roles: ['admin'] },
+      privileged: identity,
     }))
 
     const denied = await authorizeConfigAccess(ref, configRequest({
       headers: { Cookie: 'session=privileged' },
-    }), new URL(configUrl), { requireSameOrigin: true })
+    }), new URL(configUrl), identity, { requireSameOrigin: true })
 
     expect(denied).toBeNull()
 
@@ -82,13 +85,14 @@ describe('HTTP config update authorization', () => {
   })
 
   test('rejects cross-origin config writes before publishing updates', async () => {
+    const identity: Identity = { userId: 'u1', username: 'admin-user', roles: ['admin'] }
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
-      privileged: { userId: 'u1', username: 'admin-user', roles: ['admin'] },
+      privileged: identity,
     }))
 
     const denied = await authorizeConfigAccess(ref, configRequest({
       headers: { Cookie: 'session=privileged', Origin: 'http://evil.example' },
-    }), new URL(configUrl), { requireSameOrigin: true })
+    }), new URL(configUrl), identity, { requireSameOrigin: true })
 
     expect(denied?.status).toBe(403)
 
@@ -115,17 +119,19 @@ describe('admin surface access', () => {
 
   test('allows admin HTTP reads for admins and rejects non-admins', async () => {
     const observeUrl = 'http://127.0.0.1:3000/kgraph'
+    const adminIdentity: Identity = { userId: 'u-admin', username: 'admin', roles: ['admin'] }
+    const userIdentity: Identity = { userId: 'u-user', username: 'user', roles: [] }
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
-      admin: { userId: 'u-admin', username: 'admin', roles: ['admin'] },
-      user:  { userId: 'u-user',  username: 'user',  roles: [] },
+      admin: adminIdentity,
+      user:  userIdentity,
     }))
 
     const adminDenied = await authorizeConfigAccess(ref, new Request(observeUrl, {
       headers: { Cookie: 'session=admin' },
-    }), new URL(observeUrl))
+    }), new URL(observeUrl), adminIdentity)
     const userDenied = await authorizeConfigAccess(ref, new Request(observeUrl, {
       headers: { Cookie: 'session=user' },
-    }), new URL(observeUrl))
+    }), new URL(observeUrl), userIdentity)
 
     expect(adminDenied).toBeNull()
     expect(userDenied?.status).toBe(403)
