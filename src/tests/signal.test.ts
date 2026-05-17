@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs'
 import { AgentSystem } from '../system/index.ts'
 import { Signal, renderForSignal } from '../plugins/interfaces/signal.ts'
 import { ClientConnectTopic, InboundMessageTopic, OutboundMessageTopic } from '../types/events.ts'
-import type { ClientConnectEvent, InboundMessageEvent } from '../types/events.ts'
+import type { ClientConnectEvent, InboundMessageEvent, MessageAttachment } from '../types/events.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -130,6 +130,40 @@ describe('signal actor: TCP socket', () => {
     await system.shutdown()
   })
 
+  test('splits message when sending both text and attachments (attachments first)', async () => {
+    daemon = startMockSignalDaemon(17596)
+
+    const system = await AgentSystem()
+    system.spawn('signal', Signal({ host: '127.0.0.1', port: 17596 }),
+      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
+
+    await tick(100)
+
+    const attachment: MessageAttachment = { kind: 'image', url: 'test.jpg', mimeType: 'image/jpeg' }
+    system.publish(OutboundMessageTopic, { clientId: '+6666666666', text: JSON.stringify({ type: 'chunk', text: 'here is some text' }) })
+    system.publish(OutboundMessageTopic, { clientId: '+6666666666', text: JSON.stringify({ type: 'attachments', attachments: [attachment] }) })
+    system.publish(OutboundMessageTopic, { clientId: '+6666666666', text: JSON.stringify({ type: 'done' }) })
+    await tick(200)
+
+    const sendLines = daemon.receivedLines.filter(l => {
+      try { return JSON.parse(l).method === 'send' } catch { return false }
+    })
+    expect(sendLines).toHaveLength(2)
+    
+    // First message should be attachments only
+    const req1 = JSON.parse(sendLines[0]!)
+    expect(req1.params.message).toBeUndefined()
+    expect(req1.params.attachments).toBeDefined()
+    expect(req1.params.attachments).toHaveLength(1)
+
+    // Second message should be text only
+    const req2 = JSON.parse(sendLines[1]!)
+    expect(req2.params.message).toBe('here is some text')
+    expect(req2.params.attachments).toBeUndefined()
+
+    await system.shutdown()
+  })
+
   test('emits WsMessage with images when an envelope contains attachments', async () => {
     const messageEvents: InboundMessageEvent[] = []
 
@@ -248,11 +282,11 @@ describe('signal actor: TCP socket', () => {
     console.log(`received ${messageEvents.length} message(s) from ${connectEvents.length} sender(s)`)
     for (const e of messageEvents) {
       console.log(`  [${e.clientId}] ${e.text}`)
-      if (e.images) {
-        console.log(`    attachments (${e.images.length}):`)
-        for (const path of e.images) {
-          const file = Bun.file(path)
-          console.log(`      ${path} (${await file.exists() ? file.size + ' bytes' : 'missing'})`)
+      if (e.attachments) {
+        console.log(`    attachments (${e.attachments.length}):`)
+        for (const attachment of e.attachments) {
+          const file = Bun.file(attachment.url)
+          console.log(`      ${attachment.url} (${await file.exists() ? file.size + ' bytes' : 'missing'})`)
         }
       }
     }

@@ -259,7 +259,7 @@ export const Signal = (
     writeToSocket(rpcLine('send', {
       ...(account ? { account } : {}),
       recipient: [clientId],
-      message,
+      ...(message ? { message } : {}),
       ...(textStyles.length > 0 ? { textStyles } : {}),
       ...(attachments.length > 0 ? { attachments } : {}),
     }))
@@ -466,13 +466,27 @@ export const Signal = (
             pending.delete(msg.clientId)
             sendTyping(msg.clientId, true)
             if (pending.size === 0) ctx.timers.cancel('typing')
+
             const rendered = renderForSignal(buf.text)
             const allAttachments = buf.attachments.map(a => join(MEDIA_DIR, a.url))
+
+            const sendSeq = async () => {
+              // If both text and attachments exist, send them in two separate messages (attachments first).
+              if (rendered.message && allAttachments.length > 0) {
+                await sendOverSocket(msg.clientId, { message: '', textStyles: [] }, allAttachments)
+                await sendOverSocket(msg.clientId, rendered, [])
+              } else {
+                // Otherwise just send whatever we have in a single message.
+                await sendOverSocket(msg.clientId, rendered, allAttachments)
+              }
+            }
+
             ctx.pipeToSelf(
-              sendOverSocket(msg.clientId, rendered, allAttachments),
+              sendSeq(),
               ()    => ({ type: '_sendOk'  as const }),
               (err) => ({ type: '_sendErr' as const, error: String(err) }),
             )
+
             const span = state.activeSpans[msg.clientId]
             if (span) {
               span.done()

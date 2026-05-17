@@ -10,7 +10,7 @@ export type ExecutorConfig = {
   maxToolLoops: number
 }
 
-import type { MessageAttachment } from '../events.ts'
+import type { MessageAttachment } from '../../types/events.ts'
 
 export type PlanSummary = {
   id: string
