@@ -4,7 +4,8 @@ import { agentLoop, idleLoopState, type LoopMsg, type LoopState } from '../../sy
 import { OutboundMessageTopic } from '../../types/events.ts'
 import { UserStreamTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter, ToolFinalReply, ToolMsg, ToolSchema } from '../../types/tools.ts'
-import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
+import { applyToolFilter } from '../../system/tool-utils.ts'
+import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage, TokenUsage } from '../../types/llm.ts'
 import { HistorySnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
 

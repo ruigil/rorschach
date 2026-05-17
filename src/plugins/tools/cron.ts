@@ -2,7 +2,7 @@ import { CronExpressionParser } from 'cron-parser'
 import type { ActorDef, PersistenceAdapter } from '../../system/types.ts'
 import { emit } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { defineTool } from '../../types/tools.ts'
+import { defineTool } from '../../system/tool-utils.ts'
 import type { ToolInvokeMsg } from '../../types/tools.ts'
 import { CronTriggerTopic } from '../../types/events.ts'
 

@@ -1,7 +1,7 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { JobRegistryTopic } from '../../types/tools.ts'
-import { defineTool } from '../../types/tools.ts'
+import { defineTool } from '../../system/tool-utils.ts'
 import type { ToolMsg, ToolReply, ToolResultPayload } from '../../types/tools.ts'
 
 // ─── Schema ───

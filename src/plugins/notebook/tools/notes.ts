@@ -2,7 +2,7 @@ import { mkdir, unlink } from 'node:fs/promises'
 import { extname, basename } from 'node:path'
 import type { ActorDef, ActorRef, SpanHandle } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
-import { defineTool } from '../../../types/tools.ts'
+import { defineTool } from '../../../system/tool-utils.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { Attachment, NoteEntry } from '../types.ts'
 

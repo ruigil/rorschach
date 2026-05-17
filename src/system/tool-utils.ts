@@ -1,7 +1,7 @@
 import { ask } from './ask.ts'
 import type { ActorContext, ActorRef, MessageHeaders } from './types.ts'
 import { JobRegistryTopic } from '../types/tools.ts'
-import type { ToolFinalReply, ToolMsg, ToolReply } from '../types/tools.ts'
+import type { ToolFinalReply, ToolMsg, ToolReply, ToolSchema, ToolFilter } from '../types/tools.ts'
 
 export type InvokeToolArgs = {
   toolName:  string
@@ -102,4 +102,49 @@ export const invokeTool = async <M>(
     type: 'toolResult',
     result: { text: placeholderText ?? `Job started; result will be delivered when ready (jobId=${jobId}).` },
   }
+}
+
+// ─── Schema (what the LLM sees) ───
+
+export const defineTool = (
+  name: string,
+  description: string,
+  parameters: object,
+): { name: string; schema: ToolSchema } => ({
+  name,
+  schema: {
+    type: 'function',
+    function: { name, description, parameters },
+  },
+})
+
+// ─── Tool filtering and parsing ───
+
+type ToolParseResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: string }
+
+export const parseToolArgs = <T>(
+  rawArgs: string,
+  extract: (parsed: Record<string, unknown>) => T | null,
+  missingMsg = 'Missing required arguments',
+): ToolParseResult<T> => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(rawArgs)
+  } catch {
+    return { ok: false, error: 'Invalid arguments: expected JSON object' }
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, error: 'Invalid arguments: expected JSON object' }
+  }
+  const value = extract(parsed as Record<string, unknown>)
+  if (value === null) return { ok: false, error: missingMsg }
+  return { ok: true, value }
+}
+
+export const applyToolFilter = (name: string, filter?: ToolFilter): boolean => {
+  if (!filter) return true
+  if ('allow' in filter) return filter.allow.includes(name)
+  return !filter.deny.includes(name)
 }

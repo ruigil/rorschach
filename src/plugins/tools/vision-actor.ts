@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
-import { defineTool } from '../../types/tools.ts'
+import { defineTool } from '../../system/tool-utils.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply, VisionProviderReply } from '../../types/llm.ts'
 

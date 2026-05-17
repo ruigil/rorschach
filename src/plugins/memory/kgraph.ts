@@ -1,7 +1,7 @@
 import { GrafeoDB } from '@grafeo-db/js'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { defineTool } from '../../types/tools.ts'
+import { defineTool } from '../../system/tool-utils.ts'
 import type { EmbeddingReply, LlmProviderMsg, RerankReply } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { KgraphGraph, KgraphMsg, CreateNodeResult, VectorSearchMatch } from './types.ts'

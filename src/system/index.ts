@@ -1,8 +1,8 @@
 // ─── Public API ───
 export { AgentSystem, type PluginSystemOptions } from './system.ts'
 export { ask } from './ask.ts'
-export { invokeTool } from './invoke-tool.ts'
-export type { InvokeToolArgs, InvokeToolOptions } from './invoke-tool.ts'
+export { invokeTool, defineTool, parseToolArgs, applyToolFilter } from './tool-utils.ts'
+export type { InvokeToolArgs, InvokeToolOptions } from './tool-utils.ts'
 export { onLifecycle, onMessage } from './match.ts'
 export { watchTopic } from './services.ts'
 

@@ -8,17 +8,7 @@ export type ToolSchema = {
   function: { name: string; description: string; parameters: object }
 }
 
-export const defineTool = (
-  name: string,
-  description: string,
-  parameters: object,
-): { name: string; schema: ToolSchema } => ({
-  name,
-  schema: {
-    type: 'function',
-    function: { name, description, parameters },
-  },
-})
+export type ToolFilter = { allow: string[] } | { deny: string[] }
 
 // ─── Generic tool protocol ───
 
@@ -76,12 +66,6 @@ export type ToolRegistrationEvent =
 export const ToolRegistrationTopic = createTopic<ToolRegistrationEvent>('tools.registration')
 
 // ─── Job registry (for long-running jobs) ───
-//
-// `invokeTool` publishes `running` when a tool returns `toolPending`.
-// Tools publish `completed` or `failed` when their work finishes.
-// `invokeTool`'s subscriber catches these and publishes `cleared`
-// to remove the retained entry. The `tool_status` plugin subscribes
-// to this topic so it can route status queries without polling tools.
 
 export type JobLifecycleEvent =
   | {
@@ -98,36 +82,3 @@ export type JobLifecycleEvent =
   | { jobId: string; status: 'cleared' }
 
 export const JobRegistryTopic = createTopic<JobLifecycleEvent>('tools.jobs')
-
-// ─── Tool filter ───
-
-type ToolParseResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: string }
-
-export const parseToolArgs = <T>(
-  rawArgs: string,
-  extract: (parsed: Record<string, unknown>) => T | null,
-  missingMsg = 'Missing required arguments',
-): ToolParseResult<T> => {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(rawArgs)
-  } catch {
-    return { ok: false, error: 'Invalid arguments: expected JSON object' }
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return { ok: false, error: 'Invalid arguments: expected JSON object' }
-  }
-  const value = extract(parsed as Record<string, unknown>)
-  if (value === null) return { ok: false, error: missingMsg }
-  return { ok: true, value }
-}
-
-export type ToolFilter = { allow: string[] } | { deny: string[] }
-
-export const applyToolFilter = (name: string, filter?: ToolFilter): boolean => {
-  if (!filter) return true
-  if ('allow' in filter) return filter.allow.includes(name)
-  return !filter.deny.includes(name)
-}

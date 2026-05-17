@@ -2,7 +2,7 @@ import { ask } from '../../system/ask.ts'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
-import { defineTool, parseToolArgs } from '../../types/tools.ts'
+import { defineTool, parseToolArgs } from '../../system/tool-utils.ts'
 import type { ToolReply } from '../../types/tools.ts'
 import type { ExecutorToolsMsg, PlanStoreMsg, PlanStoreReply, PlanSummary } from './types.ts'
 

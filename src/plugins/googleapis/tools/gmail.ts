@@ -2,7 +2,7 @@ import { google } from 'googleapis'
 import type { ActorDef, ActorRef } from '../../../system/types.ts'
 import { onMessage } from '../../../system/match.ts'
 import { ask } from '../../../system/ask.ts'
-import { defineTool } from '../../../types/tools.ts'
+import { defineTool } from '../../../system/tool-utils.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { GoogleToken, TokenStoreMsg } from '../types.ts'
 

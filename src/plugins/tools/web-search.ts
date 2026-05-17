@@ -1,6 +1,6 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
-import { defineTool } from '../../types/tools.ts'
+import { defineTool } from '../../system/tool-utils.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSource } from '../../types/tools.ts'
 
 // ─── Brave API types ───

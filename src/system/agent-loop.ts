@@ -7,7 +7,7 @@ import type {
   EventTopic,
   Interceptor,
 } from './types.ts'
-import { invokeTool } from './invoke-tool.ts'
+import { invokeTool } from './tool-utils.ts'
 import type {
   ToolCollection,
   ToolFinalReply,

@@ -1,8 +1,8 @@
 import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { defineConfig, publishConfigSurface, deleteConfigSurface } from '../../system/plugin-config.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { defineTool, ToolRegistrationTopic } from '../../types/tools.ts'
-import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
+import { defineTool } from '../../system/tool-utils.ts'
+import { ToolRegistrationTopic, type ToolCollection, type ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 
 import type { NotebookConfig, NoteAgentMsg, TodoReminderMsg } from './types.ts'
