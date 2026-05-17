@@ -158,8 +158,8 @@ describe('signal actor: TCP socket', () => {
     expect(messageEvents).toHaveLength(1)
     expect(messageEvents[0]!.clientId).toBe('+5555555555')
     expect(messageEvents[0]!.text).toBe('check this out')
-    expect(messageEvents[0]!.images).toHaveLength(1)
-    const inboundPath = messageEvents[0]!.images![0]!
+    expect(messageEvents[0]!.attachments).toHaveLength(1)
+    const inboundPath = messageEvents[0]!.attachments![0]!.url
     expect(inboundPath).toInclude('workspace/media/inbound/rorschach-')
     expect(inboundPath).toEndWith('.jpg')
     expect(await Bun.file(inboundPath).exists()).toBe(true)

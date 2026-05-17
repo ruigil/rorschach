@@ -219,6 +219,8 @@ const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, 
       return { state }
     }
 
+    emitUi(params.clientId, { type: 'start' }, ctx)
+
     let requestSpan: SpanHandle | null = params.requestSpan ?? null
     if (!requestSpan) {
       const parent = ctx.trace.fromHeaders()

@@ -8,6 +8,7 @@ import { applyToolFilter } from '../../system/tool-utils.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage, TokenUsage } from '../../types/llm.ts'
 import { HistorySnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
+import type { MessageAttachment } from '../../types/events.ts'
 
 // ─── State ───
 
@@ -24,7 +25,7 @@ export type ChatbotState = {
 // ─── Chatbot actor message protocol ───
 
 type ChatbotExtra =
-  | { type: 'userMessage';      clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; isCron?: boolean; isInjected?: boolean }
+  | { type: 'userMessage';      clientId: string; text: string; attachments?: MessageAttachment[]; isCron?: boolean; isInjected?: boolean }
   | { type: '_historySnapshot'; messages: ApiMessage[]; userContext: string | null; version: number }
   | { type: '_toolRegistered';  name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
@@ -54,28 +55,36 @@ const buildSystemPrompt = (basePrompt: string | undefined, userContext: string |
 }
 
 const assembleUserText = (
-  text:    string,
-  images?: string[],
-  audio?:  string,
-  pdfs?:   string[],
+  text:         string,
+  attachments?: MessageAttachment[],
 ): string => {
   let out = text
-  if (images && images.length > 0) {
+  if (!attachments || attachments.length === 0) return out
+
+  const images = attachments.filter(a => a.kind === 'image').map(a => a.url)
+  if (images.length > 0) {
     const note = images.length === 1
       ? `[Image attached: "${images[0]}"] `
       : `[Images attached: ${images.map(p => `"${p}"`).join(', ')}]`
     out = out ? `${out}\n\n${note}` : note
   }
-  if (audio) {
-    const note = `[Audio attached: "${audio}"]`
+
+  const audio = attachments.filter(a => a.kind === 'audio').map(a => a.url)
+  if (audio.length > 0) {
+    const note = audio.length === 1
+      ? `[Audio attached: "${audio[0]}"]`
+      : `[Audio files attached: ${audio.map(p => `"${p}"`).join(', ')}]`
     out = out ? `${out}\n\n${note}` : note
   }
-  if (pdfs && pdfs.length > 0) {
+
+  const pdfs = attachments.filter(a => a.kind === 'pdf').map(a => a.url)
+  if (pdfs.length > 0) {
     const note = pdfs.length === 1
       ? `[PDF attached: "${pdfs[0]}"] `
       : `[PDFs attached: ${pdfs.map(p => `"${p}"`).join(', ')}]`
     out = out ? `${out}\n\n${note}` : note
   }
+
   return out
 }
 
@@ -207,8 +216,8 @@ export const Chatbot = (
   }
 
   const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
-    const { clientId: msgClientId, text, images, audio, pdfs, isCron, isInjected } = msg
-    const userText = isCron ? `[Internal Instruction] ${text}` : assembleUserText(text, images, audio, pdfs)
+    const { clientId: msgClientId, text, attachments, isCron, isInjected } = msg
+    const userText = isCron ? `[Internal Instruction] ${text}` : assembleUserText(text, attachments)
     return doStartTurn(state, userText, msgClientId, isInjected || isCron || false, ctx)
   }
 

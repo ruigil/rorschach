@@ -10,6 +10,8 @@ export type ExecutorConfig = {
   maxToolLoops: number
 }
 
+import type { MessageAttachment } from '../events.ts'
+
 export type PlanSummary = {
   id: string
   goal: string
@@ -61,7 +63,7 @@ export type PlanStoreMsg =
 export type ExecutorToolsMsg = ToolInvokeMsg | { type: '_done' }
 
 export type ExecutorAgentExtra =
-  | { type: 'userMessage'; clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; isCron?: boolean; isInjected?: boolean }
+  | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isCron?: boolean; isInjected?: boolean }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
 
 export type ExecutorAgentMsg = LoopMsg<ExecutorAgentExtra>

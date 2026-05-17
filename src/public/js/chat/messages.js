@@ -267,7 +267,7 @@ function toolActionLabel(toolName) {
   return `running ${toolName}…`
 }
 
-function appendUserMessage(text, images, audio, pdfs = []) {
+function appendUserMessage(text, attachments = []) {
   if (emptyEl?.parentNode) emptyEl.remove()
   const wrap   = document.createElement('div')
   wrap.className = 'message user'
@@ -277,25 +277,31 @@ function appendUserMessage(text, images, audio, pdfs = []) {
   label.className = 'message-label'
   label.textContent = 'You'
   bubble.appendChild(label)
-  if (images && images.length > 0) {
+
+  const images = attachments.filter(a => a.kind === 'image')
+  if (images.length > 0) {
     const imgRow = document.createElement('div')
     imgRow.className = 'message-images'
-    images.forEach(src => {
+    images.forEach(a => {
       const img = document.createElement('img')
-      img.src = src
+      img.src = a.data
       img.className = 'message-image'
       imgRow.appendChild(img)
     })
     bubble.appendChild(imgRow)
   }
+
+  const audio = attachments.find(a => a.kind === 'audio')
   if (audio) {
     const audioEl = document.createElement('audio')
-    audioEl.src = audio
+    audioEl.src = audio.data
     audioEl.controls = true
     audioEl.className = 'message-audio'
     bubble.appendChild(audioEl)
   }
-  if (pdfs && pdfs.length > 0) {
+
+  const pdfs = attachments.filter(a => a.kind === 'pdf')
+  if (pdfs.length > 0) {
     pdfs.forEach(pdf => {
       const chip = document.createElement('div')
       chip.className = 'message-pdf-chip'
@@ -306,6 +312,7 @@ function appendUserMessage(text, images, audio, pdfs = []) {
       bubble.appendChild(chip)
     })
   }
+
   if (text) {
     const textEl = document.createElement('span')
     textEl.textContent = text
@@ -476,14 +483,18 @@ chatForm.addEventListener('submit', (e) => {
   const audio  = getPendingAudio()
   const pdfs   = getPendingPdfs()
 
-  if ((!text && images.length === 0 && !audio && pdfs.length === 0) || state.ws?.readyState !== WebSocket.OPEN || state.isWaiting) return
+  const attachments = [
+    ...images.map(data => ({ kind: 'image', data })),
+    ...(audio ? [{ kind: 'audio', data: audio }] : []),
+    ...pdfs.map(p => ({ kind: 'pdf', data: p.dataUrl, name: p.name })),
+  ]
 
-  appendUserMessage(text, images.slice(), audio, pdfs.slice())
+  if ((!text && attachments.length === 0) || state.ws?.readyState !== WebSocket.OPEN || state.isWaiting) return
+
+  appendUserMessage(text, attachments)
   state.ws.send(JSON.stringify({
     text,
-    images: images.slice(),
-    ...(audio ? { audio } : {}),
-    ...(pdfs.length > 0 ? { pdfs: pdfs.map(p => ({ data: p.dataUrl, name: p.name })) } : {}),
+    attachments,
   }))
 
   input.value = ''

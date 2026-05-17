@@ -1,8 +1,28 @@
 import { createTopic } from '../system/types.ts'
 
+// ─── Message attachments ───────────────────────────────────────────────────
+
+export type MessageAttachmentKind = 'image' | 'audio' | 'video' | 'pdf' | 'file'
+
+export type MessageAttachment = {
+  kind:      MessageAttachmentKind
+  url:       string   // Public URL or absolute local file path
+  name?:     string   // Original filename
+  alt?:      string   // Description/ALT text
+  mimeType?: string
+  data?:     string   // Base64 data (used during inbound ingestion before saving to disk)
+}
+
 // ─── Domain event: published when a client sends a message (any interface) ───
 
-export type InboundMessageEvent = { clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string; isCron?: boolean }
+export type InboundMessageEvent = {
+  clientId:      string
+  text:          string
+  attachments?:  MessageAttachment[]
+  traceId:       string
+  parentSpanId:  string
+  isCron?:       boolean
+}
 
 /** Topic published when any interface (HTTP/WS, Signal, CLI) receives a message from a client. */
 export const InboundMessageTopic = createTopic<InboundMessageEvent>('client.inbound')

@@ -1,6 +1,6 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { ClientConnectTopic, ClientDisconnectTopic, InboundMessageTopic, CronTriggerTopic, OutboundMessageTopic } from '../../types/events.ts'
+import { ClientConnectTopic, ClientDisconnectTopic, InboundMessageTopic, CronTriggerTopic, OutboundMessageTopic, type MessageAttachment } from '../../types/events.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import { HistoryStore, type HistoryStoreMsg} from './history-store.ts'
 import {
@@ -16,7 +16,7 @@ import {
 type SessionManagerMsg =
   | { type: '_connected';        clientId: string; userId: string; roles: string[] }
   | { type: '_disconnected';     clientId: string }
-  | { type: '_message';          clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; traceId: string; parentSpanId: string; isCron?: boolean }
+  | { type: '_message';          clientId: string; text: string; attachments?: MessageAttachment[]; traceId: string; parentSpanId: string; isCron?: boolean }
   | { type: '_cronTrigger';      userId: string; text: string; traceId: string; parentSpanId: string }
   | { type: '_agentRegistered';  descriptor: AgentDescriptor }
   | { type: '_agentUnregistered'; mode: string }
@@ -152,7 +152,7 @@ export const SessionManager = (
       start: (state, ctx) => {
         ctx.subscribe(ClientConnectTopic,    e => ({ type: '_connected'    as const, clientId: e.clientId, userId: e.userId, roles: e.roles }))
         ctx.subscribe(ClientDisconnectTopic, e => ({ type: '_disconnected' as const, clientId: e.clientId }))
-        ctx.subscribe(InboundMessageTopic,   e => ({ type: '_message'      as const, clientId: e.clientId, text: e.text, images: e.images, audio: e.audio, pdfs: e.pdfs, traceId: e.traceId, parentSpanId: e.parentSpanId, isCron: e.isCron }))
+        ctx.subscribe(InboundMessageTopic,   e => ({ type: '_message'      as const, clientId: e.clientId, text: e.text, attachments: e.attachments, traceId: e.traceId, parentSpanId: e.parentSpanId, isCron: e.isCron }))
         ctx.subscribe(CronTriggerTopic,      e => ({ type: '_cronTrigger'  as const, userId: e.userId, text: e.text, traceId: e.traceId, parentSpanId: e.parentSpanId }))
         ctx.subscribe(AgentRegistrationTopic, e =>
           e.type === 'register'
@@ -310,7 +310,7 @@ export const SessionManager = (
       },
 
       _message: (state, msg) => {
-        const { clientId, text, images, audio, pdfs, traceId, parentSpanId, isCron } = msg
+        const { clientId, text, attachments, traceId, parentSpanId, isCron } = msg
         const userId = userIdOfClient(state, clientId)
         if (!userId) return { state }
         const session = state.sessions[userId]
@@ -319,7 +319,7 @@ export const SessionManager = (
         const headers = traceId && parentSpanId
           ? { traceparent: `00-${traceId}-${parentSpanId}-01` }
           : undefined
-        agent?.send({ type: 'userMessage', clientId, text, images, audio, pdfs, isCron, isInjected: isCron }, headers)
+        agent?.send({ type: 'userMessage', clientId, text, attachments, isCron, isInjected: isCron }, headers)
         return { state }
       },
 

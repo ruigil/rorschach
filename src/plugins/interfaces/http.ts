@@ -5,6 +5,7 @@ import { emit } from '../../system/types.ts'
 import {
   InboundMessageTopic, ClientConnectTopic, ClientDisconnectTopic,
   OutboundMessageTopic, OutboundBroadcastTopic, OutboundAdminBroadcastTopic,
+  type MessageAttachment,
 } from '../../types/events.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
@@ -41,10 +42,10 @@ const FALLBACK_MODELS = [
 
 export type HttpMessage =
   | { type: 'connected'; clientId: string; userId: string; roles: string[] }
-  | { type: 'message'; clientId: string; text: string; images?: string[]; audio?: string; pdfs?: Array<{ data: string; name: string }> }
+  | { type: 'message'; clientId: string; text: string; attachments?: MessageAttachment[] }
   | { type: 'switchMode'; clientId: string; mode: string }
   | { type: 'listAgents'; clientId: string }
-  | { type: '_mediaSaved'; clientId: string; text: string; imagePaths: string[]; audioPath?: string; pdfPaths?: string[] }
+  | { type: '_mediaSaved'; clientId: string; text: string; attachments: MessageAttachment[] }
   | { type: 'closed'; clientId: string }
   | { type: 'broadcast'; text: string }
   | { type: 'adminBroadcast'; text: string }
@@ -59,37 +60,22 @@ export type HttpMessage =
   | { type: '_audioGenerated'; publicUrl: string }
   | { type: '_cost'; event: CostEvent }
 
-// ─── Image helpers ───
+// ─── Media helpers ───
 
-const saveImagesToTempFiles = (images: string[]): Promise<string[]> =>
-  Promise.all(images.map(async (dataUrl) => {
-    const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/)
-    const ext = match?.[1] ?? 'jpeg'
-    const data = match?.[2] ?? ''
-    const filePath = join(INBOUND_DIR, `rorschach-${crypto.randomUUID()}.${ext}`)
-    await mkdir(INBOUND_DIR, { recursive: true })
-    await Bun.write(filePath, Buffer.from(data, 'base64'))
-    return filePath
-  }))
+const saveAttachmentsToTempFiles = (attachments: MessageAttachment[]): Promise<MessageAttachment[]> =>
+  Promise.all(attachments.map(async (att) => {
+    if (!att.data) return att
 
-const saveAudioToTempFile = async (dataUrl: string): Promise<string> => {
-  const match = dataUrl.match(/^data:audio\/(\w+);base64,(.+)$/)
-  const ext  = match?.[1] ?? 'wav'
-  const data = match?.[2] ?? ''
-  const filePath = join(INBOUND_DIR, `rorschach-${crypto.randomUUID()}.${ext}`)
-  await mkdir(INBOUND_DIR, { recursive: true })
-  await Bun.write(filePath, Buffer.from(data, 'base64'))
-  return filePath
-}
+    const match = att.data.match(/^data:[^;]+;base64,(.+)$/)
+    const b64 = match?.[1] ?? att.data
+    const ext = att.mimeType?.split('/')[1] || att.name?.split('.').pop() || (att.kind === 'image' ? 'jpeg' : att.kind === 'audio' ? 'wav' : 'bin')
+    const fileName = att.name ? `rorschach-${crypto.randomUUID()}-${att.name}` : `rorschach-${crypto.randomUUID()}.${ext}`
+    const filePath = join(INBOUND_DIR, fileName)
 
-const savePdfsToTempFiles = (pdfs: Array<{ data: string; name: string }>): Promise<string[]> =>
-  Promise.all(pdfs.map(async ({ data, name }) => {
-    const match = data.match(/^data:[^;]+;base64,(.+)$/)
-    const b64 = match?.[1] ?? data
-    const filePath = join(INBOUND_DIR, `rorschach-${crypto.randomUUID()}-${name}`)
     await mkdir(INBOUND_DIR, { recursive: true })
     await Bun.write(filePath, Buffer.from(b64, 'base64'))
-    return filePath
+
+    return { ...att, url: filePath, data: undefined }
   }))
 
 // ─── Actor state ───
@@ -270,15 +256,11 @@ export const HTTP = (
         const span = context.trace.start('request', { clientId: message.clientId })
         const newState = { ...state, activeSpans: { ...state.activeSpans, [message.clientId]: span } }
 
-        if ((message.images && message.images.length > 0) || message.audio || (message.pdfs && message.pdfs.length > 0)) {
+        if (message.attachments && message.attachments.length > 0) {
           context.pipeToSelf(
-            Promise.all([
-              message.images && message.images.length > 0 ? saveImagesToTempFiles(message.images) : Promise.resolve([]),
-              message.audio ? saveAudioToTempFile(message.audio) : Promise.resolve(undefined),
-              message.pdfs && message.pdfs.length > 0 ? savePdfsToTempFiles(message.pdfs) : Promise.resolve([]),
-            ]).then(([imagePaths, audioPath, pdfPaths]) => ({ imagePaths, audioPath, pdfPaths })),
-            ({ imagePaths, audioPath, pdfPaths }): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, text: message.text, imagePaths, audioPath, pdfPaths }),
-            (): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, text: message.text, imagePaths: [] }),
+            saveAttachmentsToTempFiles(message.attachments),
+            (attachments): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, text: message.text, attachments }),
+            (): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, text: message.text, attachments: [] }),
           )
           return { state: newState }
         }
@@ -295,7 +277,7 @@ export const HTTP = (
       },
 
       _mediaSaved: (state, message) => {
-        const { clientId, text, imagePaths, audioPath, pdfPaths } = message
+        const { clientId, text, attachments } = message
         const span = state.activeSpans[clientId]
         if (!span) return { state }
         return {
@@ -303,9 +285,7 @@ export const HTTP = (
           events: [emit(InboundMessageTopic, {
             clientId,
             text,
-            images: imagePaths.length > 0 ? imagePaths : undefined,
-            audio: audioPath,
-            pdfs: pdfPaths && pdfPaths.length > 0 ? pdfPaths : undefined,
+            attachments: attachments.length > 0 ? attachments : undefined,
             traceId: span.traceId,
             parentSpanId: span.spanId,
           })],
@@ -570,17 +550,13 @@ export const HTTP = (
             message: (ws: ServerWebSocket<WsData>, message) => {
               const raw = typeof message === 'string' ? message : message.toString()
               let text = raw
-              let images: string[] | undefined
-              let audio: string | undefined
-              let pdfs: Array<{ data: string; name: string }> | undefined
+              let attachments: MessageAttachment[] | undefined
               try {
                 const parsed = JSON.parse(raw) as {
-                  type?:    string
-                  mode?:    string
-                  text?:    string
-                  images?:  string[]
-                  audio?:   string
-                  pdfs?:    Array<{ data: string; name: string }>
+                  type?:        string
+                  mode?:        string
+                  text?:        string
+                  attachments?: MessageAttachment[]
                 }
                 // Control frames (switchMode, listAgents) — handled separately from chat messages.
                 if (parsed.type === 'switchMode' && typeof parsed.mode === 'string') {
@@ -593,12 +569,10 @@ export const HTTP = (
                 }
                 if (typeof parsed.text === 'string') {
                   text = parsed.text
-                  images = parsed.images
-                  audio = parsed.audio
-                  pdfs = parsed.pdfs
+                  attachments = parsed.attachments
                 }
-              } catch { /* plain text, no images */ }
-              selfRef?.send({ type: 'message', clientId: ws.data.clientId, text, images, audio, pdfs })
+              } catch { /* plain text */ }
+              selfRef?.send({ type: 'message', clientId: ws.data.clientId, text, attachments })
             },
             close: (ws: ServerWebSocket<WsData>) => {
               ws.unsubscribe(CHANNEL)

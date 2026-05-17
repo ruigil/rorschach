@@ -1,5 +1,6 @@
 import type { ActorRef } from '../system/types.ts'
 import { createTopic } from '../system/types.ts'
+import type { MessageAttachment } from './events.ts'
 
 // ─── Schema (what the LLM sees) ───
 
@@ -14,16 +15,10 @@ export type ToolFilter = { allow: string[] } | { deny: string[] }
 
 export type ToolSource = { title: string; url: string; snippet: string }
 
-export type ToolAttachment =
-  | { kind: 'image'; url: string; alt?: string; mimeType?: string }
-  | { kind: 'audio'; url: string; alt?: string; mimeType?: string }
-  | { kind: 'video'; url: string; alt?: string; mimeType?: string }
-  | { kind: 'file';  url: string; alt?: string; mimeType?: string }
-
 export type ToolResultPayload = {
   text:         string
   sources?:     ToolSource[]
-  attachments?: ToolAttachment[]
+  attachments?: MessageAttachment[]
 }
 
 export type ToolInvokeMsg = {

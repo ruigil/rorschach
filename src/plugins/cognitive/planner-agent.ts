@@ -8,6 +8,7 @@ import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import type { ToolMsg } from '../../types/tools.ts'
 import { SwitchAgentTopic, type AgentFactoryOpts } from '../../types/agents.ts'
+import type { MessageAttachment } from '../../types/events.ts'
 import {
   formalizePlanTool,
   FormalizePlanTool,
@@ -16,7 +17,7 @@ import {
 // ─── Message protocol ───
 
 type PlannerExtra =
-  | { type: 'userMessage'; clientId: string; text: string; images?: string[]; audio?: string; pdfs?: string[]; isCron?: boolean; isInjected?: boolean }
+  | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isCron?: boolean; isInjected?: boolean }
   | { type: '_toolRegistered'; name: string; schema: import('../../types/tools.ts').ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
 

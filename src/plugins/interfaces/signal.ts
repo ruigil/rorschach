@@ -7,11 +7,11 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { join } from 'node:path'
 import { ask } from '../../system/ask.ts'
 
-import { ClientConnectTopic, InboundMessageTopic, OutboundMessageTopic } from '../../types/events.ts'
+import { ClientConnectTopic, InboundMessageTopic, OutboundMessageTopic, type MessageAttachment } from '../../types/events.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
 import { resolveIdentity } from './types.ts'
 import type { IdentityProviderMsg, Identity } from '../../types/identity.ts'
-import type { ToolAttachment, ToolSource } from '../../types/tools.ts'
+import type { ToolSource } from '../../types/tools.ts'
 
 const INBOUND_DIR = join(import.meta.dir, '../../..', 'workspace/media/inbound')
 const MEDIA_DIR   = join(import.meta.dir, '../../..', 'workspace/media')
@@ -202,9 +202,9 @@ type Envelope = {
   syncMessage?:  { sentMessage?: { destination?: string; destinationNumber?: string; message?: string; attachments?: Attachment[]; groupInfo?: { groupId?: string } } }
 }
 
-type BufferedMsg = { text: string; images?: string[]; audio?: string }
+type BufferedMsg = { text: string; attachments?: MessageAttachment[] }
 
-type PendingTurn = { text: string; attachments: ToolAttachment[]; sources: ToolSource[] }
+type PendingTurn = { text: string; attachments: MessageAttachment[]; sources: ToolSource[] }
 
 type SignalMsg =
   | { type: '_reconnect' }
@@ -276,15 +276,20 @@ export const Signal = (
     return aliases[sub] ?? sub
   }
 
-  const copyToInbound = (id: string, contentType: string): string => {
+  const copyToInbound = (id: string, contentType: string): MessageAttachment => {
+    const kind: MessageAttachment['kind'] =
+      contentType.startsWith('image/') ? 'image' :
+      contentType.startsWith('audio/') ? 'audio' :
+      contentType.startsWith('video/') ? 'video' :
+      contentType.includes('pdf')      ? 'pdf'   : 'file'
     const ext  = mimeToExt(contentType)
     const dest = join(INBOUND_DIR, `rorschach-${crypto.randomUUID()}.${ext}`)
     mkdirSync(INBOUND_DIR, { recursive: true })
     copyFileSync(`${attachmentsDir}/${id}`, dest)
-    return dest
+    return { kind, url: dest, mimeType: contentType }
   }
 
-  const attachmentPaths = (attachments: Attachment[]): string[] =>
+  const attachmentPaths = (attachments: Attachment[]): MessageAttachment[] =>
     attachments.map(a => copyToInbound(a.id, a.contentType))
 
   return {
@@ -358,11 +363,10 @@ export const Signal = (
         const source         = envelope.source ?? envelope.sourceNumber ?? sent?.destination ?? sent?.destinationNumber
         const incomingGroup  = envelope.dataMessage?.groupInfo?.groupId ?? envelope.syncMessage?.sentMessage?.groupInfo?.groupId ?? null
         const text            = envelope.dataMessage?.message ?? sent?.message ?? ''
-        const attachments     = envelope.dataMessage?.attachments ?? sent?.attachments ?? []
-        const imageAttachments = attachments.filter(a => a.contentType.startsWith('image/'))
-        const audioAttachment  = attachments.find(a  => a.contentType.startsWith('audio/'))
+        const attachments      = envelope.dataMessage?.attachments ?? sent?.attachments ?? []
+        const messageAttachments = attachmentPaths(attachments)
 
-        if (!source || (!text && attachments.length === 0)) return { state }
+        if (!source || (!text && messageAttachments.length === 0)) return { state }
 
         // Ignore messages from Signal groups
         if (incomingGroup) return { state }
@@ -378,8 +382,7 @@ export const Signal = (
             events: [emit(InboundMessageTopic, {
               clientId:    phone,
               text,
-              ...(imageAttachments.length > 0 ? { images: attachmentPaths(imageAttachments) } : {}),
-              ...(audioAttachment ? { audio: copyToInbound(audioAttachment.id, audioAttachment.contentType) } : {}),
+              attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
               traceId:      span.traceId,
               parentSpanId: span.spanId,
             })],
@@ -391,8 +394,7 @@ export const Signal = (
         const pendingConnect = new Map(state.pendingConnect)
         pendingConnect.set(phone, [...existing, {
           text,
-          ...(imageAttachments.length > 0 ? { images: attachmentPaths(imageAttachments) } : {}),
-          ...(audioAttachment ? { audio: copyToInbound(audioAttachment.id, audioAttachment.contentType) } : {}),
+          attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
         }])
 
         if (existing.length === 0) {
@@ -418,6 +420,9 @@ export const Signal = (
         try { ev = JSON.parse(msg.text) } catch { return { state } }
 
         switch (ev.type) {
+          case 'start':
+          case 'reasoningChunk':
+          case 'tooling':
           case 'chunk': {
             const isFirst = !state.pending.has(msg.clientId)
             if (isFirst) {
@@ -428,12 +433,16 @@ export const Signal = (
             }
             const pending = new Map(state.pending)
             const cur     = pending.get(msg.clientId) ?? { text: '', attachments: [], sources: [] }
-            pending.set(msg.clientId, { ...cur, text: cur.text + String(ev.text ?? '') })
+            if (ev.type === 'chunk') {
+              pending.set(msg.clientId, { ...cur, text: cur.text + String(ev.text ?? '') })
+            } else {
+              pending.set(msg.clientId, cur)
+            }
             return { state: { ...state, pending } }
           }
 
           case 'attachments': {
-            const incoming = (ev.attachments as ToolAttachment[] | undefined) ?? []
+            const incoming = (ev.attachments as MessageAttachment[] | undefined) ?? []
             if (incoming.length === 0) return { state }
             const pending = new Map(state.pending)
             const cur     = pending.get(msg.clientId) ?? { text: '', attachments: [], sources: [] }
@@ -519,11 +528,10 @@ export const Signal = (
           const span = ctx.trace.start('request', { clientId: phone })
           activeSpans = { ...activeSpans, [phone]: span }
           events.push(emit(InboundMessageTopic, {
-            clientId:    phone,
-            text:        buf.text,
-            ...(buf.images ? { images: buf.images } : {}),
-            ...(buf.audio  ? { audio:  buf.audio  } : {}),
-            traceId:     span.traceId,
+            clientId:     phone,
+            text:         buf.text,
+            attachments:  buf.attachments,
+            traceId:      span.traceId,
             parentSpanId: span.spanId,
           }))
         }
