@@ -1,8 +1,5 @@
 // ─── Public API ───
 export { AgentSystem, type PluginSystemOptions } from './system.ts'
-export { GenericWorkerBridge } from '../plugins/parallel/worker-bridge.ts'
-export { taskTopic } from '../plugins/parallel/types.ts'
-export type { TaskEvent, WorkerBridge, WorkerBridgeMsg, WorkerBridgeOptions, WorkerBridgeState } from '../plugins/parallel/types.ts'
 export { ask } from './ask.ts'
 export { invokeTool } from './invoke-tool.ts'
 export type { InvokeToolArgs, InvokeToolOptions } from './invoke-tool.ts'

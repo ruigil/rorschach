@@ -13,10 +13,12 @@
 // Both can be used directly (as shown below) or wired up via the parallel
 // plugin, which manages their lifecycle through the config system.
 
-import { AgentSystem, LogTopic, taskTopic } from '../system/index.ts'
+import { AgentSystem, LogTopic } from '../system/index.ts'
 import { PoolRouter } from '../plugins/parallel/pool-router.ts'
 import { GenericWorkerBridge } from '../plugins/parallel/worker-bridge.ts'
-import type { ActorDef, LogEvent, TaskEvent, WorkerBridgeMsg, WorkerBridgeState } from '../system/index.ts'
+import { taskTopic } from '../plugins/parallel/types.ts'
+import type { WorkerBridgeMsg, WorkerBridgeState, TaskEvent } from '../plugins/parallel/types.ts'
+import type { ActorDef, LogEvent } from '../system/index.ts'
 
 // ─── System setup ─────────────────────────────────────────────────────────────
 
