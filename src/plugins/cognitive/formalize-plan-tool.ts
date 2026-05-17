@@ -3,7 +3,7 @@ import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
 import { defineTool } from '../../types/tools.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
-import type { Plan, PlanTask } from './types.ts'
+import type { Plan, PlanTask } from '../../types/plans.ts'
 
 // ─── Schema ───
 

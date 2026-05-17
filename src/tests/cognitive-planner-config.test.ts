@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
 import cognitivePlugin, { type CognitiveConfig } from '../plugins/cognitive/cognitive.plugin.ts'
-import { AgentRegistrationTopic, type AgentDescriptor } from '../plugins/cognitive/types.ts'
+import { AgentRegistrationTopic, type AgentDescriptor } from '../types/agents.ts'
 import { RouteRegistrationTopic, type RouteRegistration } from '../types/routes.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)

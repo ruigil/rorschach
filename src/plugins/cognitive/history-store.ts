@@ -2,12 +2,12 @@ import type { ActorDef, PersistenceAdapter } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import { UserContextTopic } from '../../types/memory.ts'
-import { HistorySnapshotTopic } from './types.ts'
+import { HistorySnapshotTopic, type AgentHistoryMsg } from '../../types/agents.ts'
 
 // ─── Message protocol ───
 
 export type HistoryStoreMsg =
-  | { type: 'append';         messages: ApiMessage[] }
+  | AgentHistoryMsg
   | { type: 'setUserContext'; summary: string | null }
   | { type: '_userContext';   summary: string }      // forwarded from UserContextTopic
 

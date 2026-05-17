@@ -4,7 +4,7 @@ import type { ActorDef } from '../system/types.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import { HistoryStore } from '../plugins/cognitive/history-store.ts'
 import { PlannerAgentFactory } from '../plugins/cognitive/planner-agent.ts'
-import { SwitchAgentTopic, type SwitchAgentEvent } from '../plugins/cognitive/types.ts'
+import { SwitchAgentTopic, type SwitchAgentEvent } from '../types/agents.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 

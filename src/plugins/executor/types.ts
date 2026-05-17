@@ -1,8 +1,7 @@
 import type { ActorRef } from '../../system/types.ts'
 import type { ToolInvokeMsg } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
-import type { HistoryStoreMsg } from '../cognitive/history-store.ts'
-import type { Plan } from '../cognitive/types.ts'
+import type { Plan } from '../../types/plans.ts'
 import type { LoopMsg } from '../../system/agent-loop.ts'
 
 export type ExecutorConfig = {
@@ -66,10 +65,3 @@ export type ExecutorAgentExtra =
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
 
 export type ExecutorAgentMsg = LoopMsg<ExecutorAgentExtra>
-
-export type ExecutorAgentFactoryOpts = {
-  userId: string
-  clientId: string
-  llmRef: ActorRef<LlmProviderMsg>
-  historyStoreRef: ActorRef<HistoryStoreMsg>
-}

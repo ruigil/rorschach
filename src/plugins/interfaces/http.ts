@@ -17,8 +17,7 @@ import { ConfigSchemaTopic, ConfigUpdateRequestTopic } from '../../types/config.
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import { IdentityProviderTopic, resolveIdentity, resolveCookieIdentity, ANONYMOUS_USER_ID } from '../../types/identity.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
-import { AgentCatalogTopic, SwitchAgentTopic } from '../cognitive/types.ts'
-import type { AgentCatalogEvent } from '../cognitive/types.ts'
+import { AgentCatalogTopic, SwitchAgentTopic, type AgentCatalogEvent } from '../../types/agents.ts'
 
 // ─── Public directory (resolved relative to this module) ───
 const PUBLIC_DIR = join(import.meta.dir, '../..', 'public')

@@ -2,7 +2,7 @@ import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ActorDef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
-import type { Plan } from '../cognitive/types.ts'
+import type { Plan } from '../../types/plans.ts'
 import type { PlanGraph, PlanStoreMsg, PlanStoreReply, PlanSummary } from './types.ts'
 
 const isPlan = (value: unknown): value is Plan => {

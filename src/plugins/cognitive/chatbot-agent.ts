@@ -6,8 +6,7 @@ import { UserStreamTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter, ToolFinalReply, ToolMsg, ToolSchema } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage, TokenUsage } from '../../types/llm.ts'
-import { HistorySnapshotTopic } from './types.ts'
-import type { AgentFactoryOpts } from './types.ts'
+import { HistorySnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
 
 // ─── State ───
 

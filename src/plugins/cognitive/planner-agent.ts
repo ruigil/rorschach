@@ -6,8 +6,7 @@ import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter, ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import type { ToolMsg } from '../../types/tools.ts'
-import type { AgentFactoryOpts } from './types.ts'
-import { SwitchAgentTopic } from './types.ts'
+import { SwitchAgentTopic, type AgentFactoryOpts } from '../../types/agents.ts'
 import {
   formalizePlanTool,
   FormalizePlanTool,

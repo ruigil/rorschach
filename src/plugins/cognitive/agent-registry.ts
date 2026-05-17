@@ -7,7 +7,7 @@ import {
   AgentCatalogTopic,
   SwitchAgentTopic,
   type AgentDescriptor,
-} from './types.ts'
+} from '../../types/agents.ts'
 
 // ─── Message protocol ─────────────────────────────────────────────────────
 //

@@ -5,7 +5,7 @@ import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import type { ActorRef } from '../../system/types.ts'
-import type { AgentFactoryOpts } from '../cognitive/types.ts'
+import type { AgentFactoryOpts } from '../../types/agents.ts'
 import type { ExecutorAgentMsg } from './types.ts'
 
 export type ExecutorAgentOptions = {

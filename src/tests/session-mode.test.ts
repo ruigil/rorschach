@@ -3,7 +3,7 @@ import { AgentSystem } from '../system/index.ts'
 import type { ActorDef } from '../system/types.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import { ClientConnectTopic, OutboundMessageTopic } from '../types/events.ts'
-import { AgentRegistrationTopic, SwitchAgentTopic, type AgentDescriptor } from '../plugins/cognitive/types.ts'
+import { AgentRegistrationTopic, SwitchAgentTopic, type AgentDescriptor } from '../types/agents.ts'
 import { SessionManager } from '../plugins/cognitive/session-manager.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
