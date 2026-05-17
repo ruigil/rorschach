@@ -101,7 +101,7 @@ export const JobRegistryTopic = createTopic<JobLifecycleEvent>('tools.jobs')
 
 // ─── Tool filter ───
 
-export type ToolParseResult<T> =
+type ToolParseResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: string }
 

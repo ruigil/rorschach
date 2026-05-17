@@ -12,7 +12,7 @@ import { ask } from '../../system/ask.ts'
 import { LlmProviderTopic, CostTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg, CostEvent } from '../../types/llm.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import type { RouteHandler, RouteMatch, RouteRegistration } from '../../types/routes.ts'
+import type { RouteRegistration } from '../../types/routes.ts'
 import { ConfigSchemaTopic, ConfigUpdateRequestTopic } from '../../types/config.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import { IdentityProviderTopic, resolveIdentity, resolveCookieIdentity, ANONYMOUS_USER_ID } from '../../types/identity.ts'
@@ -170,6 +170,8 @@ export const HTTP = (
   let llmProviderRef:      ActorRef<LlmProviderMsg>      | null = null
   let identityProviderRef: ActorRef<IdentityProviderMsg> | null = null
   const configSchemas = new Map<string, ConfigSchemaSection>()
+  type RouteHandler = Extract<RouteRegistration, { handler: Function }>['handler']
+  type RouteMatch = NonNullable<RouteRegistration['match']>
   type RouteRecord = { method: string; path: string; match: RouteMatch; handler: RouteHandler }
 
   const routes = new Map<string, RouteRecord>()

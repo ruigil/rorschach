@@ -5,9 +5,6 @@ import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type {
   TokenUsage, 
-  LlmProviderMsg, 
-  LlmProviderAdapter, 
-  OpenRouterAdapterOptions, 
   VisionProviderReply,
   AudioProviderReply,
   TranscriptionProviderReply,
@@ -18,6 +15,7 @@ import type {
   VideoDownloadReply
 } from '../../types/llm.ts'
 import { CostTopic } from '../../types/llm.ts'
+import type { LlmProviderAdapter, LlmProviderInternalMsg, OpenRouterAdapterOptions } from './types.ts'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
@@ -318,7 +316,7 @@ export type LlmProviderOptions = {
   adapter: LlmProviderAdapter
 }
 
-export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMsg, null> => {
+export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderInternalMsg, null> => {
   const { adapter } = options
 
   const handleStreamDone = (
@@ -335,8 +333,8 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
     if (usage) {
       context.pipeToSelf(
         adapter.fetchModelInfo(model),
-        (info): LlmProviderMsg => ({ type: '_costReady', model, role, clientId, usage, info: info as ModelInfo | null }),
-        (): LlmProviderMsg => ({ type: '_costReady', model, role, clientId, usage, info: null }),
+        (info): LlmProviderInternalMsg => ({ type: '_costReady', model, role, clientId, usage, info: info as ModelInfo | null }),
+        (): LlmProviderInternalMsg => ({ type: '_costReady', model, role, clientId, usage, info: null }),
       )
     }
     return { state }
@@ -344,7 +342,7 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
 
   return {
     initialState: null,
-    handler: onMessage<LlmProviderMsg, null>({
+    handler: onMessage<LlmProviderInternalMsg, null>({
       stream: (state, message, context) => {
         const { requestId, model, messages, tools, role, clientId, replyTo } = message
 
@@ -356,7 +354,7 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
             (text) => replyTo.send({ type: 'llmChunk', requestId, text }),
             (text) => replyTo.send({ type: 'llmReasoningChunk', requestId, text }),
           ),
-          (result): LlmProviderMsg => ({
+          (result): LlmProviderInternalMsg => ({
             type: '_streamDone',
             result: result.type === 'content'
               ? { type: 'llmDone', requestId, usage: result.usage }
@@ -364,7 +362,7 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
             model, role, clientId,
             replyTo,
           }),
-          (error): LlmProviderMsg => ({
+          (error): LlmProviderInternalMsg => ({
             type: '_streamDone',
             result: { type: 'llmError', requestId, error },
             model, role, clientId,
@@ -385,13 +383,13 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
             (text)    => replyTo.send({ type: 'llmChunk',      requestId, text }),
             (dataUrl) => replyTo.send({ type: 'llmImageChunk', requestId, dataUrl }),
           ),
-          (result): LlmProviderMsg => ({
+          (result): LlmProviderInternalMsg => ({
             type: '_streamImageDone',
             result: { type: 'llmDone', requestId, usage: result.usage } as VisionProviderReply,
             model, role, clientId,
             replyTo,
           }),
-          (error): LlmProviderMsg => ({
+          (error): LlmProviderInternalMsg => ({
             type: '_streamImageDone',
             result: { type: 'llmError', requestId, error } as VisionProviderReply,
             model, role, clientId,
@@ -413,13 +411,13 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
             (text) => replyTo.send({ type: 'llmChunk',      requestId, text }),
             (data) => replyTo.send({ type: 'llmAudioChunk', requestId, data }),
           ),
-          (result): LlmProviderMsg => ({
+          (result): LlmProviderInternalMsg => ({
             type: '_streamAudioDone',
             result: { type: 'llmDone', requestId, usage: result.usage } as AudioProviderReply,
             model, role, clientId,
             replyTo,
           }),
-          (error): LlmProviderMsg => ({
+          (error): LlmProviderInternalMsg => ({
             type: '_streamAudioDone',
             result: { type: 'llmError', requestId, error } as AudioProviderReply,
             model, role, clientId,
@@ -437,7 +435,7 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
 
         context.pipeToSelf(
           adapter.speak(model, input, voice, instructions, fmt),
-          ({ data, format: outFormat, usage }): LlmProviderMsg => {
+          ({ data, format: outFormat, usage }): LlmProviderInternalMsg => {
             replyTo.send({ type: 'llmAudioChunk', requestId, data, format: outFormat })
             return {
               type: '_speakDone',
@@ -446,7 +444,7 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
               replyTo,
             }
           },
-          (error): LlmProviderMsg => ({
+          (error): LlmProviderInternalMsg => ({
             type: '_speakDone',
             result: { type: 'llmError', requestId, error } as SpeechProviderReply,
             model, role, clientId,
@@ -463,7 +461,7 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
 
         context.pipeToSelf(
           adapter.transcribe(model, audio),
-          ({ text, usage }): LlmProviderMsg => {
+          ({ text, usage }): LlmProviderInternalMsg => {
             replyTo.send({ type: 'llmChunk', requestId, text })
             return {
               type: '_transcribeDone',
@@ -472,7 +470,7 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
               replyTo,
             }
           },
-          (error): LlmProviderMsg => ({
+          (error): LlmProviderInternalMsg => ({
             type: '_transcribeDone',
             result: { type: 'llmError', requestId, error } as TranscriptionProviderReply,
             model, role, clientId,
@@ -491,8 +489,8 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
 
         context.pipeToSelf(
           adapter.embed(model, text, dimensions),
-          ({ embedding, usage }): LlmProviderMsg => ({ type: '_embedDone', result: { type: 'embeddingResult', embedding }, model, role, clientId, usage, replyTo }),
-          (error):                LlmProviderMsg => ({ type: '_embedDone', result: { type: 'embeddingError', error: String(error) }, model, role, clientId, usage: null, replyTo }),
+          ({ embedding, usage }): LlmProviderInternalMsg => ({ type: '_embedDone', result: { type: 'embeddingResult', embedding }, model, role, clientId, usage, replyTo }),
+          (error):                LlmProviderInternalMsg => ({ type: '_embedDone', result: { type: 'embeddingError', error: String(error) }, model, role, clientId, usage: null, replyTo }),
         )
 
         return { state }
@@ -503,8 +501,8 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
         if (message.usage) {
           context.pipeToSelf(
             adapter.fetchModelInfo(message.model),
-            (info): LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: message.usage!, info }),
-            ():    LlmProviderMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: message.usage!, info: null }),
+            (info): LlmProviderInternalMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: message.usage!, info }),
+            ():    LlmProviderInternalMsg => ({ type: '_costReady', model: message.model, role: message.role, clientId: message.clientId, usage: message.usage!, info: null }),
           )
         }
         return { state }
@@ -515,8 +513,8 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
 
         context.pipeToSelf(
           adapter.fetchModelInfo(model),
-          (info): LlmProviderMsg => ({ type: '_modelInfoDone', info, replyTo }),
-          (): LlmProviderMsg => ({ type: '_modelInfoDone', info: null, replyTo }),
+          (info): LlmProviderInternalMsg => ({ type: '_modelInfoDone', info, replyTo }),
+          (): LlmProviderInternalMsg => ({ type: '_modelInfoDone', info: null, replyTo }),
         )
 
         return { state }
@@ -527,8 +525,8 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
 
         context.pipeToSelf(
           adapter.fetchModels(),
-          (models): LlmProviderMsg => ({ type: '_modelsDone', models, replyTo }),
-          (): LlmProviderMsg => ({ type: '_modelsDone', models: [], replyTo }),
+          (models): LlmProviderInternalMsg => ({ type: '_modelsDone', models, replyTo }),
+          (): LlmProviderInternalMsg => ({ type: '_modelsDone', models: [], replyTo }),
         )
 
         return { state }
@@ -542,8 +540,8 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
 
         context.pipeToSelf(
           adapter.rerank(model, query, documents, topN),
-          ({ scores, usage }): LlmProviderMsg => ({ type: '_rerankDone', result: { type: 'rerankResult', requestId, scores, usage }, model, role, clientId, usage, replyTo }),
-          (error):                LlmProviderMsg => ({ type: '_rerankDone', result: { type: 'rerankError', requestId, error: String(error) }, model, role, clientId, usage: null, replyTo }),
+          ({ scores, usage }): LlmProviderInternalMsg => ({ type: '_rerankDone', result: { type: 'rerankResult', requestId, scores, usage }, model, role, clientId, usage, replyTo }),
+          (error):                LlmProviderInternalMsg => ({ type: '_rerankDone', result: { type: 'rerankError', requestId, error: String(error) }, model, role, clientId, usage: null, replyTo }),
         )
 
         return { state }
@@ -555,13 +553,13 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
 
         context.pipeToSelf(
           adapter.submitVideoGeneration(model, prompt, aspectRatio, duration, resolution),
-          (result): LlmProviderMsg => ({
+          (result): LlmProviderInternalMsg => ({
             type: '_videoSubmitDone',
             result: { type: 'videoSubmitted', requestId, jobId: result.jobId, pollingUrl: result.pollingUrl, usage: null } as VideoSubmitReply,
             model, role, clientId,
             replyTo,
           }),
-          (error): LlmProviderMsg => ({
+          (error): LlmProviderInternalMsg => ({
             type: '_videoSubmitDone',
             result: { type: 'videoSubmitError', requestId, error: String(error) } as VideoSubmitReply,
             model, role, clientId,
@@ -577,13 +575,13 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
 
         context.pipeToSelf(
           adapter.pollVideoGeneration(pollingUrl),
-          (result): LlmProviderMsg => ({
+          (result): LlmProviderInternalMsg => ({
             type: '_videoPollDone',
             result: { type: 'videoPollResult', requestId, status: result.status, unsigned_urls: result.unsigned_urls, error: result.error } as VideoPollReply,
             role, clientId,
             replyTo,
           }),
-          (error): LlmProviderMsg => ({
+          (error): LlmProviderInternalMsg => ({
             type: '_videoPollDone',
             result: { type: 'videoPollError', requestId, error: String(error) } as VideoPollReply,
             role, clientId,
@@ -601,13 +599,13 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderMs
 
         context.pipeToSelf(
           adapter.downloadVideos(downloads),
-          (): LlmProviderMsg => ({
+          (): LlmProviderInternalMsg => ({
             type: '_videoDownloadDone',
             result: { type: 'videosDownloaded', requestId, destPaths } as VideoDownloadReply,
             role, clientId,
             replyTo,
           }),
-          (error): LlmProviderMsg => ({
+          (error): LlmProviderInternalMsg => ({
             type: '_videoDownloadDone',
             result: { type: 'videoDownloadError', requestId, error: String(error) } as VideoDownloadReply,
             role, clientId,

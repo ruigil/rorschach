@@ -10,9 +10,9 @@ import { createTopic } from '../system/types.ts'
 // `id` identifies the publisher's registration so it can be revoked
 // (publish the same id with handler: null on plugin stop).
 
-export type RouteHandler = (req: Request, url: URL) => Promise<Response> | Response
+type RouteHandler = (req: Request, url: URL) => Promise<Response> | Response
 
-export type RouteMatch = 'exact' | 'prefix'
+type RouteMatch = 'exact' | 'prefix'
 
 export type RouteRegistration =
   | { id: string; method: string; path: string; match?: RouteMatch; handler: RouteHandler }
