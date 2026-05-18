@@ -66,36 +66,12 @@
         <r-chat-input></r-chat-input>
       </div>
     </div>
-    <div id="plan-workspace-resizer" class="plan-workspace-resizer" role="separator" aria-orientation="vertical" aria-label="Resize plan workspace"></div>
-    <aside id="plan-workspace" class="plan-workspace" aria-label="Plan workspace">
-      <div class="plan-workspace-header">
-        <div>
-          <div class="plan-workspace-kicker">Executor</div>
-          <h2 id="plan-workspace-title">Plans</h2>
-        </div>
-        <button id="plan-workspace-close" class="plan-workspace-close" aria-label="Close plan workspace">×</button>
-      </div>
-      <div id="plan-workspace-body" class="plan-workspace-body"></div>
-    </aside>
+    <r-plan-workspace id="plan-workspace"></r-plan-workspace>
   </div>
 
   <!-- ─── Config panel ─── -->
   <div id="panel-config" class="panel">
-    <div class="config-bar">
-      <r-tabs class="config-subtabs" id="config-tabs"></r-tabs>
-    </div>
-
-    <div class="config-content">
-        <form id="config-form" novalidate>
-          <div id="config-form-container"></div>
-
-          <div class="form-actions">
-            <button type="submit" class="btn-save">Save</button>
-            <button type="button" class="btn-reset" id="reset-btn">Reset</button>
-            <r-flash-message id="flash-msg"></r-flash-message>
-          </div>
-        </form>
-      </div>
+    <r-config-form></r-config-form>
   </div>
 
 

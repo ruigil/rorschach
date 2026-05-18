@@ -1,7 +1,5 @@
 import { state } from '../state.js'
 import { renderMarkdown } from '../markdown.js'
-import { openPlanList, closePlanWorkspace } from './plan-workspace.js'
-
 const messagesEl = document.getElementById('messages')
 const emptyEl = document.getElementById('empty')
 const modeSelect = document.getElementById('mode-select')
@@ -67,8 +65,9 @@ function setMode(mode, displayName = '') {
   state.currentMode = mode
   state.currentModeDisplayName = displayName || modeLabel(mode)
   isPlannerMode = mode === 'planner'
-  if (mode === 'executor') openPlanList()
-  else closePlanWorkspace()
+  const planWorkspace = document.querySelector('r-plan-workspace')
+  if (mode === 'executor') planWorkspace?.openList()
+  else planWorkspace?.close()
   syncModeSelect()
 }
 

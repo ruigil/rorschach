@@ -870,6 +870,9 @@ button[type="submit"] svg { pointer-events: none; }
 /* ─── Config panel ─── */
 #panel-config.active { flex-direction: column; }
 
+r-config-form { display: contents; }
+r-plan-workspace { display: contents; }
+
 .config-bar {
   display: flex;
   align-items: stretch;
