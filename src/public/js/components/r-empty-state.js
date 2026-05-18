@@ -33,12 +33,21 @@ const CSS = `
   animation: blink 1.1s step-end infinite;
 }
 
+:host([variant="chat"]) {
+  animation: emptyFade 0.6s ease both;
+}
+
 :host([variant="chat"]) .text {
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   font-family: var(--font-ui, sans-serif);
+}
+
+@keyframes emptyFade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .subtext {

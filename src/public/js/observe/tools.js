@@ -1,9 +1,9 @@
 const toolsListEl = document.getElementById('tools-list')
 
-export function onToolRegistered(msg) {
-  toolsListEl?.register(msg.name, msg.schema)
-}
+toolsListEl?.addEventListener('tool-registered', (e) => {
+  toolsListEl.register(e.detail.name, e.detail.schema)
+})
 
-export function onToolUnregistered(msg) {
-  toolsListEl?.unregister(msg.name)
-}
+toolsListEl?.addEventListener('tool-unregistered', (e) => {
+  toolsListEl.unregister(e.detail.name)
+})

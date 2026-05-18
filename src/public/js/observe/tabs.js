@@ -1,6 +1,4 @@
 import { fetchKgraph } from './graph.js'
-import { renderCostsTable } from './costs.js'
-import { actorsMap } from './actors.js'
 
 const metricsSummary    = document.getElementById('metrics-summary')
 const obsLogControls    = document.getElementById('obs-log-controls')
@@ -13,14 +11,15 @@ obsTabs?.addEventListener('tab-change', (e) => {
   document.querySelectorAll('.obs-subpanel').forEach(p => p.classList.remove('active'))
   document.getElementById('obs-' + subtab)?.classList.add('active')
 
-  metricsSummary.style.display    = subtab === 'metrics' && Object.keys(actorsMap).length > 0 ? 'flex' : 'none'
+  const actorTreeEl = document.getElementById('actor-tree')
+  metricsSummary.style.display    = subtab === 'metrics' && Object.keys(actorTreeEl?.actorsMap ?? {}).length > 0 ? 'flex' : 'none'
   obsLogControls.style.display    = subtab === 'logs'    ? 'flex' : 'none'
   obsTracesControls.style.display = subtab === 'traces'  ? 'flex' : 'none'
   obsMemoryControls.style.display = subtab === 'memory'  ? 'flex' : 'none'
 
   if (subtab === 'traces') document.getElementById('obs-traces-list')?.render()
   if (subtab === 'memory') fetchKgraph()
-  if (subtab === 'costs')  renderCostsTable()
+  if (subtab === 'costs')  document.getElementById('obs-costs')?.render()
 })
 
 document.getElementById('memory-refresh')?.addEventListener('click', fetchKgraph)

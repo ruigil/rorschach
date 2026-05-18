@@ -1,4 +1,4 @@
-import { LightElement, escHtml, CHEVRON_DOWN, CHEVRON_RIGHT } from './base.js'
+import { LightElement, escHtml, ICONS } from './base.js'
 
 export class RTopicList extends LightElement {
   constructor() {
@@ -28,7 +28,7 @@ export class RTopicList extends LightElement {
       watchHtml = `
         <div class="topic-entry">
           <div class="topic-row topic-group" data-topic="$watch" data-has-subs="true">
-            <span class="tree-chevron topic-chevron" data-topic="$watch">${isGroupExpanded ? CHEVRON_DOWN : CHEVRON_RIGHT}</span>
+            <span class="tree-chevron topic-chevron" data-topic="$watch">${isGroupExpanded ? ICONS['chevron-down'] : ICONS['chevron-right'] }</span>
             <span class="topic-name">$watch</span>
             <span class="topic-sub-count">${watchTopics.length}</span>
           </div>
@@ -44,7 +44,7 @@ export class RTopicList extends LightElement {
     const isExpanded   = this._expandedTopics.has(t.topic)
     const subCount     = t.subscribers.length
     const chevron = subCount > 0
-      ? `<span class="tree-chevron topic-chevron" data-topic="${escHtml(t.topic)}">${isExpanded ? CHEVRON_DOWN : CHEVRON_RIGHT}</span>`
+      ? `<span class="tree-chevron topic-chevron" data-topic="${escHtml(t.topic)}">${isExpanded ? ICONS['chevron-down'] : ICONS['chevron-right'] }</span>`
       : `<span class="tree-spacer"></span>`
     const subs = isExpanded && subCount > 0
       ? `<div class="topic-subscribers">${t.subscribers.map(s =>

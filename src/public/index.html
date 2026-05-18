@@ -40,9 +40,7 @@
         <r-status-dot id="dot" status="disconnected" label="connecting…"></r-status-dot>
       </div>
       <button class="logout-btn" id="logout-btn" title="Sign out" style="display:none">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-        </svg>
+        <r-icon name="logout"></r-icon>
       </button>
     </div>
   </header>
@@ -51,16 +49,7 @@
   <div id="panel-chat" class="panel active">
     <div class="chat-main">
       <div id="messages">
-        <div class="empty-state" id="empty">
-          <svg class="empty-icon" width="48" height="48" viewBox="0 0 48 48" fill="none">
-            <ellipse cx="24" cy="24" rx="20" ry="7" stroke="currentColor" stroke-width="0.5" opacity="0.15"/>
-            <ellipse cx="24" cy="24" rx="13" ry="4.5" stroke="currentColor" stroke-width="0.5" opacity="0.3"/>
-            <ellipse cx="24" cy="24" rx="7" ry="2.5" stroke="currentColor" stroke-width="0.5" opacity="0.5"/>
-            <circle cx="24" cy="24" r="1.5" fill="currentColor" opacity="0.9"/>
-          </svg>
-          <span class="empty-title">Signal detected</span>
-          <span class="empty-sub">awaiting transmission</span>
-        </div>
+        <r-empty-state id="empty" variant="chat" name="signal" text="Signal detected" subtext="awaiting transmission"></r-empty-state>
       </div>
       <div class="chat-dock">
         <r-chat-input></r-chat-input>

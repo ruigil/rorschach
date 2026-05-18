@@ -1,5 +1,3 @@
-import { updateTopics } from './topics.js'
-
 const actorTreeEl    = document.getElementById('actor-tree')
 const metricsSummary = document.getElementById('metrics-summary')
 const sumActors      = document.getElementById('sum-actors')
@@ -14,7 +12,8 @@ actorTreeEl?.addEventListener('actor-select', (e) => {
   actorDetailEl?.show(e.detail.actor)
 })
 
-export function updateMetrics(event) {
+actorTreeEl?.addEventListener('metrics', (e) => {
+  const event = e.detail
   const metricsEmpty = document.getElementById('metrics-empty')
   if (metricsEmpty?.parentNode) metricsEmpty.remove()
 
@@ -38,5 +37,7 @@ export function updateMetrics(event) {
   const selectedActor = actorTreeEl?.update(actors)
   if (selectedActor) actorDetailEl?.show(selectedActor)
 
-  if (event.topics) updateTopics(event.topics)
-}
+  if (event.topics) {
+    document.getElementById('topic-list')?.dispatchEvent(new CustomEvent('topics', { detail: event.topics, bubbles: true }))
+  }
+})

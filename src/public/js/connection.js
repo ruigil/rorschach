@@ -1,10 +1,5 @@
 import { state } from './state.js'
 import { setChatInputEnabled, setWaiting, removeThinking, resetStream, handleChatMsg } from './chat/messages.js'
-import { onUsageMsg } from './observe/costs.js'
-import { appendLog } from './observe/logs.js'
-import { updateMetrics } from './observe/actors.js'
-import { onTraceSpan } from './observe/traces.js'
-import { onToolRegistered, onToolUnregistered } from './observe/tools.js'
 
 const dot         = document.getElementById('dot')
 const logoutBtn   = document.getElementById('logout-btn')
@@ -63,12 +58,12 @@ export async function connect() {
 
     const chatTypes = ['chunk', 'done', 'error', 'tooling', 'sources', 'attachments', 'reasoningChunk', 'plannerMode', 'modeChanged', 'agents']
     if      (chatTypes.includes(msg.type))        handleChatMsg(msg)
-    else if (msg.type === 'planGraph')            document.querySelector('r-plan-workspace')?.openGraph(msg.planId)
-    else if (msg.type === 'usage')                onUsageMsg(msg)
-    else if (msg.type === 'log')                  appendLog(msg)
-    else if (msg.type === 'metrics')              updateMetrics(msg)
-    else if (msg.type === 'trace')                onTraceSpan(msg)
-    else if (msg.type === 'tool_registered')      onToolRegistered(msg)
-    else if (msg.type === 'tool_unregistered')    onToolUnregistered(msg)
+    else if (msg.type === 'planGraph')            document.querySelector('r-plan-workspace')?.dispatchEvent(new CustomEvent('plan-graph', { detail: msg, bubbles: true }))
+    else if (msg.type === 'usage')                document.getElementById('obs-costs')?.dispatchEvent(new CustomEvent('usage', { detail: msg, bubbles: true }))
+    else if (msg.type === 'log')                  document.getElementById('log-stream')?.dispatchEvent(new CustomEvent('log', { detail: msg, bubbles: true }))
+    else if (msg.type === 'metrics')              document.getElementById('actor-tree')?.dispatchEvent(new CustomEvent('metrics', { detail: msg, bubbles: true }))
+    else if (msg.type === 'trace')                document.getElementById('obs-traces-list')?.dispatchEvent(new CustomEvent('trace', { detail: msg, bubbles: true }))
+    else if (msg.type === 'tool_registered')      document.getElementById('tools-list')?.dispatchEvent(new CustomEvent('tool-registered', { detail: msg, bubbles: true }))
+    else if (msg.type === 'tool_unregistered')    document.getElementById('tools-list')?.dispatchEvent(new CustomEvent('tool-unregistered', { detail: msg, bubbles: true }))
   })
 }

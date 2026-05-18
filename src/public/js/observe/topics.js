@@ -1,5 +1,5 @@
 const topicListEl = document.getElementById('topic-list')
 
-export function updateTopics(topics) {
-  topicListEl?.update(topics)
-}
+topicListEl?.addEventListener('topics', (e) => {
+  topicListEl.update(e.detail)
+})

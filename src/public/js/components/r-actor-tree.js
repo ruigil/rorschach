@@ -1,4 +1,4 @@
-import { LightElement, escHtml, CHEVRON_DOWN, CHEVRON_RIGHT } from './base.js'
+import { LightElement, escHtml, ICONS } from './base.js'
 
 export class RActorTree extends LightElement {
   constructor() {
@@ -61,7 +61,7 @@ export class RActorTree extends LightElement {
       const padLeft     = `${0.6 + depth * 1.1}rem`
 
       const chevron = hasChildren
-        ? `<span class="tree-chevron" data-path="${node.path}">${isCollapsed ? CHEVRON_RIGHT : CHEVRON_DOWN}</span>`
+        ? `<span class="tree-chevron" data-path="${node.path}">${isCollapsed ? ICONS['chevron-right'] : ICONS['chevron-down'] }</span>`
         : `<span class="tree-spacer"></span>`
 
       const dot = status
