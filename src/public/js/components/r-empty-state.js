@@ -1,4 +1,4 @@
-import { RorschachElement } from './base.js'
+import { RorschachElement, ICONS } from './base.js'
 
 const CSS = `
 :host {
@@ -61,7 +61,7 @@ const CSS = `
 `
 
 export class REmptyState extends RorschachElement {
-  static observedAttributes = ['icon', 'text', 'subtext', 'variant']
+  static observedAttributes = ['name', 'icon', 'text', 'subtext', 'variant']
 
   constructor() {
     super()
@@ -77,7 +77,8 @@ export class REmptyState extends RorschachElement {
   }
 
   render() {
-    const icon    = this.getAttribute('icon') || ''
+    const name    = this.getAttribute('name') || ''
+    const icon    = name ? (ICONS[name] || '') : (this.getAttribute('icon') || '')
     const text    = this.getAttribute('text') || ''
     const subtext = this.getAttribute('subtext') || ''
 

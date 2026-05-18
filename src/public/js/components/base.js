@@ -19,6 +19,22 @@ export const ICONS = {
   'waterfall':     `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`,
 }
 
+export function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+export function tsStr(timestamp) {
+  return new Date(timestamp).toISOString().slice(11, 23)
+}
+
+export class LightElement extends HTMLElement {
+  $(selector) { return this.querySelector(selector) }
+  $$(selector) { return this.querySelectorAll(selector) }
+}
+
 const STYLESHEET_CACHE = new Map()
 
 export class RorschachElement extends HTMLElement {

@@ -1,4 +1,3 @@
-import { renderTraces } from './traces.js'
 import { fetchKgraph } from './graph.js'
 import { renderCostsTable } from './costs.js'
 import { actorsMap } from './actors.js'
@@ -19,7 +18,7 @@ obsTabs?.addEventListener('tab-change', (e) => {
   obsTracesControls.style.display = subtab === 'traces'  ? 'flex' : 'none'
   obsMemoryControls.style.display = subtab === 'memory'  ? 'flex' : 'none'
 
-  if (subtab === 'traces') renderTraces()
+  if (subtab === 'traces') document.getElementById('obs-traces-list')?.render()
   if (subtab === 'memory') fetchKgraph()
   if (subtab === 'costs')  renderCostsTable()
 })

@@ -143,7 +143,7 @@ function renderGraph(graph) {
   const meta = document.createElement('div')
   meta.className = 'plan-graph-meta'
   meta.textContent = `${formatDate(graph.plan.createdAt)} · ${graph.plan.taskCount} task${graph.plan.taskCount === 1 ? '' : 's'}`
-  const graphEl = document.createElement('div')
+  const graphEl = document.createElement('r-force-graph')
   graphEl.className = 'plan-graph'
   const detailWrap = document.createElement('div')
   detailWrap.className = 'plan-task-detail-wrap'
@@ -160,91 +160,10 @@ function renderGraph(graph) {
     return
   }
 
-  const width = Math.max(graphEl.clientWidth, 320)
-  const height = Math.max(graphEl.clientHeight, 260)
-  const nodeById = Object.fromEntries(graph.nodes.map(node => [node.id, { ...node }]))
-  const nodes = Object.values(nodeById)
-  const edges = graph.edges
-    .map(edge => ({ ...edge, source: nodeById[edge.source], target: nodeById[edge.target] }))
-    .filter(edge => edge.source && edge.target)
-
-  const svg = d3.select(graphEl).append('svg')
-    .attr('width', '100%')
-    .attr('height', '100%')
-
-  svg.append('defs').append('marker')
-    .attr('id', 'plan-arrow')
-    .attr('viewBox', '0 -4 8 8')
-    .attr('refX', 8)
-    .attr('refY', 0)
-    .attr('markerWidth', 6)
-    .attr('markerHeight', 6)
-    .attr('orient', 'auto')
-    .append('path')
-    .attr('d', 'M0,-4L8,0L0,4')
-    .attr('fill', '#00c4d4')
-
-  const g = svg.append('g')
-  svg.call(d3.zoom().scaleExtent([0.25, 4]).on('zoom', ev => g.attr('transform', ev.transform)))
-
-  const link = g.append('g').selectAll('line').data(edges).enter().append('line')
-    .attr('stroke', '#1e5264')
-    .attr('stroke-width', 1.4)
-    .attr('marker-end', 'url(#plan-arrow)')
-
-  const node = g.append('g').selectAll('g').data(nodes).enter().append('g')
-    .attr('class', d => 'plan-node' + (d.id === selectedTaskId ? ' selected' : ''))
-    .attr('cursor', 'pointer')
-    .call(d3.drag()
-      .on('start', (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y })
-      .on('drag',  (ev, d) => { d.fx = ev.x; d.fy = ev.y })
-      .on('end',   (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null })
-    )
-    .on('click', (_ev, d) => {
-      selectedTaskId = d.id
-      node.attr('class', n => 'plan-node' + (n.id === selectedTaskId ? ' selected' : ''))
-      updateDetail()
-    })
-
-  node.append('rect')
-    .attr('x', -62)
-    .attr('y', -22)
-    .attr('width', 124)
-    .attr('height', 44)
-    .attr('rx', 6)
-
-  node.append('text')
-    .text(d => shortLabel(d.label))
-    .attr('text-anchor', 'middle')
-    .attr('dy', '0.3em')
-    .attr('font-size', '10px')
-    .attr('font-family', 'var(--font-mono)')
-
-  const sim = d3.forceSimulation(nodes)
-    .force('link', d3.forceLink(edges).id(d => d.id).distance(135).strength(0.7))
-    .force('charge', d3.forceManyBody().strength(-320))
-    .force('center', d3.forceCenter(width / 2, height / 2))
-    .force('x', d3.forceX(width / 2).strength(0.06))
-    .force('y', d3.forceY(height / 2).strength(0.08))
-    .force('collide', d3.forceCollide(76))
-    .on('tick', () => {
-      link
-        .attr('x1', d => d.source.x)
-        .attr('y1', d => d.source.y)
-        .attr('x2', d => {
-          const dx = d.target.x - d.source.x
-          const dy = d.target.y - d.source.y
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1
-          return d.target.x - (dx / dist) * 68
-        })
-        .attr('y2', d => {
-          const dx = d.target.x - d.source.x
-          const dy = d.target.y - d.source.y
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1
-          return d.target.y - (dy / dist) * 28
-        })
-      node.attr('transform', d => `translate(${d.x},${d.y})`)
-    })
+  graphEl.renderPlanGraph(graph, selectedTaskId, (id) => {
+    selectedTaskId = id
+    updateDetail()
+  })
 }
 
 export async function openPlanList() {
