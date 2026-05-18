@@ -34,7 +34,7 @@ export function updateTopics(topics) {
   topicsData = topics
 
   if (topics.length === 0) {
-    topicListEl.innerHTML = `<div class="empty-panel"><span>no active topics</span></div>`
+    topicListEl.innerHTML = `<r-empty-state variant="panel" text="no active topics"></r-empty-state>`
     return
   }
 

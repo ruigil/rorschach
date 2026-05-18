@@ -88,13 +88,13 @@
     "memory": {
       "dbPath": "workspace/memory",
       "kgraph": {
-        "embeddingModel": "qwen/qwen3-embedding-8b",
-        "embeddingDimensions": 4096,
+        "embeddingModel": "perplexity/pplx-embed-v1-0.6b",
+        "embeddingDimensions": 768,
         "cosineSimilarityThreshold": 0.6,
         "rerankerModel": "cohere/rerank-4-pro"
       },
       "system": {
-        "model": "moonshotai/kimi-k2.6",
+        "model": "google/gemini-3.1-flash-lite",
         "consolidationIntervalMs": 3600000,
         "contextIntervalMs": 3600000
       }

@@ -1,3 +1,4 @@
+import './js/components/index.js'
 import './js/corona.js'
 import './js/markdown.js'
 import './js/tabs.js'

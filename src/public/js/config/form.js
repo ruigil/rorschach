@@ -102,8 +102,6 @@ function renderForms() {
 
   tabsContainer.querySelectorAll('[data-config-tab]').forEach(btn => {
     btn.addEventListener('click', () => {
-      tabsContainer.querySelectorAll('.config-subtab').forEach(b => b.classList.remove('active'))
-      btn.classList.add('active')
       container.querySelectorAll('.config-pane').forEach(p => p.classList.remove('active'))
       container.querySelector(`[data-config-pane="${btn.dataset.configTab}"]`).classList.add('active')
     })
@@ -322,24 +320,13 @@ let saveTimer  = null
 let errorTimer = null
 
 function flashSaved() {
-  const saveStatus = document.getElementById('save-status')
-  const saveError  = document.getElementById('save-error')
-  if (!saveStatus || !saveError) return
-  saveError.classList.remove('visible')
-  saveStatus.classList.add('visible')
-  clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => saveStatus.classList.remove('visible'), 2200)
+  const flash = document.getElementById('flash-msg')
+  if (flash) flash.save()
 }
 
 function flashError(msg) {
-  const saveStatus = document.getElementById('save-status')
-  const saveError  = document.getElementById('save-error')
-  if (!saveStatus || !saveError) return
-  saveStatus.classList.remove('visible')
-  saveError.textContent = msg
-  saveError.classList.add('visible')
-  clearTimeout(errorTimer)
-  errorTimer = setTimeout(() => saveError.classList.remove('visible'), 4000)
+  const flash = document.getElementById('flash-msg')
+  if (flash) flash.error(msg)
 }
 
 // ─── Event Listeners ────────────────────────────────────────────────────────

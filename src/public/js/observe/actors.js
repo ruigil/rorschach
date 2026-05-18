@@ -102,12 +102,7 @@ actorTreeEl.addEventListener('click', e => {
 function renderActorDetail(actor) {
   if (!actor) {
     actorDetailEl.innerHTML = `
-      <div class="empty-panel">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-          <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
-        </svg>
-        <span>select an actor to inspect</span>
-      </div>`
+      <r-empty-state variant="panel" icon="<svg width=&quot;28&quot; height=&quot;28&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1&quot;><circle cx=&quot;12&quot; cy=&quot;12&quot; r=&quot;3&quot;/><path d=&quot;M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14&quot;/></svg>" text="select an actor to inspect"></r-empty-state>`
     return
   }
 

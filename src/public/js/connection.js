@@ -8,7 +8,6 @@ import { onToolRegistered, onToolUnregistered } from './observe/tools.js'
 import { openPlanGraph } from './chat/plan-workspace.js'
 
 const dot         = document.getElementById('dot')
-const statusLabel = document.getElementById('status-label')
 const logoutBtn   = document.getElementById('logout-btn')
 
 logoutBtn.addEventListener('click', async () => {
@@ -18,8 +17,8 @@ logoutBtn.addEventListener('click', async () => {
 
 function setConnected(connected) {
   state.isConnected = connected
-  dot.className     = 'header-dot ' + (connected ? 'connected' : 'disconnected')
-  statusLabel.textContent = connected ? 'connected' : 'reconnecting…'
+  dot.setAttribute('status', connected ? 'connected' : 'disconnected')
+  dot.setAttribute('label', connected ? 'connected' : 'reconnecting…')
   setChatInputEnabled(connected)
 }
 

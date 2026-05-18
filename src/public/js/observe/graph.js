@@ -38,7 +38,7 @@ function renderKgraph(graph) {
   const { nodes, edges } = graph
 
   if (nodes.length === 0) {
-    container.innerHTML = `<div class="empty-panel"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="5" cy="12" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><line x1="7" y1="11.5" x2="17" y2="6.5"/><line x1="7" y1="12.5" x2="17" y2="17.5"/></svg><span>no graph data</span></div>`
+    container.innerHTML = `<r-empty-state variant="panel" icon="<svg width=&quot;28&quot; height=&quot;28&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1&quot;><circle cx=&quot;5&quot; cy=&quot;12&quot; r=&quot;2&quot;/><circle cx=&quot;19&quot; cy=&quot;5&quot; r=&quot;2&quot;/><circle cx=&quot;19&quot; cy=&quot;19&quot; r=&quot;2&quot;/><line x1=&quot;7&quot; y1=&quot;11.5&quot; x2=&quot;17&quot; y2=&quot;6.5&quot;/><line x1=&quot;7&quot; y1=&quot;12.5&quot; x2=&quot;17&quot; y2=&quot;17.5&quot;/></svg>" text="no graph data"></r-empty-state>`
     return
   }
 

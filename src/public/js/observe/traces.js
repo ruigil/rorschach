@@ -115,10 +115,11 @@ function renderTrace(record) {
 export function renderTraces() {
   if (tracesMap.size === 0) {
     tracesListEl.innerHTML = ''
-    if (!tracesListEl.querySelector('.empty-panel')) {
-      const e = document.createElement('div')
-      e.className = 'empty-panel'
-      e.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>awaiting traces</span>`
+    if (!tracesListEl.querySelector('r-empty-state')) {
+      const e = document.createElement('r-empty-state')
+      e.setAttribute('variant', 'panel')
+      e.setAttribute('icon', '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>')
+      e.setAttribute('text', 'awaiting traces')
       tracesListEl.appendChild(e)
     }
     return
