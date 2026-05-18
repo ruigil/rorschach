@@ -18,6 +18,7 @@ import { connect } from './js/connection.js'
 import { state } from './js/state.js'
 import { initConfigForms } from './js/config/form.js'
 import { setTabVisible } from './js/tabs.js'
+import { initChatInput } from './js/chat/messages.js'
 
 fetch(new URL('me', location.href))
   .then(r => r.json())
@@ -36,4 +37,5 @@ fetch(new URL('me', location.href))
     setTabVisible('observe', false)
   })
 
+initChatInput()
 connect()
