@@ -15,6 +15,7 @@ import { UserStreamTopic, type UserStreamEvent } from '../../types/events.ts'
 export type UserContextOptions = {
   model:         string
   intervalMs:    number
+  workPath?:     string
 }
 
 type WorkerOptions = {
@@ -22,6 +23,7 @@ type WorkerOptions = {
   userId:           string
   llmRef:           ActorRef<LlmProviderMsg>
   turns:            UserStreamEvent[]
+  workPath?:        string
 }
 
 // ─── Internal types ───
@@ -67,7 +69,7 @@ const buildMessages = (userId: string, currentContext: string, turns: UserStream
 // ─── Worker Actor ───
 
 const UserContextWorker = (options: WorkerOptions): ActorDef<UserContextWorkerMsg, WorkerState> => {
-  const { model, userId, llmRef, turns } = options
+  const { model, userId, llmRef, turns, workPath = 'workspace/history' } = options
 
   return {
     initialState: { requestId: null, accumulated: '' },
@@ -76,7 +78,7 @@ const UserContextWorker = (options: WorkerOptions): ActorDef<UserContextWorkerMs
         context.pipeToSelf(
           (async () => {
             try {
-              return await Bun.file(`workspace/memory/${userId}/context.md`).text()
+              return await Bun.file(`${workPath}/${userId}/context.md`).text()
             } catch {
               return ''
             }
@@ -117,7 +119,7 @@ const UserContextWorker = (options: WorkerOptions): ActorDef<UserContextWorkerMs
         context.publishRetained(UserContextTopic, userId, { userId, summary })
 
         context.pipeToSelf(
-          Bun.write(`workspace/memory/${userId}/context.md`, summary),
+          Bun.write(`${workPath}/${userId}/context.md`, summary),
           () => {
             context.log.info('user context saved', { userId })
             return { type: '_stop' as const }
@@ -147,7 +149,7 @@ const UserContextWorker = (options: WorkerOptions): ActorDef<UserContextWorkerMs
 // ─── Supervisor Actor ───
 
 export const UserContextSupervisor = (options: UserContextOptions): ActorDef<UserContextMsg, UserContextState> => {
-  const { model, intervalMs } = options
+  const { model, intervalMs, workPath } = options
 
   return {
     initialState: INITIAL_USER_CONTEXT_STATE,
@@ -205,7 +207,7 @@ export const UserContextSupervisor = (options: UserContextOptions): ActorDef<Use
 
           const worker = context.spawn(
             `user-context-worker-${userId}`,
-            UserContextWorker({ model, userId, llmRef: state.llmRef, turns }),
+            UserContextWorker({ model, userId, llmRef: state.llmRef, turns, workPath }),
           )
           worker.send({ type: '_start' })
           workers[userId] = worker

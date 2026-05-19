@@ -83,7 +83,7 @@ export const zettelLinkTool = defineTool('zettel_link', 'Create a link between t
 
 // ─── State & messages ───
 
-type ZettelState = { kgraphRef: ActorRef<KgraphMsg>; dbPath: string } 
+type ZettelState = { kgraphRef: ActorRef<KgraphMsg>; workPath: string } 
 
 export type ZettelNoteMsg =
   | ToolInvokeMsg
@@ -95,11 +95,11 @@ export type ZettelNoteMsg =
 const slugify = (name: string): string =>
   name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
-const getBasePath = (userId: string, dbPath: string) => `${dbPath}/${userId}`
+const getBasePath = (userId: string, workPath: string) => `${workPath}/${userId}`
 
-const indexPath = (userId: string, dbPath: string) => `${getBasePath(userId, dbPath)}/notes/index.json`
-const noteFilePath = (userId: string, meta: Pick<ZettelNote, 'path'>, dbPath: string) =>
-  `${getBasePath(userId, dbPath)}/${meta.path}`
+const indexPath = (userId: string, workPath: string) => `${getBasePath(userId, workPath)}/notes/index.json`
+const noteFilePath = (userId: string, meta: Pick<ZettelNote, 'path'>, workPath: string) =>
+  `${getBasePath(userId, workPath)}/${meta.path}`
 
 // ─── Serialized index mutation queue ───
 //
@@ -107,37 +107,37 @@ const noteFilePath = (userId: string, meta: Pick<ZettelNote, 'path'>, dbPath: st
 // and overwrite each other. Chaining mutations through a per-userId promise queue
 // ensures each operation sees the result of the previous one without re-reading disk.
 
-const makeIndexQueue = (dbPath: string) => {
+const makeIndexQueue = (workPath: string) => {
   const queues = new Map<string, Promise<ZettelIndex>>()
 
   const current = (userId: string): Promise<ZettelIndex> =>
-    (queues.get(userId) ?? readIndex(userId, dbPath)).catch(() => readIndex(userId, dbPath))
+    (queues.get(userId) ?? readIndex(userId, workPath)).catch(() => readIndex(userId, workPath))
 
   const mutate = (userId: string, fn: (idx: ZettelIndex) => ZettelIndex): Promise<ZettelIndex> => {
     const next = current(userId).then(async (idx) => {
       const updated = fn(idx)
-      await writeIndex(userId, updated, dbPath)
+      await writeIndex(userId, updated, workPath)
       return updated
     })
-    queues.set(userId, next.catch(() => readIndex(userId, dbPath)))
+    queues.set(userId, next.catch(() => readIndex(userId, workPath)))
     return next
   }
 
   return { current, mutate }
 }
 
-const readIndex = async (userId: string, dbPath: string): Promise<ZettelIndex> => {
+const readIndex = async (userId: string, workPath: string): Promise<ZettelIndex> => {
   try {
-    const text = await Bun.file(indexPath(userId, dbPath)).text()
+    const text = await Bun.file(indexPath(userId, workPath)).text()
     return JSON.parse(text) as ZettelIndex
   } catch {
     return { notes: [] }
   }
 }
 
-const writeIndex = async (userId: string, index: ZettelIndex, dbPath: string): Promise<void> => {
-  await mkdir(`${getBasePath(userId, dbPath)}/notes`, { recursive: true })
-  await Bun.write(indexPath(userId, dbPath), JSON.stringify(index, null, 2))
+const writeIndex = async (userId: string, index: ZettelIndex, workPath: string): Promise<void> => {
+  await mkdir(`${getBasePath(userId, workPath)}/notes`, { recursive: true })
+  await Bun.write(indexPath(userId, workPath), JSON.stringify(index, null, 2))
 }
 
 const serializeNote = (meta: ZettelNote, body: string): string => {
@@ -257,7 +257,7 @@ const handleCreate = async (
   userId: string,
   args: Record<string, unknown>,
   queue: IndexQueue,
-  dbPath: string,
+  workPath: string,
   log: any,
 ): Promise<string> => {
   const name = args.name as string
@@ -282,8 +282,8 @@ const handleCreate = async (
     kgraphNodeId,
   }
 
-  await mkdir(`${getBasePath(userId, dbPath)}/notes`, { recursive: true })
-  await Bun.write(noteFilePath(userId, meta, dbPath), serializeNote(meta, content))
+  await mkdir(`${getBasePath(userId, workPath)}/notes`, { recursive: true })
+  await Bun.write(noteFilePath(userId, meta, workPath), serializeNote(meta, content))
   await queue.mutate(userId, (idx) => ({ notes: [...idx.notes, meta] }))
 
   return JSON.stringify({ id, name, synopsis, tags, createdAt: now, eventTime })
@@ -294,7 +294,7 @@ const handleUpdate = async (
   userId: string,
   args: Record<string, unknown>,
   queue: IndexQueue,
-  dbPath: string,
+  workPath: string,
   log: any,
 ): Promise<string> => {
   const id = args.id as string
@@ -304,7 +304,7 @@ const handleUpdate = async (
   const existingMeta = currentIndex.notes.find(n => n.id === id)
   if (!existingMeta) return JSON.stringify({ error: 'Note not found' })
 
-  const raw = await Bun.file(noteFilePath(userId, existingMeta, dbPath)).text()
+  const raw = await Bun.file(noteFilePath(userId, existingMeta, workPath)).text()
   const { body: existingBody } = parseNote(raw)
 
   const name = typeof args.name === 'string' ? args.name : existingMeta.name
@@ -316,7 +316,7 @@ const handleUpdate = async (
 
   const updated: ZettelNote = { ...existingMeta, name, synopsis, tags, eventTime, updatedAt: now }
 
-  await Bun.write(noteFilePath(userId, existingMeta, dbPath), serializeNote(updated, content))
+  await Bun.write(noteFilePath(userId, existingMeta, workPath), serializeNote(updated, content))
   await queue.mutate(userId, (idx) => ({ notes: idx.notes.map(n => n.id === id ? updated : n) }))
   await upsertInKgraph(kgraphRef, userId, existingMeta.kgraphNodeId, name, synopsis, tags, log, eventTime)
 
@@ -330,7 +330,7 @@ const handleSearch = async (
   userId: string,
   args: Record<string, unknown>,
   queue: IndexQueue,
-  dbPath: string,
+  workPath: string,
   log: any,
 ): Promise<string> => {
   const text = args.text as string
@@ -352,7 +352,7 @@ const handleSearch = async (
 
   const readContent = async (note: ZettelNote): Promise<string> => {
     try {
-      const raw = await Bun.file(noteFilePath(userId, note, dbPath)).text()
+      const raw = await Bun.file(noteFilePath(userId, note, workPath)).text()
       return parseNote(raw).body
     } catch { return '' }
   }
@@ -396,7 +396,7 @@ const handleLinks = async (
   userId: string,
   args: Record<string, unknown>,
   queue: IndexQueue,
-  dbPath: string,
+  workPath: string,
   log: any,
 ): Promise<string> => {
   const index = await queue.current(userId)
@@ -414,7 +414,7 @@ const handleLinks = async (
       return [
         (async () => {
           try {
-            const raw = await Bun.file(noteFilePath(userId, target, dbPath)).text()
+            const raw = await Bun.file(noteFilePath(userId, target, workPath)).text()
             const { body } = parseNote(raw)
             return { id: target.id, name: target.name, linkType: link.type, synopsis: target.synopsis, tags: target.tags, links: target.links, content: body }
           } catch {
@@ -471,7 +471,7 @@ const handleLink = async (
   userId: string,
   args: Record<string, unknown>,
   queue: IndexQueue,
-  dbPath: string,
+  workPath: string,
   log: any,
 ): Promise<string> => {
   const index = await queue.current(userId)
@@ -499,9 +499,9 @@ const handleLink = async (
   const now = new Date().toISOString()
   const updated: ZettelNote = { ...source, links: updatedLinks, updatedAt: now }
 
-  const raw = await Bun.file(noteFilePath(userId, source, dbPath)).text()
+  const raw = await Bun.file(noteFilePath(userId, source, workPath)).text()
   const { body } = parseNote(raw)
-  await Bun.write(noteFilePath(userId, source, dbPath), serializeNote(updated, body))
+  await Bun.write(noteFilePath(userId, source, workPath), serializeNote(updated, body))
   await queue.mutate(userId, (idx) => ({ notes: idx.notes.map(n => n.id === source.id ? updated : n) }))
 
   const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
@@ -520,13 +520,13 @@ const handleLink = async (
 
 // ─── Actor definition ───
 
-export const ZettelNotes = (kgraphRef: ActorRef<KgraphMsg>, dbPath: string): ActorDef<ZettelNoteMsg, ZettelState> => {
-  const queue = makeIndexQueue(dbPath)
+export const ZettelNotes = (kgraphRef: ActorRef<KgraphMsg>, workPath: string): ActorDef<ZettelNoteMsg, ZettelState> => {
+  const queue = makeIndexQueue(workPath)
 
   return {
-    initialState: () => ({ kgraphRef, dbPath }),
+    initialState: () => ({ kgraphRef, workPath }),
     lifecycle: onLifecycle({
-      start: (_state) => ({ state: { kgraphRef, dbPath } }),
+      start: (_state) => ({ state: { kgraphRef, workPath } }),
     }),
 
     handler: onMessage<ZettelNoteMsg, ZettelState>({
@@ -538,12 +538,12 @@ export const ZettelNotes = (kgraphRef: ActorRef<KgraphMsg>, dbPath: string): Act
           const args = JSON.parse(rawArgs) as Record<string, unknown>
           const effectiveUserId = (args.userId as string | undefined) ?? userId
           switch (toolName) {
-            case zettelCreateTool.name: return handleCreate(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
-            case zettelUpdateTool.name: return handleUpdate(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
-            case zettelSearchTool.name: return handleSearch(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
-            case zettelLinksTool.name:  return handleLinks(effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case zettelCreateTool.name: return handleCreate(state.kgraphRef, effectiveUserId, args, queue, state.workPath, ctx.log)
+            case zettelUpdateTool.name: return handleUpdate(state.kgraphRef, effectiveUserId, args, queue, state.workPath, ctx.log)
+            case zettelSearchTool.name: return handleSearch(state.kgraphRef, effectiveUserId, args, queue, state.workPath, ctx.log)
+            case zettelLinksTool.name:  return handleLinks(effectiveUserId, args, queue, state.workPath, ctx.log)
             case zettelUnlinkedTool.name: return handleUnlinkedNotes(effectiveUserId, queue, ctx.log)
-            case zettelLinkTool.name:  return handleLink(state.kgraphRef, effectiveUserId, args, queue, state.dbPath, ctx.log)
+            case zettelLinkTool.name:  return handleLink(state.kgraphRef, effectiveUserId, args, queue, state.workPath, ctx.log)
             default: throw new Error(`Unknown tool: ${toolName}`)
           }
         }

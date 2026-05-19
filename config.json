@@ -52,6 +52,7 @@
       }
     },
     "cognitive": {
+      "workPath": "workspace/history",
       "llmProvider": {
         "apiKey": "${OPENROUTER_API_KEY}",
         "reasoning": {
@@ -86,7 +87,7 @@
       }
     },
     "memory": {
-      "dbPath": "workspace/memory",
+      "workPath": "workspace/memory",
       "kgraph": {
         "embeddingModel": "perplexity/pplx-embed-v1-0.6b",
         "embeddingDimensions": 768,

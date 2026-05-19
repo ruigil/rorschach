@@ -93,3 +93,18 @@ export type LlmProviderInternalMsg =
   | { type: '_modelsDone';        models: string[];                   replyTo: ActorRef<string[]> }
   | { type: '_rerankDone';        result: RerankReply;                model: string; role: string; clientId?: string; usage: TokenUsage | null; replyTo: ActorRef<RerankReply> }
   | { type: '_costReady';         model: string; role: string; clientId?: string; usage: TokenUsage; info: ModelInfo | null }
+
+// ─── User context message protocol ───
+
+// Supervisor: subscribes to topics + timer, routes turns to per-user workers.
+export type UserContextMsg =
+  | { type: '_turn';             userId: string; userText: string; assistantText: string; timestamp: number }
+  | { type: '_run' }
+  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_workerDone';       worker: ActorRef<UserContextWorkerMsg> }
+
+// Worker: one per user, runs the update loop.
+export type UserContextWorkerMsg =
+  | { type: '_start' }
+  | { type: '_stop' }
+  | LlmProviderReply

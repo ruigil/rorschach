@@ -86,11 +86,11 @@ export type KgraphState = {
 
 // ─── Helpers ───
 
-const resolveDb = (state: KgraphState, userId: string, basePath: string): GrafeoDB => {
+const resolveDb = (state: KgraphState, userId: string, workPath: string): GrafeoDB => {
   const existing = state.userDbs.get(userId)
   if (existing) return existing
-  const userDbPath = `${basePath}/${userId}/kgraph`
-  const db = GrafeoDB.create(userDbPath)
+  const userWorkPath = `${workPath}/${userId}/kgraph`
+  const db = GrafeoDB.create(userWorkPath)
   state.userDbs.set(userId, db)
   return db
 }
@@ -98,7 +98,7 @@ const resolveDb = (state: KgraphState, userId: string, basePath: string): Grafeo
 // ─── Actor definition ───
 
 export const Kgraph = (
-  basePath: string,
+  workPath: string,
   embedding?: { model: string; dimensions: number },
   cosineSimilarityThreshold = 0.0,
   reranker?: { model: string; topK?: number },
@@ -111,7 +111,7 @@ export const Kgraph = (
         ctx.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
       }
 
-      ctx.log.info('kgraph ready (user-isolated mode)', { basePath })
+      ctx.log.info('kgraph ready (user-isolated mode)', { workPath })
       return { state: { userDbs: new Map(), llmRef: null } }
     },
 
@@ -139,7 +139,7 @@ export const Kgraph = (
         const span = parent
           ? ctx.trace.child(parent.traceId, parent.spanId, kgraphQueryTool.name, { query: args.query })
           : null
-        const db = resolveDb(state, effectiveUserId, basePath)
+        const db = resolveDb(state, effectiveUserId, workPath)
 
         ctx.pipeToSelf(
           db.execute(args.query).then(r => r.rows() as unknown[]),
@@ -154,7 +154,7 @@ export const Kgraph = (
         const span = parent
           ? ctx.trace.child(parent.traceId, parent.spanId, kgraphCreateLinkTool.name, { statement: args.statement })
           : null
-        const db = resolveDb(state, effectiveUserId, basePath)
+        const db = resolveDb(state, effectiveUserId, workPath)
 
         // Strip // line comments — GrafeoDB Cypher doesn't support them and
         // the LLM occasionally adds them as inline annotations.
@@ -200,7 +200,7 @@ export const Kgraph = (
         }
 
         const llmRef = state.llmRef
-        const db = resolveDb(state, effectiveUserId, basePath)
+        const db = resolveDb(state, effectiveUserId, workPath)
 
         ctx.pipeToSelf(
           Promise.all(INDEXED_LABELS.map(lbl =>
@@ -249,7 +249,7 @@ export const Kgraph = (
       }
 
       const llmRef = state.llmRef
-      const db = resolveDb(state, userId, basePath)
+      const db = resolveDb(state, userId, workPath)
 
       const fetchLimit = reranker
         ? (reranker.topK ?? Math.max(topN, 10))
@@ -396,7 +396,7 @@ export const Kgraph = (
 
     updateNode: (state, message, ctx) => {
       const { nodeId, properties, embeddingText, userId, replyTo } = message
-      const db = resolveDb(state, userId, basePath)
+      const db = resolveDb(state, userId, workPath)
 
       const applyProperties = async (vec?: number[]) => {
         const setClauses: string[] = []
@@ -461,7 +461,7 @@ export const Kgraph = (
 
     dump: (state, message, ctx) => {
       const { userId } = message
-      const db = resolveDb(state, userId, basePath)
+      const db = resolveDb(state, userId, workPath)
 
       const nodeQuery = 'MATCH (n) RETURN n'
       const edgeQuery = 'MATCH ()-[r]->() RETURN r'

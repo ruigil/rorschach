@@ -54,6 +54,7 @@ export type SessionManagerOptions = {
   llmRef:              ActorRef<LlmProviderMsg>
   defaultMode:         string                   // resolved by the plugin; first-connect / cron / fallback target
   historyWindowHours?: number
+  workPath?:           string
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -144,7 +145,7 @@ const publishModeChanged = (
 export const SessionManager = (
   options: SessionManagerOptions,
 ): ActorDef<SessionManagerMsg, SessionManagerState> => {
-  const { llmRef, defaultMode, historyWindowHours } = options
+  const { llmRef, defaultMode, historyWindowHours, workPath } = options
 
   return {
     initialState: initialSessionManagerState,
@@ -237,7 +238,7 @@ export const SessionManager = (
         }
 
         // First connect for this userId — spawn history store + default agent.
-        const historyStoreRef = ctx.spawn(`history-store-${userId}`, HistoryStore({ userId, historyWindowHours })) as ActorRef<HistoryStoreMsg>
+        const historyStoreRef = ctx.spawn(`history-store-${userId}`, HistoryStore({ userId, historyWindowHours, workPath })) as ActorRef<HistoryStoreMsg>
         const seeded: Session = {
           historyStoreRef,
           agentRefs:   {},

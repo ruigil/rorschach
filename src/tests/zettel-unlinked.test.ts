@@ -58,7 +58,7 @@ describe('zettel-notes unlinked notes', () => {
 
     const zettelDir = tmpZettel()
     tempDirs.push(zettelDir)
-    const zettelRef = system.spawn('zettel', ZettelNotes(kgraphRef, zettelDir), { state: { kgraphRef, dbPath: zettelDir } }) as ActorRef<ZettelNoteMsg>
+    const zettelRef = system.spawn('zettel', ZettelNotes(kgraphRef, zettelDir), { state: { kgraphRef, workPath: zettelDir } }) as ActorRef<ZettelNoteMsg>
 
     await tick()
 
@@ -163,7 +163,7 @@ describe('zettel-notes unlinked notes', () => {
  
      const zettelDir = tmpZettel()
      tempDirs.push(zettelDir)
-     const zettelRef = system.spawn('zettel', ZettelNotes(kgraphRef, zettelDir), { state: { kgraphRef, dbPath: zettelDir } }) as ActorRef<ZettelNoteMsg>
+     const zettelRef = system.spawn('zettel', ZettelNotes(kgraphRef, zettelDir), { state: { kgraphRef, workPath: zettelDir } }) as ActorRef<ZettelNoteMsg>
  
      await tick()
  

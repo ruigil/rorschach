@@ -3,11 +3,10 @@ import { defineConfig, createSlot, stopSlot, publishConfigSurface, deleteConfigS
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import type { KgraphMsg, MemoryConsolidationMsg, MemorySupervisorMsg, UserContextMsg } from './types.ts'
+import type { KgraphMsg, MemoryConsolidationMsg, MemorySupervisorMsg } from './types.ts'
 import { Kgraph } from './kgraph.ts'
 import { MemoryConsolidation } from './memory-consolidation.ts'
 import { MemorySupervisor } from './memory-supervisor.ts'
-import { UserContextSupervisor } from './user-context.ts'
 import {
   ZettelNotes,
   type ZettelNoteMsg,
@@ -20,11 +19,10 @@ import { buildMemoryRoutes, memorySchemas, KGRAPH_ROUTE_ID } from './routes.ts'
 export type MemoryActorConfig = {
   model:                   string
   consolidationIntervalMs: number
-  contextIntervalMs:       number
 }
 
 export type MemoryConfig = {
-  dbPath?: string
+  workPath?: string
   kgraph?: {
     embeddingModel?:            string
     embeddingDimensions?:       number
@@ -36,7 +34,7 @@ export type MemoryConfig = {
 }
 
 const config = defineConfig<MemoryConfig>('memory', {
-  dbPath: './workspace/memory/kgraph',
+  workPath: './workspace/memory/kgraph',
 }, {
   schemas: memorySchemas,
 })
@@ -47,7 +45,6 @@ type MemoryActors = {
   consolidation: ActorRef<MemoryConsolidationMsg>
   memory:        ActorRef<MemorySupervisorMsg>
   zettel:        ActorRef<ZettelNoteMsg>
-  userContext:   ActorRef<UserContextMsg>
 }
 
 type MemoryPluginState = {
@@ -56,7 +53,6 @@ type MemoryPluginState = {
   consolidation:       ActorRef<MemoryConsolidationMsg> | null
   memory:              ActorRef<MemorySupervisorMsg>    | null
   zettel:              ActorRef<ZettelNoteMsg>          | null
-  userContext:         ActorRef<UserContextMsg>         | null
   memoryGen:           number
 }
 
@@ -70,10 +66,10 @@ const spawnMemoryActors = (
   config: MemoryActorConfig,
   gen: number,
   kgraphRef: ActorRef<KgraphMsg>,
-  dbPath: string,
+  workPath: string,
 ): MemoryActors => {
   
-  const zettel = ctx.spawn(`zettel-notes-${gen}`, ZettelNotes(kgraphRef, dbPath) )
+  const zettel = ctx.spawn(`zettel-notes-${gen}`, ZettelNotes(kgraphRef, workPath) )
 
   const ref = zettel as unknown as ActorRef<ToolMsg>
 
@@ -99,26 +95,21 @@ const spawnMemoryActors = (
     `memory-consolidation-${gen}`,
     MemoryConsolidation({ model: config.model, intervalMs: config.consolidationIntervalMs, tools: consolidationTools }),
   )
-  const userContext = ctx.spawn(
-    `user-context-${gen}`,
-    UserContextSupervisor({ model: config.model, intervalMs: config.contextIntervalMs }),
-  )
   const memory = ctx.spawn(
     `memory-supervisor-${gen}`,
     MemorySupervisor({ model: config.model, recallTools, storeTools }),
   ) 
   
-  return { consolidation, memory, zettel, userContext }
+  return { consolidation, memory, zettel }
 }
 
 const stopMemoryActors = (
   ctx: Parameters<NonNullable<PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig>['lifecycle']>>[2],
-  state: Pick<MemoryPluginState, 'consolidation' | 'memory' | 'zettel' | 'userContext'>,
+  state: Pick<MemoryPluginState, 'consolidation' | 'memory' | 'zettel'>,
 ): void => {
   if (state.consolidation) ctx.stop(state.consolidation)
   if (state.memory)        ctx.stop(state.memory)
   if (state.zettel)        ctx.stop(state.zettel)
-  if (state.userContext)   ctx.stop(state.userContext)
 }
 
 // ─── Plugin definition ───
@@ -136,14 +127,13 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
     consolidation:       null,
     memory:              null,
     zettel:              null,
-    userContext:         null,
     memoryGen:           0,
   },
 
   lifecycle: onLifecycle({
     start: (state, ctx) => {
       const slice       = ctx.initialConfig() as MemoryConfig | undefined
-      const dbPath      = slice?.dbPath ?? './workspace/memory'
+      const workPath    = slice?.workPath ?? './workspace/memory'
       const kgraphConfig = slice?.kgraph ?? {}
 
       publishConfigSurface(ctx, config, () => slice)
@@ -156,19 +146,17 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         ? { model: kgraphConfig.rerankerModel, topK: kgraphConfig.rerankerTopK }
         : undefined
 
-      const kgraphRef = ctx.spawn('kgraph-0', Kgraph(dbPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg)) as ActorRef<KgraphMsg>
+      const kgraphRef = ctx.spawn('kgraph-0', Kgraph(workPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg)) as ActorRef<KgraphMsg>
 
       let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
       let memory:        ActorRef<MemorySupervisorMsg>    | null = null
       let zettel:        ActorRef<ZettelNoteMsg>          | null = null
-      let userContext:   ActorRef<UserContextMsg>         | null = null
 
       if (slice?.system) {
-        const actors = spawnMemoryActors(ctx, slice.system, 0, kgraphRef, dbPath)
+        const actors = spawnMemoryActors(ctx, slice.system, 0, kgraphRef, workPath)
         consolidation = actors.consolidation
         memory        = actors.memory
         zettel        = actors.zettel
-        userContext   = actors.userContext
         ctx.log.info('memory actors activated', { model: slice.system.model })
       }
 
@@ -176,14 +164,13 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
       }
 
-      ctx.log.info('memory plugin activated', { dbPath })
+      ctx.log.info('memory plugin activated', { workPath })
       return { state: {
         initialized: true,
         kgraph: { config: kgraphConfig, ref: kgraphRef, gen: 0 },
         consolidation,
         memory,
         zettel,
-        userContext,
         memoryGen: 0,
       } }
     },
@@ -214,7 +201,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         ctx.stop(state.kgraph.ref)
       }
 
-      const dbPath          = msg.slice?.dbPath ?? './workspace/memory'
+      const workPath        = msg.slice?.workPath ?? './workspace/memory'
       const newKgraphConfig = msg.slice?.kgraph ?? {}
       const kgraphGen       = state.kgraph.gen + 1
 
@@ -226,7 +213,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         ? { model: newKgraphConfig.rerankerModel, topK: newKgraphConfig.rerankerTopK }
         : undefined
 
-      const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, Kgraph(dbPath, newEmbeddingCfg, newKgraphConfig.cosineSimilarityThreshold, newRerankerCfg)) as ActorRef<KgraphMsg>
+      const kgraphRef = ctx.spawn(`kgraph-${kgraphGen}`, Kgraph(workPath, newEmbeddingCfg, newKgraphConfig.cosineSimilarityThreshold, newRerankerCfg)) as ActorRef<KgraphMsg>
 
       // ─── Reconfigure memory actors ───
       stopMemoryActors(ctx, state)
@@ -234,15 +221,13 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
       let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
       let memory:        ActorRef<MemorySupervisorMsg>    | null = null
       let zettel:        ActorRef<ZettelNoteMsg>          | null = null
-      let userContext:   ActorRef<UserContextMsg>         | null = null
       const memoryGen = state.memoryGen + 1
 
       if (msg.slice?.system) {
-        const actors = spawnMemoryActors(ctx, msg.slice.system, memoryGen, kgraphRef, dbPath)
+        const actors = spawnMemoryActors(ctx, msg.slice.system, memoryGen, kgraphRef, workPath)
         consolidation = actors.consolidation
         memory        = actors.memory
         zettel        = actors.zettel
-        userContext   = actors.userContext
         ctx.log.info('memory actors reconfigured', { gen: memoryGen })
       }
 
@@ -251,7 +236,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
       }
 
-      ctx.log.info('memory plugin reconfigured', { dbPath, kgraphGen })
+      ctx.log.info('memory plugin reconfigured', { workPath, kgraphGen })
 
       return { state: {
         ...state,
@@ -259,7 +244,6 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         consolidation,
         memory,
         zettel,
-        userContext,
         memoryGen,
       } }
     },

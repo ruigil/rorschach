@@ -107,18 +107,3 @@ export type UserConsolidationWorkerMsg =
   | LoopMsg
   | { type: '_turn';        userText: string; assistantText: string; timestamp: number }
   | { type: '_consolidate' }
-
-// ─── User context message protocol ───
-
-// Supervisor: subscribes to topics + timer, routes turns to per-user workers.
-export type UserContextMsg =
-  | { type: '_turn';             userId: string; userText: string; assistantText: string; timestamp: number }
-  | { type: '_run' }
-  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_workerDone';       worker: ActorRef<UserContextWorkerMsg> }
-
-// Worker: one per user, runs the update loop.
-export type UserContextWorkerMsg =
-  | { type: '_start' }
-  | { type: '_stop' }
-  | LlmProviderReply

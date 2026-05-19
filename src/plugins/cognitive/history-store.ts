@@ -32,14 +32,15 @@ const initialHistoryStoreState = (): HistoryStoreState => ({
 export type HistoryStoreOptions = {
   userId:              string
   historyWindowHours?: number   // when set, trim records older than the window on each append
+  workPath?:           string
 }
 
 // ─── On-disk format (backward compatible with chatbot's createPersistence) ───
 
 type PersistedHistoryStore = { userContext: string | null; records: Record_[] }
 
-const createPersistence = (userId: string): PersistenceAdapter<HistoryStoreState> => {
-  const path = `workspace/history/${userId}.json`
+const createPersistence = (userId: string, workPath: string = 'workspace/history'): PersistenceAdapter<HistoryStoreState> => {
+  const path = `${workPath}/${userId}.json`
   return {
     load: async () => {
       const file = Bun.file(path)
@@ -78,7 +79,7 @@ const toMessages = (records: Record_[]): ApiMessage[] => records.map(r => r.mess
 export const HistoryStore = (
   options: HistoryStoreOptions,
 ): ActorDef<HistoryStoreMsg, HistoryStoreState> => {
-  const { userId, historyWindowHours } = options
+  const { userId, historyWindowHours, workPath } = options
 
   const publishSnapshot = (state: HistoryStoreState, ctx: { publishRetained: any }) => {
     ctx.publishRetained(HistorySnapshotTopic, userId, {
@@ -91,7 +92,7 @@ export const HistoryStore = (
 
   return {
     initialState: initialHistoryStoreState,
-    persistence: createPersistence(userId),
+    persistence: createPersistence(userId, workPath),
 
     lifecycle: onLifecycle({
       start: (state, ctx) => {

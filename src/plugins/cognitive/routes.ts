@@ -67,4 +67,35 @@ export const plannerSchema: ConfigSchemaSection = {
   },
 }
 
-export const cognitiveSchemas = [chatbotSchema, sessionSchema, llmSchema, plannerSchema]
+export const userContextSchema: ConfigSchemaSection = {
+  id: 'cognitive.userContext',
+  title: 'User Context',
+  subtitle: 'cognitive · periodic context summary',
+  tab: 'cognitive',
+  configKey: 'userContext',
+  routeId: 'config.cognitive',
+  schema: {
+    type: 'object',
+    properties: {
+      model: { type: 'string', default: 'deepseek/deepseek-v4-flash', 'x-ui': { widget: 'model-select' } },
+      intervalMs: { type: 'number', default: 60_000, minimum: 60_000, description: 'Interval for updating the user context summary' },
+    },
+  },
+}
+
+export const cognitiveWorkPathSchema: ConfigSchemaSection = {
+  id: 'cognitive.workPath',
+  title: 'History',
+  subtitle: 'cognitive · storage location',
+  tab: 'cognitive',
+  configKey: '',
+  routeId: 'config.cognitive',
+  schema: {
+    type: 'object',
+    properties: {
+      workPath: { type: 'string', default: 'workspace/history', description: 'Base path for storing conversation history and user context' },
+    },
+  },
+}
+
+export const cognitiveSchemas = [chatbotSchema, sessionSchema, llmSchema, plannerSchema, userContextSchema, cognitiveWorkPathSchema]
