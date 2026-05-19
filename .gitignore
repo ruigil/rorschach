@@ -5,6 +5,9 @@ out
 dist
 *.tgz
 
+# antigravity
+.antigravitycli
+
 # frontend build
 src/public/rorschach.js
 
