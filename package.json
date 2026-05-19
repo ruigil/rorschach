@@ -9,13 +9,18 @@
   },
   "private": true,
   "scripts": {
-    "rorschach": "bun run src/index.ts",
-    "dev": "bun run src/index.ts",
+    "clean": "rm -rf dist",
+    "copy:assets": "mkdir -p dist/public && cp -r src/public/* dist/public",
+    "build:frontend": "bun build src/frontend/rorschach.ts --outfile dist/public/rorschach.js --minify",
+    "build:backend": "bun build src/index.ts --outfile dist/index.js",
+    "build": "bun run clean && bun run copy:assets && bun run build:frontend && bun run build:backend",
+    "dev:frontend": "bun build src/frontend/rorschach.ts --outfile src/public/rorschach.js --watch",
+    "dev:backend": "bun run --watch src/index.ts",
+    "dev": "bun run dev:frontend & bun run dev:backend",
     "test": "bun test",
     "typecheck": "bun tsc --noEmit",
     "test:watch": "bun test --watch",
-    "test:coverage": "bun test --coverage",
-    "build": "bun build src/index.ts --outfile dist/index.js"
+    "test:coverage": "bun test --coverage"
   },
   "type": "module",
   "dependencies": {
@@ -23,6 +28,7 @@
     "cron-parser": "^5.5.0",
     "googleapis": "^171.4.0",
     "just-bash": "^2.14.3",
+    "lit": "^3.3.3",
     "unpdf": "^1.6.2"
   }
 }
