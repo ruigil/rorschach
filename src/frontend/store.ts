@@ -1,4 +1,6 @@
 import { type RorschachState } from './types/state.js'
+import { type ReactiveController, type ReactiveControllerHost } from 'lit'
+import { modeLabel } from './core/utils.js'
 
 const state: RorschachState = {
   isConnected: false,
@@ -11,7 +13,19 @@ const state: RorschachState = {
   topics: [],
   actors: [],
   logs: [],
+  traces: [],
+  usage: [],
+  tools: {},
   ws: null,
+  messages: [],
+  activeStream: {
+    isActive: false,
+    reasoning: '',
+    text: '',
+    sources: [],
+    attachments: [],
+  },
+  currentPlanGraph: null,
 }
 
 type StateKey = keyof RorschachState
@@ -57,4 +71,63 @@ export const store = {
   getState() {
     return state
   },
+
+  setMode(mode: string, displayName?: string) {
+    this.set('currentMode', mode)
+    this.set('currentModeDisplayName', displayName || modeLabel(mode))
+  },
+
+  addLog(log: any) {
+    this.set('logs', [log, ...state.logs].slice(0, 500))
+  },
+
+  appendMessage(msg: any) {
+    this.set('messages', [...state.messages, msg])
+  },
+
+  updateActiveStream(patch: Partial<RorschachState['activeStream']>) {
+    this.set('activeStream', { ...state.activeStream, ...patch })
+  },
+
+  commitActiveStream(role: 'assistant' | 'error' = 'assistant', text?: string) {
+    const active = state.activeStream
+    const message = {
+      id: crypto.randomUUID(),
+      role,
+      text: text ?? active.text,
+      reasoning: active.reasoning,
+      sources: [...active.sources],
+      attachments: [...active.attachments],
+      timestamp: Date.now(),
+    }
+    this.appendMessage(message)
+    this.set('activeStream', {
+      isActive: false,
+      reasoning: '',
+      text: '',
+      sources: [],
+      attachments: [],
+    })
+  },
+}
+
+export class StoreController<T extends StateKey> implements ReactiveController {
+  private _unsub?: () => void
+  public value: RorschachState[T]
+
+  constructor(private host: ReactiveControllerHost, private key: T) {
+    this.host.addController(this)
+    this.value = store.get(this.key)
+  }
+
+  hostConnected() {
+    this._unsub = store.subscribe(this.key, (val) => {
+      this.value = val
+      this.host.requestUpdate()
+    })
+  }
+
+  hostDisconnected() {
+    this._unsub?.()
+  }
 }

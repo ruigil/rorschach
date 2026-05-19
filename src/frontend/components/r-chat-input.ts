@@ -1,41 +1,27 @@
 import { html, css } from 'lit';
 import { customElement, state, query } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
-import { store } from '../store.js';
+import { StoreController, store } from '../store.js';
 
 @customElement('r-chat-input')
 export class RChatInput extends RorschachBase {
-  @state() private _isConnected = false;
-  @state() private isWaiting = false;
   @state() private pendingImages: string[] = [];
   @state() private pendingAudio: string | null = null;
   @state() private pendingPdfs: { dataUrl: string, name: string }[] = [];
   @state() private isRecording = false;
 
+  private _isConnected = new StoreController(this, 'isConnected');
+  private _isWaiting = new StoreController(this, 'isWaiting');
+
   @query('#input') private inputEl!: HTMLTextAreaElement;
   @query('#file-input') private fileInputEl!: HTMLInputElement;
 
-  private _unsub: (() => void)[] = [];
   private _mediaRecorder: any = null;
   private _audioCtx: AudioContext | null = null;
   private _recordingStream: MediaStream | null = null;
 
   override createRenderRoot() {
     return this;
-  }
-
-  override connectedCallback() {
-    super.connectedCallback();
-    this._unsub.push(store.subscribe('isConnected', (v) => this._isConnected = v));
-    this._unsub.push(store.subscribe('isWaiting', (v) => this.isWaiting = v));
-    this._isConnected = store.get('isConnected');
-    this.isWaiting = store.get('isWaiting');
-  }
-
-  override disconnectedCallback() {
-    super.disconnectedCallback();
-    this._unsub.forEach(un => un());
-    this._unsub = [];
   }
 
   getPending() {
@@ -217,7 +203,7 @@ export class RChatInput extends RorschachBase {
   }
 
   override render() {
-    const disabled = !this.isConnected || this.isWaiting;
+    const disabled = !this._isConnected.value || this._isWaiting.value;
 
     return html`
       <div class="input-area">

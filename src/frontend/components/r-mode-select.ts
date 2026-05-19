@@ -1,39 +1,21 @@
 import { html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
-import { store } from '../store.js';
+import { StoreController, store } from '../store.js';
 import { switchMode } from '../session.js';
 import type { Agent } from '../types/state.js';
 
 @customElement('r-mode-select')
 export class RModeSelect extends RorschachBase {
-  @state() private _agents: Agent[] = [];
-  @state() private _currentMode = '';
-  @state() private _currentModeDisplayName = '';
-  @state() private _isConnected = false;
-  @state() private _isWaiting = false;
-
-  private _unsubs: (() => void)[] = [];
+  private _agents = new StoreController(this, 'agents');
+  private _currentMode = new StoreController(this, 'currentMode');
+  private _currentModeDisplayName = new StoreController(this, 'currentModeDisplayName');
+  private _isConnected = new StoreController(this, 'isConnected');
+  private _isWaiting = new StoreController(this, 'isWaiting');
 
   // We render to the light DOM to use the global shell.css styles
   override createRenderRoot() {
     return this;
-  }
-
-  override connectedCallback() {
-    super.connectedCallback();
-    this._unsubs = [
-      store.subscribe('agents', (val) => this._agents = val),
-      store.subscribe('currentMode', (val) => this._currentMode = val),
-      store.subscribe('currentModeDisplayName', (val) => this._currentModeDisplayName = val),
-      store.subscribe('isConnected', (val) => this._isConnected = val),
-      store.subscribe('isWaiting', (val) => this._isWaiting = val),
-    ];
-  }
-
-  override disconnectedCallback() {
-    super.disconnectedCallback();
-    this._unsubs.forEach(unsub => unsub());
   }
 
   private _modeLabel(mode: string, displayName = '') {
@@ -46,20 +28,26 @@ export class RModeSelect extends RorschachBase {
     const select = e.target as HTMLSelectElement;
     if (switchMode(select.value)) {
       // Temporarily disable while switching
-      this._isWaiting = true; 
+      store.set('isWaiting', true); 
     }
   }
 
   override render() {
-    const agentList = this._agents.length > 0
-      ? this._agents
-      : this._currentMode ? [{ 
-          mode: this._currentMode, 
-          displayName: this._currentModeDisplayName || this._modeLabel(this._currentMode), 
+    const agents = this._agents.value;
+    const currentMode = this._currentMode.value;
+    const currentModeDisplayName = this._currentModeDisplayName.value;
+    const isConnected = this._isConnected.value;
+    const isWaiting = this._isWaiting.value;
+
+    const agentList = agents.length > 0
+      ? agents
+      : currentMode ? [{ 
+          mode: currentMode, 
+          displayName: currentModeDisplayName || this._modeLabel(currentMode), 
           shortDesc: '' 
         }] : [];
 
-    const isDisabled = !this._isConnected || this._isWaiting || agentList.length < 2;
+    const isDisabled = !isConnected || isWaiting || agentList.length < 2;
 
     if (agentList.length === 0) {
       return html`
@@ -79,7 +67,7 @@ export class RModeSelect extends RorschachBase {
           ${agentList.map(agent => html`
             <option 
               value=${agent.mode} 
-              ?selected=${agent.mode === this._currentMode} 
+              ?selected=${agent.mode === currentMode} 
               .title=${agent.shortDesc || ''}
             >
               ${agent.displayName || this._modeLabel(agent.mode)}

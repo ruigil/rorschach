@@ -1,12 +1,7 @@
 import { html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
-import { RorschachBase, escHtml } from './base.js';
-
-export interface Attachment {
-  kind: 'image' | 'audio' | 'video' | 'file';
-  url: string;
-  alt?: string;
-}
+import { RorschachBase } from './base.js';
+import { type Attachment } from '../types/state.js';
 
 @customElement('r-attachments')
 export class RAttachments extends RorschachBase {
@@ -50,7 +45,7 @@ export class RAttachments extends RorschachBase {
       border-radius: 4px;
     }
 
-    .attachment-file {
+    .attachment-file, .attachment-pdf {
       display: flex;
       align-items: center;
       gap: 0.4rem;
@@ -60,7 +55,7 @@ export class RAttachments extends RorschachBase {
       font-size: 0.78rem;
     }
 
-    .attachment-file:hover {
+    .attachment-file:hover, .attachment-pdf:hover {
       text-decoration: underline;
     }
 
@@ -68,6 +63,10 @@ export class RAttachments extends RorschachBase {
       font-size: 0.7rem;
       color: var(--muted, #8a8a8a);
       padding: 0.2rem 0.4rem;
+    }
+    
+    .attachment-pdf svg {
+      flex-shrink: 0;
     }
   `;
 
@@ -82,41 +81,42 @@ export class RAttachments extends RorschachBase {
   }
 
   private renderAttachment(a: Attachment) {
+    const src = a.url || a.data || '';
     if (a.kind === 'image') {
       return html`
         <div class="attachment attachment-image">
-          <img src="${a.url}" class="attachment-image" ?alt="${a.alt}" .alt="${a.alt || ''}">
+          <img src="${src}" class="attachment-image" alt="${a.name || ''}">
         </div>
       `;
     } else if (a.kind === 'audio') {
       return html`
         <div class="attachment attachment-audio">
-          <audio src="${a.url}" controls class="attachment-audio"></audio>
-          ${a.alt ? html`<div class="attachment-caption">${a.alt}</div>` : ''}
+          <audio src="${src}" controls class="attachment-audio"></audio>
+          ${a.name ? html`<div class="attachment-caption">${a.name}</div>` : ''}
         </div>
       `;
     } else if (a.kind === 'video') {
       return html`
         <div class="attachment attachment-video">
-          <video src="${a.url}" controls class="attachment-video"></video>
-          ${a.alt ? html`<div class="attachment-caption">${a.alt}</div>` : ''}
+          <video src="${src}" controls class="attachment-video"></video>
+          ${a.name ? html`<div class="attachment-caption">${a.name}</div>` : ''}
         </div>
       `;
+    } else if (a.kind === 'pdf') {
+        return html`
+            <div class="attachment attachment-pdf">
+              ${this.renderIcon('file')}
+              <span>${a.name || 'document.pdf'}</span>
+            </div>
+        `;
     } else {
       return html`
         <div class="attachment attachment-file">
-          <a href="${a.url}" target="_blank" rel="noopener noreferrer" class="attachment-file">
-            ${a.alt || a.url.split('/').pop() || 'file'}
+          <a href="${src}" target="_blank" rel="noopener noreferrer" class="attachment-file">
+            ${a.name || src.split('/').pop() || 'file'}
           </a>
         </div>
       `;
     }
-  }
-
-  /**
-   * Backward compatibility
-   */
-  renderLegacy(attachments: Attachment[]) {
-    this.items = attachments;
   }
 }

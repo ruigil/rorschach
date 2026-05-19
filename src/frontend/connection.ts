@@ -1,5 +1,6 @@
 import { store } from './store.js'
-import { type WSFrame, type WSFrameType } from './types/websocket.js'
+import { type WSFrame } from './types/websocket.js'
+import { toolActionLabel } from './core/utils.js'
 
 const logoutBtn = document.getElementById('logout-btn')
 
@@ -8,49 +9,59 @@ logoutBtn?.addEventListener('click', async () => {
   window.location.href = new URL('auth/login.html', location.href).href
 })
 
-const wsMessageFrameTypes = new Set<WSFrameType>([
-  'chunk',
-  'done',
-  'error',
-  'tooling',
-  'sources',
-  'attachments',
-  'reasoningChunk',
-  'plannerMode',
-  'modeChanged',
-  'agents',
-])
-
-const targetFrameHandlers: Partial<Record<WSFrameType, (msg: any) => void>> = {
-  planGraph:         dispatchTo('r-plan-workspace', 'plan-graph'),
-  usage:             callObserve('handleUsage'),
-  log:               callObserve('handleLog'),
-  metrics:           callObserve('handleMetrics'),
-  trace:             callObserve('handleTrace'),
-  tool_registered:   callObserve('handleToolRegistered'),
-  tool_unregistered: callObserve('handleToolUnregistered'),
+const frameHandlers: Record<string, (msg: any) => void> = {
+  chunk: (msg) => {
+    store.updateActiveStream({
+      isActive: true,
+      text: store.get('activeStream').text + msg.text,
+      toolingLabel: undefined,
+    })
+  },
+  reasoningChunk: (msg) => {
+    store.updateActiveStream({
+      isActive: true,
+      reasoning: store.get('activeStream').reasoning + msg.text,
+      toolingLabel: undefined,
+    })
+  },
+  tooling: (msg) => {
+    store.updateActiveStream({
+      isActive: true,
+      toolingLabel: toolActionLabel(msg.tools || [])
+    })
+  },
+  sources: (msg) => store.updateActiveStream({ sources: msg.sources }),
+  attachments: (msg) => store.updateActiveStream({ attachments: msg.attachments }),
+  done: () => store.commitActiveStream(),
+  error: (msg) => store.commitActiveStream('error', msg.text),
+  agents: (msg) => store.set('agents', Array.isArray(msg.agents) ? msg.agents : []),
+  modeChanged: (msg) => store.setMode(msg.mode, msg.displayName),
+  plannerMode: (msg) => {
+    if (msg.active) store.setMode('planner', 'Planner')
+    else if (store.get('currentMode') === 'planner') store.setMode('chatbot', 'Chatbot')
+  },
+  log: (msg) => store.addLog(msg),
+  metrics: (msg) => {
+    if (msg.actors) store.set('actors', msg.actors)
+    if (msg.topics) store.set('topics', msg.topics)
+  },
+  trace: (msg) => store.set('traces', [...store.get('traces'), msg]),
+  usage: (msg) => store.set('usage', [...store.get('usage'), msg]),
+  tool_registered: (msg) => store.set('tools', { ...store.get('tools'), [msg.name]: msg.schema }),
+  tool_unregistered: (msg) => {
+    const nextTools = { ...store.get('tools') }
+    delete nextTools[msg.name]
+    store.set('tools', nextTools)
+  },
+  planGraph: (msg) => store.set('currentPlanGraph', msg),
 }
 
-function dispatchTo(selector: string, eventName: string) {
-  return (msg: any) => {
-    document.querySelector(selector)?.dispatchEvent(new CustomEvent(eventName, { detail: msg, bubbles: true }))
-  }
-}
-
-function callObserve(methodName: string) {
-  return (msg: any) => {
-    (document.querySelector('r-observe-panel') as any)?.[methodName]?.(msg)
-  }
-}
 
 function dispatchFrame(msg: WSFrame) {
-  if (wsMessageFrameTypes.has(msg.type)) {
-    document.dispatchEvent(new CustomEvent('ws-message', { detail: msg, bubbles: true }))
-    return
-  }
-
-  targetFrameHandlers[msg.type]?.(msg)
+  const handler = frameHandlers[msg.type]
+  if (handler) handler(msg)
 }
+
 
 export async function connect() {
   const wsUrl = new URL('ws', location.href)

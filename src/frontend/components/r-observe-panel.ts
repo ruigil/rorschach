@@ -1,7 +1,7 @@
 import { html } from 'lit';
 import { customElement, state, query } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
-import { store } from '../store.js';
+import { store, StoreController } from '../store.js';
 import { RActorTree } from './r-actor-tree.js';
 import { RActorDetail } from './r-actor-detail.js';
 import { RTopicList } from './r-topic-list.js';
@@ -22,10 +22,12 @@ const CONTROL_BY_TAB: Record<string, string> = {
 @customElement('r-observe-panel')
 export class RObservePanel extends RorschachBase {
   @state() private _activeTab = 'metrics';
-  @state() private _metrics = { actors: 0, recv: 0, done: 0, fail: 0 };
-  @state() private _logCountText = '0 events';
-  @state() private _tracesCountText = '0 traces';
   @state() private _memoryStatsText = '';
+
+  private _actors = new StoreController(this, 'actors');
+  private _topics = new StoreController(this, 'topics');
+  private _logs = new StoreController(this, 'logs');
+  private _traces = new StoreController(this, 'traces');
 
   @query('r-actor-tree') private _actorTree?: RActorTree;
   @query('r-actor-detail') private _actorDetail?: RActorDetail;
@@ -41,84 +43,11 @@ export class RObservePanel extends RorschachBase {
     return this;
   }
 
-  handleMetrics(msg: any) {
-    const event = msg;
-    const actors: Actor[] = event.actors || [];
-    let totRecv = 0;
-    let totDone = 0;
-    let totFail = 0;
-    actors.forEach(a => {
-      totRecv += (a as any).messagesReceived  || 0;
-      totDone += a.messagesProcessed || 0;
-      totFail += (a as any).messagesFailed    || 0;
-    });
-
-    if (actors.length > 0) {
-      this._metrics = {
-        actors: actors.length,
-        recv: totRecv,
-        done: totDone,
-        fail: totFail
-      };
-      store.set('actors', actors);
-    }
-
-    if (this._actorTree) {
-      this._actorTree.actors = actors;
-    }
-
-    // Update detail if it's showing an actor that was updated
-    if (this._actorDetail?.actor) {
-      const updated = actors.find(a => a.name === this._actorDetail!.actor!.name);
-      if (updated) {
-        this._actorDetail.show(updated);
-      }
-    }
-    
-    if (event.topics) {
-      const topics: Topic[] = event.topics;
-      store.set('topics', topics);
-      if (this._topicList) {
-        this._topicList.topics = topics;
-      }
-    }
-  }
-
-  handleLog(msg: any) {
-    const count = this._logStream?.appendEvent(msg) ?? 0;
-    this._logCountText = `${count} event${count !== 1 ? 's' : ''}`;
-  }
-
-  handleTrace(msg: any) {
-    this._tracesList?.addSpan(msg);
-    if (this._activeTab === 'traces') {
-      this._tracesList?.requestUpdate();
-    }
-    const size = this._tracesList?.size ?? 0;
-    this._tracesCountText = `${size} trace${size !== 1 ? 's' : ''}`;
-  }
-
-  handleUsage(msg: any) {
-    this._costsTable?.addUsage(msg);
-    if (this._activeTab === 'costs') {
-      this._costsTable?.requestUpdate();
-    }
-  }
-
-  handleToolRegistered(msg: any) {
-    this._toolsList?.register(msg.name, msg.schema);
-  }
-
-
-  handleToolUnregistered(msg: any) {
-    this._toolsList?.unregister(msg.name);
-  }
-
   private _onTabChange(event: CustomEvent) {
     const tab = event.detail?.tab;
     if (!tab) return;
     this._activeTab = tab;
-    
+
     if (tab === 'traces') this._tracesList?.requestUpdate();
     if (tab === 'memory') this._fetchKgraph();
     if (tab === 'costs') this._costsTable?.requestUpdate();
@@ -141,18 +70,30 @@ export class RObservePanel extends RorschachBase {
   }
 
   private _clearLogs() {
-    const count = this._logStream?.clear() ?? 0;
-    this._logCountText = `${count} events`;
+    store.set('logs', []);
   }
 
   private _clearTraces() {
-    this._tracesList?.clear();
-    this._tracesCountText = '0 traces';
+    store.set('traces', []);
   }
 
   override render() {
     const activeControl = CONTROL_BY_TAB[this._activeTab];
-    const showMetrics = activeControl === 'metrics-summary' && this._metrics.actors > 0;
+    const actors = this._actors.value;
+    const topics = this._topics.value;
+    const logs = this._logs.value;
+    const traces = this._traces.value;
+
+    let totRecv = 0, totDone = 0, totFail = 0;
+    actors.forEach((a: any) => {
+      totRecv += a.messagesReceived  || 0;
+      totDone += a.messagesProcessed || 0;
+      totFail += a.messagesFailed    || 0;
+    });
+
+    const showMetrics = activeControl === 'metrics-summary' && actors.length > 0;
+    const logCountText = `${logs.length} event${logs.length !== 1 ? 's' : ''}`;
+    const tracesCountText = `${traces.length} trace${traces.length !== 1 ? 's' : ''}`;
 
     return html`
       <div class="obs-bar">
@@ -168,28 +109,28 @@ export class RObservePanel extends RorschachBase {
         <div class="obs-bar-end">
           <div class="metrics-summary" ?hidden=${!showMetrics}>
             <div class="summary-stat">
-              <span class="summary-val">${this._metrics.actors}</span>
+              <span class="summary-val">${actors.length}</span>
               <span class="summary-key">actors</span>
             </div>
             <div class="summary-stat">
-              <span class="summary-val">${this._metrics.recv}</span>
+              <span class="summary-val">${totRecv}</span>
               <span class="summary-key">recv</span>
             </div>
             <div class="summary-stat">
-              <span class="summary-val">${this._metrics.done}</span>
+              <span class="summary-val">${totDone}</span>
               <span class="summary-key">done</span>
             </div>
             <div class="summary-stat">
-              <span class="summary-val">${this._metrics.fail}</span>
+              <span class="summary-val">${totFail}</span>
               <span class="summary-key">fail</span>
             </div>
           </div>
           <div class="obs-log-controls" ?hidden=${activeControl !== 'obs-log-controls'}>
-            <span class="log-count">${this._logCountText}</span>
+            <span class="log-count">${logCountText}</span>
             <button class="btn-clear" @click=${this._clearLogs}>clear</button>
           </div>
           <div class="obs-traces-controls" ?hidden=${activeControl !== 'obs-traces-controls'}>
-            <span class="log-count">${this._tracesCountText}</span>
+            <span class="log-count">${tracesCountText}</span>
             <button class="btn-clear" @click=${this._clearTraces}>clear</button>
           </div>
           <div class="obs-memory-controls" ?hidden=${activeControl !== 'obs-memory-controls'}>
@@ -202,7 +143,7 @@ export class RObservePanel extends RorschachBase {
       <div class="obs-subpanel ${this._activeTab === 'metrics' ? 'active' : ''}">
         <div class="metrics-layout">
           <div class="tree-col">
-            <r-actor-tree @actor-select=${this._onActorSelect}></r-actor-tree>
+            <r-actor-tree .actors=${actors} @actor-select=${this._onActorSelect}></r-actor-tree>
           </div>
           <div class="detail-col">
             <r-actor-detail></r-actor-detail>
@@ -211,7 +152,7 @@ export class RObservePanel extends RorschachBase {
       </div>
 
       <div class="obs-subpanel ${this._activeTab === 'topics' ? 'active' : ''}">
-        <r-topic-list .topics=${store.get('topics')}></r-topic-list>
+        <r-topic-list .topics=${topics}></r-topic-list>
       </div>
 
       <div class="obs-subpanel ${this._activeTab === 'traces' ? 'active' : ''}">
@@ -232,5 +173,7 @@ export class RObservePanel extends RorschachBase {
       <div class="obs-subpanel ${this._activeTab === 'memory' ? 'active' : ''}">
         <r-force-graph></r-force-graph>
       </div>
-    `;  }
+    `;
+  }
 }
+

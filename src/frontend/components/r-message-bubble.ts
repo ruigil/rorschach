@@ -1,9 +1,13 @@
 import { html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
+import { type Message, type ActiveStream } from '../types/state.js';
+import { renderMarkdown } from '../markdown.js';
 
 @customElement('r-message-bubble')
 export class RMessageBubble extends RorschachBase {
+  @property({ type: Object }) message?: Message;
+  @property({ type: Object }) stream?: ActiveStream;
   @property({ type: String, reflect: true }) type: 'assistant' | 'user' | 'error' = 'assistant';
 
   // Render to light DOM to reuse chat.css styles
@@ -11,132 +15,49 @@ export class RMessageBubble extends RorschachBase {
     return this;
   }
 
-  override connectedCallback() {
-    super.connectedCallback();
-    this.classList.add('message', this.type);
-    this._ensureStructure();
-  }
-
-  override updated(changedProperties: Map<string, any>) {
-    if (changedProperties.has('type')) {
-      this.classList.remove('assistant', 'user', 'error');
-      this.classList.add(this.type);
-      const labelEl = this.querySelector('.message-label');
-      if (labelEl) {
-        labelEl.textContent = this._getLabelText();
-      }
-    }
-  }
-
   private _getLabelText() {
-    return this.type === 'user' ? 'You' : this.type === 'error' ? 'Error' : 'Rorschach';
-  }
-
-  private _ensureStructure() {
-    if (!this.querySelector('.bubble')) {
-      const labelText = this._getLabelText();
-      this.innerHTML = `<div class="message-label">${labelText}</div><div class="bubble"></div>`;
-    }
-  }
-
-  get bubbleContainer(): HTMLElement | null {
-    this._ensureStructure();
-    return this.querySelector('.bubble');
+    const role = this.message?.role ?? this.type;
+    return role === 'user' ? 'You' : role === 'error' ? 'Error' : 'Rorschach';
   }
 
   override render() {
-    // We handle the main structure in _ensureStructure to support imperative streaming
-    // and avoid Lit overwriting manually appended children.
-    return html``;
-  }
+    const role = this.message?.role ?? this.type;
+    const isAssistant = role === 'assistant';
+    
+    const text = this.message?.text ?? this.stream?.text ?? '';
+    const reasoning = this.message?.reasoning ?? this.stream?.reasoning ?? '';
+    const sources = this.message?.sources ?? this.stream?.sources ?? [];
+    const attachments = this.message?.attachments ?? this.stream?.attachments ?? [];
+    const toolingLabel = this.stream?.toolingLabel;
 
-  addBody() {
-    const body = document.createElement('div');
-    body.className = 'bubble-body';
-    this.bubbleContainer?.appendChild(body);
-    return body;
-  }
+    return html`
+      <div class="message ${role}">
+        <div class="message-label">${this._getLabelText()}</div>
+        <div class="bubble">
+          ${reasoning ? html`
+            <details class="reasoning" ?open=${!this.message}>
+              <summary>Thinking...</summary>
+              <pre class="reasoning-content">${reasoning}</pre>
+            </details>
+          ` : ''}
 
-  addImages(images: { data: string }[]) {
-    const bubble = this.bubbleContainer;
-    if (!bubble) return;
-    const imgRow = document.createElement('div');
-    imgRow.className = 'message-images';
-    images.forEach(a => {
-      const img = document.createElement('img');
-      img.src = a.data;
-      img.className = 'message-image';
-      imgRow.appendChild(img);
-    });
-    bubble.appendChild(imgRow);
-  }
+          ${sources.length > 0 ? html`
+            <r-sources-list .sources=${sources}></r-sources-list>
+          ` : ''}
 
-  addAudio(audioData: string) {
-    const bubble = this.bubbleContainer;
-    if (!bubble) return;
-    const audioEl = document.createElement('audio');
-    audioEl.src = audioData;
-    audioEl.controls = true;
-    audioEl.className = 'message-audio';
-    bubble.appendChild(audioEl);
-  }
+          ${attachments.length > 0 ? html`
+            <r-attachments .items=${attachments}></r-attachments>
+          ` : ''}
 
-  addPdfs(pdfs: { name: string, data?: string }[]) {
-    const bubble = this.bubbleContainer;
-    if (!bubble) return;
-    pdfs.forEach(pdf => {
-      const chip = document.createElement('div');
-      chip.className = 'message-pdf-chip';
-      chip.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
-      const nameSpan = document.createElement('span');
-      nameSpan.textContent = pdf.name;
-      chip.appendChild(nameSpan);
-      bubble.appendChild(chip);
-    });
-  }
+          ${toolingLabel ? html`
+            <r-thinking-indicator .label=${toolingLabel}></r-thinking-indicator>
+          ` : ''}
 
-  addText(text: string) {
-    const bubble = this.bubbleContainer;
-    if (!bubble) return;
-    const textEl = document.createElement('span');
-    textEl.textContent = text;
-    bubble.appendChild(textEl);
-  }
-
-  addSources(sourcesEl: HTMLElement) {
-    const bubble = this.bubbleContainer;
-    if (!bubble) return;
-    const body = bubble.querySelector('.bubble-body');
-    if (body) {
-      bubble.insertBefore(sourcesEl, body);
-    } else {
-      bubble.appendChild(sourcesEl);
-    }
-  }
-
-  addAttachments(attachmentsEl: HTMLElement) {
-    const bubble = this.bubbleContainer;
-    if (!bubble) return;
-    const body = bubble.querySelector('.bubble-body');
-    if (body) {
-      bubble.insertBefore(attachmentsEl, body);
-    } else {
-      bubble.appendChild(attachmentsEl);
-    }
-  }
-
-  addReasoningSection() {
-    const bubble = this.bubbleContainer;
-    if (!bubble) return null;
-    const details = document.createElement('details');
-    details.className = 'reasoning';
-    const summary = document.createElement('summary');
-    summary.textContent = 'Thinking...';
-    const content = document.createElement('pre');
-    content.className = 'reasoning-content';
-    details.appendChild(summary);
-    details.appendChild(content);
-    bubble.appendChild(details);
-    return content;
+          <div class="bubble-body">
+            ${this.message ? renderMarkdown(text) : text}
+          </div>
+        </div>
+      </div>
+    `;
   }
 }

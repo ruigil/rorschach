@@ -1,6 +1,7 @@
 import { html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
+import { StoreController } from '../store.js';
 
 interface CostEntry {
   role: string;
@@ -18,44 +19,48 @@ function formatTokens(n: number) {
 
 @customElement('r-costs-table')
 export class RCostsTable extends RorschachBase {
-  @state() private _costsMap = new Map<string, CostEntry>();
+  private _usage = new StoreController(this, 'usage');
 
   // Render to light DOM to reuse shell/observe styles
   override createRenderRoot() {
     return this;
   }
 
-  addUsage(msg: any) {
-    if (!msg.role || !msg.model) return;
-    const key = `${msg.role}:${msg.model}`;
-    const prev = this._costsMap.get(key) ?? { 
-      role: msg.role, 
-      model: msg.model, 
-      inputTokens: 0, 
-      outputTokens: 0, 
-      contextWindow: null, 
-      cost: 0 
-    };
-    
-    this._costsMap.set(key, {
-      ...prev,
-      inputTokens: prev.inputTokens + (msg.inputTokens ?? 0),
-      outputTokens: prev.outputTokens + (msg.outputTokens ?? 0),
-      contextWindow: msg.contextWindow ?? prev.contextWindow,
-      cost: (prev.cost ?? 0) + (msg.cost ?? 0),
+  private _getCostsMap() {
+    const costsMap = new Map<string, CostEntry>();
+    this._usage.value.forEach(msg => {
+      if (!msg.role || !msg.model) return;
+      const key = `${msg.role}:${msg.model}`;
+      const prev = costsMap.get(key) ?? { 
+        role: msg.role, 
+        model: msg.model, 
+        inputTokens: 0, 
+        outputTokens: 0, 
+        contextWindow: null, 
+        cost: 0 
+      };
+      
+      costsMap.set(key, {
+        ...prev,
+        inputTokens: prev.inputTokens + (msg.inputTokens ?? 0),
+        outputTokens: prev.outputTokens + (msg.outputTokens ?? 0),
+        contextWindow: msg.contextWindow ?? prev.contextWindow,
+        cost: (prev.cost ?? 0) + (msg.cost ?? 0),
+      });
     });
-    this.requestUpdate();
+    return costsMap;
   }
 
   override render() {
-    if (this._costsMap.size === 0) {
+    const costsMap = this._getCostsMap();
+    if (costsMap.size === 0) {
       return html`
         <r-empty-state variant="panel" text="no usage data yet"></r-empty-state>
       `;
     }
 
     let totalIn = 0, totalOut = 0, totalCost = 0;
-    const entries = [...this._costsMap.values()];
+    const entries = [...costsMap.values()];
 
     return html`
       <table class="costs-table">

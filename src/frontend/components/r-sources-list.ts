@@ -130,11 +130,4 @@ export class RSourcesList extends RorschachBase {
   private toggle() {
     this.open = !this.open;
   }
-
-  /**
-   * Backward compatibility
-   */
-  renderLegacy(sources: Source[]) {
-    this.sources = sources;
-  }
 }

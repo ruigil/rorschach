@@ -1,14 +1,14 @@
 import { html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
-import { store } from '../store.js';
+import { store, StoreController } from '../store.js';
 
 @customElement('r-status-dot')
 export class RStatusDot extends RorschachBase {
   @property({ type: String, reflect: true }) status = 'disconnected';
   @property({ type: String }) label = 'connecting…';
 
-  private _unsub?: () => void;
+  private _isConnected = new StoreController(this, 'isConnected');
 
   static override styles = css`
     :host {
@@ -65,25 +65,16 @@ export class RStatusDot extends RorschachBase {
     }
   `;
 
-  override connectedCallback() {
-    super.connectedCallback();
-    this._unsub = store.subscribe('isConnected', (connected) => {
-      this.status = connected ? 'connected' : 'disconnected';
-      this.label = connected ? 'connected' : 'reconnecting…';
-    });
-  }
-
-  override disconnectedCallback() {
-    super.disconnectedCallback();
-    if (this._unsub) {
-      this._unsub();
-    }
-  }
-
   override render() {
+    const connected = this._isConnected.value;
+    const status = connected ? 'connected' : 'disconnected';
+    const label = connected ? 'connected' : 'reconnecting…';
+
+    this.status = status; // Reflect to attribute
+
     return html`
       <span class="dot"></span>
-      ${this.label ? html`<span class="label">${this.label}</span>` : ''}
+      ${label ? html`<span class="label">${label}</span>` : ''}
     `;
   }
 }

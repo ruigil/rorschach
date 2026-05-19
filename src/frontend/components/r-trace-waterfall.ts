@@ -1,6 +1,7 @@
 import { html, type TemplateResult } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
+import { StoreController, store } from '../store.js';
 
 const MAX_TRACES = 20;
 
@@ -26,7 +27,7 @@ interface TraceRecord {
 
 @customElement('r-trace-waterfall')
 export class RTraceWaterfall extends RorschachBase {
-  @state() private _tracesMap = new Map<string, TraceRecord>();
+  private _traces = new StoreController(this, 'traces');
 
   // Render to light DOM to reuse shell/observe styles
   override createRenderRoot() {
@@ -34,51 +35,57 @@ export class RTraceWaterfall extends RorschachBase {
   }
 
   get size() {
-    return this._tracesMap.size;
+    const tracesMap = this._getTracesMap();
+    return tracesMap.size;
   }
 
-  addSpan(span: any) {
-    let record = this._tracesMap.get(span.traceId);
-    if (!record) {
-      if (this._tracesMap.size >= MAX_TRACES) {
-        const oldestId = this._tracesMap.keys().next().value;
-        if (oldestId) this._tracesMap.delete(oldestId);
-      }
-      record = { traceId: span.traceId, requestStart: span.timestamp, spans: new Map() };
-      this._tracesMap.set(span.traceId, record);
-    }
+  private _getTracesMap() {
+    const traces = this._traces.value;
+    const tracesMap = new Map<string, TraceRecord>();
 
-    let spanData = record.spans.get(span.spanId);
-    if (!spanData) {
-      spanData = {
-        spanId: span.spanId,
-        parentSpanId: span.parentSpanId,
-        actor: span.actor,
-        operation: span.operation,
-        startTime: span.timestamp,
-        status: span.status,
-        data: span.data,
-      };
-      record.spans.set(span.spanId, spanData);
-    } else {
-      spanData.endTime = span.timestamp;
-      spanData.durationMs = span.durationMs;
-      spanData.status = span.status;
-      if (span.data) {
-        spanData.data = { ...spanData.data, ...span.data };
+    traces.forEach(span => {
+      let record = tracesMap.get(span.traceId);
+      if (!record) {
+        if (tracesMap.size >= MAX_TRACES) {
+          const oldestId = tracesMap.keys().next().value;
+          if (oldestId) tracesMap.delete(oldestId);
+        }
+        record = { traceId: span.traceId, requestStart: span.timestamp, spans: new Map() };
+        tracesMap.set(span.traceId, record);
       }
-    }
 
-    if (span.operation === 'request' && (span.status === 'done' || span.status === 'error')) {
-      record.requestDuration = span.durationMs;
-      record.requestEnd = span.timestamp;
-    }
-    this.requestUpdate();
+      let spanData = record.spans.get(span.spanId);
+      if (!spanData) {
+        spanData = {
+          spanId: span.spanId,
+          parentSpanId: span.parentSpanId,
+          actor: span.actor,
+          operation: span.operation,
+          startTime: span.timestamp,
+          status: span.status,
+          data: span.data,
+        };
+        record.spans.set(span.spanId, spanData);
+      } else {
+        spanData.endTime = span.timestamp;
+        spanData.durationMs = span.durationMs;
+        spanData.status = span.status;
+        if (span.data) {
+          spanData.data = { ...spanData.data, ...span.data };
+        }
+      }
+
+      if (span.operation === 'request' && (span.status === 'done' || span.status === 'error')) {
+        record.requestDuration = span.durationMs;
+        record.requestEnd = span.timestamp;
+      }
+    });
+
+    return tracesMap;
   }
 
   clear() {
-    this._tracesMap.clear();
-    this.requestUpdate();
+    store.set('traces', []);
   }
 
   private _computeDepths(spans: TraceSpan[]): Map<string, number> {
@@ -155,7 +162,8 @@ export class RTraceWaterfall extends RorschachBase {
   }
 
   override render() {
-    if (this._tracesMap.size === 0) {
+    const tracesMap = this._getTracesMap();
+    if (tracesMap.size === 0) {
       return html`
         <r-empty-state 
           variant="panel" 
@@ -165,7 +173,7 @@ export class RTraceWaterfall extends RorschachBase {
       `;
     }
 
-    const arr = Array.from(this._tracesMap.values()).reverse();
+    const arr = Array.from(tracesMap.values()).reverse();
     return html`${arr.map(r => this._renderTrace(r))}`;
   }
 }

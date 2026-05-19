@@ -1,7 +1,7 @@
 import { html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { RorschachBase, escHtml } from './base.js';
-import { store } from '../store.js';
+import { store, StoreController } from '../store.js';
 
 @customElement('r-plan-workspace')
 export class RPlanWorkspace extends RorschachBase {
@@ -12,7 +12,9 @@ export class RPlanWorkspace extends RorschachBase {
   private _DEFAULT_WIDTH = 460;
   private _MIN_WIDTH = 320;
   private _MIN_CHAT_WIDTH = 360;
-  private _unsubMode: (() => void) | null = null;
+
+  private _currentMode = new StoreController(this, 'currentMode');
+  private _currentPlanGraph = new StoreController(this, 'currentPlanGraph');
 
   override createRenderRoot() {
     return this;
@@ -20,17 +22,20 @@ export class RPlanWorkspace extends RorschachBase {
 
   override connectedCallback() {
     super.connectedCallback();
-    this._bindEvents();
-    this._unsubMode = store.subscribe('currentMode', (mode) => {
-      if (mode === 'executor') this.openList();
-      else this.close();
-    });
+  }
+
+  override updated(changedProperties: Map<string, any>) {
+    const mode = this._currentMode.value;
+    if (mode === 'executor') this.openList();
+    else if (mode !== 'planner') this.close();
+
+    if (changedProperties.has('_currentPlanGraph') && this._currentPlanGraph.value) {
+      this._renderGraph(this._currentPlanGraph.value);
+    }
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
-    this._unsubMode?.();
-    this._unsubMode = null;
   }
 
   async openList() {

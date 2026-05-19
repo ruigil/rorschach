@@ -1,13 +1,12 @@
 import { html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { RorschachBase, tsStr } from './base.js';
+import { StoreController, store } from '../store.js';
 import type { LogEvent } from '../types/state.js';
-
-const MAX_LOGS = 500;
 
 @customElement('r-log-stream')
 export class RLogStream extends RorschachBase {
-  @state() private _logs: LogEvent[] = [];
+  private _logs = new StoreController(this, 'logs');
 
   // Render to light DOM to reuse shell/observe styles
   override createRenderRoot() {
@@ -15,21 +14,17 @@ export class RLogStream extends RorschachBase {
   }
 
   get count() {
-    return this._logs.length;
-  }
-
-  appendEvent(event: LogEvent) {
-    this._logs = [event, ...this._logs].slice(0, MAX_LOGS);
-    return this._logs.length;
+    return this._logs.value.length;
   }
 
   clear() {
-    this._logs = [];
+    store.set('logs', []);
     return 0;
   }
 
   override render() {
-    if (this._logs.length === 0) {
+    const logs = this._logs.value;
+    if (logs.length === 0) {
       return html`
         <r-empty-state 
           variant="panel" 
@@ -40,7 +35,7 @@ export class RLogStream extends RorschachBase {
     }
 
     return html`
-      ${this._logs.map(event => {
+      ${logs.map(event => {
         const level = event.level || 'info';
         const dataStr = event.data !== undefined ? JSON.stringify(event.data) : '';
         
