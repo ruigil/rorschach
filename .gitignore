@@ -5,6 +5,9 @@ out
 dist
 *.tgz
 
+# frontend build
+src/public/rorschach.js
+
 # code coverage
 coverage
 *.lcov
