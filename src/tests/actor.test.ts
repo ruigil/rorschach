@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
+import { watchTopic } from '../system/services.ts'
 import type {
   ActorDef,
   ActorRef,
@@ -325,6 +326,42 @@ describe('Actor: lifecycle state evolution', () => {
     expect(snapshots.length).toBe(1)
     expect(snapshots[0]).toContain('terminated')
 
+    await system.shutdown()
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════
+// Actor: Self-Termination
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Actor: self-termination', () => {
+  test('actor can stop itself using context.stop(context.self)', async () => {
+    let terminated = false
+
+    const def: ActorDef<'stop', null> = {
+      handler: (state, msg, ctx) => {
+        if (msg === 'stop') {
+          ctx.stop(ctx.self)
+        }
+        return { state }
+      },
+    }
+
+    const system = await AgentSystem()
+    const ref = system.spawn('self-stopper', def)
+    await tick()
+
+    // Watch for termination
+    system.subscribe(watchTopic(ref.name), (event: LifecycleEvent) => {
+      if (event.type === 'terminated') {
+        terminated = true
+      }
+    })
+
+    ref.send('stop')
+    await tick(100)
+
+    expect(terminated).toBe(true)
     await system.shutdown()
   })
 })

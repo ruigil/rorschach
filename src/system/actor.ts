@@ -160,6 +160,7 @@ type ActorInternals<M> = {
   readonly isStopped: () => boolean
   readonly getHeaders: () => MessageHeaders
   readonly configRef: { value: unknown } | undefined
+  readonly stopSelf: () => void
 }
 
 /**
@@ -170,7 +171,7 @@ type ActorInternals<M> = {
  */
 const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> => {
   const { name, ref, timers, children, mailbox, services,
-          enqueueLifecycle, log, isStopped, getHeaders, configRef } = internals
+          enqueueLifecycle, log, isStopped, getHeaders, configRef, stopSelf } = internals
 
   // ─── Tracing ───
 
@@ -254,10 +255,14 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       return childHandle.ref
     },
 
-    stop: (child: ActorIdentity) => {
-      const childHandle = children.get(child.name)
+    stop: (target: ActorIdentity) => {
+      if (target.name === name) {
+        stopSelf()
+        return
+      }
+      const childHandle = children.get(target.name)
       if (childHandle) {
-        children.delete(child.name)
+        children.delete(target.name)
         childHandle.stop()
       }
     },
@@ -473,6 +478,12 @@ export const createActor = <M, S>(
     name, ref, timers, children, mailbox, services,
     enqueueLifecycle, log, isStopped: () => stopped, getHeaders: () => currentHeaders,
     configRef,
+    stopSelf: () => {
+      if (!stopped) {
+        stopped = true
+        mailbox.close()
+      }
+    },
   })
 
   // ─── Supervision policy ───

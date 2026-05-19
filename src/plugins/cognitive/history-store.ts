@@ -40,7 +40,8 @@ export type HistoryStoreOptions = {
 type PersistedHistoryStore = { userContext: string | null; records: Record_[] }
 
 const createPersistence = (userId: string, workPath: string = 'workspace/history'): PersistenceAdapter<HistoryStoreState> => {
-  const path = `${workPath}/${userId}.json`
+  const path = `${workPath}/${userId}/history.json`
+
   return {
     load: async () => {
       const file = Bun.file(path)
