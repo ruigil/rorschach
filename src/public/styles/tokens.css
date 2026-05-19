@@ -1,0 +1,104 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:            #03070a;
+  --surface:       #060e14;
+  --surface-2:     #0a1820;
+  --border:        #0d1f2d;
+  --border-mid:    #1a3548;
+  --muted:         #215060;
+  --text:          #e8f6fa;
+  --text-dim:      #3d6878;
+  --text-mid:      #8abccc;
+
+  --user-bg:       rgba(0, 40, 35, 0.82);
+  --user-text:     #5de0c0;
+  --user-border:   rgba(93, 224, 192, 0.18);
+
+  --bot-text:      #b8e8f4;
+  --bot-bg:        rgba(0, 18, 24, 0.82);
+  --bot-border:    rgba(0, 196, 212, 0.08);
+  --bot-rail:      rgba(0, 196, 212, 0.45);
+  --bot-rail-glow: rgba(0, 196, 212, 0.05);
+
+  --accent:        #00c4d4;
+  --accent-bright: #22e8f8;
+  --accent-glow:   rgba(0, 196, 212, 0.25);
+  --accent-dim:    rgba(0, 196, 212, 0.06);
+
+  --error:         #e06030;
+  --error-bg:      rgba(224, 96, 48, 0.07);
+  --error-border:  rgba(224, 96, 48, 0.16);
+
+  --warn:          #c4843a;
+  --green:         #39e8a0;
+  --green-glow:    rgba(57, 232, 160, 0.2);
+
+  --log-debug:     #3d6878;
+  --log-info:      #5ba0b8;
+  --log-warn:      #c4843a;
+  --log-error:     #e06030;
+
+  --font-ui:   'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Menlo', monospace;
+  --radius:    8px;
+}
+
+html, body { height: 100%; overscroll-behavior: none; }
+[hidden] { display: none !important; }
+
+/* Background lives on html so canvas at z-index:-2 (root stacking context) is visible */
+html { background: var(--bg); }
+
+
+#void-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  width: 100% !important;
+  height: 100% !important;
+  image-rendering: pixelated;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: transparent;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Primary heat bloom — orange-red energy rising from below */
+    radial-gradient(ellipse 85% 50% at 50% 108%, rgba(220,80,20,0.18)  0%, rgba(180,40,10,0.06) 45%, transparent 70%),
+    /* Secondary — yellow-white hot centre bleeding up */
+    radial-gradient(ellipse 40% 30% at 50% 112%, rgba(255,200,80,0.12) 0%, transparent 55%),
+    /* Left flank — deep red structural mass */
+    radial-gradient(ellipse 38% 55% at -6% 65%,  rgba(180,30,10,0.08)  0%, transparent 55%),
+    /* Right edge — violet/purple deep energy */
+    radial-gradient(ellipse 30% 40% at 108% 40%, rgba(140,0,200,0.06)  0%, transparent 50%),
+    /* Upper — cold cyan, entity structure above frame */
+    radial-gradient(ellipse 50% 28% at 50% -8%,  rgba(0,80,100,0.10)   0%, transparent 60%),
+    /* Deep void floor */
+    radial-gradient(ellipse 100% 55% at 50% 130%, rgba(60,10,5,0.35)   0%, transparent 65%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  top: 51px;
+  left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(0,196,212,0.2) 30%, rgba(0,196,212,0.4) 50%, rgba(0,196,212,0.2) 70%, transparent 100%);
+  pointer-events: none;
+  z-index: 9;
+}

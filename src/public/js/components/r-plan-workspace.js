@@ -1,4 +1,5 @@
 import { LightElement, escHtml, defineElement } from './base.js'
+import { store } from '../store.js'
 
 export class RPlanWorkspace extends LightElement {
   constructor() {
@@ -10,11 +11,21 @@ export class RPlanWorkspace extends LightElement {
     this._DEFAULT_WIDTH = 460
     this._MIN_WIDTH = 320
     this._MIN_CHAT_WIDTH = 360
+    this._unsubMode = null
   }
 
   connectedCallback() {
     this._render()
     this._bindEvents()
+    this._unsubMode = store.subscribe('currentMode', (mode) => {
+      if (mode === 'executor') this.openList()
+      else this.close()
+    })
+  }
+
+  disconnectedCallback() {
+    this._unsubMode?.()
+    this._unsubMode = null
   }
 
   // ─── Public API ───────────────────────────────────────────────────────────

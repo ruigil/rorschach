@@ -30,12 +30,7 @@
       <button class="nav-link" data-tab="observe" hidden>observe</button>
     </nav>
     <div class="header-end">
-      <label class="mode-select-wrap" for="mode-select">
-        <span>mode</span>
-        <select id="mode-select" disabled>
-          <option value="">loading</option>
-        </select>
-      </label>
+      <r-mode-select></r-mode-select>
       <div class="status-pill">
         <r-status-dot id="dot" status="disconnected" label="connecting…"></r-status-dot>
       </div>
@@ -47,14 +42,7 @@
 
   <!-- ─── Chat panel ─── -->
   <div id="panel-chat" class="panel active">
-    <div class="chat-main">
-      <div id="messages">
-        <r-empty-state id="empty" variant="chat" name="signal" text="Signal detected" subtext="awaiting transmission"></r-empty-state>
-      </div>
-      <div class="chat-dock">
-        <r-chat-input></r-chat-input>
-      </div>
-    </div>
+    <r-chat-panel></r-chat-panel>
     <r-plan-workspace id="plan-workspace"></r-plan-workspace>
   </div>
 
@@ -66,114 +54,7 @@
 
   <!-- ─── Observe panel ─── -->
   <div id="panel-observe" class="panel">
-
-    <div class="obs-bar">
-      <r-tabs class="obs-subtabs">
-        <button class="obs-subtab active" data-subtab="metrics">metrics</button>
-        <button class="obs-subtab" data-subtab="topics">topics</button>
-        <button class="obs-subtab" data-subtab="logs">logs</button>
-        <button class="obs-subtab" data-subtab="traces">traces</button>
-        <button class="obs-subtab" data-subtab="tools">tools</button>
-        <button class="obs-subtab" data-subtab="memory">memory</button>
-        <button class="obs-subtab" data-subtab="costs">costs</button>
-      </r-tabs>
-      <div class="obs-bar-end">
-        <div class="metrics-summary" id="metrics-summary" style="display:none">
-          <div class="summary-stat">
-            <span class="summary-val" id="sum-actors">0</span>
-            <span class="summary-key">actors</span>
-          </div>
-          <div class="summary-stat">
-            <span class="summary-val" id="sum-recv">0</span>
-            <span class="summary-key">recv</span>
-          </div>
-          <div class="summary-stat">
-            <span class="summary-val" id="sum-done">0</span>
-            <span class="summary-key">done</span>
-          </div>
-          <div class="summary-stat">
-            <span class="summary-val" id="sum-fail">0</span>
-            <span class="summary-key">fail</span>
-          </div>
-        </div>
-        <div class="obs-log-controls" id="obs-log-controls" style="display:none">
-          <span class="log-count" id="log-count">0 events</span>
-          <button class="btn-clear" id="clear-logs">clear</button>
-        </div>
-        <div class="obs-traces-controls" id="obs-traces-controls" style="display:none">
-          <span class="log-count" id="traces-count">0 traces</span>
-          <button class="btn-clear" id="clear-traces">clear</button>
-        </div>
-        <div class="obs-memory-controls" id="obs-memory-controls" style="display:none">
-          <span class="log-count" id="memory-stats"></span>
-          <button class="btn-clear" id="memory-refresh">refresh</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="obs-metrics" class="obs-subpanel active">
-      <div class="metrics-layout">
-        <div class="tree-col">
-          <r-actor-tree id="actor-tree">
-            <r-empty-state id="metrics-empty" variant="panel" name="monitor" text="awaiting metrics snapshot"></r-empty-state>
-          </r-actor-tree>
-        </div>
-        <div class="detail-col">
-          <r-actor-detail id="actor-detail">
-            <r-empty-state variant="panel" name="eye" text="select an actor to inspect"></r-empty-state>
-          </r-actor-detail>
-        </div>
-      </div>
-    </div>
-
-    <div id="obs-topics" class="obs-subpanel">
-      <r-topic-list id="topic-list">
-        <r-empty-state id="topics-empty" variant="panel" name="activity" text="awaiting metrics snapshot"></r-empty-state>
-      </r-topic-list>
-    </div>
-
-    <div id="obs-traces" class="obs-subpanel">
-      <r-trace-waterfall id="obs-traces-list">
-        <r-empty-state id="traces-empty" variant="panel" name="waterfall" text="awaiting traces"></r-empty-state>
-      </r-trace-waterfall>
-    </div>
-
-    <div id="obs-logs" class="obs-subpanel">
-      <r-log-stream id="log-stream">
-        <r-empty-state id="log-empty" variant="panel" name="terminal" text="awaiting log events"></r-empty-state>
-      </r-log-stream>
-    </div>
-
-    <div id="obs-tools" class="obs-subpanel">
-      <r-tools-list id="tools-list">
-        <r-empty-state id="tools-empty" variant="panel" name="wrench" text="no tools registered"></r-empty-state>
-      </r-tools-list>
-    </div>
-
-    <r-costs-table id="obs-costs" class="obs-subpanel">
-      <r-empty-state id="costs-empty" variant="panel" text="no usage data yet"></r-empty-state>
-      <table class="costs-table" id="costs-table" style="display:none">
-        <thead>
-          <tr>
-            <th>role</th>
-            <th>model</th>
-            <th>in</th>
-            <th>out</th>
-            <th>ctx</th>
-            <th>cost</th>
-          </tr>
-        </thead>
-        <tbody id="costs-rows"></tbody>
-        <tfoot id="costs-summary"></tfoot>
-      </table>
-    </r-costs-table>
-
-    <div id="obs-memory" class="obs-subpanel">
-      <r-force-graph id="memory-graph">
-        <r-empty-state id="memory-empty" variant="panel" name="network" text="no graph data"></r-empty-state>
-      </r-force-graph>
-    </div>
-
+    <r-observe-panel></r-observe-panel>
   </div>
 
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/base16/ocean.min.css">

@@ -7,6 +7,50 @@ logoutBtn?.addEventListener('click', async () => {
   window.location.href = new URL('auth/login.html', location.href).href
 })
 
+const wsMessageFrameTypes = new Set([
+  'chunk',
+  'done',
+  'error',
+  'tooling',
+  'sources',
+  'attachments',
+  'reasoningChunk',
+  'plannerMode',
+  'modeChanged',
+  'agents',
+])
+
+const targetFrameHandlers = {
+  planGraph:         dispatchTo('r-plan-workspace', 'plan-graph'),
+  usage:             callObserve('handleUsage'),
+  log:               callObserve('handleLog'),
+  metrics:           callObserve('handleMetrics'),
+  trace:             callObserve('handleTrace'),
+  tool_registered:   callObserve('handleToolRegistered'),
+  tool_unregistered: callObserve('handleToolUnregistered'),
+}
+
+function dispatchTo(selector, eventName) {
+  return (msg) => {
+    document.querySelector(selector)?.dispatchEvent(new CustomEvent(eventName, { detail: msg, bubbles: true }))
+  }
+}
+
+function callObserve(methodName) {
+  return (msg) => {
+    document.querySelector('r-observe-panel')?.[methodName]?.(msg)
+  }
+}
+
+function dispatchFrame(msg) {
+  if (wsMessageFrameTypes.has(msg.type)) {
+    document.dispatchEvent(new CustomEvent('ws-message', { detail: msg, bubbles: true }))
+    return
+  }
+
+  targetFrameHandlers[msg.type]?.(msg)
+}
+
 export async function connect() {
   const wsUrl = new URL('ws', location.href)
   wsUrl.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -45,14 +89,6 @@ export async function connect() {
     let msg
     try { msg = JSON.parse(e.data) } catch { return }
 
-    const chatTypes = ['chunk', 'done', 'error', 'tooling', 'sources', 'attachments', 'reasoningChunk', 'plannerMode', 'modeChanged', 'agents']
-    if      (chatTypes.includes(msg.type))        document.dispatchEvent(new CustomEvent('ws-message', { detail: msg, bubbles: true }))
-    else if (msg.type === 'planGraph')            document.querySelector('r-plan-workspace')?.dispatchEvent(new CustomEvent('plan-graph', { detail: msg, bubbles: true }))
-    else if (msg.type === 'usage')                document.getElementById('obs-costs')?.dispatchEvent(new CustomEvent('usage', { detail: msg, bubbles: true }))
-    else if (msg.type === 'log')                  document.getElementById('log-stream')?.dispatchEvent(new CustomEvent('log', { detail: msg, bubbles: true }))
-    else if (msg.type === 'metrics')              document.getElementById('actor-tree')?.dispatchEvent(new CustomEvent('metrics', { detail: msg, bubbles: true }))
-    else if (msg.type === 'trace')                document.getElementById('obs-traces-list')?.dispatchEvent(new CustomEvent('trace', { detail: msg, bubbles: true }))
-    else if (msg.type === 'tool_registered')      document.getElementById('tools-list')?.dispatchEvent(new CustomEvent('tool-registered', { detail: msg, bubbles: true }))
-    else if (msg.type === 'tool_unregistered')    document.getElementById('tools-list')?.dispatchEvent(new CustomEvent('tool-unregistered', { detail: msg, bubbles: true }))
+    dispatchFrame(msg)
   })
 }
