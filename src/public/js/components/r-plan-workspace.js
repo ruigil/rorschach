@@ -1,4 +1,4 @@
-import { LightElement, escHtml } from './base.js'
+import { LightElement, escHtml, defineElement } from './base.js'
 
 export class RPlanWorkspace extends LightElement {
   constructor() {
@@ -277,6 +277,4 @@ export class RPlanWorkspace extends LightElement {
   }
 }
 
-if (!customElements.get('r-plan-workspace')) {
-  customElements.define('r-plan-workspace', RPlanWorkspace)
-}
+defineElement('r-plan-workspace', RPlanWorkspace)

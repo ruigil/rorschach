@@ -1,4 +1,5 @@
-import { LightElement, ICONS } from './base.js'
+import { LightElement, ICONS, defineElement } from './base.js'
+import { store } from '../store.js'
 
 export class RChatInput extends LightElement {
   constructor() {
@@ -9,11 +10,27 @@ export class RChatInput extends LightElement {
     this._pendingImages = []
     this._pendingAudio = null
     this._pendingPdfs = []
+    this._unsubConnected = null
+    this._unsubWaiting = null
   }
 
   connectedCallback() {
     this._render()
     this._bindEvents()
+    this._updateDisabled()
+    this._unsubConnected = store.subscribe('isConnected', () => this._updateDisabled())
+    this._unsubWaiting = store.subscribe('isWaiting', () => this._updateDisabled())
+  }
+
+  disconnectedCallback() {
+    if (this._unsubConnected) {
+      this._unsubConnected()
+      this._unsubConnected = null
+    }
+    if (this._unsubWaiting) {
+      this._unsubWaiting()
+      this._unsubWaiting = null
+    }
   }
 
   get input() {
@@ -50,6 +67,11 @@ export class RChatInput extends LightElement {
 
   focus() {
     if (this.input) this.input.focus()
+  }
+
+  _updateDisabled() {
+    const disabled = !store.get('isConnected') || store.get('isWaiting')
+    this.setDisabled(disabled)
   }
 
   _render() {
@@ -247,6 +269,4 @@ export class RChatInput extends LightElement {
   }
 }
 
-if (!customElements.get('r-chat-input')) {
-  customElements.define('r-chat-input', RChatInput)
-}
+defineElement('r-chat-input', RChatInput)

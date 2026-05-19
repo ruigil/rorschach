@@ -1,5 +1,4 @@
-import { state } from './state.js'
-import { focusChatInput } from './chat/messages.js'
+import { store } from './store.js'
 
 const tabBtns = document.querySelectorAll('[data-tab]')
 const logoSub = document.getElementById('logo-sub')
@@ -13,7 +12,9 @@ export function activateTab(tab) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'))
   panel.classList.add('active')
   logoSub.textContent = tab
-  if (tab === 'chat' && state.isConnected) focusChatInput()
+  if (tab === 'chat' && store.get('isConnected')) {
+    document.querySelector('r-chat-input')?.focus()
+  }
 }
 
 export function setTabVisible(tab, visible) {

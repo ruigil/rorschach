@@ -1,4 +1,4 @@
-import { LightElement, escHtml } from './base.js'
+import { LightElement, escHtml, defineElement } from './base.js'
 
 const MAX_TRACES = 20
 
@@ -129,6 +129,4 @@ export class RTraceWaterfall extends LightElement {
   }
 }
 
-if (!customElements.get('r-trace-waterfall')) {
-  customElements.define('r-trace-waterfall', RTraceWaterfall)
-}
+defineElement('r-trace-waterfall', RTraceWaterfall)

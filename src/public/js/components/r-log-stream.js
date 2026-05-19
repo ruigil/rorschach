@@ -1,4 +1,4 @@
-import { LightElement, escHtml, tsStr } from './base.js'
+import { LightElement, escHtml, tsStr, defineElement } from './base.js'
 
 const MAX_LOGS = 500
 
@@ -51,6 +51,4 @@ export class RLogStream extends LightElement {
   }
 }
 
-if (!customElements.get('r-log-stream')) {
-  customElements.define('r-log-stream', RLogStream)
-}
+defineElement('r-log-stream', RLogStream)

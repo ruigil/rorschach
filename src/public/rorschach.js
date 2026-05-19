@@ -13,26 +13,33 @@ import './js/observe/topics.js'
 import './js/observe/graph.js'
 import './js/observe/tabs.js'
 import { connect } from './js/connection.js'
-import { state } from './js/state.js'
+import { store } from './js/store.js'
 import { setTabVisible } from './js/tabs.js'
 import { initChatInput } from './js/chat/messages.js'
 
 fetch(new URL('me', location.href))
   .then(r => r.json())
   .then(({ userId, roles }) => {
-    state.currentUserId = userId
-    state.currentUserRoles = roles ?? []
-    const isAdmin = state.currentUserRoles.includes('admin')
+    store.set('currentUserId', userId)
+    store.set('currentUserRoles', roles ?? [])
+    const isAdmin = store.get('currentUserRoles').includes('admin')
     const isAnonymousMode = userId === 'anonymous'
     const canUseAdminSurface = isAnonymousMode || isAdmin
     setTabVisible('config', canUseAdminSurface)
     setTabVisible('observe', canUseAdminSurface)
     if (canUseAdminSurface) document.querySelector('r-config-form')?.loadSchemas()
+    if (userId && userId !== 'anonymous') {
+      document.getElementById('logout-btn').style.display = ''
+    }
   })
   .catch(() => {
     setTabVisible('config', false)
     setTabVisible('observe', false)
   })
+
+store.subscribe('isWaiting', (waiting) => {
+  document.querySelector('header')?.classList.toggle('streaming', waiting)
+})
 
 initChatInput()
 connect()

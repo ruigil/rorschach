@@ -1,4 +1,4 @@
-import { RorschachElement, escHtml } from './base.js'
+import { RorschachElement, escHtml, defineElement } from './base.js'
 
 const CSS = `
 :host {
@@ -194,6 +194,4 @@ export class RMediaPreviews extends RorschachElement {
   }
 }
 
-if (!customElements.get('r-media-previews')) {
-  customElements.define('r-media-previews', RMediaPreviews)
-}
+defineElement('r-media-previews', RMediaPreviews)

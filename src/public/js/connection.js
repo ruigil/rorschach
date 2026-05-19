@@ -1,20 +1,11 @@
-import { state } from './state.js'
-import { setChatInputEnabled, setWaiting, removeThinking, resetStream, handleChatMsg } from './chat/messages.js'
+import { store } from './store.js'
 
-const dot         = document.getElementById('dot')
-const logoutBtn   = document.getElementById('logout-btn')
+const logoutBtn = document.getElementById('logout-btn')
 
-logoutBtn.addEventListener('click', async () => {
+logoutBtn?.addEventListener('click', async () => {
   await fetch(new URL('auth/logout', location.href), { method: 'POST' })
   window.location.href = new URL('auth/login.html', location.href).href
 })
-
-function setConnected(connected) {
-  state.isConnected = connected
-  dot.setAttribute('status', connected ? 'connected' : 'disconnected')
-  dot.setAttribute('label', connected ? 'connected' : 'reconnecting…')
-  setChatInputEnabled(connected)
-}
 
 export async function connect() {
   const wsUrl = new URL('ws', location.href)
@@ -29,35 +20,33 @@ export async function connect() {
     if (ticketRes.ok) {
       const { ticket } = await ticketRes.json()
       wsUrl.searchParams.set('ticket', ticket)
-      logoutBtn.style.display = ''
     }
     // 503 or other → connect without ticket (auth not configured)
   } catch { /* network error — attempt connection anyway */ }
 
-  state.ws = new WebSocket(wsUrl.href)
+  const ws = new WebSocket(wsUrl.href)
+  store.set('ws', ws)
 
-  state.ws.addEventListener('open', () => {
-    setConnected(true)
+  ws.addEventListener('open', () => {
+    store.set('isConnected', true)
     const chatTab = document.querySelector('[data-tab="chat"].active')
     if (chatTab) document.getElementById('input')?.focus()
   })
 
-  state.ws.addEventListener('close', () => {
-    setConnected(false)
-    removeThinking()
-    resetStream()
-    setWaiting(false)
+  ws.addEventListener('close', () => {
+    store.set('isConnected', false)
+    store.set('isWaiting', false)
     setTimeout(connect, 2000)
   })
 
-  state.ws.addEventListener('error', () => state.ws.close())
+  ws.addEventListener('error', () => ws.close())
 
-  state.ws.addEventListener('message', (e) => {
+  ws.addEventListener('message', (e) => {
     let msg
     try { msg = JSON.parse(e.data) } catch { return }
 
     const chatTypes = ['chunk', 'done', 'error', 'tooling', 'sources', 'attachments', 'reasoningChunk', 'plannerMode', 'modeChanged', 'agents']
-    if      (chatTypes.includes(msg.type))        handleChatMsg(msg)
+    if      (chatTypes.includes(msg.type))        document.dispatchEvent(new CustomEvent('ws-message', { detail: msg, bubbles: true }))
     else if (msg.type === 'planGraph')            document.querySelector('r-plan-workspace')?.dispatchEvent(new CustomEvent('plan-graph', { detail: msg, bubbles: true }))
     else if (msg.type === 'usage')                document.getElementById('obs-costs')?.dispatchEvent(new CustomEvent('usage', { detail: msg, bubbles: true }))
     else if (msg.type === 'log')                  document.getElementById('log-stream')?.dispatchEvent(new CustomEvent('log', { detail: msg, bubbles: true }))

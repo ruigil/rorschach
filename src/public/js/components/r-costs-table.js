@@ -1,4 +1,4 @@
-import { LightElement } from './base.js'
+import { LightElement, defineElement } from './base.js'
 
 export class RCostsTable extends LightElement {
   constructor() {
@@ -71,6 +71,4 @@ function formatTokens(n) {
   return String(n)
 }
 
-if (!customElements.get('r-costs-table')) {
-  customElements.define('r-costs-table', RCostsTable)
-}
+defineElement('r-costs-table', RCostsTable)

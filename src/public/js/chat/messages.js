@@ -1,4 +1,4 @@
-import { state } from '../state.js'
+import { store } from '../store.js'
 import { renderMarkdown } from '../markdown.js'
 const messagesEl = document.getElementById('messages')
 const emptyEl = document.getElementById('empty')
@@ -17,6 +17,7 @@ let attachmentsWrap = null
 let isPlannerMode = false
 
 let chatInput = null
+let syncModeSelectPending = false
 
 function modeLabel(mode, displayName = '') {
   if (displayName) return displayName
@@ -24,16 +25,17 @@ function modeLabel(mode, displayName = '') {
   return mode.charAt(0).toUpperCase() + mode.slice(1)
 }
 
-function syncModeSelect() {
+function _syncModeSelect() {
   if (!modeSelect) return
-  const selectedMode = state.currentMode
+  const selectedMode = store.get('currentMode')
+  const agents = store.get('agents')
   modeSelect.innerHTML = ''
 
-  const agents = state.agents.length > 0
-    ? state.agents
-    : selectedMode ? [{ mode: selectedMode, displayName: state.currentModeDisplayName || modeLabel(selectedMode), shortDesc: '' }] : []
+  const agentList = agents.length > 0
+    ? agents
+    : selectedMode ? [{ mode: selectedMode, displayName: store.get('currentModeDisplayName') || modeLabel(selectedMode), shortDesc: '' }] : []
 
-  if (agents.length === 0) {
+  if (agentList.length === 0) {
     const opt = document.createElement('option')
     opt.value = ''
     opt.textContent = 'loading'
@@ -42,7 +44,7 @@ function syncModeSelect() {
     return
   }
 
-  for (const agent of agents) {
+  for (const agent of agentList) {
     const opt = document.createElement('option')
     opt.value = agent.mode
     opt.textContent = agent.displayName || modeLabel(agent.mode)
@@ -50,51 +52,47 @@ function syncModeSelect() {
     modeSelect.appendChild(opt)
   }
 
-  if (selectedMode && !agents.some(agent => agent.mode === selectedMode)) {
+  if (selectedMode && !agentList.some(agent => agent.mode === selectedMode)) {
     const opt = document.createElement('option')
     opt.value = selectedMode
-    opt.textContent = state.currentModeDisplayName || modeLabel(selectedMode)
+    opt.textContent = store.get('currentModeDisplayName') || modeLabel(selectedMode)
     modeSelect.appendChild(opt)
   }
 
-  modeSelect.value = selectedMode || agents[0].mode
-  modeSelect.disabled = !state.isConnected || state.isWaiting || agents.length < 2
+  modeSelect.value = selectedMode || agentList[0].mode
+  modeSelect.disabled = !store.get('isConnected') || store.get('isWaiting') || agentList.length < 2
 }
 
+function syncModeSelect() {
+  if (syncModeSelectPending) return
+  syncModeSelectPending = true
+  requestAnimationFrame(() => {
+    syncModeSelectPending = false
+    _syncModeSelect()
+  })
+}
+
+store.subscribe('agents', syncModeSelect)
+store.subscribe('currentMode', syncModeSelect)
+store.subscribe('currentModeDisplayName', syncModeSelect)
+store.subscribe('isConnected', syncModeSelect)
+store.subscribe('isWaiting', syncModeSelect)
+
 function setMode(mode, displayName = '') {
-  state.currentMode = mode
-  state.currentModeDisplayName = displayName || modeLabel(mode)
+  store.set('currentMode', mode)
+  store.set('currentModeDisplayName', displayName || modeLabel(mode))
   isPlannerMode = mode === 'planner'
   const planWorkspace = document.querySelector('r-plan-workspace')
   if (mode === 'executor') planWorkspace?.openList()
   else planWorkspace?.close()
-  syncModeSelect()
 }
 
-// ─── Input state ───
-
-export function setChatInputEnabled(connected) {
-  if (chatInput) {
-    chatInput.setDisabled(!connected || state.isWaiting)
+store.subscribe('isConnected', (connected) => {
+  if (!connected) {
+    removeThinking()
+    resetStream()
   }
-  syncModeSelect()
-}
-
-export function setWaiting(waiting) {
-  state.isWaiting = waiting
-  if (chatInput) {
-    chatInput.setDisabled(waiting || !state.isConnected)
-  }
-  document.querySelector('header').classList.toggle('streaming', waiting)
-  if (!waiting && document.querySelector('[data-tab="chat"].active')) {
-    if (chatInput) chatInput.focus()
-  }
-  syncModeSelect()
-}
-
-export function focusChatInput() {
-  if (state.isConnected && chatInput) chatInput.focus()
-}
+})
 
 // ─── Stream state reset (called on WS disconnect) ───
 
@@ -189,14 +187,13 @@ function appendUserMessage(text, attachments = []) {
 
 export function handleChatMsg(msg) {
   if (msg.type === 'agents') {
-    state.agents = Array.isArray(msg.agents) ? msg.agents : []
-    syncModeSelect()
+    store.set('agents', Array.isArray(msg.agents) ? msg.agents : [])
   } else if (msg.type === 'modeChanged') {
     setMode(msg.mode, msg.displayName)
   } else if (msg.type === 'plannerMode') {
     isPlannerMode = msg.active
     if (msg.active) setMode('planner', 'Planner')
-    else if (state.currentMode === 'planner') setMode('chatbot', 'Chatbot')
+    else if (store.get('currentMode') === 'planner') setMode('chatbot', 'Chatbot')
   } else if (msg.type === 'tooling') {
     removeThinking()
     const tools = msg.tools ?? []
@@ -292,7 +289,10 @@ export function handleChatMsg(msg) {
     reasoningEl = null
     sourcesWrap = null
     attachmentsWrap = null
-    setWaiting(false)
+    store.set('isWaiting', false)
+    if (document.querySelector('[data-tab="chat"].active')) {
+      chatInput?.focus()
+    }
   } else if (msg.type === 'error') {
     removeThinking()
     streamWrap = null
@@ -312,7 +312,10 @@ export function handleChatMsg(msg) {
     bubble.bubbleContainer.appendChild(textEl)
     messagesEl.appendChild(bubble)
     scrollToBottom()
-    setWaiting(false)
+    store.set('isWaiting', false)
+    if (document.querySelector('[data-tab="chat"].active')) {
+      chatInput?.focus()
+    }
   }
 }
 
@@ -322,17 +325,19 @@ export function initChatInput() {
   chatInput = document.querySelector('r-chat-input')
   if (!chatInput) return
 
+  document.addEventListener('ws-message', (e) => handleChatMsg(e.detail))
+
   chatInput.addEventListener('chat-submit', (e) => {
     const { text, attachments } = e.detail
-    if ((!text && attachments.length === 0) || state.ws?.readyState !== WebSocket.OPEN || state.isWaiting) return
+    if ((!text && attachments.length === 0) || store.get('ws')?.readyState !== WebSocket.OPEN || store.get('isWaiting')) return
 
     appendUserMessage(text, attachments)
-    state.ws.send(JSON.stringify({
+    store.get('ws').send(JSON.stringify({
       text,
       attachments,
     }))
 
-    setWaiting(true)
+    store.set('isWaiting', true)
     showThinking()
 
     const logoMark = document.querySelector('.logo-mark')
@@ -342,11 +347,11 @@ export function initChatInput() {
 
   modeSelect?.addEventListener('change', () => {
     const mode = modeSelect.value
-    if (!mode || mode === state.currentMode || state.ws?.readyState !== WebSocket.OPEN) {
+    if (!mode || mode === store.get('currentMode') || store.get('ws')?.readyState !== WebSocket.OPEN) {
       syncModeSelect()
       return
     }
-    state.ws.send(JSON.stringify({ type: 'switchMode', mode }))
+    store.get('ws').send(JSON.stringify({ type: 'switchMode', mode }))
     modeSelect.disabled = true
   })
 }

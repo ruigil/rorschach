@@ -1,4 +1,4 @@
-import { RorschachElement } from './base.js'
+import { RorschachElement, defineElement } from './base.js'
 
 const CSS = `
 :host {
@@ -60,6 +60,4 @@ export class RTabs extends RorschachElement {
   }
 }
 
-if (!customElements.get('r-tabs')) {
-  customElements.define('r-tabs', RTabs)
-}
+defineElement('r-tabs', RTabs)

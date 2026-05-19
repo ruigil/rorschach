@@ -1,4 +1,4 @@
-import { RorschachElement, ICONS } from './base.js'
+import { RorschachElement, ICONS, escHtml, defineElement } from './base.js'
 
 const CSS = `
 :host {
@@ -93,12 +93,10 @@ export class REmptyState extends RorschachElement {
 
     let html = ''
     if (icon) html += `<span class="icon">${icon}</span>`
-    if (text) html += `<span class="text">${RorschachElement.escHtml(text)}</span>`
-    if (subtext) html += `<span class="subtext">${RorschachElement.escHtml(subtext)}</span>`
+    if (text) html += `<span class="text">${escHtml(text)}</span>`
+    if (subtext) html += `<span class="subtext">${escHtml(subtext)}</span>`
     this.shadowRoot.innerHTML = html
   }
 }
 
-if (!customElements.get('r-empty-state')) {
-  customElements.define('r-empty-state', REmptyState)
-}
+defineElement('r-empty-state', REmptyState)

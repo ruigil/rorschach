@@ -1,5 +1,4 @@
-export { RorschachElement, LightElement, ICONS, escHtml, tsStr } from './base.js'
-export { store } from './observable-store.js'
+export { RorschachElement, LightElement, ICONS, escHtml, tsStr, defineElement } from './base.js'
 export { RIcon } from './r-icon.js'
 export { RBadge } from './r-badge.js'
 export { RStatusDot } from './r-status-dot.js'

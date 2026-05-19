@@ -1,4 +1,4 @@
-import { LightElement } from './base.js'
+import { LightElement, defineElement } from './base.js'
 
 export class RConfigForm extends LightElement {
   constructor() {
@@ -355,6 +355,4 @@ export class RConfigForm extends LightElement {
   }
 }
 
-if (!customElements.get('r-config-form')) {
-  customElements.define('r-config-form', RConfigForm)
-}
+defineElement('r-config-form', RConfigForm)

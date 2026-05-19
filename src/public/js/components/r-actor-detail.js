@@ -1,4 +1,4 @@
-import { LightElement, escHtml } from './base.js'
+import { LightElement, escHtml, defineElement } from './base.js'
 
 export class RActorDetail extends LightElement {
   show(actor) {
@@ -70,6 +70,4 @@ export class RActorDetail extends LightElement {
   }
 }
 
-if (!customElements.get('r-actor-detail')) {
-  customElements.define('r-actor-detail', RActorDetail)
-}
+defineElement('r-actor-detail', RActorDetail)

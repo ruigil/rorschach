@@ -1,4 +1,4 @@
-import { LightElement, escHtml, ICONS } from './base.js'
+import { LightElement, escHtml, ICONS, defineElement } from './base.js'
 
 export class RTopicList extends LightElement {
   constructor() {
@@ -71,6 +71,4 @@ export class RTopicList extends LightElement {
   }
 }
 
-if (!customElements.get('r-topic-list')) {
-  customElements.define('r-topic-list', RTopicList)
-}
+defineElement('r-topic-list', RTopicList)

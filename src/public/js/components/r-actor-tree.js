@@ -1,4 +1,4 @@
-import { LightElement, escHtml, ICONS } from './base.js'
+import { LightElement, escHtml, ICONS, defineElement } from './base.js'
 
 export class RActorTree extends LightElement {
   constructor() {
@@ -116,6 +116,4 @@ export class RActorTree extends LightElement {
   }
 }
 
-if (!customElements.get('r-actor-tree')) {
-  customElements.define('r-actor-tree', RActorTree)
-}
+defineElement('r-actor-tree', RActorTree)

@@ -1,4 +1,4 @@
-import { RorschachElement } from './base.js'
+import { RorschachElement, defineElement } from './base.js'
 
 const CSS = `
 :host {
@@ -49,6 +49,4 @@ export class RFlashMessage extends RorschachElement {
   }
 }
 
-if (!customElements.get('r-flash-message')) {
-  customElements.define('r-flash-message', RFlashMessage)
-}
+defineElement('r-flash-message', RFlashMessage)

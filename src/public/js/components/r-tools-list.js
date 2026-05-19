@@ -1,4 +1,4 @@
-import { LightElement, escHtml } from './base.js'
+import { LightElement, escHtml, defineElement } from './base.js'
 
 export class RToolsList extends LightElement {
   constructor() {
@@ -35,6 +35,4 @@ export class RToolsList extends LightElement {
   }
 }
 
-if (!customElements.get('r-tools-list')) {
-  customElements.define('r-tools-list', RToolsList)
-}
+defineElement('r-tools-list', RToolsList)

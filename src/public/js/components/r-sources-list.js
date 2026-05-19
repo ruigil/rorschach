@@ -1,4 +1,4 @@
-import { RorschachElement } from './base.js'
+import { RorschachElement, escHtml, defineElement } from './base.js'
 
 const CSS = `
 :host {
@@ -96,9 +96,9 @@ export class RSourcesList extends RorschachElement {
         <button class="sources-toggle">${label}</button>
         <div class="sources-list">
           ${sources.map(s => `
-            <a class="source-item" href="${this.constructor.escHtml(s.url)}" target="_blank" rel="noopener noreferrer">
-              <span class="source-title">${this.constructor.escHtml(s.title)}</span>
-              ${s.snippet ? `<span class="source-snippet">${this.constructor.escHtml(s.snippet)}</span>` : ''}
+            <a class="source-item" href="${escHtml(s.url)}" target="_blank" rel="noopener noreferrer">
+              <span class="source-title">${escHtml(s.title)}</span>
+              ${s.snippet ? `<span class="source-snippet">${escHtml(s.snippet)}</span>` : ''}
             </a>
           `).join('')}
         </div>
@@ -114,6 +114,4 @@ export class RSourcesList extends RorschachElement {
   }
 }
 
-if (!customElements.get('r-sources-list')) {
-  customElements.define('r-sources-list', RSourcesList)
-}
+defineElement('r-sources-list', RSourcesList)

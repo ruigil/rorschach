@@ -62,15 +62,10 @@ export class RorschachElement extends HTMLElement {
   loadStylesFromUrl(url) {
     fetch(url).then(r => r.text()).then(css => this.loadStyles(css))
   }
+}
 
-  static escHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-  }
-
-  static tsStr(timestamp) {
-    return new Date(timestamp).toISOString().slice(11, 23)
+export function defineElement(name, ctor) {
+  if (!customElements.get(name)) {
+    customElements.define(name, ctor)
   }
 }

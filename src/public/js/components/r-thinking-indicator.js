@@ -1,4 +1,4 @@
-import { RorschachElement } from './base.js'
+import { RorschachElement, defineElement } from './base.js'
 
 const CSS = `
 :host {
@@ -94,6 +94,4 @@ export class RThinkingIndicator extends RorschachElement {
   }
 }
 
-if (!customElements.get('r-thinking-indicator')) {
-  customElements.define('r-thinking-indicator', RThinkingIndicator)
-}
+defineElement('r-thinking-indicator', RThinkingIndicator)

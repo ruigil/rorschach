@@ -1,4 +1,4 @@
-import { LightElement } from './base.js'
+import { LightElement, defineElement } from './base.js'
 
 export class RMessageBubble extends LightElement {
   constructor() {
@@ -137,6 +137,4 @@ export class RMessageBubble extends LightElement {
   }
 }
 
-if (!customElements.get('r-message-bubble')) {
-  customElements.define('r-message-bubble', RMessageBubble)
-}
+defineElement('r-message-bubble', RMessageBubble)

@@ -1,4 +1,4 @@
-import { RorschachElement } from './base.js'
+import { RorschachElement, escHtml, defineElement } from './base.js'
 
 const CSS = `
 :host {
@@ -76,28 +76,28 @@ export class RAttachments extends RorschachElement {
     if (a.kind === 'image') {
       return `
             <div class="attachment attachment-image">
-              <img src="${this.constructor.escHtml(a.url)}" class="attachment-image" ${a.alt ? `alt="${this.constructor.escHtml(a.alt)}"` : ''}>
+              <img src="${escHtml(a.url)}" class="attachment-image" ${a.alt ? `alt="${escHtml(a.alt)}"` : ''}>
             </div>
           `
     } else if (a.kind === 'audio') {
       return `
             <div class="attachment attachment-audio">
-              <audio src="${this.constructor.escHtml(a.url)}" controls class="attachment-audio"></audio>
-              ${a.alt ? `<div class="attachment-caption">${this.constructor.escHtml(a.alt)}</div>` : ''}
+              <audio src="${escHtml(a.url)}" controls class="attachment-audio"></audio>
+              ${a.alt ? `<div class="attachment-caption">${escHtml(a.alt)}</div>` : ''}
             </div>
           `
     } else if (a.kind === 'video') {
       return `
             <div class="attachment attachment-video">
-              <video src="${this.constructor.escHtml(a.url)}" controls class="attachment-video"></video>
-              ${a.alt ? `<div class="attachment-caption">${this.constructor.escHtml(a.alt)}</div>` : ''}
+              <video src="${escHtml(a.url)}" controls class="attachment-video"></video>
+              ${a.alt ? `<div class="attachment-caption">${escHtml(a.alt)}</div>` : ''}
             </div>
           `
     } else {
       return `
             <div class="attachment attachment-file">
-              <a href="${this.constructor.escHtml(a.url)}" target="_blank" rel="noopener noreferrer" class="attachment-file">
-                ${this.constructor.escHtml(a.alt || a.url.split('/').pop() || 'file')}
+              <a href="${escHtml(a.url)}" target="_blank" rel="noopener noreferrer" class="attachment-file">
+                ${escHtml(a.alt || a.url.split('/').pop() || 'file')}
               </a>
             </div>
           `
@@ -108,6 +108,4 @@ export class RAttachments extends RorschachElement {
   }
 }
 
-if (!customElements.get('r-attachments')) {
-  customElements.define('r-attachments', RAttachments)
-}
+defineElement('r-attachments', RAttachments)

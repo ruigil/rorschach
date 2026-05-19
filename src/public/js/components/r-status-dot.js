@@ -1,4 +1,5 @@
-import { RorschachElement } from './base.js'
+import { RorschachElement, escHtml, defineElement } from './base.js'
+import { store } from '../store.js'
 
 const CSS = `
 :host {
@@ -65,6 +66,17 @@ export class RStatusDot extends RorschachElement {
 
   connectedCallback() {
     this.render()
+    this._unsub = store.subscribe('isConnected', (connected) => {
+      this.setAttribute('status', connected ? 'connected' : 'disconnected')
+      this.setAttribute('label', connected ? 'connected' : 'reconnecting…')
+    })
+  }
+
+  disconnectedCallback() {
+    if (this._unsub) {
+      this._unsub()
+      this._unsub = null
+    }
   }
 
   attributeChangedCallback() {
@@ -73,10 +85,8 @@ export class RStatusDot extends RorschachElement {
 
   render() {
     const label = this.getAttribute('label') || ''
-    this.shadowRoot.innerHTML = `<span class="dot"></span>${label ? `<span class="label">${RorschachElement.escHtml(label)}</span>` : ''}`
+    this.shadowRoot.innerHTML = `<span class="dot"></span>${label ? `<span class="label">${escHtml(label)}</span>` : ''}`
   }
 }
 
-if (!customElements.get('r-status-dot')) {
-  customElements.define('r-status-dot', RStatusDot)
-}
+defineElement('r-status-dot', RStatusDot)

@@ -1,4 +1,4 @@
-import { RorschachElement, escHtml } from './base.js'
+import { RorschachElement, escHtml, defineElement } from './base.js'
 
 const CSS = `
 :host {
@@ -273,6 +273,4 @@ export class RForceGraph extends RorschachElement {
   }
 }
 
-if (!customElements.get('r-force-graph')) {
-  customElements.define('r-force-graph', RForceGraph)
-}
+defineElement('r-force-graph', RForceGraph)

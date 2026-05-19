@@ -1,4 +1,4 @@
-import { RorschachElement, ICONS } from './base.js'
+import { RorschachElement, ICONS, defineElement } from './base.js'
 
 const CSS = `
 :host {
@@ -38,6 +38,4 @@ export class RIcon extends RorschachElement {
   }
 }
 
-if (!customElements.get('r-icon')) {
-  customElements.define('r-icon', RIcon)
-}
+defineElement('r-icon', RIcon)
