@@ -95,7 +95,6 @@
   font-size: 0.875rem;
   font-weight: 300;
   line-height: 1.75;
-  white-space: pre-wrap;
   word-break: break-word;
   max-width: min(660px, 82%);
 }
@@ -145,6 +144,11 @@
 
 #messages.receiving {
   animation: incomingShimmer 0.7s ease both;
+}
+
+.bubble-body {
+  display: block;
+  white-space: normal;
 }
 
 /* ─── Chat: usage bar ─── */

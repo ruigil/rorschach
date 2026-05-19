@@ -2,13 +2,6 @@ import { store } from './store.js'
 import { type WSFrame } from './types/websocket.js'
 import { toolActionLabel } from './core/utils.js'
 
-const logoutBtn = document.getElementById('logout-btn')
-
-logoutBtn?.addEventListener('click', async () => {
-  await fetch(new URL('auth/logout', location.href), { method: 'POST' })
-  window.location.href = new URL('auth/login.html', location.href).href
-})
-
 const frameHandlers: Record<string, (msg: any) => void> = {
   chunk: (msg) => {
     store.updateActiveStream({

@@ -23,6 +23,7 @@ const CONTROL_BY_TAB: Record<string, string> = {
 export class RObservePanel extends RorschachBase {
   @state() private _activeTab = 'metrics';
   @state() private _memoryStatsText = '';
+  @state() private _kgData: any = null;
 
   private _actors = new StoreController(this, 'actors');
   private _topics = new StoreController(this, 'topics');
@@ -62,7 +63,7 @@ export class RObservePanel extends RorschachBase {
     try {
       const res = await fetch(new URL('kgraph', location.href));
       const graph = await res.json();
-      this._memoryGraph?.renderKnowledgeGraph(graph);
+      this._kgData = graph;
       this._memoryStatsText = `${graph.nodes.length} nodes · ${graph.edges.length} edges`;
     } catch {
       this._memoryStatsText = 'error';
@@ -171,7 +172,7 @@ export class RObservePanel extends RorschachBase {
       </r-costs-table>
 
       <div class="obs-subpanel ${this._activeTab === 'memory' ? 'active' : ''}">
-        <r-force-graph></r-force-graph>
+        <r-force-graph .kgData=${this._kgData}></r-force-graph>
       </div>
     `;
   }

@@ -1,12 +1,17 @@
-import { html } from 'lit';
+import { html, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { RorschachBase, escHtml } from './base.js';
+import { RorschachBase } from './base.js';
 import { store, StoreController } from '../store.js';
 
 @customElement('r-plan-workspace')
 export class RPlanWorkspace extends RorschachBase {
-  private _currentGraph: any = null;
-  private _selectedTaskId: string | null = null;
+  @state() private _view: 'list' | 'graph' | 'loading' | 'error' = 'list';
+  @state() private _errorMsg = '';
+  @state() private _plans: any[] = [];
+  @state() private _currentGraph: any = null;
+  @state() private _selectedTaskId: string | null = null;
+  @state() private _title = 'Plans';
+
   private _isResizing = false;
   private _WIDTH_KEY = 'rorschach.planWorkspaceWidth';
   private _DEFAULT_WIDTH = 460;
@@ -20,45 +25,44 @@ export class RPlanWorkspace extends RorschachBase {
     return this;
   }
 
-  override connectedCallback() {
-    super.connectedCallback();
-  }
-
   override updated(changedProperties: Map<string, any>) {
     const mode = this._currentMode.value;
     if (mode === 'executor') this.openList();
     else if (mode !== 'planner') this.close();
 
     if (changedProperties.has('_currentPlanGraph') && this._currentPlanGraph.value) {
-      this._renderGraph(this._currentPlanGraph.value);
+      this._view = 'graph';
+      this._currentGraph = this._currentPlanGraph.value;
+      this._selectedTaskId = this._currentGraph.nodes[0]?.id ?? null;
+      this._title = this._currentGraph.plan.goal;
     }
-  }
-
-  override disconnectedCallback() {
-    super.disconnectedCallback();
   }
 
   async openList() {
     this._setOpen(true);
-    this._setTitle('Plans');
-    const bodyEl = this.querySelector('.plan-workspace-body');
-    if (bodyEl) bodyEl.innerHTML = this._emptyPanel('loading plans');
+    this._title = 'Plans';
+    this._view = 'loading';
     try {
-      this._renderPlanList(await this._fetchJson('plans'));
+      this._plans = await this._fetchJson('plans');
+      this._view = 'list';
     } catch {
-      if (bodyEl) bodyEl.innerHTML = this._emptyPanel('could not load plans');
+      this._errorMsg = 'could not load plans';
+      this._view = 'error';
     }
   }
 
   async openGraph(planId: string) {
     this._setOpen(true);
-    this._setTitle('Plan');
-    const bodyEl = this.querySelector('.plan-workspace-body');
-    if (bodyEl) bodyEl.innerHTML = this._emptyPanel('loading graph');
+    this._title = 'Plan';
+    this._view = 'loading';
     try {
-      this._renderGraph(await this._fetchJson(`plans/${encodeURIComponent(planId)}/graph`));
+      this._currentGraph = await this._fetchJson(`plans/${encodeURIComponent(planId)}/graph`);
+      this._selectedTaskId = this._currentGraph.nodes[0]?.id ?? null;
+      this._title = this._currentGraph.plan.goal;
+      this._view = 'graph';
     } catch {
-      if (bodyEl) bodyEl.innerHTML = this._emptyPanel('could not load graph');
+      this._errorMsg = 'could not load graph';
+      this._view = 'error';
     }
   }
 
@@ -96,15 +100,6 @@ export class RPlanWorkspace extends RorschachBase {
     if (open) this._applyWidth(this._savedWidth());
   }
 
-  _setTitle(text: string) {
-    const titleEl = this.querySelector('.plan-workspace-title');
-    if (titleEl) titleEl.textContent = text;
-  }
-
-  _emptyPanel(text: string) {
-    return `<div class="plan-empty"><span>${escHtml(text)}</span></div>`;
-  }
-
   override render() {
     return html`
       <div class="plan-workspace-resizer" role="separator" aria-orientation="vertical" aria-label="Resize plan workspace"></div>
@@ -112,19 +107,104 @@ export class RPlanWorkspace extends RorschachBase {
         <div class="plan-workspace-header">
           <div>
             <div class="plan-workspace-kicker">Executor</div>
-            <h2 class="plan-workspace-title">Plans</h2>
+            <h2 class="plan-workspace-title">${this._title}</h2>
           </div>
           <button class="plan-workspace-close" aria-label="Close plan workspace" @click=${this.close}>×</button>
         </div>
-        <div class="plan-workspace-body"></div>
+        <div class="plan-workspace-body">
+          ${this._renderContent()}
+        </div>
       </aside>
     `;
   }
 
-  private _bindEvents() {
-    // Note: Event binding for resizer needs to happen after render or via delegated events
-    // Since we use Light DOM and standard Lit render, it's easier to use @click etc in render()
-    // but for resizer we need pointer events.
+  private _renderContent() {
+    switch (this._view) {
+      case 'loading':
+        return html`<div class="plan-empty"><span>loading...</span></div>`;
+      case 'error':
+        return html`<div class="plan-empty"><span>${this._errorMsg}</span></div>`;
+      case 'list':
+        return this._renderPlanList();
+      case 'graph':
+        return this._renderGraphView();
+      default:
+        return nothing;
+    }
+  }
+
+  private _renderPlanList() {
+    if (!this._plans.length) {
+      return html`<div class="plan-empty"><span>no saved plans</span></div>`;
+    }
+
+    return html`
+      <div class="plan-list">
+        ${this._plans.map(plan => html`
+          <button class="plan-list-item" type="button" @click=${() => this.openGraph(plan.id)}>
+            <span class="plan-list-goal">${plan.goal}</span>
+            <span class="plan-list-meta">${this._formatDate(plan.createdAt)} · ${plan.taskCount} task${plan.taskCount === 1 ? '' : 's'}</span>
+          </button>
+        `)}
+      </div>
+    `;
+  }
+
+  private _renderGraphView() {
+    if (!this._currentGraph || !this._currentGraph.nodes.length) {
+      return html`<div class="plan-empty"><span>plan has no tasks</span></div>`;
+    }
+
+    return html`
+      <div class="plan-graph-shell">
+        <div class="plan-graph-meta">
+          ${this._formatDate(this._currentGraph.plan.createdAt)} · ${this._currentGraph.plan.taskCount} task${this._currentGraph.plan.taskCount === 1 ? '' : 's'}
+        </div>
+        <r-force-graph 
+          class="plan-graph" 
+          .planData=${this._currentGraph}
+          .selectedTaskId=${this._selectedTaskId}
+          @node-select=${(e: CustomEvent) => this._selectedTaskId = e.detail.id}
+        ></r-force-graph>
+        <div class="plan-task-detail-wrap">
+          ${this._renderTaskDetail(this._taskById(this._selectedTaskId!))}
+        </div>
+      </div>
+    `;
+  }
+
+  private _taskById(id: string) {
+    return this._currentGraph?.nodes.find((node: any) => node.id === id) ?? null;
+  }
+
+  private _renderTaskDetail(task: any) {
+    if (!task) {
+      return html`<div class="plan-task-placeholder">Select a task to inspect details.</div>`;
+    }
+
+    const deps = task.dependencies.length
+      ? task.dependencies.map((id: string) => this._taskById(id)?.label || id).join(', ')
+      : 'none';
+    const dependents = task.dependents.length
+      ? task.dependents.map((id: string) => this._taskById(id)?.label || id).join(', ')
+      : 'none';
+
+    return html`
+      <div class="plan-task-detail">
+        <div class="plan-task-status">status · not tracked</div>
+        <h3>${task.label}</h3>
+        <dl>
+          <dt>Description</dt>
+          <dd>${task.description || 'No description'}</dd>
+          <dt>Validation</dt>
+          <dd>${task.validationCriteria || 'No validation criteria'}</dd>
+          <dt>Depends on</dt>
+          <dd>${deps}</dd>
+          <dt>Unlocks</dt>
+          <dd>${dependents}</dd>
+        </dl>
+      </div>
+    `;
   }
 
   protected override firstUpdated() {
@@ -153,7 +233,6 @@ export class RPlanWorkspace extends RorschachBase {
       if (event.pointerId !== undefined && resizer?.hasPointerCapture(event.pointerId)) {
         resizer.releasePointerCapture(event.pointerId);
       }
-      if (this._currentGraph) this._renderGraph(this._currentGraph);
     };
 
     resizer.addEventListener('pointerup', finishResize);
@@ -163,7 +242,6 @@ export class RPlanWorkspace extends RorschachBase {
       if (!this._panel?.classList.contains('plan-workspace-open')) return;
       const width = this._applyWidth(this._savedWidth());
       localStorage.setItem(this._WIDTH_KEY, String(width));
-      if (this._currentGraph) this._renderGraph(this._currentGraph);
     });
   }
 
@@ -176,107 +254,5 @@ export class RPlanWorkspace extends RorschachBase {
   private _formatDate(value: any) {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
-  }
-
-  private _renderPlanList(plans: any[]) {
-    this._currentGraph = null;
-    this._selectedTaskId = null;
-    this._setTitle('Plans');
-    const bodyEl = this.querySelector('.plan-workspace-body');
-    if (!bodyEl) return;
-    if (!plans.length) {
-      bodyEl.innerHTML = this._emptyPanel('no saved plans');
-      return;
-    }
-
-    const list = document.createElement('div');
-    list.className = 'plan-list';
-    for (const plan of plans) {
-      const btn = document.createElement('button');
-      btn.className = 'plan-list-item';
-      btn.type = 'button';
-      btn.dataset.planId = plan.id;
-      btn.innerHTML = `
-        <span class="plan-list-goal">${escHtml(plan.goal)}</span>
-        <span class="plan-list-meta">${escHtml(this._formatDate(plan.createdAt))} · ${plan.taskCount} task${plan.taskCount === 1 ? '' : 's'}</span>
-      `;
-      btn.addEventListener('click', () => this.openGraph(plan.id));
-      list.appendChild(btn);
-    }
-    bodyEl.replaceChildren(list);
-  }
-
-  private _taskById(id: string) {
-    return this._currentGraph?.nodes.find((node: any) => node.id === id) ?? null;
-  }
-
-  private _renderTaskDetail(task: any) {
-    const detail = document.createElement('div');
-    detail.className = 'plan-task-detail';
-    if (!task) {
-      detail.innerHTML = '<div class="plan-task-placeholder">Select a task to inspect details.</div>';
-      return detail;
-    }
-
-    const deps = task.dependencies.length
-      ? task.dependencies.map((id: string) => this._taskById(id)?.label || id).join(', ')
-      : 'none';
-    const dependents = task.dependents.length
-      ? task.dependents.map((id: string) => this._taskById(id)?.label || id).join(', ')
-      : 'none';
-
-    detail.innerHTML = `
-      <div class="plan-task-status">status · not tracked</div>
-      <h3>${escHtml(task.label)}</h3>
-      <dl>
-        <dt>Description</dt>
-        <dd>${escHtml(task.description || 'No description')}</dd>
-        <dt>Validation</dt>
-        <dd>${escHtml(task.validationCriteria || 'No validation criteria')}</dd>
-        <dt>Depends on</dt>
-        <dd>${escHtml(deps)}</dd>
-        <dt>Unlocks</dt>
-        <dd>${escHtml(dependents)}</dd>
-      </dl>
-    `;
-    return detail;
-  }
-
-  private _renderGraph(graph: any) {
-    const nextSelectedTaskId = this._selectedTaskId;
-    this._currentGraph = graph;
-    this._selectedTaskId = graph.nodes.some((node: any) => node.id === nextSelectedTaskId)
-      ? nextSelectedTaskId
-      : graph.nodes[0]?.id ?? null;
-    this._setTitle(graph.plan.goal);
-    const bodyEl = this.querySelector('.plan-workspace-body');
-    if (!bodyEl) return;
-
-    const shell = document.createElement('div');
-    shell.className = 'plan-graph-shell';
-    const meta = document.createElement('div');
-    meta.className = 'plan-graph-meta';
-    meta.textContent = `${this._formatDate(graph.plan.createdAt)} · ${graph.plan.taskCount} task${graph.plan.taskCount === 1 ? '' : 's'}`;
-    const graphEl = document.createElement('r-force-graph') as any;
-    graphEl.className = 'plan-graph';
-    const detailWrap = document.createElement('div');
-    detailWrap.className = 'plan-task-detail-wrap';
-    shell.append(meta, graphEl, detailWrap);
-    bodyEl.replaceChildren(shell);
-
-    const updateDetail = () => {
-      detailWrap.replaceChildren(this._renderTaskDetail(this._taskById(this._selectedTaskId!)));
-    };
-    updateDetail();
-
-    if (!graph.nodes.length) {
-      graphEl.innerHTML = this._emptyPanel('plan has no tasks');
-      return;
-    }
-
-    graphEl.renderPlanGraph(graph, this._selectedTaskId, (id: string) => {
-      this._selectedTaskId = id;
-      updateDetail();
-    });
   }
 }

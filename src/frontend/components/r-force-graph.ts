@@ -1,5 +1,5 @@
 import { html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 import { RorschachBase, escHtml } from './base.js';
 
 declare const d3: any;
@@ -19,6 +19,11 @@ const DEFAULT_STROKE = '#1a3548';
 
 @customElement('r-force-graph')
 export class RForceGraph extends RorschachBase {
+  @property({ type: Object }) planData: any = null;
+  @property({ type: String }) selectedTaskId: string | null = null;
+  @property({ type: Object }) kgData: { nodes: any[], edges: any[] } | null = null;
+
+  @state() private _hasData = false;
   private _sim: any = null;
 
   static override styles = css`
@@ -58,16 +63,49 @@ export class RForceGraph extends RorschachBase {
     }
   }
 
-  renderKnowledgeGraph(graph: { nodes: any[], edges: any[] }) {
-    if (this._sim) this._sim.stop();
-    this.shadowRoot!.innerHTML = '';
-    const { nodes, edges } = graph;
-    if (nodes.length === 0) {
-      this.shadowRoot!.innerHTML = `<slot><r-empty-state variant="panel" name="network" text="no graph data"></r-empty-state></slot>`;
-      return;
+  override updated(changedProperties: Map<string, any>) {
+    if ((changedProperties.has('planData') && this.planData) || 
+        (changedProperties.has('kgData') && this.kgData)) {
+      const nodes = this.planData?.nodes || this.kgData?.nodes || [];
+      this._hasData = nodes.length > 0;
+      if (this._hasData) {
+        requestAnimationFrame(() => {
+          if (this.planData) this._renderPlanGraphD3();
+          else if (this.kgData) this._renderKnowledgeGraphD3();
+        });
+      }
     }
 
-    const host = this.shadowRoot!.host as HTMLElement;
+    if (changedProperties.has('selectedTaskId') && this._sim && this.planData) {
+      this._updateSelection();
+    }
+  }
+
+  override render() {
+    if (!this._hasData) {
+      return html`
+        <slot>
+          <r-empty-state variant="panel" name="network" text="no graph data"></r-empty-state>
+        </slot>
+      `;
+    }
+    return html`<div id="graph-container" style="width:100%; height:100%;"></div>`;
+  }
+
+  private _updateSelection() {
+    d3.select(this.shadowRoot).selectAll('.plan-node')
+      .classed('selected', (d: any) => d.id === this.selectedTaskId);
+  }
+
+  private _renderKnowledgeGraphD3() {
+    if (!this.kgData) return;
+    if (this._sim) this._sim.stop();
+    const container = this.shadowRoot!.querySelector('#graph-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const { nodes, edges } = this.kgData;
+    const host = this as HTMLElement;
     const width  = host.clientWidth || 600;
     const height = host.clientHeight || 400;
     const R = 22;
@@ -78,7 +116,7 @@ export class RForceGraph extends RorschachBase {
       .map(e => ({ ...e, source: nodeById[e.source], target: nodeById[e.target] }))
       .filter(e => e.source && e.target);
 
-    const svg = d3.select(this.shadowRoot).append('svg')
+    const svg = d3.select(container).append('svg')
       .attr('width', '100%').attr('height', '100%');
 
     svg.append('defs').append('marker')
@@ -102,7 +140,7 @@ export class RForceGraph extends RorschachBase {
       .attr('text-anchor', 'middle').attr('font-family', 'var(--font-mono)')
       .attr('pointer-events', 'none');
 
-    const tooltip = d3.select(this.shadowRoot).append('div').attr('class', 'graph-tooltip');
+    const tooltip = d3.select(container).append('div').attr('class', 'graph-tooltip');
 
     const nodeGroup = g.append('g').selectAll('g').data(simNodes).enter().append('g')
       .attr('cursor', 'grab')
@@ -137,8 +175,9 @@ export class RForceGraph extends RorschachBase {
           .html(`<strong>${escHtml(d.labels.join(' · '))}</strong><pre>${escHtml(lines)}</pre>`);
       })
       .on('mousemove', (ev: any) => {
-        tooltip.style('left', (ev.clientX - host.getBoundingClientRect().left + 14) + 'px')
-               .style('top', (ev.clientY - host.getBoundingClientRect().top - 14) + 'px');
+        const rect = container.getBoundingClientRect();
+        tooltip.style('left', (ev.clientX - rect.left + 14) + 'px')
+               .style('top', (ev.clientY - rect.top - 14) + 'px');
       })
       .on('mouseout', () => tooltip.style('display', 'none'));
 
@@ -186,26 +225,23 @@ export class RForceGraph extends RorschachBase {
     this._sim = sim;
   }
 
-  renderPlanGraph(graph: any, selectedId: string | null, onSelect: (id: string) => void) {
+  private _renderPlanGraphD3() {
+    if (!this.planData) return;
     if (this._sim) this._sim.stop();
-    this.shadowRoot!.innerHTML = '';
-    if (!graph.nodes.length) {
-      this.shadowRoot!.innerHTML = `<slot><div class="plan-empty"><span>plan has no tasks</span></div></slot>`;
-      return;
-    }
+    const container = this.shadowRoot!.querySelector('#graph-container');
+    if (!container) return;
+    container.innerHTML = '';
 
-    const host = this.shadowRoot!.host as HTMLElement;
+    const host = this as HTMLElement;
     const width  = Math.max(host.clientWidth, 320);
     const height = Math.max(host.clientHeight, 260);
-    const nodeById = Object.fromEntries(graph.nodes.map((node: any) => [node.id, { ...node }]));
+    const nodeById = Object.fromEntries(this.planData.nodes.map((node: any) => [node.id, { ...node }]));
     const nodes = Object.values(nodeById);
-    const edges = graph.edges
+    const edges = this.planData.edges
       .map((edge: any) => ({ ...edge, source: nodeById[edge.source], target: nodeById[edge.target] }))
       .filter((edge: any) => edge.source && edge.target);
 
-    let currentSelected = selectedId;
-
-    const svg = d3.select(this.shadowRoot).append('svg')
+    const svg = d3.select(container).append('svg')
       .attr('width', '100%').attr('height', '100%');
 
     svg.append('defs').append('marker')
@@ -230,7 +266,7 @@ export class RForceGraph extends RorschachBase {
     };
 
     const node = g.append('g').selectAll('g').data(nodes).enter().append('g')
-      .attr('class', (d: any) => 'plan-node' + (d.id === currentSelected ? ' selected' : ''))
+      .attr('class', (d: any) => 'plan-node' + (d.id === this.selectedTaskId ? ' selected' : ''))
       .attr('cursor', 'pointer')
       .call(d3.drag()
         .on('start', (ev: any, d: any) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
@@ -238,9 +274,7 @@ export class RForceGraph extends RorschachBase {
         .on('end',   (ev: any, d: any) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
       )
       .on('click', (_ev: any, d: any) => {
-        currentSelected = d.id;
-        node.attr('class', (n: any) => 'plan-node' + (n.id === currentSelected ? ' selected' : ''));
-        if (onSelect) onSelect(d.id);
+        this.dispatchEvent(new CustomEvent('node-select', { detail: { id: d.id } }));
       });
 
     node.append('rect')
@@ -280,9 +314,5 @@ export class RForceGraph extends RorschachBase {
       });
 
     this._sim = sim;
-  }
-
-  override render() {
-    return html`<slot><r-empty-state variant="panel" name="network" text="no graph data"></r-empty-state></slot>`;
   }
 }

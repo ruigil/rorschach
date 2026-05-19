@@ -18,6 +18,7 @@ const state: RorschachState = {
   tools: {},
   ws: null,
   messages: [],
+  activeTab: 'chat',
   activeStream: {
     isActive: false,
     reasoning: '',
@@ -108,6 +109,7 @@ export const store = {
       sources: [],
       attachments: [],
     })
+    this.set('isWaiting', false)
   },
 }
 

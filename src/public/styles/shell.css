@@ -184,6 +184,21 @@ header.streaming::after {
 }
 
 /* ─── Panel system ─── */
+
+r-shell, main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+r-chat-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
 .panel {
   display: none;
   flex: 1;
@@ -244,6 +259,5 @@ header.streaming::after {
   font-weight: 300;
   color: var(--text-dim);
 }
-
 .empty-panel span::after { content: '_'; animation: blink 1.1s step-end infinite; }
 
