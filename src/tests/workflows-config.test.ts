@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
-import workflowsPlugin, { type WorkflowsConfig } from '../plugins/workflows/workflows.plugin.ts'
+import workflowsPlugin  from '../plugins/workflows/workflows.plugin.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../types/agents.ts'
 import { RouteRegistrationTopic, type RouteRegistration } from '../types/routes.ts'
+import type { WorkflowsConfig } from '../plugins/workflows/types.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
