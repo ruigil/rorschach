@@ -3,7 +3,7 @@ import { AgentSystem } from '../system/index.ts'
 import type { ActorDef } from '../system/types.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import { HistoryStore } from '../plugins/cognitive/history-store.ts'
-import { PlannerAgentFactory } from '../plugins/cognitive/planner-agent.ts'
+import { PlannerAgentFactory } from '../plugins/workflows/planner-agent.ts'
 import { SwitchAgentTopic, type SwitchAgentEvent } from '../types/agents.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
@@ -43,12 +43,27 @@ describe('planner mode return', () => {
     const switches: SwitchAgentEvent[] = []
     system.subscribe(SwitchAgentTopic, event => switches.push(event))
 
+    const MockWorkflowTools = (): ActorDef<any, null> => ({
+      initialState: null,
+      handler: (state, msg) => {
+        if (msg.type === 'invoke' && msg.toolName === 'formalize_plan') {
+          msg.replyTo.send({
+            type: 'toolResult',
+            result: { text: 'Plan saved to mock-file — 0 tasks.' }
+          })
+        }
+        return { state }
+      }
+    })
+
     const llmRef = system.spawn('formalizing-llm', FormalizingLlm())
     const historyStoreRef = system.spawn('history-store-u1', HistoryStore({ userId: 'u1' }))
+    const workflowToolsRef = system.spawn('mock-workflow-tools', MockWorkflowTools())
     const planner = system.spawn('planner-u1', PlannerAgentFactory({
       model:        'test-planner',
       plansDir:     `/tmp/rorschach-plans-${crypto.randomUUID()}`,
       maxToolLoops: 3,
+      workflowToolsRef,
     })({
       userId: 'u1',
       clientId: 'c1',

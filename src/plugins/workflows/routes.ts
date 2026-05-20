@@ -5,13 +5,13 @@ import type { ConfigSchemaSection } from '../../types/config.ts'
 import type { Identity } from '../../types/identity.ts'
 import type { PlanStoreMsg, PlanStoreReply } from './types.ts'
 
-export const executorStorageSchema: ConfigSchemaSection = {
-  id: 'executor.storage',
+export const workflowsStorageSchema: ConfigSchemaSection = {
+  id: 'workflows.storage',
   title: 'Plans',
-  subtitle: 'executor · planner artifacts',
-  tab: 'executor',
+  subtitle: 'workflows · planner artifacts',
+  tab: 'workflows',
   configKey: '',
-  routeId: 'config.executor',
+  routeId: 'config.workflows',
   schema: {
     type: 'object',
     required: ['plansDir'],
@@ -21,13 +21,13 @@ export const executorStorageSchema: ConfigSchemaSection = {
   },
 }
 
-export const executorAgentSchema: ConfigSchemaSection = {
-  id: 'executor.agent',
-  title: 'Agent',
-  subtitle: 'executor · plan discussion model',
-  tab: 'executor',
-  configKey: '',
-  routeId: 'config.executor',
+export const workflowsExecutorSchema: ConfigSchemaSection = {
+  id: 'workflows.executor',
+  title: 'Executor',
+  subtitle: 'workflows · plan execution discussion',
+  tab: 'workflows',
+  configKey: 'executor',
+  routeId: 'config.workflows',
   schema: {
     type: 'object',
     required: ['model', 'maxToolLoops'],
@@ -38,7 +38,24 @@ export const executorAgentSchema: ConfigSchemaSection = {
   },
 }
 
-export const executorSchemas = [executorStorageSchema, executorAgentSchema]
+export const workflowsPlannerSchema: ConfigSchemaSection = {
+  id: 'workflows.planner',
+  title: 'Planner',
+  subtitle: 'workflows · plan creation model',
+  tab: 'workflows',
+  configKey: 'planner',
+  routeId: 'config.workflows',
+  schema: {
+    type: 'object',
+    required: ['model', 'maxToolLoops'],
+    properties: {
+      model: { type: 'string', default: 'z-ai/glm-5.1', 'x-ui': { widget: 'model-select', label: 'Planner model' } },
+      maxToolLoops: { type: 'number', default: 10, minimum: 1, maximum: 50 },
+    },
+  },
+}
+
+export const workflowsSchemas = [workflowsStorageSchema, workflowsExecutorSchema, workflowsPlannerSchema]
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -59,11 +76,11 @@ const planIdFromPath = (pathname: string, suffix = ''): string | null => {
 const requireSession = (identity: Identity | null): Response | null =>
   identity ? null : json({ error: 'Unauthorized' }, 401)
 
-export const buildExecutorRoutes = (
+export const buildWorkflowsRoutes = (
   planStoreRef: ActorRef<PlanStoreMsg> | null,
 ): RouteRegistration[] => [
   {
-    id:     'executor.plans.list',
+    id:     'workflows.plans.list',
     method: 'GET',
     path:   '/plans',
     handler: async (_req, _url, identity) => {
@@ -77,7 +94,7 @@ export const buildExecutorRoutes = (
     },
   },
   {
-    id:     'executor.plans.item',
+    id:     'workflows.plans.item',
     method: 'GET',
     path:   '/plans/',
     match:  'prefix',

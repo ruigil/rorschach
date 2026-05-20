@@ -5,7 +5,7 @@
     "./src/plugins/tools/tools.plugin.ts",
     "./src/plugins/memory/memory.plugin.ts",
     "./src/plugins/cognitive/cognitive.plugin.ts",
-    "./src/plugins/executor/executor.plugin.ts",
+    "./src/plugins/workflows/workflows.plugin.ts",
     "./src/plugins/observability/observability.plugin.ts",
     "./src/plugins/notebook/notebook.plugin.ts",
     "./src/plugins/googleapis/googleapis.plugin.ts"
@@ -71,19 +71,7 @@
         }
       },
       "session": {
-        "historyWindowHours": 4
-      },
-      "planner": {
-        "model": "z-ai/glm-5.1",
-        "plansDir": "workspace/plans",
-        "maxToolLoops": 10,
-        "toolFilter": {
-          "allow": [
-            "web_search",
-            "fetch_file",
-            "switch_mode"
-          ]
-        }
+        "historyWindowHours": 2
       },
       "userContext": {
         "model": "deepseek/deepseek-v4-flash",
@@ -104,10 +92,23 @@
         "contextIntervalMs": 3600000
       }
     },
-    "executor": {
+    "workflows": {
       "plansDir": "workspace/plans",
-      "model": "z-ai/glm-5.1",
-      "maxToolLoops": 10
+      "executor": {
+        "model": "z-ai/glm-5.1",
+        "maxToolLoops": 10
+      },
+      "planner": {
+        "model": "z-ai/glm-5.1",
+        "maxToolLoops": 10,
+        "toolFilter": {
+          "allow": [
+            "web_search",
+            "fetch_file",
+            "switch_mode"
+          ]
+        }
+      }
     },
     "notebook": {
       "notebookDir": "workspace/notebook",

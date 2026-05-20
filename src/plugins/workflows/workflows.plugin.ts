@@ -2,38 +2,59 @@ import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
 import { defineConfig, publishConfigSurface, deleteConfigSurface } from '../../system/plugin-config.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
+import type { ToolCollection, ToolMsg, ToolFilter } from '../../types/tools.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
 import { ExecutorAgentFactory } from './executor-agent.ts'
+import { PlannerAgentFactory } from './planner-agent.ts'
 import { PlanStore } from './plan-store.ts'
-import { ExecutorTools, getPlanTool, listPlansTool, showPlanGraphTool } from './tools.ts'
-import { buildExecutorRoutes, executorSchemas } from './routes.ts'
-import type { ExecutorConfig, ExecutorToolsMsg, PlanStoreMsg } from './types.ts'
+import { WorkflowTools, getPlanTool, listPlansTool, showPlanGraphTool } from './tools.ts'
+import { buildWorkflowsRoutes, workflowsSchemas } from './routes.ts'
+import type { WorkflowsConfig, WorkflowToolsMsg, PlanStoreMsg } from './types.ts'
 
 type PluginMsg =
-  | { type: 'config'; slice: ExecutorConfig | undefined }
+  | { type: 'config'; slice: WorkflowsConfig | undefined }
 
 type PluginState = {
   initialized: boolean
   gen: number
   plansDir: string
-  model: string
-  maxToolLoops: number
+  executor: {
+    model: string
+    maxToolLoops: number
+  }
+  planner: {
+    model: string
+    maxToolLoops: number
+    toolFilter?: ToolFilter
+  }
   planStoreRef: ActorRef<PlanStoreMsg> | null
-  toolsRef: ActorRef<ExecutorToolsMsg> | null
+  toolsRef: ActorRef<WorkflowToolsMsg> | null
 }
 
-const defaultConfig: ExecutorConfig = {
+const defaultConfig: WorkflowsConfig = {
   plansDir:     'workspace/plans',
-  model:        'z-ai/glm-5.1',
-  maxToolLoops: 10,
+  executor: {
+    model:        'z-ai/glm-5.1',
+    maxToolLoops: 10,
+  },
+  planner: {
+    model:        'z-ai/glm-5.1',
+    maxToolLoops: 10,
+    toolFilter: {
+      allow: [
+        'web_search',
+        'fetch_file',
+        'switch_mode',
+      ],
+    },
+  },
 }
 
-const config = defineConfig<ExecutorConfig>('executor', defaultConfig, {
-  schemas: executorSchemas,
+const config = defineConfig<WorkflowsConfig>('workflows', defaultConfig, {
+  schemas: workflowsSchemas,
 })
 
-const buildTools = (toolsRef: ActorRef<ExecutorToolsMsg>): ToolCollection => {
+const buildTools = (toolsRef: ActorRef<WorkflowToolsMsg>): ToolCollection => {
   const ref = toolsRef as unknown as ActorRef<ToolMsg>
   return {
     [listPlansTool.name]:     { ...listPlansTool, ref },
@@ -42,9 +63,9 @@ const buildTools = (toolsRef: ActorRef<ExecutorToolsMsg>): ToolCollection => {
   }
 }
 
-const buildDescriptor = (
-  cfg: Pick<PluginState, 'model' | 'maxToolLoops'>,
-  toolsRef: ActorRef<ExecutorToolsMsg>,
+const buildExecutorDescriptor = (
+  cfg: { model: string; maxToolLoops: number },
+  toolsRef: ActorRef<WorkflowToolsMsg>,
 ): AgentDescriptor => ({
   mode:        'executor',
   displayName: 'Executor',
@@ -57,11 +78,29 @@ const buildDescriptor = (
   capabilities: { userVisible: true },
 })
 
+const buildPlannerDescriptor = (
+  cfg: { model: string; maxToolLoops: number; toolFilter?: ToolFilter },
+  plansDir: string,
+  toolsRef: ActorRef<WorkflowToolsMsg>,
+): AgentDescriptor => ({
+  mode:        'planner',
+  displayName: 'Planner',
+  shortDesc:   'Structured planning of multi-step goals',
+  factory:     PlannerAgentFactory({
+    model:        cfg.model,
+    maxToolLoops: cfg.maxToolLoops,
+    toolFilter:   cfg.toolFilter,
+    plansDir,
+    workflowToolsRef: toolsRef,
+  }),
+  capabilities: { userVisible: true },
+})
+
 const publishRoutes = (
   ctx: ActorContext<PluginMsg>,
   planStoreRef: ActorRef<PlanStoreMsg> | null,
 ): void => {
-  for (const reg of buildExecutorRoutes(planStoreRef)) {
+  for (const reg of buildWorkflowsRoutes(planStoreRef)) {
     ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
   }
 }
@@ -70,7 +109,7 @@ const deleteRoutes = (
   ctx: ActorContext<PluginMsg>,
   planStoreRef: ActorRef<PlanStoreMsg> | null,
 ): void => {
-  for (const reg of buildExecutorRoutes(planStoreRef)) {
+  for (const reg of buildWorkflowsRoutes(planStoreRef)) {
     ctx.deleteRetained(RouteRegistrationTopic, reg.id, {
       id:      reg.id,
       method:  reg.method,
@@ -88,19 +127,22 @@ const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void =>
 
 const spawnChildren = (
   ctx: ActorContext<PluginMsg>,
-  cfg: ExecutorConfig,
+  cfg: WorkflowsConfig,
   gen: number,
 ): Pick<PluginState, 'planStoreRef' | 'toolsRef'> => {
   const planStoreRef = ctx.spawn(`plan-store-${gen}`, PlanStore(cfg.plansDir)) as ActorRef<PlanStoreMsg>
-  const toolsRef = ctx.spawn(`executor-tools-${gen}`, ExecutorTools(planStoreRef)) as ActorRef<ExecutorToolsMsg>
-  ctx.publish(AgentRegistrationTopic, { type: 'register', descriptor: buildDescriptor(cfg, toolsRef) })
+  const toolsRef = ctx.spawn(`workflow-tools-${gen}`, WorkflowTools(planStoreRef, cfg.plansDir)) as ActorRef<WorkflowToolsMsg>
+  
+  ctx.publish(AgentRegistrationTopic, { type: 'register', descriptor: buildExecutorDescriptor(cfg.executor, toolsRef) })
+  ctx.publish(AgentRegistrationTopic, { type: 'register', descriptor: buildPlannerDescriptor(cfg.planner, cfg.plansDir, toolsRef) })
+  
   return { planStoreRef, toolsRef }
 }
 
-const executorPlugin: PluginDef<PluginMsg, PluginState, ExecutorConfig> = {
-  id:          'executor',
+const workflowsPlugin: PluginDef<PluginMsg, PluginState, WorkflowsConfig> = {
+  id:          'workflows',
   version:     '1.0.0',
-  description: 'Read-only plan executor: inspect saved plans and render task DAGs',
+  description: 'Workflows plugin: design plans conversationally or inspect their task dependency graphs',
 
   configDescriptor: config,
 
@@ -108,22 +150,22 @@ const executorPlugin: PluginDef<PluginMsg, PluginState, ExecutorConfig> = {
     initialized:         false,
     gen:                 0,
     plansDir:            defaultConfig.plansDir,
-    model:               defaultConfig.model,
-    maxToolLoops:        defaultConfig.maxToolLoops,
+    executor:            defaultConfig.executor,
+    planner:             defaultConfig.planner,
     planStoreRef:        null,
     toolsRef:            null,
   },
 
   lifecycle: onLifecycle({
     start: (_state, ctx) => {
-      const cfg = { ...defaultConfig, ...(ctx.initialConfig() as ExecutorConfig | undefined ?? {}) }
+      const cfg = { ...defaultConfig, ...(ctx.initialConfig() as WorkflowsConfig | undefined ?? {}) }
 
       publishConfigSurface(ctx, config, () => cfg)
 
       const children = spawnChildren(ctx, cfg, 0)
       publishRoutes(ctx, children.planStoreRef)
 
-      ctx.log.info('executor plugin activated', { plansDir: cfg.plansDir })
+      ctx.log.info('workflows plugin activated', { plansDir: cfg.plansDir })
       return { state: { initialized: true, gen: 0, ...cfg, ...children } }
     },
 
@@ -131,8 +173,9 @@ const executorPlugin: PluginDef<PluginMsg, PluginState, ExecutorConfig> = {
       deleteRoutes(ctx, state.planStoreRef)
       stopChildren(state, ctx)
       ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'executor' })
+      ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'planner' })
       deleteConfigSurface(ctx, config)
-      ctx.log.info('executor plugin deactivated')
+      ctx.log.info('workflows plugin deactivated')
       return { state }
     },
   }),
@@ -142,6 +185,7 @@ const executorPlugin: PluginDef<PluginMsg, PluginState, ExecutorConfig> = {
       deleteRoutes(ctx, state.planStoreRef)
       stopChildren(state, ctx)
       ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'executor' })
+      ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'planner' })
 
       const cfg = { ...defaultConfig, ...(msg.slice ?? {}) }
       const gen = state.gen + 1
@@ -161,4 +205,4 @@ const executorPlugin: PluginDef<PluginMsg, PluginState, ExecutorConfig> = {
   }),
 }
 
-export default executorPlugin
+export default workflowsPlugin

@@ -3,11 +3,11 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { AgentSystem, ask } from '../system/index.ts'
-import { PlanStore } from '../plugins/executor/plan-store.ts'
-import { buildExecutorRoutes } from '../plugins/executor/routes.ts'
-import { ExecutorTools, listPlansTool, showPlanGraphTool } from '../plugins/executor/tools.ts'
+import { PlanStore } from '../plugins/workflows/plan-store.ts'
+import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
+import { WorkflowTools, listPlansTool, showPlanGraphTool, formalizePlanTool } from '../plugins/workflows/tools.ts'
 import type { Plan } from '../types/plans.ts'
-import type { PlanStoreMsg, PlanStoreReply } from '../plugins/executor/types.ts'
+import type { WorkflowToolsMsg, PlanStoreMsg, PlanStoreReply } from '../plugins/workflows/types.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 import { OutboundMessageTopic } from '../types/events.ts'
 import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
@@ -19,7 +19,7 @@ afterEach(async () => {
 })
 
 const makeDir = async (): Promise<string> => {
-  const dir = join(tmpdir(), `rorschach-executor-${crypto.randomUUID()}`)
+  const dir = join(tmpdir(), `rorschach-workflows-${crypto.randomUUID()}`)
   tempDirs.push(dir)
   await mkdir(dir, { recursive: true })
   return dir
@@ -48,7 +48,7 @@ const samplePlan = (): Plan => ({
   ],
 })
 
-describe('executor plan store', () => {
+describe('workflows plan store', () => {
   test('lists valid plans and ignores malformed files', async () => {
     const dir = await makeDir()
     await writeFile(join(dir, 'plan.json'), JSON.stringify(samplePlan()))
@@ -90,15 +90,15 @@ describe('executor plan store', () => {
 
     const system = await AgentSystem()
     const store = system.spawn('plan-store', PlanStore(dir))
-    const routes = buildExecutorRoutes(store)
+    const routes = buildWorkflowsRoutes(store)
 
-    const listRoute = routes.find(route => route.id === 'executor.plans.list')
+    const listRoute = routes.find(route => route.id === 'workflows.plans.list')
     expect(listRoute?.handler).not.toBeNull()
     if (!listRoute || listRoute.handler === null) throw new Error('missing list route')
     const listRes = await listRoute.handler(new Request('http://localhost/plans'), new URL('http://localhost/plans'), ANONYMOUS_IDENTITY)
     expect(await listRes.json()).toMatchObject([{ id: 'plan-1', taskCount: 2 }])
 
-    const itemRoute = routes.find(route => route.id === 'executor.plans.item')
+    const itemRoute = routes.find(route => route.id === 'workflows.plans.item')
     expect(itemRoute?.handler).not.toBeNull()
     if (!itemRoute || itemRoute.handler === null) throw new Error('missing item route')
     const graphRes = await itemRoute.handler(new Request('http://localhost/plans/plan-1/graph'), new URL('http://localhost/plans/plan-1/graph'), ANONYMOUS_IDENTITY)
@@ -108,7 +108,7 @@ describe('executor plan store', () => {
     await system.shutdown()
   })
 
-  test('executor tools list plans and publish plan graph UI events', async () => {
+  test('workflow tools list plans and publish plan graph UI events', async () => {
     const dir = await makeDir()
     await writeFile(join(dir, 'plan.json'), JSON.stringify(samplePlan()))
 
@@ -117,7 +117,7 @@ describe('executor plan store', () => {
     system.subscribe(OutboundMessageTopic, event => events.push(event))
 
     const store = system.spawn('plan-store', PlanStore(dir))
-    const tools = system.spawn('executor-tools', ExecutorTools(store))
+    const tools = system.spawn('workflow-tools', WorkflowTools(store, dir))
 
     const listReply = await ask<ToolInvokeMsg, ToolReply>(tools, replyTo => ({
       type:      'invoke',
@@ -140,6 +140,35 @@ describe('executor plan store', () => {
     }))
     expect(graphReply.type).toBe('toolResult')
     expect(events.map(event => JSON.parse(event.text))).toContainEqual({ type: 'planGraph', planId: 'plan-1' })
+
+    await system.shutdown()
+  })
+
+  test('workflow tools can formalize and save plan to disk', async () => {
+    const dir = await makeDir()
+    const system = await AgentSystem()
+
+    const store = system.spawn('plan-store', PlanStore(dir))
+    const tools = system.spawn('workflow-tools', WorkflowTools(store, dir))
+
+    const formalizeReply = await ask<ToolInvokeMsg, ToolReply>(tools, replyTo => ({
+      type:      'invoke',
+      toolName:  formalizePlanTool.name,
+      arguments: JSON.stringify({
+        goal:    'Learn antigravity',
+        summary: 'Decided to use Gemini 3.5.',
+        tasks:   [],
+      }),
+      replyTo,
+      userId:    'u1',
+      clientId:  'c1',
+    }))
+
+    expect(formalizeReply.type).toBe('toolResult')
+    if (formalizeReply.type === 'toolResult') {
+      expect(formalizeReply.result.text).toContain('Plan saved')
+      expect(formalizeReply.result.text).toContain('0 tasks')
+    }
 
     await system.shutdown()
   })

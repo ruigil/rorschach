@@ -1,6 +1,6 @@
 import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/types.ts'
 import { onLifecycle } from '../../system/match.ts'
-import { agentLoop, idleLoopState, type LoopState, type LoopMsg } from '../../system/agent-loop.ts'
+import { agentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { applyToolFilter } from '../../system/tool-utils.ts'
@@ -9,37 +9,17 @@ import type { ApiMessage } from '../../types/llm.ts'
 import type { ToolMsg } from '../../types/tools.ts'
 import { SwitchAgentTopic, type AgentFactoryOpts } from '../../types/agents.ts'
 import type { MessageAttachment } from '../../types/events.ts'
-import {
-  formalizePlanTool,
-  FormalizePlanTool,
-} from './formalize-plan-tool.ts'
-
-// ─── Message protocol ───
-
-type PlannerExtra =
-  | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isCron?: boolean; isInjected?: boolean }
-  | { type: '_toolRegistered'; name: string; schema: import('../../types/tools.ts').ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
-  | { type: '_toolUnregistered'; name: string }
-
-export type PlannerAgentMsg = LoopMsg<PlannerExtra>
+import { formalizePlanTool } from './tools.ts'
+import type { PlannerAgentMsg, PlannerAgentState } from './types.ts'
 
 // ─── Planner configuration (used to configure per-session planner instances) ───
 
 export type PlannerAgentConfig = {
-  model:        string
-  plansDir:     string
-  maxToolLoops: number
-  toolFilter?:   ToolFilter
-}
-
-// ─── State ───
-
-export type PlannerAgentState = {
-  loop:                    LoopState
-  plannerHistory:          ApiMessage[]
-  tools:                   ToolCollection
-  pendingFormalizeSummary: string | null
-  activeClientId:          string
+  model:             string
+  plansDir:          string
+  maxToolLoops:      number
+  toolFilter?:       ToolFilter
+  workflowToolsRef?: ActorRef<any>
 }
 
 const initialPlannerAgentState = (): PlannerAgentState => ({
@@ -88,7 +68,7 @@ export const PlannerAgentFactory = (config: PlannerAgentConfig) =>
 // ─── Actor ───
 
 const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): ActorDef<PlannerAgentMsg, PlannerAgentState> => {
-  const { model, maxToolLoops, toolFilter, plansDir } = config
+  const { model, maxToolLoops, toolFilter, plansDir, workflowToolsRef } = config
   const { userId, historyStoreRef, llmRef } = opts
 
   type M   = PlannerAgentMsg
@@ -226,7 +206,10 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
 
         ctx.log.info('planner-agent: started', { userId })
 
-        const formalizePlanToolRef = ctx.spawn('formalize-plan-tool', FormalizePlanTool({ plansDir })) as ActorRef<ToolMsg>
+        const formalizePlanToolRef = workflowToolsRef as unknown as ActorRef<ToolMsg>
+        if (!formalizePlanToolRef) {
+          ctx.log.error('planner-agent: workflowToolsRef is not configured!')
+        }
 
         return {
           state: {

@@ -1,10 +1,12 @@
+import { mkdir } from 'node:fs/promises'
 import { ask } from '../../system/ask.ts'
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import { defineTool, parseToolArgs } from '../../system/tool-utils.ts'
 import type { ToolReply } from '../../types/tools.ts'
-import type { ExecutorToolsMsg, PlanStoreMsg, PlanStoreReply, PlanSummary } from './types.ts'
+import type { Plan, PlanTask } from '../../types/plans.ts'
+import type { WorkflowToolsMsg, PlanStoreMsg, PlanStoreReply, PlanSummary } from './types.ts'
 
 export const listPlansTool = defineTool('list_plans', 'List saved plans created by the planner.', {
   type: 'object',
@@ -27,6 +29,30 @@ export const showPlanGraphTool = defineTool('show_plan_graph', 'Open the graphic
   },
 })
 
+export const formalizePlanTool = defineTool('formalize_plan', 'Finalize and save the accepted plan to disk. Call this only when the user has explicitly approved the plan you described conversationally.', {
+  type: 'object',
+  properties: {
+    goal:    { type: 'string', description: 'The user-stated goal the plan addresses' },
+    summary: { type: 'string', description: 'Brief narrative summary of the context gathered and key decisions made' },
+    tasks: {
+      type: 'array',
+      description: 'Ordered list of tasks forming a DAG. Use "dependencies" to express ordering.',
+      items: {
+        type: 'object',
+        properties: {
+          id:                 { type: 'string', description: 'Short unique identifier' },
+          name:               { type: 'string', description: 'Short task name' },
+          description:        { type: 'string', description: 'What needs to be done' },
+          validationCriteria: { type: 'string', description: 'How to verify this task is complete' },
+          dependencies:       { type: 'array', items: { type: 'string' }, description: 'IDs of tasks that must complete before this one' },
+        },
+        required: ['id', 'name', 'description', 'validationCriteria', 'dependencies'],
+      },
+    },
+  },
+  required: ['goal', 'summary', 'tasks'],
+})
+
 const formatPlanList = (plans: PlanSummary[]): string => {
   if (plans.length === 0) return 'No saved plans found.'
   return plans.map(plan => {
@@ -47,11 +73,17 @@ const replyError = (replyTo: ActorRef<ToolReply>, error: string): void => {
   replyTo.send({ type: 'toolError', error })
 }
 
-export const ExecutorTools = (
+const todayISO = (): string => new Date().toISOString().slice(0, 10)
+
+const slugify = (text: string): string =>
+  text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50)
+
+export const WorkflowTools = (
   planStoreRef: ActorRef<PlanStoreMsg>,
-): ActorDef<ExecutorToolsMsg, null> => ({
+  plansDir: string,
+): ActorDef<WorkflowToolsMsg, null> => ({
   initialState: null,
-  handler: onMessage<ExecutorToolsMsg, null>({
+  handler: onMessage<WorkflowToolsMsg, null>({
     _done: (state) => ({ state }),
 
     invoke: (state, msg, ctx) => {
@@ -129,7 +161,73 @@ export const ExecutorTools = (
         return { state }
       }
 
+      if (msg.toolName === formalizePlanTool.name) {
+        const parent = ctx.trace.fromHeaders()
+        const span = parent
+          ? ctx.trace.child(parent.traceId, parent.spanId, formalizePlanTool.name, { toolName: formalizePlanTool.name })
+          : null
+
+        let goal:    string
+        let summary: string
+        let tasks:   PlanTask[]
+        try {
+          const args = JSON.parse(msg.arguments) as { goal?: string; summary?: string; tasks?: PlanTask[] }
+          goal    = args.goal    ?? ''
+          summary = args.summary ?? ''
+          tasks   = args.tasks   ?? []
+          if (!goal) throw new Error('missing goal')
+        } catch (err) {
+          const error = `invalid arguments: ${String(err)}`
+          span?.error(error)
+          replyError(msg.replyTo, error)
+          return { state }
+        }
+
+        const plan: Plan = {
+          id:        crypto.randomUUID(),
+          goal,
+          context:   summary,
+          createdAt: new Date().toISOString(),
+          tasks,
+        }
+
+        const shortId  = crypto.randomUUID().slice(0, 8)
+        const filename = `${todayISO()}-${slugify(goal)}-${shortId}.json`
+        const filepath = `${plansDir}/${filename}`
+
+        ctx.log.info('workflow-tools: writing plan', { filepath, tasks: plan.tasks.length })
+
+        ctx.pipeToSelf(
+          (async () => {
+            await mkdir(plansDir, { recursive: true })
+            await Bun.write(filepath, JSON.stringify(plan, null, 2))
+          })(),
+          ()    => ({ type: '_writeDone' as const, filepath, taskCount: plan.tasks.length, replyTo: msg.replyTo, span }),
+          (err) => ({ type: '_writeErr'  as const, error: String(err),                    replyTo: msg.replyTo, span }),
+        )
+
+        return { state }
+      }
+
       replyError(msg.replyTo, `Unknown tool: ${msg.toolName}`)
+      return { state }
+    },
+
+    _writeDone: (state, msg) => {
+      const { filepath, taskCount, replyTo, span } = msg
+      span?.done({ filepath, taskCount })
+      replyTo.send({
+        type: 'toolResult',
+        result: { text: `Plan saved to ${filepath} — ${taskCount} tasks.` },
+      })
+      return { state }
+    },
+
+    _writeErr: (state, msg, ctx) => {
+      const { error, replyTo, span } = msg
+      ctx.log.error('workflow-tools: write failed', { error })
+      span?.error(error)
+      replyTo.send({ type: 'toolError', error })
       return { state }
     },
   }),

@@ -48,25 +48,6 @@ export const llmSchema: ConfigSchemaSection = {
     },
   },
 }
-
-export const plannerSchema: ConfigSchemaSection = {
-  id: 'cognitive.planner',
-  title: 'Planner',
-  subtitle: 'cognitive · structured planning agent',
-  tab: 'cognitive',
-  configKey: 'planner',
-  routeId: 'config.cognitive',
-  schema: {
-    type: 'object',
-    required: ['model', 'plansDir', 'maxToolLoops'],
-    properties: {
-      model: { type: 'string', default: 'z-ai/glm-5.1', 'x-ui': { widget: 'model-select', label: 'Planner model' } },
-      plansDir: { type: 'string', default: 'workspace/plans' },
-      maxToolLoops: { type: 'number', default: 10, minimum: 1, maximum: 50 },
-    },
-  },
-}
-
 export const userContextSchema: ConfigSchemaSection = {
   id: 'cognitive.userContext',
   title: 'User Context',
@@ -98,4 +79,4 @@ export const cognitiveWorkPathSchema: ConfigSchemaSection = {
   },
 }
 
-export const cognitiveSchemas = [chatbotSchema, sessionSchema, llmSchema, plannerSchema, userContextSchema, cognitiveWorkPathSchema]
+export const cognitiveSchemas = [chatbotSchema, sessionSchema, llmSchema, userContextSchema, cognitiveWorkPathSchema]
