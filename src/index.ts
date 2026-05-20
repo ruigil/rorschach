@@ -5,7 +5,7 @@ import {
   TraceTopic,
   ConfigUpdateRequestTopic,
 } from './system/index.ts'
-import { OutboundAdminBroadcastTopic, ClientConnectTopic, OutboundMessageTopic } from './types/events.ts'
+import { OutboundAdminBroadcastTopic, ClientPresenceTopic, OutboundMessageTopic } from './types/events.ts'
 import { loadConfig, saveConfig } from './config.ts'
 import type { LogEvent, MetricsEvent, LifecycleEvent, TraceSpan } from './system/index.ts'
 import type { ConfigUpdateRequest } from './system/index.ts'
@@ -65,7 +65,9 @@ system.subscribe(ToolRegistrationTopic, (event: ToolRegistrationEvent) => {
 
 // ─── Replay current tools to each newly connected client ───
 
-system.subscribe(ClientConnectTopic, ({ clientId, userId, roles }) => {
+system.subscribe(ClientPresenceTopic, (event) => {
+  if (event.status !== 'connected') return
+  const { clientId, userId, roles } = event
   if (userId !== 'anonymous' && !roles.includes('admin')) return
   for (const event of Object.values(toolsSnapshot)) {
     system.publish(OutboundMessageTopic, {

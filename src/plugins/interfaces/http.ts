@@ -3,7 +3,8 @@ import { mkdir } from 'node:fs/promises'
 import type { Server, ServerWebSocket } from 'bun'
 import { emit } from '../../system/types.ts'
 import {
-  InboundMessageTopic, ClientConnectTopic, ClientDisconnectTopic,
+  InboundMessageTopic,
+  ClientPresenceTopic,
   OutboundMessageTopic, OutboundBroadcastTopic, OutboundAdminBroadcastTopic,
   type MessageAttachment,
 } from '../../types/events.ts'
@@ -143,8 +144,40 @@ export const canAccessAdminSurface = (
 const isSameOriginRequest = (req: Request, url: URL): boolean => {
   const origin = req.headers.get('origin')
   if (!origin) return true
+  const allowedOrigins = new Set([url.origin])
+
+  const addHostOrigins = (host: string | undefined | null, proto?: string | null) => {
+    const normalizedHost = host?.split(',')[0]?.trim()
+    if (!normalizedHost) return
+    const schemes = proto ? [proto] : [url.protocol.slice(0, -1), 'https']
+    for (const scheme of schemes) {
+      try {
+        allowedOrigins.add(new URL(`${scheme}://${normalizedHost}`).origin)
+      } catch { /* ignore malformed host headers */ }
+    }
+  }
+
+  addHostOrigins(req.headers.get('host'))
+
+  const forwardedHost = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
+  const forwardedProto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim()
+  addHostOrigins(forwardedHost, forwardedProto)
+
+  const forwarded = req.headers.get('forwarded')?.split(',')[0]
+  if (forwarded) {
+    const parts = Object.fromEntries(
+      forwarded.split(';').map(part => {
+        const [key, value] = part.split('=')
+        return [key?.trim().toLowerCase(), value?.trim().replace(/^"|"$/g, '')]
+      }).filter(([key, value]) => key && value),
+    )
+    if (parts.host && parts.proto) {
+      addHostOrigins(parts.host, parts.proto)
+    }
+  }
+
   try {
-    return new URL(origin).origin === url.origin
+    return allowedOrigins.has(new URL(origin).origin)
   } catch {
     return false
   }
@@ -222,13 +255,18 @@ export const HTTP = (
       connected: (state, message, context) => {
         const connections = state.connections + 1
         context.log.info(`client connected: ${message.clientId} userId=${message.userId} (${connections} total)`)
+        context.publishRetained(ClientPresenceTopic, message.clientId, {
+          status: 'connected',
+          clientId: message.clientId,
+          userId:   message.userId,
+          roles:    message.roles,
+        })
         // Push the agent catalog as a welcome frame so the UI can render its mode selector.
         if (state.agentCatalog.length > 0) {
           state.server?.publish(`client:${message.clientId}`, JSON.stringify({ type: 'agents', agents: state.agentCatalog }))
         }
         return {
           state: { ...state, connections },
-          events: [emit(ClientConnectTopic, { clientId: message.clientId, userId: message.userId, roles: message.roles })],
         }
       },
 
@@ -295,18 +333,20 @@ export const HTTP = (
       closed: (state, message, context) => {
         const connections = Math.max(0, state.connections - 1)
         context.log.info(`client disconnected: ${message.clientId} (${connections} remaining)`)
+        context.deleteRetained(ClientPresenceTopic, message.clientId, {
+          status:   'disconnected',
+          clientId: message.clientId,
+        })
         const span = state.activeSpans[message.clientId]
         if (span) {
           span.error('client disconnected')
           const { [message.clientId]: _, ...rest } = state.activeSpans
           return {
             state: { ...state, connections, activeSpans: rest },
-            events: [emit(ClientDisconnectTopic, { clientId: message.clientId })],
           }
         }
         return {
           state: { ...state, connections },
-          events: [emit(ClientDisconnectTopic, { clientId: message.clientId })],
         }
       },
 

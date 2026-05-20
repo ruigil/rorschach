@@ -249,6 +249,10 @@ export const AgentSystem = async (
     services.eventStream.publishRetained(topic, key, event)
   }
 
+  const deleteRetained = <T>(topic: EventTopic<T>, key: string, tombstone: T): void => {
+    services.eventStream.deleteRetained(topic, key, tombstone)
+  }
+
   const subscribe = <T>(
     topic: EventTopic<T>,
     callback: (event: T) => void,
@@ -259,7 +263,7 @@ export const AgentSystem = async (
   }
 
   return {
-    spawn, stop, shutdown, publish, publishRetained, subscribe,
+    spawn, stop, shutdown, publish, publishRetained, deleteRetained, subscribe,
     updateConfig,
     use,
     unloadPlugin,

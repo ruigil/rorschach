@@ -84,6 +84,10 @@
             "switch_mode"
           ]
         }
+      },
+      "userContext": {
+        "model": "deepseek/deepseek-v4-flash",
+        "intervalMs": 60000
       }
     },
     "memory": {

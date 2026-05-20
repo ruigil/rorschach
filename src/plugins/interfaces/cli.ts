@@ -1,8 +1,7 @@
 import type { ActorDef, SpanHandle } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import {
-  ClientConnectTopic,
-  ClientDisconnectTopic,
+  ClientPresenceTopic,
   InboundMessageTopic,
   OutboundMessageTopic,
 } from '../../types/events.ts'
@@ -308,7 +307,12 @@ export const CLI = (): ActorDef<CliMsg, CliState> => {
       },
 
       stopped: (state, ctx) => {
-        if (state.connected) ctx.publish(ClientDisconnectTopic, { clientId: CLI_CLIENT_ID })
+        if (state.connected) {
+          ctx.deleteRetained(ClientPresenceTopic, CLI_CLIENT_ID, {
+            status: 'disconnected',
+            clientId: CLI_CLIENT_ID,
+          })
+        }
         process.stdout.write('\x1b[r\x1b[2J\x1b[H')  // reset scroll region, clear, home
         if (process.stdin.isTTY) process.stdin.setRawMode(false)
         return { state }
@@ -319,7 +323,14 @@ export const CLI = (): ActorDef<CliMsg, CliState> => {
       _userInput: (state, message, ctx) => {
         if (state.status === 'waiting') return { state }
 
-        if (!state.connected) ctx.publish(ClientConnectTopic, { clientId: CLI_CLIENT_ID, userId: ANONYMOUS_USER_ID, roles: [] })
+        if (!state.connected) {
+          ctx.publishRetained(ClientPresenceTopic, CLI_CLIENT_ID, {
+            status: 'connected',
+            clientId: CLI_CLIENT_ID,
+            userId: ANONYMOUS_USER_ID,
+            roles: [],
+          })
+        }
 
         const span = ctx.trace.start('request', { clientId: CLI_CLIENT_ID })
         const activeSpans = { ...state.activeSpans, [CLI_CLIENT_ID]: span }

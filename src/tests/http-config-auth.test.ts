@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
+import { ask } from '../system/ask.ts'
 import { authorizeConfigAccess, canAccessAdminSurface } from '../plugins/interfaces/http.ts'
-import { rolesForIdentity, type AuthConfig } from '../plugins/auth/authenticator.ts'
+import { Authenticator, rolesForIdentity, type AuthConfig } from '../plugins/auth/authenticator.ts'
 import type { ActorRef } from '../system/types.ts'
 import type { Identity, IdentityProviderMsg } from '../types/identity.ts'
 import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
+import type { AuthenticatorMsg, AuthSession, User, UserStoreMsg } from '../plugins/auth/types.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -25,6 +27,18 @@ const fakeIdentityProvider = (sessions: Record<string, Identity>): ActorDef<Iden
     if (msg.type === 'resolveCookie') msg.replyTo.send(sessions[msg.cookie] ?? null)
     if (msg.type === 'resolveTicket') msg.replyTo.send(msg.ticket ? (sessions[msg.ticket] ?? null) : null)
     if (msg.type === 'resolvePhone') msg.replyTo.send(Object.values(sessions).find(identity => identity.username === msg.phone) ?? null)
+    return { state }
+  },
+})
+
+const fakeUserStore = (users: Record<string, User>): ActorDef<UserStoreMsg, null> => ({
+  initialState: null,
+  handler: (state, msg) => {
+    if (msg.type === 'getUser') msg.replyTo.send(users[msg.userId] ?? null)
+    if (msg.type === 'getUserByCredential') msg.replyTo.send(Object.values(users).find(user => user.deviceKeys.some(key => key.id === msg.credentialId)) ?? null)
+    if (msg.type === 'getUserByPhone') msg.replyTo.send(Object.values(users).find(user => user.phone === msg.phone) ?? null)
+    if (msg.type === 'listUsers') msg.replyTo.send(Object.values(users))
+    if (msg.type === 'createUser') msg.replyTo.send({ error: 'not implemented' })
     return { state }
   },
 })
@@ -95,6 +109,64 @@ describe('HTTP config update authorization', () => {
     }), new URL(configUrl), identity, { requireSameOrigin: true })
 
     expect(denied?.status).toBe(403)
+
+    await shutdown()
+  })
+
+  test('allows proxied same-origin config writes with forwarded headers', async () => {
+    const identity: Identity = { userId: 'u1', username: 'admin-user', roles: ['admin'] }
+    const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
+      privileged: identity,
+    }))
+
+    const denied = await authorizeConfigAccess(ref, configRequest({
+      headers: {
+        Cookie: 'session=privileged',
+        Origin: 'https://rorschach.example',
+        'X-Forwarded-Host': 'rorschach.example',
+        'X-Forwarded-Proto': 'https',
+      },
+    }), new URL(configUrl), identity, { requireSameOrigin: true })
+
+    expect(denied).toBeNull()
+
+    await shutdown()
+  })
+
+  test('allows same-host config writes when TLS terminates before Bun', async () => {
+    const identity: Identity = { userId: 'u1', username: 'admin-user', roles: ['admin'] }
+    const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
+      privileged: identity,
+    }))
+
+    const denied = await authorizeConfigAccess(ref, configRequest({
+      headers: {
+        Cookie: 'session=privileged',
+        Host: 'rorschach.example',
+        Origin: 'https://rorschach.example',
+      },
+    }), new URL('http://rorschach.example/config/tools'), identity, { requireSameOrigin: true })
+
+    expect(denied).toBeNull()
+
+    await shutdown()
+  })
+
+  test('allows proxied same-origin config writes with Forwarded header', async () => {
+    const identity: Identity = { userId: 'u1', username: 'admin-user', roles: ['admin'] }
+    const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
+      privileged: identity,
+    }))
+
+    const denied = await authorizeConfigAccess(ref, configRequest({
+      headers: {
+        Cookie: 'session=privileged',
+        Origin: 'https://rorschach.example',
+        Forwarded: 'for=192.0.2.1;proto=https;host=rorschach.example',
+      },
+    }), new URL(configUrl), identity, { requireSameOrigin: true })
+
+    expect(denied).toBeNull()
 
     await shutdown()
   })
@@ -173,5 +245,77 @@ describe('auth admin allowlist', () => {
       phone: '+15551111111',
       roles: [],
     })).toEqual([])
+  })
+
+  test('rehydrates admin roles when validating an existing session token', async () => {
+    const system = await AgentSystem()
+    const user: User = {
+      id: 'u-admin',
+      username: 'alice',
+      createdAt: Date.now(),
+      roles: ['admin'],
+      deviceKeys: [],
+    }
+    const userStore = system.spawn('users', fakeUserStore({ [user.id]: user }))
+    const auth = system.spawn('auth', Authenticator({ userStore: userStore as ActorRef<UserStoreMsg>, config: baseConfig }), {
+      state: {
+        challenges: {},
+        tickets: {},
+        sessions: {
+          stale: {
+            token: 'stale',
+            userId: user.id,
+            username: user.username,
+            roles: [],
+            expiresAt: Date.now() + 60_000,
+          },
+        },
+      },
+    }) as ActorRef<AuthenticatorMsg>
+
+    const session = await ask<AuthenticatorMsg, AuthSession | null>(
+      auth,
+      replyTo => ({ type: 'validateToken' as const, token: 'stale', replyTo }),
+    )
+
+    expect(session?.roles).toContain('admin')
+
+    await system.shutdown()
+  })
+
+  test('rehydrates admin roles when validating a websocket ticket', async () => {
+    const system = await AgentSystem()
+    const user: User = {
+      id: 'u-admin',
+      username: 'alice',
+      createdAt: Date.now(),
+      roles: ['admin'],
+      deviceKeys: [],
+    }
+    const userStore = system.spawn('users', fakeUserStore({ [user.id]: user }))
+    const auth = system.spawn('auth', Authenticator({ userStore: userStore as ActorRef<UserStoreMsg>, config: baseConfig }), {
+      state: {
+        challenges: {},
+        tickets: { ticket: { token: 'stale', expiresAt: Date.now() + 60_000 } },
+        sessions: {
+          stale: {
+            token: 'stale',
+            userId: user.id,
+            username: user.username,
+            roles: [],
+            expiresAt: Date.now() + 60_000,
+          },
+        },
+      },
+    }) as ActorRef<AuthenticatorMsg>
+
+    const session = await ask<AuthenticatorMsg, AuthSession | null>(
+      auth,
+      replyTo => ({ type: 'validateTicket' as const, ticket: 'ticket', replyTo }),
+    )
+
+    expect(session?.roles).toContain('admin')
+
+    await system.shutdown()
   })
 })

@@ -318,6 +318,20 @@ export const Authenticator = (opts: {
 }): ActorDef<AuthenticatorMsg, AuthenticatorState> => {
   const { userStore, config } = opts
 
+  const rehydrateSession = async (session: AuthSession): Promise<AuthSession | null> => {
+    const user = await ask<UserStoreMsg, User | null>(
+      userStore,
+      (r) => ({ type: 'getUser' as const, userId: session.userId, replyTo: r }),
+      { timeoutMs: 3_000 },
+    )
+    if (!user) return null
+    return {
+      ...session,
+      username: user.username,
+      roles: rolesForIdentity(config, user),
+    }
+  }
+
   return {
     initialState: initialAuthenticatorState,
     lifecycle: onLifecycle({
@@ -597,12 +611,15 @@ export const Authenticator = (opts: {
         if (!session || session.expiresAt < Date.now()) {
           if (session) {
             const { [token]: _, ...sessions } = state.sessions
+            replyTo.send(null)
             return { state: { ...state, sessions }, events: [] }
           }
           replyTo.send(null)
           return { state }
         }
-        replyTo.send(session)
+        rehydrateSession(session)
+          .then(nextSession => replyTo.send(nextSession))
+          .catch(() => replyTo.send(session))
         return { state }
       },
 
@@ -645,7 +662,9 @@ export const Authenticator = (opts: {
           replyTo.send(null)
           return { state: { ...state, tickets } }
         }
-        replyTo.send(session)
+        rehydrateSession(session)
+          .then(nextSession => replyTo.send(nextSession))
+          .catch(() => replyTo.send(session))
         return { state: { ...state, tickets } }
       },
 

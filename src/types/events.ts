@@ -27,19 +27,12 @@ export type InboundMessageEvent = {
 /** Topic published when any interface (HTTP/WS, Signal, CLI) receives a message from a client. */
 export const InboundMessageTopic = createTopic<InboundMessageEvent>('client.inbound')
 
-// ─── Domain event: published when a client connects (any interface) ───
+export type ClientPresenceEvent =
+  | { status: 'connected'; clientId: string; userId: string; roles: string[] }
+  | { status: 'disconnected'; clientId: string }
 
-export type ClientConnectEvent = { clientId: string; userId: string; roles: string[] }
-
-/** Topic published when a client connects via any interface. */
-export const ClientConnectTopic = createTopic<ClientConnectEvent>('client.connect')
-
-// ─── Domain event: published when a client disconnects (any interface) ───
-
-export type ClientDisconnectEvent = { clientId: string }
-
-/** Topic published when a client disconnects via any interface. */
-export const ClientDisconnectTopic = createTopic<ClientDisconnectEvent>('client.disconnect')
+/** Retained topic describing currently connected clients for actors that restart. */
+export const ClientPresenceTopic = createTopic<ClientPresenceEvent>('client.presence')
 
 // ─── Domain event: emit to send a message to a specific client (any interface) ───
 

@@ -4,7 +4,7 @@ import cognitivePlugin from '../src/plugins/cognitive/cognitive.plugin.ts'
 import memoryPlugin from '../src/plugins/memory/memory.plugin.ts'
 import observabilityPlugin from '../src/plugins/observability/observability.plugin.ts'
 import {
-  ClientConnectTopic, ClientDisconnectTopic,
+  ClientPresenceTopic,
   InboundMessageTopic, OutboundMessageTopic, OutboundBroadcastTopic,
 } from '../src/types/events.ts'
 import type { OutboundMessageEvent } from '../src/types/events.ts'
@@ -238,7 +238,12 @@ for (let run = 0; run < RUNS; run++) {
   if (RUNS > 1) console.log(`Run ${run + 1}/${RUNS}`)
 
   const RECALL_CLIENT_ID = `benchmark-recall-${run}`
-  system.publish(ClientConnectTopic, { clientId: RECALL_CLIENT_ID, userId: USER_ID, roles: ['user'] })
+  system.publishRetained(ClientPresenceTopic, RECALL_CLIENT_ID, {
+    status: 'connected',
+    clientId: RECALL_CLIENT_ID,
+    userId: USER_ID,
+    roles: ['user'],
+  })
 
   // Wait for the chatbot actor to fully initialize and register its tools
   await new Promise(resolve => setTimeout(resolve, 500))
@@ -261,7 +266,10 @@ for (let run = 0; run < RUNS; run++) {
     console.log(`(Latency: ${result.latency}ms, Keyword: ${isCorrect}, Judge: ${judge.score}, tools: [${toolCalls.join(', ')}], recall_memory: ${recallMemory})\n`)
   }
 
-  system.publish(ClientDisconnectTopic, { clientId: RECALL_CLIENT_ID })
+  system.deleteRetained(ClientPresenceTopic, RECALL_CLIENT_ID, {
+    status: 'disconnected',
+    clientId: RECALL_CLIENT_ID,
+  })
   allRunResults.push(runResults)
 }
 

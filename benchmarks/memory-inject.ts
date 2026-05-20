@@ -4,7 +4,7 @@ import cognitivePlugin from '../src/plugins/cognitive/cognitive.plugin.ts'
 import memoryPlugin from '../src/plugins/memory/memory.plugin.ts'
 import observabilityPlugin from '../src/plugins/observability/observability.plugin.ts'
 import {
-  ClientConnectTopic, ClientDisconnectTopic,
+  ClientPresenceTopic,
   InboundMessageTopic, OutboundMessageTopic, OutboundBroadcastTopic,
 } from '../src/types/events.ts'
 import type { OutboundMessageEvent } from '../src/types/events.ts'
@@ -190,7 +190,12 @@ const sendTurn = async (text: string, clientId: string, traceId: string): Promis
 console.log('\n🚀 Starting Injection Phase\n')
 
 const INJECT_CLIENT_ID = 'benchmark-inject'
-system.publish(ClientConnectTopic, { clientId: INJECT_CLIENT_ID, userId: USER_ID, roles: ['user'] })
+system.publishRetained(ClientPresenceTopic, INJECT_CLIENT_ID, {
+  status: 'connected',
+  clientId: INJECT_CLIENT_ID,
+  userId: USER_ID,
+  roles: ['user'],
+})
 
 // Wait for the chatbot actor to fully initialize and register its tools
 await new Promise(resolve => setTimeout(resolve, 500))

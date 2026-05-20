@@ -1,6 +1,12 @@
 import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
-import { ClientConnectTopic, ClientDisconnectTopic, InboundMessageTopic, CronTriggerTopic, OutboundMessageTopic, type MessageAttachment } from '../../types/events.ts'
+import {
+  ClientPresenceTopic,
+  InboundMessageTopic,
+  CronTriggerTopic,
+  OutboundMessageTopic,
+  type MessageAttachment,
+} from '../../types/events.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import { HistoryStore, type HistoryStoreMsg} from './history-store.ts'
 import {
@@ -124,6 +130,9 @@ const clientIdsForUser = (state: SessionManagerState, userId: string): string[] 
     .filter(([, uid]) => uid === userId)
     .map(([clientId]) => clientId)
 
+const firstClientIdForUser = (state: SessionManagerState, userId: string): string | undefined =>
+  Object.entries(state.clientIndex).find(([, uid]) => uid === userId)?.[0]
+
 const publishModeChanged = (
   state: SessionManagerState,
   clientIds: string[],
@@ -151,8 +160,11 @@ export const SessionManager = (
     initialState: initialSessionManagerState,
     lifecycle: onLifecycle({
       start: (state, ctx) => {
-        ctx.subscribe(ClientConnectTopic,    e => ({ type: '_connected'    as const, clientId: e.clientId, userId: e.userId, roles: e.roles }))
-        ctx.subscribe(ClientDisconnectTopic, e => ({ type: '_disconnected' as const, clientId: e.clientId }))
+        ctx.subscribe(ClientPresenceTopic, e =>
+          e.status === 'connected'
+            ? { type: '_connected' as const, clientId: e.clientId, userId: e.userId, roles: e.roles }
+            : { type: '_disconnected' as const, clientId: e.clientId },
+        )
         ctx.subscribe(InboundMessageTopic,   e => ({ type: '_message'      as const, clientId: e.clientId, text: e.text, attachments: e.attachments, traceId: e.traceId, parentSpanId: e.parentSpanId, isCron: e.isCron }))
         ctx.subscribe(CronTriggerTopic,      e => ({ type: '_cronTrigger'  as const, userId: e.userId, text: e.text, traceId: e.traceId, parentSpanId: e.parentSpanId }))
         ctx.subscribe(AgentRegistrationTopic, e =>
@@ -206,9 +218,21 @@ export const SessionManager = (
 
     handler: onMessage<SessionManagerMsg, SessionManagerState>({
 
-      _agentRegistered: (state, msg) => ({
-        state: { ...state, descriptors: { ...state.descriptors, [msg.descriptor.mode]: msg.descriptor } },
-      }),
+      _agentRegistered: (state, msg, ctx) => {
+        let next: SessionManagerState = {
+          ...state,
+          descriptors: { ...state.descriptors, [msg.descriptor.mode]: msg.descriptor },
+        }
+
+        for (const [userId, session] of Object.entries(next.sessions)) {
+          if (session.activeMode !== msg.descriptor.mode || session.agentRefs[msg.descriptor.mode]) continue
+          const clientId = firstClientIdForUser(next, userId)
+          if (!clientId) continue
+          next = ensureAgent(next, userId, msg.descriptor.mode, clientId, llmRef, ctx).state
+        }
+
+        return { state: next }
+      },
 
       _agentUnregistered: (state, msg) => {
         const { [msg.mode]: _, ...descriptors } = state.descriptors
@@ -217,6 +241,7 @@ export const SessionManager = (
 
       _connected: (state, msg, ctx) => {
         const { clientId, userId } = msg
+        if (state.clientIndex[clientId]) return { state }
         const existing = state.sessions[userId]
         const ts = Date.now()
 

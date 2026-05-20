@@ -7,7 +7,7 @@ import { onLifecycle, onMessage } from '../../system/match.ts'
 import { join } from 'node:path'
 import { ask } from '../../system/ask.ts'
 
-import { ClientConnectTopic, InboundMessageTopic, OutboundMessageTopic, type MessageAttachment } from '../../types/events.ts'
+import { ClientPresenceTopic, InboundMessageTopic, OutboundMessageTopic, type MessageAttachment } from '../../types/events.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
 import { resolveIdentity } from './types.ts'
 import type { IdentityProviderMsg, Identity } from '../../types/identity.ts'
@@ -188,6 +188,7 @@ export type SignalOptions = {
   port?:           number     // default: 7583
   account?:        string
   reconnectMs?:    number     // default: 3000
+  presenceTtlMs?:  number     // default: 60 minutes
   attachmentsDir?: string
 }
 
@@ -217,6 +218,7 @@ type SignalMsg =
   | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
   | { type: '_phoneResolved';         phone: string; userId: string }
   | { type: '_phoneRejected';         phone: string }
+  | { type: '_presenceExpired';       phone: string }
 
 // ─── State ───
 
@@ -237,6 +239,7 @@ export const Signal = (
   const port           = options?.port           ?? 7583
   const account        = options?.account        ?? null
   const reconnectMs    = options?.reconnectMs    ?? 3_000
+  const presenceTtlMs  = options?.presenceTtlMs  ?? 60 * 60 * 1000
   const attachmentsDir = options?.attachmentsDir ?? `${process.env.HOME}/.local/share/signal-cli/attachments`
 
   let msgId        = 0
@@ -292,6 +295,10 @@ export const Signal = (
   const attachmentPaths = (attachments: Attachment[]): MessageAttachment[] =>
     attachments.map(a => copyToInbound(a.id, a.contentType))
 
+  const refreshPresenceExpiry = (phone: string, ctx: { timers: { startSingleTimer: (key: string, message: SignalMsg, delayMs: number) => void } }) => {
+    ctx.timers.startSingleTimer(`presence:${phone}`, { type: '_presenceExpired', phone }, presenceTtlMs)
+  }
+
   return {
     initialState: () => ({ seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() }),
     lifecycle: onLifecycle({
@@ -303,7 +310,13 @@ export const Signal = (
         return { state }
       },
 
-      stopped: (state) => {
+      stopped: (state, ctx) => {
+        for (const phone of state.seenIds) {
+          ctx.deleteRetained(ClientPresenceTopic, phone, {
+            status: 'disconnected',
+            clientId: phone,
+          })
+        }
         activeSocket?.destroy()
         activeSocket = null
         return { state }
@@ -375,6 +388,7 @@ export const Signal = (
 
         // Already an identified, seen sender — emit directly
         if (state.seenIds.has(phone)) {
+          refreshPresenceExpiry(phone, ctx)
           const span = ctx.trace.start('request', { clientId: phone })
           const activeSpans = { ...state.activeSpans, [phone]: span }
           return {
@@ -534,9 +548,14 @@ export const Signal = (
         // Mark seen, emit connect, then flush buffered messages.
         const seenIds = new Set(state.seenIds)
         seenIds.add(phone)
-        const events: ReturnType<typeof emit>[] = [
-          emit(ClientConnectTopic, { clientId: phone, userId, roles: [] }),
-        ]
+        ctx.publishRetained(ClientPresenceTopic, phone, {
+          status: 'connected',
+          clientId: phone,
+          userId,
+          roles: [],
+        })
+        refreshPresenceExpiry(phone, ctx)
+        const events: ReturnType<typeof emit>[] = []
         let activeSpans = { ...state.activeSpans }
         for (const buf of buffered) {
           const span = ctx.trace.start('request', { clientId: phone })
@@ -558,6 +577,17 @@ export const Signal = (
         pendingConnect.delete(phone)
         writeToSocket(rpcLine('send', { ...(account ? { account } : {}), recipient: [phone], message: 'Please register on the web first.' })).catch(() => {})
         return { state: { ...state, pendingConnect } }
+      },
+
+      _presenceExpired: (state, msg, ctx) => {
+        if (!state.seenIds.has(msg.phone)) return { state }
+        const seenIds = new Set(state.seenIds)
+        seenIds.delete(msg.phone)
+        ctx.deleteRetained(ClientPresenceTopic, msg.phone, {
+          status: 'disconnected',
+          clientId: msg.phone,
+        })
+        return { state: { ...state, seenIds } }
       },
 
       _sendOk: (state) => ({ state }),

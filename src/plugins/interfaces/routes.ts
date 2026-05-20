@@ -29,6 +29,7 @@ export const signalSchema: ConfigSchemaSection = {
     properties: {
       host: { type: 'string', default: '127.0.0.1' },
       port: { type: 'number', default: 7583, minimum: 1, maximum: 65535 },
+      presenceTtlMs: { type: 'number', default: 3600000, minimum: 60000, description: 'Signal sender inactivity window before ending presence' },
     },
   },
 }

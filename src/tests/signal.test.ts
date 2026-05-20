@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { mkdirSync } from 'node:fs'
 import { AgentSystem } from '../system/index.ts'
 import { Signal, renderForSignal } from '../plugins/interfaces/signal.ts'
-import { ClientConnectTopic, InboundMessageTopic, OutboundMessageTopic } from '../types/events.ts'
-import type { ClientConnectEvent, InboundMessageEvent, MessageAttachment } from '../types/events.ts'
+import { ClientPresenceTopic, InboundMessageTopic, OutboundMessageTopic } from '../types/events.ts'
+import type { ClientPresenceEvent, InboundMessageEvent, MessageAttachment } from '../types/events.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -59,12 +59,12 @@ describe('signal actor: TCP socket', () => {
   })
 
   test('emits WsConnect + WsMessage when the daemon pushes an envelope', async () => {
-    const connectEvents: ClientConnectEvent[] = []
+    const connectEvents: ClientPresenceEvent[] = []
     const messageEvents: InboundMessageEvent[] = []
 
     daemon = startMockSignalDaemon(17590)
     const system = await AgentSystem()
-    system.subscribe(ClientConnectTopic,  e => connectEvents.push(e))
+    system.subscribe(ClientPresenceTopic,  e => { if (e.status === 'connected') connectEvents.push(e) })
     system.subscribe(InboundMessageTopic,  e => messageEvents.push(e))
 
     system.spawn('signal', Signal({ host: '127.0.0.1', port: 17590 }),
@@ -83,11 +83,11 @@ describe('signal actor: TCP socket', () => {
   })
 
   test('does not re-emit WsConnect for the same sender on a second message', async () => {
-    const connectEvents: ClientConnectEvent[] = []
+    const connectEvents: ClientPresenceEvent[] = []
 
     daemon = startMockSignalDaemon(17591)
     const system = await AgentSystem()
-    system.subscribe(ClientConnectTopic, e => connectEvents.push(e))
+    system.subscribe(ClientPresenceTopic, e => { if (e.status === 'connected') connectEvents.push(e) })
 
     system.spawn('signal', Signal({ host: '127.0.0.1', port: 17591 }),
       { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
@@ -264,11 +264,11 @@ describe('signal actor: TCP socket', () => {
   })
 
   test('integration: receives messages and attachments from signal-cli TCP at 127.0.0.1:7583', async () => {
-    const connectEvents: ClientConnectEvent[] = []
+    const connectEvents: ClientPresenceEvent[] = []
     const messageEvents: InboundMessageEvent[] = []
 
     const system = await AgentSystem()
-    system.subscribe(ClientConnectTopic, e => connectEvents.push(e))
+    system.subscribe(ClientPresenceTopic, e => { if (e.status === 'connected') connectEvents.push(e) })
     system.subscribe(InboundMessageTopic, e => messageEvents.push(e))
 
     const ref = system.spawn('signal', Signal({

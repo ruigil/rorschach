@@ -597,6 +597,7 @@ export type PluginSystem = {
   // ─── Event Stream ───
   readonly publish: <T>(topic: EventTopic<T>, event: T) => void
   readonly publishRetained: <T>(topic: EventTopic<T>, key: string, event: T) => void
+  readonly deleteRetained: <T>(topic: EventTopic<T>, key: string, tombstone: T) => void
   readonly subscribe: <T>(
     topic: EventTopic<T>,
     callback: (event: T) => void,
