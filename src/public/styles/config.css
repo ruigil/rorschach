@@ -51,7 +51,7 @@ r-observe-panel { display: contents; }
 }
 
 .config-sidebar {
-  width: 220px;
+  width: 160px;
   border-right: 1px solid var(--border);
   background: rgba(3, 7, 10, 0.45);
   backdrop-filter: blur(8px);
@@ -59,48 +59,39 @@ r-observe-panel { display: contents; }
   flex-direction: column;
   flex-shrink: 0;
   overflow-y: auto;
-  padding: 1.75rem 0.75rem;
+  padding: 1rem 0.5rem;
 }
 
 .config-sidebar-menu {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.2rem;
 }
 
 .config-sidebar-item {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 0.75rem 1rem;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
   background: transparent;
-  border: 1px solid transparent;
+  border: none;
   border-radius: var(--radius);
   cursor: pointer;
   text-align: left;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background 0.15s;
   position: relative;
   font-family: var(--font-ui);
 }
 
 .config-sidebar-item:hover {
   background: rgba(0, 196, 212, 0.04);
-  border-color: rgba(0, 196, 212, 0.08);
-}
-
-.config-sidebar-item.active {
-  background: rgba(0, 196, 212, 0.08);
-  border-color: rgba(0, 196, 212, 0.2);
-  box-shadow: 0 0 12px rgba(0, 196, 212, 0.04);
 }
 
 .config-sidebar-item.active::before {
   content: '';
   position: absolute;
   left: 0;
-  top: 0.7rem;
-  bottom: 0.7rem;
+  top: 0.5rem;
+  bottom: 0.5rem;
   width: 3px;
   background: var(--accent);
   border-radius: 0 4px 4px 0;
@@ -108,9 +99,10 @@ r-observe-panel { display: contents; }
 }
 
 .config-sidebar-item-title {
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--text-mid);
   transition: color 0.15s;
 }
@@ -121,20 +113,6 @@ r-observe-panel { display: contents; }
 
 .config-sidebar-item.active .config-sidebar-item-title {
   color: var(--accent-bright);
-}
-
-.config-sidebar-item-sub {
-  font-size: 0.6rem;
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  margin-top: 0.15rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: 400;
-}
-
-.config-sidebar-item.active .config-sidebar-item-sub {
-  color: var(--text-mid);
 }
 
 #config-form {

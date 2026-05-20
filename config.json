@@ -95,11 +95,11 @@
     "workflows": {
       "plansDir": "workspace/plans",
       "executor": {
-        "model": "z-ai/glm-5.1",
+        "model": "deepseek/deepseek-v4-flash",
         "maxToolLoops": 10
       },
       "planner": {
-        "model": "z-ai/glm-5.1",
+        "model": "deepseek/deepseek-v4-flash",
         "maxToolLoops": 10,
         "toolFilter": {
           "allow": [

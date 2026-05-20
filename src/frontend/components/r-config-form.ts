@@ -185,8 +185,7 @@ export class RConfigForm extends RorschachBase {
                 <button type="button"
                         class="config-sidebar-item ${this.activeSectionId === section.id ? 'active' : ''}"
                         @click=${() => this.activeSectionId = section.id}>
-                  <div class="config-sidebar-item-title">${section.title}</div>
-                  ${section.subtitle ? html`<div class="config-sidebar-item-sub">${section.id.split('.')[0]}</div>` : ''}
+                  <span class="config-sidebar-item-title">${section.title}</span>
                 </button>
               `)}
             </div>
