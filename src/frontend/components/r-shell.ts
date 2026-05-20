@@ -12,6 +12,7 @@ export class RShell extends RorschachBase {
   private _currentUserId = new StoreController(this, 'currentUserId');
   private _currentUserRoles = new StoreController(this, 'currentUserRoles');
   private _isWaiting = new StoreController(this, 'isWaiting');
+  private _planWorkspaceOpen = new StoreController(this, 'planWorkspaceOpen');
 
   @query('r-chat-panel') private _chatPanel?: any;
 
@@ -32,11 +33,6 @@ export class RShell extends RorschachBase {
         const { userId, roles } = await res.json();
         store.set('currentUserId', userId);
         store.set('currentUserRoles', roles ?? []);
-        
-        // Initial schema load if admin
-        if (this._canUseAdminSurface()) {
-          (this.querySelector('r-config-form') as any)?.loadSchemas();
-        }
       }
     } catch (e) {
       console.error('Failed to fetch user session', e);
@@ -108,7 +104,7 @@ export class RShell extends RorschachBase {
       </header>
 
       <main>
-        <div id="panel-chat" class="panel ${activeTab === 'chat' ? 'active' : ''}">
+        <div id="panel-chat" class="panel ${activeTab === 'chat' ? 'active' : ''} ${this._planWorkspaceOpen.value ? 'plan-workspace-open' : ''}">
           <r-chat-panel></r-chat-panel>
           <r-plan-workspace id="plan-workspace"></r-plan-workspace>
         </div>

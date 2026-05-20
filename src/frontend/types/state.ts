@@ -72,6 +72,8 @@ export interface RorschachState {
   ws: WebSocket | null
   messages: Message[]
   activeTab: string
+  observeActiveTab: string
   activeStream: ActiveStream
   currentPlanGraph: any | null
+  planWorkspaceOpen: boolean
 }

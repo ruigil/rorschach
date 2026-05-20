@@ -21,10 +21,10 @@ const CONTROL_BY_TAB: Record<string, string> = {
 
 @customElement('r-observe-panel')
 export class RObservePanel extends RorschachBase {
-  @state() private _activeTab = 'metrics';
   @state() private _memoryStatsText = '';
   @state() private _kgData: any = null;
 
+  private _observeActiveTab = new StoreController(this, 'observeActiveTab');
   private _actors = new StoreController(this, 'actors');
   private _topics = new StoreController(this, 'topics');
   private _logs = new StoreController(this, 'logs');
@@ -44,14 +44,17 @@ export class RObservePanel extends RorschachBase {
     return this;
   }
 
+  override updated(changedProperties: Map<string, any>) {
+    const tab = this._observeActiveTab.value;
+    if (tab === 'memory' && !this._kgData) {
+      this._fetchKgraph();
+    }
+  }
+
   private _onTabChange(event: CustomEvent) {
     const tab = event.detail?.tab;
     if (!tab) return;
-    this._activeTab = tab;
-
-    if (tab === 'traces') this._tracesList?.requestUpdate();
-    if (tab === 'memory') this._fetchKgraph();
-    if (tab === 'costs') this._costsTable?.requestUpdate();
+    store.set('observeActiveTab', tab);
   }
 
   private _onActorSelect(event: CustomEvent) {
@@ -79,7 +82,8 @@ export class RObservePanel extends RorschachBase {
   }
 
   override render() {
-    const activeControl = CONTROL_BY_TAB[this._activeTab];
+    const activeTab = this._observeActiveTab.value || 'metrics';
+    const activeControl = CONTROL_BY_TAB[activeTab];
     const actors = this._actors.value;
     const topics = this._topics.value;
     const logs = this._logs.value;
@@ -99,13 +103,13 @@ export class RObservePanel extends RorschachBase {
     return html`
       <div class="obs-bar">
         <r-tabs class="obs-subtabs" @tab-change=${this._onTabChange}>
-          <button class="obs-subtab ${this._activeTab === 'metrics' ? 'active' : ''}" data-subtab="metrics">metrics</button>
-          <button class="obs-subtab ${this._activeTab === 'topics' ? 'active' : ''}" data-subtab="topics">topics</button>
-          <button class="obs-subtab ${this._activeTab === 'logs' ? 'active' : ''}" data-subtab="logs">logs</button>
-          <button class="obs-subtab ${this._activeTab === 'traces' ? 'active' : ''}" data-subtab="traces">traces</button>
-          <button class="obs-subtab ${this._activeTab === 'tools' ? 'active' : ''}" data-subtab="tools">tools</button>
-          <button class="obs-subtab ${this._activeTab === 'memory' ? 'active' : ''}" data-subtab="memory">memory</button>
-          <button class="obs-subtab ${this._activeTab === 'costs' ? 'active' : ''}" data-subtab="costs">costs</button>
+          <button class="obs-subtab ${activeTab === 'metrics' ? 'active' : ''}" data-subtab="metrics">metrics</button>
+          <button class="obs-subtab ${activeTab === 'topics' ? 'active' : ''}" data-subtab="topics">topics</button>
+          <button class="obs-subtab ${activeTab === 'logs' ? 'active' : ''}" data-subtab="logs">logs</button>
+          <button class="obs-subtab ${activeTab === 'traces' ? 'active' : ''}" data-subtab="traces">traces</button>
+          <button class="obs-subtab ${activeTab === 'tools' ? 'active' : ''}" data-subtab="tools">tools</button>
+          <button class="obs-subtab ${activeTab === 'memory' ? 'active' : ''}" data-subtab="memory">memory</button>
+          <button class="obs-subtab ${activeTab === 'costs' ? 'active' : ''}" data-subtab="costs">costs</button>
         </r-tabs>
         <div class="obs-bar-end">
           <div class="metrics-summary" ?hidden=${!showMetrics}>
@@ -141,7 +145,7 @@ export class RObservePanel extends RorschachBase {
         </div>
       </div>
 
-      <div class="obs-subpanel ${this._activeTab === 'metrics' ? 'active' : ''}">
+      <div class="obs-subpanel ${activeTab === 'metrics' ? 'active' : ''}" data-observe-tab="metrics">
         <div class="metrics-layout">
           <div class="tree-col">
             <r-actor-tree .actors=${actors} @actor-select=${this._onActorSelect}></r-actor-tree>
@@ -152,26 +156,26 @@ export class RObservePanel extends RorschachBase {
         </div>
       </div>
 
-      <div class="obs-subpanel ${this._activeTab === 'topics' ? 'active' : ''}">
+      <div class="obs-subpanel ${activeTab === 'topics' ? 'active' : ''}" data-observe-tab="topics">
         <r-topic-list .topics=${topics}></r-topic-list>
       </div>
 
-      <div class="obs-subpanel ${this._activeTab === 'traces' ? 'active' : ''}">
+      <div class="obs-subpanel ${activeTab === 'traces' ? 'active' : ''}" data-observe-tab="traces">
         <r-trace-waterfall></r-trace-waterfall>
       </div>
 
-      <div class="obs-subpanel ${this._activeTab === 'logs' ? 'active' : ''}">
+      <div class="obs-subpanel ${activeTab === 'logs' ? 'active' : ''}" data-observe-tab="logs">
         <r-log-stream></r-log-stream>
       </div>
 
-      <div class="obs-subpanel ${this._activeTab === 'tools' ? 'active' : ''}">
+      <div class="obs-subpanel ${activeTab === 'tools' ? 'active' : ''}" data-observe-tab="tools">
         <r-tools-list></r-tools-list>
       </div>
 
-      <r-costs-table class="obs-subpanel ${this._activeTab === 'costs' ? 'active' : ''}">
+      <r-costs-table class="obs-subpanel ${activeTab === 'costs' ? 'active' : ''}" data-observe-tab="costs">
       </r-costs-table>
 
-      <div class="obs-subpanel ${this._activeTab === 'memory' ? 'active' : ''}">
+      <div class="obs-subpanel ${activeTab === 'memory' ? 'active' : ''}" data-observe-tab="memory">
         <r-force-graph .kgData=${this._kgData}></r-force-graph>
       </div>
     `;

@@ -3,12 +3,15 @@ import { customElement, property } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 import { type Message, type ActiveStream } from '../types/state.js';
 import { renderMarkdown } from '../markdown.js';
+import { StoreController } from '../store.js';
 
 @customElement('r-message-bubble')
 export class RMessageBubble extends RorschachBase {
   @property({ type: Object }) message?: Message;
   @property({ type: Object }) stream?: ActiveStream;
   @property({ type: String, reflect: true }) type: 'assistant' | 'user' | 'error' = 'assistant';
+
+  private _currentMode = new StoreController(this, 'currentMode');
 
   // Render to light DOM to reuse chat.css styles
   override createRenderRoot() {
@@ -17,7 +20,12 @@ export class RMessageBubble extends RorschachBase {
 
   private _getLabelText() {
     const role = this.message?.role ?? this.type;
-    return role === 'user' ? 'You' : role === 'error' ? 'Error' : 'Rorschach';
+    if (role === 'user') return 'You';
+    if (role === 'error') return 'Error';
+    
+    const mode = this._currentMode.value;
+    const suffix = mode && mode !== 'chatbot' ? ` [${mode.charAt(0).toUpperCase() + mode.slice(1)}]` : '';
+    return `Rorschach${suffix}`;
   }
 
   override render() {
@@ -32,8 +40,11 @@ export class RMessageBubble extends RorschachBase {
 
     return html`
       <div class="message ${role}">
-        <div class="message-label">${this._getLabelText()}</div>
         <div class="bubble">
+          <div class="bubble-header">
+            <span class="bubble-avatar">${role === 'user' ? '👤' : role === 'error' ? '⚠️' : '🤖'}</span>
+            <span class="bubble-name">${this._getLabelText()}</span>
+          </div>
           ${reasoning ? html`
             <details class="reasoning" ?open=${!this.message}>
               <summary>Thinking...</summary>

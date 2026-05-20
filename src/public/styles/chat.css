@@ -13,6 +13,11 @@
 #messages::-webkit-scrollbar-track { background: transparent; }
 #messages::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
 
+.chat-spacer {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .message {
   display: flex;
   flex-direction: column;
@@ -73,22 +78,41 @@
 .message.assistant,
 .message.error   { align-items: flex-start; }
 
-.message-label {
-  font-size: 0.6rem;
+.bubble-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+  font-family: var(--font-mono);
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-dim);
-  margin-bottom: 0.15rem;
+  user-select: none;
+}
+
+.bubble-avatar {
+  font-size: 1.25rem; /* A little bigger to see the avatar better */
+  line-height: 1;
+}
+
+.bubble-name {
+  font-size: 0.65rem;
+  opacity: 0.8;
+}
+
+.message.user .bubble-name {
+  color: rgba(93, 224, 192, 0.7);
+}
+
+.message.user .bubble-header {
+  flex-direction: row-reverse;
+}
+
+.message.assistant .bubble-name {
+  color: rgba(0, 196, 212, 0.85);
 }
 
 .bubble-body { display: block; }
-
-.message.user .message-label      { color: rgba(93, 224, 192, 0.35); }
-.message.assistant .message-label { color: rgba(0, 196, 212, 0.4); }
-
-.message.user .message-label::before      { content: '👤 '; }
-.message.assistant .message-label::before { content: '🤖 '; }
 
 .bubble {
   font-family: var(--font-mono);

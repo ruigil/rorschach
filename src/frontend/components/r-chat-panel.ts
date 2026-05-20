@@ -2,6 +2,7 @@ import { html } from 'lit';
 import { customElement, query } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 import { store, StoreController } from '../store.js';
+import { submitChatMessage } from '../actions.js';
 
 @customElement('r-chat-panel')
 export class RChatPanel extends RorschachBase {
@@ -9,6 +10,10 @@ export class RChatPanel extends RorschachBase {
   private _isWaiting = new StoreController(this, 'isWaiting');
   private _messages = new StoreController(this, 'messages');
   private _activeStream = new StoreController(this, 'activeStream');
+
+  private _lastMessagesLength = 0;
+  private _lastStreamText = '';
+  private _lastStreamActive = false;
 
   @query('#messages') private messagesEl!: HTMLElement;
 
@@ -26,9 +31,20 @@ export class RChatPanel extends RorschachBase {
     this.removeEventListener('chat-submit', this._handleSubmit);
   }
 
-  override updated(changedProperties: Map<string, any>) {
-    if (changedProperties.has('_messages') || changedProperties.has('_activeStream')) {
+  override updated() {
+    const messages = this._messages.value;
+    const activeStream = this._activeStream.value;
+
+    const messagesChanged = messages.length !== this._lastMessagesLength;
+    const streamActiveChanged = activeStream.isActive !== this._lastStreamActive;
+    const streamTextChanged = activeStream.text !== this._lastStreamText;
+
+    if (messagesChanged || streamActiveChanged || streamTextChanged) {
       this._scrollToBottom();
+      
+      this._lastMessagesLength = messages.length;
+      this._lastStreamActive = activeStream.isActive;
+      this._lastStreamText = activeStream.text;
     }
   }
 
@@ -52,6 +68,7 @@ export class RChatPanel extends RorschachBase {
     return html`
       <div class="chat-main">
         <div id="messages">
+          ${messages.length > 0 || activeStream.isActive ? html`<div class="chat-spacer"></div>` : ''}
           ${messages.length === 0 && !activeStream.isActive ? html`
             <r-empty-state id="empty" variant="chat" name="signal" text="Signal detected" subtext="awaiting transmission"></r-empty-state>
           ` : ''}
@@ -71,23 +88,6 @@ export class RChatPanel extends RorschachBase {
 
   private _handleSubmit(event: any) {
     const { text, attachments } = event.detail;
-    const ws = store.get('ws');
-    if ((!text && attachments.length === 0) || ws?.readyState !== WebSocket.OPEN || this._isWaiting.value) return;
-
-    store.appendMessage({
-      id: crypto.randomUUID(),
-      role: 'user',
-      text,
-      attachments,
-      timestamp: Date.now()
-    });
-
-    ws.send(JSON.stringify({ text, attachments }));
-    store.set('isWaiting', true);
-    store.updateActiveStream({ isActive: true });
-
-    const logoMark = document.querySelector('.logo-mark');
-    logoMark?.classList.add('noticing');
-    setTimeout(() => logoMark?.classList.remove('noticing'), 700);
+    submitChatMessage(text, attachments);
   }
 }

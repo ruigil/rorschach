@@ -11,12 +11,19 @@ interface ConfigSchema {
   schema: any;
 }
 
+import { store, StoreController } from '../store.js';
+
 @customElement('r-config-form')
 export class RConfigForm extends RorschachBase {
   @state() private schemas: ConfigSchema[] = [];
   @state() private currentValues: Record<string, any> = {};
   @state() private models: string[] = [];
   @state() private activeTab: string | null = null;
+  @state() private activeSectionId: string | null = null;
+
+  private _currentUserRoles = new StoreController(this, 'currentUserRoles');
+  private _currentUserId = new StoreController(this, 'currentUserId');
+  private _hasLoaded = false;
 
   override createRenderRoot() {
     return this;
@@ -27,6 +34,47 @@ export class RConfigForm extends RorschachBase {
     this.addEventListener('tab-change', (e: any) => {
       this.activeTab = e.detail?.tab;
     });
+  }
+
+  override willUpdate(changedProperties: Map<string, any>) {
+    if (changedProperties.has('activeTab') || changedProperties.has('schemas')) {
+      const tab = this.activeTab;
+      if (tab) {
+        const sections = this.schemas.filter(s => s.tab === tab);
+        if (sections.length > 0) {
+          if (!this.activeSectionId || !sections.some(s => s.id === this.activeSectionId)) {
+            this.activeSectionId = sections[0]?.id || null;
+          }
+        } else {
+          this.activeSectionId = null;
+        }
+      } else {
+        this.activeSectionId = null;
+      }
+    }
+  }
+
+  override updated(changedProperties: Map<string, any>) {
+    if (!this._hasLoaded && this._currentUserId.value !== null) {
+      if (this._canUseAdminSurface()) {
+        this._hasLoaded = true;
+        this.loadSchemas();
+      }
+    }
+
+    // Re-trigger if new widgets appeared
+    this.querySelectorAll('[data-widget="google-account"]').forEach(el => {
+      if (!(el as any)._initialized) {
+        (el as any)._initialized = true;
+        el.dispatchEvent(new CustomEvent('hook-google-status', { bubbles: false }));
+      }
+    });
+  }
+
+  private _canUseAdminSurface() {
+    const roles = this._currentUserRoles.value as string[];
+    const userId = this._currentUserId.value;
+    return userId === 'anonymous' || roles.includes('admin');
   }
 
   async loadSchemas() {
@@ -73,20 +121,35 @@ export class RConfigForm extends RorschachBase {
   }
 
   async save() {
+    console.log('[RConfigForm] save() initiated');
     const byPlugin = this._gatherValuesByPlugin();
+    console.log('[RConfigForm] Gathered config values:', byPlugin);
+    
+    const activeSchemas = this.schemas.filter(s => s.tab === this.activeTab);
+    const activePluginIds = new Set(activeSchemas.map(s => s.id.split('.')[0]));
+    console.log('[RConfigForm] Active plugin IDs to save:', Array.from(activePluginIds));
+
     for (const [pluginId, patch] of Object.entries(byPlugin)) {
+      if (!activePluginIds.has(pluginId)) {
+        console.log(`[RConfigForm] Skipping save for inactive plugin "${pluginId}"`);
+        continue;
+      }
       try {
+        console.log(`[RConfigForm] POSTing config patch for plugin "${pluginId}":`, patch);
         const res = await fetch(new URL(`config/${pluginId}`, location.href), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(patch),
         });
         if (!res.ok) throw new Error(`server error ${res.status}`);
+        console.log(`[RConfigForm] Successfully saved plugin "${pluginId}"`);
       } catch (err: any) {
+        console.error(`[RConfigForm] Failed to save plugin "${pluginId}":`, err);
         this._flashError(`Failed to save ${pluginId}: ${err.message}`);
         return;
       }
     }
+    console.log('[RConfigForm] Active plugins saved, flashing success message...');
     this._flashSaved();
   }
 
@@ -100,6 +163,7 @@ export class RConfigForm extends RorschachBase {
       (byTab[s.tab] ??= []).push(s);
     }
     const tabNames = Object.keys(byTab);
+    const activeSections = byTab[this.activeTab ?? ''] ?? [];
 
     return html`
       <div class="config-bar">
@@ -114,6 +178,20 @@ export class RConfigForm extends RorschachBase {
         </r-tabs>
       </div>
       <div class="config-content">
+        ${activeSections.length > 0 ? html`
+          <div class="config-sidebar">
+            <div class="config-sidebar-menu">
+              ${activeSections.map(section => html`
+                <button type="button"
+                        class="config-sidebar-item ${this.activeSectionId === section.id ? 'active' : ''}"
+                        @click=${() => this.activeSectionId = section.id}>
+                  <div class="config-sidebar-item-title">${section.title}</div>
+                  ${section.subtitle ? html`<div class="config-sidebar-item-sub">${section.id.split('.')[0]}</div>` : ''}
+                </button>
+              `)}
+            </div>
+          </div>
+        ` : ''}
         <form id="config-form" novalidate @submit=${(e: Event) => { e.preventDefault(); this.save(); }}>
           <div id="config-form-container">
             ${tabNames.map(tab => html`
@@ -147,7 +225,7 @@ export class RConfigForm extends RorschachBase {
     const props = section.schema.properties ?? {};
     
     return html`
-      <div class="config-section">
+      <div class="config-section ${this.activeSectionId === section.id ? 'active' : ''}">
         <div class="pane-header">
           <span class="pane-title">${section.title}</span>
           ${section.subtitle ? html`<span class="pane-sub">${section.subtitle}</span>` : ''}
@@ -290,16 +368,6 @@ export class RConfigForm extends RorschachBase {
     });
   }
 
-  override updated() {
-    // Re-trigger if new widgets appeared
-    this.querySelectorAll('[data-widget="google-account"]').forEach(el => {
-      if (!(el as any)._initialized) {
-        (el as any)._initialized = true;
-        el.dispatchEvent(new CustomEvent('hook-google-status', { bubbles: false }));
-      }
-    });
-  }
-
   private _inferWidget(schema: any) {
     if (schema.type === 'boolean') return 'toggle';
     if (schema.type === 'number') return 'number';
@@ -311,6 +379,7 @@ export class RConfigForm extends RorschachBase {
     const byPlugin: Record<string, any> = {};
     this.querySelectorAll('[data-config-key]').forEach((el: any) => {
       if (el.dataset.widget === 'google-account') return;
+      if (!el.name || !el.dataset.section) return;
       const pluginId = el.dataset.section.split('.')[0];
       const configKey = el.dataset.configKey;
       const key = el.name;
@@ -338,11 +407,21 @@ export class RConfigForm extends RorschachBase {
 
   private _flashSaved() {
     const flash = this.querySelector('#flash-msg') as any;
-    if (flash) flash.save();
+    console.log('[RConfigForm] _flashSaved() called. Found flash-msg element:', flash);
+    if (flash) {
+      flash.save();
+    } else {
+      console.warn('[RConfigForm] #flash-msg element not found in DOM!');
+    }
   }
 
   private _flashError(msg: string) {
     const flash = this.querySelector('#flash-msg') as any;
-    if (flash) flash.error(msg);
+    console.error('[RConfigForm] _flashError() called with message:', msg, '. Found flash-msg element:', flash);
+    if (flash) {
+      flash.error(msg);
+    } else {
+      console.warn('[RConfigForm] #flash-msg element not found in DOM!');
+    }
   }
 }

@@ -109,22 +109,8 @@ export class RChatInput extends RorschachBase {
       return;
     }
 
-    const processorSrc = `
-      class RecorderProcessor extends AudioWorkletProcessor {
-        process(inputs) {
-          const ch = inputs[0]?.[0]
-          if (ch) this.port.postMessage(new Float32Array(ch))
-          return true
-        }
-      }
-      registerProcessor('recorder-processor', RecorderProcessor)
-    `;
-    const workletBlob = new Blob([processorSrc], { type: 'application/javascript' });
-    const workletUrl = URL.createObjectURL(workletBlob);
-
     this._audioCtx = new AudioContext({ sampleRate: 16000 });
-    await this._audioCtx.audioWorklet.addModule(workletUrl);
-    URL.revokeObjectURL(workletUrl);
+    await this._audioCtx.audioWorklet.addModule('worklets/recorder-processor.js');
 
     const source = this._audioCtx.createMediaStreamSource(this._recordingStream);
     const workletNode = new AudioWorkletNode(this._audioCtx, 'recorder-processor');

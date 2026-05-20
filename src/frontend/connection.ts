@@ -1,39 +1,40 @@
 import { store } from './store.js'
 import { type WSFrame } from './types/websocket.js'
 import { toolActionLabel } from './core/utils.js'
+import { updateActiveStream, commitActiveStream, setMode, addLog } from './actions.js'
 
 const frameHandlers: Record<string, (msg: any) => void> = {
   chunk: (msg) => {
-    store.updateActiveStream({
+    updateActiveStream({
       isActive: true,
       text: store.get('activeStream').text + msg.text,
       toolingLabel: undefined,
     })
   },
   reasoningChunk: (msg) => {
-    store.updateActiveStream({
+    updateActiveStream({
       isActive: true,
       reasoning: store.get('activeStream').reasoning + msg.text,
       toolingLabel: undefined,
     })
   },
   tooling: (msg) => {
-    store.updateActiveStream({
+    updateActiveStream({
       isActive: true,
       toolingLabel: toolActionLabel(msg.tools || [])
     })
   },
-  sources: (msg) => store.updateActiveStream({ sources: msg.sources }),
-  attachments: (msg) => store.updateActiveStream({ attachments: msg.attachments }),
-  done: () => store.commitActiveStream(),
-  error: (msg) => store.commitActiveStream('error', msg.text),
+  sources: (msg) => updateActiveStream({ sources: msg.sources }),
+  attachments: (msg) => updateActiveStream({ attachments: msg.attachments }),
+  done: () => commitActiveStream(),
+  error: (msg) => commitActiveStream('error', msg.text),
   agents: (msg) => store.set('agents', Array.isArray(msg.agents) ? msg.agents : []),
-  modeChanged: (msg) => store.setMode(msg.mode, msg.displayName),
+  modeChanged: (msg) => setMode(msg.mode, msg.displayName),
   plannerMode: (msg) => {
-    if (msg.active) store.setMode('planner', 'Planner')
-    else if (store.get('currentMode') === 'planner') store.setMode('chatbot', 'Chatbot')
+    if (msg.active) setMode('planner', 'Planner')
+    else if (store.get('currentMode') === 'planner') setMode('chatbot', 'Chatbot')
   },
-  log: (msg) => store.addLog(msg),
+  log: (msg) => addLog(msg),
   metrics: (msg) => {
     if (msg.actors) store.set('actors', msg.actors)
     if (msg.topics) store.set('topics', msg.topics)
@@ -79,6 +80,13 @@ export async function connect() {
 
   ws.addEventListener('open', () => {
     store.set('isConnected', true)
+
+    // Restore saved mode on reconnect/refresh
+    const savedMode = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.currentMode') : null;
+    if (savedMode) {
+      ws.send(JSON.stringify({ type: 'switchMode', mode: savedMode }));
+    }
+
     const chatTab = document.querySelector('[data-tab="chat"].active')
     if (chatTab) {
       (document.getElementById('input') as HTMLElement | null)?.focus()

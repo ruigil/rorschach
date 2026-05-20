@@ -2,9 +2,9 @@
 
 .plan-workspace {
   display: none;
-  width: var(--plan-workspace-width, min(42vw, 520px));
-  min-width: 390px;
-  flex: 0 0 var(--plan-workspace-width, min(42vw, 520px));
+  width: var(--plan-workspace-width, 50vw);
+  min-width: 320px;
+  flex: 0 0 var(--plan-workspace-width, 50vw);
   background: rgba(4, 13, 20, 0.92);
   overflow: hidden;
   min-height: 0;
@@ -273,4 +273,21 @@ body.plan-workspace-resizing {
   #panel-chat.plan-workspace-open .plan-workspace-resizer {
     display: none;
   }
+}
+
+/* ─── Scrollbar styling ─── */
+.plan-list::-webkit-scrollbar,
+.plan-task-detail-wrap::-webkit-scrollbar {
+  width: 3px;
+}
+
+.plan-list::-webkit-scrollbar-track,
+.plan-task-detail-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.plan-list::-webkit-scrollbar-thumb,
+.plan-task-detail-wrap::-webkit-scrollbar-thumb {
+  background: var(--border-mid);
+  border-radius: 2px;
 }

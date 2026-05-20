@@ -1,4 +1,4 @@
-import { html, css } from 'lit';
+import { html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { RorschachBase, escHtml } from './base.js';
 
@@ -26,34 +26,16 @@ export class RForceGraph extends RorschachBase {
   @state() private _hasData = false;
   private _sim: any = null;
 
-  static override styles = css`
-    :host {
-      display: block;
-      position: relative;
-      width: 100%;
-      height: 100%;
-    }
-    svg { width: 100%; height: 100%; }
-    .graph-tooltip {
-      position: absolute;
-      display: none;
-      background: var(--surface-2, #0a1820);
-      border: 1px solid var(--border-mid, #1a3548);
-      border-radius: var(--radius, 8px);
-      padding: 0.5rem;
-      font-size: 0.65rem;
-      font-family: var(--font-mono, monospace);
-      color: var(--text, #e8f6fa);
-      pointer-events: none;
-      z-index: 10;
-      max-width: 260px;
-    }
-    .graph-tooltip strong { display: block; margin-bottom: 0.25rem; color: var(--accent, #00c4d4); }
-    .graph-tooltip pre { margin: 0; white-space: pre-wrap; font-size: 0.6rem; color: var(--text-dim, #3d6878); }
-    .plan-node rect { fill: var(--surface, #060e14); stroke: var(--border-mid, #1a3548); stroke-width: 1.5; }
-    .plan-node.selected rect { stroke: var(--accent, #00c4d4); stroke-width: 2; }
-    .plan-node text { fill: var(--text, #e8f6fa); }
-  `;
+  override createRenderRoot() {
+    return this;
+  }
+
+  override connectedCallback() {
+    super.connectedCallback();
+    this.style.display = 'block';
+    this.style.width = '100%';
+    this.style.height = '100%';
+  }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
@@ -93,14 +75,14 @@ export class RForceGraph extends RorschachBase {
   }
 
   private _updateSelection() {
-    d3.select(this.shadowRoot).selectAll('.plan-node')
+    d3.select(this).selectAll('.plan-node')
       .classed('selected', (d: any) => d.id === this.selectedTaskId);
   }
 
   private _renderKnowledgeGraphD3() {
     if (!this.kgData) return;
     if (this._sim) this._sim.stop();
-    const container = this.shadowRoot!.querySelector('#graph-container');
+    const container = this.querySelector('#graph-container');
     if (!container) return;
     container.innerHTML = '';
 
@@ -228,7 +210,7 @@ export class RForceGraph extends RorschachBase {
   private _renderPlanGraphD3() {
     if (!this.planData) return;
     if (this._sim) this._sim.stop();
-    const container = this.shadowRoot!.querySelector('#graph-container');
+    const container = this.querySelector('#graph-container');
     if (!container) return;
     container.innerHTML = '';
 

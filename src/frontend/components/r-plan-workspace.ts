@@ -12,6 +12,9 @@ export class RPlanWorkspace extends RorschachBase {
   @state() private _selectedTaskId: string | null = null;
   @state() private _title = 'Plans';
 
+  private _lastMode = '';
+  private _lastPlanGraph: any = null;
+
   private _isResizing = false;
   private _WIDTH_KEY = 'rorschach.planWorkspaceWidth';
   private _DEFAULT_WIDTH = 460;
@@ -27,14 +30,43 @@ export class RPlanWorkspace extends RorschachBase {
 
   override updated(changedProperties: Map<string, any>) {
     const mode = this._currentMode.value;
-    if (mode === 'executor') this.openList();
-    else if (mode !== 'planner') this.close();
+    if (mode !== this._lastMode) {
+      const isInitialLoad = this._lastMode === '';
+      this._lastMode = mode;
+      if (mode === 'executor') {
+        if (isInitialLoad) {
+          const savedOpen = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.planWorkspaceOpen') === 'true' : false;
+          if (savedOpen) {
+            const savedView = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.planWorkspaceView') || 'list' : 'list';
+            const savedPlanId = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.planWorkspacePlanId') : null;
+            if (savedView === 'graph' && savedPlanId) {
+              this.openGraph(savedPlanId);
+            } else {
+              this.openList();
+            }
+          } else {
+            this.close();
+          }
+        } else {
+          this.openList();
+        }
+      }
+      else if (mode !== 'planner') this.close();
+    }
 
-    if (changedProperties.has('_currentPlanGraph') && this._currentPlanGraph.value) {
-      this._view = 'graph';
-      this._currentGraph = this._currentPlanGraph.value;
-      this._selectedTaskId = this._currentGraph.nodes[0]?.id ?? null;
-      this._title = this._currentGraph.plan.goal;
+    const planGraph = this._currentPlanGraph.value;
+    if (planGraph !== this._lastPlanGraph) {
+      this._lastPlanGraph = planGraph;
+      if (planGraph) {
+        if (planGraph.planId) {
+          this.openGraph(planGraph.planId);
+        } else {
+          this._view = 'graph';
+          this._currentGraph = planGraph;
+          this._selectedTaskId = this._currentGraph.nodes[0]?.id ?? null;
+          this._title = this._currentGraph.plan.goal;
+        }
+      }
     }
   }
 
@@ -42,6 +74,10 @@ export class RPlanWorkspace extends RorschachBase {
     this._setOpen(true);
     this._title = 'Plans';
     this._view = 'loading';
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('rorschach.planWorkspaceView', 'list');
+      localStorage.removeItem('rorschach.planWorkspacePlanId');
+    }
     try {
       this._plans = await this._fetchJson('plans');
       this._view = 'list';
@@ -55,9 +91,16 @@ export class RPlanWorkspace extends RorschachBase {
     this._setOpen(true);
     this._title = 'Plan';
     this._view = 'loading';
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('rorschach.planWorkspaceView', 'graph');
+      localStorage.setItem('rorschach.planWorkspacePlanId', planId);
+    }
     try {
       this._currentGraph = await this._fetchJson(`plans/${encodeURIComponent(planId)}/graph`);
-      this._selectedTaskId = this._currentGraph.nodes[0]?.id ?? null;
+      const savedTaskId = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.planWorkspaceSelectedTaskId') : null;
+      this._selectedTaskId = savedTaskId && this._currentGraph.nodes.some((n: any) => n.id === savedTaskId)
+        ? savedTaskId
+        : (this._currentGraph.nodes[0]?.id ?? null);
       this._title = this._currentGraph.plan.goal;
       this._view = 'graph';
     } catch {
@@ -76,7 +119,7 @@ export class RPlanWorkspace extends RorschachBase {
 
   _maxWorkspaceWidth() {
     const panelWidth = this._panel?.getBoundingClientRect().width ?? window.innerWidth;
-    return Math.max(this._MIN_WIDTH, Math.min(760, panelWidth - this._MIN_CHAT_WIDTH));
+    return Math.max(this._MIN_WIDTH, Math.round(panelWidth * 0.7));
   }
 
   _clampWidth(width: number) {
@@ -84,9 +127,11 @@ export class RPlanWorkspace extends RorschachBase {
   }
 
   _savedWidth() {
+    const panelWidth = this._panel?.getBoundingClientRect().width ?? window.innerWidth;
+    const defaultWidth = Math.round(panelWidth / 2);
     const raw = localStorage.getItem(this._WIDTH_KEY);
-    const parsed = raw ? Number(raw) : this._DEFAULT_WIDTH;
-    return Number.isFinite(parsed) ? this._clampWidth(parsed) : this._DEFAULT_WIDTH;
+    const parsed = raw ? Number(raw) : defaultWidth;
+    return Number.isFinite(parsed) ? this._clampWidth(parsed) : defaultWidth;
   }
 
   _applyWidth(width: number) {
@@ -96,20 +141,25 @@ export class RPlanWorkspace extends RorschachBase {
   }
 
   _setOpen(open: boolean) {
+    store.set('planWorkspaceOpen', open);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('rorschach.planWorkspaceOpen', String(open));
+    }
     this._panel?.classList.toggle('plan-workspace-open', open);
     if (open) this._applyWidth(this._savedWidth());
   }
 
   override render() {
+    const showBack = this._view === 'graph';
+
     return html`
       <div class="plan-workspace-resizer" role="separator" aria-orientation="vertical" aria-label="Resize plan workspace"></div>
       <aside class="plan-workspace" aria-label="Plan workspace">
         <div class="plan-workspace-header">
-          <div>
-            <div class="plan-workspace-kicker">Executor</div>
-            <h2 class="plan-workspace-title">${this._title}</h2>
-          </div>
-          <button class="plan-workspace-close" aria-label="Close plan workspace" @click=${this.close}>×</button>
+          <h2 class="plan-workspace-title">${this._title}</h2>
+          ${showBack ? html`
+            <button class="plan-workspace-close" aria-label="Back to plans list" @click=${() => this.openList()}>×</button>
+          ` : nothing}
         </div>
         <div class="plan-workspace-body">
           ${this._renderContent()}
@@ -164,7 +214,12 @@ export class RPlanWorkspace extends RorschachBase {
           class="plan-graph" 
           .planData=${this._currentGraph}
           .selectedTaskId=${this._selectedTaskId}
-          @node-select=${(e: CustomEvent) => this._selectedTaskId = e.detail.id}
+          @node-select=${(e: CustomEvent) => {
+            this._selectedTaskId = e.detail.id;
+            if (typeof localStorage !== 'undefined') {
+              localStorage.setItem('rorschach.planWorkspaceSelectedTaskId', e.detail.id);
+            }
+          }}
         ></r-force-graph>
         <div class="plan-task-detail-wrap">
           ${this._renderTaskDetail(this._taskById(this._selectedTaskId!))}

@@ -27,8 +27,11 @@ export class RAttachments extends RorschachBase {
     }
 
     .attachment-image {
-      max-width: 200px;
-      max-height: 150px;
+      width: 100%;
+      max-width: 100%;
+      max-height: 450px;
+      object-fit: contain;
+      background: rgba(0, 0, 0, 0.15);
       display: block;
       border-radius: 4px;
     }
@@ -39,8 +42,10 @@ export class RAttachments extends RorschachBase {
     }
 
     .attachment-video {
-      max-width: 250px;
-      max-height: 180px;
+      width: 100%;
+      max-width: 100%;
+      max-height: 450px;
+      background: rgba(0, 0, 0, 0.15);
       display: block;
       border-radius: 4px;
     }

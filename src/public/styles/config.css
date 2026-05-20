@@ -44,15 +44,107 @@ r-observe-panel { display: contents; }
 
 .config-content {
   flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.config-sidebar {
+  width: 220px;
+  border-right: 1px solid var(--border);
+  background: rgba(3, 7, 10, 0.45);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
   overflow-y: auto;
+  padding: 1.75rem 0.75rem;
+}
+
+.config-sidebar-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.config-sidebar-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  font-family: var(--font-ui);
+}
+
+.config-sidebar-item:hover {
+  background: rgba(0, 196, 212, 0.04);
+  border-color: rgba(0, 196, 212, 0.08);
+}
+
+.config-sidebar-item.active {
+  background: rgba(0, 196, 212, 0.08);
+  border-color: rgba(0, 196, 212, 0.2);
+  box-shadow: 0 0 12px rgba(0, 196, 212, 0.04);
+}
+
+.config-sidebar-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.7rem;
+  bottom: 0.7rem;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.config-sidebar-item-title {
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-mid);
+  transition: color 0.15s;
+}
+
+.config-sidebar-item:hover .config-sidebar-item-title {
+  color: var(--text);
+}
+
+.config-sidebar-item.active .config-sidebar-item-title {
+  color: var(--accent-bright);
+}
+
+.config-sidebar-item-sub {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  margin-top: 0.15rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 400;
+}
+
+.config-sidebar-item.active .config-sidebar-item-sub {
+  color: var(--text-mid);
 }
 
 #config-form {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 1.75rem;
-  padding: 2rem 2.5rem;
-  max-width: 540px;
+  padding: 2rem 3rem;
+  max-width: 600px;
+  overflow-y: auto;
 }
 
 .config-pane {
@@ -64,9 +156,13 @@ r-observe-panel { display: contents; }
 .config-pane.active { display: flex; }
 
 .config-section {
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: 1.25rem;
+}
+
+.config-section.active {
+  display: flex;
 }
 
 .pane-header {

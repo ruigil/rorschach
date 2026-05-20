@@ -1,6 +1,14 @@
 import { type RorschachState } from './types/state.js'
 import { type ReactiveController, type ReactiveControllerHost } from 'lit'
-import { modeLabel } from './core/utils.js'
+
+const savedMessagesStr = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.lastMessages') : null;
+let savedMessages = [];
+if (savedMessagesStr) {
+  try { savedMessages = JSON.parse(savedMessagesStr); } catch {}
+}
+
+const savedMode = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.currentMode') || '' : '';
+const savedPlanOpen = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.planWorkspaceOpen') === 'true' : false;
 
 const state: RorschachState = {
   isConnected: false,
@@ -8,7 +16,7 @@ const state: RorschachState = {
   currentUserId: null,
   currentUserRoles: [],
   agents: [],
-  currentMode: '',
+  currentMode: savedMode,
   currentModeDisplayName: '',
   topics: [],
   actors: [],
@@ -17,8 +25,9 @@ const state: RorschachState = {
   usage: [],
   tools: {},
   ws: null,
-  messages: [],
+  messages: savedMessages,
   activeTab: 'chat',
+  observeActiveTab: 'metrics',
   activeStream: {
     isActive: false,
     reasoning: '',
@@ -27,6 +36,7 @@ const state: RorschachState = {
     attachments: [],
   },
   currentPlanGraph: null,
+  planWorkspaceOpen: savedPlanOpen,
 }
 
 type StateKey = keyof RorschachState
@@ -73,44 +83,6 @@ export const store = {
     return state
   },
 
-  setMode(mode: string, displayName?: string) {
-    this.set('currentMode', mode)
-    this.set('currentModeDisplayName', displayName || modeLabel(mode))
-  },
-
-  addLog(log: any) {
-    this.set('logs', [log, ...state.logs].slice(0, 500))
-  },
-
-  appendMessage(msg: any) {
-    this.set('messages', [...state.messages, msg])
-  },
-
-  updateActiveStream(patch: Partial<RorschachState['activeStream']>) {
-    this.set('activeStream', { ...state.activeStream, ...patch })
-  },
-
-  commitActiveStream(role: 'assistant' | 'error' = 'assistant', text?: string) {
-    const active = state.activeStream
-    const message = {
-      id: crypto.randomUUID(),
-      role,
-      text: text ?? active.text,
-      reasoning: active.reasoning,
-      sources: [...active.sources],
-      attachments: [...active.attachments],
-      timestamp: Date.now(),
-    }
-    this.appendMessage(message)
-    this.set('activeStream', {
-      isActive: false,
-      reasoning: '',
-      text: '',
-      sources: [],
-      attachments: [],
-    })
-    this.set('isWaiting', false)
-  },
 }
 
 export class StoreController<T extends StateKey> implements ReactiveController {
