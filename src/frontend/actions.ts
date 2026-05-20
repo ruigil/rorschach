@@ -1,5 +1,5 @@
 import { store } from './store.js';
-import { type RorschachState, type Message } from './types/state.js';
+import { type RorschachState, type Message, type LogEvent, type Attachment } from './types/state.js';
 import { modeLabel, toolActionLabel } from './core/utils.js';
 
 export function setMode(mode: string, displayName?: string) {
@@ -11,9 +11,16 @@ export function setMode(mode: string, displayName?: string) {
   }
 }
 
-export function addLog(log: any) {
+export function addLog(log: Partial<LogEvent> & { message: string }) {
   const currentLogs = store.get('logs');
-  store.set('logs', [log, ...currentLogs].slice(0, 500));
+  const entry: LogEvent = {
+    timestamp: log.timestamp ?? Date.now(),
+    level: log.level ?? 'info',
+    source: log.source ?? '',
+    message: log.message,
+    data: log.data,
+  };
+  store.set('logs', [entry, ...currentLogs].slice(0, 500));
 }
 
 export function appendMessage(msg: Message) {
@@ -52,19 +59,6 @@ export function commitActiveStream(role: 'assistant' | 'error' = 'assistant', te
   store.set('isWaiting', false);
 }
 
-export async function bootstrapSession() {
-  try {
-    const res = await fetch(new URL('me', location.href));
-    if (res.ok) {
-      const { userId, roles } = await res.json();
-      store.set('currentUserId', userId);
-      store.set('currentUserRoles', roles ?? []);
-    }
-  } catch (e) {
-    console.error('Failed to fetch user session', e);
-  }
-}
-
 export function switchMode(mode: string) {
   const ws = store.get('ws');
   if (!mode || mode === store.get('currentMode') || ws?.readyState !== WebSocket.OPEN) {
@@ -74,7 +68,7 @@ export function switchMode(mode: string) {
   return true;
 }
 
-export function submitChatMessage(text: string, attachments: any[]) {
+export function submitChatMessage(text: string, attachments: Attachment[]) {
   const ws = store.get('ws');
   const isWaiting = store.get('isWaiting');
   if ((!text && attachments.length === 0) || ws?.readyState !== WebSocket.OPEN || isWaiting) {
@@ -92,10 +86,6 @@ export function submitChatMessage(text: string, attachments: any[]) {
   ws.send(JSON.stringify({ text, attachments }));
   store.set('isWaiting', true);
   updateActiveStream({ isActive: true });
-
-  const logoMark = document.querySelector('.logo-mark');
-  logoMark?.classList.add('noticing');
-  setTimeout(() => logoMark?.classList.remove('noticing'), 700);
 }
 
 export async function logout() {

@@ -10,13 +10,18 @@ import { RTraceWaterfall } from './r-trace-waterfall.js';
 import { RToolsList } from './r-tools-list.js';
 import { RCostsTable } from './r-costs-table.js';
 import { RForceGraph } from './r-force-graph.js';
+import { OBSERVE_TABS, DEFAULT_OBSERVE_TAB } from '../constants.js';
+import type { ObserveTab } from '../constants.js';
 import type { Topic, Actor } from '../types/state.js';
 
-const CONTROL_BY_TAB: Record<string, string> = {
+const CONTROL_BY_TAB: Record<ObserveTab, string> = {
   metrics: 'metrics-summary',
   logs:    'obs-log-controls',
   traces:  'obs-traces-controls',
   memory:  'obs-memory-controls',
+  topics:  '',
+  tools:   '',
+  costs:   '',
 };
 
 @customElement('r-observe-panel')
@@ -82,7 +87,7 @@ export class RObservePanel extends RorschachBase {
   }
 
   override render() {
-    const activeTab = this._observeActiveTab.value || 'metrics';
+    const activeTab = this._observeActiveTab.value || DEFAULT_OBSERVE_TAB;
     const activeControl = CONTROL_BY_TAB[activeTab];
     const actors = this._actors.value;
     const topics = this._topics.value;

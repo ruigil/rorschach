@@ -1,5 +1,6 @@
 import { type RorschachState } from './types/state.js'
 import { type ReactiveController, type ReactiveControllerHost } from 'lit'
+import { DEFAULT_TAB, DEFAULT_OBSERVE_TAB } from './constants.js'
 
 const savedMessagesStr = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.lastMessages') : null;
 let savedMessages = [];
@@ -26,8 +27,8 @@ const state: RorschachState = {
   tools: {},
   ws: null,
   messages: savedMessages,
-  activeTab: 'chat',
-  observeActiveTab: 'metrics',
+  activeTab: DEFAULT_TAB,
+  observeActiveTab: DEFAULT_OBSERVE_TAB,
   activeStream: {
     isActive: false,
     reasoning: '',

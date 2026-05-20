@@ -1,4 +1,5 @@
 import { store } from '../../frontend/store.js'
+import { DEFAULT_TAB, DEFAULT_OBSERVE_TAB } from '../../frontend/constants.js'
 
 const defaultState: Record<string, any> = {
   isConnected: false,
@@ -16,8 +17,8 @@ const defaultState: Record<string, any> = {
   tools: {},
   ws: null,
   messages: [],
-  activeTab: 'chat',
-  observeActiveTab: 'metrics',
+  activeTab: DEFAULT_TAB,
+  observeActiveTab: DEFAULT_OBSERVE_TAB,
   activeStream: {
     isActive: false,
     reasoning: '',

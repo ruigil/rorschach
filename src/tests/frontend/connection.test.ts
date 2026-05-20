@@ -63,12 +63,15 @@ describe('connection frame handlers (via actions)', () => {
 
   test('tool_registered adds to tools map', () => {
     store.set('tools', {})
-    store.set('tools', { ...store.get('tools'), ['web_search']: { type: 'function' } })
+    const schema = { type: 'function' as const, function: { name: 'web_search', description: 'Search the web', parameters: {} } }
+    store.set('tools', { ...store.get('tools'), ['web_search']: schema })
     expect(store.get('tools')).toHaveProperty('web_search')
   })
 
   test('tool_unregistered removes from tools map', () => {
-    store.set('tools', { web_search: {}, fetch_page: {} })
+    const schema1 = { type: 'function' as const, function: { name: 'web_search', description: '', parameters: {} } }
+    const schema2 = { type: 'function' as const, function: { name: 'fetch_page', description: '', parameters: {} } }
+    store.set('tools', { web_search: schema1, fetch_page: schema2 })
     const next = { ...store.get('tools') }
     delete next['web_search']
     store.set('tools', next)

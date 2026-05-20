@@ -2,7 +2,7 @@ import { html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 import { StoreController, store } from '../store.js';
-import { switchMode } from '../session.js';
+import { switchMode } from '../actions.js';
 import type { Agent } from '../types/state.js';
 
 @customElement('r-mode-select')

@@ -1,9 +1,10 @@
 import { store } from './store.js'
 import { type WSFrame } from './types/websocket.js'
+import { type TraceSpan, type UsageEntry, type PlanGraph, type LogEvent } from './types/state.js'
 import { toolActionLabel } from './core/utils.js'
 import { updateActiveStream, commitActiveStream, setMode, addLog } from './actions.js'
 
-const frameHandlers: Record<string, (msg: any) => void> = {
+const frameHandlers: Record<string, (msg: Record<string, any>) => void> = {
   chunk: (msg) => {
     updateActiveStream({
       isActive: true,
@@ -34,20 +35,20 @@ const frameHandlers: Record<string, (msg: any) => void> = {
     if (msg.active) setMode('planner', 'Planner')
     else if (store.get('currentMode') === 'planner') setMode('chatbot', 'Chatbot')
   },
-  log: (msg) => addLog(msg),
+  log: (msg) => addLog(msg as Partial<LogEvent> & { message: string }),
   metrics: (msg) => {
     if (msg.actors) store.set('actors', msg.actors)
     if (msg.topics) store.set('topics', msg.topics)
   },
-  trace: (msg) => store.set('traces', [...store.get('traces'), msg]),
-  usage: (msg) => store.set('usage', [...store.get('usage'), msg]),
+  trace: (msg) => store.set('traces', [...store.get('traces'), msg as TraceSpan]),
+  usage: (msg) => store.set('usage', [...store.get('usage'), msg as UsageEntry]),
   tool_registered: (msg) => store.set('tools', { ...store.get('tools'), [msg.name]: msg.schema }),
   tool_unregistered: (msg) => {
     const nextTools = { ...store.get('tools') }
     delete nextTools[msg.name]
     store.set('tools', nextTools)
   },
-  planGraph: (msg) => store.set('currentPlanGraph', msg),
+  planGraph: (msg) => store.set('currentPlanGraph', msg as PlanGraph),
 }
 
 

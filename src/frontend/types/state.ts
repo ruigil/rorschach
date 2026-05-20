@@ -1,3 +1,5 @@
+import type { Tab, ObserveTab } from '../constants.js'
+
 export interface Agent {
   mode: string
   displayName: string
@@ -20,7 +22,7 @@ export interface LogEvent {
   level: 'debug' | 'info' | 'warn' | 'error'
   source: string
   message: string
-  data?: any
+  data?: Record<string, unknown>
 }
 
 export interface Attachment {
@@ -55,6 +57,42 @@ export interface ActiveStream {
   attachments: Attachment[]
 }
 
+export interface TraceSpan {
+  traceId: string
+  spanId: string
+  parentSpanId: string | null
+  actor: string
+  operation: string
+  timestamp: number
+  durationMs?: number
+  status: string
+  data?: Record<string, unknown>
+}
+
+export interface UsageEntry {
+  role: string
+  model: string
+  inputTokens: number
+  outputTokens: number
+  contextWindow: number | null
+  cost: number
+}
+
+export interface PlanGraphNode {
+  id: string
+  label: string
+  description?: string
+  validationCriteria?: string
+  dependencies: string[]
+  dependents: string[]
+}
+
+export interface PlanGraph {
+  planId?: string
+  plan?: { goal: string; createdAt: string; taskCount: number }
+  nodes: PlanGraphNode[]
+}
+
 export interface RorschachState {
   isConnected: boolean
   isWaiting: boolean
@@ -66,14 +104,14 @@ export interface RorschachState {
   topics: Topic[]
   actors: Actor[]
   logs: LogEvent[]
-  traces: any[]
-  usage: any[]
-  tools: Record<string, any>
+  traces: TraceSpan[]
+  usage: UsageEntry[]
+  tools: Record<string, { type: 'function'; function: { name: string; description: string; parameters: object } }>
   ws: WebSocket | null
   messages: Message[]
-  activeTab: string
-  observeActiveTab: string
+  activeTab: Tab
+  observeActiveTab: ObserveTab
   activeStream: ActiveStream
-  currentPlanGraph: any | null
+  currentPlanGraph: PlanGraph | null
   planWorkspaceOpen: boolean
 }

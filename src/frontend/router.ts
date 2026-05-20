@@ -1,38 +1,30 @@
-import { store } from './store.js';
+import { store } from './store.js'
+import { TABS, DEFAULT_TAB } from './constants.js'
+import type { Tab } from './constants.js'
 
-const HASH_TO_TAB: Record<string, string> = {
-  '#/chat': 'chat',
-  '#/config': 'config',
-  '#/observe': 'observe',
-};
+const TAB_TO_HASH: Record<Tab, string> = Object.fromEntries(
+  TABS.map(tab => [tab, `#/${tab}`])
+) as Record<Tab, string>
 
-const TAB_TO_HASH: Record<string, string> = {
-  'chat': '#/chat',
-  'config': '#/config',
-  'observe': '#/observe',
-};
+const HASH_TO_TAB: Record<string, Tab> = Object.fromEntries(
+  TABS.map(tab => [`#/${tab}`, tab])
+)
 
 export function initRouter() {
-  // Sync state from hash
   function syncHashToStore() {
-    const hash = window.location.hash;
-    const tab = HASH_TO_TAB[hash] || 'chat';
+    const tab = HASH_TO_TAB[window.location.hash] || DEFAULT_TAB
     if (store.get('activeTab') !== tab) {
-      store.set('activeTab', tab);
+      store.set('activeTab', tab)
     }
   }
 
-  // Run initial sync from URL to store
-  syncHashToStore();
+  syncHashToStore()
+  window.addEventListener('hashchange', syncHashToStore)
 
-  // Listen for subsequent hash changes (e.g. back/forward button clicks)
-  window.addEventListener('hashchange', syncHashToStore);
-
-  // Sync state changes back to hash
   store.subscribe('activeTab', (activeTab) => {
-    const expectedHash = TAB_TO_HASH[activeTab as string] || '#/chat';
+    const expectedHash = TAB_TO_HASH[activeTab as Tab] || `#/${DEFAULT_TAB}`
     if (window.location.hash !== expectedHash) {
-      window.location.hash = expectedHash;
+      window.location.hash = expectedHash
     }
-  });
+  })
 }
