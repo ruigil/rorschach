@@ -62,7 +62,7 @@
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "model": "google/gemini-3.5-flash",
+        "model": "deepseek/deepseek-v4-flash",
         "toolFilter": {
           "deny": [
             "bash",
@@ -81,15 +81,14 @@
     "memory": {
       "workPath": "workspace/memory",
       "kgraph": {
-        "embeddingModel": "perplexity/pplx-embed-v1-0.6b",
-        "embeddingDimensions": 768,
+        "embeddingModel": "qwen/qwen3-embedding-4b",
+        "embeddingDimensions": 4096,
         "cosineSimilarityThreshold": 0.6,
         "rerankerModel": "cohere/rerank-4-pro"
       },
       "system": {
-        "model": "google/gemini-3.1-flash-lite",
-        "consolidationIntervalMs": 3600000,
-        "contextIntervalMs": 3600000
+        "model": "google/gemini-3.5-flash",
+        "consolidationIntervalMs": 3600000
       }
     },
     "workflows": {

@@ -33,7 +33,7 @@ export class RPlanWorkspace extends RorschachBase {
     if (mode !== this._lastMode) {
       const isInitialLoad = this._lastMode === '';
       this._lastMode = mode;
-      if (mode === 'executor') {
+      if (mode === 'executor' || mode === 'planner') {
         if (isInitialLoad) {
           const savedOpen = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.planWorkspaceOpen') === 'true' : false;
           if (savedOpen) {
@@ -60,11 +60,13 @@ export class RPlanWorkspace extends RorschachBase {
       if (planGraph) {
         if (planGraph.planId) {
           this.openGraph(planGraph.planId);
-        } else {
+        } else if (planGraph.nodes && planGraph.nodes.length) {
           this._view = 'graph';
           this._currentGraph = planGraph;
           this._selectedTaskId = this._currentGraph.nodes[0]?.id ?? null;
           this._title = this._currentGraph.plan.goal;
+        } else {
+          this.openList();
         }
       }
     }

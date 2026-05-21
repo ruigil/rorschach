@@ -235,5 +235,22 @@
   font-size: 0.72rem;
   line-height: 1.55;
   opacity: 0.8;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-mid) transparent;
+}
+
+.reasoning-content::-webkit-scrollbar { width: 4px; }
+.reasoning-content::-webkit-scrollbar-track { background: transparent; }
+.reasoning-content::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
+.reasoning-content::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+@keyframes reasoning-glow {
+  0%, 100% { color: var(--text-dim); text-shadow: none; }
+  50% { color: var(--accent-bright); text-shadow: 0 0 8px var(--accent-glow); }
+}
+
+.reasoning-streaming summary {
+  color: var(--accent);
+  animation: reasoning-glow 1.8s ease-in-out infinite;
 }
 

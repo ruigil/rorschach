@@ -223,6 +223,9 @@ export class RForceGraph extends RorschachBase {
       .map((edge: any) => ({ ...edge, source: nodeById[edge.source], target: nodeById[edge.target] }))
       .filter((edge: any) => edge.source && edge.target);
 
+    const hasIncoming = new Set(edges.map((e: any) => e.target.id));
+    const hasOutgoing = new Set(edges.map((e: any) => e.source.id));
+
     const svg = d3.select(container).append('svg')
       .attr('width', '100%').attr('height', '100%');
 
@@ -248,7 +251,13 @@ export class RForceGraph extends RorschachBase {
     };
 
     const node = g.append('g').selectAll('g').data(nodes).enter().append('g')
-      .attr('class', (d: any) => 'plan-node' + (d.id === this.selectedTaskId ? ' selected' : ''))
+      .attr('class', (d: any) => {
+        let cls = 'plan-node';
+        if (d.id === this.selectedTaskId) cls += ' selected';
+        if (!hasIncoming.has(d.id) && hasOutgoing.has(d.id)) cls += ' source';
+        if (hasIncoming.has(d.id) && !hasOutgoing.has(d.id)) cls += ' sink';
+        return cls;
+      })
       .attr('cursor', 'pointer')
       .call(d3.drag()
         .on('start', (ev: any, d: any) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })

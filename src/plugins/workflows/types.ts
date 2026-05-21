@@ -88,7 +88,7 @@ export type PlanStoreMsg =
 export type WorkflowToolsMsg =
   | ToolInvokeMsg
   | { type: '_done' }
-  | { type: '_writeDone'; filepath: string; taskCount: number; replyTo: ActorRef<import('../../types/tools.ts').ToolReply>; span: import('../../system/types.ts').SpanHandle | null }
+  | { type: '_writeDone'; filepath: string; taskCount: number; planId: string; clientId?: string; replyTo: ActorRef<import('../../types/tools.ts').ToolReply>; span: import('../../system/types.ts').SpanHandle | null }
   | { type: '_writeErr';  error: string;    replyTo: ActorRef<import('../../types/tools.ts').ToolReply>; span: import('../../system/types.ts').SpanHandle | null }
 
 

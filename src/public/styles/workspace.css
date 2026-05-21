@@ -188,6 +188,16 @@ body.plan-workspace-resizing {
   stroke-width: 1.2px;
 }
 
+.plan-node.source rect {
+  stroke: #39e8a0;
+  stroke-width: 1.8px;
+}
+
+.plan-node.sink rect {
+  stroke: #e05040;
+  stroke-width: 1.8px;
+}
+
 .plan-node.selected rect {
   stroke: var(--accent);
   stroke-width: 2px;

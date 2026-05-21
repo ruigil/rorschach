@@ -7,7 +7,7 @@ import { applyToolFilter } from '../../system/tool-utils.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import type { ToolMsg } from '../../types/tools.ts'
-import { SwitchAgentTopic, type AgentFactoryOpts } from '../../types/agents.ts'
+import { type AgentFactoryOpts } from '../../types/agents.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 import { savePlanTool, updatePlanTool, deletePlanTool, listPlansTool, getPlanTool, showPlanGraphTool } from './tools.ts'
 import type { PlannerAgentMsg, PlannerAgentState } from './types.ts'
@@ -126,14 +126,6 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
           type:     'append',
           messages: [{ role: 'assistant', content: state.pendingFormalizeSummary }],
         })
-        if (state.activeClientId) {
-          ctx.publish(SwitchAgentTopic, {
-            clientId: state.activeClientId,
-            mode:     'chatbot',
-            source:   'programmatic',
-            reason:   'plannerFormalizedPlan',
-          })
-        }
         return { state: resetScratch(state) }
       }
 

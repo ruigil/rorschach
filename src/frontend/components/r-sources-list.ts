@@ -16,12 +16,12 @@ export class RSourcesList extends RorschachBase {
   static override styles = css`
     :host {
       display: block;
-      margin-top: 0.5rem;
-      margin-bottom: 0.75rem;
       white-space: normal;
     }
 
     .sources {
+      margin-top: 0.75rem;
+      margin-bottom: 0.75rem;
       display: flex;
       flex-direction: column;
     }

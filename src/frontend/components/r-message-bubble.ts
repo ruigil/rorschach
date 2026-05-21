@@ -46,14 +46,10 @@ export class RMessageBubble extends RorschachBase {
             <span class="bubble-name">${this._getLabelText()}</span>
           </div>
           ${reasoning ? html`
-            <details class="reasoning" ?open=${!this.message}>
+            <details class="reasoning ${!this.message && this.stream?.reasoning ? 'reasoning-streaming' : ''}">
               <summary>Thinking...</summary>
               <pre class="reasoning-content">${reasoning}</pre>
             </details>
-          ` : ''}
-
-          ${sources.length > 0 ? html`
-            <r-sources-list .sources=${sources}></r-sources-list>
           ` : ''}
 
           ${attachments.length > 0 ? html`
@@ -67,6 +63,10 @@ export class RMessageBubble extends RorschachBase {
           <div class="bubble-body">
             ${this.message ? renderMarkdown(text) : text}
           </div>
+
+          ${sources.length > 0 ? html`
+            <r-sources-list .sources=${sources}></r-sources-list>
+          ` : ''}
         </div>
       </div>
     `;

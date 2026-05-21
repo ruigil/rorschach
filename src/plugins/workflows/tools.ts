@@ -234,7 +234,7 @@ export const WorkflowTools = (
             await mkdir(plansDir, { recursive: true })
             await Bun.write(filepath, JSON.stringify(plan, null, 2))
           })(),
-          ()    => ({ type: '_writeDone' as const, filepath, taskCount: plan.tasks.length, replyTo: msg.replyTo, span }),
+          ()    => ({ type: '_writeDone' as const, filepath, taskCount: plan.tasks.length, planId: plan.id, clientId: msg.clientId, replyTo: msg.replyTo, span }),
           (err) => ({ type: '_writeErr'  as const, error: String(err),                    replyTo: msg.replyTo, span }),
         )
 
@@ -264,7 +264,15 @@ export const WorkflowTools = (
           ask<PlanStoreMsg, PlanStoreReply>(planStoreRef, replyTo => ({ type: 'update', planId, patch, replyTo }), { timeoutMs: 5_000 }),
           reply => {
             if (!reply.ok) replyError(msg.replyTo, reply.error)
-            else if ('updated' in reply) msg.replyTo.send({ type: 'toolResult', result: { text: `Plan ${planId} updated successfully (${reply.plan.tasks.length} tasks).` } })
+            else if ('updated' in reply) {
+              msg.replyTo.send({ type: 'toolResult', result: { text: `Plan ${planId} updated successfully (${reply.plan.tasks.length} tasks).` } })
+              if (msg.clientId) {
+                ctx.publish(OutboundMessageTopic, {
+                  clientId: msg.clientId,
+                  text: JSON.stringify({ type: 'planGraph', planId }),
+                })
+              }
+            }
             else replyError(msg.replyTo, 'Unexpected plan store response.')
             return { type: '_done' }
           },
@@ -288,7 +296,15 @@ export const WorkflowTools = (
           ask<PlanStoreMsg, PlanStoreReply>(planStoreRef, replyTo => ({ type: 'delete', planId: arg.planId, replyTo }), { timeoutMs: 5_000 }),
           reply => {
             if (!reply.ok) replyError(msg.replyTo, reply.error)
-            else if ('deleted' in reply) msg.replyTo.send({ type: 'toolResult', result: { text: `Plan ${arg.planId} deleted.` } })
+            else if ('deleted' in reply) {
+              msg.replyTo.send({ type: 'toolResult', result: { text: `Plan ${arg.planId} deleted.` } })
+              if (msg.clientId) {
+                ctx.publish(OutboundMessageTopic, {
+                  clientId: msg.clientId,
+                  text: JSON.stringify({ type: 'planGraph' }),
+                })
+              }
+            }
             else replyError(msg.replyTo, 'Unexpected plan store response.')
             return { type: '_done' }
           },
@@ -304,13 +320,19 @@ export const WorkflowTools = (
       return { state }
     },
 
-    _writeDone: (state, msg) => {
-      const { filepath, taskCount, replyTo, span } = msg
+    _writeDone: (state, msg, ctx) => {
+      const { filepath, taskCount, planId, clientId, replyTo, span } = msg
       span?.done({ filepath, taskCount })
       replyTo.send({
         type: 'toolResult',
         result: { text: `Plan saved to ${filepath} — ${taskCount} tasks.` },
       })
+      if (clientId) {
+        ctx.publish(OutboundMessageTopic, {
+          clientId,
+          text: JSON.stringify({ type: 'planGraph', planId }),
+        })
+      }
       return { state }
     },
 
