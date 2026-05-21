@@ -132,4 +132,4 @@ export type CostEvent = {
   /** Present for per-client usage; absent for background tasks */
   clientId?: string
 }
-export const CostTopic = createTopic<CostEvent>('system.costs')
+export const CostTopic = createTopic<CostEvent>('cognitive.costs')
