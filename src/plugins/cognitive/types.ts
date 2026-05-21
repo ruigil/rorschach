@@ -1,4 +1,5 @@
 import type { ActorRef } from '../../system/types.ts'
+import { createTopic } from '../../system/types.ts'
 import type {
   ApiMessage,
   AudioProviderReply,
@@ -108,3 +109,8 @@ export type UserContextWorkerMsg =
   | { type: '_start' }
   | { type: '_stop' }
   | LlmProviderReply
+
+// ─── Topic: published (retained) after each context summary generation ───
+
+export type UserContextEvent = { userId: string; summary: string }
+export const UserContextTopic = createTopic<UserContextEvent>('user.context')

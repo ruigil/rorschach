@@ -1,7 +1,7 @@
 import type { ActorDef, PersistenceAdapter } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type { ApiMessage } from '../../types/llm.ts'
-import { UserContextTopic } from '../../types/memory.ts'
+import { UserContextTopic } from './types.ts'
 import { HistorySnapshotTopic, type AgentHistoryMsg } from '../../types/agents.ts'
 
 // ─── Message protocol ───

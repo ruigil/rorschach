@@ -7,7 +7,7 @@ import type {
 } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { UserContextMsg, UserContextWorkerMsg } from './types.ts'
-import { UserContextTopic } from '../../types/memory.ts'
+import { UserContextTopic } from './types.ts'
 import { UserStreamTopic, type UserStreamEvent } from '../../types/events.ts'
 
 // ─── Options ───
