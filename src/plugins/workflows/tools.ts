@@ -5,8 +5,7 @@ import { onMessage } from '../../system/match.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import { defineTool, parseToolArgs } from '../../system/tool-utils.ts'
 import type { ToolReply } from '../../types/tools.ts'
-import type { Plan, PlanTask } from '../../types/plans.ts'
-import type { WorkflowToolsMsg, PlanStoreMsg, PlanStoreReply, PlanSummary } from './types.ts'
+import type { Plan, PlanTask, WorkflowToolsMsg, PlanStoreMsg, PlanStoreReply, PlanSummary } from './types.ts'
 
 export const listPlansTool = defineTool('list_plans', 'List saved plans created by the planner.', {
   type: 'object',
@@ -29,7 +28,7 @@ export const showPlanGraphTool = defineTool('show_plan_graph', 'Open the graphic
   },
 })
 
-export const formalizePlanTool = defineTool('formalize_plan', 'Finalize and save the accepted plan to disk. Call this only when the user has explicitly approved the plan you described conversationally.', {
+export const savePlanTool = defineTool('save_plan', 'Finalize and save the accepted plan to disk. Call this only when the user has explicitly approved the plan you described conversationally.', {
   type: 'object',
   properties: {
     goal:    { type: 'string', description: 'The user-stated goal the plan addresses' },
@@ -51,6 +50,39 @@ export const formalizePlanTool = defineTool('formalize_plan', 'Finalize and save
     },
   },
   required: ['goal', 'summary', 'tasks'],
+})
+
+export const updatePlanTool = defineTool('update_plan', 'Update an existing saved plan. You can modify the goal, context/summary, and tasks. Only the fields you provide will be updated; omitted fields remain unchanged.', {
+  type: 'object',
+  required: ['planId'],
+  properties: {
+    planId:  { type: 'string', description: 'The id of the plan to update.' },
+    goal:    { type: 'string', description: 'The updated goal for the plan.' },
+    summary: { type: 'string', description: 'Updated narrative summary of context and decisions.' },
+    tasks: {
+      type: 'array',
+      description: 'Updated ordered list of tasks forming a DAG.',
+      items: {
+        type: 'object',
+        properties: {
+          id:                 { type: 'string', description: 'Short unique identifier' },
+          name:               { type: 'string', description: 'Short task name' },
+          description:        { type: 'string', description: 'What needs to be done' },
+          validationCriteria: { type: 'string', description: 'How to verify this task is complete' },
+          dependencies:       { type: 'array', items: { type: 'string' }, description: 'IDs of tasks that must complete before this one' },
+        },
+        required: ['id', 'name', 'description', 'validationCriteria', 'dependencies'],
+      },
+    },
+  },
+})
+
+export const deletePlanTool = defineTool('delete_plan', 'Delete a saved plan by id. This permanently removes the plan file from disk.', {
+  type: 'object',
+  required: ['planId'],
+  properties: {
+    planId: { type: 'string', description: 'The id of the plan to delete.' },
+  },
 })
 
 const formatPlanList = (plans: PlanSummary[]): string => {
@@ -161,10 +193,10 @@ export const WorkflowTools = (
         return { state }
       }
 
-      if (msg.toolName === formalizePlanTool.name) {
+      if (msg.toolName === savePlanTool.name) {
         const parent = ctx.trace.fromHeaders()
         const span = parent
-          ? ctx.trace.child(parent.traceId, parent.spanId, formalizePlanTool.name, { toolName: formalizePlanTool.name })
+          ? ctx.trace.child(parent.traceId, parent.spanId, savePlanTool.name, { toolName: savePlanTool.name })
           : null
 
         let goal:    string
@@ -206,6 +238,65 @@ export const WorkflowTools = (
           (err) => ({ type: '_writeErr'  as const, error: String(err),                    replyTo: msg.replyTo, span }),
         )
 
+        return { state }
+      }
+
+      if (msg.toolName === updatePlanTool.name) {
+        let planId: string
+        let patch: { goal?: string; context?: string; tasks?: PlanTask[] }
+        try {
+          const args = JSON.parse(msg.arguments) as { planId?: string; goal?: string; summary?: string; tasks?: PlanTask[] }
+          if (!args.planId || typeof args.planId !== 'string') throw new Error('missing planId')
+          planId = args.planId.trim()
+          patch = {
+            ...(args.goal    !== undefined && { goal: args.goal }),
+            ...(args.summary !== undefined && { context: args.summary }),
+            ...(args.tasks   !== undefined && { tasks: args.tasks }),
+          }
+          if (Object.keys(patch).length === 0) throw new Error('provide at least one field to update (goal, summary, or tasks)')
+        } catch (err) {
+          replyError(msg.replyTo, `invalid arguments: ${String(err)}`)
+          return { state }
+        }
+
+        ctx.log.info('workflow-tools: updating plan', { planId })
+        ctx.pipeToSelf(
+          ask<PlanStoreMsg, PlanStoreReply>(planStoreRef, replyTo => ({ type: 'update', planId, patch, replyTo }), { timeoutMs: 5_000 }),
+          reply => {
+            if (!reply.ok) replyError(msg.replyTo, reply.error)
+            else if ('updated' in reply) msg.replyTo.send({ type: 'toolResult', result: { text: `Plan ${planId} updated successfully (${reply.plan.tasks.length} tasks).` } })
+            else replyError(msg.replyTo, 'Unexpected plan store response.')
+            return { type: '_done' }
+          },
+          error => {
+            replyError(msg.replyTo, String(error))
+            return { type: '_done' }
+          },
+        )
+        return { state }
+      }
+
+      if (msg.toolName === deletePlanTool.name) {
+        const arg = planIdArg(msg.arguments)
+        if (!arg.ok) {
+          replyError(msg.replyTo, arg.error)
+          return { state }
+        }
+
+        ctx.log.info('workflow-tools: deleting plan', { planId: arg.planId })
+        ctx.pipeToSelf(
+          ask<PlanStoreMsg, PlanStoreReply>(planStoreRef, replyTo => ({ type: 'delete', planId: arg.planId, replyTo }), { timeoutMs: 5_000 }),
+          reply => {
+            if (!reply.ok) replyError(msg.replyTo, reply.error)
+            else if ('deleted' in reply) msg.replyTo.send({ type: 'toolResult', result: { text: `Plan ${arg.planId} deleted.` } })
+            else replyError(msg.replyTo, 'Unexpected plan store response.')
+            return { type: '_done' }
+          },
+          error => {
+            replyError(msg.replyTo, String(error))
+            return { type: '_done' }
+          },
+        )
         return { state }
       }
 

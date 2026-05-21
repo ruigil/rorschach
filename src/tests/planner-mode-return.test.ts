@@ -19,7 +19,7 @@ const FormalizingLlm = (): ActorDef<LlmProviderMsg, { calls: number }> => ({
         requestId: msg.requestId,
         calls:     [{
           id:        'formalize-1',
-          name:      'formalize_plan',
+          name:      'save_plan',
           arguments: JSON.stringify({
             goal:    'surface mode in web UI',
             summary: 'Plan accepted.',
@@ -38,7 +38,7 @@ const FormalizingLlm = (): ActorDef<LlmProviderMsg, { calls: number }> => ({
 })
 
 describe('planner mode return', () => {
-  test('switches back to chatbot after formalize_plan succeeds', async () => {
+  test('switches back to chatbot after save_plan succeeds', async () => {
     const system = await AgentSystem()
     const switches: SwitchAgentEvent[] = []
     system.subscribe(SwitchAgentTopic, event => switches.push(event))
@@ -46,7 +46,7 @@ describe('planner mode return', () => {
     const MockWorkflowTools = (): ActorDef<any, null> => ({
       initialState: null,
       handler: (state, msg) => {
-        if (msg.type === 'invoke' && msg.toolName === 'formalize_plan') {
+        if (msg.type === 'invoke' && msg.toolName === 'save_plan') {
           msg.replyTo.send({
             type: 'toolResult',
             result: { text: 'Plan saved to mock-file — 0 tasks.' }

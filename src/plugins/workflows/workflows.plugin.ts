@@ -7,7 +7,7 @@ import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents
 import { ExecutorAgentFactory } from './executor-agent.ts'
 import { PlannerAgentFactory } from './planner-agent.ts'
 import { PlanStore } from './plan-store.ts'
-import { WorkflowTools, getPlanTool, listPlansTool, showPlanGraphTool } from './tools.ts'
+import { WorkflowTools, getPlanTool, listPlansTool, showPlanGraphTool, updatePlanTool, deletePlanTool } from './tools.ts'
 import { buildWorkflowsRoutes, workflowsSchemas } from './routes.ts'
 import type { WorkflowsConfig, WorkflowToolsMsg, PlanStoreMsg } from './types.ts'
 
@@ -60,6 +60,8 @@ const buildTools = (toolsRef: ActorRef<WorkflowToolsMsg>): ToolCollection => {
     [listPlansTool.name]:     { ...listPlansTool, ref },
     [getPlanTool.name]:       { ...getPlanTool, ref },
     [showPlanGraphTool.name]: { ...showPlanGraphTool, ref },
+    [updatePlanTool.name]:    { ...updatePlanTool, ref },
+    [deletePlanTool.name]:    { ...deletePlanTool, ref },
   }
 }
 

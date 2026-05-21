@@ -1,9 +1,8 @@
-import { readdir } from 'node:fs/promises'
+import { readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ActorDef } from '../../system/types.ts'
 import { onMessage } from '../../system/match.ts'
-import type { Plan } from '../../types/plans.ts'
-import type { PlanGraph, PlanStoreMsg, PlanStoreReply, PlanSummary } from './types.ts'
+import type { Plan, PlanTask, PlanGraph, PlanStoreMsg, PlanStoreReply, PlanSummary } from './types.ts'
 
 const isPlan = (value: unknown): value is Plan => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -137,6 +136,56 @@ export const PlanStore = (plansDir: string): ActorDef<PlanStoreMsg, null> => ({
           if (!reply.ok || !('plan' in reply)) return reply
           return { ok: true as const, graph: toGraph(reply.plan) }
         }),
+        reply => {
+          msg.replyTo.send(reply)
+          return { type: '_done' }
+        },
+        error => {
+          msg.replyTo.send({ ok: false, error: String(error) })
+          return { type: '_done' }
+        },
+      )
+      return { state }
+    },
+
+    update: (state, msg, ctx) => {
+      ctx.pipeToSelf(
+        (async () => {
+          const found = await getPlan(plansDir, msg.planId)
+          if (!found.ok || !('plan' in found)) return found
+
+          const existing = found.plan
+          const updated: Plan = {
+            ...existing,
+            goal:    msg.patch.goal    ?? existing.goal,
+            context: msg.patch.context ?? existing.context,
+            tasks:   msg.patch.tasks   ?? existing.tasks,
+          }
+
+          await Bun.write(found.filepath, JSON.stringify(updated, null, 2))
+          return { ok: true as const, updated: true as const, plan: updated, filepath: found.filepath }
+        })(),
+        reply => {
+          msg.replyTo.send(reply)
+          return { type: '_done' }
+        },
+        error => {
+          msg.replyTo.send({ ok: false, error: String(error) })
+          return { type: '_done' }
+        },
+      )
+      return { state }
+    },
+
+    delete: (state, msg, ctx) => {
+      ctx.pipeToSelf(
+        (async () => {
+          const found = await getPlan(plansDir, msg.planId)
+          if (!found.ok || !('filepath' in found)) return found
+
+          await unlink(found.filepath)
+          return { ok: true as const, deleted: true as const, planId: msg.planId }
+        })(),
         reply => {
           msg.replyTo.send(reply)
           return { type: '_done' }

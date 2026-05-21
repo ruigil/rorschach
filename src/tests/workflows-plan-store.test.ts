@@ -5,9 +5,8 @@ import { tmpdir } from 'node:os'
 import { AgentSystem, ask } from '../system/index.ts'
 import { PlanStore } from '../plugins/workflows/plan-store.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
-import { WorkflowTools, listPlansTool, showPlanGraphTool, formalizePlanTool } from '../plugins/workflows/tools.ts'
-import type { Plan } from '../types/plans.ts'
-import type { WorkflowToolsMsg, PlanStoreMsg, PlanStoreReply } from '../plugins/workflows/types.ts'
+import { WorkflowTools, listPlansTool, showPlanGraphTool, savePlanTool } from '../plugins/workflows/tools.ts'
+import type { Plan, WorkflowToolsMsg, PlanStoreMsg, PlanStoreReply } from '../plugins/workflows/types.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 import { OutboundMessageTopic } from '../types/events.ts'
 import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
@@ -153,7 +152,7 @@ describe('workflows plan store', () => {
 
     const formalizeReply = await ask<ToolInvokeMsg, ToolReply>(tools, replyTo => ({
       type:      'invoke',
-      toolName:  formalizePlanTool.name,
+      toolName:  savePlanTool.name,
       arguments: JSON.stringify({
         goal:    'Learn antigravity',
         summary: 'Decided to use Gemini 3.5.',

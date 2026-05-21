@@ -9,7 +9,7 @@ import type { ApiMessage } from '../../types/llm.ts'
 import type { ToolMsg } from '../../types/tools.ts'
 import { SwitchAgentTopic, type AgentFactoryOpts } from '../../types/agents.ts'
 import type { MessageAttachment } from '../../types/events.ts'
-import { formalizePlanTool } from './tools.ts'
+import { savePlanTool, updatePlanTool, deletePlanTool, listPlansTool, getPlanTool, showPlanGraphTool } from './tools.ts'
 import type { PlannerAgentMsg, PlannerAgentState } from './types.ts'
 
 // ─── Planner configuration (used to configure per-session planner instances) ───
@@ -39,7 +39,12 @@ Today's date is ${new Date().toDateString()}.
 
 You have access to:
 - Research tools (web_search, fetch_file, etc.) to gather information proactively
-- formalize_plan: save the final plan to disk once the user explicitly accepts it. Requires goal, summary, and tasks.
+- save_plan: save the final plan to disk once the user explicitly accepts it. Requires goal, summary, and tasks.
+- update_plan: update an existing saved plan by id. You can modify goal, summary, and/or tasks.
+- delete_plan: delete a saved plan by id.
+- list_plans: list all saved plans.
+- get_plan: read a saved plan by id.
+- show_plan_graph: open the graphical DAG view for a plan.
 
 Process:
 1. Research the goal using available research tools to understand what is involved. Do this before asking the user anything you can look up yourself.
@@ -47,10 +52,11 @@ Process:
 Continue until you have gathered all constraints, preferences, and context required to build a complete plan.
 3. Once you have enough context, describe the full plan to the user in your response. Include every task with its id, name, description, validation criteria, and dependencies.
 4. Wait for the user's feedback. They may:
-   - Accept the plan: call formalize_plan with the goal, summary, and full task list.
-   - Request changes: do more research if needed and describe the revised plan.
+   - Accept the plan: call save_plan with the goal, summary, and full task list.
+   - Request changes: do more research if needed and describe the revised plan. If the plan was already saved, use update_plan to apply changes.
+   - Reject the plan: if they want to start over, use delete_plan to remove the saved plan.
 
-After calling formalize_plan, briefly acknowledge the save in one short sentence and stop — do not call any further tools in the same turn.
+After calling save_plan or update_plan, briefly acknowledge the save in one short sentence and stop — do not call any further tools in the same turn.
 
 Task quality guidelines:
 - Each task must have a clear, specific name and description
@@ -151,7 +157,7 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
     },
 
     onToolResult: (state, result) => {
-      if (result.toolName === formalizePlanTool.name && result.reply.type === 'toolResult') {
+      if ((result.toolName === savePlanTool.name || result.toolName === updatePlanTool.name) && result.reply.type === 'toolResult') {
         return { state: { ...state, pendingFormalizeSummary: result.reply.result.text } }
       }
       return { state }
@@ -206,9 +212,15 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
 
         ctx.log.info('planner-agent: started', { userId })
 
-        const formalizePlanToolRef = workflowToolsRef as unknown as ActorRef<ToolMsg>
-        if (!formalizePlanToolRef) {
+        const savePlanToolRef = workflowToolsRef as unknown as ActorRef<ToolMsg>
+        if (!savePlanToolRef) {
           ctx.log.error('planner-agent: workflowToolsRef is not configured!')
+        }
+
+        const planTools = [savePlanTool, updatePlanTool, deletePlanTool, listPlansTool, getPlanTool, showPlanGraphTool]
+        const tools: ToolCollection = {}
+        for (const tool of planTools) {
+          tools[tool.name] = { ...tool, ref: savePlanToolRef }
         }
 
         return {
@@ -216,10 +228,7 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
             ...state,
             tools: {
               ...state.tools,
-              [formalizePlanTool.name]: {
-                ...formalizePlanTool,
-                ref: formalizePlanToolRef,
-              },
+              ...tools,
             },
           },
         }

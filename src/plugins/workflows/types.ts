@@ -1,9 +1,24 @@
 import type { ActorRef } from '../../system/types.ts'
 import type { ToolInvokeMsg, ToolCollection, ToolFilter, ToolMsg } from '../../types/tools.ts'
 import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
-import type { Plan } from '../../types/plans.ts'
 import type { LoopMsg, LoopState } from '../../system/agent-loop.ts'
 import type { MessageAttachment } from '../../types/events.ts'
+
+export type PlanTask = {
+  id:                 string
+  name:               string
+  description:        string
+  validationCriteria: string
+  dependencies:       string[]
+}
+
+export type Plan = {
+  id:        string
+  goal:      string
+  context:   string
+  createdAt: string
+  tasks:     PlanTask[]
+}
 
 export type WorkflowsConfig = {
   plansDir: string
@@ -58,12 +73,16 @@ export type PlanStoreReply =
   | { ok: true; plans: PlanSummary[] }
   | { ok: true; plan: Plan; filepath: string }
   | { ok: true; graph: PlanGraph }
+  | { ok: true; deleted: true; planId: string }
+  | { ok: true; updated: true; plan: Plan; filepath: string }
   | { ok: false; error: string; status?: number }
 
 export type PlanStoreMsg =
   | { type: 'list'; replyTo: ActorRef<PlanStoreReply> }
   | { type: 'get'; planId: string; replyTo: ActorRef<PlanStoreReply> }
   | { type: 'graph'; planId: string; replyTo: ActorRef<PlanStoreReply> }
+  | { type: 'update'; planId: string; patch: { goal?: string; context?: string; tasks?: PlanTask[] }; replyTo: ActorRef<PlanStoreReply> }
+  | { type: 'delete'; planId: string; replyTo: ActorRef<PlanStoreReply> }
   | { type: '_done' }
 
 export type WorkflowToolsMsg =
