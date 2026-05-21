@@ -26,7 +26,7 @@ import {
   type SupervisionStrategy,
   type TraceContext,
 } from './types.ts'
-import { TraceTopic } from '../types/trace.ts'
+import { TraceTopic } from './types.ts'
 
 // ─── Trace ID generation ───────────────────────────────────────────────────
 

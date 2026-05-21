@@ -21,8 +21,8 @@ export {
   type ActorSlot,
 } from './plugin-config.ts'
 
-export { TraceTopic } from '../types/trace.ts'
-export type { TraceSpan } from '../types/trace.ts'
+export { TraceTopic } from './types.ts'
+export type { TraceSpan } from './types.ts'
 export type { SpanHandle } from './types.ts'
 
 export {

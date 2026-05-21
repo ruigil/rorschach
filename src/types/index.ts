@@ -1,6 +1,5 @@
 export * from './events.ts'
 export * from './tools.ts'
-export * from './trace.ts'
 export * from './llm.ts'
 export * from './memory.ts'
 export * from './agents.ts'

@@ -8,8 +8,8 @@ import {
   InboundMessageTopic, OutboundMessageTopic, OutboundBroadcastTopic,
 } from '../src/types/events.ts'
 import type { OutboundMessageEvent } from '../src/types/events.ts'
-import { TraceTopic } from '../src/types/trace.ts'
-import type { TraceSpan } from '../src/types/trace.ts'
+import { TraceTopic } from '../src/system/types.ts'
+import type { TraceSpan } from '../src/system/types.ts'
 import { CostTopic, LlmProviderTopic } from '../src/types/llm.ts'
 import type { CostEvent, LlmProviderMsg, LlmProviderReply, LlmProviderEvent } from '../src/types/llm.ts'
 import type { LogEvent, ActorRef } from '../src/system/types.ts'
