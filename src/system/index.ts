@@ -57,11 +57,8 @@ export {
   SystemLifecycleTopic,
   createTopic,
   emit,
-  STOP,
   redact,
 } from './actor/types.ts'
-
-export { createMailbox } from './actor/mailbox.ts'
 
 export { ConfigSchemaTopic, ConfigUpdateRequestTopic } from '../types/config.ts'
 export type { ConfigSchemaSection, ConfigUpdateRequest } from '../types/config.ts'

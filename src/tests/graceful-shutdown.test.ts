@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { AgentSystem, DeadLetterTopic, SystemLifecycleTopic } from '../system/index.ts'
-import { createMailbox } from '../system/index.ts'
-import { STOP } from '../system/index.ts'
+import { createMailbox } from '../system/actor/mailbox.ts'
+import { STOP } from '../system/actor/types.ts'
 import type {
   ActorDef,
   LifecycleEvent,
