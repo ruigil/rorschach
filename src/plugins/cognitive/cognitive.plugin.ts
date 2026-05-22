@@ -3,7 +3,7 @@ import { LlmProvider, OpenRouterAdapter } from './llm-provider.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import type { ToolFilter } from '../../types/tools.ts'
 import type { SessionConfig, UserContextMsg } from './types.ts'
-import { UserContextSupervisor } from './user-context.ts'
+import { UserContext } from './user-context.ts'
 import type { AgentDescriptor } from '../../types/agents.ts'
 import { AgentRegistry } from './agent-registry.ts'
 import { AgentRegistrationTopic } from '../../types/agents.ts'
@@ -31,7 +31,6 @@ export type CognitiveConfig = {
   chatbot?:     ChatbotAgentConfig
   session?:     SessionConfig
   userContext?: UserContextConfig
-  workPath?:    string
 }
 
 type ResolvedCognitiveConfig = CognitiveConfig & {
@@ -40,13 +39,13 @@ type ResolvedCognitiveConfig = CognitiveConfig & {
 }
 
 const defaultConfig: CognitiveConfig = {
-  workPath: 'workspace/history',
   chatbot: {
     model: 'deepseek/deepseek-v4-flash',
   },
   session: {
     defaultMode:        'chatbot',
-    historyWindowHours: 4,
+    contextWindowHours: 4,
+    contextPath:        'workspace/context',
   },
   userContext: {
     model:      'deepseek/deepseek-v4-flash',
@@ -104,7 +103,7 @@ const spawnAll = (
   chatbotConfig: ChatbotAgentConfig,
   sessionConfig: SessionConfig,
   userContextConfig: UserContextConfig | null,
-  workPath: string | undefined,
+  contextPath: string | undefined,
   gen: number,
 ): Omit<PluginState, 'initialized'> => {
 
@@ -121,8 +120,8 @@ const spawnAll = (
     SessionManager({
       llmRef:             llmProviderRef,
       defaultMode:        sessionConfig.defaultMode,
-      historyWindowHours: sessionConfig.historyWindowHours,
-      workPath,
+      contextWindowHours: sessionConfig.contextWindowHours,
+      contextPath,
     }),
   )
 
@@ -130,7 +129,7 @@ const spawnAll = (
   if (userContextConfig) {
     userContextRef = ctx.spawn(
       `user-context-${gen}`,
-      UserContextSupervisor({ model: userContextConfig.model, intervalMs: userContextConfig.intervalMs, workPath }),
+      UserContext({ model: userContextConfig.model, intervalMs: userContextConfig.intervalMs, contextPath }),
     )
   }
 
@@ -169,7 +168,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
       const slice = ctx.initialConfig() as ResolvedCognitiveConfig
       const llmProviderConfig = slice.llmProvider ?? null
       const userContextConfig = slice.userContext ?? null
-      const workPath          = slice.workPath
+      const contextPath       = slice.session.contextPath
 
       publishConfigSurface(ctx, config, () => slice)
 
@@ -178,7 +177,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
         return { state: initialState }
       }
 
-      const children = spawnAll(ctx, llmProviderConfig, slice.chatbot, slice.session, userContextConfig, workPath, 0)
+      const children = spawnAll(ctx, llmProviderConfig, slice.chatbot, slice.session, userContextConfig, contextPath, 0)
       ctx.log.info('cognitive plugin activated')
       return { state: { initialized: true, ...children } }
     },
@@ -204,7 +203,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
       const slice = msg.slice as ResolvedCognitiveConfig | undefined
       const newLlmProviderConfig = slice?.llmProvider ?? null
       const newUserContextConfig = slice?.userContext ?? null
-      const newWorkPath          = slice?.workPath
+      const newContextPath       = slice?.session?.contextPath
 
       // Stop all existing actors
       if (state.llmProvider.ref)    ctx.stop(state.llmProvider.ref)
@@ -222,7 +221,7 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
       // Respawn everything with new config
       const gen = state.llmProvider.gen + 1
       const resolvedSlice = slice as ResolvedCognitiveConfig
-      const children = spawnAll(ctx, newLlmProviderConfig, resolvedSlice.chatbot, resolvedSlice.session, newUserContextConfig, newWorkPath, gen)
+      const children = spawnAll(ctx, newLlmProviderConfig, resolvedSlice.chatbot, resolvedSlice.session, newUserContextConfig, newContextPath, gen)
 
       return { state: { initialized: true, ...children } }
     },

@@ -52,7 +52,6 @@
       }
     },
     "cognitive": {
-      "workPath": "workspace/history",
       "llmProvider": {
         "apiKey": "${OPENROUTER_API_KEY}",
         "reasoning": {
@@ -71,7 +70,8 @@
         }
       },
       "session": {
-        "historyWindowHours": 2
+        "contextWindowHours": 2,
+        "contextPath": "workspace/context"
       },
       "userContext": {
         "model": "deepseek/deepseek-v4-flash",

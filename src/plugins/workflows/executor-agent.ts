@@ -5,7 +5,8 @@ import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import type { ActorRef } from '../../system/types.ts'
-import type { AgentFactoryOpts } from '../../types/agents.ts'
+import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentContextMsg } from '../../types/agents.ts'
+import { assembleAgentMessages, type ContextView } from '../../system/context-assembly.ts'
 import type { ExecutorAgentMsg } from './types.ts'
 
 export type ExecutorAgentOptions = {
@@ -14,17 +15,29 @@ export type ExecutorAgentOptions = {
   tools: ToolCollection
   userId: string
   llmRef: ActorRef<LlmProviderMsg>
+  contextStoreRef: ActorRef<AgentContextMsg>
 }
 
 export type ExecutorAgentState = {
   loop: LoopState
-  history: ApiMessage[]
+  contextView: ContextView
   activeClientId: string
 }
 
+const EXECUTOR_MODE = 'executor'
+
+const emptyContextView = (userId = ''): ContextView => ({
+  userId,
+  version:        0,
+  recentMessages: [],
+  userContext:    null,
+  modeSummaries:  {},
+  toolSummaries:  [],
+})
+
 const initialState = (): ExecutorAgentState => ({
   loop: idleLoopState(),
-  history: [],
+  contextView: emptyContextView(),
   activeClientId: '',
 })
 
@@ -45,20 +58,25 @@ export const ExecutorAgent = (options: ExecutorAgentOptions): ActorDef<ExecutorA
   type S = ExecutorAgentState
   type Ctx = ActorContext<M>
 
-  const buildTurnMessages = (state: S): ApiMessage[] => [
-    { role: 'system', content: buildSystemPrompt() },
-    ...state.history,
-  ]
+  const buildTurnMessages = (state: S, userMsg: ApiMessage): ApiMessage[] =>
+    assembleAgentMessages(state.contextView, {
+      mode:                      EXECUTOR_MODE,
+      systemPrompt:              buildSystemPrompt(),
+      includeUserContext:        false,
+      includeCurrentModeSummary: true,
+      includeOtherModeSummaries: false,
+      includeToolSummaries:      true,
+    }, userMsg)
 
   const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
     const userMsg: ApiMessage = { role: 'user', content: msg.text }
     const nextState = {
       ...state,
       activeClientId: msg.clientId,
-      history: [...state.history, userMsg],
     }
+    options.contextStoreRef.send({ type: 'append', mode: EXECUTOR_MODE, source: 'user', clientId: msg.clientId, injected: msg.isInjected || msg.isCron || false, messages: [userMsg] })
     return loop.startTurn(nextState, {
-      messages: buildTurnMessages(nextState),
+      messages: buildTurnMessages(nextState, userMsg),
       userId: options.userId,
       clientId: msg.clientId,
     }, ctx)
@@ -77,15 +95,17 @@ export const ExecutorAgent = (options: ExecutorAgentOptions): ActorDef<ExecutorA
       llm:       'The executor encountered an error. Please try again.',
       loopLimit: 'Tool loop limit reached in executor. Please try again.',
     },
-    onComplete: (state, finalText) => ({
-      state: finalText
-        ? { ...state, history: [...state.history, { role: 'assistant', content: finalText }] }
-        : state,
-    }),
+    onComplete: (state, finalText) => {
+      if (finalText) {
+        options.contextStoreRef.send({ type: 'append', mode: EXECUTOR_MODE, source: 'assistant', clientId: state.activeClientId, messages: [{ role: 'assistant', content: finalText }] })
+      }
+      return { state }
+    },
     onError: (state) => ({ state }),
-    onBatchHistoryReady: (state, messages) => ({
-      state: { ...state, history: [...state.history, ...messages] },
-    }),
+    onBatchHistoryReady: (state, messages) => {
+      options.contextStoreRef.send({ type: 'append', mode: EXECUTOR_MODE, messages })
+      return { state }
+    },
   })
 
   const hostInterceptor: Interceptor<M, S> = (state, msg, ctx, next) => {
@@ -96,13 +116,38 @@ export const ExecutorAgent = (options: ExecutorAgentOptions): ActorDef<ExecutorA
       return handleUserMessage(state, m as Extract<M, { type: 'userMessage' }>, ctx)
     }
 
+    if (m.type === '_contextSnapshot') {
+      return {
+        state: {
+          ...state,
+          contextView: {
+            userId:         m.userId,
+            version:        m.version,
+            recentMessages: m.recentMessages,
+            userContext:    m.userContext,
+            modeSummaries:  m.modeSummaries,
+            toolSummaries:  m.toolSummaries,
+          },
+        },
+      }
+    }
+
     return next(state, msg)
   }
 
   return {
     initialState,
     lifecycle: onLifecycle({
-      start: (state) => ({ state }),
+      start: (state, ctx) => {
+        ctx.subscribe(ContextSnapshotTopic, (event) => {
+          if (event.userId !== options.userId) return null
+          return {
+            type: '_contextSnapshot' as const,
+            ...event,
+          }
+        })
+        return { state }
+      },
     }),
     handler: loop.idle,
     interceptors: [hostInterceptor],
@@ -111,9 +156,10 @@ export const ExecutorAgent = (options: ExecutorAgentOptions): ActorDef<ExecutorA
   }
 }
 
-export const ExecutorAgentFactory = (options: Omit<ExecutorAgentOptions, 'userId' | 'llmRef'>) =>
+export const ExecutorAgentFactory = (options: Omit<ExecutorAgentOptions, 'userId' | 'llmRef' | 'contextStoreRef'>) =>
   (opts: AgentFactoryOpts): ActorDef<ExecutorAgentMsg, ExecutorAgentState> => ExecutorAgent({
     ...options,
     userId: opts.userId,
     llmRef: opts.llmRef,
+    contextStoreRef: opts.contextStoreRef,
   })

@@ -1,8 +1,10 @@
 import type { ActorRef } from '../../system/types.ts'
 import type { ToolInvokeMsg, ToolCollection, ToolFilter, ToolMsg } from '../../types/tools.ts'
-import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
+import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { LoopMsg, LoopState } from '../../system/agent-loop.ts'
 import type { MessageAttachment } from '../../types/events.ts'
+import type { ContextView } from '../../system/context-assembly.ts'
+import type { ContextSnapshotEvent } from '../../types/agents.ts'
 
 export type PlanTask = {
   id:                 string
@@ -95,6 +97,7 @@ export type WorkflowToolsMsg =
 export type ExecutorAgentExtra =
   | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isCron?: boolean; isInjected?: boolean }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
+  | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
 
 export type ExecutorAgentMsg = LoopMsg<ExecutorAgentExtra>
 
@@ -102,12 +105,13 @@ export type PlannerExtra =
   | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isCron?: boolean; isInjected?: boolean }
   | { type: '_toolRegistered'; name: string; schema: import('../../types/tools.ts').ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
+  | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
 
 export type PlannerAgentMsg = LoopMsg<PlannerExtra>
 
 export type PlannerAgentState = {
   loop:                    LoopState
-  plannerHistory:          ApiMessage[]
+  contextView:             ContextView
   tools:                   ToolCollection
   pendingFormalizeSummary: string | null
   activeClientId:          string

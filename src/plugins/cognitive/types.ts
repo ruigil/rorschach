@@ -22,7 +22,8 @@ import type {
 
 export type SessionConfig = {
   defaultMode:        string   // mode for first-connect, cron routing, crash fallback. Defaults to 'chatbot'.
-  historyWindowHours: number   // trim HistoryStore records older than this on every append.
+  contextWindowHours: number   // trim ContextStore records older than this on every append.
+  contextPath?:       string
 }
 
 // ─── LLM provider adapter contracts ───
@@ -97,17 +98,11 @@ export type LlmProviderInternalMsg =
 
 // ─── User context message protocol ───
 
-// Supervisor: subscribes to topics + timer, routes turns to per-user workers.
 export type UserContextMsg =
   | { type: '_turn';             userId: string; userText: string; assistantText: string; timestamp: number }
   | { type: '_run' }
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_workerDone';       worker: ActorRef<UserContextWorkerMsg> }
-
-// Worker: one per user, runs the update loop.
-export type UserContextWorkerMsg =
-  | { type: '_start' }
-  | { type: '_stop' }
+  | { type: '_contextSnapshot';  userId: string; userContext: string | null }
   | LlmProviderReply
 
 // ─── Topic: published (retained) after each context summary generation ───

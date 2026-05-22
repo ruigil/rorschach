@@ -56,7 +56,7 @@ describe('session manager mode UI events', () => {
     system.spawn('session-manager', SessionManager({
       llmRef,
       defaultMode:        'chatbot',
-      historyWindowHours: 4,
+      contextWindowHours: 4,
     }))
 
     const clientFrames: Record<string, string[]> = { c1: [], c2: [] }
@@ -122,7 +122,7 @@ describe('session manager mode UI events', () => {
     system.spawn('session-manager', SessionManager({
       llmRef,
       defaultMode:        'chatbot',
-      historyWindowHours: 4,
+      contextWindowHours: 4,
     }))
     await tick()
 

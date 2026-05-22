@@ -7,7 +7,8 @@ import { applyToolFilter } from '../../system/tool-utils.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import type { ToolMsg } from '../../types/tools.ts'
-import { type AgentFactoryOpts } from '../../types/agents.ts'
+import { ContextSnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
+import { assembleAgentMessages, type ContextView } from '../../system/context-assembly.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 import { savePlanTool, updatePlanTool, deletePlanTool, listPlansTool, getPlanTool, showPlanGraphTool } from './tools.ts'
 import type { PlannerAgentMsg, PlannerAgentState } from './types.ts'
@@ -24,10 +25,21 @@ export type PlannerAgentConfig = {
 
 const initialPlannerAgentState = (): PlannerAgentState => ({
   loop:                    idleLoopState(),
-  plannerHistory:          [],
+  contextView:             emptyContextView(),
   tools:                   {},
   pendingFormalizeSummary: null,
   activeClientId:          '',
+})
+
+const PLANNER_MODE = 'planner'
+
+const emptyContextView = (userId = ''): ContextView => ({
+  userId,
+  version:        0,
+  recentMessages: [],
+  userContext:    null,
+  modeSummaries:  {},
+  toolSummaries:  [],
 })
 
 
@@ -75,18 +87,24 @@ export const PlannerAgentFactory = (config: PlannerAgentConfig) =>
 
 const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): ActorDef<PlannerAgentMsg, PlannerAgentState> => {
   const { model, maxToolLoops, toolFilter, plansDir, workflowToolsRef } = config
-  const { userId, historyStoreRef, llmRef } = opts
+  const { userId, contextStoreRef, llmRef } = opts
 
   type M   = PlannerAgentMsg
   type S   = PlannerAgentState
   type Ctx = ActorContext<M>
 
-  const buildTurnMessages = (state: PlannerAgentState): ApiMessage[] =>
-    [{ role: 'system', content: buildSystemPrompt() }, ...state.plannerHistory]
+  const buildTurnMessages = (state: PlannerAgentState, userMsg: ApiMessage): ApiMessage[] =>
+    assembleAgentMessages(state.contextView, {
+      mode:                      PLANNER_MODE,
+      systemPrompt:              buildSystemPrompt(),
+      includeUserContext:        true,
+      includeCurrentModeSummary: true,
+      includeOtherModeSummaries: false,
+      includeToolSummaries:      true,
+    }, userMsg)
 
   const resetScratch = (state: S): S => ({
     ...state,
-    plannerHistory:          [],
     pendingFormalizeSummary: null,
   })
 
@@ -95,10 +113,10 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
     const stateNext: S = {
       ...state,
       activeClientId: msg.clientId,
-      plannerHistory: [...state.plannerHistory, userMsg],
     }
+    contextStoreRef.send({ type: 'append', mode: PLANNER_MODE, source: 'user', clientId: msg.clientId, injected: msg.isInjected || msg.isCron || false, messages: [userMsg] })
     return loop.startTurn(stateNext, {
-      messages: buildTurnMessages(stateNext),
+      messages: buildTurnMessages(stateNext, userMsg),
       userId,
       clientId: msg.clientId,
     }, ctx)
@@ -122,17 +140,20 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
     onComplete: (state, finalText, _usage, ctx) => {
       if (state.pendingFormalizeSummary) {
         ctx.log.info('planner: formalized plan, resetting scratch', { userId })
-        historyStoreRef.send({
+        contextStoreRef.send({
           type:     'append',
+          mode:     PLANNER_MODE,
+          source:   'assistant',
+          clientId: state.activeClientId,
           messages: [{ role: 'assistant', content: state.pendingFormalizeSummary }],
         })
         return { state: resetScratch(state) }
       }
 
-      const newPlannerHistory: ApiMessage[] = finalText
-        ? [...state.plannerHistory, { role: 'assistant', content: finalText }]
-        : state.plannerHistory
-      return { state: { ...state, plannerHistory: newPlannerHistory } }
+      if (finalText) {
+        contextStoreRef.send({ type: 'append', mode: PLANNER_MODE, source: 'assistant', clientId: state.activeClientId, messages: [{ role: 'assistant', content: finalText }] })
+      }
+      return { state }
     },
 
     onError: (state, err, ctx) => {
@@ -145,7 +166,8 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
     },
 
     onBatchHistoryReady: (state, messages) => {
-      return { state: { ...state, plannerHistory: [...state.plannerHistory, ...messages] } }
+      contextStoreRef.send({ type: 'append', mode: PLANNER_MODE, messages })
+      return { state }
     },
 
     onToolResult: (state, result) => {
@@ -162,6 +184,22 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
     if (m.type === 'userMessage') {
       if (state.loop.phase !== 'idle') return { state, stash: true }
       return handleUserMessage(state, m as Extract<M, { type: 'userMessage' }>, ctx)
+    }
+
+    if (m.type === '_contextSnapshot') {
+      return {
+        state: {
+          ...state,
+          contextView: {
+            userId:         m.userId,
+            version:        m.version,
+            recentMessages: m.recentMessages,
+            userContext:    m.userContext,
+            modeSummaries:  m.modeSummaries,
+            toolSummaries:  m.toolSummaries,
+          },
+        },
+      }
     }
 
     if (m.type === '_toolRegistered') {
@@ -200,6 +238,14 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
             }
           }
           return { type: '_toolUnregistered' as const, name: event.name }
+        })
+
+        ctx.subscribe(ContextSnapshotTopic, (event) => {
+          if (event.userId !== userId) return null
+          return {
+            type: '_contextSnapshot' as const,
+            ...event,
+          }
         })
 
         ctx.log.info('planner-agent: started', { userId })

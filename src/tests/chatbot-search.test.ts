@@ -2,7 +2,7 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
 import { OutboundMessageTopic } from '../types/events.ts'
 import { Chatbot, type ChatbotState } from '../plugins/cognitive/chatbot-agent.ts'
-import { HistoryStore } from '../plugins/cognitive/history-store.ts'
+import { ContextStore } from '../plugins/cognitive/context-store.ts'
 import { LlmProvider, OpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import type { BraveLlmContextResponse } from '../plugins/tools/web-search.ts'
@@ -23,11 +23,9 @@ import { idleLoopState } from '../system/agent-loop.ts'
 
 const INITIAL_CHATBOT_STATE: ChatbotState = {
   loop:           idleLoopState(),
-  historyMirror:  [],
-  historyVersion: 0,
+  contextView:    { userId: '', version: 0, recentMessages: [], userContext: null, modeSummaries: {}, toolSummaries: [] },
   tools:          {},
   sessionUsage:   { promptTokens: 0, completionTokens: 0 },
-  userContext:    null,
   activeClientId: '',
 }
 
@@ -104,10 +102,10 @@ const stubFetchByUrl = (completions: (() => Response)[], braveFactory?: () => Re
 const spawnChatbot = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
   const userId = `test-user-${crypto.randomUUID()}`
   const llmRef = system.spawn('llm-provider', LlmProvider({ adapter: OpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }))
-  const historyStoreRef = system.spawn(`history-store-${userId}`, HistoryStore({ userId }))
+  const contextStoreRef = system.spawn(`context-store-${userId}`, ContextStore({ userId }))
   return system.spawn(
     'chatbot',
-    Chatbot({ model: LLM_PROVIDER_ADAPTER_OPTS.model }, { clientId: CLIENT_ID, userId, historyStoreRef, llmRef }),
+    Chatbot({ model: LLM_PROVIDER_ADAPTER_OPTS.model }, { clientId: CLIENT_ID, userId, contextStoreRef, llmRef }),
     { state: { ...INITIAL_CHATBOT_STATE } },
   )
 }

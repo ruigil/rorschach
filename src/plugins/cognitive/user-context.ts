@@ -1,4 +1,4 @@
-import type { ActorDef, ActorRef, MessageHandler, ActorResult } from '../../system/types.ts'
+import type { ActorDef, ActorRef } from '../../system/types.ts'
 import { onLifecycle, onMessage } from '../../system/match.ts'
 import type {
   ApiMessage,
@@ -6,37 +6,32 @@ import type {
   LlmProviderReply,
 } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
-import type { UserContextMsg, UserContextWorkerMsg } from './types.ts'
+import type { UserContextMsg } from './types.ts'
 import { UserContextTopic } from './types.ts'
 import { UserStreamTopic, type UserStreamEvent } from '../../types/events.ts'
+import { ContextSnapshotTopic } from '../../types/agents.ts'
 
 // ─── Options ───
 
 export type UserContextOptions = {
   model:         string
   intervalMs:    number
-  workPath?:     string
-}
-
-type WorkerOptions = {
-  model:            string
-  userId:           string
-  llmRef:           ActorRef<LlmProviderMsg>
-  turns:            UserStreamEvent[]
-  workPath?:        string
+  contextPath?:  string
 }
 
 // ─── Internal types ───
 
+type ActiveRequest = {
+  requestId:   string
+  accumulated: string
+  userId:      string
+}
+
 export type UserContextState = {
   llmRef:  ActorRef<LlmProviderMsg> | null
   buffers: Record<string, UserStreamEvent[]>
-  workers: Record<string, ActorRef<UserContextWorkerMsg>>
-}
-
-type WorkerState = {
-  requestId:      string | null
-  accumulated:    string
+  active:  Record<string, ActiveRequest>   // userId → in-flight LLM request
+  userContexts: Record<string, string>      // userId → current context summary
 }
 
 // ─── System prompt ───
@@ -66,90 +61,30 @@ const buildMessages = (userId: string, currentContext: string, turns: UserStream
   ]
 }
 
-// ─── Worker Actor ───
+// ─── Actor ───
 
-const UserContextWorker = (options: WorkerOptions): ActorDef<UserContextWorkerMsg, WorkerState> => {
-  const { model, userId, llmRef, turns, workPath = 'workspace/history' } = options
+export const UserContext = (options: UserContextOptions): ActorDef<UserContextMsg, UserContextState> => {
+  const { model, intervalMs, contextPath = 'workspace/context' } = options
 
-  return {
-    initialState: { requestId: null, accumulated: '' },
-    handler: onMessage<UserContextWorkerMsg, WorkerState>({
-      _start: (state, _, context) => {
-        context.pipeToSelf(
-          (async () => {
-            try {
-              return await Bun.file(`${workPath}/${userId}/context.md`).text()
-            } catch {
-              return ''
-            }
-          })(),
-          (content) => {
-            const requestId = crypto.randomUUID()
-            llmRef.send({
-              type: 'stream',
-              requestId,
-              model,
-              messages: buildMessages(userId, content, turns),
-              role: 'user-context',
-              replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
-            })
-            // Return a dummy chunk to initialize requestId in state
-            return { type: 'llmChunk' as const, requestId, text: '', done: false }
-          },
-          (error) => {
-            context.log.error('user context worker: failed to read context file', { userId, error: String(error) })
-            return { type: '_stop' as const }
-          }
-        )
-        return { state }
-      },
+  const startUserUpdate = (userId: string, turns: UserStreamEvent[], llmRef: ActorRef<LlmProviderMsg>, state: UserContextState, ctx: any): UserContextState => {
+    const requestId = crypto.randomUUID()
+    const currentContext = state.userContexts[userId] ?? ''
 
-      llmChunk: (state, msg) => {
-        if (state.requestId !== null && msg.requestId !== state.requestId) return { state }
-        return { state: { ...state, requestId: msg.requestId, accumulated: state.accumulated + msg.text } }
-      },
+    llmRef.send({
+      type: 'stream',
+      requestId,
+      model,
+      messages: buildMessages(userId, currentContext, turns),
+      role: 'user-context',
+      replyTo: ctx.self as unknown as ActorRef<LlmProviderReply>,
+    })
 
-      llmReasoningChunk: (state) => ({ state }),
-
-      llmDone: (state, msg, context) => {
-        if (msg.requestId !== state.requestId) return { state }
-        const summary = state.accumulated.trim()
-        context.log.info('user context updated', { userId, length: summary.length })
-
-        context.publishRetained(UserContextTopic, userId, { userId, summary })
-
-        context.pipeToSelf(
-          Bun.write(`${workPath}/${userId}/context.md`, summary),
-          () => {
-            context.log.info('user context saved', { userId })
-            return { type: '_stop' as const }
-          },
-          (error) => {
-            context.log.error('user context save failed', { userId, error: String(error) })
-            return { type: '_stop' as const }
-          }
-        )
-        return { state }
-      },
-
-      llmError: (state, msg, context) => {
-        if (msg.requestId !== state.requestId) return { state }
-        context.log.error('user context LLM error', { userId, error: String(msg.error) })
-        return { state, become: (s, m, c) => { c.stop(c.self); return { state: s } } } // Quick stop
-      },
-
-      _stop: (state, _, context) => {
-        context.stop(context.self)
-        return { state }
-      },
-    }),
+    return {
+      ...state,
+      active: { ...state.active, [userId]: { requestId, accumulated: '', userId } },
+      buffers: { ...state.buffers, [userId]: [] },
+    }
   }
-}
-
-// ─── Supervisor Actor ───
-
-export const UserContextSupervisor = (options: UserContextOptions): ActorDef<UserContextMsg, UserContextState> => {
-  const { model, intervalMs, workPath } = options
 
   return {
     initialState: INITIAL_USER_CONTEXT_STATE,
@@ -169,15 +104,13 @@ export const UserContextSupervisor = (options: UserContextOptions): ActorDef<Use
           type: '_llmProvider' as const,
           ref: e.ref,
         }))
+        context.subscribe(ContextSnapshotTopic, (e) => ({
+          type: '_contextSnapshot' as const,
+          userId: e.userId,
+          userContext: e.userContext,
+        }))
         context.timers.startPeriodicTimer('user-context-run', { type: '_run' }, intervalMs)
         return { state }
-      },
-      terminated: (state, event) => {
-        const entry = Object.entries(state.workers).find(([, ref]) => ref.name === event.ref.name)
-        if (!entry) return { state }
-        const [userId] = entry
-        const { [userId]: _, ...workers } = state.workers
-        return { state: { ...state, workers } }
       },
     }),
 
@@ -195,31 +128,82 @@ export const UserContextSupervisor = (options: UserContextOptions): ActorDef<Use
         }
       },
 
+      _contextSnapshot: (state, msg) => {
+        return {
+          state: {
+            ...state,
+            userContexts: {
+              ...state.userContexts,
+              [msg.userId]: msg.userContext ?? '',
+            },
+          },
+        }
+      },
+
       _run: (state, _, context) => {
         if (!state.llmRef) return { state }
 
-        const workers = { ...state.workers }
-        const buffers = { ...state.buffers }
-
-        for (const [userId, turns] of Object.entries(buffers)) {
-          if (workers[userId]) continue // Already running for this user
+        let next = state
+        for (const [userId, turns] of Object.entries(state.buffers)) {
+          if (state.active[userId]) continue
           if (turns.length === 0) continue
-
-          const worker = context.spawn(
-            `user-context-worker-${userId}`,
-            UserContextWorker({ model, userId, llmRef: state.llmRef, turns, workPath }),
-          )
-          worker.send({ type: '_start' })
-          workers[userId] = worker
-          buffers[userId] = []
+          next = startUserUpdate(userId, turns, state.llmRef, next, context)
         }
 
-        return { state: { ...state, workers, buffers } }
+        return { state: next }
       },
 
       _llmProvider: (state, msg) => ({ state: { ...state, llmRef: msg.ref } }),
 
-      _workerDone: (state) => ({ state }),
+      llmChunk: (state, msg) => {
+        const entry = Object.values(state.active).find(a => a.requestId === msg.requestId)
+        if (!entry) return { state }
+        return {
+          state: {
+            ...state,
+            active: {
+              ...state.active,
+              [entry.userId]: { ...entry, accumulated: entry.accumulated + msg.text },
+            },
+          },
+        }
+      },
+
+      llmReasoningChunk: (state) => ({ state }),
+
+      llmDone: (state, msg, context) => {
+        const entry = Object.values(state.active).find(a => a.requestId === msg.requestId)
+        if (!entry) return { state }
+
+        const { userId } = entry
+        const summary = entry.accumulated.trim()
+        context.log.info('user context updated', { userId, length: summary.length })
+
+        context.publishRetained(UserContextTopic, userId, { userId, summary })
+
+        const { [userId]: _, ...active } = state.active
+        const next = {
+          ...state,
+          active,
+          userContexts: {
+            ...state.userContexts,
+            [userId]: summary,
+          },
+        }
+
+        // Send a self-message to check if other users have buffered turns that can start now
+        context.self.send({ type: '_run' as const })
+
+        return { state: next }
+      },
+
+      llmError: (state, msg, context) => {
+        const entry = Object.values(state.active).find(a => a.requestId === msg.requestId)
+        if (!entry) return { state }
+        context.log.error('user context LLM error', { userId: entry.userId, error: String(msg.error) })
+        const { [entry.userId]: _, ...active } = state.active
+        return { state: { ...state, active } }
+      },
     }),
   }
 }
@@ -227,5 +211,6 @@ export const UserContextSupervisor = (options: UserContextOptions): ActorDef<Use
 const INITIAL_USER_CONTEXT_STATE: UserContextState = {
   llmRef:  null,
   buffers: {},
-  workers: {},
+  active:  {},
+  userContexts: {},
 }

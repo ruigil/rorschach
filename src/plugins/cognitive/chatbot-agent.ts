@@ -2,31 +2,28 @@ import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from 
 import { onLifecycle } from '../../system/match.ts'
 import { agentLoop, idleLoopState, type LoopMsg, type LoopState } from '../../system/agent-loop.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
-import { UserStreamTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter, ToolFinalReply, ToolMsg, ToolSchema } from '../../types/tools.ts'
 import { applyToolFilter } from '../../system/tool-utils.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage, TokenUsage } from '../../types/llm.ts'
-import { HistorySnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
+import { ContextSnapshotTopic, type AgentFactoryOpts, type ContextSnapshotEvent } from '../../types/agents.ts'
+import { assembleAgentMessages, type ContextView } from '../../system/context-assembly.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 
 // ─── State ───
 
 export type ChatbotState = {
   loop:           LoopState
-  historyMirror:  ApiMessage[]
-  historyVersion: number
+  contextView:    ContextView
   tools:          ToolCollection
   sessionUsage:   TokenUsage
-  userContext:    string | null
   activeClientId: string
-  isInjected?:    boolean
 }
 // ─── Chatbot actor message protocol ───
 
 type ChatbotExtra =
   | { type: 'userMessage';      clientId: string; text: string; attachments?: MessageAttachment[]; isCron?: boolean; isInjected?: boolean }
-  | { type: '_historySnapshot'; messages: ApiMessage[]; userContext: string | null; version: number }
+  | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
   | { type: '_toolRegistered';  name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
   | { type: '_bgToolDone';      toolName: string; toolCallId: string; reply: ToolFinalReply }
@@ -49,9 +46,20 @@ export type ChatbotAgentConfig = {
 
 
 
-const buildSystemPrompt = (basePrompt: string | undefined, userContext: string | null): string => {
+const CHATBOT_MODE = 'chatbot'
+
+const emptyContextView = (userId = ''): ContextView => ({
+  userId,
+  version:        0,
+  recentMessages: [],
+  userContext:    null,
+  modeSummaries:  {},
+  toolSummaries:  [],
+})
+
+const buildSystemPrompt = (basePrompt: string | undefined): string => {
   const todayDateNote = `Today's date is ${new Date().toDateString()}.`
-  return [basePrompt, todayDateNote, userContext, HISTORY_MARKERS_NOTE].filter(Boolean).join('\n\n---\n\n')
+  return [basePrompt, todayDateNote, HISTORY_MARKERS_NOTE].filter(Boolean).join('\n\n---\n\n')
 }
 
 const assembleUserText = (
@@ -90,11 +98,9 @@ const assembleUserText = (
 
 const initialChatbotState = (): ChatbotState => ({
   loop:           idleLoopState(),
-  historyMirror:  [],
-  historyVersion: 0,
+  contextView:    emptyContextView(),
   tools:          {},
   sessionUsage:   { promptTokens: 0, completionTokens: 0 },
-  userContext:    null,
   activeClientId: '',
 })
 
@@ -106,32 +112,37 @@ export const Chatbot = (
   opts:   AgentFactoryOpts,
 ): ActorDef<ChatbotMsg, ChatbotState> => {
   const { model, systemPrompt, toolFilter, maxToolLoops = 25 } = config
-  const { userId, historyStoreRef, llmRef } = opts
+  const { userId, contextStoreRef, llmRef } = opts
 
   type M   = ChatbotMsg
   type S   = ChatbotState
   type Ctx = ActorContext<M>
 
-  const historySnapshot = (state: S, msg: Extract<M, { type: '_historySnapshot' }>): ActorResult<M, S> => {
-    if (msg.version <= state.historyVersion && state.historyVersion > 0) return { state }
+  const contextSnapshot = (state: S, msg: Extract<M, { type: '_contextSnapshot' }>): ActorResult<M, S> => {
     return {
       state: {
         ...state,
-        historyMirror:  msg.messages,
-        userContext:    msg.userContext,
-        historyVersion: msg.version,
+        contextView: {
+          userId:         msg.userId,
+          version:        msg.version,
+          recentMessages: msg.recentMessages,
+          userContext:    msg.userContext,
+          modeSummaries:  msg.modeSummaries,
+          toolSummaries:  msg.toolSummaries,
+        },
       },
     }
   }
 
-  const buildTurnMessages = (history: ApiMessage[], userContext: string | null, llmText: string): ApiMessage[] => {
-    const sysPrompt = buildSystemPrompt(systemPrompt, userContext)
-    return [
-      ...(sysPrompt ? [{ role: 'system' as const, content: sysPrompt }] : []),
-      ...history.slice(0, -1),
-      { role: 'user' as const, content: llmText },
-    ]
-  }
+  const buildTurnMessages = (state: S, userMessage: ApiMessage): ApiMessage[] =>
+    assembleAgentMessages(state.contextView, {
+      mode:                      CHATBOT_MODE,
+      systemPrompt:              buildSystemPrompt(systemPrompt),
+      includeUserContext:        true,
+      includeCurrentModeSummary: true,
+      includeOtherModeSummaries: true,
+      includeToolSummaries:      true,
+    }, userMessage)
 
 
   const loop = agentLoop<S, M>({
@@ -157,13 +168,13 @@ export const Chatbot = (
     } as M),
 
     onBatchHistoryReady: (state, messages) => {
-      historyStoreRef.send({ type: 'append', messages })
+      contextStoreRef.send({ type: 'append', mode: CHATBOT_MODE, messages })
       return { state }
     },
 
     onComplete: (state, finalText, usage, ctx) => {
       if (finalText) {
-        historyStoreRef.send({ type: 'append', messages: [{ role: 'assistant', content: finalText }] })
+        contextStoreRef.send({ type: 'append', mode: CHATBOT_MODE, source: 'assistant', clientId: state.activeClientId, messages: [{ role: 'assistant', content: finalText }] })
       }
 
       const sessionUsage: TokenUsage = {
@@ -171,13 +182,8 @@ export const Chatbot = (
         completionTokens: state.sessionUsage.completionTokens + usage.completionTokens,
       }
 
-      const userMsg  = [...state.historyMirror].reverse().find(m => m.role === 'user')
-      const userText = typeof userMsg?.content === 'string' ? userMsg.content : ''
-
-      ctx.publish(UserStreamTopic, { userId, userText, assistantText: finalText, timestamp: Date.now(), injected: state.isInjected })
-
       return {
-        state: { ...state, sessionUsage, isInjected: undefined },
+        state: { ...state, sessionUsage },
       }
     },
 
@@ -185,7 +191,7 @@ export const Chatbot = (
       if (err.kind === 'loopLimit') {
         ctx.log.warn('chatbot: tool loop limit reached', { clientId: state.activeClientId })
       }
-      return { state: { ...state, isInjected: undefined } }
+      return { state }
     },
   })
 
@@ -197,19 +203,15 @@ export const Chatbot = (
     ctx: Ctx,
   ): ActorResult<M, S> => {
     const userMessage: ApiMessage = { role: 'user', content: userText }
-    const optimisticHistory: ApiMessage[] = [...state.historyMirror, userMessage]
-
     const stateNext: S = {
       ...state,
       activeClientId: clientId,
-      historyMirror:  optimisticHistory,
-      isInjected,
     }
 
-    historyStoreRef.send({ type: 'append', messages: [userMessage] })
+    contextStoreRef.send({ type: 'append', mode: CHATBOT_MODE, source: 'user', clientId, injected: isInjected, messages: [userMessage] })
 
     return loop.startTurn(stateNext, {
-      messages: buildTurnMessages(optimisticHistory, stateNext.userContext, userText),
+      messages: buildTurnMessages(stateNext, userMessage),
       userId,
       clientId,
     }, ctx)
@@ -245,8 +247,8 @@ export const Chatbot = (
   const hostInterceptor: Interceptor<M, S> = (state, msg, ctx, next) => {
     const m = msg as M
 
-    if (m.type === '_historySnapshot') {
-      return historySnapshot(state, m as Extract<M, { type: '_historySnapshot' }>)
+    if (m.type === '_contextSnapshot') {
+      return contextSnapshot(state, m as Extract<M, { type: '_contextSnapshot' }>)
     }
 
     if (m.type === 'userMessage') {
@@ -296,13 +298,11 @@ export const Chatbot = (
           return { type: '_toolUnregistered' as const, name: event.name }
         })
 
-        ctx.subscribe(HistorySnapshotTopic, (event) => {
+        ctx.subscribe(ContextSnapshotTopic, (event) => {
           if (event.userId !== userId) return null
           return {
-            type: '_historySnapshot' as const,
-            messages:    event.messages,
-            userContext: event.userContext,
-            version:     event.version,
+            type: '_contextSnapshot' as const,
+            ...event,
           }
         })
 

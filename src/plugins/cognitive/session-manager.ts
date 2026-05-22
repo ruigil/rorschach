@@ -8,7 +8,7 @@ import {
   type MessageAttachment,
 } from '../../types/events.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
-import { HistoryStore, type HistoryStoreMsg} from './history-store.ts'
+import { ContextStore, type ContextStoreMsg} from './context-store.ts'
 import {
   AgentRegistrationTopic,
   SessionLifecycleTopic,
@@ -36,7 +36,7 @@ type SessionManagerMsg =
 // down when it hits zero.
 
 type Session = {
-  historyStoreRef: ActorRef<HistoryStoreMsg>
+  contextStoreRef: ActorRef<ContextStoreMsg>
   agentRefs:       Record<string, ActorRef<any>>   // mode → agent
   activeMode:      string
   clientCount:     number
@@ -59,8 +59,8 @@ const initialSessionManagerState = (): SessionManagerState => ({
 export type SessionManagerOptions = {
   llmRef:              ActorRef<LlmProviderMsg>
   defaultMode:         string                   // resolved by the plugin; first-connect / cron / fallback target
-  historyWindowHours?: number
-  workPath?:           string
+  contextWindowHours?: number
+  contextPath?:        string
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ const ensureAgent = (
     userId,
     clientId,
     llmRef,
-    historyStoreRef: session.historyStoreRef,
+    contextStoreRef: session.contextStoreRef,
   }
   const ref = ctx.spawn(`${mode}-${userId}`, descriptor.factory(opts)) as ActorRef<any>
 
@@ -154,7 +154,7 @@ const publishModeChanged = (
 export const SessionManager = (
   options: SessionManagerOptions,
 ): ActorDef<SessionManagerMsg, SessionManagerState> => {
-  const { llmRef, defaultMode, historyWindowHours, workPath } = options
+  const { llmRef, defaultMode, contextWindowHours, contextPath } = options
 
   return {
     initialState: initialSessionManagerState,
@@ -178,13 +178,13 @@ export const SessionManager = (
 
       terminated: (state, event, ctx) => {
         const deadName = event.ref.name
-        // History-store death cascades into a full session drop.
+        // Context-store death cascades into a full session drop.
         for (const [userId, session] of Object.entries(state.sessions)) {
-          if (session.historyStoreRef.name === deadName) {
+          if (session.contextStoreRef.name === deadName) {
             ctx.publish(SessionLifecycleTopic, {
               type:      'sessionEnded',
               userId,
-              reason:    'historyStoreCrash',
+              reason:    'contextStoreCrash',
               timestamp: Date.now(),
             })
             return { state: removeSession(state, userId) }
@@ -262,10 +262,10 @@ export const SessionManager = (
           }
         }
 
-        // First connect for this userId — spawn history store + default agent.
-        const historyStoreRef = ctx.spawn(`history-store-${userId}`, HistoryStore({ userId, historyWindowHours, workPath })) as ActorRef<HistoryStoreMsg>
+        // First connect for this userId — spawn context store + default agent.
+        const contextStoreRef = ctx.spawn(`context-store-${userId}`, ContextStore({ userId, contextWindowHours, contextPath })) as ActorRef<ContextStoreMsg>
         const seeded: Session = {
-          historyStoreRef,
+          contextStoreRef,
           agentRefs:   {},
           activeMode:  defaultMode,
           clientCount: 1,
@@ -324,7 +324,7 @@ export const SessionManager = (
 
         // Last client gone — tear down everything for this user.
         for (const ref of Object.values(session.agentRefs)) ctx.stop(ref)
-        ctx.stop(session.historyStoreRef)
+        ctx.stop(session.contextStoreRef)
         const { [userId]: __, ...sessions } = state.sessions
         ctx.publish(SessionLifecycleTopic, {
           type:      'sessionEnded',

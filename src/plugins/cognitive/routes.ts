@@ -21,14 +21,15 @@ export const chatbotSchema: ConfigSchemaSection = {
 export const sessionSchema: ConfigSchemaSection = {
   id: 'cognitive.session',
   title: 'Session',
-  subtitle: 'cognitive · conversation history',
+  subtitle: 'cognitive · conversation context',
   tab: 'cognitive',
   configKey: 'session',
   routeId: 'config.cognitive',
   schema: {
     type: 'object',
     properties: {
-      historyWindowHours: { type: 'number', default: 4, minimum: 1, description: 'Maximum hours of message history kept in short-term memory' },
+      contextWindowHours: { type: 'number', default: 4, minimum: 1, description: 'Maximum hours of context records kept in short-term memory' },
+      contextPath: { type: 'string', default: 'workspace/context', description: 'Base path for storing conversation context and user context' },
     },
   },
 }
@@ -64,19 +65,4 @@ export const userContextSchema: ConfigSchemaSection = {
   },
 }
 
-export const cognitiveWorkPathSchema: ConfigSchemaSection = {
-  id: 'cognitive.workPath',
-  title: 'History',
-  subtitle: 'cognitive · storage location',
-  tab: 'cognitive',
-  configKey: '',
-  routeId: 'config.cognitive',
-  schema: {
-    type: 'object',
-    properties: {
-      workPath: { type: 'string', default: 'workspace/history', description: 'Base path for storing conversation history and user context' },
-    },
-  },
-}
-
-export const cognitiveSchemas = [chatbotSchema, sessionSchema, llmSchema, userContextSchema, cognitiveWorkPathSchema]
+export const cognitiveSchemas = [chatbotSchema, sessionSchema, llmSchema, userContextSchema]
