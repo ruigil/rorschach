@@ -1,5 +1,5 @@
-import type { ActorIdentity, ActorRef, SpanHandle } from '../../system/types.ts'
-import type { LoopMsg } from '../../system/agent-loop.ts'
+import type { ActorIdentity, ActorRef, SpanHandle } from '../../system/index.ts'
+import type { LoopMsg } from '../../system/index.ts'
 import type { ToolFinalReply, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 

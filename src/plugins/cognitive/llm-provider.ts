@@ -1,6 +1,6 @@
-import type { ActorDef } from '../../system/types.ts'
-import { emit } from '../../system/types.ts'
-import { onMessage } from '../../system/match.ts'
+import type { ActorDef } from '../../system/index.ts'
+import { emit } from '../../system/index.ts'
+import { onMessage } from '../../system/index.ts'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type {

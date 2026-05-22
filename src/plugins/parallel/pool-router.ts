@@ -1,6 +1,6 @@
-import { DeadLetterTopic } from '../../system/types.ts'
-import type { ActorDef, ActorRef } from '../../system/types.ts'
-import { onLifecycle } from '../../system/match.ts'
+import { DeadLetterTopic } from '../../system/index.ts'
+import type { ActorDef, ActorRef } from '../../system/index.ts'
+import { onLifecycle } from '../../system/index.ts'
 
 // ─── Public types ───
 

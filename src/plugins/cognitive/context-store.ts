@@ -1,5 +1,5 @@
-import type { ActorDef, PersistenceAdapter } from '../../system/types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import type { ActorDef, PersistenceAdapter } from '../../system/index.ts'
+import { onLifecycle, onMessage } from '../../system/index.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import { UserContextTopic } from './types.ts'
 import { UserStreamTopic } from '../../types/events.ts'

@@ -6,14 +6,14 @@ import type {
   SpanHandle,
   EventTopic,
   Interceptor,
-} from './types.ts'
+} from '../actor/types.ts'
 import { invokeTool } from './tool-utils.ts'
 import type {
   ToolCollection,
   ToolFinalReply,
   ToolMsg,
   ToolFilter,
-} from '../types/tools.ts'
+} from '../../types/tools.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
@@ -21,7 +21,7 @@ import type {
   TokenUsage,
   LlmTool,
   ToolCall,
-} from '../types/llm.ts'
+} from '../../types/llm.ts'
 
 // ─── Shared turn-slice shapes ───────────────────────────────────────────────
 

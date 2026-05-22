@@ -1,5 +1,5 @@
-import type { ActorRef } from '../system/types.ts'
-import { createTopic } from '../system/types.ts'
+import type { ActorRef } from '../system/index.ts'
+import { createTopic } from '../system/index.ts'
 import type { MessageAttachment } from './events.ts'
 
 // ─── Schema (what the LLM sees) ───

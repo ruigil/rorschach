@@ -1,5 +1,5 @@
-import type { ApiMessage } from '../types/llm.ts'
-import type { ContextSnapshotEvent, ToolSummary } from '../types/agents.ts'
+import type { ApiMessage } from '../../types/llm.ts'
+import type { ContextSnapshotEvent, ToolSummary } from '../../types/agents.ts'
 
 export type ContextView = Pick<
   ContextSnapshotEvent,

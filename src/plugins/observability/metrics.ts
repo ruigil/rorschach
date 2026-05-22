@@ -1,6 +1,6 @@
-import { MetricsTopic } from '../../system/types.ts'
-import type { ActorDef, MetricsEvent } from '../../system/types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import { MetricsTopic } from '../../system/index.ts'
+import type { ActorDef, MetricsEvent } from '../../system/index.ts'
+import { onLifecycle, onMessage } from '../../system/index.ts'
 
 type MetricsMsg = { type: 'tick' }
 

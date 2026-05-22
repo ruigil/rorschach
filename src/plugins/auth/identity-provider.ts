@@ -1,6 +1,6 @@
-import type { ActorDef, ActorRef } from '../../system/types.ts'
-import { onMessage } from '../../system/match.ts'
-import { ask } from '../../system/ask.ts'
+import type { ActorDef, ActorRef } from '../../system/index.ts'
+import { onMessage } from '../../system/index.ts'
+import { ask } from '../../system/index.ts'
 import type { IdentityProviderMsg, Identity } from '../../types/identity.ts'
 import type { AuthenticatorMsg, AuthSession, UserStoreMsg, User } from './types.ts'
 

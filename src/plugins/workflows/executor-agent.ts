@@ -1,12 +1,12 @@
-import type { ActorContext, ActorDef, ActorResult, Interceptor } from '../../system/types.ts'
-import { onLifecycle } from '../../system/match.ts'
-import { agentLoop, idleLoopState, type LoopState } from '../../system/agent-loop.ts'
+import type { ActorContext, ActorDef, ActorResult, Interceptor } from '../../system/index.ts'
+import { onLifecycle } from '../../system/index.ts'
+import { agentLoop, idleLoopState, type LoopState } from '../../system/index.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
 import type { ToolCollection } from '../../types/tools.ts'
-import type { ActorRef } from '../../system/types.ts'
+import type { ActorRef } from '../../system/index.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentContextMsg } from '../../types/agents.ts'
-import { assembleAgentMessages, type ContextView } from '../../system/context-assembly.ts'
+import { assembleAgentMessages, type ContextView } from '../../system/index.ts'
 import type { ExecutorAgentMsg } from './types.ts'
 
 export type ExecutorAgentOptions = {

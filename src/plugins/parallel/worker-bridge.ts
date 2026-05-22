@@ -1,5 +1,5 @@
-import type { ActorDef } from '../../system/types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import type { ActorDef } from '../../system/index.ts'
+import { onLifecycle, onMessage } from '../../system/index.ts'
 import type {
   TaskEvent, WorkerBridge, WorkerBridgeMsg, WorkerBridgeOptions, WorkerBridgeState,
 } from './types.ts'

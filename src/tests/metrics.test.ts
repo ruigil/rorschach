@@ -6,7 +6,7 @@ import {
   type PluginSystem,
 } from '../system/index.ts'
 import observabilityPlugin from '../plugins/observability/observability.plugin.ts'
-import { AgentSystem } from '../system/system.ts'
+import { AgentSystem } from '../system/index.ts'
 
 // ─── Helpers ───
 

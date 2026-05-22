@@ -1,8 +1,8 @@
 import { join } from 'node:path'
-import type { ActorDef, ActorRef } from '../../system/types.ts'
-import { onMessage } from '../../system/match.ts'
+import type { ActorDef, ActorRef } from '../../system/index.ts'
+import { onMessage } from '../../system/index.ts'
 import { JobRegistryTopic } from '../../types/tools.ts'
-import { defineTool } from '../../system/tool-utils.ts'
+import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, VideoSubmitReply, VideoPollReply, VideoDownloadReply } from '../../types/llm.ts'
 

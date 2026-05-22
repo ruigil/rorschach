@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
-import { createMailbox } from '../system/mailbox.ts'
-import { STOP } from '../system/types.ts'
+import { createMailbox } from '../system/index.ts'
+import { STOP } from '../system/index.ts'
 
 // ─── Helpers ───
 

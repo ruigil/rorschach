@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
-import { agentLoop, type AgentLoopHandle, type LoopMsg, type LoopStartTurnParams, idleLoopState, type WithLoopState } from '../system/agent-loop.ts'
-import type { ActorDef, ActorContext, ActorRef, Interceptor } from '../system/types.ts'
+import { agentLoop, type AgentLoopHandle, type LoopMsg, type LoopStartTurnParams, idleLoopState, type WithLoopState } from '../system/index.ts'
+import type { ActorDef, ActorContext, ActorRef, Interceptor } from '../system/index.ts'
 import type { LlmProviderMsg, LlmProviderReply, ApiMessage, TokenUsage } from '../types/llm.ts'
 import type { ToolMsg, ToolFinalReply, ToolSchema, ToolCollection } from '../types/tools.ts'
 

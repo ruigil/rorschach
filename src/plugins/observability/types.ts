@@ -1,4 +1,4 @@
-import type { LogEvent, TraceSpan } from '../../system/types.ts'
+import type { LogEvent, TraceSpan } from '../../system/index.ts'
 import type { CostEvent } from '../../types/llm.ts'
 
 // ─── JSONL logger message protocol ───

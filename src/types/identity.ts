@@ -1,4 +1,4 @@
-import { createTopic, type ActorRef } from '../system/types.ts'
+import { createTopic, type ActorRef } from '../system/index.ts'
 
 export type Identity = {
   userId:   string

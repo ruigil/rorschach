@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
-import { createMailbox } from '../system/mailbox.ts'
+import { createMailbox } from '../system/index.ts'
 import { AgentSystem } from '../system/index.ts'
-import { DeadLetterTopic } from '../system/types.ts'
+import { DeadLetterTopic } from '../system/index.ts'
 import type { ActorDef, DeadLetter, LifecycleEvent } from '../system/index.ts'
 
 // ─── Helpers ───

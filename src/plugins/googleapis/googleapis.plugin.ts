@@ -1,8 +1,8 @@
-import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
-import { defineConfig, publishConfigSurface, deleteConfigSurface } from '../../system/plugin-config.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import type { ActorContext, ActorRef, PluginDef } from '../../system/index.ts'
+import { defineConfig, publishConfigSurface, deleteConfigSurface } from '../../system/index.ts'
+import { onLifecycle, onMessage } from '../../system/index.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { defineTool } from '../../system/tool-utils.ts'
+import { defineTool } from '../../system/index.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 

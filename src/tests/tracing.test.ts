@@ -22,7 +22,7 @@ const LLM_PROVIDER_ADAPTER_OPTS = {
   model: 'openai/gpt-4o-mini',
 }
 
-import { idleLoopState } from '../system/agent-loop.ts'
+import { idleLoopState } from '../system/index.ts'
 
 const INITIAL_CHATBOT_STATE: ChatbotState = {
   loop:           idleLoopState(),
@@ -228,7 +228,7 @@ describe('distributed tracing', () => {
     let capturedHeaders: MessageHeaders | undefined
 
     // A fake tool actor ref that captures message headers and replies immediately
-    const fakeToolRef: import('../system/types.ts').ActorRef<ToolMsg> = {
+    const fakeToolRef: import('../system/index.ts').ActorRef<ToolMsg> = {
       name:    'fake-tool',
       isAlive: () => true,
       send:    (msg: ToolMsg, headers?: MessageHeaders) => {

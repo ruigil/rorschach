@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
-import type { ActorDef } from '../system/types.ts'
+import type { ActorDef } from '../system/index.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import { ClientPresenceTopic, InboundMessageTopic, OutboundMessageTopic } from '../types/events.ts'
 import { AgentRegistrationTopic, SwitchAgentTopic, type AgentDescriptor } from '../types/agents.ts'

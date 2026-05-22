@@ -1,5 +1,5 @@
-import type { ActorDef } from '../../system/types.ts'
-import { onMessage } from '../../system/match.ts'
+import type { ActorDef } from '../../system/index.ts'
+import { onMessage } from '../../system/index.ts'
 import type { OAuthStateMsg } from './types.ts'
 
 const STATE_TTL_MS = 10 * 60 * 1000  // 10 min

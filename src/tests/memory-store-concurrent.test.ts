@@ -6,7 +6,7 @@ import {
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
-import type { ActorRef } from '../system/types.ts'
+import type { ActorRef } from '../system/index.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 

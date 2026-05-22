@@ -1,6 +1,6 @@
-import type { LoopMsg } from '../../system/agent-loop.ts'
+import type { LoopMsg } from '../../system/index.ts'
 import type { ToolInvokeMsg } from '../../types/tools.ts'
-import type { ActorRef } from '../../system/types.ts'
+import type { ActorRef } from '../../system/index.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 
 // ─── Domain types ───

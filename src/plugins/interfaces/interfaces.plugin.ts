@@ -1,9 +1,9 @@
 import { HTTP, type HTTPOptions } from './http.ts'
 import { CLI } from './cli.ts'
 import { Signal, type SignalOptions } from './signal.ts'
-import { defineConfig, createSlot, stopSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/plugin-config.ts'
-import type { PluginDef } from '../../system/types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import { defineConfig, createSlot, stopSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/index.ts'
+import type { PluginDef } from '../../system/index.ts'
+import { onLifecycle, onMessage } from '../../system/index.ts'
 import { interfacesSchemas } from './routes.ts'
 
 export type InterfacesConfig = {

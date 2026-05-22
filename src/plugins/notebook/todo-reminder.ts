@@ -1,6 +1,6 @@
-import type { ActorDef } from '../../system/types.ts'
-import { emit } from '../../system/types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import type { ActorDef } from '../../system/index.ts'
+import { emit } from '../../system/index.ts'
+import { onLifecycle, onMessage } from '../../system/index.ts'
 import { OutboundBroadcastTopic } from '../../types/events.ts'
 import type { Todo, TodoReminderMsg } from './types.ts'
 

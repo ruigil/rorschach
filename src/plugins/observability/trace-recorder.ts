@@ -1,8 +1,8 @@
 import { appendFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { TraceTopic, type ActorDef } from '../../system/types.ts'
+import { TraceTopic, type ActorDef } from '../../system/index.ts'
 import type { TraceRecorderMsg } from './types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import { onLifecycle, onMessage } from '../../system/index.ts'
 
 // ─── Helpers ───
 

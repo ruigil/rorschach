@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { mkdir } from 'node:fs/promises'
 import { AgentSystem } from '../system/index.ts'
-import type { ActorDef } from '../system/types.ts'
+import type { ActorDef } from '../system/index.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import type { ToolMsg } from '../types/tools.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'

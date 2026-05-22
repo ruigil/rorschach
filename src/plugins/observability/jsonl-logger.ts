@@ -1,9 +1,9 @@
 import { appendFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import type { ActorDef } from '../../system/types.ts'
-import { LogTopic } from '../../system/types.ts'
+import type { ActorDef } from '../../system/index.ts'
+import { LogTopic } from '../../system/index.ts'
 import type { JsonlLoggerMsg } from './types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import { onLifecycle, onMessage } from '../../system/index.ts'
 
 // ─── Actor state ───
 

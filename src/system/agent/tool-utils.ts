@@ -1,7 +1,7 @@
-import { ask } from './ask.ts'
-import type { ActorContext, ActorRef, MessageHeaders } from './types.ts'
-import { JobRegistryTopic } from '../types/tools.ts'
-import type { ToolFinalReply, ToolMsg, ToolReply, ToolSchema, ToolFilter } from '../types/tools.ts'
+import { ask } from '../actor/ask.ts'
+import type { ActorContext, ActorRef, MessageHeaders } from '../actor/types.ts'
+import { JobRegistryTopic } from '../../types/tools.ts'
+import type { ToolFinalReply, ToolMsg, ToolReply, ToolSchema, ToolFilter } from '../../types/tools.ts'
 
 export type InvokeToolArgs = {
   toolName:  string

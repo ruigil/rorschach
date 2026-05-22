@@ -1,9 +1,9 @@
-import type { ActorRef } from '../../system/types.ts'
+import type { ActorRef } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolCollection, ToolFilter, ToolMsg } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
-import type { LoopMsg, LoopState } from '../../system/agent-loop.ts'
+import type { LoopMsg, LoopState } from '../../system/index.ts'
 import type { MessageAttachment } from '../../types/events.ts'
-import type { ContextView } from '../../system/context-assembly.ts'
+import type { ContextView } from '../../system/index.ts'
 import type { ContextSnapshotEvent } from '../../types/agents.ts'
 
 export type PlanTask = {
@@ -90,8 +90,8 @@ export type PlanStoreMsg =
 export type WorkflowToolsMsg =
   | ToolInvokeMsg
   | { type: '_done' }
-  | { type: '_writeDone'; filepath: string; taskCount: number; planId: string; clientId?: string; replyTo: ActorRef<import('../../types/tools.ts').ToolReply>; span: import('../../system/types.ts').SpanHandle | null }
-  | { type: '_writeErr';  error: string;    replyTo: ActorRef<import('../../types/tools.ts').ToolReply>; span: import('../../system/types.ts').SpanHandle | null }
+  | { type: '_writeDone'; filepath: string; taskCount: number; planId: string; clientId?: string; replyTo: ActorRef<import('../../types/tools.ts').ToolReply>; span: import('../../system/index.ts').SpanHandle | null }
+  | { type: '_writeErr';  error: string;    replyTo: ActorRef<import('../../types/tools.ts').ToolReply>; span: import('../../system/index.ts').SpanHandle | null }
 
 
 export type ExecutorAgentExtra =

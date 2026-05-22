@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
-import { watchTopic } from '../system/services.ts'
+import { watchTopic } from '../system/index.ts'
 import type {
   ActorDef,
   ActorRef,

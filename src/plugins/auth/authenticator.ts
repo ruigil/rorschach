@@ -1,7 +1,7 @@
-import { emit } from '../../system/types.ts'
-import type { ActorDef, ActorRef } from '../../system/types.ts'
-import { ask } from '../../system/ask.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import { emit } from '../../system/index.ts'
+import type { ActorDef, ActorRef } from '../../system/index.ts'
+import { ask } from '../../system/index.ts'
+import { onLifecycle, onMessage } from '../../system/index.ts'
 import type {
   AuthenticatorMsg, AuthSession, AuthChallenge, DeviceKey, UserStoreMsg, User,
 } from './types.ts'

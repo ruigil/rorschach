@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { mkdir } from 'node:fs/promises'
 import { AgentSystem } from '../system/index.ts'
-import { assembleAgentMessages } from '../system/context-assembly.ts'
+import { assembleAgentMessages } from '../system/index.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
 import { ContextSnapshotTopic, type ContextSnapshotEvent } from '../types/agents.ts'
 import { UserStreamTopic, type UserStreamEvent } from '../types/events.ts'

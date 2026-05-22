@@ -1,5 +1,5 @@
-import type { ActorRef } from '../../system/types.ts'
-import { ask } from '../../system/ask.ts'
+import type { ActorRef } from '../../system/index.ts'
+import { ask } from '../../system/index.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import type {

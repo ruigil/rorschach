@@ -1,5 +1,5 @@
-import type { ActorDef, PersistenceAdapter } from '../../system/types.ts'
-import { onMessage } from '../../system/match.ts'
+import type { ActorDef, PersistenceAdapter } from '../../system/index.ts'
+import { onMessage } from '../../system/index.ts'
 import type { User, UserId, DeviceKey, UserStoreMsg } from './types.ts'
 
 // ─── State ───

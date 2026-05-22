@@ -1,9 +1,9 @@
 import { PoolRouter, type PoolRouterOptions } from './pool-router.ts'
 import { GenericWorkerBridge } from './worker-bridge.ts'
 import type { WorkerBridgeOptions } from './types.ts'
-import { defineConfig } from '../../system/plugin-config.ts'
-import type { ActorContext, ActorRef, PluginDef } from '../../system/types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import { defineConfig } from '../../system/index.ts'
+import type { ActorContext, ActorRef, PluginDef } from '../../system/index.ts'
+import { onLifecycle, onMessage } from '../../system/index.ts'
 
 export type PoolRouterEntry = {
   name: string

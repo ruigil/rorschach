@@ -1,8 +1,8 @@
 import { join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
-import type { ActorDef, ActorRef } from '../../system/types.ts'
-import { onMessage } from '../../system/match.ts'
-import { defineTool } from '../../system/tool-utils.ts'
+import type { ActorDef, ActorRef } from '../../system/index.ts'
+import { onMessage } from '../../system/index.ts'
+import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, SpeechProviderReply, TranscriptionProviderReply } from '../../types/llm.ts'
 

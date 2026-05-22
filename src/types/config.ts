@@ -1,4 +1,4 @@
-import { createTopic } from '../system/types.ts'
+import { createTopic } from '../system/index.ts'
 
 // ─── Config Schema Section ───────────────────────────────────────────────────
 //

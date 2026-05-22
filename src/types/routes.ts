@@ -1,4 +1,4 @@
-import { createTopic } from '../system/types.ts'
+import { createTopic } from '../system/index.ts'
 import type { Identity } from './identity.ts'
 
 // ─── HTTP route registration ───

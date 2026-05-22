@@ -2,9 +2,9 @@ import { JsonlLogger, type JsonlLoggerOptions } from './jsonl-logger.ts'
 import { Metrics, type MetricsActorOptions } from './metrics.ts'
 import { TraceRecorder, type TraceRecorderOptions } from './trace-recorder.ts'
 import { CostTracker, type CostTrackerOptions } from './cost-tracker.ts'
-import { defineConfig, createSlot, stopSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/plugin-config.ts'
-import type { PluginDef } from '../../system/types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import { defineConfig, createSlot, stopSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/index.ts'
+import type { PluginDef } from '../../system/index.ts'
+import { onLifecycle, onMessage } from '../../system/index.ts'
 import { observabilitySchemas } from './routes.ts'
 
 export type ObservabilityConfig = {

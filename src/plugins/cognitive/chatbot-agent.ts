@@ -1,13 +1,13 @@
-import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/types.ts'
-import { onLifecycle } from '../../system/match.ts'
-import { agentLoop, idleLoopState, type LoopMsg, type LoopState } from '../../system/agent-loop.ts'
+import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/index.ts'
+import { onLifecycle } from '../../system/index.ts'
+import { agentLoop, idleLoopState, type LoopMsg, type LoopState } from '../../system/index.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter, ToolFinalReply, ToolMsg, ToolSchema } from '../../types/tools.ts'
-import { applyToolFilter } from '../../system/tool-utils.ts'
+import { applyToolFilter } from '../../system/index.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage, TokenUsage } from '../../types/llm.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts, type ContextSnapshotEvent } from '../../types/agents.ts'
-import { assembleAgentMessages, type ContextView } from '../../system/context-assembly.ts'
+import { assembleAgentMessages, type ContextView } from '../../system/index.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 
 // ─── State ───

@@ -1,6 +1,6 @@
 import type { ActorContext, ActorDef, ActorRef } from './types.ts'
-import { ConfigSchemaTopic, type ConfigSchemaSection } from '../types/config.ts'
-import { RouteRegistrationTopic, type RouteRegistration } from '../types/routes.ts'
+import { ConfigSchemaTopic, type ConfigSchemaSection } from '../../types/config.ts'
+import { RouteRegistrationTopic, type RouteRegistration } from '../../types/routes.ts'
 
 // ─── Config Descriptor ──────────────────────────────────────────────────────
 //

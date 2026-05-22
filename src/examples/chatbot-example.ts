@@ -1,7 +1,7 @@
 import { AgentSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
 import interfacesPlugin from '../plugins/interfaces/interfaces.plugin.ts'
 import cognitivePlugin from '../plugins/cognitive/cognitive.plugin.ts'
-import type { LifecycleEvent, LogEvent } from '../system/types.ts'
+import type { LifecycleEvent, LogEvent } from '../system/index.ts'
 
 const apiKey = process.env.OPENROUTER_API_KEY
 if (!apiKey) {

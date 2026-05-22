@@ -1,5 +1,5 @@
-import type { ActorDef, ActorRef } from '../system/types.ts'
-import { createTopic } from '../system/types.ts'
+import type { ActorDef, ActorRef } from '../system/index.ts'
+import { createTopic } from '../system/index.ts'
 import type { ApiMessage, LlmProviderMsg } from './llm.ts'
 
 // ─── Shared context protocol for session-hosted agents ───

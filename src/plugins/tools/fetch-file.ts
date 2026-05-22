@@ -1,8 +1,8 @@
 import { join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
-import type { ActorDef, ActorRef, SpanHandle } from '../../system/types.ts'
-import { onMessage } from '../../system/match.ts'
-import { defineTool } from '../../system/tool-utils.ts'
+import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
+import { onMessage } from '../../system/index.ts'
+import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 
 const INBOUND_DIR = join(import.meta.dir, '../../..', 'workspace/media/inbound')

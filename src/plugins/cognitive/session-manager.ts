@@ -1,5 +1,5 @@
-import type { ActorDef, ActorRef } from '../../system/types.ts'
-import { onLifecycle, onMessage } from '../../system/match.ts'
+import type { ActorDef, ActorRef } from '../../system/index.ts'
+import { onLifecycle, onMessage } from '../../system/index.ts'
 import {
   ClientPresenceTopic,
   InboundMessageTopic,

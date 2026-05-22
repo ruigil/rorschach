@@ -1,5 +1,5 @@
 import { resolve, dirname } from 'node:path'
-import type { PluginDef } from './system/types.ts'
+import type { PluginDef } from './system/index.ts'
 
 // ─── Env var interpolation ───────────────────────────────────────────────────
 //

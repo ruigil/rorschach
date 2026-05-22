@@ -582,7 +582,7 @@ export type PluginDef<M, S = unknown, C = unknown> = ActorDef<M, S> & {
     /** Key in the global config tree. Defaults to the plugin's id. */
     readonly key?: string
     /** Config schema sections published by plugin config-surface helpers. */
-    readonly schemas?: readonly import('../types/config.ts').ConfigSchemaSection[]
+    readonly schemas?: readonly import('../../types/config.ts').ConfigSchemaSection[]
     /**
      * Maps an updated config slice to a plugin message, enabling reactive config updates.
      * Called by `system.updateConfig()` when the plugin's config slice changes.

@@ -1,7 +1,7 @@
 import { google } from 'googleapis'
 import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
-import { ask } from '../../system/ask.ts'
+import { ask } from '../../system/index.ts'
 import type { GoogleToken, GoogleOAuthRouteOpts, OAuthStateMsg } from './types.ts'
 
 // ─── Config Schema Sections ──────────────────────────────────────────────────

@@ -8,11 +8,11 @@ import {
   InboundMessageTopic, OutboundMessageTopic, OutboundBroadcastTopic,
 } from '../src/types/events.ts'
 import type { OutboundMessageEvent } from '../src/types/events.ts'
-import { TraceTopic } from '../src/system/types.ts'
-import type { TraceSpan } from '../src/system/types.ts'
+import { TraceTopic } from '../src/system/index.ts'
+import type { TraceSpan } from '../src/system/index.ts'
 import { CostTopic } from '../src/types/llm.ts'
 import type { CostEvent } from '../src/types/llm.ts'
-import type { LogEvent } from '../src/system/types.ts'
+import type { LogEvent } from '../src/system/index.ts'
 import { mkdir, rm, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 

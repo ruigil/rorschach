@@ -202,7 +202,7 @@ describe('tools plugin', () => {
             type: 'invoke',
             toolName: 'web_search',
             arguments: JSON.stringify({ query: 'probe' }),
-            replyTo: ctx.self as unknown as import('../system/types.ts').ActorRef<ToolReply>,
+            replyTo: ctx.self as unknown as import('../system/index.ts').ActorRef<ToolReply>,
             userId: 'test-user',
           })
         }

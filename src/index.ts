@@ -11,7 +11,7 @@ import type { LogEvent, MetricsEvent, LifecycleEvent, TraceSpan } from './system
 import type { ConfigUpdateRequest } from './system/index.ts'
 import { ToolRegistrationTopic } from './types/tools.ts'
 import type { ToolRegistrationEvent } from './types/tools.ts'
-import { AgentSystem } from './system/system.ts'
+import { AgentSystem } from './system/index.ts'
 
 if (!process.env.OPENROUTER_API_KEY) {
   console.error('Error: OPENROUTER_API_KEY environment variable is not set.')
