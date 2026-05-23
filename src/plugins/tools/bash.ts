@@ -33,6 +33,16 @@ export const readTool = defineTool('read', 'Read text content from a file in the
   required: ['path'],
 })
 
+export const editTool = defineTool('edit', 'Safely edit a file in the virtual filesystem by searching for a unique block of text and replacing it. The operation fails if the block is missing or occurs multiple times.', {
+  type: 'object',
+  properties: {
+    path: { type: 'string', description: 'Path to the file to edit under /workspace.' },
+    target: { type: 'string', description: 'The exact block of text to be replaced (including leading whitespace/newlines).' },
+    replacement: { type: 'string', description: 'The replacement text.' },
+  },
+  required: ['path', 'target', 'replacement'],
+})
+
 // ─── Internal message protocol ───
 
 export type BashToolMsg =
@@ -43,6 +53,8 @@ export type BashToolMsg =
   | { type: '_writeErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_readDone'; content: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_readErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_editReadDone'; path: string; target: string; replacement: string; content: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_editWriteDone'; path: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
 
 // ─── Result formatting ───
 
@@ -56,11 +68,11 @@ const formatExecResult = (result: BashExecResult): string => {
 
 // ─── Actor definition ───
 
-export const JustBash = (options?: BashOptions): ActorDef<BashToolMsg, null> => {
+export const BashTool = (options?: BashOptions): ActorDef<BashToolMsg, null> => {
   const fs = new MountableFs({ base: new InMemoryFs() });
 
   // Mount read-only knowledge base
-  fs.mount("/home/rigel", new OverlayFs({ root: "/home/rigel", readOnly: true }));
+  fs.mount("/rorschach", new OverlayFs({ root: "/home/rigel/rorschach/src", readOnly: true }));
   // Mount read-write workspace
   fs.mount("/workspace", new ReadWriteFs({ root: "/home/rigel/rorschach/workspace" }));
 
@@ -114,6 +126,38 @@ export const JustBash = (options?: BashOptions): ActorDef<BashToolMsg, null> => 
             (result) => ({ type: '_readDone' as const, content: result.stdout, replyTo, span }),
             (error) => ({ type: '_readErr' as const, error: String(error), replyTo, span }),
           )
+        } else if (toolName === editTool.name) {
+          const args = JSON.parse(rawArgs) as { path: string; target: string; replacement: string }
+
+          // Ensure safety check: path must be under /workspace
+          if (!args.path.startsWith('/workspace')) {
+            replyTo.send({ type: 'toolError', error: 'Permission denied: edit target path must reside inside /workspace' })
+            return { state }
+          }
+
+          ctx.log.info('bash edit read', { path: args.path })
+          const span: SpanHandle | null = parent
+            ? ctx.trace.child(parent.traceId, parent.spanId, toolName, { toolName, path: args.path })
+            : null
+
+          ctx.pipeToSelf(
+            bash.exec(`cat ${args.path}`),
+            (result) => {
+              if (result.exitCode !== 0) {
+                return { type: '_readErr' as const, error: result.stderr || `File not found: ${args.path}`, replyTo, span }
+              }
+              return {
+                type: '_editReadDone' as const,
+                path: args.path,
+                target: args.target,
+                replacement: args.replacement,
+                content: result.stdout,
+                replyTo,
+                span,
+              }
+            },
+            (error) => ({ type: '_readErr' as const, error: String(error), replyTo, span }),
+          )
         } else {
           replyTo.send({ type: 'toolError', error: `Unknown tool: ${toolName}` })
         }
@@ -163,6 +207,47 @@ export const JustBash = (options?: BashOptions): ActorDef<BashToolMsg, null> => 
         ctx.log.error('bash read failed', { error })
         span?.error(error)
         replyTo.send({ type: 'toolError', error })
+        return { state }
+      },
+
+      _editReadDone: (state, message, ctx) => {
+        const { path, target, replacement, content, replyTo, span } = message
+
+        // 1. Verify occurrences of target block in the file
+        const occurrences = content.split(target).length - 1
+
+        if (occurrences === 0) {
+          ctx.log.error('edit target not found', { path })
+          span?.error('Target text block not found in the file')
+          replyTo.send({ type: 'toolError', error: 'Target text block not found in the file' })
+          return { state }
+        }
+
+        if (occurrences > 1) {
+          ctx.log.error('edit target not unique', { path, occurrences })
+          span?.error(`Target text block is not unique: found ${occurrences} occurrences`)
+          replyTo.send({ type: 'toolError', error: `Target text block is not unique: found ${occurrences} occurrences. Please provide a more unique target block.` })
+          return { state }
+        }
+
+        // 2. Perform the unique replacement
+        const updatedContent = content.replace(target, replacement)
+
+        // 3. Write back the updated content
+        ctx.log.info('bash edit write', { path })
+        ctx.pipeToSelf(
+          bash.exec(`cat > ${path}`, { stdin: updatedContent }),
+          (_) => ({ type: '_editWriteDone' as const, path, replyTo, span }),
+          (error) => ({ type: '_writeErr' as const, error: String(error), replyTo, span }),
+        )
+
+        return { state }
+      },
+
+      _editWriteDone: (state, message) => {
+        const { path, replyTo, span } = message
+        span?.done({ path })
+        replyTo.send({ type: 'toolResult', result: { text: `Successfully updated ${path}` } })
         return { state }
       },
     }),

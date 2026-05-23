@@ -114,4 +114,6 @@ export interface RorschachState {
   activeStream: ActiveStream
   currentPlanGraph: PlanGraph | null
   planWorkspaceOpen: boolean
+  docWorkspaceOpen: boolean
+  currentDocArtifact: string | null
 }

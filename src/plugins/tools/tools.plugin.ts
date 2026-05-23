@@ -1,5 +1,5 @@
 import { WebSearch, type WebSearchActorOptions as WebSearchActorConfig, webSearchTool } from './web-search.ts'
-import { JustBash, bashTool, writeTool, readTool } from './bash.ts'
+import { BashTool, bashTool, writeTool, readTool, editTool } from './bash.ts'
 import { Vision, analyzeImageTool, generateImageTool } from './vision-actor.ts'
 import { Cron, cronCreateTool, cronDeleteTool, cronListTool } from './cron.ts'
 import { Audio, transcribeAudioTool, textToSpeechTool } from './audio.ts'
@@ -117,10 +117,11 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       }
 
       const bashConfig = slice?.bash ?? null
-      const bashRef = ctx.spawn('bash-0', JustBash(bashConfig ?? undefined)) as ActorRef<ToolMsg>
+      const bashRef = ctx.spawn('bash-0', BashTool(bashConfig ?? undefined)) as ActorRef<ToolMsg>
       ctx.publishRetained(ToolRegistrationTopic, bashTool.name,  { ...bashTool,  ref: bashRef })
       ctx.publishRetained(ToolRegistrationTopic, writeTool.name, { ...writeTool, ref: bashRef })
       ctx.publishRetained(ToolRegistrationTopic, readTool.name,  { ...readTool,  ref: bashRef })
+      ctx.publishRetained(ToolRegistrationTopic, editTool.name,  { ...editTool,  ref: bashRef })
 
       const cronRef = ctx.spawn('cron-0', Cron()) as unknown as ActorRef<ToolMsg>
       ctx.publishRetained(ToolRegistrationTopic, cronCreateTool.name, { ...cronCreateTool, ref: cronRef })
@@ -163,6 +164,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         ctx.deleteRetained(ToolRegistrationTopic, bashTool.name,  { name: bashTool.name,  ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, writeTool.name, { name: writeTool.name, ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, readTool.name,  { name: readTool.name,  ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, editTool.name,  { name: editTool.name,  ref: null })
       }
       if (state.vision.ref) {
         ctx.deleteRetained(ToolRegistrationTopic, analyzeImageTool.name,  { name: analyzeImageTool.name,  ref: null })
@@ -273,7 +275,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         ctx.publishRetained(ToolRegistrationTopic, webSearchTool.name, { ...webSearchTool, ref: webSearchRef })
       }
 
-      const bashRef = ctx.spawn(`bash-${state.bash.gen + 1}`, JustBash(newBashConfig ?? undefined)) as ActorRef<ToolMsg>
+      const bashRef = ctx.spawn(`bash-${state.bash.gen + 1}`, BashTool(newBashConfig ?? undefined)) as ActorRef<ToolMsg>
       ctx.publishRetained(ToolRegistrationTopic, bashTool.name,  { ...bashTool,  ref: bashRef })
       ctx.publishRetained(ToolRegistrationTopic, writeTool.name, { ...writeTool, ref: bashRef })
       ctx.publishRetained(ToolRegistrationTopic, readTool.name,  { ...readTool,  ref: bashRef })

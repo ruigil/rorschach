@@ -5,6 +5,7 @@ r-config-form { display: contents; }
 r-chat-panel { display: contents; }
 r-mode-select { display: contents; }
 r-plan-workspace { display: contents; }
+r-doc-workspace { display: contents; }
 r-observe-panel { display: contents; }
 
 .config-bar {

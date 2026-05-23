@@ -491,7 +491,10 @@ export const HTTP = (
             // Resolve identity once at the boundary for all non-static requests.
             // WebSocket upgrade handles its own resolution via ticket.
             const isMedia = url.pathname.startsWith('/inbound/') || url.pathname.startsWith('/generated/')
-            const isStatic = url.pathname === '/' || url.pathname.endsWith('.html') || url.pathname.endsWith('.css') || url.pathname.endsWith('.js') || url.pathname.endsWith('.ico')
+            // Plugin-served paths (e.g. /artifacts/*) must not be treated as static even if they
+            // end in .html — the registered route handler does its own auth check using identity.
+            const isPluginPath = url.pathname.startsWith('/artifacts/')
+            const isStatic = !isPluginPath && (url.pathname === '/' || url.pathname.endsWith('.html') || url.pathname.endsWith('.css') || url.pathname.endsWith('.js') || url.pathname.endsWith('.ico'))
             const identity = (!isMedia && !isStatic && url.pathname !== '/ws')
               ? await resolveCookieIdentity(identityProviderRef, req)
               : null

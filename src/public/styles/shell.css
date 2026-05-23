@@ -222,6 +222,12 @@ r-chat-panel {
   background: rgba(0,3,5,0.5);
 }
 
+#panel-chat.doc-workspace-open {
+  max-width: none;
+  margin: 0;
+  background: rgba(0,3,5,0.5);
+}
+
 .chat-main {
   display: flex;
   flex: 1;
@@ -231,7 +237,8 @@ r-chat-panel {
   margin: 0 auto;
 }
 
-#panel-chat.plan-workspace-open .chat-main {
+#panel-chat.plan-workspace-open .chat-main,
+#panel-chat.doc-workspace-open .chat-main {
   max-width: none;
   margin: 0;
 }

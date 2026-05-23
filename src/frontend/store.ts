@@ -38,6 +38,8 @@ const state: RorschachState = {
   },
   currentPlanGraph: null,
   planWorkspaceOpen: savedPlanOpen,
+  docWorkspaceOpen: false,
+  currentDocArtifact: null,
 }
 
 type StateKey = keyof RorschachState

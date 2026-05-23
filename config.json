@@ -8,7 +8,8 @@
     "./src/plugins/workflows/workflows.plugin.ts",
     "./src/plugins/observability/observability.plugin.ts",
     "./src/plugins/notebook/notebook.plugin.ts",
-    "./src/plugins/googleapis/googleapis.plugin.ts"
+    "./src/plugins/googleapis/googleapis.plugin.ts",
+    "./src/plugins/coding/coding.plugin.ts"
   ],
   "config": {
     "auth": {
@@ -137,6 +138,10 @@
         "costsDir": "workspace/observability/costs",
         "flushIntervalMs": 300000
       }
+    },
+    "coding": {
+      "model": "google/gemini-3.5-flash",
+      "maxToolLoops": 25
     }
   }
 }

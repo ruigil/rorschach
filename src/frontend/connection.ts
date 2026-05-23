@@ -49,6 +49,10 @@ const frameHandlers: Record<string, (msg: Record<string, any>) => void> = {
     store.set('tools', nextTools)
   },
   planGraph: (msg) => store.set('currentPlanGraph', msg as PlanGraph),
+  docWorkspace: (msg) => {
+    store.set('currentDocArtifact', msg.artifactName);
+    store.set('docWorkspaceOpen', !!msg.artifactName);
+  },
 }
 
 
