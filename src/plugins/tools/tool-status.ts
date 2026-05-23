@@ -24,6 +24,7 @@ type JobInfo = {
   startedAt: number
   clientId?: string
   userId?:   string
+  statusText?: string
   result?:   ToolResultPayload
   error?:    string
 }
@@ -60,7 +61,8 @@ const formatJobStatus = (jobId: string, info: JobInfo): string => {
   if (info.error !== undefined) {
     return `Job ${jobId} (${info.toolName}) failed: ${info.error}`
   }
-  return `Job ${jobId} (${info.toolName}) is still running, started ${age} ago.`
+  const detail = info.statusText ? ` ${info.statusText}` : ''
+  return `Job ${jobId} (${info.toolName}) is still running, started ${age} ago.${detail}`
 }
 
 // ─── Actor ───
@@ -88,6 +90,7 @@ export const ToolStatus = (): ActorDef<ToolStatusMsg, ToolStatusState> => ({
             startedAt: event.startedAt,
             clientId:  event.clientId,
             userId:    event.userId,
+            statusText: event.statusText,
           },
         }
       })
@@ -135,7 +138,8 @@ export const ToolStatus = (): ActorDef<ToolStatusMsg, ToolStatusState> => ({
         }
         const lines = entries.map(([id, j]) => {
           const age = formatAge(Date.now() - j.startedAt)
-          const status = j.result !== undefined ? 'completed' : j.error !== undefined ? 'failed' : `running ${age}`
+      const detail = j.statusText ? `, ${j.statusText}` : ''
+      const status = j.result !== undefined ? 'completed' : j.error !== undefined ? 'failed' : `running ${age}${detail}`
           return `- ${id} (${j.toolName}, ${status})`
         })
         msg.replyTo.send({ type: 'toolResult', result: { text: lines.join('\n') } })

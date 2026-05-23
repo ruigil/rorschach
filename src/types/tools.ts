@@ -71,8 +71,9 @@ export type JobLifecycleEvent =
       startedAt: number
       clientId?: string
       userId?: string
+      statusText?: string
     }
-  | { jobId: string; status: 'completed'; result: ToolResultPayload }
+  | { jobId: string; status: 'completed'; result: ToolResultPayload; statusText?: string }
   | { jobId: string; status: 'failed';    error: string }
   | { jobId: string; status: 'cleared' }
 

@@ -140,8 +140,17 @@
       }
     },
     "coding": {
-      "model": "google/gemini-3.5-flash",
-      "maxToolLoops": 25
+      "projectRoot": "/home/rigel/rorschach/src",
+      "projectMount": "/rorschach",
+      "artifactsDir": "workspace/artifacts",
+      "coding": {
+        "model": "deepseek/deepseek-v4-pro",
+        "maxToolLoops": 25
+      },
+      "docs": {
+        "model": "deepseek/deepseek-v4-pro",
+        "maxToolLoops": 30
+      }
     }
   }
 }

@@ -314,6 +314,30 @@ body.plan-workspace-resizing {
   min-height: 0;
   border-left: 1px solid var(--border);
   box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-mid) transparent;
+}
+
+.doc-workspace::-webkit-scrollbar,
+.doc-workspace-body::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.doc-workspace::-webkit-scrollbar-track,
+.doc-workspace-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.doc-workspace::-webkit-scrollbar-thumb,
+.doc-workspace-body::-webkit-scrollbar-thumb {
+  background: var(--border-mid);
+  border-radius: 2px;
+}
+
+.doc-workspace::-webkit-scrollbar-thumb:hover,
+.doc-workspace-body::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }
 
 .doc-workspace-resizer {
@@ -447,6 +471,8 @@ body.doc-workspace-resizing {
   background: #03070a;
   display: flex;
   flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-mid) transparent;
 }
 
 .doc-workspace-empty {
@@ -487,4 +513,3 @@ body.doc-workspace-resizing {
     display: none;
   }
 }
-

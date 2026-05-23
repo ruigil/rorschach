@@ -1,0 +1,110 @@
+import { join, resolve, relative } from 'node:path'
+import type { ConfigSchemaSection } from '../../types/config.ts'
+import type { Identity } from '../../types/identity.ts'
+import type { RouteRegistration } from '../../types/routes.ts'
+
+export const codingProjectSchema: ConfigSchemaSection = {
+  id: 'coding.project',
+  title: 'Coding',
+  subtitle: 'coding · project and artifact paths',
+  tab: 'coding',
+  configKey: '',
+  routeId: 'config.coding',
+  schema: {
+    type: 'object',
+    required: ['projectRoot', 'projectMount', 'artifactsDir'],
+    properties: {
+      projectRoot: { type: 'string', default: '/home/user/project', 'x-ui': { label: 'Project root' } },
+      projectMount: { type: 'string', default: '/rorschach/home/user/project', 'x-ui': { label: 'Project mount' } },
+      artifactsDir: { type: 'string', default: 'workspace/artifacts', 'x-ui': { label: 'Artifacts directory' } },
+    },
+  },
+}
+
+export const codingAgentSchema: ConfigSchemaSection = {
+  id: 'coding.agent',
+  title: 'Coding Agent',
+  subtitle: 'coding · user-facing project assistant',
+  tab: 'coding',
+  configKey: 'coding',
+  routeId: 'config.coding',
+  schema: {
+    type: 'object',
+    required: ['model', 'maxToolLoops'],
+    properties: {
+      model: { type: 'string', default: 'google/gemini-3.5-flash', 'x-ui': { widget: 'model-select', label: 'Coding model' } },
+      maxToolLoops: { type: 'number', default: 25, minimum: 1, maximum: 80 },
+    },
+  },
+}
+
+export const docsAgentSchema: ConfigSchemaSection = {
+  id: 'coding.docs',
+  title: 'Docs Agent',
+  subtitle: 'coding · documentation generation',
+  tab: 'coding',
+  configKey: 'docs',
+  routeId: 'config.coding',
+  schema: {
+    type: 'object',
+    required: ['model', 'maxToolLoops'],
+    properties: {
+      model: { type: 'string', default: 'google/gemini-3.5-flash', 'x-ui': { widget: 'model-select', label: 'Docs model' } },
+      maxToolLoops: { type: 'number', default: 30, minimum: 1, maximum: 100 },
+    },
+  },
+}
+
+export const codingSchemas = [codingProjectSchema, codingAgentSchema, docsAgentSchema]
+
+const mimeType = (path: string): string => {
+  if (path.endsWith('.html')) return 'text/html; charset=utf-8'
+  if (path.endsWith('.css')) return 'text/css; charset=utf-8'
+  if (path.endsWith('.js')) return 'text/javascript; charset=utf-8'
+  if (path.endsWith('.json')) return 'application/json; charset=utf-8'
+  if (path.endsWith('.svg')) return 'image/svg+xml'
+  if (path.endsWith('.png')) return 'image/png'
+  if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg'
+  return 'application/octet-stream'
+}
+
+const json = (body: unknown, status = 200): Response =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+const requireSession = (identity: Identity | null): Response | null =>
+  identity ? null : json({ error: 'Unauthorized' }, 401)
+
+const artifactPath = (artifactsDir: string, pathname: string): string | null => {
+  if (!pathname.startsWith('/artifacts/')) return null
+  const raw = pathname.slice('/artifacts/'.length) || 'index.html'
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(raw)
+  } catch {
+    return null
+  }
+  if (!decoded || decoded.includes('\0')) return null
+  const root = resolve(artifactsDir)
+  const target = resolve(join(root, decoded))
+  const rel = relative(root, target)
+  if (rel.startsWith('..') || rel === '..' || rel.startsWith('/') || rel.includes('\\..\\')) return null
+  return target
+}
+
+export const buildCodingRoutes = (artifactsDir: string): RouteRegistration[] => [
+  {
+    id: 'coding.artifacts',
+    method: 'GET',
+    path: '/artifacts/',
+    match: 'prefix',
+    handler: async (_req, url, identity) => {
+      const unauthorized = requireSession(identity)
+      if (unauthorized) return unauthorized
+      const path = artifactPath(artifactsDir, url.pathname)
+      if (!path) return json({ error: 'Not found' }, 404)
+      const file = Bun.file(path)
+      if (!(await file.exists())) return json({ error: 'Not found' }, 404)
+      return new Response(file, { headers: { 'Content-Type': mimeType(path) } })
+    },
+  },
+]
