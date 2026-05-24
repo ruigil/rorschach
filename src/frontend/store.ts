@@ -11,6 +11,14 @@ if (savedMessagesStr) {
 const savedMode = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.currentMode') || '' : '';
 const savedPlanOpen = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.planWorkspaceOpen') === 'true' : false;
 
+const savedUndockedStr = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.chat_window_state') : null;
+let savedIsUndocked = false;
+if (savedUndockedStr) {
+  try {
+    savedIsUndocked = !!JSON.parse(savedUndockedStr).isUndocked;
+  } catch {}
+}
+
 const state: RorschachState = {
   isConnected: false,
   isWaiting: false,
@@ -40,6 +48,7 @@ const state: RorschachState = {
   planWorkspaceOpen: savedPlanOpen,
   docWorkspaceOpen: false,
   currentDocArtifact: null,
+  isChatUndocked: savedIsUndocked,
 }
 
 type StateKey = keyof RorschachState

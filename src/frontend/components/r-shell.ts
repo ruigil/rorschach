@@ -16,6 +16,7 @@ export class RShell extends RorschachBase {
   private _isWaiting = new StoreController(this, 'isWaiting');
   private _planWorkspaceOpen = new StoreController(this, 'planWorkspaceOpen');
   private _docWorkspaceOpen = new StoreController(this, 'docWorkspaceOpen');
+  private _isChatUndocked = new StoreController(this, 'isChatUndocked');
 
   @query('r-chat-panel') private _chatPanel?: any;
   @state() private _noticing = false;
@@ -117,7 +118,7 @@ export class RShell extends RorschachBase {
 
       <main>
         <div id="panel-chat" class="panel ${activeTab === 'chat' ? 'active' : ''} ${this._planWorkspaceOpen.value ? 'plan-workspace-open' : ''} ${this._docWorkspaceOpen.value ? 'doc-workspace-open' : ''}">
-          <r-chat-panel></r-chat-panel>
+          ${!this._isChatUndocked.value ? html`<r-chat-panel></r-chat-panel>` : ''}
           <r-plan-workspace id="plan-workspace"></r-plan-workspace>
           <r-doc-workspace id="doc-workspace"></r-doc-workspace>
         </div>
@@ -130,6 +131,8 @@ export class RShell extends RorschachBase {
           <r-observe-panel></r-observe-panel>
         </div>
       </main>
+
+      ${this._isChatUndocked.value ? html`<r-chat-panel></r-chat-panel>` : ''}
     `;
   }
 }

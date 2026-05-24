@@ -27,7 +27,7 @@
   },
   "type": "module",
   "dependencies": {
-    "@grafeo-db/js": "^0.5.41",
+    "@grafeo-db/js": "^0.5.42",
     "cron-parser": "^5.5.0",
     "googleapis": "^171.4.0",
     "just-bash": "^3.0.1",

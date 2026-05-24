@@ -5,7 +5,7 @@
     "": {
       "name": "rorschach",
       "dependencies": {
-        "@grafeo-db/js": "^0.5.41",
+        "@grafeo-db/js": "^0.5.42",
         "cron-parser": "^5.5.0",
         "googleapis": "^171.4.0",
         "just-bash": "^3.0.1",
@@ -49,19 +49,19 @@
 
     "@exodus/bytes": ["@exodus/bytes@1.15.1", "", { "peerDependencies": { "@noble/hashes": "^1.8.0 || ^2.0.0" }, "optionalPeers": ["@noble/hashes"] }, "sha512-S6mL0yNB/Abt9Ei4tq8gDhcczc4S3+vQ4ra7vxnAf+YHC02srtqxKKZghx2Dq6p0e66THKwR6r8N6P95wEty7Q=="],
 
-    "@grafeo-db/js": ["@grafeo-db/js@0.5.41", "", { "optionalDependencies": { "@grafeo-db/js-darwin-arm64": "0.5.41", "@grafeo-db/js-darwin-x64": "0.5.41", "@grafeo-db/js-linux-arm64-gnu": "0.5.41", "@grafeo-db/js-linux-arm64-musl": "0.5.41", "@grafeo-db/js-linux-x64-gnu": "0.5.41", "@grafeo-db/js-win32-x64-msvc": "0.5.41" } }, "sha512-Ylb9r0fj8bl0bzXC0X+2NHGwn/JcRwp5/rxC2Ndcwh2mKeSwBnhnajyMQG2SyTR2qZesubjS3XlrxEy85+jEAg=="],
+    "@grafeo-db/js": ["@grafeo-db/js@0.5.42", "", { "optionalDependencies": { "@grafeo-db/js-darwin-arm64": "0.5.42", "@grafeo-db/js-darwin-x64": "0.5.42", "@grafeo-db/js-linux-arm64-gnu": "0.5.42", "@grafeo-db/js-linux-arm64-musl": "0.5.42", "@grafeo-db/js-linux-x64-gnu": "0.5.42", "@grafeo-db/js-win32-x64-msvc": "0.5.42" } }, "sha512-EAi8wVxOu04dAlgRDv9o2FNyvNtGQJOrE0uskfQoHTkmNzYdVpr23isKjNKEg1yX7xaFWdLdBjQrucU8LqTMnQ=="],
 
-    "@grafeo-db/js-darwin-arm64": ["@grafeo-db/js-darwin-arm64@0.5.41", "", { "os": "darwin", "cpu": "arm64" }, "sha512-V70B+nwb8GnCv6lDnQdUEH37M0/NqsTNFwgwKi69QZ9No1AFs4B7gq9wisK0Uc0h8CSwl4cdY1jcfZJFZ1SqyQ=="],
+    "@grafeo-db/js-darwin-arm64": ["@grafeo-db/js-darwin-arm64@0.5.42", "", { "os": "darwin", "cpu": "arm64" }, "sha512-zGktciH7DtC1gnR1CIxqtLH2M+4wxrn45+um7W6dyNlYfi4844vKGQbK1Waq2zKIqvGL1x550pgqoXx1pijDEg=="],
 
-    "@grafeo-db/js-darwin-x64": ["@grafeo-db/js-darwin-x64@0.5.41", "", { "os": "darwin", "cpu": "x64" }, "sha512-EsB3swXNh+V4h5idAUfTV3tN98TdVFYYiZJE8+zr1COPzu8Lax8Ex4oYySa5Tm5uLjLv31ETc0jjXW+T+ChJxQ=="],
+    "@grafeo-db/js-darwin-x64": ["@grafeo-db/js-darwin-x64@0.5.42", "", { "os": "darwin", "cpu": "x64" }, "sha512-EZKeUhgYHJgsbu7Fsqq+wS+ByQTxTbcGoHJLpskTQgnf58SHElhUbToPalL/NHr51be8q5x+KB6jpvLEu6qf5g=="],
 
-    "@grafeo-db/js-linux-arm64-gnu": ["@grafeo-db/js-linux-arm64-gnu@0.5.41", "", { "os": "linux", "cpu": "arm64" }, "sha512-K+Tdanv7MwY/5vzXr5z85aNx7YUbKlv97WrdWaRuvU3nC5DgBLFyRBK7Aedh94Dq6AnMY+NZ08+fB3U4ifdatA=="],
+    "@grafeo-db/js-linux-arm64-gnu": ["@grafeo-db/js-linux-arm64-gnu@0.5.42", "", { "os": "linux", "cpu": "arm64" }, "sha512-6MT3czXIsa3AaUD2bvbIHru1lUBYmf15lh62mZ7LzGAn0qus9pTC9NYd6FJJ13xEmxZo+I18VwiYiRD+mSFxbw=="],
 
-    "@grafeo-db/js-linux-arm64-musl": ["@grafeo-db/js-linux-arm64-musl@0.5.41", "", { "os": "linux", "cpu": "arm64" }, "sha512-CaB0y60KKPtgWXjfHQ5Qs0vStutBbVbPme1J1yyueupA7lXQ4o24xEpx4KaGKORSKvMZwgffrSJWVofbK4Puww=="],
+    "@grafeo-db/js-linux-arm64-musl": ["@grafeo-db/js-linux-arm64-musl@0.5.42", "", { "os": "linux", "cpu": "arm64" }, "sha512-Pid43AXLqot7aBpwtFzZ1TLuHzxagReWeFHVhzNaWNwb0cnySe1YdNiY3GytuARg8IWbjg9YcIf9rnwRg3/aag=="],
 
-    "@grafeo-db/js-linux-x64-gnu": ["@grafeo-db/js-linux-x64-gnu@0.5.41", "", { "os": "linux", "cpu": "x64" }, "sha512-LfptE3Z6jGHTNRAXAVqijT2ywYnAP0+NWHV2j8XW9Z9XWCjs4QASbI7DezOeJkdzVFd0ZFwUpkKu+fsYEABYbQ=="],
+    "@grafeo-db/js-linux-x64-gnu": ["@grafeo-db/js-linux-x64-gnu@0.5.42", "", { "os": "linux", "cpu": "x64" }, "sha512-5LthBRNKb3YaSn7mP1Ep6/YPYY3PbOeQ5BguFvtrMQtsovtGyIqHqp9Fv68JGLk45AXJG6vol0B6IwpRHb3TQQ=="],
 
-    "@grafeo-db/js-win32-x64-msvc": ["@grafeo-db/js-win32-x64-msvc@0.5.41", "", { "os": "win32", "cpu": "x64" }, "sha512-u6hnJW+zVNAR0brqL9M9UkGhR72kis3fdFNLZQF2sP83qiER7qgvQLVMvtKHttCeKf3MRWKLH2jlvRy23i/XSQ=="],
+    "@grafeo-db/js-win32-x64-msvc": ["@grafeo-db/js-win32-x64-msvc@0.5.42", "", { "os": "win32", "cpu": "x64" }, "sha512-IRNcnqYhiRuMvqEjeVbndky7Rors/pf8zwGGuI4hco6PGkDKENfm8w7aDPe1b46cxV82TpMCC4FdpkiW1ixA7A=="],
 
     "@jitl/quickjs-ffi-types": ["@jitl/quickjs-ffi-types@0.32.0", "", {}, "sha512-v9T+GQpmk43VDJ7d72sf0Nexhk+ArvtUihW27dy7lqAl0zBObFKtSBBIm5RBjwIhE8VwsPPm9PNuvPvNqLWUEg=="],
 

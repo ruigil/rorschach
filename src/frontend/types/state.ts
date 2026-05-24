@@ -116,4 +116,5 @@ export interface RorschachState {
   planWorkspaceOpen: boolean
   docWorkspaceOpen: boolean
   currentDocArtifact: string | null
+  isChatUndocked: boolean
 }

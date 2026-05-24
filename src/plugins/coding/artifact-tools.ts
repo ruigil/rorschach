@@ -86,7 +86,7 @@ const tocSidebar = (): string => `
         </ol>
       </aside>`
 
-const pageShell = (
+export const pageShell = (
   title: string,
   bodyHtml: string,
 ): string => `<!doctype html>
@@ -96,7 +96,48 @@ const pageShell = (
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/base16/ocean.min.css">
   <script src="./toc.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    function copyCode(btn) {
+      const codeBlock = btn.closest('.code-block');
+      if (!codeBlock) return;
+      const codeEl = codeBlock.querySelector('code');
+      if (!codeEl) return;
+      const code = codeEl.textContent || '';
+      navigator.clipboard.writeText(code).then(() => {
+        btn.textContent = 'copied';
+        setTimeout(() => { btn.textContent = 'copy'; }, 1800);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('pre code').forEach((block) => {
+        if (typeof hljs !== 'undefined') {
+          hljs.highlightElement(block);
+        }
+        
+        const langClass = Array.from(block.classList).find(c => c.startsWith('language-'));
+        const lang = langClass ? langClass.replace('language-', '') : 'code';
+        const pre = block.parentElement;
+        if (!pre) return;
+        
+        if (pre.parentElement && pre.parentElement.classList.contains('code-block')) return;
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = 'code-block';
+        
+        const header = document.createElement('div');
+        header.className = 'code-header';
+        header.innerHTML = '<span class="code-lang">' + lang + '</span><button class="copy-btn" onclick="copyCode(this)">copy</button>';
+        
+        pre.parentNode.insertBefore(wrapper, pre);
+        wrapper.appendChild(header);
+        wrapper.appendChild(pre);
+      });
+    });
+  </script>
   <style>
     html { scrollbar-width: thin; scrollbar-color: var(--border-mid) transparent; }
     body { min-height: 100vh; height: auto; overflow: auto; padding: 0; }
@@ -138,7 +179,7 @@ ${bodyHtml}
 </html>
 `
 
-const indexShell = (manifest: DocsManifest): string => {
+export const indexShell = (manifest: DocsManifest): string => {
   return pageShell('Documentation Index', `
       <p>${escapeHtml(manifest.query)}</p>
       <p><em>Generated at ${escapeHtml(manifest.generatedAt)}</em></p>
