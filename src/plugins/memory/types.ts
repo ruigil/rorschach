@@ -2,6 +2,7 @@ import type { ActorIdentity, ActorRef, SpanHandle } from '../../system/index.ts'
 import type { LoopMsg } from '../../system/index.ts'
 import type { ToolFinalReply, ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
+import type { ContextTurn } from '../../types/agents.ts'
 
 export type CreateNodeResult = { name: string; nodeId: number }
 
@@ -98,12 +99,12 @@ export type MemorySupervisorMsg =
 
 // Supervisor: subscribes to topics + timer, routes turns to per-user workers.
 export type MemoryConsolidationMsg =
-  | { type: '_turn';             userId: string; userText: string; assistantText: string; timestamp: number }
+  | { type: '_contextSnapshot';  userId: string; turns: ContextTurn[] }
   | { type: '_consolidate' }
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
 
 // Worker: one per user, runs the agentic loop over a local buffer.
 export type UserConsolidationWorkerMsg =
   | LoopMsg
-  | { type: '_turn';        userText: string; assistantText: string; timestamp: number }
+  | { type: '_turn';        turn: ContextTurn }
   | { type: '_consolidate' }

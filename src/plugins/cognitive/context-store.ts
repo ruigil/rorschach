@@ -2,11 +2,11 @@ import type { ActorDef, PersistenceAdapter } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import { UserContextTopic } from './types.ts'
-import { UserStreamTopic } from '../../types/events.ts'
 import {
   ContextSnapshotTopic,
   type AgentContextMsg,
   type ContextRecordSource,
+  type ContextTurn,
   type ToolSummary,
 } from '../../types/agents.ts'
 
@@ -18,7 +18,7 @@ export type ContextStoreMsg =
 
 // ─── State ───
 
-const CONTEXT_SCHEMA_VERSION = 1
+const CONTEXT_SCHEMA_VERSION = 2
 
 type ContextRecord = {
   message:   ApiMessage
@@ -32,6 +32,8 @@ type ContextRecord = {
 export type ContextStoreState = {
   schemaVersion:      number
   records:            ContextRecord[]
+  turns:              ContextTurn[]
+  nextTurnSeq:        number
   userContext:        string | null
   modeSummaries:      Record<string, string>
   version:            number
@@ -42,6 +44,8 @@ export type ContextStoreState = {
 const initialContextStoreState = (): ContextStoreState => ({
   schemaVersion:       CONTEXT_SCHEMA_VERSION,
   records:             [],
+  turns:               [],
+  nextTurnSeq:         1,
   userContext:         null,
   modeSummaries:       {},
   version:             0,
@@ -64,6 +68,8 @@ type PersistedContextStore = {
   userContext:   string | null
   modeSummaries: Record<string, string>
   records:       ContextRecord[]
+  turns:         ContextTurn[]
+  nextTurnSeq:   number
 }
 
 const createPersistence = (userId: string, contextPath: string = 'workspace/context'): PersistenceAdapter<ContextStoreState> => {
@@ -79,10 +85,17 @@ const createPersistence = (userId: string, contextPath: string = 'workspace/cont
       } catch {
         return undefined
       }
-      if (saved.schemaVersion !== CONTEXT_SCHEMA_VERSION || !Array.isArray(saved.records)) return undefined
+      if (
+        saved.schemaVersion !== CONTEXT_SCHEMA_VERSION ||
+        !Array.isArray(saved.records) ||
+        !Array.isArray(saved.turns) ||
+        typeof saved.nextTurnSeq !== 'number'
+      ) return undefined
       return {
         schemaVersion: CONTEXT_SCHEMA_VERSION,
         records:       saved.records,
+        turns:         saved.turns,
+        nextTurnSeq:   saved.nextTurnSeq,
         userContext:   saved.userContext ?? null,
         modeSummaries: saved.modeSummaries ?? {},
         version:       0,
@@ -96,6 +109,8 @@ const createPersistence = (userId: string, contextPath: string = 'workspace/cont
         userContext:   state.userContext,
         modeSummaries: state.modeSummaries,
         records:       state.records,
+        turns:         state.turns,
+        nextTurnSeq:   state.nextTurnSeq,
       }
       await Bun.write(path, JSON.stringify(data, null, 2))
     },
@@ -120,6 +135,11 @@ const trimRecords = (records: ContextRecord[], hours: number): ContextRecord[] =
     if (r.message.role === 'user') earliestValidIndex = i
   }
   return records.slice(earliestValidIndex)
+}
+
+const trimTurns = (turns: ContextTurn[], hours: number): ContextTurn[] => {
+  const cutoff = Date.now() - hours * 60 * 60 * 1000
+  return turns.filter(turn => turn.timestamp >= cutoff)
 }
 
 const extractText = (message: ApiMessage): string =>
@@ -177,8 +197,8 @@ export const ContextStore = (
     ctx.publishRetained(ContextSnapshotTopic, userId, {
       userId,
       version:       state.version,
-      messages:      recentMessages,
       recentMessages,
+      turns:         state.turns,
       userContext:   state.userContext,
       modeSummaries: state.modeSummaries,
       toolSummaries: buildToolSummaries(state.records),
@@ -224,10 +244,10 @@ export const ContextStore = (
         ]
         const trimmed = contextWindowHours ? trimRecords(newRecords, contextWindowHours) : newRecords
 
-        // Turn detection: pair user message with assistant reply for UserStreamTopic.
+        // Turn detection: pair user message with assistant reply for context snapshots.
         let pendingUserText    = state.pendingUserText
         let pendingUserInjected = state.pendingUserInjected
-        let userStreamEvent: { userText: string; assistantText: string; injected: boolean } | null = null
+        let completedTurn: ContextTurn | null = null
 
         const lastUser = accepted.findLast(m => m.role === 'user')
         const lastAssistant = accepted.findLast(m => isConversationMessage(m) && m.role === 'assistant')
@@ -236,29 +256,34 @@ export const ContextStore = (
           pendingUserText = extractText(lastUser)
           pendingUserInjected = msg.injected ?? false
         } else if (lastAssistant && pendingUserText) {
-          userStreamEvent = { userText: pendingUserText, assistantText: extractText(lastAssistant), injected: pendingUserInjected }
+          if (!pendingUserInjected) {
+            completedTurn = {
+              seq:           state.nextTurnSeq,
+              userId,
+              userText:      pendingUserText,
+              assistantText: extractText(lastAssistant),
+              timestamp:     now,
+            }
+          }
           pendingUserText = null
           pendingUserInjected = false
         }
 
+        const nextTurns = completedTurn
+          ? [...state.turns, completedTurn]
+          : state.turns
+        const trimmedTurns = contextWindowHours ? trimTurns(nextTurns, contextWindowHours) : nextTurns
+
         const next: ContextStoreState = {
           ...state,
           records: trimmed,
+          turns: trimmedTurns,
+          nextTurnSeq: completedTurn ? state.nextTurnSeq + 1 : state.nextTurnSeq,
           version: state.version + 1,
           pendingUserText,
           pendingUserInjected,
         }
         publishSnapshot(next, ctx)
-
-        if (userStreamEvent) {
-          ctx.publish(UserStreamTopic, {
-            userId,
-            userText:      userStreamEvent.userText,
-            assistantText: userStreamEvent.assistantText,
-            timestamp:     now,
-            injected:      userStreamEvent.injected,
-          })
-        }
 
         return { state: next }
       },

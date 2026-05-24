@@ -8,8 +8,7 @@ import type {
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { UserContextMsg } from './types.ts'
 import { UserContextTopic } from './types.ts'
-import { UserStreamTopic, type UserStreamEvent } from '../../types/events.ts'
-import { ContextSnapshotTopic } from '../../types/agents.ts'
+import { ContextSnapshotTopic, type ContextTurn } from '../../types/agents.ts'
 
 // ─── Options ───
 
@@ -28,10 +27,11 @@ type ActiveRequest = {
 }
 
 export type UserContextState = {
-  llmRef:  ActorRef<LlmProviderMsg> | null
-  buffers: Record<string, UserStreamEvent[]>
-  active:  Record<string, ActiveRequest>   // userId → in-flight LLM request
-  userContexts: Record<string, string>      // userId → current context summary
+  llmRef:          ActorRef<LlmProviderMsg> | null
+  buffers:         Record<string, ContextTurn[]>
+  active:          Record<string, ActiveRequest>   // userId → in-flight LLM request
+  userContexts:    Record<string, string>          // userId → current context summary
+  lastSeenTurnSeq: Record<string, number>
 }
 
 // ─── System prompt ───
@@ -49,7 +49,7 @@ const buildSystemPrompt = (userId: string, currentContext: string): string =>
   `4. **Objectivity** — Be specific and concrete. Do not speculate or pad. Write in third person, present tense.\n` +
   `5. **Output** — Your response MUST be the summary and nothing else. No preamble, no commentary.`
 
-const buildMessages = (userId: string, currentContext: string, turns: UserStreamEvent[]): ApiMessage[] => {
+const buildMessages = (userId: string, currentContext: string, turns: ContextTurn[]): ApiMessage[] => {
   const turnList = turns.map((t, i) => {
     const date = new Date(t.timestamp).toISOString()
     return `Turn ${i + 1} [${date}]\nUser: ${t.userText}\nAssistant: ${t.assistantText}`
@@ -66,7 +66,7 @@ const buildMessages = (userId: string, currentContext: string, turns: UserStream
 export const UserContext = (options: UserContextOptions): ActorDef<UserContextMsg, UserContextState> => {
   const { model, intervalMs, contextPath = 'workspace/context' } = options
 
-  const startUserUpdate = (userId: string, turns: UserStreamEvent[], llmRef: ActorRef<LlmProviderMsg>, state: UserContextState, ctx: any): UserContextState => {
+  const startUserUpdate = (userId: string, turns: ContextTurn[], llmRef: ActorRef<LlmProviderMsg>, state: UserContextState, ctx: any): UserContextState => {
     const requestId = crypto.randomUUID()
     const currentContext = state.userContexts[userId] ?? ''
 
@@ -90,16 +90,6 @@ export const UserContext = (options: UserContextOptions): ActorDef<UserContextMs
     initialState: INITIAL_USER_CONTEXT_STATE,
     lifecycle: onLifecycle({
       start: (state, context) => {
-        context.subscribe(UserStreamTopic, (e) => {
-          if (e.injected) return null
-          return {
-            type: '_turn' as const,
-            userId: e.userId,
-            userText: e.userText,
-            assistantText: e.assistantText,
-            timestamp: e.timestamp,
-          }
-        })
         context.subscribe(LlmProviderTopic, (e) => ({
           type: '_llmProvider' as const,
           ref: e.ref,
@@ -108,6 +98,7 @@ export const UserContext = (options: UserContextOptions): ActorDef<UserContextMs
           type: '_contextSnapshot' as const,
           userId: e.userId,
           userContext: e.userContext,
+          turns: e.turns,
         }))
         context.timers.startPeriodicTimer('user-context-run', { type: '_run' }, intervalMs)
         return { state }
@@ -115,26 +106,30 @@ export const UserContext = (options: UserContextOptions): ActorDef<UserContextMs
     }),
 
     handler: onMessage<UserContextMsg, UserContextState>({
-      _turn: (state, msg) => {
-        const buffer = state.buffers[msg.userId] ?? []
-        return {
-          state: {
-            ...state,
-            buffers: {
-              ...state.buffers,
-              [msg.userId]: [...buffer, { userId: msg.userId, userText: msg.userText, assistantText: msg.assistantText, timestamp: msg.timestamp }],
-            },
-          },
-        }
-      },
-
       _contextSnapshot: (state, msg) => {
+        const previousSeq = state.lastSeenTurnSeq[msg.userId]
+        const latestSeq = msg.turns.at(-1)?.seq ?? previousSeq ?? 0
+        const unseenTurns = previousSeq === undefined
+          ? []
+          : msg.turns.filter(turn => turn.seq > previousSeq)
+        const buffer = state.buffers[msg.userId] ?? []
+
         return {
           state: {
             ...state,
+            buffers: unseenTurns.length > 0
+              ? {
+                  ...state.buffers,
+                  [msg.userId]: [...buffer, ...unseenTurns],
+                }
+              : state.buffers,
             userContexts: {
               ...state.userContexts,
               [msg.userId]: msg.userContext ?? '',
+            },
+            lastSeenTurnSeq: {
+              ...state.lastSeenTurnSeq,
+              [msg.userId]: latestSeq,
             },
           },
         }
@@ -209,8 +204,9 @@ export const UserContext = (options: UserContextOptions): ActorDef<UserContextMs
 }
 
 const INITIAL_USER_CONTEXT_STATE: UserContextState = {
-  llmRef:  null,
-  buffers: {},
-  active:  {},
-  userContexts: {},
+  llmRef:          null,
+  buffers:         {},
+  active:          {},
+  userContexts:    {},
+  lastSeenTurnSeq: {},
 }

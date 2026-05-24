@@ -57,16 +57,3 @@ export type CronTriggerEvent = { userId: string; text: string; traceId: string; 
 
 /** Topic emitted when a cron job fires for a specific user. Session manager routes to that user's chatbot actor. */
 export const CronTriggerTopic = createTopic<CronTriggerEvent>('cron.trigger.user')
-
-// ─── Domain event: published when a chatbot turn completes ───
-
-export type UserStreamEvent = {
-  userId:        string
-  userText:      string
-  assistantText: string
-  timestamp:     number
-  injected?:     boolean
-}
-
-/** Topic emitted when a chatbot LLM turn completes. Subscribe to persist conversation history. */
-export const UserStreamTopic = createTopic<UserStreamEvent>('user.stream')

@@ -13,6 +13,14 @@ export type ToolSummary = {
   timestamp: number
 }
 
+export type ContextTurn = {
+  seq:           number
+  userId:        string
+  userText:      string
+  assistantText: string
+  timestamp:     number
+}
+
 export type AgentContextMsg =
   | {
       type:       'append'
@@ -27,8 +35,8 @@ export type AgentContextMsg =
 export type ContextSnapshotEvent = {
   userId:        string
   version:       number
-  messages:      ApiMessage[]
   recentMessages: ApiMessage[]
+  turns:         ContextTurn[]
   userContext:   string | null
   modeSummaries: Record<string, string>
   toolSummaries: ToolSummary[]

@@ -17,6 +17,7 @@ import type {
   VideoSubmitReply,
   VisionProviderReply,
 } from '../../types/llm.ts'
+import type { ContextTurn } from '../../types/agents.ts'
 
 // ─── Session configuration (consumed by SessionManager) ───
 
@@ -99,10 +100,9 @@ export type LlmProviderInternalMsg =
 // ─── User context message protocol ───
 
 export type UserContextMsg =
-  | { type: '_turn';             userId: string; userText: string; assistantText: string; timestamp: number }
   | { type: '_run' }
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_contextSnapshot';  userId: string; userContext: string | null }
+  | { type: '_contextSnapshot';  userId: string; userContext: string | null; turns: ContextTurn[] }
   | LlmProviderReply
 
 // ─── Topic: published (retained) after each context summary generation ───

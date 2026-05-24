@@ -4,7 +4,6 @@ import { AgentSystem } from '../system/index.ts'
 import { assembleAgentMessages } from '../system/index.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
 import { ContextSnapshotTopic, type ContextSnapshotEvent } from '../types/agents.ts'
-import { UserStreamTopic, type UserStreamEvent } from '../types/events.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -62,7 +61,6 @@ describe('ContextStore context snapshots', () => {
       { role: 'user', content: 'search for cats' },
       { role: 'assistant', content: 'Cats are mammals.' },
     ])
-    expect(latest.messages).toEqual(latest.recentMessages)
     expect(latest.modeSummaries).toEqual({})
     expect(latest.toolSummaries).toEqual([
       {
@@ -76,37 +74,36 @@ describe('ContextStore context snapshots', () => {
     await system.shutdown()
   })
 
-  test('publishes UserStreamTopic when user + assistant turn completes', async () => {
+  test('adds a snapshot turn when user + assistant turn completes', async () => {
     const system = await AgentSystem()
-    const events: UserStreamEvent[] = []
-    system.subscribe(UserStreamTopic, event => events.push(event))
+    const snapshots: ContextSnapshotEvent[] = []
+    system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
     const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath: await tempContextPath() }))
     await tick()
 
-    // User message only — no event yet
+    // User message only — no completed turn yet
     ref.send({ type: 'append', mode: 'chatbot', messages: [{ role: 'user', content: 'hello' }] })
     await tick()
-    expect(events).toHaveLength(0)
+    expect(snapshots.at(-1)?.turns).toEqual([])
 
     // Assistant reply — turn completes
     ref.send({ type: 'append', mode: 'chatbot', source: 'assistant', messages: [{ role: 'assistant', content: 'hi there' }] })
     await tick()
-    expect(events).toHaveLength(1)
-    expect(events[0]).toEqual({
+    expect(snapshots.at(-1)?.turns).toEqual([{
+      seq: 1,
       userId: 'u1',
       userText: 'hello',
       assistantText: 'hi there',
       timestamp: expect.any(Number),
-      injected: false,
-    })
+    }])
 
     await system.shutdown()
   })
 
-  test('does not publish UserStreamTopic for tool-call assistant messages', async () => {
+  test('does not add a snapshot turn for tool-call assistant messages', async () => {
     const system = await AgentSystem()
-    const events: UserStreamEvent[] = []
-    system.subscribe(UserStreamTopic, event => events.push(event))
+    const snapshots: ContextSnapshotEvent[] = []
+    system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
     const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath: await tempContextPath() }))
     await tick()
 
@@ -125,21 +122,21 @@ describe('ContextStore context snapshots', () => {
       }],
     })
     await tick()
-    expect(events).toHaveLength(0)
+    expect(snapshots.at(-1)?.turns).toEqual([])
 
     // Final text reply — turn completes
     ref.send({ type: 'append', mode: 'chatbot', source: 'assistant', messages: [{ role: 'assistant', content: 'Here are results.' }] })
     await tick()
-    expect(events).toHaveLength(1)
-    expect(events[0]!.assistantText).toBe('Here are results.')
+    expect(snapshots.at(-1)?.turns).toHaveLength(1)
+    expect(snapshots.at(-1)?.turns[0]!.assistantText).toBe('Here are results.')
 
     await system.shutdown()
   })
 
-  test('propagates injected flag to UserStreamTopic', async () => {
+  test('filters injected turns at the context snapshot source', async () => {
     const system = await AgentSystem()
-    const events: UserStreamEvent[] = []
-    system.subscribe(UserStreamTopic, event => events.push(event))
+    const snapshots: ContextSnapshotEvent[] = []
+    system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
     const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath: await tempContextPath() }))
     await tick()
 
@@ -148,9 +145,7 @@ describe('ContextStore context snapshots', () => {
     ref.send({ type: 'append', mode: 'chatbot', source: 'assistant', messages: [{ role: 'assistant', content: 'done' }] })
     await tick()
 
-    expect(events).toHaveLength(1)
-    expect(events[0]!.injected).toBe(true)
-    expect(events[0]!.userText).toBe('cron task')
+    expect(snapshots.at(-1)?.turns).toEqual([])
 
     await system.shutdown()
   })

@@ -1,8 +1,7 @@
 import type { ActorContext, ActorDef, ActorRef, Interceptor } from '../../system/index.ts'
 import { agentLoop, idleLoopState, type LoopState } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
-import { UserStreamTopic } from '../../types/events.ts'
-import type { UserStreamEvent } from '../../types/events.ts'
+import { ContextSnapshotTopic, type ContextTurn } from '../../types/agents.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import type {
   ApiMessage,
@@ -34,7 +33,7 @@ type WorkerOptions = {
 type ConsolidationWorkerState = {
   loop:    LoopState
   userId:  string
-  buffer:  UserStreamEvent[]
+  buffer:  ContextTurn[]
   llmRef:  ActorRef<LlmProviderMsg> | null
   tools:   ToolCollection
 }
@@ -60,7 +59,7 @@ const buildSystemPrompt = (userId: string): string =>
   zettelConsolidationSection(userId) +
   `Skip trivial exchanges. Focus on discovering non-obvious links that connect concepts across the conversation history.`
 
-const buildMessages = (userId: string, turns: UserStreamEvent[]): ApiMessage[] => {
+const buildMessages = (userId: string, turns: ContextTurn[]): ApiMessage[] => {
   const turnList = turns.map((t, i) => {
     const date = new Date(t.timestamp).toISOString()
     return `Turn ${i + 1} [${date}]\nUser: ${t.userText}\nAssistant: ${t.assistantText}`
@@ -107,10 +106,7 @@ const ConsolidationWorker = (options: WorkerOptions): ActorDef<UserConsolidation
       return {
         state: {
           ...state,
-          buffer: [
-            ...state.buffer,
-            { userId: state.userId, userText: m.userText, assistantText: m.assistantText, timestamp: m.timestamp },
-          ],
+          buffer: [...state.buffer, m.turn],
         },
       }
     }
@@ -149,6 +145,7 @@ export type ConsolidationState = {
   tools:            ToolCollection
   workers:          Record<string, ActorRef<UserConsolidationWorkerMsg>>
   workerSeq:        number
+  lastSeenTurnSeq:  Record<string, number>
 }
 
 export const MemoryConsolidation = (options: MemoryConsolidationOptions): ActorDef<MemoryConsolidationMsg, ConsolidationState> => {
@@ -165,17 +162,15 @@ export const MemoryConsolidation = (options: MemoryConsolidationOptions): ActorD
       tools,
       workers:   {},
       workerSeq: 0,
+      lastSeenTurnSeq: {},
     },
     lifecycle: onLifecycle({
       start: (state, context) => {
-        context.subscribe(UserStreamTopic, (e) => {
-          if (e.injected) return null
+        context.subscribe(ContextSnapshotTopic, (e) => {
           return {
-            type: '_turn' as const,
+            type: '_contextSnapshot' as const,
             userId: e.userId,
-            userText: e.userText,
-            assistantText: e.assistantText,
-            timestamp: e.timestamp,
+            turns: e.turns,
           }
         })
         context.subscribe(LlmProviderTopic, (e) => ({
@@ -196,7 +191,25 @@ export const MemoryConsolidation = (options: MemoryConsolidationOptions): ActorD
     }),
 
     handler: onMessage<MemoryConsolidationMsg, ConsolidationState>({
-      _turn: (state, msg, context) => {
+      _contextSnapshot: (state, msg, context) => {
+        const previousSeq = state.lastSeenTurnSeq[msg.userId]
+        const latestSeq = msg.turns.at(-1)?.seq ?? previousSeq ?? 0
+        const unseenTurns = previousSeq === undefined
+          ? []
+          : msg.turns.filter(turn => turn.seq > previousSeq)
+
+        if (unseenTurns.length === 0) {
+          return {
+            state: {
+              ...state,
+              lastSeenTurnSeq: {
+                ...state.lastSeenTurnSeq,
+                [msg.userId]: latestSeq,
+              },
+            },
+          }
+        }
+
         let worker    = state.workers[msg.userId]
         let workers   = state.workers
         let workerSeq = state.workerSeq
@@ -217,14 +230,21 @@ export const MemoryConsolidation = (options: MemoryConsolidationOptions): ActorD
           workers = { ...workers, [msg.userId]: worker }
         }
 
-        worker.send({
-          type:          '_turn',
-          userText:      msg.userText,
-          assistantText: msg.assistantText,
-          timestamp:     msg.timestamp,
-        })
+        for (const turn of unseenTurns) {
+          worker.send({ type: '_turn', turn })
+        }
 
-        return { state: { ...state, workers, workerSeq } }
+        return {
+          state: {
+            ...state,
+            workers,
+            workerSeq,
+            lastSeenTurnSeq: {
+              ...state.lastSeenTurnSeq,
+              [msg.userId]: latestSeq,
+            },
+          },
+        }
       },
 
       _consolidate: (state) => {
