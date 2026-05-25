@@ -1,6 +1,7 @@
-import { type RorschachState } from './types/state.js'
+import { type RorschachState, type WindowRuntimeState } from './types/state.js'
 import { type ReactiveController, type ReactiveControllerHost } from 'lit'
 import { DEFAULT_TAB, DEFAULT_OBSERVE_TAB } from './constants.js'
+import { WINDOW_REGISTRY } from './core/window-registry.js'
 
 const savedMessagesStr = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.lastMessages') : null;
 let savedMessages = [];
@@ -17,6 +18,78 @@ if (savedUndockedStr) {
   try {
     savedIsUndocked = !!JSON.parse(savedUndockedStr).isUndocked;
   } catch {}
+}
+
+function getSavedWindowState(id: string): WindowRuntimeState {
+  const config = WINDOW_REGISTRY[id];
+  const defaultX = typeof window !== 'undefined' ? window.innerWidth - 420 : 800;
+  const defaultY = 100;
+
+  const defaultState: WindowRuntimeState = {
+    id,
+    isOpen: id === 'chat',
+    isDocked: true,
+    isMinimized: false,
+    x: defaultX,
+    y: defaultY,
+    w: config?.defaultWidth ?? 400,
+    h: config?.defaultHeight ?? 600,
+    zIndex: 1000,
+    params: {}
+  };
+
+  if (typeof localStorage === 'undefined') return defaultState;
+
+  const saved = localStorage.getItem(`rorschach.window_state.${id}`);
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      return { ...defaultState, ...parsed };
+    } catch {}
+  }
+
+  // Fallbacks
+  if (id === 'chat') {
+    const oldChat = localStorage.getItem('rorschach.chat_window_state');
+    if (oldChat) {
+      try {
+        const parsed = JSON.parse(oldChat);
+        return {
+          ...defaultState,
+          isDocked: !parsed.isUndocked,
+          isMinimized: !!parsed.isCollapsed,
+          x: typeof parsed.x === 'number' ? parsed.x : defaultX,
+          y: typeof parsed.y === 'number' ? parsed.y : defaultY,
+          w: typeof parsed.w === 'number' ? parsed.w : defaultState.w,
+          h: typeof parsed.h === 'number' ? parsed.h : defaultState.h
+        };
+      } catch {}
+    }
+  }
+
+  if (id === 'docs') {
+    const docOpen = localStorage.getItem('rorschach.docWorkspaceOpen') === 'true';
+    const docArtifact = localStorage.getItem('rorschach.docWorkspaceArtifact');
+    if (docOpen || docArtifact) {
+      return {
+        ...defaultState,
+        isOpen: docOpen,
+        params: docArtifact ? { currentDocArtifact: docArtifact } : {}
+      };
+    }
+  }
+
+  if (id === 'plans') {
+    const planOpen = localStorage.getItem('rorschach.planWorkspaceOpen') === 'true';
+    if (planOpen) {
+      return {
+        ...defaultState,
+        isOpen: planOpen
+      };
+    }
+  }
+
+  return defaultState;
 }
 
 const state: RorschachState = {
@@ -49,6 +122,13 @@ const state: RorschachState = {
   docWorkspaceOpen: false,
   currentDocArtifact: null,
   isChatUndocked: savedIsUndocked,
+  windows: {
+    chat: getSavedWindowState('chat'),
+    docs: getSavedWindowState('docs'),
+    plans: getSavedWindowState('plans'),
+  },
+  activeWindowIds: ['chat'],
+  activeWorkspaceTab: localStorage.getItem('rorschach.activeWorkspaceTab') || 'docs',
 }
 
 type StateKey = keyof RorschachState

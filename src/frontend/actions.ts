@@ -92,3 +92,76 @@ export async function logout() {
   await fetch(new URL('auth/logout', location.href), { method: 'POST' });
   window.location.href = new URL('auth/login.html', location.href).href;
 }
+
+export function openWindow(id: string, params: Record<string, any> = {}) {
+  const windows = { ...store.get('windows') };
+  const winState = windows[id];
+  if (!winState) return;
+
+  winState.isOpen = true;
+  winState.isMinimized = false;
+  winState.params = { ...winState.params, ...params };
+  
+  if (winState.isDocked && id !== 'chat') {
+    store.set('activeWorkspaceTab', id);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('rorschach.activeWorkspaceTab', id);
+    }
+  }
+
+  store.set('windows', windows);
+  focusWindow(id);
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(`rorschach.window_state.${id}`, JSON.stringify(winState));
+    if (id === 'docs') {
+      localStorage.setItem('rorschach.docWorkspaceOpen', 'true');
+      if (params.currentDocArtifact) {
+        localStorage.setItem('rorschach.docWorkspaceArtifact', params.currentDocArtifact);
+      }
+    } else if (id === 'plans') {
+      localStorage.setItem('rorschach.planWorkspaceOpen', 'true');
+    }
+  }
+}
+
+export function closeWindow(id: string) {
+  const windows = { ...store.get('windows') };
+  const winState = windows[id];
+  if (!winState) return;
+
+  winState.isOpen = false;
+  store.set('windows', windows);
+
+  const activeIds = [...store.get('activeWindowIds')];
+  const idx = activeIds.indexOf(id);
+  if (idx !== -1) {
+    activeIds.splice(idx, 1);
+    store.set('activeWindowIds', activeIds);
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(`rorschach.window_state.${id}`, JSON.stringify(winState));
+    if (id === 'docs') {
+      localStorage.setItem('rorschach.docWorkspaceOpen', 'false');
+    } else if (id === 'plans') {
+      localStorage.setItem('rorschach.planWorkspaceOpen', 'false');
+    }
+  }
+}
+
+export function focusWindow(id: string) {
+  const activeIds = [...store.get('activeWindowIds')];
+  const idx = activeIds.indexOf(id);
+  if (idx !== -1) activeIds.splice(idx, 1);
+  activeIds.push(id);
+  store.set('activeWindowIds', activeIds);
+
+  const windows = { ...store.get('windows') };
+  activeIds.forEach((activeId, index) => {
+    if (windows[activeId]) {
+      windows[activeId].zIndex = 1000 + index;
+    }
+  });
+  store.set('windows', windows);
+}

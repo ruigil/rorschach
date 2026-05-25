@@ -117,4 +117,20 @@ export interface RorschachState {
   docWorkspaceOpen: boolean
   currentDocArtifact: string | null
   isChatUndocked: boolean
+  windows: Record<string, WindowRuntimeState>
+  activeWindowIds: string[]
+  activeWorkspaceTab: string
+}
+
+export interface WindowRuntimeState {
+  id: string
+  isOpen: boolean
+  isDocked: boolean
+  isMinimized: boolean
+  x: number
+  y: number
+  w: number
+  h: number
+  zIndex: number
+  params: Record<string, any>
 }

@@ -3,9 +3,10 @@ import { customElement, query, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 import { store, StoreController } from '../store.js';
 import { connect } from '../connection.js';
-import { logout } from '../actions.js';
+import { logout, openWindow, closeWindow, focusWindow } from '../actions.js';
 import { TABS } from '../constants.js';
 import type { Tab } from '../constants.js';
+import { WINDOW_REGISTRY } from '../core/window-registry.js';
 
 @customElement('r-shell')
 export class RShell extends RorschachBase {
@@ -14,17 +15,22 @@ export class RShell extends RorschachBase {
   private _currentUserId = new StoreController(this, 'currentUserId');
   private _currentUserRoles = new StoreController(this, 'currentUserRoles');
   private _isWaiting = new StoreController(this, 'isWaiting');
-  private _planWorkspaceOpen = new StoreController(this, 'planWorkspaceOpen');
-  private _docWorkspaceOpen = new StoreController(this, 'docWorkspaceOpen');
-  private _isChatUndocked = new StoreController(this, 'isChatUndocked');
 
-  @query('r-chat-panel') private _chatPanel?: any;
+  private _windows = new StoreController(this, 'windows');
+  private _activeWorkspaceTab = new StoreController(this, 'activeWorkspaceTab');
+  private _currentMode = new StoreController(this, 'currentMode');
+  private _currentDocArtifact = new StoreController(this, 'currentDocArtifact');
+  private _currentPlanGraph = new StoreController(this, 'currentPlanGraph');
+
+  private _lastMode = '';
+  private _lastDocArtifact: string | null = null;
+  private _lastPlanGraph: any = null;
+
   @state() private _noticing = false;
   private _prevWaiting = false;
 
-  // We use light DOM to reuse the existing shell styles from style.css
   override createRenderRoot() {
-    return this;
+    return this; // Light DOM to integrate globally
   }
 
   override connectedCallback() {
@@ -45,6 +51,10 @@ export class RShell extends RorschachBase {
     }
 
     connect();
+
+    if (store.get('activeTab') === 'chat') {
+      openWindow('chat');
+    }
   }
 
   private _canUseAdminSurface() {
@@ -56,7 +66,7 @@ export class RShell extends RorschachBase {
   private _handleTabClick(tab: Tab) {
     store.set('activeTab', tab);
     if (tab === 'chat') {
-      this._chatPanel?.focus();
+      openWindow('chat');
     }
   }
 
@@ -64,13 +74,71 @@ export class RShell extends RorschachBase {
     await logout();
   }
 
-  override updated() {
+  private _undockWorkspace(id: string) {
+    const windows = { ...store.get('windows') };
+    if (windows[id]) {
+      windows[id].isDocked = false;
+      store.set('windows', windows);
+      localStorage.setItem(`rorschach.window_state.${id}`, JSON.stringify(windows[id]));
+    }
+  }
+
+  private _isAnyWorkspaceDockedAndOpen() {
+    const windows = this._windows.value as any;
+    return Object.keys(windows).some(id => id !== 'chat' && windows[id].isOpen && windows[id].isDocked);
+  }
+
+  private _getActiveDockedWorkspaces() {
+    const windows = this._windows.value as any;
+    return Object.keys(windows).filter(id => id !== 'chat' && windows[id].isOpen && windows[id].isDocked);
+  }
+
+  override updated(changedProperties: Map<string | symbol, unknown>) {
+    super.updated(changedProperties);
+
     const isWaiting = this._isWaiting.value as boolean;
     if (isWaiting && !this._prevWaiting) {
       this._noticing = true;
       setTimeout(() => { this._noticing = false; }, 700);
     }
     this._prevWaiting = isWaiting;
+
+    // Enforce selection of an active tab
+    const activeTab = this._activeWorkspaceTab.value as string;
+    const dockedOpenWorkspaces = this._getActiveDockedWorkspaces();
+    if (dockedOpenWorkspaces.length > 0 && !dockedOpenWorkspaces.includes(activeTab)) {
+      const fallback = dockedOpenWorkspaces[0]!;
+      store.set('activeWorkspaceTab', fallback);
+      localStorage.setItem('rorschach.activeWorkspaceTab', fallback);
+    }
+
+    // Sync workspaces open states based on modes, artifacts, and graphs
+    const mode = this._currentMode.value as string;
+    if (mode !== this._lastMode) {
+      const isInitialLoad = this._lastMode === '';
+      this._lastMode = mode;
+      if (mode === 'executor' || mode === 'planner') {
+        openWindow('plans');
+      } else if (!isInitialLoad) {
+        closeWindow('plans');
+      }
+    }
+
+    const artifact = this._currentDocArtifact.value as string | null;
+    if (artifact !== this._lastDocArtifact) {
+      this._lastDocArtifact = artifact;
+      if (artifact) {
+        openWindow('docs', { currentDocArtifact: artifact });
+      }
+    }
+
+    const planGraph = this._currentPlanGraph.value as any;
+    if (planGraph !== this._lastPlanGraph) {
+      this._lastPlanGraph = planGraph;
+      if (planGraph && (planGraph.planId || (planGraph.nodes && planGraph.nodes.length))) {
+        openWindow('plans');
+      }
+    }
   }
 
   override render() {
@@ -79,6 +147,7 @@ export class RShell extends RorschachBase {
     const isConnected = this._isConnected.value;
     const isWaiting = this._isWaiting.value;
     const userId = this._currentUserId.value;
+    const windows = this._windows.value as any;
 
     return html`
       <header class="${isWaiting ? 'streaming' : ''}">
@@ -117,10 +186,49 @@ export class RShell extends RorschachBase {
       </header>
 
       <main>
-        <div id="panel-chat" class="panel ${activeTab === 'chat' ? 'active' : ''} ${this._planWorkspaceOpen.value ? 'plan-workspace-open' : ''} ${this._docWorkspaceOpen.value ? 'doc-workspace-open' : ''}">
-          ${!this._isChatUndocked.value ? html`<r-chat-panel></r-chat-panel>` : ''}
-          <r-plan-workspace id="plan-workspace"></r-plan-workspace>
-          <r-doc-workspace id="doc-workspace"></r-doc-workspace>
+        <div id="panel-chat" class="panel ${activeTab === 'chat' ? 'active' : ''} ${this._isAnyWorkspaceDockedAndOpen() ? 'workspaces-open' : ''}">
+          <!-- Left-Dock Slot: Chat Window -->
+          ${windows.chat.isOpen && windows.chat.isDocked ? html`
+            <r-window .windowId=${'chat'} class="chat-dock-slot"></r-window>
+          ` : ''}
+
+          <!-- Right-Dock Slot: Shared Tabbed Workspaces -->
+          ${this._isAnyWorkspaceDockedAndOpen() ? html`
+            <div class="workspace-dock-slot flex-column">
+              <div class="workspace-tabs-bar">
+                <div class="tabs-list">
+                  ${this._getActiveDockedWorkspaces().map(id => html`
+                    <button 
+                      class="workspace-tab ${this._activeWorkspaceTab.value === id ? 'active' : ''}" 
+                      @click=${() => {
+                        store.set('activeWorkspaceTab', id);
+                        localStorage.setItem('rorschach.activeWorkspaceTab', id);
+                      }}
+                    >
+                      ${this.renderIcon((WINDOW_REGISTRY[id]?.icon ?? 'file') as any)}
+                      <span>${WINDOW_REGISTRY[id]?.title ?? id}</span>
+                      <span class="tab-close" @click=${(e: Event) => {
+                        e.stopPropagation();
+                        closeWindow(id);
+                      }}>×</span>
+                    </button>
+                  `)}
+                </div>
+
+                <div class="workspace-tabs-actions">
+                  <button class="win-btn tab-action-btn" @click=${() => this._undockWorkspace(this._activeWorkspaceTab.value as string)} title="Undock to floating window">
+                    ${this.renderIcon('popup')}
+                  </button>
+                  <button class="win-btn tab-action-btn close-btn" @click=${() => closeWindow(this._activeWorkspaceTab.value as string)} title="Close workspace">
+                    ×
+                  </button>
+                </div>
+              </div>
+              <div class="workspace-active-body flex-grow-1 min-height-0">
+                <r-window .windowId=${this._activeWorkspaceTab.value as string}></r-window>
+              </div>
+            </div>
+          ` : ''}
         </div>
 
         <div id="panel-config" class="panel ${activeTab === 'config' ? 'active' : ''}">
@@ -132,7 +240,15 @@ export class RShell extends RorschachBase {
         </div>
       </main>
 
-      ${this._isChatUndocked.value ? html`<r-chat-panel></r-chat-panel>` : ''}
+      <!-- Floating Windows Layer -->
+      <div class="floating-window-layer">
+        ${Object.keys(windows).map(id => {
+          const win = windows[id];
+          return win.isOpen && !win.isDocked ? html`
+            <r-window .windowId=${id}></r-window>
+          ` : '';
+        })}
+      </div>
     `;
   }
 }
