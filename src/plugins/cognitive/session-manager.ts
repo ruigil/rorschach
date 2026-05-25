@@ -16,17 +16,19 @@ import {
   type AgentDescriptor,
   type AgentFactoryOpts,
 } from '../../types/agents.ts'
+import { JobRegistryTopic, type JobLifecycleEvent } from '../../types/tools.ts'
 
 // ─── Message protocol ──────────────────────────────────────────────────────
 
 type SessionManagerMsg =
   | { type: '_connected';        clientId: string; userId: string; roles: string[] }
   | { type: '_disconnected';     clientId: string }
-  | { type: '_message';          clientId: string; text: string; attachments?: MessageAttachment[]; traceId: string; parentSpanId: string; isCron?: boolean }
+  | { type: '_message';          clientId: string; text: string; attachments?: MessageAttachment[]; traceId: string; parentSpanId: string }
   | { type: '_cronTrigger';      userId: string; text: string; traceId: string; parentSpanId: string }
   | { type: '_agentRegistered';  descriptor: AgentDescriptor }
   | { type: '_agentUnregistered'; mode: string }
   | { type: '_switchAgent';      clientId: string; mode: string; source: 'user' | 'llm' | 'programmatic'; reason?: string }
+  | { type: '_jobRegistry';      event: JobLifecycleEvent }
 
 // ─── State ─────────────────────────────────────────────────────────────────
 //
@@ -46,12 +48,14 @@ type SessionManagerState = {
   descriptors: Record<string, AgentDescriptor>     // mode → descriptor (catalog mirror)
   sessions:    Record<string, Session>              // userId → Session
   clientIndex: Record<string, string>               // clientId → userId
+  activeJobs:  Record<string, { userId: string; clientId: string; toolName: string }> // jobId → info
 }
 
 const initialSessionManagerState = (): SessionManagerState => ({
   descriptors: {},
   sessions:    {},
   clientIndex: {},
+  activeJobs:  {},
 })
 
 // ─── Options ───────────────────────────────────────────────────────────────
@@ -165,7 +169,7 @@ export const SessionManager = (
             ? { type: '_connected' as const, clientId: e.clientId, userId: e.userId, roles: e.roles }
             : { type: '_disconnected' as const, clientId: e.clientId },
         )
-        ctx.subscribe(InboundMessageTopic,   e => ({ type: '_message'      as const, clientId: e.clientId, text: e.text, attachments: e.attachments, traceId: e.traceId, parentSpanId: e.parentSpanId, isCron: e.isCron }))
+        ctx.subscribe(InboundMessageTopic,   e => ({ type: '_message'      as const, clientId: e.clientId, text: e.text, attachments: e.attachments, traceId: e.traceId, parentSpanId: e.parentSpanId }))
         ctx.subscribe(CronTriggerTopic,      e => ({ type: '_cronTrigger'  as const, userId: e.userId, text: e.text, traceId: e.traceId, parentSpanId: e.parentSpanId }))
         ctx.subscribe(AgentRegistrationTopic, e =>
           e.type === 'register'
@@ -173,6 +177,7 @@ export const SessionManager = (
             : { type: '_agentUnregistered' as const, mode:       e.mode },
         )
         ctx.subscribe(SwitchAgentTopic,      e => ({ type: '_switchAgent'  as const, clientId: e.clientId, mode: e.mode, source: e.source, reason: e.reason }))
+        ctx.subscribe(JobRegistryTopic,      e => ({ type: '_jobRegistry'  as const, event: e }))
         return { state }
       },
 
@@ -336,7 +341,7 @@ export const SessionManager = (
       },
 
       _message: (state, msg) => {
-        const { clientId, text, attachments, traceId, parentSpanId, isCron } = msg
+        const { clientId, text, attachments, traceId, parentSpanId } = msg
         const userId = userIdOfClient(state, clientId)
         if (!userId) return { state }
         const session = state.sessions[userId]
@@ -345,7 +350,7 @@ export const SessionManager = (
         const headers = traceId && parentSpanId
           ? { traceparent: `00-${traceId}-${parentSpanId}-01` }
           : undefined
-        agent?.send({ type: 'userMessage', clientId, text, attachments, isCron, isInjected: isCron }, headers)
+        agent?.send({ type: 'userMessage', clientId, text, attachments }, headers)
         return { state }
       },
 
@@ -367,7 +372,90 @@ export const SessionManager = (
         const headers = traceId && parentSpanId
           ? { traceparent: `00-${traceId}-${parentSpanId}-01` }
           : undefined
-        agent.send({ type: 'userMessage', clientId, text, isCron: true, isInjected: true }, headers)
+        const formattedText = `[Internal Instruction] ${text}`
+        agent.send({ type: 'userMessage', clientId, text: formattedText, isInjected: true }, headers)
+        return { state }
+      },
+
+      _jobRegistry: (state, msg, ctx) => {
+        const { event } = msg
+        if (event.status === 'running') {
+          if (event.userId && event.clientId) {
+            return {
+              state: {
+                ...state,
+                activeJobs: {
+                  ...state.activeJobs,
+                  [event.jobId]: {
+                    userId: event.userId,
+                    clientId: event.clientId,
+                    toolName: event.toolName,
+                  },
+                },
+              },
+            }
+          }
+          return { state }
+        }
+
+        if (event.status === 'completed' || event.status === 'failed') {
+          const cached = state.activeJobs[event.jobId]
+          if (!cached) return { state }
+
+          const { userId, clientId, toolName } = cached
+
+          // Format out-of-band text
+          const resultText = event.status === 'completed'
+            ? (event.result?.text ?? 'Success')
+            : (event.error ?? 'Unknown error')
+
+          const userText = `[Background tool result — ${toolName}]: ${resultText}`
+
+          // 1. Publish sources and attachments outbound directly
+          if (event.status === 'completed' && event.result) {
+            if (event.result.sources?.length) {
+              ctx.publish(OutboundMessageTopic, {
+                clientId,
+                text: JSON.stringify({ type: 'sources', sources: event.result.sources }),
+              })
+            }
+            if (event.result.attachments?.length) {
+              ctx.publish(OutboundMessageTopic, {
+                clientId,
+                text: JSON.stringify({ type: 'attachments', attachments: event.result.attachments }),
+              })
+            }
+          }
+
+          // 2. Clear retained topic entry
+          ctx.publishRetained(JobRegistryTopic, event.jobId, { jobId: event.jobId, status: 'cleared' })
+
+          // 3. Inject back into the active agent for that session
+          const session = state.sessions[userId]
+          const mode = session?.activeMode ?? defaultMode
+          const agent = session?.agentRefs[mode]
+
+          if (agent) {
+            agent.send({ type: 'userMessage', clientId, text: userText, isInjected: true })
+          } else {
+            ctx.log.warn('job completion but no agent found to inject into', { userId, mode, jobId: event.jobId })
+          }
+
+          // 4. Remove from active jobs cache
+          const { [event.jobId]: _, ...activeJobs } = state.activeJobs
+          return {
+            state: {
+              ...state,
+              activeJobs,
+            },
+          }
+        }
+
+        if (event.status === 'cleared') {
+          const { [event.jobId]: _, ...activeJobs } = state.activeJobs
+          return { state: { ...state, activeJobs } }
+        }
+
         return { state }
       },
 

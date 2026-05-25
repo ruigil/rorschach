@@ -74,7 +74,7 @@ export const ExecutorAgent = (options: ExecutorAgentOptions): ActorDef<ExecutorA
       ...state,
       activeClientId: msg.clientId,
     }
-    options.contextStoreRef.send({ type: 'append', mode: EXECUTOR_MODE, source: 'user', clientId: msg.clientId, injected: msg.isInjected || msg.isCron || false, messages: [userMsg] })
+    options.contextStoreRef.send({ type: 'append', mode: EXECUTOR_MODE, source: 'user', clientId: msg.clientId, injected: msg.isInjected || false, messages: [userMsg] })
     return loop.startTurn(nextState, {
       messages: buildTurnMessages(nextState, userMsg),
       userId: options.userId,

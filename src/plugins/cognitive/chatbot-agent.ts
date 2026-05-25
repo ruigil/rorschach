@@ -22,11 +22,10 @@ export type ChatbotState = {
 // ─── Chatbot actor message protocol ───
 
 type ChatbotExtra =
-  | { type: 'userMessage';      clientId: string; text: string; attachments?: MessageAttachment[]; isCron?: boolean; isInjected?: boolean }
+  | { type: 'userMessage';      clientId: string; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
   | { type: '_toolRegistered';  name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
-  | { type: '_bgToolDone';      toolName: string; toolCallId: string; reply: ToolFinalReply }
 
 export type ChatbotMsg = LoopMsg<ChatbotExtra>
 
@@ -160,13 +159,6 @@ export const Chatbot = (
       loopLimit: 'Tool loop limit reached. Please try again.',
     },
 
-    backgroundCompletionMessage: (toolName, toolCallId, reply) => ({
-      type: '_bgToolDone',
-      toolName,
-      toolCallId,
-      reply,
-    } as M),
-
     onBatchHistoryReady: (state, messages) => {
       contextStoreRef.send({ type: 'append', mode: CHATBOT_MODE, messages })
       return { state }
@@ -218,30 +210,9 @@ export const Chatbot = (
   }
 
   const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
-    const { clientId: msgClientId, text, attachments, isCron, isInjected } = msg
-    const userText = isCron ? `[Internal Instruction] ${text}` : assembleUserText(text, attachments)
-    return doStartTurn(state, userText, msgClientId, isInjected || isCron || false, ctx)
-  }
-
-  const handleBackgroundResult = (state: S, msg: Extract<M, { type: '_bgToolDone' }>, ctx: Ctx): ActorResult<M, S> => {
-    const resultText = msg.reply.type === 'toolResult' ? msg.reply.result.text : `Tool error: ${msg.reply.error}`
-    const userText = `[Background tool result — ${msg.toolName} (toolCallId=${msg.toolCallId})]: ${resultText}`
-
-    const payload = msg.reply.type === 'toolResult' ? msg.reply.result : undefined
-    if (payload?.sources?.length) {
-      ctx.publish(OutboundMessageTopic, {
-        clientId: state.activeClientId,
-        text: JSON.stringify({ type: 'sources', sources: payload.sources }),
-      })
-    }
-    if (payload?.attachments?.length) {
-      ctx.publish(OutboundMessageTopic, {
-        clientId: state.activeClientId,
-        text: JSON.stringify({ type: 'attachments', attachments: payload.attachments }),
-      })
-    }
-
-    return doStartTurn(state, userText, state.activeClientId, true, ctx)
+    const { clientId: msgClientId, text, attachments, isInjected } = msg
+    const userText = assembleUserText(text, attachments)
+    return doStartTurn(state, userText, msgClientId, isInjected || false, ctx)
   }
 
   const hostInterceptor: Interceptor<M, S> = (state, msg, ctx, next) => {
@@ -254,10 +225,6 @@ export const Chatbot = (
     if (m.type === 'userMessage') {
       if (state.loop.phase !== 'idle') return { state, stash: true }
       return handleUserMessage(state, m as Extract<M, { type: 'userMessage' }>, ctx)
-    }
-
-    if (m.type === '_bgToolDone') {
-      return handleBackgroundResult(state, m as Extract<M, { type: '_bgToolDone' }>, ctx)
     }
 
     if (m.type === '_toolRegistered') {

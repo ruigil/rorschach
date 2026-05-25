@@ -79,25 +79,20 @@ const createTestTool = (mode: ToolMode): ActorDef<TestMsg, ToolState> => ({
 
 type CallerMsg =
   | { type: 'go';            replyTo: ActorRef<ToolFinalReply> }
-  | { type: 'goWithBg';      replyTo: ActorRef<ToolFinalReply>; updatesTo: ActorRef<ToolFinalReply> }
   | { type: '_immediate';    reply: ToolFinalReply; outerReply: ActorRef<ToolFinalReply> }
   | { type: '_immediateErr'; error: unknown;         outerReply: ActorRef<ToolFinalReply> }
-  | { type: '_completion';   reply: ToolFinalReply }
 
 const createCaller = (
   toolRef: ActorRef<ToolMsg>,
-  updatesTo: ActorRef<ToolFinalReply> | null = null,
 ): ActorDef<CallerMsg, null> => ({
   handler: (state, msg, ctx) => {
-    if (msg.type === 'go' || msg.type === 'goWithBg') {
+    if (msg.type === 'go') {
       const target = msg.replyTo
-      const updates = msg.type === 'goWithBg' ? msg.updatesTo : updatesTo
       ctx.pipeToSelf(
-        invokeTool<CallerMsg>(
+        invokeTool(
           ctx,
           toolRef,
           { toolName: 'test-tool', arguments: '{}', userId: 'test-user' },
-          updates ? { onCompletion: (reply) => ({ type: '_completion' as const, reply }) } : undefined,
         ),
         (reply) => ({ type: '_immediate' as const, reply, outerReply: target }),
         (err)   => ({ type: '_immediateErr' as const, error: err, outerReply: target }),
@@ -112,8 +107,6 @@ const createCaller = (
       msg.outerReply.send({ type: 'toolError', error: String(msg.error) })
       return { state }
     }
-    // _completion
-    if (updatesTo) updatesTo.send(msg.reply)
     return { state }
   },
 })
@@ -166,31 +159,7 @@ describe('invokeTool primitive', () => {
     await system.shutdown()
   })
 
-  test('toolPending without onCompletion → graceful toolError fallback', async () => {
-    const system = await AgentSystem()
-    const events: JobLifecycleEvent[] = []
-    system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
-
-    const mode: ToolMode = { kind: 'pending', eventually: { type: 'toolResult', result: { text: 'done' } }, delayMs: 30 }
-    const tool = system.spawn('tool-pending-no-cb', createTestTool(mode), { state: {
-      mode, jobs: {},
-    } }) as unknown as ActorRef<ToolMsg>
-    // Caller without onCompletion
-    const caller = system.spawn('caller-no-cb', createCaller(tool))
-    await tick()
-
-    const immediate: ToolFinalReply[] = []
-    const sink: ActorRef<ToolFinalReply> = { name: 'sink', isAlive: () => true, send: (r) => { immediate.push(r) } }
-    caller.send({ type: 'go', replyTo: sink })
-    await tick(80)
-
-    expect(immediate).toHaveLength(1)
-    expect(immediate[0]?.type).toBe('toolError')
-    expect((immediate[0] as { type: 'toolError'; error: string }).error).toContain('does not support background completion')
-    await system.shutdown()
-  })
-
-  test('toolPending with onCompletion: placeholder now, real result later, registry events emitted', async () => {
+  test('toolPending: placeholder now, real result later via JobRegistryTopic', async () => {
     const system = await AgentSystem()
     const events: JobLifecycleEvent[] = []
     system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
@@ -205,11 +174,7 @@ describe('invokeTool primitive', () => {
       mode, jobs: {},
     } }) as unknown as ActorRef<ToolMsg>
 
-    const updatesSink: ToolFinalReply[] = []
-    const updatesRef: ActorRef<ToolFinalReply> = {
-      name: 'updates', isAlive: () => true, send: (r) => { updatesSink.push(r) },
-    }
-    const caller = system.spawn('caller-cb', createCaller(tool, updatesRef))
+    const caller = system.spawn('caller-cb', createCaller(tool))
     await tick()
 
     const immediate: ToolFinalReply[] = []
@@ -220,58 +185,26 @@ describe('invokeTool primitive', () => {
     // Immediate placeholder
     expect(immediate).toHaveLength(1)
     expect(immediate[0]).toEqual({ type: 'toolResult', result: { text: 'WORKING…' } })
+
     // Running event published
     const running = events.find(e => e.status === 'running')
     expect(running).toBeDefined()
 
-    // Wait for timer to complete
+    // Wait for timer to complete and publish completed event
     await tick(80)
 
-    expect(updatesSink).toHaveLength(1)
-    expect(updatesSink[0]).toEqual({ type: 'toolResult', result: { text: 'finished work' } })
+    const completed = events.find(e => e.status === 'completed')
+    expect(completed).toBeDefined()
+    expect((completed as Extract<JobLifecycleEvent, { status: 'completed' }>).result).toEqual({ text: 'finished work' })
 
-    // Cleared event published after completion
-    const cleared = events.find(e => e.status === 'cleared')
-    expect(cleared).toBeDefined()
-    await system.shutdown()
-  })
-
-  test('completion via JobRegistryTopic respects tool timer delay', async () => {
-    const system = await AgentSystem()
-    const start = Date.now()
-    const mode: ToolMode = {
-      kind: 'pending',
-      eventually: { type: 'toolResult', result: { text: 'ok' } },
-      delayMs: 50,
-    }
-    const tool = system.spawn('tool-delay', createTestTool(mode), { state: {
-      mode, jobs: {},
-    } }) as unknown as ActorRef<ToolMsg>
-
-    const updatesSink: ToolFinalReply[] = []
-    const updatesRef: ActorRef<ToolFinalReply> = {
-      name: 'updates2', isAlive: () => true, send: (r) => { updatesSink.push(r) },
-    }
-    const caller = system.spawn('caller-delay', createCaller(tool, updatesRef))
-    await tick()
-
-    const sink: ActorRef<ToolFinalReply> = { name: 'sink', isAlive: () => true, send: () => {} }
-    caller.send({ type: 'go', replyTo: sink })
-
-    // After 20ms, completion should NOT have arrived (delay was 50ms)
-    await tick(20)
-    expect(updatesSink).toHaveLength(0)
-
-    // After another 100ms, it should have
-    await tick(100)
-    expect(updatesSink).toHaveLength(1)
-    const elapsed = Date.now() - start
-    expect(elapsed).toBeGreaterThanOrEqual(45)
     await system.shutdown()
   })
 
   test('toolPending error completion via JobRegistryTopic', async () => {
     const system = await AgentSystem()
+    const events: JobLifecycleEvent[] = []
+    system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
+
     const mode: ToolMode = {
       kind: 'pending',
       eventually: { type: 'toolError', error: 'something went wrong' },
@@ -281,11 +214,7 @@ describe('invokeTool primitive', () => {
       mode, jobs: {},
     } }) as unknown as ActorRef<ToolMsg>
 
-    const updatesSink: ToolFinalReply[] = []
-    const updatesRef: ActorRef<ToolFinalReply> = {
-      name: 'updates3', isAlive: () => true, send: (r) => { updatesSink.push(r) },
-    }
-    const caller = system.spawn('caller-err', createCaller(tool, updatesRef))
+    const caller = system.spawn('caller-err', createCaller(tool))
     await tick()
 
     const immediate: ToolFinalReply[] = []
@@ -296,8 +225,10 @@ describe('invokeTool primitive', () => {
     expect(immediate).toHaveLength(1)
     expect(immediate[0]?.type).toBe('toolResult') // placeholder
 
-    expect(updatesSink).toHaveLength(1)
-    expect(updatesSink[0]).toEqual({ type: 'toolError', error: 'something went wrong' })
+    const failed = events.find(e => e.status === 'failed')
+    expect(failed).toBeDefined()
+    expect((failed as Extract<JobLifecycleEvent, { status: 'failed' }>).error).toBe('something went wrong')
+
     await system.shutdown()
   })
 })

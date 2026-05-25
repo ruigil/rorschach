@@ -140,12 +140,6 @@ export type AgentLoopHooks<S extends WithLoopState, M> = {
     messages: ApiMessage[],
     ctx: ActorContext<M>,
   ) => { state: S }
-
-  backgroundCompletionMessage?: (
-    toolName: string,
-    toolCallId: string,
-    reply: ToolFinalReply,
-  ) => M
 }
 
 // ─── Exported handle ────────────────────────────────────────────────────────
@@ -334,9 +328,6 @@ const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, 
               { toolName: call.name, arguments: call.arguments, clientId, userId },
               {
                 headers: toolSpan ? ctx.trace.injectHeaders(toolSpan) : undefined,
-                onCompletion: hooks.backgroundCompletionMessage
-                  ? (reply: ToolFinalReply): M => hooks.backgroundCompletionMessage!(call.name, call.id, reply)
-                  : undefined,
               },
             ),
             (reply) => ({

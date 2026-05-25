@@ -114,7 +114,7 @@ const PlannerAgent = (config: PlannerAgentConfig, opts: AgentFactoryOpts): Actor
       ...state,
       activeClientId: msg.clientId,
     }
-    contextStoreRef.send({ type: 'append', mode: PLANNER_MODE, source: 'user', clientId: msg.clientId, injected: msg.isInjected || msg.isCron || false, messages: [userMsg] })
+    contextStoreRef.send({ type: 'append', mode: PLANNER_MODE, source: 'user', clientId: msg.clientId, injected: msg.isInjected || false, messages: [userMsg] })
     return loop.startTurn(stateNext, {
       messages: buildTurnMessages(stateNext, userMsg),
       userId,

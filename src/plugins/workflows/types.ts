@@ -95,14 +95,14 @@ export type WorkflowToolsMsg =
 
 
 export type ExecutorAgentExtra =
-  | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isCron?: boolean; isInjected?: boolean }
+  | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
 
 export type ExecutorAgentMsg = LoopMsg<ExecutorAgentExtra>
 
 export type PlannerExtra =
-  | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isCron?: boolean; isInjected?: boolean }
+  | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
   | { type: '_toolRegistered'; name: string; schema: import('../../types/tools.ts').ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)

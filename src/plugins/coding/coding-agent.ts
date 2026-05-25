@@ -71,22 +71,32 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
       includeToolSummaries: true,
     }, userMsg)
 
-  const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
-    const userMsg: ApiMessage = { role: 'user', content: msg.text }
-    const nextState = { ...state, activeClientId: msg.clientId }
+  const doStartTurn = (
+    state: S,
+    userText: string,
+    clientId: string,
+    isInjected: boolean,
+    ctx: Ctx,
+  ): ActorResult<M, S> => {
+    const userMsg: ApiMessage = { role: 'user', content: userText }
+    const nextState = { ...state, activeClientId: clientId }
     opts.contextStoreRef.send({
       type: 'append',
       mode: CODING_MODE,
       source: 'user',
-      clientId: msg.clientId,
-      injected: msg.isInjected || msg.isCron || false,
+      clientId,
+      injected: isInjected,
       messages: [userMsg],
     })
     return loop.startTurn(nextState, {
       messages: buildTurnMessages(nextState, userMsg),
       userId: opts.userId,
-      clientId: msg.clientId,
+      clientId,
     }, ctx)
+  }
+
+  const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
+    return doStartTurn(state, msg.text, msg.clientId, msg.isInjected || false, ctx)
   }
 
   const loop = agentLoop<S, M>({
@@ -105,13 +115,6 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
       llm: 'The coding agent encountered an error. Please try again.',
       loopLimit: 'Tool loop limit reached in the coding agent. Please try again.',
     },
-
-    backgroundCompletionMessage: (toolName: string, toolCallId: string, reply: ToolFinalReply): M => ({
-      type: '_bgToolDone',
-      toolName,
-      toolCallId,
-      reply,
-    } as M),
 
     onComplete: (state, finalText) => {
       if (finalText) {
@@ -134,46 +137,12 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
     },
   })
 
-  const handleBackgroundResult = (state: S, msg: Extract<M, { type: '_bgToolDone' }>, ctx: Ctx): ActorResult<M, S> => {
-    if (state.loop.phase !== 'idle') return { state, stash: true }
-
-    const text = msg.reply.type === 'toolResult'
-      ? `Documentation generated. ${msg.reply.result.text}`
-      : `Documentation generation failed: ${msg.reply.error}`
-
-    if (state.activeClientId) {
-      ctx.publish(OutboundMessageTopic, {
-        clientId: state.activeClientId,
-        text: JSON.stringify({ type: 'chunk', text }),
-      })
-      ctx.publish(OutboundMessageTopic, {
-        clientId: state.activeClientId,
-        text: JSON.stringify({ type: 'done' }),
-      })
-    }
-
-    opts.contextStoreRef.send({
-      type: 'append',
-      mode: CODING_MODE,
-      source: 'assistant',
-      clientId: state.activeClientId,
-      injected: true,
-      messages: [{ role: 'assistant', content: text }],
-    })
-
-    return { state }
-  }
-
   const hostInterceptor: Interceptor<M, S> = (state, msg, ctx, next) => {
     const m = msg as M
 
     if (m.type === 'userMessage') {
       if (state.loop.phase !== 'idle') return { state, stash: true }
       return handleUserMessage(state, m as Extract<M, { type: 'userMessage' }>, ctx)
-    }
-
-    if (m.type === '_bgToolDone') {
-      return handleBackgroundResult(state, m as Extract<M, { type: '_bgToolDone' }>, ctx)
     }
 
     if (m.type === '_contextSnapshot') {

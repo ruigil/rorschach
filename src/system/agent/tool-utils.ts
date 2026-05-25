@@ -10,14 +10,7 @@ export type InvokeToolArgs = {
   userId:    string
 }
 
-export type InvokeToolOptions<M> = {
-  /**
-   * Called when a long-running job eventually completes. The returned message
-   * is enqueued to the caller's actor inbox. If omitted, `toolPending` replies
-   * are converted to `toolError` (graceful fallback for agents that don't
-   * support background completion).
-   */
-  onCompletion?: (reply: ToolFinalReply) => M
+export type InvokeToolOptions<M = any> = {
   headers?: MessageHeaders
 }
 
@@ -25,17 +18,12 @@ export type InvokeToolOptions<M> = {
  * Invoke a tool. Always resolves with a final reply (`toolResult` or
  * `toolError`).
  *
- * If the tool replies with `toolPending` and `onCompletion` is supplied:
+ * If the tool replies with `toolPending`:
  *   - this Promise resolves immediately with a placeholder `toolResult`
  *   - the job is registered on `JobRegistryTopic` (so `tool_status` can find it)
- *   - the caller subscribes to `JobRegistryTopic` for completion events
- *   - when the tool publishes `completed` or `failed`, the subscription
- *     delivers `onCompletion(finalReply)` to the caller's inbox and cleans up
- *
- * If `onCompletion` is omitted, a `toolPending` reply is converted to
- * `toolError` so the caller's existing error path runs.
+ *   - the Session Manager will subscribe to completion events and handle injecting the out-of-band result.
  */
-export const invokeTool = async <M>(
+export const invokeTool = async <M = any>(
   ctx: ActorContext<M>,
   toolRef: ActorRef<ToolMsg>,
   args: InvokeToolArgs,
@@ -62,15 +50,6 @@ export const invokeTool = async <M>(
   // toolPending
   const { jobId, placeholderText } = firstReply
 
-  if (!options?.onCompletion) {
-    return {
-      type: 'toolError',
-      error: `Tool '${args.toolName}' returned a long-running jobId (${jobId}) but caller does not support background completion.`,
-    }
-  }
-
-  const onCompletion = options.onCompletion
-
   ctx.publishRetained(JobRegistryTopic, jobId, {
     jobId,
     status: 'running',
@@ -80,23 +59,6 @@ export const invokeTool = async <M>(
     clientId: args.clientId,
     userId: args.userId,
   })
-
-  // Subscribe for completion notification via the topic instead of polling.
-  // The jobId doubles as the subscription identifier for precise unsubscribe.
-  ctx.subscribe(JobRegistryTopic, (event) => {
-    if (event.jobId !== jobId) return null
-    if (event.status === 'completed') {
-      ctx.unsubscribe(JobRegistryTopic, jobId)
-      ctx.publishRetained(JobRegistryTopic, jobId, { jobId, status: 'cleared' })
-      return onCompletion({ type: 'toolResult', result: event.result })
-    }
-    if (event.status === 'failed') {
-      ctx.unsubscribe(JobRegistryTopic, jobId)
-      ctx.publishRetained(JobRegistryTopic, jobId, { jobId, status: 'cleared' })
-      return onCompletion({ type: 'toolError', error: event.error })
-    }
-    return null
-  }, jobId)
 
   return {
     type: 'toolResult',

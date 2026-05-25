@@ -35,8 +35,7 @@ export type DocsManifest = {
 }
 
 export type CodingAgentExtra =
-  | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isCron?: boolean; isInjected?: boolean }
-  | { type: '_bgToolDone'; toolName: string; toolCallId: string; reply: ToolFinalReply }
+  | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
 
 export type CodingAgentMsg = LoopMsg<CodingAgentExtra>

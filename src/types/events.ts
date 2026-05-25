@@ -21,7 +21,6 @@ export type InboundMessageEvent = {
   attachments?:  MessageAttachment[]
   traceId:       string
   parentSpanId:  string
-  isCron?:       boolean
 }
 
 /** Topic published when any interface (HTTP/WS, Signal, CLI) receives a message from a client. */
