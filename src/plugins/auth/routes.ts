@@ -2,6 +2,7 @@ import type { ActorRef } from '../../system/index.ts'
 import { ask } from '../../system/index.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
+import { join, resolve, sep } from 'path'
 import type {
   AuthenticatorMsg,
   RegistrationOptions,
@@ -266,4 +267,51 @@ export const buildAuthRoutes = (authenticator: ActorRef<AuthenticatorMsg>): Rout
       })
     },
   },
+
+  {
+    id: 'auth.static',
+    method: 'GET',
+    path: '/auth/',
+    match: 'prefix',
+    handler: async (req, url) => {
+      const filePath = url.pathname === '/auth/' || url.pathname === '/auth'
+        ? join(PLUGIN_PUBLIC_DIR, 'login.html')
+        : safeJoinPluginPath(url.pathname)
+
+      if (!filePath) return new Response('Not Found', { status: 404 })
+
+      const file = Bun.file(filePath)
+      if (await file.exists()) {
+        return new Response(file, {
+          headers: { 'Content-Type': staticMimeType(filePath) },
+        })
+      }
+      return new Response('Not Found', { status: 404 })
+    },
+  },
 ]
+
+// ─── Static Assets Serving Helpers ──────────────────────────────────────────
+
+const PLUGIN_PUBLIC_DIR = join(import.meta.dir, 'public')
+
+const staticMimeType = (path: string): string => {
+  if (path.endsWith('.html')) return 'text/html; charset=utf-8'
+  if (path.endsWith('.css')) return 'text/css; charset=utf-8'
+  if (path.endsWith('.js')) return 'application/javascript; charset=utf-8'
+  return 'application/octet-stream'
+}
+
+const safeJoinPluginPath = (pathname: string): string | null => {
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(pathname)
+  } catch {
+    return null
+  }
+  const relativePath = decoded.startsWith('/auth') ? decoded.slice('/auth'.length) : decoded
+  const base = resolve(PLUGIN_PUBLIC_DIR)
+  const filePath = resolve(base, `.${relativePath}`)
+  return filePath === base || filePath.startsWith(base + sep) ? filePath : null
+}
+

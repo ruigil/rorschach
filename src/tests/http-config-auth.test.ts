@@ -4,6 +4,7 @@ import type { ActorDef } from '../system/index.ts'
 import { ask } from '../system/index.ts'
 import { authorizeConfigAccess, canAccessAdminSurface } from '../plugins/interfaces/http.ts'
 import { Authenticator, rolesForIdentity, type AuthConfig } from '../plugins/auth/authenticator.ts'
+import { buildAuthRoutes } from '../plugins/auth/routes.ts'
 import type { ActorRef } from '../system/index.ts'
 import type { Identity, IdentityProviderMsg } from '../types/identity.ts'
 import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
@@ -318,4 +319,46 @@ describe('auth admin allowlist', () => {
 
     await system.shutdown()
   })
+
+  test('serves auth static files via prefix dynamic route', async () => {
+    const system = await AgentSystem()
+    const mockAuthRef = {} as ActorRef<AuthenticatorMsg>
+    const routes = buildAuthRoutes(mockAuthRef)
+    const staticRoute = routes.find(r => r.id === 'auth.static')
+
+    expect(staticRoute).toBeDefined()
+    expect(staticRoute?.method).toBe('GET')
+    expect(staticRoute?.path).toBe('/auth/')
+    expect(staticRoute?.match).toBe('prefix')
+
+    const handler = staticRoute?.handler
+    expect(handler).toBeFunction()
+
+    if (handler) {
+      // Test serving login.html on root /auth/
+      const resRoot = await handler(new Request('http://localhost:3000/auth/'), new URL('http://localhost:3000/auth/'), null)
+      expect(resRoot.status).toBe(200)
+      expect(resRoot.headers.get('Content-Type')).toContain('text/html')
+      const textRoot = await resRoot.text()
+      expect(textRoot).toContain('Sign in')
+
+      // Test serving auth.js
+      const resJs = await handler(new Request('http://localhost:3000/auth/auth.js'), new URL('http://localhost:3000/auth/auth.js'), null)
+      expect(resJs.status).toBe(200)
+      expect(resJs.headers.get('Content-Type')).toContain('application/javascript')
+      const textJs = await resJs.text()
+      expect(textJs).toContain('openWebSocket')
+
+      // Test directory traversal prevention
+      const resTraversal = await handler(new Request('http://localhost:3000/auth/../routes.ts'), new URL('http://localhost:3000/auth/../routes.ts'), null)
+      expect(resTraversal.status).toBe(404)
+
+      // Test nonexistent file 404
+      const res404 = await handler(new Request('http://localhost:3000/auth/nonexistent.txt'), new URL('http://localhost:3000/auth/nonexistent.txt'), null)
+      expect(res404.status).toBe(404)
+    }
+
+    await system.shutdown()
+  })
 })
+
