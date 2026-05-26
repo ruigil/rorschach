@@ -23,7 +23,7 @@ import type { IdentityProviderMsg } from '../../types/identity.ts'
 import { AgentCatalogTopic, SwitchAgentTopic, type AgentCatalogEvent } from '../../types/agents.ts'
 
 // ─── Public directory (resolved relative to this module) ───
-const PUBLIC_DIR = join(import.meta.dir, '../..', 'public')
+const PUBLIC_DIR = join(import.meta.dir, 'public')
 const MEDIA_DIR = join(import.meta.dir, '../../..', 'workspace/media')
 const INBOUND_DIR = join(MEDIA_DIR, 'inbound')
 

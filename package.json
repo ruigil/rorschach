@@ -12,11 +12,11 @@
   "private": true,
   "scripts": {
     "clean": "rm -rf dist",
-    "copy:assets": "mkdir -p dist/public && cp -r src/public/* dist/public",
+    "copy:assets": "mkdir -p dist/public && cp -r src/plugins/interfaces/public/* dist/public",
     "build:frontend": "bun build src/frontend/rorschach.ts --outfile dist/public/rorschach.js --minify",
     "build:backend": "bun build src/index.ts --outfile dist/index.js",
     "build": "bun run clean && bun run copy:assets && bun run build:frontend && bun run build:backend",
-    "dev:frontend": "bun build src/frontend/rorschach.ts --outfile src/public/rorschach.js --watch",
+    "dev:frontend": "bun build src/frontend/rorschach.ts --outfile src/plugins/interfaces/public/rorschach.js --watch",
     "dev:backend": "bun run --watch src/index.ts",
     "dev": "bun run dev:frontend & bun run dev:backend",
     "test": "bun test",

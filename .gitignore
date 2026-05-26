@@ -9,7 +9,7 @@ dist
 .antigravitycli
 
 # frontend build
-src/public/rorschach.js
+src/plugins/interfaces/public/rorschach.js
 
 # code coverage
 coverage
