@@ -22,8 +22,6 @@ if (!process.env.OPENROUTER_API_KEY) {
 
 const { plugins, config, configPath } = await loadConfig()
 
-const PORT = (config.interfaces as any)?.http?.port as number ?? 3000
-
 // ─── Create the actor system (plugins loaded in topo-sorted order) ───
 
 const system = await AgentSystem({ plugins, config })
@@ -102,7 +100,6 @@ system.subscribe(SystemLifecycleTopic, (event) => {
 })
 
 console.log(`\n🚀 Rorschach running`)
-console.log(`   chat     → http://localhost:${PORT}`)
 
 // ─── Graceful shutdown on Ctrl+C ───
 

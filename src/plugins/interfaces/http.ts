@@ -626,6 +626,7 @@ export const HTTP = (
         })
 
         context.log.info(`listening on http://localhost:${server.port}`)
+        console.log(`🌍 listening on http://localhost:${server.port}`)
         return { state: { ...state, server } }
       },
 
