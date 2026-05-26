@@ -1,9 +1,9 @@
 import type { ActorContext, ActorDef, ActorResult, Interceptor } from '../../system/index.ts'
-import { onLifecycle } from '../../system/index.ts'
+import { onLifecycle, applyToolFilter } from '../../system/index.ts'
 import { agentLoop, idleLoopState, type LoopState } from '../../system/index.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
-import type { ToolCollection } from '../../types/tools.ts'
+import { ToolRegistrationTopic, type ToolCollection } from '../../types/tools.ts'
 import type { ActorRef } from '../../system/index.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentContextMsg } from '../../types/agents.ts'
 import { assembleAgentMessages, type ContextView } from '../../system/index.ts'
@@ -58,6 +58,8 @@ export const ExecutorAgent = (options: ExecutorAgentOptions): ActorDef<ExecutorA
   type S = ExecutorAgentState
   type Ctx = ActorContext<M>
 
+  const registeredTools: ToolCollection = {}
+
   const buildTurnMessages = (state: S, userMsg: ApiMessage): ApiMessage[] =>
     assembleAgentMessages(state.contextView, {
       mode:                      EXECUTOR_MODE,
@@ -89,7 +91,10 @@ export const ExecutorAgent = (options: ExecutorAgentOptions): ActorDef<ExecutorA
     model:        options.model,
     maxToolLoops: options.maxToolLoops,
     llmRef:       () => options.llmRef,
-    tools:        options.tools,
+    tools:        () => ({
+      ...options.tools,
+      ...registeredTools,
+    }),
     uiEvents:     OutboundMessageTopic,
     errorMessages: {
       llm:       'The executor encountered an error. Please try again.',
@@ -146,6 +151,23 @@ export const ExecutorAgent = (options: ExecutorAgentOptions): ActorDef<ExecutorA
             ...event,
           }
         })
+
+        ctx.subscribe(ToolRegistrationTopic, (event) => {
+          if (applyToolFilter(event.name, { allow: ['tool_status', 'switch_mode'] })) {
+            if ('schema' in event && event.ref) {
+              registeredTools[event.name] = {
+                name: event.name,
+                schema: event.schema,
+                ref: event.ref,
+                mayBeLongRunning: event.mayBeLongRunning,
+              }
+            } else {
+              delete registeredTools[event.name]
+            }
+          }
+          return null
+        })
+
         return { state }
       },
     }),

@@ -174,7 +174,7 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
         })
 
         ctx.subscribe(ToolRegistrationTopic, (event) => {
-          if (applyToolFilter(event.name, { allow: ['tool_status'] })) {
+          if (applyToolFilter(event.name, { allow: ['tool_status', 'switch_mode'] })) {
             if ('schema' in event && event.ref) {
               registeredTools[event.name] = {
                 name: event.name,
