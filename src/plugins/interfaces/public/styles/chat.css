@@ -588,6 +588,8 @@ r-chat-panel.undocked.collapsed {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  background: rgba(3, 8, 12, 0.45);
+  opacity: 1;
 }
 
 .chat-window-content #messages {
@@ -601,7 +603,9 @@ r-chat-panel.undocked.collapsed {
 /* Footers */
 .chat-window-footer {
   flex-shrink: 0;
-  background: transparent;
+  background: rgba(3, 8, 12, 0.45);
+  border-top: 1px solid rgba(0, 196, 212, 0.1);
+  opacity: 1;
 }
 
 /* Dock margins in floating/undocked view should be customized */
