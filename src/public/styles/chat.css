@@ -177,39 +177,50 @@
 
 /* ─── Chat: usage bar ─── */
 .chat-dock {
-  margin: 0 1rem 1rem;
+  margin: 0;
   border-radius: 12px;
-  background: rgba(3, 7, 12, 0.72);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(0, 196, 212, 0.09);
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.4),
-    0 8px 32px rgba(0, 0, 0, 0.5),
-    0 0 40px rgba(0, 196, 212, 0.04);
+  background: transparent;
+  border: none;
+  box-shadow: none;
   flex-shrink: 0;
   overflow: hidden;
 }
 
+
+
 /* ─── Chat: input area ─── */
 .input-area {
-  padding: 0.85rem 1.25rem 1rem;
+  padding: 1rem 1.25rem 1rem;
   background: transparent;
   flex-shrink: 0;
 }
 
+
 #chat-form {
   display: flex;
   gap: 0.65rem;
-  align-items: flex-end;
+  align-items: center;
+  border: 1px solid rgba(0, 196, 212, 0.28);
+  border-radius: 28px;
+  padding: 0.35rem 0.65rem;
+  background: rgba(10, 24, 32, 0.45);
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
+
+#chat-form:focus-within {
+  border-color: var(--accent);
+  box-shadow: 
+    0 0 0 1px rgba(0, 196, 212, 0.12),
+    0 0 20px rgba(0, 196, 212, 0.08),
+    inset 0 0 15px rgba(0, 196, 212, 0.01);
+}
+
 
 textarea {
   flex: 1;
-  padding: 0.8rem 1rem;
-  background: var(--surface-2);
-  border: 1px solid var(--border-mid);
-  border-radius: var(--radius);
+  padding: 0.45rem 0.3rem;
+  background: transparent;
+  border: none;
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 0.875rem;
@@ -217,19 +228,15 @@ textarea {
   line-height: 1.6;
   resize: none;
   outline: none;
-  min-height: 46px;
+  min-height: 36px;
   max-height: 150px;
   overflow-y: auto;
-  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
 }
 
 textarea:focus {
-  border-color: rgba(0,196,212,0.4);
-  box-shadow:
-    0 0 0 1px rgba(0,196,212,0.12),
-    0 0 20px rgba(0,196,212,0.06),
-    inset 0 0 15px rgba(0,196,212,0.02);
-  background: rgba(6, 14, 20, 0.95);
+  border-color: transparent;
+  box-shadow: none;
+  background: transparent;
 }
 
 textarea::placeholder { color: var(--muted); font-weight: 300; }
@@ -238,57 +245,57 @@ textarea::-webkit-scrollbar { width: 3px; }
 textarea::-webkit-scrollbar-track { background: transparent; }
 textarea::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
 
+
 button[type="submit"] {
-  width: 46px; height: 46px;
+  width: 32px; height: 32px;
   flex-shrink: 0;
   background: var(--accent);
   border: none;
-  border-radius: var(--radius);
+  border-radius: 50%;
   color: #051018;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background 0.15s, box-shadow 0.15s, transform 0.12s;
-  box-shadow: 0 2px 14px var(--accent-glow);
+  box-shadow: 0 2px 10px var(--accent-glow);
 }
 
 button[type="submit"]:hover:not(:disabled) {
   background: var(--accent-bright);
-  box-shadow: 0 2px 22px rgba(196, 149, 56, 0.45);
+  box-shadow: 0 2px 16px rgba(0, 196, 212, 0.5);
   transform: translateY(-1px);
 }
 
-button[type="submit"]:active:not(:disabled) { transform: translateY(0); box-shadow: 0 1px 8px var(--accent-glow); }
+button[type="submit"]:active:not(:disabled) { transform: translateY(0); box-shadow: 0 1px 6px var(--accent-glow); }
 button[type="submit"]:disabled { background: var(--muted); box-shadow: none; opacity: 0.45; cursor: not-allowed; }
 button[type="submit"] svg { pointer-events: none; }
+
 
 /* ─── Attach / mic buttons ─── */
 
 #attach-btn,
 #mic-btn {
-  width: 36px; height: 36px;
+  width: 32px; height: 32px;
   flex-shrink: 0;
   background: transparent;
-  border: 1px solid var(--border-mid);
-  border-radius: var(--radius);
+  border: none;
+  border-radius: 50%;
   color: var(--muted);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.15s, color 0.15s, box-shadow 0.15s;
-  margin-bottom: 5px;
+  transition: color 0.15s, background 0.15s;
 }
 
 #attach-btn:hover,
 #mic-btn:hover {
-  border-color: rgba(54, 184, 204, 0.4);
   color: var(--accent);
+  background: rgba(0, 196, 212, 0.08);
 }
 
 #mic-btn.recording {
-  border-color: rgba(224, 96, 48, 0.65);
   color: var(--error);
   animation: recordPulse 1.2s ease-in-out infinite;
 }
@@ -297,6 +304,7 @@ button[type="submit"] svg { pointer-events: none; }
   0%, 100% { box-shadow: 0 0 0 0   rgba(224, 96, 48, 0.45); }
   50%       { box-shadow: 0 0 0 6px rgba(224, 96, 48, 0);    }
 }
+
 
 /* ─── Images in message bubbles ─── */
 
@@ -593,39 +601,47 @@ r-chat-panel.undocked.collapsed {
 /* Footers */
 .chat-window-footer {
   flex-shrink: 0;
-  background: rgba(4, 8, 12, 0.45);
+  background: transparent;
 }
 
 /* Dock margins in floating/undocked view should be customized */
 .undocked .chat-window-footer .chat-dock {
-  margin: 0.5rem;
+  margin: 0;
   border-radius: 8px;
-  background: rgba(2, 4, 8, 0.8);
-  border: 1px solid rgba(0, 196, 212, 0.12);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 
+
+
 .undocked .chat-window-footer .input-area {
-  padding: 0.5rem 0.75rem 0.6rem;
+  padding: 0.6rem 0.75rem 0.6rem;
+}
+
+
+.undocked .chat-window-footer #chat-form {
+  border-radius: 20px;
+  padding: 0.25rem 0.5rem;
 }
 
 .undocked .chat-window-footer textarea {
-  min-height: 38px;
-  padding: 0.6rem 0.8rem;
+  min-height: 28px;
+  padding: 0.3rem 0.2rem;
   font-size: 0.8rem;
 }
 
 .undocked .chat-window-footer button[type="submit"] {
-  width: 38px;
-  height: 38px;
+  width: 26px;
+  height: 26px;
 }
 
 .undocked .chat-window-footer #attach-btn,
 .undocked .chat-window-footer #mic-btn {
-  width: 30px;
-  height: 30px;
-  margin-bottom: 4px;
+  width: 26px;
+  height: 26px;
 }
+
 
 .undocked .chat-window-footer .input-hint {
   display: none; /* Hide input hint in floating window to save vertical space */
@@ -700,4 +716,42 @@ r-chat-panel.undocked.collapsed {
   background: transparent;
   cursor: se-resize;
 }
+
+/* ─── Responsive stacking for narrow screens & containers (<= 400px) ─── */
+@media (max-width: 400px) {
+  .message.user {
+    align-items: flex-start;
+  }
+  .message.user .bubble-header {
+    flex-direction: row;
+  }
+  .message.user .bubble {
+    border-radius: 4px 14px 14px 14px;
+  }
+  .bubble {
+    max-width: 100%;
+  }
+  .undocked #messages .message.user .bubble {
+    border-radius: 4px 12px 12px 12px;
+  }
+}
+
+@container chatWindow (max-width: 400px) {
+  .message.user {
+    align-items: flex-start;
+  }
+  .message.user .bubble-header {
+    flex-direction: row;
+  }
+  .message.user .bubble {
+    border-radius: 4px 14px 14px 14px;
+  }
+  .bubble {
+    max-width: 100%;
+  }
+  .undocked #messages .message.user .bubble {
+    border-radius: 4px 12px 12px 12px;
+  }
+}
+
 
