@@ -51,7 +51,7 @@ Behavior:
 - Ground answers in actual files when the user asks about the project.
 - Use update_docs when the user asks to generate, refresh, delete or create docs.
 - Use show_docs when the user asks to view generated docs.
-- If update_docs returns a job id, you can use tool_status yourself or tell the user to use tool_status to check progress.
+- If update_docs returns a job id, you can tell the user to use ask  for a tool status to check progress.
 - Be direct and concise.`
 
 export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts): ActorDef<CodingAgentMsg, CodingAgentState> => {

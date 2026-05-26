@@ -1,6 +1,5 @@
 {
   "plugins": [
-    "./src/plugins/auth/auth.plugin.ts",
     "./src/plugins/interfaces/interfaces.plugin.ts",
     "./src/plugins/tools/tools.plugin.ts",
     "./src/plugins/memory/memory.plugin.ts",
