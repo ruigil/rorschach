@@ -99,6 +99,7 @@ export const pageShell = (
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/base16/ocean.min.css">
   <script src="./toc.js" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
   <script>
     function copyCode(btn) {
       const codeBlock = btn.closest('.code-block');
@@ -113,7 +114,38 @@ export const pageShell = (
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+      // 1. Transform mermaid code blocks
+      const mermaidBlocks = document.querySelectorAll('pre code.language-mermaid');
+      if (mermaidBlocks.length > 0) {
+        mermaidBlocks.forEach((block) => {
+          const pre = block.parentElement;
+          if (!pre) return;
+          const container = document.createElement('div');
+          container.className = 'mermaid';
+          container.textContent = block.textContent;
+          pre.replaceWith(container);
+        });
+
+        if (typeof mermaid !== 'undefined') {
+          mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            themeVariables: {
+              background: '#060e14',
+              primaryColor: '#0ea5e9',
+              primaryTextColor: '#f8fafc',
+              lineColor: '#334155',
+              fontFamily: 'Inter, system-ui, sans-serif',
+              fontSize: '13px'
+            }
+          });
+        }
+      }
+
+      // 2. Process other code blocks with highlight.js
       document.querySelectorAll('pre code').forEach((block) => {
+        if (block.classList.contains('language-mermaid')) return;
+        
         if (typeof hljs !== 'undefined') {
           hljs.highlightElement(block);
         }
@@ -155,6 +187,7 @@ export const pageShell = (
     .artifact-header { border-bottom: 1px solid var(--border); margin-bottom: 22px; padding-bottom: 16px; }
     .artifact-title { color: var(--accent-bright); font-size: 1.45rem; letter-spacing: 0; }
     .artifact-meta { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.72rem; margin-top: 8px; }
+    .mermaid { display: flex; justify-content: center; margin: 1.5rem 0; background: rgba(6, 14, 20, 0.4); border: 1px solid var(--border); border-radius: 6px; padding: 16px; overflow-x: auto; }
     @media (max-width: 760px) {
       .artifact-layout { display: block; }
       .artifact-sidebar { position: static; min-height: auto; max-height: none; border-right: 0; border-bottom: 1px solid var(--border); }

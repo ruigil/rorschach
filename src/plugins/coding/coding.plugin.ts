@@ -1,4 +1,5 @@
 import type { ActorContext, ActorRef, PluginDef } from '../../system/index.ts'
+import { dirname } from 'node:path'
 import { defineConfig, deleteConfigSurface, onLifecycle, onMessage, publishConfigSurface } from '../../system/index.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
@@ -26,6 +27,7 @@ const defaultConfig: CodingConfig = {
   projectRoot: '/home/rigel/rorschach/src',
   projectMount: '/rorschach',
   artifactsDir: '/home/rigel/rorschach/workspace/artifacts',
+  workspaceDir: '/home/rigel/rorschach/workspace',
   coding: {
     model: 'google/gemini-3.5-flash',
     maxToolLoops: 25,
@@ -120,6 +122,7 @@ const spawnChildren = (
   const shellRef = ctx.spawn(`coding-shell-${gen}`, ProjectShell({
     projectRoot: cfg.projectRoot,
     projectMount: cfg.projectMount,
+    workspaceDir: cfg.workspaceDir ?? dirname(cfg.artifactsDir),
     artifactsDir: cfg.artifactsDir,
   })) as ActorRef<ProjectShellMsg>
 

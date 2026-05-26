@@ -4,7 +4,7 @@ import type { ActorDef, SpanHandle } from '../../system/index.ts'
 import { defineTool, onMessage } from '../../system/index.ts'
 import type { ProjectShellMsg } from './types.ts'
 
-export const codingBashTool = defineTool('bash', 'Execute a read-oriented bash command against the mounted project. The project is mounted read-only at /rorschach. Generated docs live under /workspace/artifacts.', {
+export const codingBashTool = defineTool('bash', 'Execute a read-oriented bash command against the mounted project. The project is mounted read-only at /rorschach. Workspace files live under /workspace, and generated docs live under /workspace/artifacts.', {
   type: 'object',
   properties: {
     command: { type: 'string', description: 'The bash command to execute.' },
@@ -16,7 +16,7 @@ export const codingBashTool = defineTool('bash', 'Execute a read-oriented bash c
 export const codingReadTool = defineTool('read', 'Read a UTF-8 project or artifact file by absolute path.', {
   type: 'object',
   properties: {
-    path: { type: 'string', description: 'Absolute path under /rorschach or /workspace/artifacts.' },
+    path: { type: 'string', description: 'Absolute path under /rorschach or /workspace.' },
   },
   required: ['path'],
 })
@@ -34,13 +34,14 @@ const formatExecResult = (result: BashExecResult): string => {
 export const ProjectShell = (options: {
   projectRoot: string
   projectMount: string
+  workspaceDir: string
   artifactsDir: string
 }): ActorDef<ProjectShellMsg, null> => {
   const fs = new MountableFs({
     base: new InMemoryFs(),
     mounts: [
       { mountPoint: options.projectMount, filesystem: new OverlayFs({ root: options.projectRoot, readOnly: true, mountPoint: "/" }) },
-      { mountPoint: "/workspace", filesystem: new ReadWriteFs({ root: options.artifactsDir }) },
+      { mountPoint: "/workspace", filesystem: new ReadWriteFs({ root: options.workspaceDir }) },
     ],
   });
 

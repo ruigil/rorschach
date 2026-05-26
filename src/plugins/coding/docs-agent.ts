@@ -39,6 +39,11 @@ Documentation process:
 HTML requirements:
 - Body content passed to write_doc_page should fit inside the existing .md styling.
 - Use h2/h3, p, ul/ol, table, pre/code blocks, and links.
+- To include architecture, sequence, flowchart, or class diagrams, use a pre/code block with the "language-mermaid" class containing a valid Mermaid.js diagram definition. For example:
+  <pre><code class="language-mermaid">
+  graph TD
+    A --> B
+  </code></pre>
 - Do not include full html/head/body in bodyHtml; the tool adds the shell and app stylesheet.
 - Include sourcePaths for every page.
 

@@ -10,6 +10,7 @@ export type CodingConfig = {
   projectRoot: string
   projectMount: string
   artifactsDir: string
+  workspaceDir?: string
   coding: {
     model: string
     maxToolLoops: number

@@ -16,6 +16,7 @@ export const codingProjectSchema: ConfigSchemaSection = {
     properties: {
       projectRoot: { type: 'string', default: '/home/user/project', 'x-ui': { label: 'Project root' } },
       projectMount: { type: 'string', default: '/rorschach/home/user/project', 'x-ui': { label: 'Project mount' } },
+      workspaceDir: { type: 'string', default: 'workspace', 'x-ui': { label: 'Workspace directory' } },
       artifactsDir: { type: 'string', default: 'workspace/artifacts', 'x-ui': { label: 'Artifacts directory' } },
     },
   },
