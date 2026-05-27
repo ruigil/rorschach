@@ -19,11 +19,10 @@
     "dev:frontend": "bun build src/frontend/rorschach.ts --outfile src/plugins/interfaces/public/rorschach.js --watch",
     "dev:backend": "bun run --watch src/index.ts",
     "dev": "bun run dev:frontend & bun run dev:backend",
-    "test": "bun test",
-    "test:frontend": "bun test --preload ./src/tests/setup.ts src/tests/frontend/",
+    "test": "bun test --preload ./src/tests/setup.ts",
     "typecheck": "bun tsc --noEmit",
-    "test:watch": "bun test --watch",
-    "test:coverage": "bun test --coverage"
+    "test:watch": "bun test --preload ./src/tests/setup.ts --watch",
+    "test:coverage": "bun test --preload ./src/tests/setup.ts --coverage"
   },
   "type": "module",
   "dependencies": {
