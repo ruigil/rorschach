@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
-import { mkdir } from 'node:fs/promises'
+import { describe, expect, test, afterAll } from 'bun:test'
+import { mkdir, rm } from 'node:fs/promises'
 import { AgentSystem } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
@@ -10,11 +10,22 @@ import { ExecutorAgentFactory } from '../plugins/workflows/executor-agent.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
+const tempDirs: string[] = []
+
 const tempContextPath = async (): Promise<string> => {
   const path = `/tmp/rorschach-agent-context-${crypto.randomUUID()}`
   await mkdir(path, { recursive: true })
+  tempDirs.push(path)
   return path
 }
+
+afterAll(async () => {
+  for (const path of tempDirs) {
+    try {
+      await rm(path, { recursive: true, force: true })
+    } catch {}
+  }
+})
 
 const CapturingLlm = (streams: Array<Extract<LlmProviderMsg, { type: 'stream' }>>): ActorDef<LlmProviderMsg, null> => ({
   initialState: null,

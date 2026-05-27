@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
-import { mkdir } from 'node:fs/promises'
+import { describe, expect, test, afterAll } from 'bun:test'
+import { mkdir, rm } from 'node:fs/promises'
 import { AgentSystem } from '../system/index.ts'
 import { assembleAgentMessages } from '../system/index.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
@@ -7,11 +7,22 @@ import { ContextSnapshotTopic, type ContextSnapshotEvent } from '../types/agents
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
+const tempDirs: string[] = []
+
 const tempContextPath = async (): Promise<string> => {
   const path = `/tmp/rorschach-context-${crypto.randomUUID()}`
   await mkdir(path, { recursive: true })
+  tempDirs.push(path)
   return path
 }
+
+afterAll(async () => {
+  for (const path of tempDirs) {
+    try {
+      await rm(path, { recursive: true, force: true })
+    } catch {}
+  }
+})
 
 describe('ContextStore context snapshots', () => {
   test('starts empty for an old persisted context shape', async () => {

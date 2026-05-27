@@ -1,4 +1,6 @@
-import { describe, test, expect, afterEach } from 'bun:test'
+import { describe, test, expect, afterEach, afterAll } from 'bun:test'
+import { mkdirSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { AgentSystem, TraceTopic, type TraceSpan } from '../system/index.ts'
 import type { MessageHeaders } from '../system/index.ts'
 import { Chatbot, type ChatbotState } from '../plugins/cognitive/chatbot-agent.ts'
@@ -88,10 +90,27 @@ const spanFor = (spans: TraceSpan[], operation: string, status: TraceSpan['statu
 
 // ─── Spawn helpers ───
 
+const tempDirs: string[] = []
+
+const tempContextPath = (): string => {
+  const path = `/tmp/rorschach-tracing-context-${crypto.randomUUID()}`
+  mkdirSync(path, { recursive: true })
+  tempDirs.push(path)
+  return path
+}
+
+afterAll(async () => {
+  for (const path of tempDirs) {
+    try {
+      await rm(path, { recursive: true, force: true })
+    } catch {}
+  }
+})
+
 const spawnChatbot = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
   const userId = `test-user-${crypto.randomUUID()}`
   const llmRef = system.spawn('llm-provider', LlmProvider({ adapter: OpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }))
-  const contextStoreRef = system.spawn(`context-store-${userId}`, ContextStore({ userId }))
+  const contextStoreRef = system.spawn(`context-store-${userId}`, ContextStore({ userId, contextPath: tempContextPath() }))
   return system.spawn(
     'chatbot',
     Chatbot({ model: LLM_PROVIDER_ADAPTER_OPTS.model }, { clientId: CLIENT_ID, userId, contextStoreRef, llmRef }),
