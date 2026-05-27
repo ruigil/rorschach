@@ -1,6 +1,6 @@
-import { appendFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { appendFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { ActorDef } from '../../system/index.ts'
+import type { ActorDef, MessageHandler } from '../../system/index.ts'
 import { LogTopic } from '../../system/index.ts'
 import type { JsonlLoggerMsg } from './types.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
@@ -18,6 +18,8 @@ export type JsonlLoggerState = {
   written: number
   /** Internal buffer for batched writes */
   buffer: string[]
+  /** True when currently awaiting a file rollover directory/file creation */
+  rotating?: boolean
 }
 
 // ─── Helpers ───
@@ -30,20 +32,12 @@ const resolvePath = (template: string, dateStr: string): string => {
   return template.replace('{date}', dateStr)
 }
 
-
-const ensureFile = (path: string): void => {
+const ensureFile = async (path: string): Promise<void> => {
   const dir = dirname(path)
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  if (!existsSync(path)) writeFileSync(path, '')
-}
-
-/** If the calendar day has rolled over, return new {resolvedPath, dateStr}; else null. */
-const checkRotation = (state: JsonlLoggerState): { resolvedPath: string; dateStr: string } | null => {
-  const today = currentDateStr()
-  if (today === state.dateStr) return null
-  const resolvedPath = resolvePath(state.filePath, today)
-  ensureFile(resolvedPath)
-  return { resolvedPath, dateStr: today }
+  await mkdir(dir, { recursive: true })
+  try {
+    await writeFile(path, '', { flag: 'wx' })
+  } catch {}
 }
 
 // ─── Options ───
@@ -86,46 +80,76 @@ export const JsonlLogger = (
   const { filePath, flushIntervalMs, minLevel = 'debug' } = options
   const minLevelValue = LOG_LEVEL_ORDER[minLevel]
 
+  const handler: MessageHandler<JsonlLoggerMsg, JsonlLoggerState> = onMessage<JsonlLoggerMsg, JsonlLoggerState>({
+    log: (state, message, context) => {
+      if (state.rotating) {
+        return { state, stash: true }
+      }
+
+      // Drop events below the minimum level
+      if (LOG_LEVEL_ORDER[message.event.level] < minLevelValue) return { state }
+
+      const line = JSON.stringify(message.event)
+      const today = currentDateStr()
+
+      if (today !== state.dateStr) {
+        context.pipeToSelf(
+          (async () => {
+            const newPath = resolvePath(state.filePath, today)
+            await ensureFile(newPath)
+            return { today, resolvedPath: newPath }
+          })(),
+          res => ({ type: '_rotated' as const, dateStr: res.today, resolvedPath: res.resolvedPath }),
+          err => {
+            context.log.error('log rotation failed', { error: String(err) })
+            return { type: '_rotated' as const, dateStr: today, resolvedPath: state.resolvedPath }
+          }
+        )
+        return { state: { ...state, rotating: true }, stash: true }
+      }
+
+      // Buffered mode: accumulate lines, write on flush
+      if (flushIntervalMs && flushIntervalMs > 0) {
+        return { state: { ...state, buffer: [...state.buffer, line] } }
+      }
+
+      // Unbuffered mode: append immediately (fire-and-forget async)
+      appendFile(state.resolvedPath, line + '\n').catch(err => {
+        context.log.error('Failed to append log line', { error: String(err) })
+      })
+      return { state: { ...state, written: state.written + 1 } }
+    },
+
+    _rotated: (state, message) => {
+      return {
+        state: { ...state, dateStr: message.dateStr, resolvedPath: message.resolvedPath, rotating: false },
+        become: handler,
+        unstashAll: true
+      }
+    },
+    
+    flush: (state, _message, context) => {
+      if (state.buffer.length === 0) return { state }
+
+      const chunk = state.buffer.join('\n') + '\n'
+      appendFile(state.resolvedPath, chunk).catch(err => {
+        context.log.error('Failed to flush log lines', { error: String(err) })
+      })
+
+      const written = state.written + state.buffer.length
+      return { state: { ...state, buffer: [], written } }
+    },
+  })
+
   return {
     initialState: { filePath, resolvedPath: filePath, dateStr: '', written: 0, buffer: [] },
-    handler: onMessage({
-      log(state, message) {
-        // Drop events below the minimum level
-        if (LOG_LEVEL_ORDER[message.event.level] < minLevelValue) return { state }
-
-        const line = JSON.stringify(message.event)
-        const rotation = checkRotation(state)
-        const rotated = rotation ? { ...state, ...rotation } : state
-
-        // Buffered mode: accumulate lines, write on flush
-        if (flushIntervalMs && flushIntervalMs > 0) {
-          return { state: { ...rotated, buffer: [...rotated.buffer, line] } }
-        }
-
-        // Unbuffered mode: append immediately
-        appendFileSync(rotated.resolvedPath, line + '\n')
-        return { state: { ...rotated, written: rotated.written + 1 } }
-      },
-
-      flush(state, _message, _context) {
-        const rotation = checkRotation(state)
-        const rotated = rotation ? { ...state, ...rotation } : state
-
-        if (rotated.buffer.length === 0) return { state: rotated }
-
-        const chunk = rotated.buffer.join('\n') + '\n'
-        appendFileSync(rotated.resolvedPath, chunk)
-
-        const written = rotated.written + rotated.buffer.length
-        return { state: { ...rotated, buffer: [], written } }
-      },
-    }),
+    handler,
 
     lifecycle: onLifecycle({
-      start: (state, context) => {
+      start: async (state, context) => {
         const dateStr = currentDateStr()
         const resolvedPath = resolvePath(filePath, dateStr)
-        ensureFile(resolvedPath)
+        await ensureFile(resolvedPath)
 
         // Subscribe to system log topic — adapter receives LogEvent directly (type-safe)
         context.subscribe(LogTopic, (event) => ({ type: 'log', event }))
@@ -139,14 +163,18 @@ export const JsonlLogger = (
         return { state: { ...state, filePath, resolvedPath, dateStr } }
       },
 
-      stopped: (state, context) => {
+      stopped: async (state, context) => {
         // Flush any remaining buffered entries before stopping
         if (state.buffer.length > 0) {
           const chunk = state.buffer.join('\n') + '\n'
-          appendFileSync(state.resolvedPath, chunk)
-          const written = state.written + state.buffer.length
-          context.log.info(`final flush: ${state.buffer.length} entries (${written} total)`)
-          return { state: { ...state, buffer: [], written } }
+          try {
+            await appendFile(state.resolvedPath, chunk)
+            const written = state.written + state.buffer.length
+            context.log.info(`final flush: ${state.buffer.length} entries (${written} total)`)
+            return { state: { ...state, buffer: [], written } }
+          } catch (err) {
+            context.log.error('Failed to perform final flush', { error: String(err) })
+          }
         }
 
         context.log.info(`stopped — ${state.written} log entries persisted`)

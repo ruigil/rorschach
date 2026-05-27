@@ -1,6 +1,6 @@
 import { createConnection } from 'node:net'
 import type { Socket } from 'node:net'
-import { copyFileSync, mkdirSync } from 'node:fs'
+import { copyFile, mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { emit } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
@@ -219,6 +219,7 @@ type SignalMsg =
   | { type: '_phoneResolved';         phone: string; userId: string }
   | { type: '_phoneRejected';         phone: string }
   | { type: '_presenceExpired';       phone: string }
+  | { type: '_attachmentsCopied';     phone: string; text: string; messageAttachments: MessageAttachment[] }
 
 // ─── State ───
 
@@ -279,24 +280,48 @@ export const Signal = (
     return aliases[sub] ?? sub
   }
 
-  const copyToInbound = (id: string, contentType: string): MessageAttachment => {
-    const kind: MessageAttachment['kind'] =
-      contentType.startsWith('image/') ? 'image' :
-      contentType.startsWith('audio/') ? 'audio' :
-      contentType.startsWith('video/') ? 'video' :
-      contentType.includes('pdf')      ? 'pdf'   : 'file'
-    const ext  = mimeToExt(contentType)
-    const dest = join(INBOUND_DIR, `rorschach-${crypto.randomUUID()}.${ext}`)
-    mkdirSync(INBOUND_DIR, { recursive: true })
-    copyFileSync(`${attachmentsDir}/${id}`, dest)
-    return { kind, url: dest, mimeType: contentType }
-  }
-
-  const attachmentPaths = (attachments: Attachment[]): MessageAttachment[] =>
-    attachments.map(a => copyToInbound(a.id, a.contentType))
-
   const refreshPresenceExpiry = (phone: string, ctx: { timers: { startSingleTimer: (key: string, message: SignalMsg, delayMs: number) => void } }) => {
     ctx.timers.startSingleTimer(`presence:${phone}`, { type: '_presenceExpired', phone }, presenceTtlMs)
+  }
+
+  const processIncomingMessage = (state: SignalState, phone: string, text: string, messageAttachments: MessageAttachment[], ctx: any) => {
+    // Already an identified, seen sender — emit directly
+    if (state.seenIds.has(phone)) {
+      refreshPresenceExpiry(phone, ctx)
+      const span = ctx.trace.start('request', { clientId: phone })
+      const activeSpans = { ...state.activeSpans, [phone]: span }
+      return {
+        state: { ...state, activeSpans },
+        events: [emit(InboundMessageTopic, {
+          clientId:    phone,
+          text,
+          attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
+          traceId:      span.traceId,
+          parentSpanId: span.spanId,
+        })],
+      }
+    }
+
+    // New sender — buffer and resolve via userStore
+    const existing = state.pendingConnect.get(phone) ?? []
+    const pendingConnect = new Map(state.pendingConnect)
+    pendingConnect.set(phone, [...existing, {
+      text,
+      attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
+    }])
+
+    if (existing.length === 0) {
+      ctx.pipeToSelf(
+        resolveIdentity(state.identityProviderRef,
+          r => ({ type: 'resolvePhone' as const, phone, replyTo: r })),
+        (id: Identity | null): SignalMsg => id
+          ? { type: '_phoneResolved', phone, userId: id.userId }
+          : { type: '_phoneRejected', phone },
+        (): SignalMsg => ({ type: '_phoneRejected', phone }),
+      )
+    }
+
+    return { state: { ...state, pendingConnect } }
   }
 
   return {
@@ -377,56 +402,48 @@ export const Signal = (
         const incomingGroup  = envelope.dataMessage?.groupInfo?.groupId ?? envelope.syncMessage?.sentMessage?.groupInfo?.groupId ?? null
         const text            = envelope.dataMessage?.message ?? sent?.message ?? ''
         const attachments      = envelope.dataMessage?.attachments ?? sent?.attachments ?? []
-        const messageAttachments = attachmentPaths(attachments)
 
-        if (!source || (!text && messageAttachments.length === 0)) return { state }
+        if (!source) return { state }
 
         // Ignore messages from Signal groups
         if (incomingGroup) return { state }
 
         const phone = source
 
-        // Already an identified, seen sender — emit directly
-        if (state.seenIds.has(phone)) {
-          refreshPresenceExpiry(phone, ctx)
-          const span = ctx.trace.start('request', { clientId: phone })
-          const activeSpans = { ...state.activeSpans, [phone]: span }
-          return {
-            state: { ...state, activeSpans },
-            events: [emit(InboundMessageTopic, {
-              clientId:    phone,
-              text,
-              attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
-              traceId:      span.traceId,
-              parentSpanId: span.spanId,
-            })],
-          }
-        }
-
-        // New sender — buffer and resolve via userStore
-        const existing = state.pendingConnect.get(phone) ?? []
-        const pendingConnect = new Map(state.pendingConnect)
-        pendingConnect.set(phone, [...existing, {
-          text,
-          attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
-        }])
-
-        if (existing.length === 0) {
-          // First message from this phone — resolve identity.
-          // No provider ⇒ ANONYMOUS_IDENTITY (everyone collapses to one identity).
-          // Provider returns Identity ⇒ real userId.
-          // Provider returns null ⇒ unknown phone, reject.
+        if (attachments.length > 0) {
           ctx.pipeToSelf(
-            resolveIdentity(state.identityProviderRef,
-              r => ({ type: 'resolvePhone' as const, phone, replyTo: r })),
-            (id: Identity | null): SignalMsg => id
-              ? { type: '_phoneResolved', phone, userId: id.userId }
-              : { type: '_phoneRejected', phone },
-            (): SignalMsg => ({ type: '_phoneRejected', phone }),
+            (async () => {
+              const copied: MessageAttachment[] = []
+              for (const a of attachments) {
+                const kind: MessageAttachment['kind'] =
+                  a.contentType.startsWith('image/') ? 'image' :
+                  a.contentType.startsWith('audio/') ? 'audio' :
+                  a.contentType.startsWith('video/') ? 'video' :
+                  a.contentType.includes('pdf')      ? 'pdf'   : 'file'
+                const ext  = mimeToExt(a.contentType)
+                const dest = join(INBOUND_DIR, `rorschach-${crypto.randomUUID()}.${ext}`)
+                await mkdir(INBOUND_DIR, { recursive: true })
+                await copyFile(`${attachmentsDir}/${a.id}`, dest)
+                copied.push({ kind, url: dest, mimeType: a.contentType })
+              }
+              return copied
+            })(),
+            copied => ({ type: '_attachmentsCopied' as const, phone, text, messageAttachments: copied }),
+            err => {
+              ctx.log.error('signal: failed to copy attachments, proceeding without them', { error: String(err) })
+              return { type: '_attachmentsCopied' as const, phone, text, messageAttachments: [] }
+            }
           )
+          return { state }
         }
 
-        return { state: { ...state, pendingConnect } }
+        if (!text) return { state }
+
+        return processIncomingMessage(state, phone, text, [], ctx)
+      },
+
+      _attachmentsCopied: (state, msg, ctx) => {
+        return processIncomingMessage(state, msg.phone, msg.text, msg.messageAttachments, ctx)
       },
 
       _send: (state, msg, ctx) => {

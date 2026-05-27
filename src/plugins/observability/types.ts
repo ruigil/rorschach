@@ -6,6 +6,7 @@ import type { CostEvent } from '../../types/llm.ts'
 export type JsonlLoggerMsg =
   | { type: 'log'; event: LogEvent }
   | { type: 'flush' }
+  | { type: '_rotated'; dateStr: string; resolvedPath: string }
 
 // ─── Trace recorder message protocol ───
 
@@ -18,3 +19,4 @@ export type TraceRecorderMsg =
 export type CostTrackerMsg =
   | { type: 'cost'; event: CostEvent }
   | { type: 'flush' }
+  | { type: '_rotated'; dateStr: string; resolvedPath: string }

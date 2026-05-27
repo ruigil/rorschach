@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, existsSync } from 'node:fs'
+import { appendFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { TraceTopic, type ActorDef } from '../../system/index.ts'
 import type { TraceRecorderMsg } from './types.ts'
@@ -8,12 +8,6 @@ import { onLifecycle, onMessage } from '../../system/index.ts'
 
 const dayFolder = (timestamp: number): string =>
   new Date(timestamp).toISOString().slice(0, 10) // "YYYY-MM-DD"
-
-const tracePath = (tracesDir: string, timestamp: number, traceId: string): string => {
-  const dir = join(tracesDir, dayFolder(timestamp))
-  mkdirSync(dir, { recursive: true })
-  return join(dir, traceId + '.jsonl')
-}
 
 // ─── Actor state ───
 
@@ -53,14 +47,24 @@ export const TraceRecorder = (
   return {
     initialState: { tracesDir, written: 0, buffer: [] },
     handler: onMessage({
-      span(state, message) {
+      span(state, message, context) {
         const line = JSON.stringify(message.span)
 
         if (flushIntervalMs && flushIntervalMs > 0) {
           return { state: { ...state, buffer: [...state.buffer, { traceId: message.span.traceId, timestamp: message.span.timestamp, line }] } }
         }
 
-        appendFileSync(tracePath(state.tracesDir, message.span.timestamp, message.span.traceId), line + '\n')
+        const dir = join(state.tracesDir, dayFolder(message.span.timestamp));
+        const path = join(dir, message.span.traceId + '.jsonl');
+
+        // Asynchronous non-blocking directory creation and write
+        void (async () => {
+          await mkdir(dir, { recursive: true });
+          await appendFile(path, line + '\n');
+        })().catch((err: unknown) => {
+          context.log.error('Failed to append trace span', { error: String(err) });
+        });
+
         return { state: { ...state, written: state.written + 1 } }
       },
 
@@ -74,9 +78,17 @@ export const TraceRecorder = (
           byTrace.set(traceId, entry)
         }
 
-        for (const [traceId, { timestamp, lines }] of byTrace) {
-          appendFileSync(tracePath(state.tracesDir, timestamp, traceId), lines.join('\n') + '\n')
-        }
+        // Asynchronous non-blocking write of all trace logs grouped by trace
+        void (async () => {
+          for (const [traceId, { timestamp, lines }] of byTrace) {
+            const dir = join(state.tracesDir, dayFolder(timestamp));
+            const path = join(dir, traceId + '.jsonl');
+            await mkdir(dir, { recursive: true });
+            await appendFile(path, lines.join('\n') + '\n');
+          }
+        })().catch((err: unknown) => {
+          context.log.error('Failed to flush trace spans', { error: String(err) });
+        });
 
         const written = state.written + state.buffer.length
         context.log.debug(`flushed ${state.buffer.length} spans across ${byTrace.size} traces (${written} total)`)
@@ -85,8 +97,8 @@ export const TraceRecorder = (
     }),
 
     lifecycle: onLifecycle({
-      start: (state, context) => {
-        if (!existsSync(tracesDir)) mkdirSync(tracesDir, { recursive: true })
+      start: async (state, context) => {
+        await mkdir(tracesDir, { recursive: true })
 
         context.subscribe(TraceTopic, (span) => ({ type: 'span', span }))
 
@@ -98,7 +110,7 @@ export const TraceRecorder = (
         return { state: { ...state, tracesDir } }
       },
 
-      stopped: (state, context) => {
+      stopped: async (state, context) => {
         if (state.buffer.length > 0) {
           const byTrace = new Map<string, { timestamp: number; lines: string[] }>()
           for (const { traceId, timestamp, line } of state.buffer) {
@@ -106,12 +118,19 @@ export const TraceRecorder = (
             entry.lines.push(line)
             byTrace.set(traceId, entry)
           }
-          for (const [traceId, { timestamp, lines }] of byTrace) {
-            appendFileSync(tracePath(state.tracesDir, timestamp, traceId), lines.join('\n') + '\n')
+          try {
+            for (const [traceId, { timestamp, lines }] of byTrace) {
+              const dir = join(state.tracesDir, dayFolder(timestamp))
+              const path = join(dir, traceId + '.jsonl')
+              await mkdir(dir, { recursive: true })
+              await appendFile(path, lines.join('\n') + '\n')
+            }
+            const written = state.written + state.buffer.length
+            context.log.info(`final flush: ${state.buffer.length} spans (${written} total)`)
+            return { state: { ...state, buffer: [], written } }
+          } catch (err) {
+            context.log.error('Failed to perform final trace flush', { error: String(err) })
           }
-          const written = state.written + state.buffer.length
-          context.log.info(`final flush: ${state.buffer.length} spans (${written} total)`)
-          return { state: { ...state, buffer: [], written } }
         }
 
         context.log.info(`stopped — ${state.written} spans persisted`)
