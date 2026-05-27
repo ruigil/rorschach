@@ -65,16 +65,16 @@ export class RStatusDot extends RorschachBase {
     }
   `;
 
-  override render() {
+  override willUpdate() {
     const connected = this._isConnected.value;
-    const status = connected ? 'connected' : 'disconnected';
-    const label = connected ? 'connected' : 'reconnecting…';
+    this.status = connected ? 'connected' : 'disconnected';
+    this.label = connected ? 'connected' : 'reconnecting…';
+  }
 
-    this.status = status; // Reflect to attribute
-
+  override render() {
     return html`
       <span class="dot"></span>
-      ${label ? html`<span class="label">${label}</span>` : ''}
+      ${this.label ? html`<span class="label">${this.label}</span>` : ''}
     `;
   }
 }
