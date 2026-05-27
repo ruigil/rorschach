@@ -27,10 +27,13 @@ const spawnTicker = (config: GreeterConfig, ctx: ActorContext<GreeterPluginMsg>)
   return ctx.spawn('ticker', tickerDef) as ActorRef<unknown>
 }
 
-const createGreeterPlugin = (config: GreeterConfig): PluginDef<GreeterPluginMsg, GreeterPluginState> => ({
+const createGreeterPlugin = (config: GreeterConfig): PluginDef<GreeterPluginMsg, GreeterPluginState, GreeterConfig> => ({
   id: 'greeter',
   version: '1.0.0',
   description: 'Periodically logs a greeting',
+  configDescriptor: {
+    defaults: config,
+  },
   initialState: { tickerRef: null },
 
   handler(state, msg, ctx) {

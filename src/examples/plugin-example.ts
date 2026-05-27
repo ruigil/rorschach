@@ -44,10 +44,13 @@ const spawnCounterChildren = (config: CounterConfig, ctx: ActorContext<CounterPl
   return { counterRef, tickerRef }
 }
 
-const createCounterPlugin = (config: CounterConfig): PluginDef<CounterPluginMsg, CounterPluginState> => ({
+const createCounterPlugin = (config: CounterConfig): PluginDef<CounterPluginMsg, CounterPluginState, CounterConfig> => ({
   id: 'counter',
   version: '1.0.0',
   description: 'Periodically increments a counter and logs its value',
+  configDescriptor: {
+    defaults: config,
+  },
   initialState: { counterRef: null, tickerRef: null },
 
   handler(state, msg, ctx) {

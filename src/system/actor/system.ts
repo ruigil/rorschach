@@ -50,7 +50,7 @@ const deepMerge = (base: unknown, override: unknown): unknown => {
     typeof override !== 'object' ||
     Array.isArray(override)
   ) {
-    return override ?? base
+    return override !== undefined ? override : base
   }
   if (base === null || typeof base !== 'object' || Array.isArray(base)) {
     return override
@@ -185,6 +185,14 @@ export const AgentSystem = async (
   const unloadPlugin = async (id: string): Promise<UnloadResult> => {
     const plugin = plugins.get(id)
     if (!plugin) return { ok: false, error: `plugin '${id}' not found` }
+
+    if (plugin.status === 'failed') {
+      const rootName = `system/${id}`
+      ctx.stop({ name: rootName })
+      plugins.delete(id)
+      return { ok: true }
+    }
+
     if (plugin.status !== 'active')
       return { ok: false, error: `plugin '${id}' is not active (status: ${plugin.status})` }
 
@@ -212,9 +220,17 @@ export const AgentSystem = async (
   }
 
   const hotReloadPlugin = async (id: string, path: string): Promise<LoadResult> => {
+    const oldPlugin = plugins.get(id)
     const result = await unloadPlugin(id)
     if (!result.ok) return result
-    const { default: def } = await import(`${path}?t=${Date.now()}`)
+    const { default: imported } = await import(`${path}?t=${Date.now()}`)
+    
+    let def = imported
+    if (typeof imported === 'function') {
+      const configKey = oldPlugin?.def.configDescriptor?.key ?? id
+      const configSlice = globalConfig[configKey]
+      def = imported(configSlice)
+    }
     return use(def)
   }
 
