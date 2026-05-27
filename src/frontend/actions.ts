@@ -1,5 +1,5 @@
 import { store } from './store.js';
-import { type RorschachState, type Message, type LogEvent, type Attachment } from './types/state.js';
+import { type RorschachState, type Message, type LogEvent, type Attachment, type WindowRuntimeState } from './types/state.js';
 import { modeLabel, toolActionLabel } from './core/utils.js';
 
 export function setMode(mode: string, displayName?: string) {
@@ -93,6 +93,35 @@ export async function logout() {
   window.location.href = new URL('auth/login.html', location.href).href;
 }
 
+function persistWindowState(id: string, state: WindowRuntimeState) {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(`rorschach.window_state.${id}`, JSON.stringify(state));
+  }
+}
+
+export function setActiveWorkspaceTab(id: string) {
+  store.set('activeWorkspaceTab', id);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('rorschach.activeWorkspaceTab', id);
+  }
+}
+
+export function updateWindowState(id: string, updates: Partial<WindowRuntimeState>) {
+  const windows = { ...store.get('windows') };
+  const target = windows[id];
+  if (!target) return false;
+
+  const nextState = { ...target, ...updates };
+  windows[id] = nextState;
+  store.set('windows', windows);
+  persistWindowState(id, nextState);
+  return true;
+}
+
+export function undockWindow(id: string) {
+  return updateWindowState(id, { isDocked: false });
+}
+
 export function openWindow(id: string, params: Record<string, any> = {}) {
   const windows = { ...store.get('windows') };
   const winState = windows[id];
@@ -103,17 +132,14 @@ export function openWindow(id: string, params: Record<string, any> = {}) {
   winState.params = { ...winState.params, ...params };
   
   if (winState.isDocked && id !== 'chat') {
-    store.set('activeWorkspaceTab', id);
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('rorschach.activeWorkspaceTab', id);
-    }
+    setActiveWorkspaceTab(id);
   }
 
   store.set('windows', windows);
   focusWindow(id);
 
   if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(`rorschach.window_state.${id}`, JSON.stringify(winState));
+    persistWindowState(id, winState);
     if (id === 'docs') {
       localStorage.setItem('rorschach.docWorkspaceOpen', 'true');
       if (params.currentDocArtifact) {
@@ -141,7 +167,7 @@ export function closeWindow(id: string) {
   }
 
   if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(`rorschach.window_state.${id}`, JSON.stringify(winState));
+    persistWindowState(id, winState);
     if (id === 'docs') {
       localStorage.setItem('rorschach.docWorkspaceOpen', 'false');
     } else if (id === 'plans') {

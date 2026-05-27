@@ -3,7 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 import { store, StoreController } from '../store.js';
 import { WINDOW_REGISTRY } from '../core/window-registry.js';
-import { openWindow, closeWindow, focusWindow } from '../actions.js';
+import { closeWindow, focusWindow, setActiveWorkspaceTab, updateWindowState } from '../actions.js';
 
 @customElement('r-window')
 export class RWindow extends RorschachBase {
@@ -147,8 +147,7 @@ export class RWindow extends RorschachBase {
 
     // When docking back workspace tabs, ensure the tab selection matches
     if (nextDocked && this.windowId !== 'chat') {
-      store.set('activeWorkspaceTab', this.windowId);
-      localStorage.setItem('rorschach.activeWorkspaceTab', this.windowId);
+      setActiveWorkspaceTab(this.windowId);
     }
   }
 
@@ -157,13 +156,7 @@ export class RWindow extends RorschachBase {
   }
 
   private _updateState(updates: Partial<any>) {
-    const windows = { ...store.get('windows') };
-    const target = windows[this.windowId];
-    if (target) {
-      windows[this.windowId] = { ...target, ...updates };
-      store.set('windows', windows);
-      localStorage.setItem(`rorschach.window_state.${this.windowId}`, JSON.stringify(windows[this.windowId]));
-    }
+    updateWindowState(this.windowId, updates);
   }
 
   override updated() {

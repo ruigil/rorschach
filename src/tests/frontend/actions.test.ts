@@ -2,9 +2,19 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 
 import { store } from '../../frontend/store.js'
 import { resetStore } from '../helpers/frontend.js'
-import { setMode, addLog, appendMessage, updateActiveStream, commitActiveStream } from '../../frontend/actions.js'
+import {
+  setMode,
+  addLog,
+  appendMessage,
+  updateActiveStream,
+  commitActiveStream,
+  setActiveWorkspaceTab,
+  updateWindowState,
+  undockWindow,
+} from '../../frontend/actions.js'
 
 beforeEach(() => {
+  localStorage.clear()
   resetStore()
 })
 
@@ -139,5 +149,64 @@ describe('commitActiveStream', () => {
     expect(msg.sources![0]!.url).toBe('http://x.com')
     expect(msg.attachments).toHaveLength(1)
     expect(msg.attachments![0]!.kind).toBe('image')
+  })
+})
+
+describe('window state actions', () => {
+  test('setActiveWorkspaceTab updates store and localStorage', () => {
+    setActiveWorkspaceTab('plans')
+
+    expect(store.get('activeWorkspaceTab')).toBe('plans')
+    expect(localStorage.getItem('rorschach.activeWorkspaceTab')).toBe('plans')
+  })
+
+  test('updateWindowState updates and persists the target window', () => {
+    store.set('windows', {
+      docs: {
+        id: 'docs',
+        isOpen: true,
+        isDocked: true,
+        isMinimized: false,
+        x: 10,
+        y: 20,
+        w: 400,
+        h: 500,
+        zIndex: 1000,
+        params: {},
+      },
+    })
+
+    expect(updateWindowState('docs', { isDocked: false, x: 64 })).toBe(true)
+
+    const win = store.get('windows').docs!
+    expect(win.isDocked).toBe(false)
+    expect(win.x).toBe(64)
+
+    const stored = JSON.parse(localStorage.getItem('rorschach.window_state.docs')!)
+    expect(stored.isDocked).toBe(false)
+    expect(stored.x).toBe(64)
+  })
+
+  test('undockWindow updates and persists dock state', () => {
+    store.set('windows', {
+      docs: {
+        id: 'docs',
+        isOpen: true,
+        isDocked: true,
+        isMinimized: false,
+        x: 10,
+        y: 20,
+        w: 400,
+        h: 500,
+        zIndex: 1000,
+        params: {},
+      },
+    })
+
+    expect(undockWindow('docs')).toBe(true)
+    expect(store.get('windows').docs!.isDocked).toBe(false)
+
+    const stored = JSON.parse(localStorage.getItem('rorschach.window_state.docs')!)
+    expect(stored.isDocked).toBe(false)
   })
 })

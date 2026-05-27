@@ -3,7 +3,7 @@ import { customElement, query, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 import { store, StoreController } from '../store.js';
 import { connect } from '../connection.js';
-import { logout, openWindow, closeWindow, focusWindow } from '../actions.js';
+import { logout, openWindow, closeWindow, setActiveWorkspaceTab, undockWindow } from '../actions.js';
 import { TABS } from '../constants.js';
 import type { Tab } from '../constants.js';
 import { WINDOW_REGISTRY } from '../core/window-registry.js';
@@ -75,12 +75,7 @@ export class RShell extends RorschachBase {
   }
 
   private _undockWorkspace(id: string) {
-    const windows = { ...store.get('windows') };
-    if (windows[id]) {
-      windows[id].isDocked = false;
-      store.set('windows', windows);
-      localStorage.setItem(`rorschach.window_state.${id}`, JSON.stringify(windows[id]));
-    }
+    undockWindow(id);
   }
 
   private _isAnyWorkspaceDockedAndOpen() {
@@ -108,8 +103,7 @@ export class RShell extends RorschachBase {
     const dockedOpenWorkspaces = this._getActiveDockedWorkspaces();
     if (dockedOpenWorkspaces.length > 0 && !dockedOpenWorkspaces.includes(activeTab)) {
       const fallback = dockedOpenWorkspaces[0]!;
-      store.set('activeWorkspaceTab', fallback);
-      localStorage.setItem('rorschach.activeWorkspaceTab', fallback);
+      setActiveWorkspaceTab(fallback);
     }
 
     // Sync workspaces open states based on modes, artifacts, and graphs
@@ -200,10 +194,7 @@ export class RShell extends RorschachBase {
                   ${this._getActiveDockedWorkspaces().map(id => html`
                     <button 
                       class="workspace-tab ${this._activeWorkspaceTab.value === id ? 'active' : ''}" 
-                      @click=${() => {
-                        store.set('activeWorkspaceTab', id);
-                        localStorage.setItem('rorschach.activeWorkspaceTab', id);
-                      }}
+                      @click=${() => setActiveWorkspaceTab(id)}
                     >
                       ${this.renderIcon((WINDOW_REGISTRY[id]?.icon ?? 'file') as any)}
                       <span>${WINDOW_REGISTRY[id]?.title ?? id}</span>
