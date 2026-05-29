@@ -8,11 +8,18 @@
   ],
   "config": {
     "observability": {
+      "jsonlLogger": {
+        "filePath": "workspace/benchmark/observability/logs/rorschach-{date}.jsonl",
+        "minLevel": "debug"
+      },
       "traceRecorder": {
         "tracesDir": "workspace/benchmark/observability/traces"
       },
       "metrics": {
         "intervalMs": 5000
+      },
+      "costTracker": {
+        "costsDir": "workspace/benchmark/observability/costs"
       }
     },
     "interfaces": {
@@ -30,13 +37,11 @@
       }
     },
     "memory": {
-      "dbPath": "workspace/benchmark",
+      "workPath": "workspace/benchmark",
       "kgraph": {
-        "embeddingModel": "qwen/qwen3-embedding-8b",
-        "embeddingDimensions": 4096,
-        "cosineSimilarityThreshold": 0.6,
-        "rerankerModel": "cohere/rerank-4-pro",
-        "rerankerTopK": 15
+        "embeddingModel": "perplexity/pplx-embed-v1-4b",
+        "embeddingDimensions": 1024,
+        "cosineSimilarityThreshold": 0.6
       },
       "system": {
         "model": "google/gemini-3.1-flash-lite-preview",
@@ -45,7 +50,7 @@
       }
     }
   },
-  "dataset": "benchmarks/datasets/family-facts.json",
+  "dataset": "benchmarks/datasets/linked-facts.json",
   "judge": {
     "model": "google/gemini-3.1-flash-lite-preview",
     "systemPrompt": "You are an impartial judge. Compare the GROUND TRUTH with the ASSISTANT REPLY for the given QUESTION. If the assistant reply contains the factual information from the ground truth, score it 1. If it is partially correct but misses key details, score 0.5. If it is wrong or says I do not know, score 0. Output ONLY JSON: { \"score\": number, \"reason\": \"string\" }"
