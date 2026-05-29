@@ -195,6 +195,10 @@
   flex-shrink: 0;
 }
 
+.image-previews {
+  margin-bottom: 0.85rem;
+}
+
 
 #chat-form {
   display: flex;
@@ -246,7 +250,7 @@ textarea::-webkit-scrollbar-track { background: transparent; }
 textarea::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
 
 
-button[type="submit"] {
+#send {
   width: 32px; height: 32px;
   flex-shrink: 0;
   background: var(--accent);
@@ -261,15 +265,15 @@ button[type="submit"] {
   box-shadow: 0 2px 10px var(--accent-glow);
 }
 
-button[type="submit"]:hover:not(:disabled) {
+#send:hover:not(:disabled) {
   background: var(--accent-bright);
   box-shadow: 0 2px 16px rgba(0, 196, 212, 0.5);
   transform: translateY(-1px);
 }
 
-button[type="submit"]:active:not(:disabled) { transform: translateY(0); box-shadow: 0 1px 6px var(--accent-glow); }
-button[type="submit"]:disabled { background: var(--muted); box-shadow: none; opacity: 0.45; cursor: not-allowed; }
-button[type="submit"] svg { pointer-events: none; }
+#send:active:not(:disabled) { transform: translateY(0); box-shadow: 0 1px 6px var(--accent-glow); }
+#send:disabled { background: var(--muted); box-shadow: none; opacity: 0.45; cursor: not-allowed; }
+#send svg { pointer-events: none; }
 
 
 /* ─── Attach / mic buttons ─── */
@@ -623,6 +627,10 @@ r-chat-panel.undocked.collapsed {
   padding: 0.6rem 0.75rem 0.6rem;
 }
 
+.undocked .chat-window-footer .image-previews {
+  margin-bottom: 0.5rem;
+}
+
 
 .undocked .chat-window-footer #chat-form {
   border-radius: 20px;
@@ -635,7 +643,7 @@ r-chat-panel.undocked.collapsed {
   font-size: 0.8rem;
 }
 
-.undocked .chat-window-footer button[type="submit"] {
+.undocked .chat-window-footer #send {
   width: 26px;
   height: 26px;
 }

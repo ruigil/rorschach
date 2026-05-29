@@ -18,7 +18,7 @@ export class RMediaPreviews extends RorschachBase {
       display: flex;
       flex-wrap: wrap;
       gap: 0.5rem;
-      margin-bottom: 0.65rem;
+      margin-bottom: 0.85rem;
     }
 
     :host(.hidden) {
