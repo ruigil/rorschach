@@ -15,7 +15,6 @@ export const zettelCreateTool = defineTool('zettel_create', 'Create a new atomic
     content: { type: 'string', description: 'Full markdown content.' },
     tags: { type: 'array', items: { type: 'string' }, description: 'Lowercase tags e.g. ["typescript", "work", "preference"].' },
     eventTime: { type: 'string', description: 'Optional ISO 8601 timestamp for when the event occurred (if different from now).' },
-    userId: { type: 'string' },
   },
   required: ['name', 'synopsis', 'content', 'tags'],
 })
@@ -29,7 +28,6 @@ export const zettelUpdateTool = defineTool('zettel_update', 'Update an existing 
     content: { type: 'string', description: 'Full updated markdown content (optional).' },
     tags: { type: 'array', items: { type: 'string' }, description: 'Updated tags (optional).' },
     eventTime: { type: 'string', description: 'Updated ISO 8601 timestamp (optional).' },
-    userId: { type: 'string' },
   },
   required: ['id'],
 })
@@ -47,7 +45,6 @@ export const zettelSearchTool = defineTool('zettel_search', 'Semantic search via
       default: 'eventTime',
       description: 'Which timestamp to use for the before/after filter.',
     },
-    userId: { type: 'string' },
   },
   required: ['text', 'tags'],
 })
@@ -57,24 +54,20 @@ export const zettelLinksTool = defineTool('zettel_links', 'Return the notes link
   properties: {
     id: { type: 'string', description: 'Note UUID.' },
     name: { type: 'string', description: 'Note title (used if id is not provided).' },
-    userId: { type: 'string' },
   },
 })
 
 export const zettelUnlinkedTool = defineTool('zettel_unlinked_notes', 'Get all notes that have no incoming links (orphans) or exactly one outgoing link. Useful for consolidation to find notes that need to be connected to the broader knowledge graph.', {
   type: 'object',
-  properties: {
-    userId: { type: 'string' },
-  },
+  properties: {},
 })
 
-export const zettelLinkTool = defineTool('zettel_link', 'Create a link between two notes in the knowledge graph. If a note does not exist, it will be created automatically.', {
+export const zettelLinkTool = defineTool('zettel_link', 'Create a typed directional link between two existing notes in the knowledge graph.', {
   type: 'object',
   properties: {
-    fromId: { type: 'string', description: 'UUID of the source note.' },
-    toId: { type: 'string', description: 'UUID of the target note.' },
+    fromId: { type: 'string', pattern: '^[0-9a-fA-F-]{36}$', description: 'UUID of the source note.' },
+    toId: { type: 'string', pattern: '^[0-9a-fA-F-]{36}$', description: 'UUID of the target note.' },
     linkType: { type: 'string', enum: ZETTEL_LINK_TYPES, description: 'Type of relationship.' },
-    userId: { type: 'string' },
   },
   required: ['fromId', 'toId', 'linkType'],
 })
@@ -94,6 +87,15 @@ export type ZettelNoteMsg =
 
 const slugify = (name: string): string =>
   name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+const NOTE_ID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+
+const parseNoteId = (value: unknown, field: string): string => {
+  if (typeof value !== 'string') throw new Error(`${field} is required`)
+  const id = value.trim().replace(/[.,;:]+$/, '')
+  if (!NOTE_ID_RE.test(id)) throw new Error(`${field} must be a note UUID`)
+  return id
+}
 
 const getBasePath = (userId: string, workPath: string) => `${workPath}/${userId}`
 
@@ -209,7 +211,7 @@ const upsertInKgraph = async (
 ): Promise<number | undefined> => {
   const embeddingText = `${synopsis} ${tags.join(' ')}`
 
-  if (kgraphNodeId !== undefined) {
+  if (kgraphNodeId !== undefined && kgraphNodeId !== null && !isNaN(kgraphNodeId)) {
     log.debug('zettel-notes: updating existing kgraph node', { userId, kgraphNodeId, name })
     await ask<KgraphMsg, ToolReply>(
       kgraphRef,
@@ -314,13 +316,13 @@ const handleUpdate = async (
   const eventTime = typeof args.eventTime === 'string' ? args.eventTime : existingMeta.eventTime
   const now = new Date().toISOString()
 
-  const updated: ZettelNote = { ...existingMeta, name, synopsis, tags, eventTime, updatedAt: now }
+  const kgraphNodeId = await upsertInKgraph(kgraphRef, userId, existingMeta.kgraphNodeId, name, synopsis, tags, log, eventTime)
+  const updated: ZettelNote = { ...existingMeta, name, synopsis, tags, eventTime, kgraphNodeId, updatedAt: now }
 
   await Bun.write(noteFilePath(userId, existingMeta, workPath), serializeNote(updated, content))
   await queue.mutate(userId, (idx) => ({ notes: idx.notes.map(n => n.id === id ? updated : n) }))
-  await upsertInKgraph(kgraphRef, userId, existingMeta.kgraphNodeId, name, synopsis, tags, log, eventTime)
 
-  return JSON.stringify({ id, name, synopsis, tags, updatedAt: now, eventTime })
+  return JSON.stringify({ id, name, synopsis, tags, kgraphNodeId, updatedAt: now, eventTime })
 }
 
 const ZETTEL_SEARCH_TOP_N = 8
@@ -476,15 +478,13 @@ const handleLink = async (
 ): Promise<string> => {
   const index = await queue.current(userId)
 
-  const source = typeof args.sourceId === 'string'
-    ? index.notes.find(n => n.id === args.sourceId)
-    : index.notes.find(n => n.name === args.sourceName)
-  if (!source) return JSON.stringify({ error: 'Source note not found' })
+  const fromId = parseNoteId(args.fromId, 'fromId')
+  const source = index.notes.find(n => n.id === fromId)
+  if (!source) throw new Error(`Source note not found: ${fromId}`)
 
-  const target = typeof args.targetId === 'string'
-    ? index.notes.find(n => n.id === args.targetId)
-    : index.notes.find(n => n.name === args.targetName)
-  if (!target) return JSON.stringify({ error: 'Target note not found' })
+  const toId = parseNoteId(args.toId, 'toId')
+  const target = index.notes.find(n => n.id === toId)
+  if (!target) throw new Error(`Target note not found: ${toId}`)
 
   const rawLinkType = typeof args.linkType === 'string' ? args.linkType : 'supports'
   const linkType: ZettelLinkType = ZETTEL_LINK_TYPES.includes(rawLinkType as ZettelLinkType)
@@ -509,10 +509,14 @@ const handleLink = async (
   const statement =
     `MATCH (a:Note {name:"${esc(source.name)}"}), (b:Note {name:"${esc(target.name)}"}) ` +
     `MERGE (a)-[:${rel}]->(b)`
-  await ask<KgraphMsg, ToolReply>(
+  const reply = await ask<KgraphMsg, ToolReply>(
     kgraphRef,
     (replyTo) => ({ type: 'invoke', toolName: 'kgraph_create_link', arguments: JSON.stringify({ statement, userId }), replyTo, userId }),
-  ).catch(() => { })
+  )
+  if (reply.type === 'toolError') throw new Error(`kgraph link failed: ${reply.error}`)
+  if (reply.type === 'toolResult' && reply.result.text.startsWith('Warning: 0 rows matched')) {
+    throw new Error(`kgraph link failed: ${reply.result.text}`)
+  }
 
   log.info('zettel-notes: linked notes', { userId, source: source.name, target: target.name, type: linkType })
   return JSON.stringify({ ok: true, source: source.name, target: target.name, type: linkType })
@@ -534,16 +538,24 @@ export const ZettelNotes = (kgraphRef: ActorRef<KgraphMsg>, workPath: string): A
         const { toolName, arguments: rawArgs, replyTo } = msg
         const userId = msg.userId
 
+        if (!userId) {
+          ctx.pipeToSelf(
+            Promise.reject(new Error(`userId is required in tool invocation message for ${toolName}`)),
+            (result) => ({ type: '_done' as const, replyTo, result }),
+            (error) => ({ type: '_error' as const, replyTo, error: String(error) }),
+          )
+          return { state }
+        }
+
         const runTool = async (): Promise<string> => {
           const args = JSON.parse(rawArgs) as Record<string, unknown>
-          const effectiveUserId = (args.userId as string | undefined) ?? userId
           switch (toolName) {
-            case zettelCreateTool.name: return handleCreate(state.kgraphRef, effectiveUserId, args, queue, state.workPath, ctx.log)
-            case zettelUpdateTool.name: return handleUpdate(state.kgraphRef, effectiveUserId, args, queue, state.workPath, ctx.log)
-            case zettelSearchTool.name: return handleSearch(state.kgraphRef, effectiveUserId, args, queue, state.workPath, ctx.log)
-            case zettelLinksTool.name:  return handleLinks(effectiveUserId, args, queue, state.workPath, ctx.log)
-            case zettelUnlinkedTool.name: return handleUnlinkedNotes(effectiveUserId, queue, ctx.log)
-            case zettelLinkTool.name:  return handleLink(state.kgraphRef, effectiveUserId, args, queue, state.workPath, ctx.log)
+            case zettelCreateTool.name: return handleCreate(state.kgraphRef, userId, args, queue, state.workPath, ctx.log)
+            case zettelUpdateTool.name: return handleUpdate(state.kgraphRef, userId, args, queue, state.workPath, ctx.log)
+            case zettelSearchTool.name: return handleSearch(state.kgraphRef, userId, args, queue, state.workPath, ctx.log)
+            case zettelLinksTool.name:  return handleLinks(userId, args, queue, state.workPath, ctx.log)
+            case zettelUnlinkedTool.name: return handleUnlinkedNotes(userId, queue, ctx.log)
+            case zettelLinkTool.name:  return handleLink(state.kgraphRef, userId, args, queue, state.workPath, ctx.log)
             default: throw new Error(`Unknown tool: ${toolName}`)
           }
         }

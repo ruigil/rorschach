@@ -20,7 +20,7 @@ const linkTypeOntology = (): string =>
 
 const toolDescs = {
   search:
-    `**zettel_search** { text, tags[], after? (ISO), before? (ISO), userId }\n` +
+    `**zettel_search** { text, tags[], after? (ISO), before? (ISO) }\n` +
     `  Semantic search via vector embeddings and re-ranking.\n` +
     `  - text: a comma-separated list of query topics (e.g., "coding preferences, language choice").\n` +
     `  - tags: required lowercase tags to enrich the query or filter results.\n` +
@@ -29,24 +29,25 @@ const toolDescs = {
     `  - **score**: 0-1 (semantic similarity). Higher is better.\n\n`,
 
   create:
-    `**zettel_create** { name, synopsis, content, tags[], eventTime?, userId }\n` +
+    `**zettel_create** { name, synopsis, content, tags[], eventTime? }\n` +
     `  Create a new atomic note. name: 2-5 words, Title Case. synopsis: comma-separated list of query topics.\n\n`,
 
   update:
-    `**zettel_update** { id, content?, name?, synopsis?, tags?, eventTime?, userId }\n` +
+    `**zettel_update** { id, content?, name?, synopsis?, tags?, eventTime? }\n` +
     `  Update an existing note. Only pass fields that should change. synopsis: comma-separated list of query topics.\n\n`,
 
   link:
-    `**zettel_link** { sourceId?, sourceName?, targetId?, targetName?, linkType, userId }\n` +
+    `**zettel_link** { fromId, toId, linkType }\n` +
     `  Create a typed directional link between two notes. Both notes must already exist.\n` +
+    `  Use note IDs returned by zettel_unlinked_notes, zettel_search, or zettel_create.\n` +
     `  linkType: Use one of the types from the ontology below.\n\n`,
 
   links:
-    `**zettel_links** { id?, name?, userId }\n` +
+    `**zettel_links** { id?, name? }\n` +
     `  Return notes linked from a given note, with full content and linkType for each result.\n\n`,
 
   unlinked:
-    `**zettel_unlinked_notes** { userId }\n` +
+    `**zettel_unlinked_notes**\n` +
     `  Get notes that are poorly integrated into the knowledge graph. Returns notes that:\n` +
     `  - Are orphans (no incoming and no outgoing links).\n` +
     `  - Have no outgoing links.\n` +
@@ -60,8 +61,7 @@ const writingRules = (): string =>
   `- **synopsis**: A comma-separated list of query topics — how someone would find this note. ` +
   `Do NOT write a factual sentence here. (e.g., "typescript preference, programming language choice")\n` +
   `- **Tags**: lowercase, single-word or hyphenated: ["typescript", "preference"].\n` +
-  `- Do not duplicate facts — update the canonical note instead.\n` +
-  `- **Strict Link Validation**: Only link to notes confirmed to exist via zettel_search or zettel_create.\n\n`
+  `- Do not duplicate facts — update the canonical note instead.\n\n`
 
 export const zettelStoreSection = (userId: string): string =>
   noteSystemHeader() +
@@ -69,12 +69,9 @@ export const zettelStoreSection = (userId: string): string =>
   toolDescs.search +
   toolDescs.create +
   toolDescs.update +
-  toolDescs.link +
-  linkTypeOntology() +
   `### A-Mem workflow\n` +
   `1. zettel_search to check if a note already covers the topic.\n` +
-  `2. zettel_update (merge) if it exists, or zettel_create if it doesn't.\n` +
-  `3. zettel_link to connect the note to related concepts discovered via search.\n\n` +
+  `2. zettel_update (merge) if it exists, or zettel_create if it doesn't.\n\n` +
   writingRules()
 
 export const zettelRecallSection = (userId: string): string =>
@@ -84,7 +81,7 @@ export const zettelRecallSection = (userId: string): string =>
   toolDescs.links +
   linkTypeOntology() +
   `### Retrieval Strategy\n` +
-  `1. zettel_search with relevant text and tags.\n` +
+  `1. zettel_search with relevant query topics and tags.\n` +
   `2. Inspect 'links' in results. Follow them using zettel_links if the linkType matches the query intent.\n` +
   `3. Synthesize a concise answer from the gathered note content.\n`
 
@@ -106,4 +103,3 @@ export const zettelConsolidationSection = (userId: string): string =>
   `2. **No outgoing**: Notes with incoming links but no outgoing links.\n` +
   `3. **Single outgoing**: Notes with exactly one outgoing link.\n\n` +
   `(Consolidation focuses on discovering links across different turns/topics to ensure a dense, reachable graph).\n`
-

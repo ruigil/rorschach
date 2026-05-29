@@ -77,7 +77,6 @@ const spawnMemoryActors = (
     [zettelSearchTool.name]: { ...zettelSearchTool, ref },
     [zettelCreateTool.name]: { ...zettelCreateTool, ref },
     [zettelUpdateTool.name]: { ...zettelUpdateTool, ref },
-    [zettelLinkTool.name]:   { ...zettelLinkTool,   ref },
   }
 
   const consolidationTools: ToolCollection = {

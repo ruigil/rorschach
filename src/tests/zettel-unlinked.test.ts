@@ -3,8 +3,8 @@ import { rm } from 'node:fs/promises'
 import { AgentSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { Kgraph } from '../plugins/memory/kgraph.ts'
-import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
-import { ZettelNotes, zettelCreateTool, zettelLinkTool, zettelUnlinkedTool } from '../plugins/memory/zettel-notes.ts'
+import type { KgraphGraph, KgraphMsg } from '../plugins/memory/kgraph.ts'
+import { ZettelNotes, zettelCreateTool, zettelLinkTool, zettelLinksTool, zettelUnlinkedTool } from '../plugins/memory/zettel-notes.ts'
 import type { ZettelNoteMsg } from '../plugins/memory/zettel-notes.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
@@ -41,6 +41,9 @@ const invokeZettel = (
     { timeoutMs: 5_000 },
   )
 
+const toolJson = <T>(reply: ToolReply): T =>
+  JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text) as T
+
 const tempDirs: string[] = []
 
 afterEach(async () => {
@@ -48,6 +51,101 @@ afterEach(async () => {
 })
 
 describe('zettel-notes unlinked notes', () => {
+
+  test('creates links from schema fromId/toId arguments in notes and kgraph', async () => {
+    const system = await AgentSystem()
+    const mockLlmRef = spawnMockLlm(system)
+    system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
+
+    const kgraphRef = system.spawn('kgraph', Kgraph(tmpKgraph(), { model: 'test-embed', dimensions: 4 }), { state: { userDbs: new Map(), llmRef: null } }) as ActorRef<KgraphMsg>
+
+    const zettelDir = tmpZettel()
+    tempDirs.push(zettelDir)
+    const zettelRef = system.spawn('zettel', ZettelNotes(kgraphRef, zettelDir), { state: { kgraphRef, workPath: zettelDir } }) as ActorRef<ZettelNoteMsg>
+
+    await tick()
+
+    const sourceReply = await invokeZettel(zettelRef, zettelCreateTool.name, {
+      name: 'Source Note',
+      synopsis: 'source synopsis',
+      content: 'source content',
+      tags: ['test'],
+    })
+    const targetReply = await invokeZettel(zettelRef, zettelCreateTool.name, {
+      name: 'Target Note',
+      synopsis: 'target synopsis',
+      content: 'target content',
+      tags: ['test'],
+    })
+
+    const source = toolJson<{ id: string }>(sourceReply)
+    const target = toolJson<{ id: string }>(targetReply)
+
+    const linkReply = await invokeZettel(zettelRef, zettelLinkTool.name, {
+      fromId: source.id,
+      toId: target.id,
+      linkType: 'supports',
+    })
+    expect(linkReply.type).toBe('toolResult')
+
+    const linksReply = await invokeZettel(zettelRef, zettelLinksTool.name, { id: source.id })
+    const links = toolJson<Array<{ name: string; linkType: string }>>(linksReply)
+    expect(links).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Target Note', linkType: 'supports' }),
+    ]))
+
+    const graph = await ask<KgraphMsg, KgraphGraph>(
+      kgraphRef,
+      (replyTo) => ({ type: 'dump', userId: 'test-user', replyTo }),
+      { timeoutMs: 5_000 },
+    )
+    expect(graph.edges).toHaveLength(1)
+    expect(graph.edges[0]?.type).toBe('SUPPORTS')
+
+    await system.shutdown()
+  })
+
+  test('normalizes trailing punctuation on link note IDs', async () => {
+    const system = await AgentSystem()
+    const mockLlmRef = spawnMockLlm(system)
+    system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
+
+    const kgraphRef = system.spawn('kgraph', Kgraph(tmpKgraph(), { model: 'test-embed', dimensions: 4 }), { state: { userDbs: new Map(), llmRef: null } }) as ActorRef<KgraphMsg>
+
+    const zettelDir = tmpZettel()
+    tempDirs.push(zettelDir)
+    const zettelRef = system.spawn('zettel', ZettelNotes(kgraphRef, zettelDir), { state: { kgraphRef, workPath: zettelDir } }) as ActorRef<ZettelNoteMsg>
+
+    await tick()
+
+    const source = toolJson<{ id: string }>(await invokeZettel(zettelRef, zettelCreateTool.name, {
+      name: 'Source Note',
+      synopsis: 'source synopsis',
+      content: 'source content',
+      tags: ['test'],
+    }))
+    const target = toolJson<{ id: string }>(await invokeZettel(zettelRef, zettelCreateTool.name, {
+      name: 'Target Note',
+      synopsis: 'target synopsis',
+      content: 'target content',
+      tags: ['test'],
+    }))
+
+    const linkReply = await invokeZettel(zettelRef, zettelLinkTool.name, {
+      fromId: `${source.id},`,
+      toId: target.id,
+      linkType: 'part_of',
+    })
+    expect(linkReply.type).toBe('toolResult')
+
+    const linksReply = await invokeZettel(zettelRef, zettelLinksTool.name, { id: source.id })
+    const links = toolJson<Array<{ name: string; linkType: string }>>(linksReply)
+    expect(links).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Target Note', linkType: 'part_of' }),
+    ]))
+
+    await system.shutdown()
+  })
 
   test('returns orphans, no-outgoing, and single-outgoing notes', async () => {
     const system = await AgentSystem()
@@ -62,7 +160,6 @@ describe('zettel-notes unlinked notes', () => {
 
     await tick()
 
-    // 1. Orphan (No in, No out)
     await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'Orphan Note',
       synopsis: 'synopsis',
@@ -70,51 +167,44 @@ describe('zettel-notes unlinked notes', () => {
       tags: ['test'],
     })
 
-    // 2. No Outgoing (Has in, No out)
-    await invokeZettel(zettelRef, zettelCreateTool.name, {
+    const targetNote = toolJson<{ id: string }>(await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'Target Note',
       synopsis: 'synopsis',
       content: 'content',
       tags: ['test'],
-    })
+    }))
 
-    // 3. Single Outgoing (Has in, 1 out)
-    await invokeZettel(zettelRef, zettelCreateTool.name, {
+    const intermediateNote = toolJson<{ id: string }>(await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'Intermediate Note',
       synopsis: 'synopsis',
       content: 'content',
       tags: ['test'],
-    })
+    }))
 
-    // 4. Source Note (Has > 1 out, No in)
-    await invokeZettel(zettelRef, zettelCreateTool.name, {
+    const sourceNote = toolJson<{ id: string }>(await invokeZettel(zettelRef, zettelCreateTool.name, {
       name: 'Source Note',
       synopsis: 'synopsis',
       content: 'content',
       tags: ['test'],
-    })
+    }))
 
     await tick()
 
-    // Create links
-    // Source -> Target
     await invokeZettel(zettelRef, zettelLinkTool.name, {
-      sourceName: 'Source Note',
-      targetName: 'Target Note',
+      fromId: sourceNote.id,
+      toId: targetNote.id,
       linkType: 'supports',
     })
 
-    // Source -> Intermediate
     await invokeZettel(zettelRef, zettelLinkTool.name, {
-      sourceName: 'Source Note',
-      targetName: 'Intermediate Note',
+      fromId: sourceNote.id,
+      toId: intermediateNote.id,
       linkType: 'supports',
     })
 
-    // Intermediate -> Target
     await invokeZettel(zettelRef, zettelLinkTool.name, {
-      sourceName: 'Intermediate Note',
-      targetName: 'Target Note',
+      fromId: intermediateNote.id,
+      toId: targetNote.id,
       linkType: 'supports',
     })
 
@@ -123,11 +213,11 @@ describe('zettel-notes unlinked notes', () => {
     const reply = await invokeZettel(zettelRef, zettelUnlinkedTool.name, {})
     expect(reply.type).toBe('toolResult')
     
-    const results = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text) as Array<{
+    const results = toolJson<Array<{
       name: string;
       incomingLinks: number;
       outgoingLinks: number;
-    }>
+    }>>(reply)
 
     const names = results.map(r => r.name)
     expect(names).toContain('Orphan Note')
@@ -135,9 +225,9 @@ describe('zettel-notes unlinked notes', () => {
     expect(names).toContain('Intermediate Note')
     expect(names).toContain('Source Note')
 
-    const orphan = results.find(r => r.name === 'Orphan Note')!
-    expect(orphan.incomingLinks).toBe(0)
-    expect(orphan.outgoingLinks).toBe(0)
+    const orphanResult = results.find(r => r.name === 'Orphan Note')!
+    expect(orphanResult.incomingLinks).toBe(0)
+    expect(orphanResult.outgoingLinks).toBe(0)
 
     const target = results.find(r => r.name === 'Target Note')!
     expect(target.incomingLinks).toBe(2)
@@ -167,27 +257,23 @@ describe('zettel-notes unlinked notes', () => {
  
      await tick()
  
-     await invokeZettel(zettelRef, zettelCreateTool.name, { name: 'Note A', synopsis: 's', content: 'c', tags: ['t'] })
-     await invokeZettel(zettelRef, zettelCreateTool.name, { name: 'Note B', synopsis: 's', content: 'c', tags: ['t'] })
-     await invokeZettel(zettelRef, zettelCreateTool.name, { name: 'Note C', synopsis: 's', content: 'c', tags: ['t'] })
+     const noteA = toolJson<{ id: string }>(await invokeZettel(zettelRef, zettelCreateTool.name, { name: 'Note A', synopsis: 's', content: 'c', tags: ['t'] }))
+     const noteB = toolJson<{ id: string }>(await invokeZettel(zettelRef, zettelCreateTool.name, { name: 'Note B', synopsis: 's', content: 'c', tags: ['t'] }))
+     const noteC = toolJson<{ id: string }>(await invokeZettel(zettelRef, zettelCreateTool.name, { name: 'Note C', synopsis: 's', content: 'c', tags: ['t'] }))
      await invokeZettel(zettelRef, zettelCreateTool.name, { name: 'Note D', synopsis: 's', content: 'c', tags: ['t'] })
  
      await tick()
  
-     // Note B -> Note A
-     await invokeZettel(zettelRef, zettelLinkTool.name, { sourceName: 'Note B', targetName: 'Note A', linkType: 'supports' })
-     // Note C -> Note A
-     await invokeZettel(zettelRef, zettelLinkTool.name, { sourceName: 'Note C', targetName: 'Note A', linkType: 'supports' })
-     // Note A -> Note B
-     await invokeZettel(zettelRef, zettelLinkTool.name, { sourceName: 'Note A', targetName: 'Note B', linkType: 'supports' })
-     // Note A -> Note C
-     await invokeZettel(zettelRef, zettelLinkTool.name, { sourceName: 'Note A', targetName: 'Note C', linkType: 'supports' })
+     await invokeZettel(zettelRef, zettelLinkTool.name, { fromId: noteB.id, toId: noteA.id, linkType: 'supports' })
+     await invokeZettel(zettelRef, zettelLinkTool.name, { fromId: noteC.id, toId: noteA.id, linkType: 'supports' })
+     await invokeZettel(zettelRef, zettelLinkTool.name, { fromId: noteA.id, toId: noteB.id, linkType: 'supports' })
+     await invokeZettel(zettelRef, zettelLinkTool.name, { fromId: noteA.id, toId: noteC.id, linkType: 'supports' })
  
      await tick()
  
      // Note A has in=2, out=2 -> SHOULD NOT BE RETURNED
      const reply = await invokeZettel(zettelRef, zettelUnlinkedTool.name, {})
-     const results = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text) as Array<{ name: string }>
+     const results = toolJson<Array<{ name: string }>>(reply)
  
      expect(results.map(r => r.name)).not.toContain('Note A')
  

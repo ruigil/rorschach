@@ -30,7 +30,7 @@ if (!apiKey || apiKey.includes('${')) {
 
 benchmarkConfig.config.cognitive.llmProvider.apiKey = apiKey
 
-const DB_DIR = join(process.cwd(), benchmarkConfig.config.memory.dbPath)
+const DB_DIR = join(process.cwd(), benchmarkConfig.config.memory.workPath)
 const TURN_TIMEOUT_MS = 120_000
 const USER_ID = 'anonymous'
 
