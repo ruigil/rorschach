@@ -56,6 +56,23 @@ function createNode(
   )
 }
 
+function createNodeWithProperties(
+  kgraphRef: ActorRef<KgraphMsg>,
+  properties: Record<string, unknown>,
+): Promise<ToolReply> {
+  return ask<KgraphMsg, ToolReply>(
+    kgraphRef,
+    (replyTo) => ({
+      type: 'invoke',
+      toolName: kgraphCreateNodeTool.name,
+      arguments: JSON.stringify({ label: 'Note', name: 'Lisbon', properties }),
+      replyTo,
+      userId: 'test-user',
+    }),
+    { timeoutMs: 5_000 },
+  )
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════
@@ -153,6 +170,65 @@ describe('kgraph create_node', () => {
     const reply = await createNode(kgraphRef, 'Note', 'Lisbon')
     expect(reply.type).toBe('toolError')
     expect((reply as { type: 'toolError'; error: string }).error).toMatch(/embedding/)
+
+    await system.shutdown()
+  })
+
+  test('omits undefined properties when creating nodes', async () => {
+    const system = await AgentSystem()
+    const mockLlmRef = spawnMockLlm(system)
+    system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
+
+    const kgraphRef = system.spawn(
+      'kgraph',
+      Kgraph(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
+      { state: { userDbs: new Map(), llmRef: null } },
+    ) as ActorRef<KgraphMsg>
+
+    await tick()
+
+    const reply = await createNodeWithProperties(kgraphRef, {
+      description: 'Capital of Portugal',
+      eventTime: undefined,
+    })
+
+    expect(reply.type).toBe('toolResult')
+
+    await system.shutdown()
+  })
+
+  test('omits undefined properties when updating nodes', async () => {
+    const system = await AgentSystem()
+    const mockLlmRef = spawnMockLlm(system)
+    system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
+
+    const kgraphRef = system.spawn(
+      'kgraph',
+      Kgraph(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
+      { state: { userDbs: new Map(), llmRef: null } },
+    ) as ActorRef<KgraphMsg>
+
+    await tick()
+
+    const created = await createNode(kgraphRef, 'Note', 'Lisbon', 'Capital of Portugal')
+    const result: CreateNodeResult = JSON.parse((created as { type: 'toolResult'; result: { text: string } }).result.text)
+
+    const updated = await ask<KgraphMsg, ToolReply>(
+      kgraphRef,
+      (replyTo) => ({
+        type: 'updateNode',
+        nodeId: result.nodeId,
+        properties: {
+          description: 'Capital city of Portugal',
+          eventTime: undefined,
+        },
+        userId: 'test-user',
+        replyTo,
+      }),
+      { timeoutMs: 5_000 },
+    )
+
+    expect(updated.type).toBe('toolResult')
 
     await system.shutdown()
   })

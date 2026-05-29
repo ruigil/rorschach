@@ -95,6 +95,9 @@ const resolveDb = (state: KgraphState, userId: string, workPath: string): Grafeo
   return db
 }
 
+const definedEntries = (properties: Record<string, unknown>): Array<[string, unknown]> =>
+  Object.entries(properties).filter(([, value]) => value !== undefined)
+
 // ─── Actor definition ───
 
 export const Kgraph = (
@@ -215,7 +218,7 @@ export const Kgraph = (
             // Build INSERT query with vector() syntax
             const vectorStr = `vector([${vector.join(',')}])`
             let insertQuery = `INSERT (n:${label} { name: ${JSON.stringify(name)}, _embedding: ${vectorStr}`
-            for (const [k, v] of Object.entries(properties ?? {})) {
+            for (const [k, v] of definedEntries(properties)) {
               insertQuery += `, ${k}: ${JSON.stringify(v)}`
             }
             insertQuery += ` }) RETURN n`
@@ -396,6 +399,11 @@ export const Kgraph = (
 
     updateNode: (state, message, ctx) => {
       const { nodeId, properties, embeddingText, userId, replyTo } = message
+      if (nodeId === undefined || nodeId === null || isNaN(nodeId)) {
+        replyTo.send({ type: 'toolError', error: `Invalid nodeId: ${nodeId}` })
+        return { state }
+      }
+
       const db = resolveDb(state, userId, workPath)
 
       const applyProperties = async (vec?: number[]) => {
@@ -403,7 +411,7 @@ export const Kgraph = (
         if (vec) {
           setClauses.push(`n._embedding = vector([${vec.join(',')}])`)
         }
-        for (const [k, v] of Object.entries(properties)) {
+        for (const [k, v] of definedEntries(properties)) {
           setClauses.push(`n.${k} = ${JSON.stringify(v)}`)
         }
         setClauses.push(`n.updatedAt = ${JSON.stringify(new Date().toISOString())}`)
