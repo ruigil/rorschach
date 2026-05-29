@@ -103,6 +103,9 @@ const indexPath = (userId: string, workPath: string) => `${getBasePath(userId, w
 const noteFilePath = (userId: string, meta: Pick<ZettelNote, 'path'>, workPath: string) =>
   `${getBasePath(userId, workPath)}/${meta.path}`
 
+const resolveLinkTarget = (index: ZettelIndex, link: ZettelLink): ZettelNote | undefined =>
+  index.notes.find(n => n.id === link.id)
+
 // ─── Serialized index mutation queue ───
 //
 // Multiple concurrent pipeToSelf calls would each read the same stale index.json
@@ -144,7 +147,7 @@ const writeIndex = async (userId: string, index: ZettelIndex, workPath: string):
 
 const serializeNote = (meta: ZettelNote, body: string): string => {
   const tags = meta.tags.length > 0 ? `[${meta.tags.join(', ')}]` : '[]'
-  const links = meta.links.length > 0 ? `[${meta.links.map(l => `${l.type}:${l.name}`).join(', ')}]` : '[]'
+  const links = meta.links.length > 0 ? `[${meta.links.map(l => `${l.type}:${l.id}`).join(', ')}]` : '[]'
   const eventTime = meta.eventTime ? `\neventTime: ${meta.eventTime}` : ''
   const nodeId = meta.kgraphNodeId !== undefined ? `\nkgraphNodeId: ${meta.kgraphNodeId}` : ''
   return `---\nid: ${meta.id}\nname: ${meta.name}\nsynopsis: ${meta.synopsis}\ntags: ${tags}\ncreatedAt: ${meta.createdAt}\nupdatedAt: ${meta.updatedAt}${eventTime}\nlinks: ${links}${nodeId}\n---\n\n${body}`
@@ -171,11 +174,10 @@ const parseNote = (raw: string): { meta: ZettelNote; body: string } => {
       const colon = entry.indexOf(':')
       if (colon > 0) {
         const type = entry.slice(0, colon) as ZettelLinkType
-        const name = entry.slice(colon + 1)
-        return { name, type: ZETTEL_LINK_TYPES.includes(type) ? type : 'supports' }
+        const id = entry.slice(colon + 1)
+        return { id, type: ZETTEL_LINK_TYPES.includes(type) ? type : 'supports' }
       }
-      // Legacy: untyped entry — default to 'supports'
-      return { name: entry, type: 'supports' as ZettelLinkType }
+      throw new Error('Invalid note format: malformed link entry')
     })
 
   const id = get('id')
@@ -411,7 +413,7 @@ const handleLinks = async (
 
   const linked = await Promise.all(
     note.links.flatMap(link => {
-      const target = index.notes.find(n => n.name === link.name)
+      const target = resolveLinkTarget(index, link)
       if (!target) return []
       return [
         (async () => {
@@ -440,11 +442,11 @@ const handleUnlinkedNotes = async (
   const incomingCount = new Map<string, number>()
   for (const note of index.notes) {
     for (const link of note.links) {
-      incomingCount.set(link.name, (incomingCount.get(link.name) || 0) + 1)
+      incomingCount.set(link.id, (incomingCount.get(link.id) || 0) + 1)
     }
   }
 
-  const noIncoming = index.notes.filter(n => (incomingCount.get(n.name) || 0) === 0)
+  const noIncoming = index.notes.filter(n => (incomingCount.get(n.id) || 0) === 0)
   const noOutgoing = index.notes.filter(n => n.links.length === 0)
   const singleOutgoing = index.notes.filter(n => n.links.length === 1)
 
@@ -461,7 +463,8 @@ const handleUnlinkedNotes = async (
       name: n.name,
       synopsis: n.synopsis,
       tags: n.tags,
-      incomingLinks: incomingCount.get(n.name) || 0,
+      links: n.links,
+      incomingLinks: incomingCount.get(n.id) || 0,
       outgoingLinks: n.links.length,
     }))
 
@@ -491,11 +494,12 @@ const handleLink = async (
     ? (rawLinkType as ZettelLinkType)
     : 'supports'
 
-  if (source.links.some(l => l.name === target.name && l.type === linkType)) {
-    return JSON.stringify({ ok: true, message: 'Link already exists' })
+  if (source.links.some(l => l.id === target.id && l.type === linkType)) {
+    log.info('zettel-notes: link already exists', { userId, source: source.name, target: target.name, type: linkType })
+    return JSON.stringify({ ok: true, created: false, source: source.name, target: target.name, targetId: target.id, type: linkType, message: 'Link already exists' })
   }
 
-  const updatedLinks: ZettelLink[] = [...source.links, { name: target.name, type: linkType }]
+  const updatedLinks: ZettelLink[] = [...source.links, { id: target.id, type: linkType }]
   const now = new Date().toISOString()
   const updated: ZettelNote = { ...source, links: updatedLinks, updatedAt: now }
 
@@ -519,7 +523,7 @@ const handleLink = async (
   }
 
   log.info('zettel-notes: linked notes', { userId, source: source.name, target: target.name, type: linkType })
-  return JSON.stringify({ ok: true, source: source.name, target: target.name, type: linkType })
+  return JSON.stringify({ ok: true, created: true, source: source.name, target: target.name, targetId: target.id, type: linkType })
 }
 
 // ─── Actor definition ───

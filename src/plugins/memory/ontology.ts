@@ -25,7 +25,7 @@ const toolDescs = {
     `  - text: a comma-separated list of query topics (e.g., "coding preferences, language choice").\n` +
     `  - tags: required lowercase tags to enrich the query or filter results.\n` +
     `  - Returns array of { id, name, synopsis, tags, links, content, score }.\n` +
-    `  - **links**: Array of { name, type } representing outgoing connections.\n` +
+    `  - **links**: Array of { id, type } representing outgoing connections.\n` +
     `  - **score**: 0-1 (semantic similarity). Higher is better.\n\n`,
 
   create:
@@ -40,6 +40,8 @@ const toolDescs = {
     `**zettel_link** { fromId, toId, linkType }\n` +
     `  Create a typed directional link between two notes. Both notes must already exist.\n` +
     `  Use note IDs returned by zettel_unlinked_notes, zettel_search, or zettel_create.\n` +
+    `  Do not call zettel_link when the source note already has a matching link in its links array.\n` +
+    `  A returned link { id, type } means the source note already links to that target note with that type.\n` +
     `  linkType: Use one of the types from the ontology below.\n\n`,
 
   links:
@@ -48,7 +50,9 @@ const toolDescs = {
 
   unlinked:
     `**zettel_unlinked_notes**\n` +
-    `  Get notes that are poorly integrated into the knowledge graph. Returns notes that:\n` +
+    `  Get notes that are poorly integrated into the knowledge graph. Returns notes with { id, name, synopsis, tags, links, incomingLinks, outgoingLinks }.\n` +
+    `  The links array lists existing outgoing links from that note as { id, type }; do not recreate those links.\n` +
+    `  Returns notes that:\n` +
     `  - Are orphans (no incoming and no outgoing links).\n` +
     `  - Have no outgoing links.\n` +
     `  - Have only one outgoing link.\n` +
@@ -96,7 +100,9 @@ export const zettelConsolidationSection = (userId: string): string =>
   `1. **Obtain unlinked notes**: Call zettel_unlinked_notes to find notes needing integration.\n` +
   `2. **Analyze context**: Identify key concepts and facts from the conversation turns.\n` +
   `3. **Search & Connect**: For each unlinked note and turn concept, use zettel_search to find related notes.\n` +
-  `4. **Create Relationships**: Use zettel_link to connect notes to the broader knowledge web.\n\n` +
+  `4. **Check existing links**: Before calling zettel_link, inspect the source note's links array from zettel_search or zettel_unlinked_notes. ` +
+  `If it already includes the target note id with the same type, skip it.\n` +
+  `5. **Create Relationships**: Use zettel_link only for missing relationships that are not already listed in links.\n\n` +
   `### Link Priority\n` +
   `When creating links, prioritize notes in this order:\n` +
   `1. **Orphans**: Notes with NO incoming and NO outgoing links.\n` +

@@ -33,7 +33,7 @@ type WorkerOptions = {
 type ConsolidationWorkerState = {
   loop:    LoopState
   userId:  string
-  buffer:  ContextTurn[]
+  turns:   ContextTurn[]
   llmRef:  ActorRef<LlmProviderMsg> | null
   tools:   ToolCollection
 }
@@ -45,7 +45,7 @@ const initialConsolidationWorkerState = (
 ): ConsolidationWorkerState => ({
   loop: idleLoopState(),
   userId,
-  buffer: [],
+  turns: [],
   llmRef,
   tools,
 })
@@ -102,27 +102,27 @@ const ConsolidationWorker = (options: WorkerOptions): ActorDef<UserConsolidation
   const hostInterceptor: Interceptor<UserConsolidationWorkerMsg, ConsolidationWorkerState> = (state, msg, ctx, next) => {
     const m = msg as UserConsolidationWorkerMsg
 
-    if (m.type === '_turn') {
+    if (m.type === '_contextTurns') {
       return {
         state: {
           ...state,
-          buffer: [...state.buffer, m.turn],
+          turns: m.turns,
         },
       }
     }
 
     if (m.type === '_consolidate') {
       if (state.loop.phase !== 'idle') return { state }
-      if (state.buffer.length === 0) return { state }
+      if (state.turns.length === 0) return { state }
 
-      const snapshotTurns = state.buffer
+      const snapshotTurns = state.turns
       const messages      = buildMessages(state.userId, snapshotTurns)
       const requestSpan   = ctx.trace.start('memory-consolidation', { userId: state.userId, turns: snapshotTurns.length })
 
       ctx.log.info('memory consolidation started', { userId: state.userId, turns: snapshotTurns.length })
 
       return loop.startTurn(
-        { ...state, buffer: [] },
+        state,
         { messages, userId: state.userId, requestSpan },
         ctx,
       )
@@ -145,7 +145,7 @@ export type ConsolidationState = {
   tools:            ToolCollection
   workers:          Record<string, ActorRef<UserConsolidationWorkerMsg>>
   workerSeq:        number
-  lastSeenTurnSeq:  Record<string, number>
+  latestTurns:      Record<string, ContextTurn[]>
 }
 
 export const MemoryConsolidation = (options: MemoryConsolidationOptions): ActorDef<MemoryConsolidationMsg, ConsolidationState> => {
@@ -156,13 +156,44 @@ export const MemoryConsolidation = (options: MemoryConsolidationOptions): ActorD
     return { ...state, workers: {} }
   }
 
+  const ensureWorker = (
+    state: ConsolidationState,
+    userId: string,
+    context: ActorContext<MemoryConsolidationMsg>,
+  ): { state: ConsolidationState; worker: ActorRef<UserConsolidationWorkerMsg> | null } => {
+    const existing = state.workers[userId]
+    if (existing) return { state, worker: existing }
+    if (state.llmRef === null) return { state, worker: null }
+
+    const workerSeq = state.workerSeq + 1
+    const worker = context.spawn(
+      `consolidation-user-${userId}-${workerSeq}`,
+      ConsolidationWorker({
+        model,
+        userId,
+        llmRef: state.llmRef,
+        tools: state.tools,
+        maxToolLoops,
+      }),
+    )
+
+    return {
+      state: {
+        ...state,
+        workers: { ...state.workers, [userId]: worker },
+        workerSeq,
+      },
+      worker,
+    }
+  }
+
   return {
     initialState: {
-      llmRef:    null,
+      llmRef:      null,
       tools,
-      workers:   {},
-      workerSeq: 0,
-      lastSeenTurnSeq: {},
+      workers:     {},
+      workerSeq:   0,
+      latestTurns: {},
     },
     lifecycle: onLifecycle({
       start: (state, context) => {
@@ -192,66 +223,34 @@ export const MemoryConsolidation = (options: MemoryConsolidationOptions): ActorD
 
     handler: onMessage<MemoryConsolidationMsg, ConsolidationState>({
       _contextSnapshot: (state, msg, context) => {
-        const previousSeq = state.lastSeenTurnSeq[msg.userId]
-        const latestSeq = msg.turns.at(-1)?.seq ?? previousSeq ?? 0
-        const unseenTurns = previousSeq === undefined
-          ? []
-          : msg.turns.filter(turn => turn.seq > previousSeq)
-
-        if (unseenTurns.length === 0) {
-          return {
-            state: {
-              ...state,
-              lastSeenTurnSeq: {
-                ...state.lastSeenTurnSeq,
-                [msg.userId]: latestSeq,
-              },
-            },
-          }
-        }
-
-        let worker    = state.workers[msg.userId]
-        let workers   = state.workers
-        let workerSeq = state.workerSeq
-
-        if (!worker) {
-          if (state.llmRef === null) return { state }
-          workerSeq = workerSeq + 1
-          worker = context.spawn(
-            `consolidation-user-${msg.userId}-${workerSeq}`,
-            ConsolidationWorker({
-              model,
-              userId:           msg.userId,
-              llmRef:           state.llmRef,
-              tools:            state.tools,
-              maxToolLoops,
-            }),
-          )
-          workers = { ...workers, [msg.userId]: worker }
-        }
-
-        for (const turn of unseenTurns) {
-          worker.send({ type: '_turn', turn })
-        }
-
-        return {
-          state: {
-            ...state,
-            workers,
-            workerSeq,
-            lastSeenTurnSeq: {
-              ...state.lastSeenTurnSeq,
-              [msg.userId]: latestSeq,
-            },
+        const withSnapshot = {
+          ...state,
+          latestTurns: {
+            ...state.latestTurns,
+            [msg.userId]: msg.turns,
           },
         }
+        const ensured = ensureWorker(withSnapshot, msg.userId, context)
+
+        ensured.worker?.send({ type: '_contextTurns', turns: msg.turns })
+
+        return { state: ensured.state }
       },
 
-      _consolidate: (state) => {
-        for (const ref of Object.values(state.workers)) {
+      _consolidate: (state, _msg, context) => {
+        let nextState = state
+
+        for (const [userId, turns] of Object.entries(state.latestTurns)) {
+          if (turns.length === 0) continue
+          const ensured = ensureWorker(nextState, userId, context)
+          nextState = ensured.state
+          ensured.worker?.send({ type: '_contextTurns', turns })
+        }
+
+        for (const ref of Object.values(nextState.workers)) {
           ref.send({ type: '_consolidate' })
         }
-        return { state }
+        return { state: nextState }
       },
 
       _llmProvider: (state, msg, context) => {

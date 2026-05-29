@@ -21,7 +21,7 @@ export const ZETTEL_LINK_TYPES = [
 ] as const
 export type ZettelLinkType = typeof ZETTEL_LINK_TYPES[number]
 
-export type ZettelLink = { name: string; type: ZettelLinkType }
+export type ZettelLink = { id: string; type: ZettelLinkType }
 
 export type ZettelNote = {
   id:            string
@@ -97,14 +97,14 @@ export type MemorySupervisorMsg =
 
 // ─── Memory consolidation message protocol ───
 
-// Supervisor: subscribes to topics + timer, routes turns to per-user workers.
+// Supervisor: subscribes to topics + timer, routes full turn snapshots to per-user workers.
 export type MemoryConsolidationMsg =
   | { type: '_contextSnapshot';  userId: string; turns: ContextTurn[] }
   | { type: '_consolidate' }
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
 
-// Worker: one per user, runs the agentic loop over a local buffer.
+// Worker: one per user, runs the agentic loop over the latest turn snapshot.
 export type UserConsolidationWorkerMsg =
   | LoopMsg
-  | { type: '_turn';        turn: ContextTurn }
+  | { type: '_contextTurns'; turns: ContextTurn[] }
   | { type: '_consolidate' }

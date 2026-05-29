@@ -87,11 +87,23 @@ describe('zettel-notes unlinked notes', () => {
       linkType: 'supports',
     })
     expect(linkReply.type).toBe('toolResult')
+    expect(toolJson<{ created: boolean }>(linkReply).created).toBe(true)
+
+    const duplicateLinkReply = await invokeZettel(zettelRef, zettelLinkTool.name, {
+      fromId: source.id,
+      toId: target.id,
+      linkType: 'supports',
+    })
+    expect(duplicateLinkReply.type).toBe('toolResult')
+    expect(toolJson<{ created: boolean; message: string }>(duplicateLinkReply)).toEqual(expect.objectContaining({
+      created: false,
+      message: 'Link already exists',
+    }))
 
     const linksReply = await invokeZettel(zettelRef, zettelLinksTool.name, { id: source.id })
-    const links = toolJson<Array<{ name: string; linkType: string }>>(linksReply)
+    const links = toolJson<Array<{ id: string; name: string; linkType: string }>>(linksReply)
     expect(links).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'Target Note', linkType: 'supports' }),
+      expect.objectContaining({ id: target.id, name: 'Target Note', linkType: 'supports' }),
     ]))
 
     const graph = await ask<KgraphMsg, KgraphGraph>(
@@ -139,9 +151,9 @@ describe('zettel-notes unlinked notes', () => {
     expect(linkReply.type).toBe('toolResult')
 
     const linksReply = await invokeZettel(zettelRef, zettelLinksTool.name, { id: source.id })
-    const links = toolJson<Array<{ name: string; linkType: string }>>(linksReply)
+    const links = toolJson<Array<{ id: string; name: string; linkType: string }>>(linksReply)
     expect(links).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'Target Note', linkType: 'part_of' }),
+      expect.objectContaining({ id: target.id, name: 'Target Note', linkType: 'part_of' }),
     ]))
 
     await system.shutdown()
@@ -215,6 +227,7 @@ describe('zettel-notes unlinked notes', () => {
     
     const results = toolJson<Array<{
       name: string;
+      links: Array<{ id: string; type: string }>;
       incomingLinks: number;
       outgoingLinks: number;
     }>>(reply)
@@ -236,10 +249,17 @@ describe('zettel-notes unlinked notes', () => {
     const intermediate = results.find(r => r.name === 'Intermediate Note')!
     expect(intermediate.incomingLinks).toBe(1)
     expect(intermediate.outgoingLinks).toBe(1)
+    expect(intermediate.links).toEqual([
+      { id: targetNote.id, type: 'supports' },
+    ])
 
     const source = results.find(r => r.name === 'Source Note')!
     expect(source.incomingLinks).toBe(0)
     expect(source.outgoingLinks).toBe(2)
+    expect(source.links).toEqual(expect.arrayContaining([
+      { id: targetNote.id, type: 'supports' },
+      { id: intermediateNote.id, type: 'supports' },
+    ]))
 
     await system.shutdown()
   })
