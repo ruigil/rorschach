@@ -1,18 +1,13 @@
 import type { ActorRef, PluginDef } from '../../system/index.ts'
 import { defineConfig, createSlot, stopSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
-import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import type { KgraphMsg, MemoryConsolidationMsg, MemorySupervisorMsg } from './types.ts'
+import type { KgraphMsg, MemoryConsolidationMsg, MemoryRecordsMsg, MemorySupervisorMsg } from './types.ts'
 import { Kgraph } from './kgraph.ts'
 import { MemoryConsolidation } from './memory-consolidation.ts'
 import { MemorySupervisor } from './memory-supervisor.ts'
-import {
-  ZettelNotes,
-  type ZettelNoteMsg,
-  zettelCreateTool, zettelUpdateTool, zettelSearchTool, zettelLinksTool, zettelUnlinkedTool, zettelLinkTool,
-} from './zettel-notes.ts'
-import { buildMemoryRoutes, memorySchemas, KGRAPH_ROUTE_ID } from './routes.ts'
+import { MemoryRecords } from './memory-records.ts'
+import { buildMemoryRoutes, memorySchemas } from './routes.ts'
 
 // ─── Config ───
 
@@ -44,7 +39,7 @@ const config = defineConfig<MemoryConfig>('memory', {
 type MemoryActors = {
   consolidation: ActorRef<MemoryConsolidationMsg>
   memory:        ActorRef<MemorySupervisorMsg>
-  zettel:        ActorRef<ZettelNoteMsg>
+  records:       ActorRef<MemoryRecordsMsg>
 }
 
 type MemoryPluginState = {
@@ -52,7 +47,7 @@ type MemoryPluginState = {
   kgraph:              ActorSlot<Exclude<MemoryConfig['kgraph'], undefined>>
   consolidation:       ActorRef<MemoryConsolidationMsg> | null
   memory:              ActorRef<MemorySupervisorMsg>    | null
-  zettel:              ActorRef<ZettelNoteMsg>          | null
+  records:             ActorRef<MemoryRecordsMsg>       | null
   memoryGen:           number
 }
 
@@ -69,46 +64,26 @@ const spawnMemoryActors = (
   workPath: string,
 ): MemoryActors => {
   
-  const zettel = ctx.spawn(`zettel-notes-${gen}`, ZettelNotes(kgraphRef, workPath) )
-
-  const ref = zettel as unknown as ActorRef<ToolMsg>
-
-  const storeTools: ToolCollection = {
-    [zettelSearchTool.name]: { ...zettelSearchTool, ref },
-    [zettelCreateTool.name]: { ...zettelCreateTool, ref },
-    [zettelUpdateTool.name]: { ...zettelUpdateTool, ref },
-  }
-
-  const consolidationTools: ToolCollection = {
-    [zettelSearchTool.name]:   { ...zettelSearchTool, ref },
-    [zettelUnlinkedTool.name]: { ...zettelUnlinkedTool, ref },
-    [zettelLinkTool.name]:     { ...zettelLinkTool,   ref },
-  }
-
-  const recallTools: ToolCollection = {
-    [zettelSearchTool.name]: { ...zettelSearchTool, ref },
-    [zettelLinksTool.name]:  { ...zettelLinksTool,  ref },
-  }
-
-  const consolidation = ctx.spawn(
-    `memory-consolidation-${gen}`,
-    MemoryConsolidation({ model: config.model, intervalMs: config.consolidationIntervalMs, tools: consolidationTools }),
-  )
+  const records = ctx.spawn(`memory-records-${gen}`, MemoryRecords(workPath))
   const memory = ctx.spawn(
     `memory-supervisor-${gen}`,
-    MemorySupervisor({ model: config.model, recallTools, storeTools }),
+    MemorySupervisor({ model: config.model, recordsRef: records, kgraphRef }),
   ) 
+  const consolidation = ctx.spawn(
+    `memory-consolidation-${gen}`,
+    MemoryConsolidation({ model: config.model, intervalMs: config.consolidationIntervalMs, kgraphRef }),
+  )
   
-  return { consolidation, memory, zettel }
+  return { consolidation, memory, records }
 }
 
 const stopMemoryActors = (
   ctx: Parameters<NonNullable<PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig>['lifecycle']>>[2],
-  state: Pick<MemoryPluginState, 'consolidation' | 'memory' | 'zettel'>,
+  state: Pick<MemoryPluginState, 'consolidation' | 'memory' | 'records'>,
 ): void => {
   if (state.consolidation) ctx.stop(state.consolidation)
   if (state.memory)        ctx.stop(state.memory)
-  if (state.zettel)        ctx.stop(state.zettel)
+  if (state.records)       ctx.stop(state.records)
 }
 
 // ─── Plugin definition ───
@@ -125,7 +100,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
     kgraph:              createSlot(),
     consolidation:       null,
     memory:              null,
-    zettel:              null,
+    records:             null,
     memoryGen:           0,
   },
 
@@ -149,13 +124,13 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
 
       let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
       let memory:        ActorRef<MemorySupervisorMsg>    | null = null
-      let zettel:        ActorRef<ZettelNoteMsg>          | null = null
+      let records:       ActorRef<MemoryRecordsMsg>       | null = null
 
       if (slice?.system) {
         const actors = spawnMemoryActors(ctx, slice.system, 0, kgraphRef, workPath)
         consolidation = actors.consolidation
         memory        = actors.memory
-        zettel        = actors.zettel
+        records       = actors.records
         ctx.log.info('memory actors activated', { model: slice.system.model })
       }
 
@@ -169,7 +144,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         kgraph: { config: kgraphConfig, ref: kgraphRef, gen: 0 },
         consolidation,
         memory,
-        zettel,
+        records,
         memoryGen: 0,
       } }
     },
@@ -219,14 +194,14 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
 
       let consolidation: ActorRef<MemoryConsolidationMsg> | null = null
       let memory:        ActorRef<MemorySupervisorMsg>    | null = null
-      let zettel:        ActorRef<ZettelNoteMsg>          | null = null
+      let records:       ActorRef<MemoryRecordsMsg>       | null = null
       const memoryGen = state.memoryGen + 1
 
       if (msg.slice?.system) {
         const actors = spawnMemoryActors(ctx, msg.slice.system, memoryGen, kgraphRef, workPath)
         consolidation = actors.consolidation
         memory        = actors.memory
-        zettel        = actors.zettel
+        records       = actors.records
         ctx.log.info('memory actors reconfigured', { gen: memoryGen })
       }
 
@@ -242,7 +217,7 @@ const memoryPlugin: PluginDef<MemoryPluginMsg, MemoryPluginState, MemoryConfig> 
         kgraph: { config: newKgraphConfig, ref: kgraphRef, gen: kgraphGen },
         consolidation,
         memory,
-        zettel,
+        records,
         memoryGen,
       } }
     },

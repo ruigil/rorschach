@@ -1,17 +1,13 @@
 import { describe, test, expect } from 'bun:test'
 import { AgentSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
-import { Kgraph, kgraphCreateNodeTool } from '../plugins/memory/kgraph.ts'
+import { Kgraph } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
-import type { ToolReply } from '../types/tools.ts'
-import type { CreateNodeResult } from '../plugins/memory/types.ts'
-
-// ─── Helpers ───
+import type { ConceptSearchReply, ConceptUpsertReply, MemoryConcept } from '../plugins/memory/types.ts'
 
 const tick = (ms = 100) => Bun.sleep(ms)
-
 const tmpDb = () => `/tmp/kgraph-test-${crypto.randomUUID()}.db`
 
 const norm = (v: number[]): number[] => {
@@ -20,10 +16,10 @@ const norm = (v: number[]): number[] => {
 }
 
 const EMBEDDINGS: Record<string, number[]> = {
-  Lisbon:  norm([1.0, 0.05, 0.0, 0.0]),
-  Paris:   norm([0.0, 0.0,  1.0, 0.0]),
-  Tokyo:   norm([0.0, 1.0,  0.0, 0.0]),
-  Berlin:  norm([0.0, 0.0,  0.0, 1.0]),
+  Lisbon: norm([1.0, 0.05, 0.0, 0.0]),
+  Paris:  norm([0.0, 0.0, 1.0, 0.0]),
+  Tokyo:  norm([0.0, 1.0, 0.0, 0.0]),
+  Berlin: norm([0.0, 0.0, 0.0, 1.0]),
 }
 
 const EMBEDDING_DIMS = 4
@@ -33,7 +29,7 @@ function spawnMockLlm(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef
   const def: ActorDef<LlmProviderMsg, null> = {
     handler: (state, msg) => {
       if (msg.type === 'embed') {
-        const vec = EMBEDDINGS[msg.text] ?? norm([1, 1, 1, 1])
+        const vec = EMBEDDINGS[msg.text.split('\n')[0] ?? ''] ?? norm([1, 1, 1, 1])
         msg.replyTo.send({ type: 'embeddingResult', embedding: vec })
       }
       return { state }
@@ -42,44 +38,41 @@ function spawnMockLlm(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef
   return system.spawn('mock-llm', def) as ActorRef<LlmProviderMsg>
 }
 
-function createNode(
-  kgraphRef: ActorRef<KgraphMsg>,
-  label: string,
+const concept = (
   name: string,
-  description?: string,
-): Promise<ToolReply> {
-  const args = JSON.stringify({ label, name, ...(description ? { properties: { description } } : {}) })
-  return ask<KgraphMsg, ToolReply>(
-    kgraphRef,
-    (replyTo) => ({ type: 'invoke', toolName: kgraphCreateNodeTool.name, arguments: args, replyTo, userId: 'test-user' }),
-    { timeoutMs: 5_000 },
-  )
-}
+  description = `${name} concept`,
+): MemoryConcept => ({
+  name,
+  kind: 'fact',
+  description,
+  topics: [name.toLowerCase()],
+})
 
-function createNodeWithProperties(
+function upsertConcept(
   kgraphRef: ActorRef<KgraphMsg>,
-  properties: Record<string, unknown>,
-): Promise<ToolReply> {
-  return ask<KgraphMsg, ToolReply>(
+  value: MemoryConcept,
+  recordId: string,
+): Promise<ConceptUpsertReply> {
+  return ask<KgraphMsg, ConceptUpsertReply>(
     kgraphRef,
-    (replyTo) => ({
-      type: 'invoke',
-      toolName: kgraphCreateNodeTool.name,
-      arguments: JSON.stringify({ label: 'Note', name: 'Lisbon', properties }),
-      replyTo,
-      userId: 'test-user',
-    }),
+    (replyTo) => ({ type: 'upsertConcept', concept: value, recordId, userId: 'test-user', replyTo }),
     { timeoutMs: 5_000 },
   )
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Tests
-// ═══════════════════════════════════════════════════════════════════
+function conceptSearch(
+  kgraphRef: ActorRef<KgraphMsg>,
+  query: string,
+): Promise<ConceptSearchReply> {
+  return ask<KgraphMsg, ConceptSearchReply>(
+    kgraphRef,
+    (replyTo) => ({ type: 'conceptSearch', query, topN: 8, userId: 'test-user', replyTo }),
+    { timeoutMs: 5_000 },
+  )
+}
 
-describe('kgraph create_node', () => {
-
-  test('creates a node and returns { name, nodeId }', async () => {
+describe('kgraph concept upsert', () => {
+  test('creates a concept and returns its nodeId', async () => {
     const system = await AgentSystem()
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
@@ -92,17 +85,14 @@ describe('kgraph create_node', () => {
 
     await tick()
 
-    const reply = await createNode(kgraphRef, 'Note', 'Lisbon', 'Capital of Portugal')
-    expect(reply.type).toBe('toolResult')
-
-    const result: CreateNodeResult = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text)
-    expect(result.name).toBe('Lisbon')
-    expect(typeof result.nodeId).toBe('number')
+    const reply = await upsertConcept(kgraphRef, concept('Lisbon', 'Capital of Portugal'), 'rec-lisbon')
+    expect(reply.type).toBe('conceptUpsertResult')
+    expect(reply.type === 'conceptUpsertResult' ? typeof reply.nodeId : 'error').toBe('number')
 
     await system.shutdown()
   })
 
-  test('two nodes with the same name produce separate records (no merging)', async () => {
+  test('same concept name updates the existing node and appends recordIds', async () => {
     const system = await AgentSystem()
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
@@ -115,19 +105,26 @@ describe('kgraph create_node', () => {
 
     await tick()
 
-    const first = await createNode(kgraphRef, 'Note', 'Lisbon', 'Capital of Portugal')
-    const firstResult: CreateNodeResult = JSON.parse((first as { type: 'toolResult'; result: { text: string } }).result.text)
+    const first = await upsertConcept(kgraphRef, concept('Lisbon', 'Capital of Portugal'), 'rec-1')
+    const second = await upsertConcept(kgraphRef, concept('Lisbon', 'Lisbon, western Portugal'), 'rec-2')
 
-    const second = await createNode(kgraphRef, 'Note', 'Lisbon', 'Lisbon, western Portugal')
-    const secondResult: CreateNodeResult = JSON.parse((second as { type: 'toolResult'; result: { text: string } }).result.text)
+    expect(first.type).toBe('conceptUpsertResult')
+    expect(second.type).toBe('conceptUpsertResult')
+    expect(second.type === 'conceptUpsertResult' && first.type === 'conceptUpsertResult' ? second.nodeId : null)
+      .toBe(first.type === 'conceptUpsertResult' ? first.nodeId : null)
 
-    expect(secondResult.name).toBe('Lisbon')
-    expect(secondResult.nodeId).not.toBe(firstResult.nodeId)
+    const search = await conceptSearch(kgraphRef, 'Lisbon')
+    expect(search.type).toBe('conceptSearchResult')
+    const lisbon = search.type === 'conceptSearchResult'
+      ? search.concepts.find(c => c.name === 'Lisbon')
+      : undefined
+    expect(lisbon?.description).toBe('Lisbon, western Portugal')
+    expect(lisbon?.recordIds).toEqual(['rec-1', 'rec-2'])
 
     await system.shutdown()
   })
 
-  test('multiple distinct nodes produce separate records', async () => {
+  test('multiple distinct concepts produce separate nodes', async () => {
     const system = await AgentSystem()
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
@@ -141,16 +138,13 @@ describe('kgraph create_node', () => {
     await tick()
 
     const names = ['Lisbon', 'Paris', 'Tokyo', 'Berlin']
-    const results: CreateNodeResult[] = []
-
-    for (const name of names) {
-      const reply = await createNode(kgraphRef, 'Note', name)
-      expect(reply.type).toBe('toolResult')
-      const result: CreateNodeResult = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text)
-      results.push(result)
+    const ids: number[] = []
+    for (const [index, name] of names.entries()) {
+      const reply = await upsertConcept(kgraphRef, concept(name), `rec-${index}`)
+      expect(reply.type).toBe('conceptUpsertResult')
+      if (reply.type === 'conceptUpsertResult') ids.push(reply.nodeId)
     }
 
-    const ids = results.map(r => r.nodeId)
     expect(new Set(ids).size).toBe(names.length)
 
     await system.shutdown()
@@ -167,68 +161,9 @@ describe('kgraph create_node', () => {
 
     await tick()
 
-    const reply = await createNode(kgraphRef, 'Note', 'Lisbon')
-    expect(reply.type).toBe('toolError')
-    expect((reply as { type: 'toolError'; error: string }).error).toMatch(/embedding/)
-
-    await system.shutdown()
-  })
-
-  test('omits undefined properties when creating nodes', async () => {
-    const system = await AgentSystem()
-    const mockLlmRef = spawnMockLlm(system)
-    system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
-
-    const kgraphRef = system.spawn(
-      'kgraph',
-      Kgraph(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
-      { state: { userDbs: new Map(), llmRef: null } },
-    ) as ActorRef<KgraphMsg>
-
-    await tick()
-
-    const reply = await createNodeWithProperties(kgraphRef, {
-      description: 'Capital of Portugal',
-      eventTime: undefined,
-    })
-
-    expect(reply.type).toBe('toolResult')
-
-    await system.shutdown()
-  })
-
-  test('omits undefined properties when updating nodes', async () => {
-    const system = await AgentSystem()
-    const mockLlmRef = spawnMockLlm(system)
-    system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
-
-    const kgraphRef = system.spawn(
-      'kgraph',
-      Kgraph(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
-      { state: { userDbs: new Map(), llmRef: null } },
-    ) as ActorRef<KgraphMsg>
-
-    await tick()
-
-    const created = await createNode(kgraphRef, 'Note', 'Lisbon', 'Capital of Portugal')
-    const result: CreateNodeResult = JSON.parse((created as { type: 'toolResult'; result: { text: string } }).result.text)
-
-    const updated = await ask<KgraphMsg, ToolReply>(
-      kgraphRef,
-      (replyTo) => ({
-        type: 'updateNode',
-        nodeId: result.nodeId,
-        properties: {
-          description: 'Capital city of Portugal',
-          eventTime: undefined,
-        },
-        userId: 'test-user',
-        replyTo,
-      }),
-      { timeoutMs: 5_000 },
-    )
-
-    expect(updated.type).toBe('toolResult')
+    const reply = await upsertConcept(kgraphRef, concept('Lisbon'), 'rec-lisbon')
+    expect(reply.type).toBe('conceptUpsertError')
+    expect(reply.type === 'conceptUpsertError' ? reply.error : '').toMatch(/embedding/)
 
     await system.shutdown()
   })

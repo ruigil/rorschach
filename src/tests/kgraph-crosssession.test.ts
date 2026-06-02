@@ -2,35 +2,40 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { rm, mkdir } from 'node:fs/promises'
 import { GrafeoDB } from '@grafeo-db/js'
 import { AgentSystem, ask } from '../system/index.ts'
-import type { ActorRef } from '../system/index.ts'
-import { Kgraph, kgraphCreateNodeTool } from '../plugins/memory/kgraph.ts'
+import type { ActorDef, ActorRef } from '../system/index.ts'
+import { Kgraph } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
-import type { VectorSearchMatch, VectorSearchReply } from '../plugins/memory/types.ts'
+import type { ConceptSearchReply, ConceptUpsertReply, MemoryConcept } from '../plugins/memory/types.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
-import type { ToolReply } from '../types/tools.ts'
-import { LlmProvider, OpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 
-// ─── Config ───
-
-const API_KEY    = process.env.OPENROUTER_API_KEY ?? ''
-const EMBED_MODEL = 'qwen/qwen3-embedding-8b'
-const DIMS       = 4096
-const TEST_DB    = '/tmp/kgraph-crosssession-test'
-const USER_ID    = 'test-user'
+const EMBED_MODEL = 'test-embed'
+const DIMS = 4
+const TEST_DB = '/tmp/kgraph-crosssession-test'
+const USER_ID = 'test-user'
 
 const tick = (ms = 500) => Bun.sleep(ms)
-const withKey = test.skipIf(!API_KEY)
 
-// ─── Helpers ───
+const embeddingFor = (text: string): number[] => {
+  const t = text.toLowerCase()
+  if (t.includes('lisbon') || t.includes('mouraria') || t.includes('live')) return [1, 0.1, 0.1, 0.1]
+  return [1, 1, 1, 1]
+}
 
 function spawnSystem() {
   return AgentSystem()
 }
 
 function spawnLlm(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<LlmProviderMsg> {
-  const adapter = OpenRouterAdapter({ apiKey: API_KEY })
-  return system.spawn('llm', LlmProvider({ adapter })) as ActorRef<LlmProviderMsg>
+  const def: ActorDef<LlmProviderMsg, null> = {
+    handler: (state, msg) => {
+      if (msg.type === 'embed') {
+        msg.replyTo.send({ type: 'embeddingResult', embedding: embeddingFor(msg.text) })
+      }
+      return { state }
+    },
+  }
+  return system.spawn('mock-llm', def) as ActorRef<LlmProviderMsg>
 }
 
 function spawnKgraph(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<KgraphMsg> {
@@ -41,25 +46,21 @@ function spawnKgraph(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<
   ) as ActorRef<KgraphMsg>
 }
 
-function createNode(kgraphRef: ActorRef<KgraphMsg>, name: string, synopsis: string, tags: string[]): Promise<ToolReply> {
-  const embeddingText = `${synopsis} ${tags.join(' ')}`
-  const args = JSON.stringify({ label: 'Note', name, properties: { description: synopsis }, embeddingText, userId: USER_ID })
-  return ask<KgraphMsg, ToolReply>(
+function upsertConcept(kgraphRef: ActorRef<KgraphMsg>, concept: MemoryConcept): Promise<ConceptUpsertReply> {
+  return ask<KgraphMsg, ConceptUpsertReply>(
     kgraphRef,
-    (replyTo) => ({ type: 'invoke', toolName: kgraphCreateNodeTool.name, arguments: args, replyTo, userId: USER_ID }),
+    (replyTo) => ({ type: 'upsertConcept', concept, recordId: 'home-location-record', userId: USER_ID, replyTo }),
     { timeoutMs: 30_000 },
   )
 }
 
-function vectorSearch(kgraphRef: ActorRef<KgraphMsg>, text: string): Promise<VectorSearchReply> {
-  return ask<KgraphMsg, VectorSearchReply>(
+function conceptSearch(kgraphRef: ActorRef<KgraphMsg>, query: string): Promise<ConceptSearchReply> {
+  return ask<KgraphMsg, ConceptSearchReply>(
     kgraphRef,
-    (replyTo) => ({ type: 'vectorSearch', label: 'Note', text, topN: 5, userId: USER_ID, replyTo }),
+    (replyTo) => ({ type: 'conceptSearch', query, topN: 5, userId: USER_ID, replyTo }),
     { timeoutMs: 30_000 },
   )
 }
-
-// ─── Setup ───
 
 beforeAll(async () => {
   await rm(TEST_DB, { recursive: true, force: true })
@@ -70,13 +71,8 @@ afterAll(async () => {
   await rm(TEST_DB, { recursive: true, force: true })
 })
 
-// ─── Tests ───
-// Tests run in declaration order. The inject test populates the DB; the
-// recall test opens the same path in a fresh system to simulate a process restart.
-
 describe('kgraph cross-session persistence', () => {
-
-  withKey('inject: creates a node and finds it in the same session', async () => {
+  test('inject: creates a concept and finds it in the same session', async () => {
     const system = await spawnSystem()
     const llmRef = spawnLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
@@ -84,46 +80,43 @@ describe('kgraph cross-session persistence', () => {
     const kgraphRef = spawnKgraph(system)
     await tick()
 
-    const createReply = await createNode(
-      kgraphRef,
-      'Home Location',
-      'The user lives in Lisbon, Portugal, in the Mouraria neighbourhood.',
-      ['location', 'personal', 'lisbon'],
-    )
-    expect(createReply.type).toBe('toolResult')
+    const createReply = await upsertConcept(kgraphRef, {
+      name: 'Home Location',
+      kind: 'place',
+      description: 'The user lives in Lisbon, Portugal, in the Mouraria neighbourhood.',
+      topics: ['location', 'personal', 'lisbon'],
+    })
+    expect(createReply.type).toBe('conceptUpsertResult')
 
-    const searchReply = await vectorSearch(kgraphRef, 'Where does the user live?')
-    expect(searchReply.type).toBe('vectorSearchResult')
-    const { matches } = searchReply as { type: 'vectorSearchResult'; matches: VectorSearchMatch[] }
-    expect(matches.length).toBeGreaterThan(0)
-    expect(matches[0]!.name).toBe('Home Location')
+    const searchReply = await conceptSearch(kgraphRef, 'Where does the user live?')
+    expect(searchReply.type).toBe('conceptSearchResult')
+    const concepts = searchReply.type === 'conceptSearchResult' ? searchReply.concepts : []
+    expect(concepts.length).toBeGreaterThan(0)
+    expect(concepts[0]!.name).toBe('Home Location')
 
     await system.shutdown()
-  }, 60_000)
+  })
 
-  withKey('raw db: inspect node properties and test cypher vector search', async () => {
-    const DB_PATH = `${TEST_DB}/${USER_ID}/kgraph`
-    const db = GrafeoDB.create(DB_PATH)
-
-    await db.execute(`CREATE VECTOR INDEX idx_note_embedding ON :Note(_embedding) DIMENSION ${DIMS} METRIC 'cosine'`).catch(e => console.log('createVectorIndex:', e))
+  test('raw db: inspect concept properties and test cypher vector search', async () => {
+    const db = GrafeoDB.create(`${TEST_DB}/${USER_ID}/kgraph`)
+    await db.execute(`CREATE VECTOR INDEX idx_concept_embedding ON :Concept(_embedding) DIMENSION ${DIMS} METRIC 'cosine'`).catch(e => console.log('createVectorIndex:', e))
 
     const queryVec = new Array(DIMS).fill(0.1)
     const vectorStr = `[${queryVec.join(',')}]`
     const resultsResult = await db.execute(`
-      MATCH (n:Note)
+      MATCH (n:Concept)
       WHERE cosine_similarity(n._embedding, vector(${vectorStr})) > 0.0
       RETURN id(n) AS nodeId, n.name AS name, cosine_similarity(n._embedding, vector(${vectorStr})) AS score
       ORDER BY score DESC
       LIMIT 5
     `)
-    const results = resultsResult.rows() as []
+    const results = resultsResult.toArray() as unknown[]
 
     db.close()
     expect(results.length).toBeGreaterThan(0)
-  }, 60_000)
+  })
 
-  withKey('recall: finds the node from the previous session without re-injecting', async () => {
-    // Fresh system + fresh actor at the same DB path — simulates a process restart
+  test('recall: finds the concept from the previous session without re-injecting', async () => {
     const system = await spawnSystem()
     const llmRef = spawnLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
@@ -131,14 +124,12 @@ describe('kgraph cross-session persistence', () => {
     const kgraphRef = spawnKgraph(system)
     await tick()
 
-    // No injection — search against persisted data only
-    const searchReply = await vectorSearch(kgraphRef, 'Where does the user live?')
-    expect(searchReply.type).toBe('vectorSearchResult')
-    const { matches } = searchReply as { type: 'vectorSearchResult'; matches: VectorSearchMatch[] }
-    expect(matches.length).toBeGreaterThan(0)
-    expect(matches[0]!.name).toBe('Home Location')
+    const searchReply = await conceptSearch(kgraphRef, 'Where does the user live?')
+    expect(searchReply.type).toBe('conceptSearchResult')
+    const concepts = searchReply.type === 'conceptSearchResult' ? searchReply.concepts : []
+    expect(concepts.length).toBeGreaterThan(0)
+    expect(concepts[0]!.name).toBe('Home Location')
 
     await system.shutdown()
-  }, 60_000)
-
+  })
 })

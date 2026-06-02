@@ -1,21 +1,16 @@
 import { describe, test, expect } from 'bun:test'
 import { AgentSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
-import { Kgraph, kgraphCreateNodeTool } from '../plugins/memory/kgraph.ts'
+import { Kgraph } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
-import type { VectorSearchMatch, VectorSearchReply } from '../plugins/memory/types.ts'
+import type { ConceptSearchReply, ConceptUpsertReply, MemoryConcept } from '../plugins/memory/types.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
-import type { ToolReply } from '../types/tools.ts'
-
-// ─── Config ───
 
 const DIMS = 4
-
 const tick = (ms = 150) => Bun.sleep(ms)
 const tmpDb = () => `/tmp/kgraph-rerank-test-${crypto.randomUUID()}.db`
 
-// Keyword-based synthetic embeddings: distinct but slightly overlapping directions so all have non-zero similarity.
 const embeddingFor = (text: string): number[] => {
   const t = text.toLowerCase()
   if (t.includes('typescript') || t.includes('programming')) return [1, 0.1, 0.1, 0.1]
@@ -24,78 +19,55 @@ const embeddingFor = (text: string): number[] => {
   return [1, 1, 1, 1]
 }
 
-// ─── Helpers ───
-
 function spawnMockLlm(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<LlmProviderMsg> {
   const def: ActorDef<LlmProviderMsg, null> = {
     handler: (state, msg) => {
       if (msg.type === 'embed') {
         msg.replyTo.send({ type: 'embeddingResult', embedding: embeddingFor(msg.text) })
-        } else if (msg.type === 'rerank') {
-          // Mock reranker: reverse the order of documents (simple deterministic behavior)
-          const scores = msg.documents.map((_, i) => ({ index: i, score: (i + 1) * 0.1 }))
-          msg.replyTo.send({ type: 'rerankResult', requestId: msg.requestId, scores, usage: null })
-        }
+      } else if (msg.type === 'rerank') {
+        const scores = msg.documents.map((_, i) => ({ index: i, score: (i + 1) * 0.1 }))
+        msg.replyTo.send({ type: 'rerankResult', requestId: msg.requestId, scores, usage: null })
+      }
       return { state }
     },
   }
   return system.spawn('mock-llm', def) as ActorRef<LlmProviderMsg>
 }
 
-function createNode(
+function createConcept(
   kgraphRef: ActorRef<KgraphMsg>,
   name: string,
   description: string,
-  embeddingText: string,
+  recordId: string,
   userId = 'test-user',
-): Promise<ToolReply> {
-  const args = JSON.stringify({ label: 'Note', name, properties: { description }, embeddingText })
-  return ask<KgraphMsg, ToolReply>(
+): Promise<ConceptUpsertReply> {
+  const concept: MemoryConcept = { name, description, kind: 'fact', topics: [] }
+  return ask<KgraphMsg, ConceptUpsertReply>(
     kgraphRef,
-    (replyTo) => ({ type: 'invoke', toolName: kgraphCreateNodeTool.name, arguments: args, replyTo, userId }),
+    (replyTo) => ({ type: 'upsertConcept', concept, recordId, userId, replyTo }),
     { timeoutMs: 5_000 },
   )
 }
 
-function vectorSearch(
+function conceptSearch(
   kgraphRef: ActorRef<KgraphMsg>,
-  text: string,
+  query: string,
   topN?: number,
   userId = 'test-user',
-): Promise<VectorSearchReply> {
-  return ask<KgraphMsg, VectorSearchReply>(
+): Promise<ConceptSearchReply> {
+  return ask<KgraphMsg, ConceptSearchReply>(
     kgraphRef,
-    (replyTo) => ({ type: 'vectorSearch', label: 'Note', text, topN, userId, replyTo }),
+    (replyTo) => ({ type: 'conceptSearch', query, topN, userId, replyTo }),
     { timeoutMs: 5_000 },
   )
 }
 
-function createLink(
-  kgraphRef: ActorRef<KgraphMsg>,
-  sourceName: string,
-  targetName: string,
-  userId = 'test-user',
-): Promise<ToolReply> {
-  const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-  const statement = `MATCH (a:Note {name:"${esc(sourceName)}"}), (b:Note {name:"${esc(targetName)}"}) MERGE (a)-[:LINKS_TO]->(b)`
-  const args = JSON.stringify({ statement })
-  return ask<KgraphMsg, ToolReply>(
-    kgraphRef,
-    (replyTo) => ({ type: 'invoke', toolName: 'kgraph_create_link', arguments: args, replyTo, userId }),
-    { timeoutMs: 5_000 },
-  )
-}
-
-// ─── Tests ───
-
-describe('kgraph vector search with reranker', () => {
-
-  test('reranker reorders vector search results', async () => {
+describe('kgraph concept search with reranker', () => {
+  test('reranker reorders concept search results', async () => {
     const system = await AgentSystem()
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
-    // Create kgraph with reranker config — rerankerTopK=3 ensures all docs are reranked
     const kgraphRef = system.spawn(
       'kgraph',
       Kgraph(tmpDb(), { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
@@ -104,37 +76,27 @@ describe('kgraph vector search with reranker', () => {
 
     await tick()
 
-    // Create 3 notes. Vector scores: TypeScript=[1,0,0,0], French=[0,1,0,0], Neural=[0,0,1,0]
-    // Query "programming typescript" should return TypeScript first by vector similarity.
-    await createNode(kgraphRef, 'TypeScript Types', 'TypeScript static type checking.', 'typescript programming')
-    await createNode(kgraphRef, 'French Cuisine', 'French cooking and cuisine techniques.', 'french cuisine cooking')
-    await createNode(kgraphRef, 'Neural Networks', 'Machine learning neural networks.', 'neural machine learning')
+    await createConcept(kgraphRef, 'TypeScript Types', 'TypeScript static type checking.', 'rec-1')
+    await createConcept(kgraphRef, 'French Cuisine', 'French cooking and cuisine techniques.', 'rec-2')
+    await createConcept(kgraphRef, 'Neural Networks', 'Machine learning neural networks.', 'rec-3')
 
-    await tick()
+    const reply = await conceptSearch(kgraphRef, 'programming typescript', 3)
 
-    const reply = await vectorSearch(kgraphRef, 'programming typescript', 3)
-
-    expect(reply.type).toBe('vectorSearchResult')
-    const { matches } = reply as { type: 'vectorSearchResult'; matches: VectorSearchMatch[] }
-
-    // Mock reranker reverses order, so Neural Networks (last in vector results) should be first
-    // because the mock assigns highest score to the last document.
-    expect(matches.length).toBe(3)
-    expect(matches[0]!.name).toBe('Neural Networks')
-    expect(matches[1]!.name).toBe('French Cuisine')
-    expect(matches[2]!.name).toBe('TypeScript Types')
-
-    // Verify that scores came from the reranker
-    expect(matches[0]!.score).toBeCloseTo(0.3, 5)
-    expect(matches[1]!.score).toBeCloseTo(0.2, 5)
-    expect(matches[2]!.score).toBeCloseTo(0.1, 5)
+    expect(reply.type).toBe('conceptSearchResult')
+    const concepts = reply.type === 'conceptSearchResult' ? reply.concepts : []
+    expect(concepts.length).toBe(3)
+    expect(concepts[0]!.name).toBe('Neural Networks')
+    expect(concepts[1]!.name).toBe('French Cuisine')
+    expect(concepts[2]!.name).toBe('TypeScript Types')
+    expect(concepts[0]!.score).toBeCloseTo(0.3, 5)
+    expect(concepts[1]!.score).toBeCloseTo(0.2, 5)
+    expect(concepts[2]!.score).toBeCloseTo(0.1, 5)
 
     await system.shutdown()
   })
 
   test('falls back to vector scores when reranker returns error', async () => {
     const system = await AgentSystem()
-
     const errorDef: ActorDef<LlmProviderMsg, null> = {
       handler: (state, msg) => {
         if (msg.type === 'embed') {
@@ -155,21 +117,15 @@ describe('kgraph vector search with reranker', () => {
     ) as ActorRef<KgraphMsg>
 
     await tick()
+    await createConcept(kgraphRef, 'TypeScript Types', 'TypeScript static type checking.', 'rec-1')
+    await createConcept(kgraphRef, 'French Cuisine', 'French cooking and cuisine techniques.', 'rec-2')
 
-    await createNode(kgraphRef, 'TypeScript Types', 'TypeScript static type checking.', 'typescript programming')
-    await createNode(kgraphRef, 'French Cuisine', 'French cooking and cuisine techniques.', 'french cuisine cooking')
+    const reply = await conceptSearch(kgraphRef, 'programming typescript', 2)
 
-    await tick()
-
-    const reply = await vectorSearch(kgraphRef, 'programming typescript', 2)
-
-    expect(reply.type).toBe('vectorSearchResult')
-    const { matches } = reply as { type: 'vectorSearchResult'; matches: VectorSearchMatch[] }
-
-    // Should fall back to vector ordering
-    expect(matches[0]!.name).toBe('TypeScript Types')
+    expect(reply.type).toBe('conceptSearchResult')
+    const concepts = reply.type === 'conceptSearchResult' ? reply.concepts : []
+    expect(concepts[0]!.name).toBe('TypeScript Types')
 
     await system.shutdown()
   })
-
 })

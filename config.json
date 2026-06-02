@@ -61,7 +61,7 @@
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "model": "deepseek/deepseek-v4-flash",
+        "model": "google/gemini-3.5-flash",
         "toolFilter": {
           "deny": [
             "bash",

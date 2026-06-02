@@ -34,6 +34,14 @@
       "chatbot": {
         "model": "google/gemini-3.1-flash-lite-preview",
         "systemPrompt": "You are a helpful assistant with access to a long-term memory system. Whenever the user shares a personal fact, preference, or piece of information about themselves, you MUST use the 'store_memory' tool to record it. Conversely, whenever the user asks a question about themselves, their past, their preferences, or any information that is not in the current conversation context, you MUST use the 'recall_memory' tool to retrieve the relevant information. Do not assume you know the answer if it is not in the immediate context; always check your memory first. This is critical for the user's experience."
+      },
+      "session": {
+        "contextWindowHours": 2,
+        "contextPath": "workspace/benchmark/context"
+      },
+      "userContext": {
+        "model": "deepseek/deepseek-v4-flash",
+        "intervalMs": 3600000
       }
     },
     "memory": {
@@ -44,15 +52,15 @@
         "cosineSimilarityThreshold": 0.6
       },
       "system": {
-        "model": "google/gemini-3.1-flash-lite-preview",
+        "model": "deepseek/deepseek-v4-flash",
         "consolidationIntervalMs": 60000,
         "contextIntervalMs": 3600000
       }
     }
   },
-  "dataset": "benchmarks/datasets/linked-facts.json",
+  "dataset": "benchmarks/datasets/family-facts.json",
   "judge": {
-    "model": "google/gemini-3.1-flash-lite-preview",
+    "model": "deepseek/deepseek-v4-flash",
     "systemPrompt": "You are an impartial judge. Compare the GROUND TRUTH with the ASSISTANT REPLY for the given QUESTION. If the assistant reply contains the factual information from the ground truth, score it 1. If it is partially correct but misses key details, score 0.5. If it is wrong or says I do not know, score 0. Output ONLY JSON: { \"score\": number, \"reason\": \"string\" }"
   }
 }

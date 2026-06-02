@@ -1,10 +1,11 @@
 import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
-import type { ToolMsg, ToolCollection } from '../../types/tools.ts'
+import type { ToolMsg } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { MemorySupervisorMsg } from './types.ts'
+import type { KgraphMsg, MemoryRecordsMsg } from './types.ts'
 import {
   memoryRecallTool,
   MemoryRecallWorker,
@@ -18,8 +19,8 @@ import {
 
 export type MemorySupervisorOptions = {
   model:         string
-  recallTools:   ToolCollection
-  storeTools:    ToolCollection
+  recordsRef:    ActorRef<MemoryRecordsMsg>
+  kgraphRef:     ActorRef<KgraphMsg>
   maxToolLoops?: number
 }
 
@@ -27,8 +28,8 @@ export type MemorySupervisorOptions = {
 
 export type MemorySupervisorState = {
   llmRef:      ActorRef<LlmProviderMsg> | null
-  recallTools: ToolCollection
-  storeTools:  ToolCollection
+  recordsRef:  ActorRef<MemoryRecordsMsg>
+  kgraphRef:   ActorRef<KgraphMsg>
   workerIdSeq: number
 }
 
@@ -37,13 +38,13 @@ export type MemorySupervisorState = {
 export const MemorySupervisor = (
   options: MemorySupervisorOptions,
 ): ActorDef<MemorySupervisorMsg, MemorySupervisorState> => {
-  const { model, recallTools, storeTools, maxToolLoops = 25 } = options
+  const { model, recordsRef, kgraphRef, maxToolLoops = 25 } = options
 
   return {
     initialState: {
       llmRef:      null,
-      recallTools,
-      storeTools,
+      recordsRef,
+      kgraphRef,
       workerIdSeq: 0,
     },
     lifecycle: onLifecycle({
@@ -85,7 +86,7 @@ export const MemorySupervisor = (
         const self    = context.self as ActorRef<MemorySupervisorMsg>
 
         if (msg.toolName === memoryRecallTool.name) {
-          const opts = { model, maxToolLoops, tools: state.recallTools, llmRef: state.llmRef }
+          const opts = { model, maxToolLoops, recordsRef: state.recordsRef, kgraphRef: state.kgraphRef, llmRef: state.llmRef }
           const worker = context.spawn(
             `memory-recall-worker-${nextSeq}`,
             MemoryRecallWorker(self, opts),
@@ -95,7 +96,7 @@ export const MemorySupervisor = (
         }
 
         if (msg.toolName === memoryStoreTool.name) {
-          const opts = { model, maxToolLoops, tools: state.storeTools, llmRef: state.llmRef }
+          const opts = { model, maxToolLoops, recordsRef: state.recordsRef, kgraphRef: state.kgraphRef, llmRef: state.llmRef }
           const worker = context.spawn(
             `memory-store-worker-${nextSeq}`,
             MemoryStoreWorker(self, opts),
