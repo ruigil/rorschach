@@ -420,7 +420,7 @@ const readConceptByName = async (
   name: string,
 ): Promise<{ nodeId: number; recordIds: string[] } | null> => {
   const result = await db.execute(
-    `MATCH (n:Concept {name:${JSON.stringify(name)}) RETURN id(n) AS nodeId, n.recordIds AS recordIds LIMIT 1`,
+    `MATCH (n:Concept {name:${JSON.stringify(name)}}) RETURN id(n) AS nodeId, n.recordIds AS recordIds LIMIT 1`,
   )
   const row = result.toArray()[0] as { nodeId?: number; recordIds?: unknown } | undefined
   if (!row || typeof row.nodeId !== 'number') return null
