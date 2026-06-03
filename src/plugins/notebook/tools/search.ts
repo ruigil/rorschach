@@ -6,7 +6,7 @@ import type { Todo } from '../types.ts'
 
 // ─── Tool name & schema ───
 
-export const notebookSearchTool = defineTool('notebook_search', 'Full-text search across all notebook content: journal entries, notes, and todo text.', {
+export const notebookSearchTool = defineTool('notebook_search', 'Full-text search across journal entries and todo text.', {
   type: 'object',
   properties: {
     query: { type: 'string', description: 'Text to search for (case-insensitive).' },
@@ -42,23 +42,6 @@ const searchAll = async (notebookDir: string, query: string): Promise<string> =>
     }
   } catch {
     // journal dir may not exist yet
-  }
-
-  // Search notes files
-  const notesDir = `${notebookDir}/notes`
-  const notesGlob = new Bun.Glob('*.md')
-  try {
-    for await (const relPath of notesGlob.scan({ cwd: notesDir })) {
-      const content = await Bun.file(`${notesDir}/${relPath}`).text().catch(() => '')
-      const lines   = content.split('\n')
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i]!.toLowerCase().includes(lower)) {
-          results.push(`notes/${relPath}:${i + 1}: ${lines[i]!.trim()}`)
-        }
-      }
-    }
-  } catch {
-    // notes dir may not exist yet
   }
 
   // Search todos

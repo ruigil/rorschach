@@ -8,7 +8,6 @@ import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { NotebookConfig, NoteAgentMsg, TodoReminderMsg } from './types.ts'
 
 import { Journal, journalWriteTool, journalReadTool, journalSearchTool } from './tools/journal.ts'
-import { Notes, notesCreateTool, notesUpdateTool, notesReadTool, notesListTool, notesSearchTool, notesAttachFileTool, notesDeleteTool } from './tools/notes.ts'
 import { Tracker, trackerLogTool, trackerStatsTool, trackerDefineHabitTool, trackerListHabitsTool } from './tools/tracker.ts'
 import { Todos, todosCreateTool, todosCompleteTool, todosListTool, todosDeleteTool, todosUpdateTool } from './tools/todos.ts'
 import { Search, notebookSearchTool } from './tools/search.ts'
@@ -22,21 +21,12 @@ export const noteTool = defineTool('note', `Interact with your personal notebook
 
 This tool is for the user only — only call it when explicitly asked by the user. Never use it to take notes for yourself.
 
-The notebook has four areas — use the request field to describe exactly what you want:
+The notebook has three areas — use the request field to describe exactly what you want:
 
 **Journal** — daily markdown diary entries:
 - "Write a journal entry: had a productive morning, finished the auth PR"
 - "Read my journal entry for 2025-11-03"
 - "Search the journal for mentions of 'deployment'"
-
-**Notes** — tagged notes with [[wiki-links]] between them:
-- "Create a note titled 'Project Alpha' with content '...' and tags work, alpha"
-- "Update the note titled 'Project Alpha', append a new section about the API changes"
-- "Read the note titled 'Meeting Notes'"
-- "List all notes tagged 'work'"
-- "Search notes for 'authentication'"
-- "Attach the file /tmp/diagram.png to the note titled 'Architecture'" — attaches a file (image or PDF) to an existing note; the file must exist at an absolute path
-- "Delete the note titled 'Old Draft'" — permanently removes the note
 
 **Tracker** — CSV-based logging for habits, expenses, or any numeric metric:
 - "Define a new tracker called 'Expenses' with unit 'EUR' or 'CHF'"
@@ -55,9 +45,9 @@ The notebook has four areas — use the request field to describe exactly what y
 - "Update the todo 'call dentist': change due date to next Monday"
 
 **Cross-area search**:
-- "Search the entire notebook for 'budget'"
+- "Search journal and todos for 'budget'"
 
-Always include enough detail in the request so the sub-agent can act without ambiguity (e.g. specify note titles, habit names, dates, file paths).`, {
+Always include enough detail in the request so the sub-agent can act without ambiguity (e.g. specify habit names, dates, file paths, or todo text).`, {
   type: 'object',
   properties: {
     request: {
@@ -80,7 +70,6 @@ type PluginState = {
   model:                string
   maxToolLoops:         number
   journalRef:           ActorRef<ToolMsg> | null
-  notesRef:             ActorRef<ToolMsg> | null
   trackerRef:           ActorRef<ToolMsg> | null
   todosRef:             ActorRef<ToolMsg> | null
   searchRef:            ActorRef<ToolMsg> | null
@@ -100,7 +89,6 @@ const config = defineConfig<NotebookConfig>('notebook', {
 
 const buildToolCollection = (
   journalRef:  ActorRef<ToolMsg>,
-  notesRef:    ActorRef<ToolMsg>,
   trackerRef:  ActorRef<ToolMsg>,
   todosRef:    ActorRef<ToolMsg>,
   searchRef:   ActorRef<ToolMsg>,
@@ -108,13 +96,6 @@ const buildToolCollection = (
   [journalWriteTool.name]:        { ...journalWriteTool,        ref: journalRef },
   [journalReadTool.name]:         { ...journalReadTool,         ref: journalRef },
   [journalSearchTool.name]:       { ...journalSearchTool,       ref: journalRef },
-  [notesCreateTool.name]:         { ...notesCreateTool,         ref: notesRef   },
-  [notesUpdateTool.name]:         { ...notesUpdateTool,         ref: notesRef   },
-  [notesReadTool.name]:           { ...notesReadTool,           ref: notesRef   },
-  [notesListTool.name]:           { ...notesListTool,           ref: notesRef   },
-  [notesSearchTool.name]:         { ...notesSearchTool,         ref: notesRef   },
-  [notesAttachFileTool.name]:     { ...notesAttachFileTool,     ref: notesRef   },
-  [notesDeleteTool.name]:         { ...notesDeleteTool,         ref: notesRef   },
   [trackerLogTool.name]:          { ...trackerLogTool,          ref: trackerRef  },
   [trackerStatsTool.name]:        { ...trackerStatsTool,        ref: trackerRef  },
   [trackerDefineHabitTool.name]:  { ...trackerDefineHabitTool,  ref: trackerRef  },
@@ -130,7 +111,7 @@ const buildToolCollection = (
 // ─── Spawn helpers (typed with ActorContext<PluginMsg>) ───
 
 type SpawnResult = Pick<PluginState,
-  'journalRef' | 'notesRef' | 'trackerRef' | 'todosRef' | 'searchRef' |
+  'journalRef' | 'trackerRef' | 'todosRef' | 'searchRef' |
   'noteAgentRef' | 'reminderRef'
 >
 
@@ -143,12 +124,11 @@ const spawnChildren = (
 ): SpawnResult => {
   // Spawn internal tool actors — NOT registered on ToolRegistrationTopic
   const journalRef = ctx.spawn(`journal-${gen}`, Journal(notebookDir)) as ActorRef<ToolMsg>
-  const notesRef   = ctx.spawn(`notes-${gen}`,   Notes(notebookDir))   as ActorRef<ToolMsg>
   const trackerRef = ctx.spawn(`tracker-${gen}`, Tracker(notebookDir)) as ActorRef<ToolMsg>
   const todosRef   = ctx.spawn(`todos-${gen}`,   Todos(notebookDir))   as ActorRef<ToolMsg>
   const searchRef  = ctx.spawn(`search-${gen}`,  Search(notebookDir))  as ActorRef<ToolMsg>
 
-  const internalTools = buildToolCollection(journalRef, notesRef, trackerRef, todosRef, searchRef)
+  const internalTools = buildToolCollection(journalRef, trackerRef, todosRef, searchRef)
 
   // Spawn note agent
   const agentOpts = { model, notebookDir, maxToolLoops, tools: internalTools }
@@ -169,12 +149,11 @@ const spawnChildren = (
     TodoReminder(notebookDir),
   ) as ActorRef<TodoReminderMsg>
 
-  return { journalRef, notesRef, trackerRef, todosRef, searchRef, noteAgentRef, reminderRef }
+  return { journalRef, trackerRef, todosRef, searchRef, noteAgentRef, reminderRef }
 }
 
 const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void => {
   if (state.journalRef)   ctx.stop(state.journalRef)
-  if (state.notesRef)     ctx.stop(state.notesRef)
   if (state.trackerRef)   ctx.stop(state.trackerRef)
   if (state.todosRef)     ctx.stop(state.todosRef)
   if (state.searchRef)    ctx.stop(state.searchRef)
@@ -188,7 +167,7 @@ const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void =>
 const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
   id:          'notebook',
   version:     '1.0.0',
-  description: 'Personal notebook: journal, notes, tracker (habits, expenses, or any numeric metric), todos — exposed as a single "note" tool.',
+  description: 'Personal notebook: journal, tracker (habits, expenses, or any numeric metric), todos — exposed as a single "note" tool.',
 
   configDescriptor: config,
 
@@ -199,7 +178,6 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
     model:               '',
     maxToolLoops:        10,
     journalRef:          null,
-    notesRef:            null,
     trackerRef:          null,
     todosRef:            null,
     searchRef:           null,
