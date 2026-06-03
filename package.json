@@ -19,6 +19,7 @@
     "dev:frontend": "bun build src/frontend/rorschach.ts --outfile src/plugins/interfaces/public/rorschach.js --watch",
     "dev:backend": "bun run --watch src/index.ts",
     "dev": "bun run dev:frontend & bun run dev:backend",
+    "rorschach": "bun run build && bun run dist/index.js",
     "test": "bun test",
     "typecheck": "bun tsc --noEmit",
     "test:watch": "bun test --watch",
