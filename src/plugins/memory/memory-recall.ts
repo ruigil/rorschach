@@ -22,18 +22,26 @@ export const memoryRecallTool = defineTool('recall_memory', 'Retrieve relevant m
   required: ['query'],
 })
 
-const memorySearchTool = defineTool('memory_search', 'Search memory concepts or expand one concept by nodeId. Pass exactly one of query or nodeId.', {
+const memorySearchTool = defineTool('memory_search', 'Search memory concepts by query.', {
   type: 'object',
   properties: {
     query: { type: 'string', description: 'Start a new semantic search over memory concepts.' },
-    nodeId: { type: 'number', description: 'Expand this concept by one graph hop.' },
   },
+  required: ['query'],
+})
+
+const memoryExpandTool = defineTool('memory_expand', 'Expand one memory concept by nodeId one graph hop.', {
+  type: 'object',
+  properties: {
+    nodeId: { type: 'number', description: 'Concept nodeId to expand by one graph hop.' },
+  },
+  required: ['nodeId'],
 })
 
 const memoryReadTool = defineTool('memory_read', 'Read selected verbatim memory records by recordId. Use this before answering; concept metadata is not final evidence.', {
   type: 'object',
   properties: {
-    recordIds: { type: 'array', items: { type: 'string' }, description: 'Record IDs selected from memory_search results.' },
+    recordIds: { type: 'array', items: { type: 'string' }, description: 'Record IDs selected from memory_search or memory_expand results.' },
   },
   required: ['recordIds'],
 })
@@ -42,10 +50,6 @@ const MAX_SEARCH_RESULTS = 8
 const MAX_EXPANSION_RESULTS = 8
 const MAX_LINK_STUBS = 5
 const MAX_RECORDS_READ = 8
-
-type MemorySearchArgs =
-  | { mode: 'query'; query: string }
-  | { mode: 'node'; nodeId: number }
 
 export type MemoryRecallWorkerOptions = {
   model:        string
@@ -88,62 +92,107 @@ const buildUserPrompt = (query: string, sources: MemoryRecord[]): string => {
   return `Query:\n${query}\n\nSources:\n${sourceBlocks}`
 }
 
-const parseSearchArgs = (rawArgs: string): MemorySearchArgs | { error: string } => {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(rawArgs)
-  } catch {
-    return { error: 'Invalid arguments: expected JSON object' }
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { error: 'Invalid arguments: expected JSON object' }
-  }
-  const args = parsed as Record<string, unknown>
-  const query = typeof args.query === 'string' ? args.query.trim() : ''
-  const nodeId = typeof args.nodeId === 'number' && Number.isFinite(args.nodeId) ? args.nodeId : undefined
-  if ((query ? 1 : 0) + (nodeId !== undefined ? 1 : 0) !== 1) {
-    return { error: 'Pass exactly one of query or nodeId.' }
-  }
-  return query ? { mode: 'query', query } : { mode: 'node', nodeId: nodeId! }
-}
-
 const searchReplyText = (concepts: MemorySearchConcept[]): string =>
   JSON.stringify({ concepts })
+
+const searchResultLogPayload = (concepts: MemorySearchConcept[]) => ({
+  count: concepts.length,
+  concepts: concepts.map(concept => ({
+    nodeId: concept.nodeId,
+    score: concept.score,
+    name: concept.name,
+    kind: concept.kind,
+    recordIds: concept.recordIds,
+    links: concept.links.map(link => ({
+      type: link.type,
+      nodeId: link.nodeId,
+      name: link.name,
+      kind: link.kind,
+      confidence: link.confidence,
+    })),
+  })),
+})
 
 const runMemorySearch = async (
   state: MemoryRecallWorkerState,
   userId: string,
   rawArgs: string,
+  ctx: ActorContext<MemoryRecallMsg>,
 ): Promise<string> => {
-  const parsed = parseSearchArgs(rawArgs)
-  if ('error' in parsed) throw new Error(parsed.error)
+  const parsed = parseToolArgs<{ query: string }>(rawArgs, (p) => {
+    const query = typeof p.query === 'string' ? p.query.trim() : ''
+    return query ? { query } : null
+  }, 'Missing query argument')
+  if (!parsed.ok) throw new Error(parsed.error)
+
+  ctx.log.info('memory recall search arguments', {
+    userId,
+    query: parsed.value.query,
+    topN: MAX_SEARCH_RESULTS,
+    linkLimit: MAX_LINK_STUBS,
+  })
 
   const reply = await ask<KgraphMsg, ConceptSearchReply>(
     state.kgraphRef,
-    (replyTo) => parsed.mode === 'query'
-      ? ({
-        type: 'conceptSearch',
-        query: parsed.query,
-        topN: MAX_SEARCH_RESULTS,
-        linkLimit: MAX_LINK_STUBS,
-        userId,
-        replyTo,
-      })
-      : ({
-        type: 'conceptExpand',
-        nodeId: parsed.nodeId,
-        limit: MAX_EXPANSION_RESULTS,
-        linkLimit: MAX_LINK_STUBS,
-        userId,
-        replyTo,
-      }),
+    (replyTo) => ({
+      type: 'conceptSearch',
+      query: parsed.value.query,
+      topN: MAX_SEARCH_RESULTS,
+      linkLimit: MAX_LINK_STUBS,
+      userId,
+      replyTo,
+    }),
   )
   if (reply.type !== 'conceptSearchResult') throw new Error(reply.error)
+  ctx.log.info('memory recall search result', {
+    userId,
+    query: parsed.value.query,
+    ...searchResultLogPayload(reply.concepts),
+  })
 
-  if (parsed.mode === 'query' && state.seedRecordIds.length === 0) {
+  if (state.seedRecordIds.length === 0) {
     state.seedRecordIds = unique(reply.concepts.flatMap(concept => concept.recordIds)).slice(0, MAX_RECORDS_READ)
   }
 
+  return searchReplyText(reply.concepts)
+}
+
+const runMemoryExpand = async (
+  state: MemoryRecallWorkerState,
+  userId: string,
+  rawArgs: string,
+  ctx: ActorContext<MemoryRecallMsg>,
+): Promise<string> => {
+  const parsed = parseToolArgs<{ nodeId: number }>(rawArgs, (p) => {
+    const nodeId = typeof p.nodeId === 'number' && Number.isFinite(p.nodeId) ? p.nodeId : undefined
+    return nodeId !== undefined ? { nodeId } : null
+  }, 'Missing nodeId argument')
+  if (!parsed.ok) throw new Error(parsed.error)
+
+  ctx.log.info('memory recall expand arguments', {
+    userId,
+    nodeId: parsed.value.nodeId,
+    limit: MAX_EXPANSION_RESULTS,
+    linkLimit: MAX_LINK_STUBS,
+  })
+
+  const reply = await ask<KgraphMsg, ConceptSearchReply>(
+    state.kgraphRef,
+    (replyTo) => ({
+      type: 'conceptExpand',
+      nodeId: parsed.value.nodeId,
+      limit: MAX_EXPANSION_RESULTS,
+      linkLimit: MAX_LINK_STUBS,
+      userId,
+      replyTo,
+    }),
+  )
+  if (reply.type !== 'conceptSearchResult') throw new Error(reply.error)
+  ctx.log.info('memory recall expand result', {
+    userId,
+    nodeId: parsed.value.nodeId,
+    ...searchResultLogPayload(reply.concepts),
+  })
   return searchReplyText(reply.concepts)
 }
 
@@ -185,6 +234,7 @@ const recallTools = (state: MemoryRecallWorkerState): ToolCollection => {
   const ref = state.selfRef as unknown as ActorRef<ToolMsg>
   return {
     [memorySearchTool.name]: { name: memorySearchTool.name, schema: memorySearchTool.schema, ref },
+    [memoryExpandTool.name]: { name: memoryExpandTool.name, schema: memoryExpandTool.schema, ref },
     [memoryReadTool.name]: { name: memoryReadTool.name, schema: memoryReadTool.schema, ref },
   }
 }
@@ -232,8 +282,9 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
   }
 
   const handleLocalTool = (state: MemoryRecallWorkerState, msg: Extract<MemoryRecallMsg, { type: 'invoke' }>, ctx: ActorContext<MemoryRecallMsg>): ActorResult<MemoryRecallMsg, MemoryRecallWorkerState> => {
-    const run = msg.toolName === memorySearchTool.name
-      ? runMemorySearch(state, msg.userId, msg.arguments)
+    const run =
+      msg.toolName === memorySearchTool.name ? runMemorySearch(state, msg.userId, msg.arguments, ctx)
+      : msg.toolName === memoryExpandTool.name ? runMemoryExpand(state, msg.userId, msg.arguments, ctx)
       : runMemoryRead(state, msg.userId, msg.arguments)
     ctx.pipeToSelf(
       run,
@@ -289,7 +340,7 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
     const m = msg as MemoryRecallMsg
 
     if (m.type === 'invoke') {
-      if (m.toolName === memorySearchTool.name || m.toolName === memoryReadTool.name) {
+      if (m.toolName === memorySearchTool.name || m.toolName === memoryExpandTool.name || m.toolName === memoryReadTool.name) {
         return handleLocalTool(state, m, ctx)
       }
       if (state.loop.phase !== 'idle') return { state, stash: true }

@@ -47,20 +47,19 @@
     "memory": {
       "workPath": "workspace/benchmark",
       "kgraph": {
-        "embeddingModel": "perplexity/pplx-embed-v1-4b",
-        "embeddingDimensions": 1024,
+        "embeddingModel": "google/gemini-embedding-2",
+        "embeddingDimensions": 768,
         "cosineSimilarityThreshold": 0.6
       },
       "system": {
-        "model": "deepseek/deepseek-v4-flash",
-        "consolidationIntervalMs": 60000,
-        "contextIntervalMs": 3600000
+        "model": "inception/mercury-2",
+        "consolidationIntervalMs": 60000
       }
     }
   },
   "dataset": "benchmarks/datasets/family-facts.json",
   "judge": {
-    "model": "deepseek/deepseek-v4-flash",
+    "model": "inception/mercury-2",
     "systemPrompt": "You are an impartial judge. Compare the GROUND TRUTH with the ASSISTANT REPLY for the given QUESTION. If the assistant reply contains the factual information from the ground truth, score it 1. If it is partially correct but misses key details, score 0.5. If it is wrong or says I do not know, score 0. Output ONLY JSON: { \"score\": number, \"reason\": \"string\" }"
   }
 }

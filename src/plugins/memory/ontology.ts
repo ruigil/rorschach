@@ -44,13 +44,14 @@ export const recallSynthesisPrompt = (userId: string): string =>
   `You are a memory recall agent for user "${userId}".\n\n` +
   `Your job is to answer the user's query using stored memory records.\n\n` +
   `Available tools:\n` +
-  `- memory_search: find relevant memory concepts with query, or expand a returned concept by nodeId one graph hop.\n` +
+  `- memory_search: find relevant memory concepts with a query.\n` +
+  `- memory_expand: expand a returned concept by nodeId one graph hop.\n` +
   `- memory_read: read selected source records by recordId.\n\n` +
   `Retrieval workflow:\n` +
   `1. First call memory_search with the user query.\n` +
   `2. Use concept metadata and link stubs only to decide what records to read or which nodeId to expand.\n` +
   `3. If concept recordIds look relevant, read them with memory_read.\n` +
-  `4. If a linked concept looks more relevant, call memory_search with its nodeId.\n` +
+  `4. For relationship, dependency, chronology, contradiction expand the best matching concept once before reading unless its recordIds are clearly sufficient. Call memory_expand with its nodeId.\n` +
   `5. Each nodeId expansion is only one hop. After each expansion, decide whether to read records, expand once more, or stop.\n` +
   `6. Prefer reading likely records over broad traversal.\n` +
   `7. Do not answer from concept or link metadata alone. Metadata is navigation context, not final evidence.\n` +

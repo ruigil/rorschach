@@ -44,6 +44,14 @@ type ConceptVectorMatch = {
 
 type CreatedGraphNode = { name: string; nodeId: number }
 
+type WeakConceptTarget = {
+  concept: MemorySearchConcept
+  reason: LinkConsolidationReason
+  incomingLinks: number
+  outgoingLinks: number
+  totalLinks: number
+}
+
 // ─── State ───
 
 export type KgraphState = {
@@ -309,46 +317,42 @@ const fetchNeighborConcepts = async (
   return concepts
 }
 
-type ConceptDegree = {
-  incoming: number
-  outgoing: number
-  total: number
-  weakConfidenceLinks: number
-}
-
-const conceptDegree = async (db: GrafeoDB, nodeId: number): Promise<ConceptDegree> => {
-  const [outgoingRows, incomingRows] = await Promise.all([
-    db.execute(`MATCH (n:Concept)-[r]->() WHERE id(n) = ${nodeId} RETURN r.confidence AS confidence`),
-    db.execute(`MATCH (n:Concept)<-[r]-() WHERE id(n) = ${nodeId} RETURN r.confidence AS confidence`),
-  ])
-  const outgoing = outgoingRows.toArray() as Array<{ confidence?: unknown }>
-  const incoming = incomingRows.toArray() as Array<{ confidence?: unknown }>
-  const links = [...outgoing, ...incoming]
+const weakConceptTargetFromRow = (row: any): WeakConceptTarget | null => {
+  const concept = conceptFromRow(row)
+  if (!concept) return null
   return {
-    incoming: incoming.length,
-    outgoing: outgoing.length,
-    total: links.length,
-    weakConfidenceLinks: links.filter(row => typeof row.confidence !== 'number' || row.confidence < 0.6).length,
+    concept,
+    reason: 'orphan',
+    incomingLinks: typeof row._incoming === 'number' ? row._incoming : 0,
+    outgoingLinks: typeof row._outgoing === 'number' ? row._outgoing : 0,
+    totalLinks: typeof row._total === 'number' ? row._total : 0,
   }
 }
 
-const consolidationReason = (degree: ConceptDegree): LinkConsolidationReason | null => {
-  if (degree.total === 0) return 'orphan'
-  if (degree.incoming === 0) return 'no_incoming'
-  if (degree.total <= 1) return 'low_degree'
-  if (degree.weakConfidenceLinks === degree.total) return 'weak_links'
-  return null
-}
-
-const fetchAllConcepts = async (
+const fetchWeakConceptTargets = async (
   db: GrafeoDB,
-  scanLimit: number,
-): Promise<MemorySearchConcept[]> => {
-  const result = await db.execute(`MATCH (n:Concept) RETURN ${conceptReturnClause} LIMIT ${Math.max(1, scanLimit)}`)
-  const concepts = (result.toArray() as any[])
-    .map(conceptFromRow)
-    .filter((concept): concept is MemorySearchConcept => concept !== null)
-  return attachLinkStubs(db, concepts, 20)
+  limit: number,
+  linkLimit: number,
+): Promise<WeakConceptTarget[]> => {
+  const result = await db.execute(`
+    MATCH (n:Concept)
+    OPTIONAL MATCH (n)-[r]-()
+    OPTIONAL MATCH (n)<-[incoming]-()
+    OPTIONAL MATCH (n)-[outgoing]->()
+    WITH n,
+      count(DISTINCT r) AS total,
+      count(DISTINCT incoming) AS incomingCount,
+      count(DISTINCT outgoing) AS outgoingCount
+    WHERE total = 0
+    RETURN ${conceptReturnClause}, total AS _total, incomingCount AS _incoming, outgoingCount AS _outgoing, "orphan" AS _reason
+    ORDER BY _total ASC, _incoming ASC, n.name
+    LIMIT ${Math.max(1, limit)}
+  `)
+  const targets = (result.toArray() as any[])
+    .map(weakConceptTargetFromRow)
+    .filter((target): target is WeakConceptTarget => target !== null)
+  const concepts = await attachLinkStubs(db, targets.map(target => target.concept), linkLimit)
+  return targets.map((target, index) => ({ ...target, concept: concepts[index]! }))
 }
 
 const candidateSearchText = (concept: MemorySearchConcept): string => [
@@ -375,24 +379,9 @@ const fetchLinkCandidates = async (
   anchorsPerTarget: number,
   linkLimit: number,
 ): Promise<LinkConsolidationCandidate[]> => {
-  const scanLimit = Math.max(limit * 8, 32)
-  const concepts = await fetchAllConcepts(entry.db, scanLimit)
-  const weakTargets: Array<{ concept: MemorySearchConcept; degree: ConceptDegree; reason: LinkConsolidationReason }> = []
-
-  for (const concept of concepts) {
-    const degree = await conceptDegree(entry.db, concept.nodeId)
-    const reason = consolidationReason(degree)
-    if (reason) weakTargets.push({ concept, degree, reason })
-  }
-
-  weakTargets.sort((a, b) => {
-    if (a.degree.total !== b.degree.total) return a.degree.total - b.degree.total
-    if (a.degree.incoming !== b.degree.incoming) return a.degree.incoming - b.degree.incoming
-    return a.concept.name.localeCompare(b.concept.name)
-  })
-
+  const weakTargets = await fetchWeakConceptTargets(entry.db, limit, linkLimit)
   const candidates: LinkConsolidationCandidate[] = []
-  for (const target of weakTargets.slice(0, limit)) {
+  for (const target of weakTargets) {
     const linkedNodeIds = new Set(target.concept.links.map(link => link.nodeId))
     linkedNodeIds.add(target.concept.nodeId)
     const searchResults = await searchConcepts(
@@ -431,7 +420,7 @@ const readConceptByName = async (
   name: string,
 ): Promise<{ nodeId: number; recordIds: string[] } | null> => {
   const result = await db.execute(
-    `MATCH (n:Concept {name:${JSON.stringify(name)}}) RETURN id(n) AS nodeId, n.recordIds AS recordIds LIMIT 1`,
+    `MATCH (n:Concept {name:${JSON.stringify(name)}) RETURN id(n) AS nodeId, n.recordIds AS recordIds LIMIT 1`,
   )
   const row = result.toArray()[0] as { nodeId?: number; recordIds?: unknown } | undefined
   if (!row || typeof row.nodeId !== 'number') return null
@@ -643,7 +632,15 @@ export const Kgraph = (
       const llmRef = state.llmRef
       ctx.log.info('kgraph linkCandidates', { userId, limit, anchorsPerTarget })
       ctx.pipeToSelf(
-        fetchLinkCandidates(entry, llmRef, embedding, cosineSimilarityThreshold, limit, anchorsPerTarget, linkLimit),
+        fetchLinkCandidates(
+          entry,
+          llmRef,
+          embedding,
+          cosineSimilarityThreshold,
+          limit,
+          anchorsPerTarget,
+          linkLimit,
+        ),
         (candidates) => ({ type: '_linkCandidatesDone' as const, candidates, replyTo }),
         (error) => ({ type: '_linkCandidatesErr' as const, error: String(error), replyTo }),
       )

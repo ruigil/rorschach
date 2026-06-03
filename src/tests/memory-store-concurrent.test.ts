@@ -65,7 +65,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
               msg.replyTo.send({
                 type: 'llmToolCalls',
                 requestId: msg.requestId,
-                calls: [{ id: 'expand-1', name: 'memory_search', arguments: JSON.stringify({ nodeId }) }],
+                calls: [{ id: 'expand-1', name: 'memory_expand', arguments: JSON.stringify({ nodeId }) }],
                 usage: { promptTokens: 1, completionTokens: 1 },
               })
               return { state }
