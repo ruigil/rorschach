@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import type { ActorDef } from '../../system/index.ts'
 import { onMessage } from '../../system/index.ts'
+import type { MessageAttachment } from '../../types/events.ts'
 import type { MemoryRecord, MemoryRecordMeta, MemoryRecordsMsg } from './types.ts'
 
 type MemoryRecordsState = {
@@ -17,6 +18,7 @@ const serializeRecord = (meta: MemoryRecordMeta, content: string): string =>
   `recordId: ${yamlString(meta.recordId)}\n` +
   `createdAt: ${yamlString(meta.createdAt)}\n` +
   `${meta.title ? `title: ${yamlString(meta.title)}\n` : ''}` +
+  `${meta.attachments && meta.attachments.length > 0 ? `attachments: ${JSON.stringify(meta.attachments)}\n` : ''}` +
   `---\n\n` +
   content
 
@@ -32,8 +34,12 @@ const parseRecord = (raw: string, fallbackRecordId: string): MemoryRecord => {
 
   const frontmatter = match[1]!
   const body = match[2]!.replace(/^\n/, '')
-  const get = (key: string): string | undefined => {
+  const getRaw = (key: string): string | undefined => {
     const found = frontmatter.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))?.[1]?.trim()
+    return found || undefined
+  }
+  const get = (key: string): string | undefined => {
+    const found = getRaw(key)
     if (!found) return undefined
     try {
       return JSON.parse(found) as string
@@ -41,11 +47,22 @@ const parseRecord = (raw: string, fallbackRecordId: string): MemoryRecord => {
       return found
     }
   }
+  const attachments = (() => {
+    const found = getRaw('attachments')
+    if (!found) return undefined
+    try {
+      const parsed = JSON.parse(found) as unknown
+      return Array.isArray(parsed) ? parsed as MessageAttachment[] : undefined
+    } catch {
+      return undefined
+    }
+  })()
 
   return {
     recordId: get('recordId') ?? fallbackRecordId,
     createdAt: get('createdAt') ?? '',
     title: get('title'),
+    attachments,
     content: body,
   }
 }
@@ -55,11 +72,13 @@ const createRecord = async (
   content: string,
   workPath: string,
   title?: string,
+  attachments?: MessageAttachment[],
 ): Promise<MemoryRecord> => {
   const meta: MemoryRecordMeta = {
     recordId: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
     title: title?.trim() || undefined,
+    attachments: attachments && attachments.length > 0 ? attachments : undefined,
   }
 
   await mkdir(recordsDir(userId, workPath), { recursive: true })
@@ -88,7 +107,7 @@ export const MemoryRecords = (workPath: string): ActorDef<MemoryRecordsMsg, Memo
   handler: onMessage<MemoryRecordsMsg, MemoryRecordsState>({
     create: (state, msg, ctx) => {
       ctx.pipeToSelf(
-        createRecord(msg.userId, msg.content, state.workPath, msg.title),
+        createRecord(msg.userId, msg.content, state.workPath, msg.title, msg.attachments),
         (record) => ({ type: '_created' as const, replyTo: msg.replyTo, record }),
         (error) => ({ type: '_createErr' as const, replyTo: msg.replyTo, error: String(error) }),
       )

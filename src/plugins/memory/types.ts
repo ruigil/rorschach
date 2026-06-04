@@ -3,6 +3,7 @@ import type { LoopMsg } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 import type { ContextTurn } from '../../types/agents.ts'
+import type { MessageAttachment } from '../../types/events.ts'
 
 // ─── Graph dump types ───
 
@@ -13,9 +14,10 @@ export type KgraphGraph = { nodes: KgraphNode[]; edges: KgraphEdge[] }
 // ─── Memory record types ───
 
 export type MemoryRecordMeta = {
-  recordId:  string
-  createdAt: string
-  title?:    string
+  recordId:     string
+  createdAt:    string
+  title?:       string
+  attachments?: MessageAttachment[]
 }
 
 export type MemoryRecord = MemoryRecordMeta & {
@@ -165,7 +167,7 @@ export type MemorySupervisorMsg =
 
 export type MemoryRecordsMsg =
   | ToolInvokeMsg
-  | { type: 'create'; content: string; title?: string; userId: string; replyTo: ActorRef<MemoryRecord | { error: string }> }
+  | { type: 'create'; content: string; title?: string; attachments?: MessageAttachment[]; userId: string; replyTo: ActorRef<MemoryRecord | { error: string }> }
   | { type: 'readMany'; recordIds: string[]; userId: string; replyTo: ActorRef<MemoryRecord[]> }
   | { type: '_created'; replyTo: ActorRef<MemoryRecord | { error: string }>; record: MemoryRecord }
   | { type: '_createErr'; replyTo: ActorRef<MemoryRecord | { error: string }>; error: string }

@@ -83,6 +83,22 @@ describe('appendMessage', () => {
     expect(stored[0].text).toBe('msg-5')
     expect(stored[9].text).toBe('msg-14')
   })
+
+  test('persists attachment metadata without payload data', () => {
+    appendMessage({
+      id: '1',
+      role: 'user',
+      text: 'with attachment',
+      attachments: [
+        { kind: 'image', data: 'data:image/png;base64,large', url: 'blob:local', name: 'screen.png' },
+      ],
+      timestamp: Date.now(),
+    })
+
+    const stored = JSON.parse(localStorage.getItem('rorschach.lastMessages')!)
+    expect(stored[0].attachments).toEqual([{ kind: 'image', name: 'screen.png' }])
+    expect(store.get('messages')[0]!.attachments![0]!.data).toBe('data:image/png;base64,large')
+  })
 })
 
 describe('updateActiveStream', () => {

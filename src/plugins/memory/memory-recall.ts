@@ -3,6 +3,7 @@ import { agentLoop, ask, idleLoopState, type LoopState } from '../../system/inde
 import { defineTool, parseToolArgs } from '../../system/index.ts'
 import type { ToolCollection, ToolMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
+import type { MessageAttachment } from '../../types/events.ts'
 import type {
   ConceptSearchReply,
   KgraphMsg,
@@ -82,8 +83,47 @@ const sourcePayload = (sources: MemoryRecord[]) =>
     recordId: source.recordId,
     title: source.title,
     createdAt: source.createdAt,
+    attachments: source.attachments,
     content: source.content,
   }))
+
+const toPublicMediaUrl = (url: string): string => {
+  if (
+    url.startsWith('http://') ||
+    url.startsWith('https://') ||
+    url.startsWith('data:') ||
+    url.startsWith('blob:') ||
+    url.startsWith('inbound/') ||
+    url.startsWith('generated/') ||
+    url.startsWith('/inbound/') ||
+    url.startsWith('/generated/')
+  ) {
+    return url
+  }
+
+  const marker = '/workspace/media/'
+  const index = url.indexOf(marker)
+  return index >= 0 ? url.slice(index + marker.length) : url
+}
+
+const toPublicMediaAttachment = (attachment: MessageAttachment): MessageAttachment => ({
+  ...attachment,
+  url: toPublicMediaUrl(attachment.url),
+})
+
+const sourceAttachments = (sources: MemoryRecord[]): MessageAttachment[] | undefined => {
+  const seen = new Set<string>()
+  const attachments: MessageAttachment[] = []
+  for (const source of sources) {
+    for (const attachment of source.attachments ?? []) {
+      const publicAttachment = toPublicMediaAttachment(attachment)
+      if (seen.has(publicAttachment.url)) continue
+      seen.add(publicAttachment.url)
+      attachments.push(publicAttachment)
+    }
+  }
+  return attachments.length > 0 ? attachments : undefined
+}
 
 const buildUserPrompt = (query: string, sources: MemoryRecord[]): string => {
   const sourceBlocks = sources.map((source, index) =>
@@ -323,6 +363,7 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
             answer: state.sources.length > 0 ? (finalText || '(no result)') : 'No relevant memory sources were found.',
             sources: sourcePayload(state.sources),
           }),
+          attachments: sourceAttachments(state.sources),
         },
       })
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })

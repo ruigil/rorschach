@@ -108,12 +108,21 @@ export class RAttachments extends RorschachBase {
         </div>
       `;
     } else if (a.kind === 'pdf') {
+      if (src) {
         return html`
-            <div class="attachment attachment-pdf">
-              ${this.renderIcon('file')}
-              <span>${a.name || 'document.pdf'}</span>
-            </div>
+          <a href="${src}" target="_blank" rel="noopener noreferrer" class="attachment attachment-pdf">
+            ${this.renderIcon('file')}
+            <span>${a.name || 'document.pdf'}</span>
+          </a>
         `;
+      }
+
+      return html`
+        <div class="attachment attachment-pdf">
+          ${this.renderIcon('file')}
+          <span>${a.name || 'document.pdf'}</span>
+        </div>
+      `;
     } else {
       return html`
         <div class="attachment attachment-file">

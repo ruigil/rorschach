@@ -1,4 +1,5 @@
 import { describe, test, expect } from 'bun:test'
+import { mkdir } from 'node:fs/promises'
 import { AgentSystem, ask } from '../system/index.ts'
 import {
   MemorySupervisor,
@@ -10,6 +11,7 @@ import type { ActorRef } from '../system/index.ts'
 import type { KgraphMsg, MemoryConcept, MemoryRecord, MemoryRecordsMsg } from '../plugins/memory/types.ts'
 import { MemoryRecords } from '../plugins/memory/memory-records.ts'
 import { Kgraph } from '../plugins/memory/kgraph.ts'
+import type { MessageAttachment } from '../types/events.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 const tmpMemory = () => `/tmp/memory-records-test-${crypto.randomUUID()}`
@@ -33,6 +35,65 @@ const spawnMemoryDeps = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
   }, { state: null }) as ActorRef<KgraphMsg>
   return { recordsRef, kgraphRef }
 }
+
+describe('Memory Records', () => {
+  test('stores attachment metadata in frontmatter and preserves markdown body bytes', async () => {
+    const system = await AgentSystem()
+    const workPath = tmpMemory()
+    const userId = 'test-user'
+    const content = '# Field Note\n\nBody stays exactly as typed.\n'
+    const attachments: MessageAttachment[] = [{
+      kind: 'image',
+      url: '/workspace/media/inbound/photo.png',
+      name: 'photo.png',
+      alt: 'whiteboard photo',
+      mimeType: 'image/png',
+    }]
+
+    const recordsRef = system.spawn('records', MemoryRecords(workPath)) as ActorRef<MemoryRecordsMsg>
+    const created = await ask<MemoryRecordsMsg, MemoryRecord | { error: string }>(
+      recordsRef,
+      (replyTo) => ({ type: 'create', content, attachments, userId, replyTo }),
+    )
+    if ('error' in created) throw new Error(created.error)
+
+    const raw = await Bun.file(`${workPath}/${userId}/records/${created.recordId}.md`).text()
+    expect(raw).toContain(`attachments: ${JSON.stringify(attachments)}\n`)
+    expect(raw.split('\n---\n\n')[1]).toBe(content)
+
+    const records = await ask<MemoryRecordsMsg, MemoryRecord[]>(
+      recordsRef,
+      (replyTo) => ({ type: 'readMany', recordIds: [created.recordId], userId, replyTo }),
+    )
+    expect(records[0]).toEqual(expect.objectContaining({ attachments, content }))
+
+    await system.shutdown()
+  })
+
+  test('reads old records without attachment frontmatter', async () => {
+    const system = await AgentSystem()
+    const workPath = tmpMemory()
+    const userId = 'test-user'
+    const recordId = 'old-record'
+    const content = 'An old body without attachment metadata.\n'
+
+    await mkdir(`${workPath}/${userId}/records`, { recursive: true })
+    await Bun.write(
+      `${workPath}/${userId}/records/${recordId}.md`,
+      `---\nrecordId: "${recordId}"\ncreatedAt: "2026-01-01T00:00:00.000Z"\n---\n\n${content}`,
+    )
+
+    const recordsRef = system.spawn('records', MemoryRecords(workPath)) as ActorRef<MemoryRecordsMsg>
+    const records = await ask<MemoryRecordsMsg, MemoryRecord[]>(
+      recordsRef,
+      (replyTo) => ({ type: 'readMany', recordIds: [recordId], userId, replyTo }),
+    )
+
+    expect(records[0]).toEqual(expect.objectContaining({ recordId, attachments: undefined, content }))
+
+    await system.shutdown()
+  })
+})
 
 describe('Memory Store Actor (Supervisor/Worker)', () => {
   test('recall can expand a concept nodeId before reading records', async () => {
@@ -169,6 +230,24 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     const system = await AgentSystem()
     const workPath = tmpMemory()
     const markdown = '# Neovim Preference\n\nThe user prefers Neovim for code editing.\n'
+    const storedAttachmentUrl = '/home/rigel/rorschach/workspace/media/inbound/neovim.png'
+    const storedAttachments: MessageAttachment[] = [{
+      kind: 'image',
+      url: storedAttachmentUrl,
+      name: 'neovim.png',
+      alt: 'Neovim preference screenshot',
+      mimeType: 'image/png',
+    }]
+    const recalledAttachments: MessageAttachment[] = [{
+      ...storedAttachments[0]!,
+      url: 'inbound/neovim.png',
+    }]
+    const attachmentsWithData: MessageAttachment[] = [{
+      ...storedAttachments[0]!,
+      data: 'data:image/png;base64,not-for-memory',
+    }]
+    const extractionUserContents: string[] = []
+    const readPayloads: Array<{ records?: Array<{ recordId: string; attachments?: MessageAttachment[] }> }> = []
 
     const mockLlmDef = {
       handler: (state: any, msg: LlmProviderMsg) => {
@@ -197,11 +276,13 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
               })
               return { state }
             }
+            readPayloads.push(payload)
             msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'The user prefers Neovim for code editing.' })
             msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
             return { state }
           }
 
+          extractionUserContents.push(String(msg.messages[1]?.content ?? ''))
           const text = JSON.stringify({
               title: 'Neovim Preference',
               concepts: [
@@ -256,7 +337,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
       (replyTo) => ({
         type: 'invoke',
         toolName: 'store_memory',
-        arguments: JSON.stringify({ content: markdown }),
+        arguments: JSON.stringify({ content: markdown, attachments: attachmentsWithData }),
         replyTo,
         userId: 'test-user',
       }),
@@ -266,10 +347,13 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     expect(reply.type).toBe('toolResult')
     const result = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text) as { recordId: string; indexedConcepts: number }
     expect(result.indexedConcepts).toBe(2)
+    expect(extractionUserContents).toEqual([markdown])
 
     const stored = await Bun.file(`${workPath}/test-user/records/${result.recordId}.md`).text()
     expect(stored).toStartWith('---\n')
     expect(stored).toContain(`recordId: "${result.recordId}"`)
+    expect(stored).toContain(`attachments: ${JSON.stringify(storedAttachments)}\n`)
+    expect(stored).not.toContain('not-for-memory')
     expect(stored).toContain('\n---\n\n' + markdown)
 
     const graph = await ask<KgraphMsg, any>(
@@ -288,6 +372,29 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     expect(edge.properties.recordIds).toBeUndefined()
     expect(edge.properties.confidence).toBe(0.8)
 
+    const duplicateRecord = await ask<MemoryRecordsMsg, MemoryRecord | { error: string }>(
+      recordsRef,
+      (replyTo) => ({
+        type: 'create',
+        content: 'The Neovim preference screenshot is archived with the note.',
+        attachments: storedAttachments,
+        userId: 'test-user',
+        replyTo,
+      }),
+    )
+    if ('error' in duplicateRecord) throw new Error(duplicateRecord.error)
+    const duplicateConcept: MemoryConcept = {
+      name: 'Neovim Preference Screenshot',
+      kind: 'fact',
+      description: 'The Neovim preference screenshot is archived with the note.',
+      topics: ['editor', 'preference'],
+    }
+    const duplicateConceptReply = await ask<KgraphMsg, { type: 'conceptUpsertResult'; nodeId: number } | { type: 'conceptUpsertError'; error: string }>(
+      kgraphRef,
+      (replyTo) => ({ type: 'upsertConcept', concept: duplicateConcept, recordId: duplicateRecord.recordId, userId: 'test-user', replyTo }),
+    )
+    expect(duplicateConceptReply.type).toBe('conceptUpsertResult')
+
     const recallReply = await ask<ToolInvokeMsg, ToolReply>(
       storeRef as unknown as ActorRef<ToolInvokeMsg>,
       (replyTo) => ({
@@ -300,11 +407,17 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
       { timeoutMs: 5_000 },
     )
     expect(recallReply.type).toBe('toolResult')
-    const recalled = JSON.parse((recallReply as { type: 'toolResult'; result: { text: string } }).result.text) as { answer: string; sources: Array<{ recordId: string; content: string }> }
+    const toolResult = recallReply as { type: 'toolResult'; result: { text: string; attachments?: MessageAttachment[] } }
+    const recalled = JSON.parse(toolResult.result.text) as { answer: string; sources: Array<{ recordId: string; content: string; attachments?: MessageAttachment[] }> }
     expect(recalled.answer).toContain('Neovim')
-    expect(recalled.sources).toEqual([
-      expect.objectContaining({ recordId: result.recordId, content: markdown }),
-    ])
+    expect(readPayloads.at(-1)?.records).toEqual(expect.arrayContaining([
+      expect.objectContaining({ recordId: result.recordId, attachments: storedAttachments }),
+    ]))
+    expect(recalled.sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ recordId: result.recordId, content: markdown, attachments: storedAttachments }),
+      expect.objectContaining({ recordId: duplicateRecord.recordId, attachments: storedAttachments }),
+    ]))
+    expect(toolResult.result.attachments).toEqual(recalledAttachments)
 
     await system.shutdown()
   })

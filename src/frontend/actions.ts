@@ -23,12 +23,19 @@ export function addLog(log: Partial<LogEvent> & { message: string }) {
   store.set('logs', [entry, ...currentLogs].slice(0, 500));
 }
 
+function toPersistedMessage(msg: Message): Message {
+  return {
+    ...msg,
+    attachments: msg.attachments?.map(({ kind, name }) => ({ kind, name })),
+  };
+}
+
 export function appendMessage(msg: Message) {
   const currentMessages = store.get('messages');
   const nextMessages = [...currentMessages, msg];
   store.set('messages', nextMessages);
   if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('rorschach.lastMessages', JSON.stringify(nextMessages.slice(-10)));
+    localStorage.setItem('rorschach.lastMessages', JSON.stringify(nextMessages.slice(-10).map(toPersistedMessage)));
   }
 }
 

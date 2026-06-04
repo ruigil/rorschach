@@ -2,6 +2,7 @@ import type { ActorDef, ActorContext, ActorRef, ActorResult } from '../../system
 import { ask, onMessage, defineTool, parseToolArgs } from '../../system/index.ts'
 import type { ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
+import type { MessageAttachment, MessageAttachmentKind } from '../../types/events.ts'
 import {
   MEMORY_CONCEPT_KINDS,
   MEMORY_LINK_TYPES,
@@ -24,6 +25,21 @@ export const memoryStoreTool = defineTool('store_memory', 'Store a markdown memo
   properties: {
     content: { type: 'string', description: 'Markdown content to preserve verbatim as the physical memory record.' },
     topic:   { type: 'string', description: 'Optional topic hint for derived metadata.' },
+    attachments: {
+      type: 'array',
+      description: 'Optional attachment metadata to preserve with the memory record. Base64 data is ignored.',
+      items: {
+        type: 'object',
+        properties: {
+          kind:     { type: 'string', enum: ['image', 'audio', 'video', 'pdf', 'file'] },
+          url:      { type: 'string' },
+          name:     { type: 'string' },
+          alt:      { type: 'string' },
+          mimeType: { type: 'string' },
+        },
+        required: ['kind', 'url'],
+      },
+    },
   },
   required: ['content'],
 })
@@ -83,6 +99,29 @@ const normalizedLinkType = (value: unknown): MemoryLinkType | null => {
   if (typeof value !== 'string') return null
   const type = value.trim().toUpperCase()
   return (MEMORY_LINK_TYPES as readonly string[]).includes(type) ? type as MemoryLinkType : null
+}
+
+const ATTACHMENT_KINDS: MessageAttachmentKind[] = ['image', 'audio', 'video', 'pdf', 'file']
+
+const normalizeAttachment = (value: unknown): MessageAttachment | null => {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Record<string, unknown>
+  const kind = typeof raw.kind === 'string' && (ATTACHMENT_KINDS as string[]).includes(raw.kind)
+    ? raw.kind as MessageAttachmentKind
+    : null
+  const url = typeof raw.url === 'string' ? raw.url : ''
+  if (!kind || !url) return null
+  const attachment: MessageAttachment = { kind, url }
+  if (typeof raw.name === 'string') attachment.name = raw.name
+  if (typeof raw.alt === 'string') attachment.alt = raw.alt
+  if (typeof raw.mimeType === 'string') attachment.mimeType = raw.mimeType
+  return attachment
+}
+
+const normalizeAttachments = (value: unknown): MessageAttachment[] | undefined => {
+  if (!Array.isArray(value)) return undefined
+  const attachments = value.map(normalizeAttachment).filter((a): a is MessageAttachment => a !== null)
+  return attachments.length > 0 ? attachments : undefined
 }
 
 const normalizeConcept = (value: unknown): MemoryConcept | null => {
@@ -193,12 +232,13 @@ export const MemoryStoreWorker = (parent: ActorRef<MemorySupervisorMsg>, options
 
     handler: onMessage<MemoryStoreMsg, MemoryStoreWorkerState>({
       invoke: (state, msg, ctx) => {
-        const parsed = parseToolArgs<{ content: string; topic?: string }>(
+        const parsed = parseToolArgs<{ content: string; topic?: string; attachments?: MessageAttachment[] }>(
           msg.arguments,
           (p) => {
             const content = typeof p.content === 'string' ? p.content : ''
             const topic = typeof p.topic === 'string' ? p.topic : undefined
-            return content ? { content, topic } : null
+            const attachments = normalizeAttachments(p.attachments)
+            return content ? { content, topic, attachments } : null
           },
           'Missing content argument',
         )
@@ -211,7 +251,7 @@ export const MemoryStoreWorker = (parent: ActorRef<MemorySupervisorMsg>, options
         ctx.pipeToSelf(
           ask<MemoryRecordsMsg, MemoryRecord | { error: string }>(
             state.recordsRef,
-            (replyTo) => ({ type: 'create', content: parsed.value.content, userId: msg.userId, replyTo }),
+            (replyTo) => ({ type: 'create', content: parsed.value.content, attachments: parsed.value.attachments, userId: msg.userId, replyTo }),
           ),
           (record) => 'error' in record
             ? ({ type: '_recordStoreErr' as const, replyTo: msg.replyTo, error: record.error })
