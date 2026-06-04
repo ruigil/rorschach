@@ -37,7 +37,6 @@ type ConceptVectorMatch = {
   recordIds: string[]
   topics: string[]
   aliases: string[]
-  evidence?: string
   eventTime?: string
   kind?: string
 }
@@ -120,7 +119,6 @@ const conceptFromVectorMatch = (match: ConceptVectorMatch): MemorySearchConcept 
     kind: match.kind,
     topics: match.topics,
     aliases: match.aliases,
-    evidence: match.evidence,
     eventTime: match.eventTime,
     recordIds: match.recordIds,
     links: [],
@@ -137,7 +135,6 @@ const conceptFromRow = (row: any): MemorySearchConcept | null => {
     kind: typeof row.kind === 'string' ? row.kind : undefined,
     topics: asStringArray(row.topics),
     aliases: asStringArray(row.aliases),
-    evidence: typeof row.evidence === 'string' ? row.evidence : undefined,
     eventTime: typeof row.eventTime === 'string' ? row.eventTime : undefined,
     recordIds: asStringArray(row.recordIds),
     links: [],
@@ -145,7 +142,7 @@ const conceptFromRow = (row: any): MemorySearchConcept | null => {
 }
 
 const conceptReturnClause =
-  'id(n) AS nodeId, n.name AS name, n.description AS description, n.recordIds AS recordIds, n.topics AS topics, n.aliases AS aliases, n.evidence AS evidence, n.eventTime AS eventTime, n.kind AS kind'
+  'id(n) AS nodeId, n.name AS name, n.description AS description, n.recordIds AS recordIds, n.topics AS topics, n.aliases AS aliases, n.eventTime AS eventTime, n.kind AS kind'
 
 const fetchLinkStubs = async (
   db: GrafeoDB,
@@ -210,7 +207,7 @@ const queryConceptVectors = async (
   const seedResult = await db.execute(`
     MATCH (n:Concept)
     WHERE cosine_similarity(n._embedding, ${vectorStr}) > ${cosineSimilarityThreshold}
-    RETURN id(n) AS nodeId, n.name AS name, n.description AS description, n.recordIds AS recordIds, n.topics AS topics, n.aliases AS aliases, n.evidence AS evidence, n.eventTime AS eventTime, n.kind AS kind, cosine_similarity(n._embedding, ${vectorStr}) AS score
+    RETURN id(n) AS nodeId, n.name AS name, n.description AS description, n.recordIds AS recordIds, n.topics AS topics, n.aliases AS aliases, n.eventTime AS eventTime, n.kind AS kind, cosine_similarity(n._embedding, ${vectorStr}) AS score
     ORDER BY score DESC
     LIMIT ${Math.max(1, limit)}
   `)
@@ -222,7 +219,6 @@ const queryConceptVectors = async (
     recordIds: asStringArray(row.recordIds),
     topics: asStringArray(row.topics),
     aliases: asStringArray(row.aliases),
-    evidence: typeof row.evidence === 'string' ? row.evidence : undefined,
     eventTime: typeof row.eventTime === 'string' ? row.eventTime : undefined,
     kind: typeof row.kind === 'string' ? row.kind : undefined,
   }))
@@ -361,7 +357,6 @@ const candidateSearchText = (concept: MemorySearchConcept): string => [
   concept.aliases?.length ? `aliases: ${concept.aliases.join(', ')}` : '',
   concept.description,
   concept.topics?.length ? `topics: ${concept.topics.join(', ')}` : '',
-  concept.evidence ? `evidence: ${concept.evidence}` : '',
 ].filter(Boolean).join('\n')
 
 const topicOverlap = (a: MemorySearchConcept, b: MemorySearchConcept): number => {
@@ -437,7 +432,6 @@ const conceptProperties = (
     description: concept.description,
     topics,
     aliases,
-    evidence: concept.evidence,
     eventTime: concept.eventTime,
     kind: concept.kind,
     recordIds,
@@ -453,7 +447,6 @@ const conceptEmbeddingText = (concept: MemoryConcept, properties: Record<string,
     aliases.length > 0 ? `aliases: ${aliases.join(', ')}` : '',
     `description: ${concept.description}`,
     topics.length > 0 ? `topics: ${topics.join(', ')}` : '',
-    concept.evidence ? `evidence: ${concept.evidence}` : '',
   ].filter(Boolean).join('\n')
 }
 

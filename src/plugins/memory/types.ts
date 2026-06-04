@@ -54,7 +54,6 @@ export type MemoryConcept = {
   description:  string
   topics:       string[]
   aliases?:     string[]
-  evidence?:    string
   eventTime?:   string
 }
 
@@ -81,7 +80,6 @@ export type MemorySearchConcept = {
   description: string
   topics?: string[]
   aliases?: string[]
-  evidence?: string
   eventTime?: string
   recordIds: string[]
   links: MemorySearchLinkStub[]

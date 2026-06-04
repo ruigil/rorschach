@@ -13,7 +13,6 @@ export const conceptExtractionPrompt = (userId: string, topic?: string): string 
     `      "description": "concise normalized retrieval description",\n` +
     `      "topics": ["lowercase-topic"],\n` +
     `      "aliases": ["alternate user phrasing"],\n` +
-    `      "evidence": "short source-grounded phrase or excerpt",\n` +
     `      "eventTime": "optional ISO 8601 timestamp"\n` +
     `    }\n` +
     `  ],\n` +

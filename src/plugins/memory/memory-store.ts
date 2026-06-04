@@ -97,7 +97,6 @@ const normalizeConcept = (value: unknown): MemoryConcept | null => {
     description,
     topics: Array.from(new Set(stringArray(raw.topics).map(t => t.toLowerCase()))),
     aliases: stringArray(raw.aliases),
-    evidence: typeof raw.evidence === 'string' && raw.evidence.trim() ? raw.evidence.trim() : undefined,
     eventTime: typeof raw.eventTime === 'string' && raw.eventTime.trim() ? raw.eventTime.trim() : undefined,
   }
 }

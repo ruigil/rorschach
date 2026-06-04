@@ -211,7 +211,6 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
                   description: 'The user prefers Neovim for code editing.',
                   topics: ['editor', 'preference'],
                   aliases: ['preferred editor', 'code editor'],
-                  evidence: 'prefers Neovim for code editing',
                 },
                 {
                   name: 'Code Editing',
@@ -283,12 +282,10 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     expect(concept.properties.kind).toBe('preference')
     expect(concept.properties.description).toBe('The user prefers Neovim for code editing.')
     expect(concept.properties.aliases).toEqual(['preferred editor', 'code editor'])
-    expect(concept.properties.evidence).toBe('prefers Neovim for code editing')
     expect(concept.properties.recordIds).toContain(result.recordId)
     const edge = graph.edges.find((e: any) => e.type === 'ABOUT')
     expect(edge).toBeTruthy()
     expect(edge.properties.recordIds).toBeUndefined()
-    expect(edge.properties.evidence).toBeUndefined()
     expect(edge.properties.confidence).toBe(0.8)
 
     const recallReply = await ask<ToolInvokeMsg, ToolReply>(

@@ -17,6 +17,13 @@ const LABEL_COLORS: Record<string, { stroke: string }> = {
 const NODE_BG = '#060e14';
 const DEFAULT_STROKE = '#1a3548';
 
+export const formatKgEdgeLabel = (edge: { type?: unknown, properties?: Record<string, unknown> }) => {
+  const type = typeof edge.type === 'string' && edge.type.length > 0 ? edge.type : 'link';
+  const confidence = edge.properties?.confidence;
+  if (typeof confidence !== 'number' || !Number.isFinite(confidence)) return type;
+  return `${type} c=${confidence.toFixed(2)}`;
+};
+
 @customElement('r-force-graph')
 export class RForceGraph extends RorschachBase {
   @property({ type: Object }) planData: any = null;
@@ -117,7 +124,7 @@ export class RForceGraph extends RorschachBase {
       .attr('marker-end', 'url(#kg-arrow)');
 
     const edgeLabel = g.append('g').selectAll('text').data(simEdges).enter().append('text')
-      .text((d: any) => d.type)
+      .text((d: any) => formatKgEdgeLabel(d))
       .attr('font-size', '9px').attr('fill', '#2a5468')
       .attr('text-anchor', 'middle').attr('font-family', 'var(--font-mono)')
       .attr('pointer-events', 'none');
