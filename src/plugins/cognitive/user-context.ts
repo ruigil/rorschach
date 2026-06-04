@@ -41,13 +41,15 @@ const buildSystemPrompt = (userId: string, currentContext: string): string =>
   `## Current Context\n` +
   `${currentContext || '(Empty)'}\n\n` +
   `## Goal\n` +
-  `Construct an updated user context summary by incorporating new information from the provided conversation turns.\n\n` +
+  `Construct a complete updated user context summary by merging the current context with new information from the provided conversation turns.\n\n` +
   `## Rules\n` +
-  `1. **Relevance** — Include only the most relevant and meaningful facts about the user (identity, work, goals, preferences, etc.).\n` +
-  `2. **Conciseness** — Keep the summary limited in size (maximum 10 paragraphs).\n` +
-  `3. **Recency** — When encountering conflicting information, prioritize the most recent data from the turns.\n` +
-  `4. **Objectivity** — Be specific and concrete. Do not speculate or pad. Write in third person, present tense.\n` +
-  `5. **Output** — Your response MUST be the summary and nothing else. No preamble, no commentary.`
+  `1. **Preservation** — Start from the current context as the baseline. Keep every still-valid fact from it, even when the new turns discuss a different topic.\n` +
+  `2. **Merge** — Add or refine durable facts found in the new turns. The output is the full merged summary, not a summary of only the new turns.\n` +
+  `3. **Relevance** — Include only the most relevant and meaningful facts about the user (identity, work, goals, preferences, family, plans, etc.).\n` +
+  `4. **Conciseness** — Keep the summary limited in size (maximum 10 paragraphs).\n` +
+  `5. **Recency** — When encountering conflicting information, prioritize the most recent data from the turns and remove the older conflicting fact.\n` +
+  `6. **Objectivity** — Be specific and concrete. Do not speculate or pad. Write in third person, present tense.\n` +
+  `7. **Output** — Your response MUST be the summary and nothing else. No preamble, no commentary.`
 
 const buildMessages = (userId: string, currentContext: string, turns: ContextTurn[]): ApiMessage[] => {
   const turnList = turns.map((t, i) => {
