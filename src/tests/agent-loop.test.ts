@@ -3,7 +3,7 @@ import { AgentSystem } from '../system/index.ts'
 import { agentLoop, type AgentLoopHandle, type LoopMsg, type LoopStartTurnParams, idleLoopState, type WithLoopState } from '../system/index.ts'
 import type { ActorDef, ActorContext, ActorRef, Interceptor } from '../system/index.ts'
 import type { LlmProviderMsg, LlmProviderReply, ApiMessage, TokenUsage } from '../types/llm.ts'
-import type { ToolMsg, ToolFinalReply, ToolSchema, ToolCollection } from '../types/tools.ts'
+import type { ToolMsg, ToolFinalReply, ToolReply, ToolSchema, ToolCollection } from '../types/tools.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -24,6 +24,7 @@ type TestState = WithLoopState & {
   streamEvents: Array<{ kind: 'text' | 'reasoning'; text: string }>
   toolCallsEvents: string[]
   toolResults: Array<{ name: string; reply: ToolFinalReply }>
+  toolPendingEvents: Array<{ toolName: string; toolCallId: string; jobId: string; placeholderText?: string }>
   batchHistory: ApiMessage[][]
   llmRef: ActorRef<LlmProviderMsg> | null
   tools: ToolCollection
@@ -36,6 +37,7 @@ const emptyState = (): TestState => ({
   streamEvents: [],
   toolCallsEvents: [],
   toolResults: [],
+  toolPendingEvents: [],
   batchHistory: [],
   llmRef: null,
   tools: {},
@@ -47,6 +49,16 @@ const SEARCH_SCHEMA: ToolSchema = {
 }
 
 const makeToolMock = (name: string, result: ToolFinalReply): ActorDef<ToolMsg, null> => ({
+  initialState: null,
+  handler: (state, msg) => {
+    if (msg.type === 'invoke' && msg.toolName === name) {
+      msg.replyTo.send(result)
+    }
+    return { state }
+  },
+})
+
+const makeImmediateToolMock = (name: string, result: ToolReply): ActorDef<ToolMsg, null> => ({
   initialState: null,
   handler: (state, msg) => {
     if (msg.type === 'invoke' && msg.toolName === name) {
@@ -262,7 +274,7 @@ describe('AgentLoop: full integration', () => {
     await system.shutdown()
   })
 
-  test('tool turn: stream → toolCalls → toolResult → done', async () => {
+	  test('tool turn: stream → toolCalls → toolResult → done', async () => {
     const system = await AgentSystem()
     const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
@@ -340,10 +352,78 @@ describe('AgentLoop: full integration', () => {
     expect(completions.length).toBe(1)
     expect(completions[0]!.log).toContain('complete')
 
-    await system.shutdown()
-  })
+	    await system.shutdown()
+	  })
 
-  test('unknown tool produces synthetic error and loop continues', async () => {
+	  test('pending tool suspends the turn without sending a fake tool result to the LLM', async () => {
+	    const system = await AgentSystem()
+	    const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
+
+	    const toolRef = system.spawn('tool', makeImmediateToolMock('search', {
+	      type: 'toolPending',
+	      jobId: 'job-1',
+	      placeholderText: 'Search started.',
+	    }))
+
+	    const llmDef: ActorDef<LlmProviderMsg, null> = {
+	      initialState: null,
+	      handler: (state, msg) => {
+	        if (msg.type === 'stream') streams.push({ msg })
+	        return { state }
+	      },
+	    }
+	    const llmRef = system.spawn('llm', llmDef)
+
+	    const pendingEvents: TestState['toolPendingEvents'] = []
+	    const batchHistories: ApiMessage[][] = []
+
+	    const loop = agentLoop<TestState, TestMsg>({
+	      role: 'test',
+	      spanName: 'test',
+	      model: 'test-model',
+	      maxToolLoops: 3,
+	      llmRef: (s) => s.llmRef,
+	      tools: (s) => s.tools,
+	      onComplete: (state, finalText) => ({ state: { ...state, finalText } }),
+	      onBatchHistoryReady: (state, messages) => {
+	        batchHistories.push([...messages])
+	        return { state }
+	      },
+	      onToolPending: (state, pending) => {
+	        pendingEvents.push(pending)
+	        return { state: { ...state, toolPendingEvents: [...state.toolPendingEvents, pending] } }
+	      },
+	      onError: (state, err) => ({
+	        state: { ...state, log: [...state.log, err.kind === 'llm' ? `error:${String(err.error)}` : `limit:${err.finalText}`] },
+	      }),
+	    })
+
+	    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef, tools: { search: { name: 'search', schema: SEARCH_SCHEMA, ref: toolRef } } }))
+	    await tick()
+
+	    agentRef.send({
+	      type: 'start',
+	      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
+	    })
+	    await tick()
+
+	    const msg1 = streams[0]!.msg
+	    msg1.replyTo.send({
+	      type: 'llmToolCalls',
+	      requestId: msg1.requestId,
+	      calls: [{ id: 'c1', name: 'search', arguments: '{}' }],
+	      usage: { promptTokens: 2, completionTokens: 3 },
+	    })
+	    await tick(150)
+
+	    expect(pendingEvents).toEqual([{ toolName: 'search', toolCallId: 'c1', jobId: 'job-1', placeholderText: 'Search started.' }])
+	    expect(batchHistories).toHaveLength(0)
+	    expect(streams).toHaveLength(1)
+
+	    await system.shutdown()
+	  })
+
+	  test('unknown tool produces synthetic error and loop continues', async () => {
     const system = await AgentSystem()
     const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
