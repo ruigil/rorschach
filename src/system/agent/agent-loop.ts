@@ -9,10 +9,11 @@ import type {
 } from '../actor/types.ts'
 import { invokeTool } from './tool-utils.ts'
 import type {
-  ToolCollection,
-  ToolFinalReply,
-  ToolMsg,
-  ToolFilter,
+	ToolCollection,
+	ToolFinalReply,
+	ToolMsg,
+	ToolReply,
+	ToolFilter,
 } from '../../types/tools.ts'
 import type {
   ApiMessage,
@@ -86,7 +87,7 @@ export type LoopToolResultMsg = {
   type: '_toolResult'
   toolName: string
   toolCallId: string
-  reply: ToolFinalReply
+  reply: ToolReply
 }
 
 export type LoopBaseMsg = LlmProviderReply | LoopToolResultMsg
@@ -129,11 +130,21 @@ export type AgentLoopHooks<S extends WithLoopState, M> = {
 
   onStream?: (s: S, chunk: StreamChunk, ctx: ActorContext<M>) => { state: S }
 
-  onToolResult?: (
-    s: S,
-    result: { toolName: string; toolCallId: string; reply: ToolFinalReply },
-    ctx: ActorContext<M>,
-  ) => { state: S }
+	  onToolResult?: (
+	    s: S,
+	    result: { toolName: string; toolCallId: string; reply: ToolFinalReply },
+	    ctx: ActorContext<M>,
+	  ) => { state: S }
+
+	  onToolPending?: (
+	    s: S,
+	    result: { toolName: string; toolCallId: string; jobId: string; placeholderText?: string },
+	    ctx: ActorContext<M>,
+	  ) => { state: S }
+
+	  toolInvocation?: {
+	    jobMetadata?: (call: { id: string; name: string; arguments: string }, turn: LoopTurn) => Record<string, unknown>
+	  }
 
   onBatchHistoryReady?: (
     s: S,
@@ -323,13 +334,14 @@ const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, 
         for (const call of knownCalls) {
           const entry = tools[call.name]!
           const toolSpan = spans.get(call.id)
-          ctx.pipeToSelf(
-            invokeTool(ctx, entry.ref,
-              { toolName: call.name, arguments: call.arguments, clientId, userId },
-              {
-                headers: toolSpan ? ctx.trace.injectHeaders(toolSpan) : undefined,
-              },
-            ),
+	          ctx.pipeToSelf(
+	            invokeTool(ctx, entry.ref,
+	              { toolName: call.name, arguments: call.arguments, clientId, userId },
+	              {
+	                headers: toolSpan ? ctx.trace.injectHeaders(toolSpan) : undefined,
+	                jobMetadata: hooks.toolInvocation?.jobMetadata?.(call, turn),
+	              },
+	            ),
             (reply) => ({
               type: '_toolResult',
               toolName: call.name,
@@ -402,12 +414,29 @@ const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, 
 
     switch (m.type) {
       case '_toolResult': {
-        const msg = m as LoopToolResultMsg
-        const batch = turn.pendingBatch!
-        const span = batch.spans.get(msg.toolCallId)
-        if (msg.reply.type === 'toolResult') {
-          span?.done()
-          ctx.log.info(`${log}: tool result`, { tool: msg.toolName, ok: true })
+	        const msg = m as LoopToolResultMsg
+	        const batch = turn.pendingBatch!
+	        const span = batch.spans.get(msg.toolCallId)
+	        if (msg.reply.type === 'toolPending') {
+	          const pendingText = msg.reply.placeholderText ?? `Background job started for ${msg.toolName} (jobId=${msg.reply.jobId}).`
+	          span?.done({ jobId: msg.reply.jobId, pending: true })
+	          turn.requestSpan?.done({ pendingJobId: msg.reply.jobId, toolName: msg.toolName })
+	          ctx.log.info(`${log}: tool pending`, { tool: msg.toolName, jobId: msg.reply.jobId })
+	          emitUi(turn.clientId, { type: 'chunk', text: pendingText }, ctx)
+	          emitUi(turn.clientId, { type: 'done' }, ctx)
+	          const r = hooks.onToolPending
+	            ? hooks.onToolPending(state, {
+	              toolName: msg.toolName,
+	              toolCallId: msg.toolCallId,
+	              jobId: msg.reply.jobId,
+	              placeholderText: msg.reply.placeholderText,
+	            }, ctx)
+	            : { state }
+	          return materialize(r.state)
+	        }
+	        if (msg.reply.type === 'toolResult') {
+	          span?.done()
+	          ctx.log.info(`${log}: tool result`, { tool: msg.toolName, ok: true })
         } else {
           span?.error(msg.reply.error)
           ctx.log.warn(`${log}: tool error`, { tool: msg.toolName, error: msg.reply.error })

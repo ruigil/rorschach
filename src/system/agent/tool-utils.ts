@@ -1,7 +1,7 @@
 import { ask } from '../actor/ask.ts'
 import type { ActorContext, ActorRef, MessageHeaders } from '../actor/types.ts'
 import { JobRegistryTopic } from '../../types/tools.ts'
-import type { ToolFinalReply, ToolMsg, ToolReply, ToolSchema, ToolFilter } from '../../types/tools.ts'
+import type { ToolMsg, ToolReply, ToolSchema, ToolFilter } from '../../types/tools.ts'
 
 export type InvokeToolArgs = {
   toolName:  string
@@ -12,23 +12,23 @@ export type InvokeToolArgs = {
 
 export type InvokeToolOptions<M = any> = {
   headers?: MessageHeaders
+  jobMetadata?: Record<string, unknown>
 }
 
 /**
- * Invoke a tool. Always resolves with a final reply (`toolResult` or
- * `toolError`).
+ * Invoke a tool and return its immediate reply.
  *
  * If the tool replies with `toolPending`:
- *   - this Promise resolves immediately with a placeholder `toolResult`
- *   - the job is registered on `JobRegistryTopic` (so `tool_status` can find it)
- *   - the Session Manager will subscribe to completion events and handle injecting the out-of-band result.
+ *   - this Promise resolves immediately with `toolPending`
+ *   - the job is registered on `JobRegistryTopic`
+ *   - the owner handles completion/failure from later job lifecycle events.
  */
 export const invokeTool = async <M = any>(
   ctx: ActorContext<M>,
   toolRef: ActorRef<ToolMsg>,
   args: InvokeToolArgs,
   options?: InvokeToolOptions<M>,
-): Promise<ToolFinalReply> => {
+): Promise<ToolReply> => {
   const firstReply = await ask<ToolMsg, ToolReply>(
     toolRef,
     (replyTo) => ({
@@ -47,8 +47,7 @@ export const invokeTool = async <M = any>(
     return firstReply
   }
 
-  // toolPending
-  const { jobId, placeholderText } = firstReply
+  const { jobId } = firstReply
 
   ctx.publishRetained(JobRegistryTopic, jobId, {
     jobId,
@@ -58,12 +57,10 @@ export const invokeTool = async <M = any>(
     startedAt: Date.now(),
     clientId: args.clientId,
     userId: args.userId,
+    metadata: options?.jobMetadata,
   })
 
-  return {
-    type: 'toolResult',
-    result: { text: placeholderText ?? `Job started; result will be delivered when ready (jobId=${jobId}).` },
-  }
+  return firstReply
 }
 
 // ─── Schema (what the LLM sees) ───
