@@ -26,8 +26,8 @@ const defaultState: Record<string, any> = {
     sources: [],
     attachments: [],
   },
-  currentPlanGraph: null,
-  planWorkspaceOpen: false,
+  currentWorkflowGraph: null,
+  workflowWorkspaceOpen: false,
 }
 
 export function resetStore() {

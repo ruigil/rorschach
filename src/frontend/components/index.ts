@@ -23,7 +23,7 @@ export * from './r-chat-input.js';
 export * from './r-chat-panel.js';
 export * from './r-config-form.js';
 export * from './r-force-graph.js';
-export * from './r-plan-workspace.js';
+export * from './r-workflow-workspace.js';
 export * from './r-doc-workspace.js';
 export * from './r-window.js';
 export * from './r-shell.js';

@@ -23,10 +23,10 @@ const loadWorkflows = async (workflows: WorkflowsConfig): Promise<AgentDescripto
 }
 
 describe('workflows config', () => {
-  test('uses default executor and planner config when only plansDir is configured', async () => {
+  test('uses default workflow config when only workflowsDir is configured', async () => {
     const registrations: AgentDescriptor[] = []
     const routes: RouteRegistration[] = []
-    const system = await AgentSystem({ config: { workflows: { plansDir: 'workspace/custom-plans' } } })
+    const system = await AgentSystem({ config: { workflows: { workflowsDir: 'workspace/custom-workflows' } } })
     
     system.subscribe(AgentRegistrationTopic, (event) => {
       if (event.type === 'register') registrations.push(event.descriptor)
@@ -39,8 +39,7 @@ describe('workflows config', () => {
     expect(result.ok).toBe(true)
     await tick()
 
-    // Assert that both 'executor' and 'planner' agents are registered
-    expect(registrations.map(d => d.mode).sort()).toEqual(['executor', 'planner'])
+    expect(registrations.map(d => d.mode)).toEqual(['workflows'])
 
     const route = routes.find(r => r.id === 'config.workflows')
     expect(route?.handler).not.toBeNull()
@@ -48,27 +47,24 @@ describe('workflows config', () => {
     
     const response = await route.handler(new Request('http://localhost/config/workflows'), new URL('http://localhost/config/workflows'), null)
     expect(await response.json()).toMatchObject({
-      plansDir: 'workspace/custom-plans',
-      executor: { model: 'z-ai/glm-5.1', maxToolLoops: 10 },
-      planner: { model: 'z-ai/glm-5.1', maxToolLoops: 10 },
+      workflowsDir: 'workspace/custom-workflows',
+      workflowRunsDir: 'workspace/workflows/runs',
+      workflows: { model: 'z-ai/glm-5.1', maxToolLoops: 10 },
     })
 
     await system.shutdown()
   })
 
-  test('registers both agents with default configurations', async () => {
+  test('registers workflows agent with configured model', async () => {
     const registrations = await loadWorkflows({
-      plansDir: 'workspace/plans-test',
-      executor: {
-        model: 'test-exec-model',
-        maxToolLoops: 5,
-      },
-      planner: {
-        model: 'test-plan-model',
+      workflowsDir: 'workspace/workflows-test',
+      workflowRunsDir: 'workspace/workflows-test/runs',
+      workflows: {
+        model: 'test-workflow-model',
         maxToolLoops: 3,
       },
     })
 
-    expect(registrations.map(d => d.mode).sort()).toEqual(['executor', 'planner'])
+    expect(registrations.map(d => d.mode)).toEqual(['workflows'])
   })
 })

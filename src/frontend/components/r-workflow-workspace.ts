@@ -1,56 +1,55 @@
 import { html, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
-import { store, StoreController } from '../store.js';
-import { openWindow, closeWindow } from '../actions.js';
+import { StoreController } from '../store.js';
 
-@customElement('r-plan-workspace')
-export class RPlanWorkspace extends RorschachBase {
+@customElement('r-workflow-workspace')
+export class RWorkflowWorkspace extends RorschachBase {
   @state() private _view: 'list' | 'graph' | 'loading' | 'error' = 'list';
   @state() private _errorMsg = '';
-  @state() private _plans: any[] = [];
+  @state() private _workflows: any[] = [];
   @state() private _currentGraph: any = null;
   @state() private _selectedTaskId: string | null = null;
+  @state() private _runId: string | null = null;
 
   private _lastMode = '';
-  private _lastPlanGraph: any = null;
+  private _lastWorkflowGraph: any = null;
 
   private _currentMode = new StoreController(this, 'currentMode');
-  private _currentPlanGraph = new StoreController(this, 'currentPlanGraph');
+  private _currentWorkflowGraph = new StoreController(this, 'currentWorkflowGraph');
 
   override createRenderRoot() {
-    return this; // Light DOM for styling integration
+    return this;
   }
 
-  override updated(changedProperties: Map<string, any>) {
+  override updated() {
     const mode = this._currentMode.value as string;
     if (mode !== this._lastMode) {
       const isInitialLoad = this._lastMode === '';
       this._lastMode = mode;
-      if (mode === 'executor' || mode === 'planner') {
+      if (mode === 'workflows') {
         if (isInitialLoad) {
-          const savedView = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.planWorkspaceView') || 'list' : 'list';
-          const savedPlanId = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.planWorkspacePlanId') : null;
-          if (savedView === 'graph' && savedPlanId) {
-            this.openGraph(savedPlanId);
-          } else {
-            this.openList();
-          }
+          const savedView = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.workflowWorkspaceView') || 'list' : 'list';
+          const savedWorkflowId = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.workflowWorkspaceWorkflowId') : null;
+          const savedRunId = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.workflowWorkspaceRunId') : null;
+          if (savedView === 'graph' && savedWorkflowId) this.openGraph(savedWorkflowId, savedRunId || undefined);
+          else this.openList();
         } else {
           this.openList();
         }
       }
     }
 
-    const planGraph = this._currentPlanGraph.value as any;
-    if (planGraph !== this._lastPlanGraph) {
-      this._lastPlanGraph = planGraph;
-      if (planGraph) {
-        if (planGraph.planId) {
-          this.openGraph(planGraph.planId);
-        } else if (planGraph.nodes && planGraph.nodes.length) {
+    const workflowGraph = this._currentWorkflowGraph.value as any;
+    if (workflowGraph !== this._lastWorkflowGraph) {
+      this._lastWorkflowGraph = workflowGraph;
+      if (workflowGraph) {
+        if (workflowGraph.workflowId) {
+          this.openGraph(workflowGraph.workflowId, workflowGraph.runId);
+        } else if (workflowGraph.nodes && workflowGraph.nodes.length) {
           this._view = 'graph';
-          this._currentGraph = planGraph;
+          this._currentGraph = workflowGraph;
+          this._runId = workflowGraph.run?.runId ?? null;
           this._selectedTaskId = this._currentGraph.nodes[0]?.id ?? null;
         } else {
           this.openList();
@@ -61,51 +60,58 @@ export class RPlanWorkspace extends RorschachBase {
 
   async openList() {
     this._view = 'loading';
+    this._runId = null;
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('rorschach.planWorkspaceView', 'list');
-      localStorage.removeItem('rorschach.planWorkspacePlanId');
+      localStorage.setItem('rorschach.workflowWorkspaceView', 'list');
+      localStorage.removeItem('rorschach.workflowWorkspaceWorkflowId');
+      localStorage.removeItem('rorschach.workflowWorkspaceRunId');
     }
     try {
-      this._plans = await this._fetchJson('plans');
+      this._workflows = await this._fetchJson('workflows');
       this._view = 'list';
     } catch {
-      this._errorMsg = 'could not load plans';
+      this._errorMsg = 'could not load workflows';
       this._view = 'error';
     }
   }
 
-  async openGraph(planId: string) {
+  async openGraph(workflowId: string, runId?: string) {
     this._view = 'loading';
+    this._runId = runId ?? null;
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('rorschach.planWorkspaceView', 'graph');
-      localStorage.setItem('rorschach.planWorkspacePlanId', planId);
+      localStorage.setItem('rorschach.workflowWorkspaceView', 'graph');
+      localStorage.setItem('rorschach.workflowWorkspaceWorkflowId', workflowId);
+      if (runId) localStorage.setItem('rorschach.workflowWorkspaceRunId', runId);
+      else localStorage.removeItem('rorschach.workflowWorkspaceRunId');
     }
     try {
-      this._currentGraph = await this._fetchJson(`plans/${encodeURIComponent(planId)}/graph`);
-      const savedTaskId = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.planWorkspaceSelectedTaskId') : null;
+      const path = runId
+        ? `workflows/${encodeURIComponent(workflowId)}/graph?runId=${encodeURIComponent(runId)}`
+        : `workflows/${encodeURIComponent(workflowId)}/graph`;
+      this._currentGraph = await this._fetchJson(path);
+      const savedTaskId = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.workflowWorkspaceSelectedTaskId') : null;
       this._selectedTaskId = savedTaskId && this._currentGraph.nodes.some((n: any) => n.id === savedTaskId)
         ? savedTaskId
         : (this._currentGraph.nodes[0]?.id ?? null);
       this._view = 'graph';
     } catch {
-      this._errorMsg = 'could not load graph';
+      this._errorMsg = 'could not load workflow graph';
       this._view = 'error';
     }
   }
 
   override render() {
     const showBack = this._view === 'graph';
-
     return html`
       <div class="plan-workspace-content-root">
         ${showBack ? html`
           <div class="plan-workspace-toolbar">
             <button class="plan-workspace-back-btn" @click=${() => this.openList()}>
               ${this.renderIcon('chevron-left')}
-              <span>Back to Plans</span>
+              <span>Back to Workflows</span>
             </button>
             <span class="plan-workspace-meta-text">
-              ${this._currentGraph?.plan ? html`${this._formatDate(this._currentGraph.plan.createdAt)} · ${this._currentGraph.plan.taskCount} tasks` : ''}
+              ${this._currentGraph?.workflow ? html`${this._formatDate(this._currentGraph.workflow.createdAt)} · ${this._currentGraph.workflow.taskCount} tasks${this._runId ? html` · ${this._currentGraph.run?.status ?? 'running'}` : ''}` : ''}
             </span>
           </div>
         ` : ''}
@@ -123,7 +129,7 @@ export class RPlanWorkspace extends RorschachBase {
       case 'error':
         return html`<div class="plan-empty"><span>${this._errorMsg}</span></div>`;
       case 'list':
-        return this._renderPlanList();
+        return this._renderWorkflowList();
       case 'graph':
         return this._renderGraphView();
       default:
@@ -131,17 +137,14 @@ export class RPlanWorkspace extends RorschachBase {
     }
   }
 
-  private _renderPlanList() {
-    if (!this._plans.length) {
-      return html`<div class="plan-empty"><span>no saved plans</span></div>`;
-    }
-
+  private _renderWorkflowList() {
+    if (!this._workflows.length) return html`<div class="plan-empty"><span>no saved workflows</span></div>`;
     return html`
       <div class="plan-list">
-        ${this._plans.map(plan => html`
-          <button class="plan-list-item" type="button" @click=${() => this.openGraph(plan.id)}>
-            <span class="plan-list-goal">${plan.goal}</span>
-            <span class="plan-list-meta">${this._formatDate(plan.createdAt)} · ${plan.taskCount} task${plan.taskCount === 1 ? '' : 's'}</span>
+        ${this._workflows.map(workflow => html`
+          <button class="plan-list-item" type="button" @click=${() => this.openGraph(workflow.id)}>
+            <span class="plan-list-goal">${workflow.goal}</span>
+            <span class="plan-list-meta">${this._formatDate(workflow.createdAt)} · ${workflow.taskCount} task${workflow.taskCount === 1 ? '' : 's'}</span>
           </button>
         `)}
       </div>
@@ -150,19 +153,18 @@ export class RPlanWorkspace extends RorschachBase {
 
   private _renderGraphView() {
     if (!this._currentGraph || !this._currentGraph.nodes.length) {
-      return html`<div class="plan-empty"><span>plan has no tasks</span></div>`;
+      return html`<div class="plan-empty"><span>workflow has no tasks</span></div>`;
     }
-
     return html`
       <div class="plan-graph-shell">
-        <r-force-graph 
-          class="plan-graph" 
+        <r-force-graph
+          class="plan-graph"
           .planData=${this._currentGraph}
           .selectedTaskId=${this._selectedTaskId}
           @node-select=${(e: CustomEvent) => {
             this._selectedTaskId = e.detail.id;
             if (typeof localStorage !== 'undefined') {
-              localStorage.setItem('rorschach.planWorkspaceSelectedTaskId', e.detail.id);
+              localStorage.setItem('rorschach.workflowWorkspaceSelectedTaskId', e.detail.id);
             }
           }}
         ></r-force-graph>
@@ -178,20 +180,16 @@ export class RPlanWorkspace extends RorschachBase {
   }
 
   private _renderTaskDetail(task: any) {
-    if (!task) {
-      return html`<div class="plan-task-placeholder">Select a task to inspect details.</div>`;
-    }
-
+    if (!task) return html`<div class="plan-task-placeholder">Select a task to inspect details.</div>`;
     const deps = task.dependencies.length
       ? task.dependencies.map((id: string) => this._taskById(id)?.label || id).join(', ')
       : 'none';
     const dependents = task.dependents.length
       ? task.dependents.map((id: string) => this._taskById(id)?.label || id).join(', ')
       : 'none';
-
     return html`
       <div class="plan-task-detail">
-        <div class="plan-task-status">status · not tracked</div>
+        <div class="plan-task-status">status · ${task.status ?? 'not_tracked'}</div>
         <h3>${task.label}</h3>
         <dl>
           <dt>Description</dt>
@@ -202,6 +200,8 @@ export class RPlanWorkspace extends RorschachBase {
           <dd>${deps}</dd>
           <dt>Unlocks</dt>
           <dd>${dependents}</dd>
+          ${task.summary ? html`<dt>Summary</dt><dd>${task.summary}</dd>` : ''}
+          ${task.error ? html`<dt>Error</dt><dd>${task.error}</dd>` : ''}
         </dl>
       </div>
     `;

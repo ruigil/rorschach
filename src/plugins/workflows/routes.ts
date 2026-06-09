@@ -3,68 +3,55 @@ import { ask } from '../../system/index.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import type { Identity } from '../../types/identity.ts'
-import type { PlanStoreMsg, PlanStoreReply } from './types.ts'
+import type { WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowStoreMsg, WorkflowStoreReply } from './types.ts'
 
 export const workflowsStorageSchema: ConfigSchemaSection = {
   id: 'workflows.storage',
-  title: 'Plans',
-  subtitle: 'workflows · planner artifacts',
+  title: 'Workflows',
+  subtitle: 'workflow storage',
   tab: 'workflows',
   configKey: '',
   routeId: 'config.workflows',
   schema: {
     type: 'object',
-    required: ['plansDir'],
+    required: ['workflowsDir', 'workflowRunsDir'],
     properties: {
-      plansDir: { type: 'string', default: 'workspace/plans', 'x-ui': { label: 'Plans directory' } },
+      workflowsDir: { type: 'string', default: 'workspace/workflows', 'x-ui': { label: 'Workflows directory' } },
+      workflowRunsDir: { type: 'string', default: 'workspace/workflows/runs', 'x-ui': { label: 'Workflow runs directory' } },
     },
   },
 }
 
-export const workflowsExecutorSchema: ConfigSchemaSection = {
-  id: 'workflows.executor',
-  title: 'Executor',
-  subtitle: 'workflows · plan execution discussion',
+export const workflowsAgentSchema: ConfigSchemaSection = {
+  id: 'workflows.agent',
+  title: 'Workflows',
+  subtitle: 'workflow model',
   tab: 'workflows',
-  configKey: 'executor',
+  configKey: 'workflows',
   routeId: 'config.workflows',
   schema: {
     type: 'object',
     required: ['model', 'maxToolLoops'],
     properties: {
-      model: { type: 'string', default: 'z-ai/glm-5.1', 'x-ui': { widget: 'model-select', label: 'Executor model' } },
+      model: { type: 'string', default: 'z-ai/glm-5.1', 'x-ui': { widget: 'model-select', label: 'Workflows model' } },
       maxToolLoops: { type: 'number', default: 10, minimum: 1, maximum: 50 },
     },
   },
 }
 
-export const workflowsPlannerSchema: ConfigSchemaSection = {
-  id: 'workflows.planner',
-  title: 'Planner',
-  subtitle: 'workflows · plan creation model',
-  tab: 'workflows',
-  configKey: 'planner',
-  routeId: 'config.workflows',
-  schema: {
-    type: 'object',
-    required: ['model', 'maxToolLoops'],
-    properties: {
-      model: { type: 'string', default: 'z-ai/glm-5.1', 'x-ui': { widget: 'model-select', label: 'Planner model' } },
-      maxToolLoops: { type: 'number', default: 10, minimum: 1, maximum: 50 },
-    },
-  },
-}
-
-export const workflowsSchemas = [workflowsStorageSchema, workflowsExecutorSchema, workflowsPlannerSchema]
+export const workflowsSchemas = [workflowsStorageSchema, workflowsAgentSchema]
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
-const planIdFromPath = (pathname: string, suffix = ''): string | null => {
-  if (!pathname.startsWith('/plans/')) return null
+const requireSession = (identity: Identity | null): Identity | Response =>
+  identity ?? json({ error: 'Unauthorized' }, 401)
+
+const workflowIdFromPath = (pathname: string, suffix = ''): string | null => {
+  if (!pathname.startsWith('/workflows/')) return null
   if (suffix && !pathname.endsWith(suffix)) return null
   const end = suffix ? pathname.length - suffix.length : pathname.length
-  const raw = pathname.slice('/plans/'.length, end)
+  const raw = pathname.slice('/workflows/'.length, end)
   if (!raw || raw.includes('/')) return null
   try {
     return decodeURIComponent(raw)
@@ -73,50 +60,149 @@ const planIdFromPath = (pathname: string, suffix = ''): string | null => {
   }
 }
 
-const requireSession = (identity: Identity | null): Response | null =>
-  identity ? null : json({ error: 'Unauthorized' }, 401)
+const runIdFromPath = (pathname: string, suffix = ''): string | null => {
+  if (!pathname.startsWith('/workflow-runs/')) return null
+  if (suffix && !pathname.endsWith(suffix)) return null
+  const end = suffix ? pathname.length - suffix.length : pathname.length
+  const raw = pathname.slice('/workflow-runs/'.length, end)
+  if (!raw || raw.includes('/')) return null
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return null
+  }
+}
 
 export const buildWorkflowsRoutes = (
-  planStoreRef: ActorRef<PlanStoreMsg> | null,
+  workflowStoreRef: ActorRef<WorkflowStoreMsg> | null,
+  workflowRunnerRef: ActorRef<WorkflowRunnerMsg> | null,
 ): RouteRegistration[] => [
   {
-    id:     'workflows.plans.list',
+    id: 'workflows.list',
     method: 'GET',
-    path:   '/plans',
+    path: '/workflows',
     handler: async (_req, _url, identity) => {
-      const unauthorized = requireSession(identity)
-      if (unauthorized) return unauthorized
-      if (!planStoreRef) return json([])
-      const reply = await ask<PlanStoreMsg, PlanStoreReply>(planStoreRef, replyTo => ({ type: 'list', replyTo }), { timeoutMs: 5_000 })
+      const session = requireSession(identity)
+      if (session instanceof Response) return session
+      if (!workflowStoreRef) return json([])
+      const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'list', userId: session.userId, replyTo }), { timeoutMs: 5_000 })
       if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
-      if (!('plans' in reply)) return json({ error: 'Unexpected plan store response' }, 500)
-      return json(reply.plans)
+      if (!('workflows' in reply)) return json({ error: 'Unexpected workflow store response' }, 500)
+      return json(reply.workflows)
     },
   },
   {
-    id:     'workflows.plans.item',
+    id: 'workflows.item',
     method: 'GET',
-    path:   '/plans/',
-    match:  'prefix',
+    path: '/workflows/',
+    match: 'prefix',
     handler: async (_req, url, identity) => {
-      const unauthorized = requireSession(identity)
-      if (unauthorized) return unauthorized
-      if (!planStoreRef) return json({ error: 'Plan store unavailable' }, 503)
+      const session = requireSession(identity)
+      if (session instanceof Response) return session
+      if (!workflowStoreRef) return json({ error: 'Workflow store unavailable' }, 503)
 
-      const graphPlanId = planIdFromPath(url.pathname, '/graph')
-      if (graphPlanId) {
-        const reply = await ask<PlanStoreMsg, PlanStoreReply>(planStoreRef, replyTo => ({ type: 'graph', planId: graphPlanId, replyTo }), { timeoutMs: 5_000 })
+      const graphWorkflowId = workflowIdFromPath(url.pathname, '/graph')
+      if (graphWorkflowId) {
+        let run = undefined
+        const runId = url.searchParams.get('runId')
+        if (runId && workflowRunnerRef) {
+          const runReply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'get', userId: session.userId, runId, replyTo }), { timeoutMs: 5_000 })
+          if (runReply.ok && 'run' in runReply) run = runReply.run
+        }
+        const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'graph', userId: session.userId, workflowId: graphWorkflowId, run, replyTo }), { timeoutMs: 5_000 })
         if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
-        if (!('graph' in reply)) return json({ error: 'Unexpected plan store response' }, 500)
+        if (!('graph' in reply)) return json({ error: 'Unexpected workflow store response' }, 500)
         return json(reply.graph)
       }
 
-      const planId = planIdFromPath(url.pathname)
-      if (!planId) return json({ error: 'Not found' }, 404)
-      const reply = await ask<PlanStoreMsg, PlanStoreReply>(planStoreRef, replyTo => ({ type: 'get', planId, replyTo }), { timeoutMs: 5_000 })
+      const workflowId = workflowIdFromPath(url.pathname)
+      if (!workflowId) return json({ error: 'Not found' }, 404)
+      const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'get', userId: session.userId, workflowId, replyTo }), { timeoutMs: 5_000 })
       if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
-      if (!('plan' in reply)) return json({ error: 'Unexpected plan store response' }, 500)
-      return json(reply.plan)
+      if (!('workflow' in reply)) return json({ error: 'Unexpected workflow store response' }, 500)
+      return json(reply.workflow)
+    },
+  },
+  {
+    id: 'workflows.runs.start',
+    method: 'POST',
+    path: '/workflows/',
+    match: 'prefix',
+    handler: async (_req, url, identity) => {
+      const session = requireSession(identity)
+      if (session instanceof Response) return session
+      if (!workflowRunnerRef) return json({ error: 'Workflow runner unavailable' }, 503)
+      const workflowId = workflowIdFromPath(url.pathname, '/runs')
+      if (!workflowId) return json({ error: 'Not found' }, 404)
+      const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'start', userId: session.userId, workflowId, replyTo }), { timeoutMs: 10_000 })
+      if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
+      if (!('run' in reply)) return json({ error: 'Unexpected workflow runner response' }, 500)
+      return json(reply.run, 202)
+    },
+  },
+  {
+    id: 'workflow-runs.list',
+    method: 'GET',
+    path: '/workflow-runs',
+    handler: async (_req, _url, identity) => {
+      const session = requireSession(identity)
+      if (session instanceof Response) return session
+      if (!workflowRunnerRef) return json([])
+      const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'list', userId: session.userId, replyTo }), { timeoutMs: 5_000 })
+      if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
+      if (!('runs' in reply)) return json({ error: 'Unexpected workflow runner response' }, 500)
+      return json(reply.runs)
+    },
+  },
+  {
+    id: 'workflow-runs.item',
+    method: 'GET',
+    path: '/workflow-runs/',
+    match: 'prefix',
+    handler: async (_req, url, identity) => {
+      const session = requireSession(identity)
+      if (session instanceof Response) return session
+      if (!workflowRunnerRef) return json({ error: 'Workflow runner unavailable' }, 503)
+      const runId = runIdFromPath(url.pathname)
+      if (!runId) return json({ error: 'Not found' }, 404)
+      const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'get', userId: session.userId, runId, replyTo }), { timeoutMs: 5_000 })
+      if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
+      if (!('run' in reply)) return json({ error: 'Unexpected workflow runner response' }, 500)
+      return json(reply.run)
+    },
+  },
+  {
+    id: 'workflow-runs.pause',
+    method: 'POST',
+    path: '/workflow-runs/',
+    match: 'prefix',
+    handler: async (_req, url, identity) => {
+      const session = requireSession(identity)
+      if (session instanceof Response) return session
+      if (!workflowRunnerRef) return json({ error: 'Workflow runner unavailable' }, 503)
+      const runId = runIdFromPath(url.pathname, '/pause')
+      if (!runId) return json({ error: 'Not found' }, 404)
+      const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'pause', userId: session.userId, runId, replyTo }), { timeoutMs: 5_000 })
+      if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
+      if (!('run' in reply)) return json({ error: 'Unexpected workflow runner response' }, 500)
+      return json(reply.run)
+    },
+  },
+  {
+    id: 'workflow-runs.resume',
+    method: 'POST',
+    path: '/workflow-runs/',
+    match: 'prefix',
+    handler: async (_req, url, identity) => {
+      const session = requireSession(identity)
+      if (session instanceof Response) return session
+      if (!workflowRunnerRef) return json({ error: 'Workflow runner unavailable' }, 503)
+      const runId = runIdFromPath(url.pathname, '/resume')
+      if (!runId) return json({ error: 'Not found' }, 404)
+      const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'resume', userId: session.userId, runId, replyTo }), { timeoutMs: 10_000 })
+      if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
+      if (!('run' in reply)) return json({ error: 'Unexpected workflow runner response' }, 500)
+      return json(reply.run)
     },
   },
 ]

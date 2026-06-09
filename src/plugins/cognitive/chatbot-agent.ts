@@ -164,7 +164,7 @@ export const Chatbot = (
       return { state }
     },
 
-    onComplete: (state, finalText, usage, ctx) => {
+	    onComplete: (state, finalText, usage, ctx) => {
       if (finalText) {
         contextStoreRef.send({ type: 'append', mode: CHATBOT_MODE, source: 'assistant', clientId: state.activeClientId, messages: [{ role: 'assistant', content: finalText }] })
       }
@@ -179,13 +179,25 @@ export const Chatbot = (
       }
     },
 
-    onError: (state, err, ctx) => {
-      if (err.kind === 'loopLimit') {
-        ctx.log.warn('chatbot: tool loop limit reached', { clientId: state.activeClientId })
-      }
-      return { state }
-    },
-  })
+	    onError: (state, err, ctx) => {
+	      if (err.kind === 'loopLimit') {
+	        ctx.log.warn('chatbot: tool loop limit reached', { clientId: state.activeClientId })
+	      }
+	      return { state }
+	    },
+
+	    onToolPending: (state, pending) => {
+	      const text = pending.placeholderText ?? `Background job started for ${pending.toolName} (jobId=${pending.jobId}).`
+	      contextStoreRef.send({
+	        type: 'append',
+	        mode: CHATBOT_MODE,
+	        source: 'assistant',
+	        clientId: state.activeClientId,
+	        messages: [{ role: 'assistant', content: text }],
+	      })
+	      return { state }
+	    },
+	  })
 
   const doStartTurn = (
     state: S,

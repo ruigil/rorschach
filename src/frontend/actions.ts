@@ -152,8 +152,8 @@ export function openWindow(id: string, params: Record<string, any> = {}) {
       if (params.currentDocArtifact) {
         localStorage.setItem('rorschach.docWorkspaceArtifact', params.currentDocArtifact);
       }
-    } else if (id === 'plans') {
-      localStorage.setItem('rorschach.planWorkspaceOpen', 'true');
+    } else if (id === 'workflows') {
+      localStorage.setItem('rorschach.workflowWorkspaceOpen', 'true');
     }
   }
 }
@@ -177,8 +177,8 @@ export function closeWindow(id: string) {
     persistWindowState(id, winState);
     if (id === 'docs') {
       localStorage.setItem('rorschach.docWorkspaceOpen', 'false');
-    } else if (id === 'plans') {
-      localStorage.setItem('rorschach.planWorkspaceOpen', 'false');
+    } else if (id === 'workflows') {
+      localStorage.setItem('rorschach.workflowWorkspaceOpen', 'false');
     }
   }
 }

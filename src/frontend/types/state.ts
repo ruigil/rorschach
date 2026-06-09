@@ -78,19 +78,25 @@ export interface UsageEntry {
   cost: number
 }
 
-export interface PlanGraphNode {
+export interface WorkflowGraphNode {
   id: string
   label: string
   description?: string
   validationCriteria?: string
   dependencies: string[]
   dependents: string[]
+  status?: string
+  attempts?: number
+  summary?: string
+  error?: string
 }
 
-export interface PlanGraph {
-  planId?: string
-  plan?: { goal: string; createdAt: string; taskCount: number }
-  nodes: PlanGraphNode[]
+export interface WorkflowGraph {
+  workflowId?: string
+  runId?: string
+  workflow?: { goal: string; createdAt: string; taskCount: number }
+  run?: { runId: string; status: string; activeTaskIds: string[] }
+  nodes: WorkflowGraphNode[]
 }
 
 export interface RorschachState {
@@ -112,8 +118,8 @@ export interface RorschachState {
   activeTab: Tab
   observeActiveTab: ObserveTab
   activeStream: ActiveStream
-  currentPlanGraph: PlanGraph | null
-  planWorkspaceOpen: boolean
+  currentWorkflowGraph: WorkflowGraph | null
+  workflowWorkspaceOpen: boolean
   docWorkspaceOpen: boolean
   currentDocArtifact: string | null
   isChatUndocked: boolean

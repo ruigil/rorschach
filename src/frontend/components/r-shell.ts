@@ -20,11 +20,11 @@ export class RShell extends RorschachBase {
   private _activeWorkspaceTab = new StoreController(this, 'activeWorkspaceTab');
   private _currentMode = new StoreController(this, 'currentMode');
   private _currentDocArtifact = new StoreController(this, 'currentDocArtifact');
-  private _currentPlanGraph = new StoreController(this, 'currentPlanGraph');
+  private _currentWorkflowGraph = new StoreController(this, 'currentWorkflowGraph');
 
   private _lastMode = '';
   private _lastDocArtifact: string | null = null;
-  private _lastPlanGraph: any = null;
+  private _lastWorkflowGraph: any = null;
 
   @state() private _noticing = false;
   private _prevWaiting = false;
@@ -111,10 +111,10 @@ export class RShell extends RorschachBase {
     if (mode !== this._lastMode) {
       const isInitialLoad = this._lastMode === '';
       this._lastMode = mode;
-      if (mode === 'executor' || mode === 'planner') {
-        openWindow('plans');
+      if (mode === 'workflows') {
+        openWindow('workflows');
       } else if (!isInitialLoad) {
-        closeWindow('plans');
+        closeWindow('workflows');
       }
     }
 
@@ -126,11 +126,11 @@ export class RShell extends RorschachBase {
       }
     }
 
-    const planGraph = this._currentPlanGraph.value as any;
-    if (planGraph !== this._lastPlanGraph) {
-      this._lastPlanGraph = planGraph;
-      if (planGraph && (planGraph.planId || (planGraph.nodes && planGraph.nodes.length))) {
-        openWindow('plans');
+    const workflowGraph = this._currentWorkflowGraph.value as any;
+    if (workflowGraph !== this._lastWorkflowGraph) {
+      this._lastWorkflowGraph = workflowGraph;
+      if (workflowGraph && (workflowGraph.workflowId || (workflowGraph.nodes && workflowGraph.nodes.length))) {
+        openWindow('workflows');
       }
     }
   }

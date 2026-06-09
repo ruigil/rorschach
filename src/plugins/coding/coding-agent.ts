@@ -129,13 +129,25 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
       return { state }
     },
 
-    onError: (state) => ({ state }),
+	    onError: (state) => ({ state }),
 
-    onBatchHistoryReady: (state, messages) => {
-      opts.contextStoreRef.send({ type: 'append', mode: CODING_MODE, messages })
-      return { state }
-    },
-  })
+	    onBatchHistoryReady: (state, messages) => {
+	      opts.contextStoreRef.send({ type: 'append', mode: CODING_MODE, messages })
+	      return { state }
+	    },
+
+	    onToolPending: (state, pending) => {
+	      const text = pending.placeholderText ?? `Background job started for ${pending.toolName} (jobId=${pending.jobId}).`
+	      opts.contextStoreRef.send({
+	        type: 'append',
+	        mode: CODING_MODE,
+	        source: 'assistant',
+	        clientId: state.activeClientId,
+	        messages: [{ role: 'assistant', content: text }],
+	      })
+	      return { state }
+	    },
+	  })
 
   const hostInterceptor: Interceptor<M, S> = (state, msg, ctx, next) => {
     const m = msg as M

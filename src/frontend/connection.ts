@@ -1,6 +1,6 @@
 import { store } from './store.js'
 import { type WSFrame } from './types/websocket.js'
-import { type TraceSpan, type UsageEntry, type PlanGraph, type LogEvent } from './types/state.js'
+import { type TraceSpan, type UsageEntry, type WorkflowGraph, type LogEvent } from './types/state.js'
 import { toolActionLabel } from './core/utils.js'
 import { updateActiveStream, commitActiveStream, setMode, addLog } from './actions.js'
 
@@ -48,7 +48,7 @@ const frameHandlers: Record<string, (msg: Record<string, any>) => void> = {
     delete nextTools[msg.name]
     store.set('tools', nextTools)
   },
-  planGraph: (msg) => store.set('currentPlanGraph', msg as PlanGraph),
+  workflowGraph: (msg) => store.set('currentWorkflowGraph', msg as WorkflowGraph),
   docWorkspace: (msg) => {
     store.set('currentDocArtifact', msg.artifactName);
     store.set('docWorkspaceOpen', !!msg.artifactName);

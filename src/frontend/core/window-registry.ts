@@ -30,11 +30,11 @@ export const WINDOW_REGISTRY: Record<string, WindowConfig> = {
     minWidth: 350,
     minHeight: 200,
   },
-  plans: {
-    id: 'plans',
-    title: 'Plans',
+  workflows: {
+    id: 'workflows',
+    title: 'Workflows',
     icon: 'git-branch',
-    contentTag: 'r-plan-workspace',
+    contentTag: 'r-workflow-workspace',
     defaultWidth: 460,
     defaultHeight: 600,
     minWidth: 320,

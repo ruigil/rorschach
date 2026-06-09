@@ -10,7 +10,7 @@ if (savedMessagesStr) {
 }
 
 const savedMode = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.currentMode') || '' : '';
-const savedPlanOpen = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.planWorkspaceOpen') === 'true' : false;
+const savedWorkflowOpen = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.workflowWorkspaceOpen') === 'true' : false;
 
 const savedUndockedStr = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.chat_window_state') : null;
 let savedIsUndocked = false;
@@ -79,12 +79,12 @@ function getSavedWindowState(id: string): WindowRuntimeState {
     }
   }
 
-  if (id === 'plans') {
-    const planOpen = localStorage.getItem('rorschach.planWorkspaceOpen') === 'true';
-    if (planOpen) {
+  if (id === 'workflows') {
+    const workflowOpen = localStorage.getItem('rorschach.workflowWorkspaceOpen') === 'true';
+    if (workflowOpen) {
       return {
         ...defaultState,
-        isOpen: planOpen
+        isOpen: workflowOpen
       };
     }
   }
@@ -117,15 +117,15 @@ const state: RorschachState = {
     sources: [],
     attachments: [],
   },
-  currentPlanGraph: null,
-  planWorkspaceOpen: savedPlanOpen,
+  currentWorkflowGraph: null,
+  workflowWorkspaceOpen: savedWorkflowOpen,
   docWorkspaceOpen: false,
   currentDocArtifact: null,
   isChatUndocked: savedIsUndocked,
   windows: {
     chat: getSavedWindowState('chat'),
     docs: getSavedWindowState('docs'),
-    plans: getSavedWindowState('plans'),
+    workflows: getSavedWindowState('workflows'),
   },
   activeWindowIds: ['chat'],
   activeWorkspaceTab: localStorage.getItem('rorschach.activeWorkspaceTab') || 'docs',

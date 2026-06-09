@@ -1,118 +1,217 @@
 import type { ActorRef } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolCollection, ToolFilter, ToolMsg } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolCollection, ToolFilter, ToolMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { LoopMsg, LoopState } from '../../system/index.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 import type { ContextView } from '../../system/index.ts'
 import type { ContextSnapshotEvent } from '../../types/agents.ts'
 
-export type PlanTask = {
-  id:                 string
-  name:               string
-  description:        string
+export type WorkflowTask = {
+  id: string
+  name: string
+  description: string
   validationCriteria: string
-  dependencies:       string[]
+  dependencies: string[]
 }
 
-export type Plan = {
-  id:        string
-  goal:      string
-  context:   string
+export type Workflow = {
+  id: string
+  userId: string
+  goal: string
+  context: string
   createdAt: string
-  tasks:     PlanTask[]
+  executionTools: string[]
+  tasks: WorkflowTask[]
 }
 
 export type WorkflowsConfig = {
-  plansDir: string
-  executor: {
-    model: string
-    maxToolLoops: number
-  }
-  planner: {
+  workflowsDir: string
+  workflowRunsDir: string
+  workflows: {
     model: string
     maxToolLoops: number
     toolFilter?: ToolFilter
   }
 }
 
-export type PlanSummary = {
+export type WorkflowSummary = {
   id: string
+  userId: string
   goal: string
   createdAt: string
   taskCount: number
   filepath: string
 }
 
-export type PlanGraphNode = {
+export type WorkflowTaskStatus = 'pending' | 'running' | 'blocked' | 'failed' | 'completed'
+export type WorkflowRunStatus = 'running' | 'paused' | 'blocked' | 'failed' | 'completed'
+
+export type WorkflowTaskBlockedReason =
+  | { type: 'missing_pending_job'; jobId: string; toolName: string }
+  | { type: 'task_blocked'; message: string }
+
+export type WorkflowTaskRunState = {
+  status: WorkflowTaskStatus
+  attempts: number
+  startedAt?: string
+  completedAt?: string
+  summary?: string
+  error?: string
+  blockedReason?: WorkflowTaskBlockedReason
+}
+
+export type WorkflowRunState = {
+  schemaVersion: number
+  runId: string
+  workflowId: string
+  userId: string
+  clientId?: string
+  status: WorkflowRunStatus
+  activeTaskIds: string[]
+  taskStates: Record<string, WorkflowTaskRunState>
+  activeTasks: Record<string, {
+    actorName: string
+    startedAt: string
+  }>
+  pendingJobs: Record<string, {
+    taskId: string
+    toolName: string
+    toolCallId?: string
+    startedAt: string
+  }>
+  events: Array<{
+    timestamp: string
+    type: string
+    taskId?: string
+    message: string
+  }>
+}
+
+export type WorkflowGraphNode = {
   id: string
   label: string
   description: string
   validationCriteria: string
   dependencies: string[]
   dependents: string[]
-  status: 'not_tracked'
+  status: WorkflowTaskStatus | 'not_tracked'
+  attempts?: number
+  summary?: string
+  error?: string
+  blockedReason?: WorkflowTaskBlockedReason
 }
 
-export type PlanGraphEdge = {
+export type WorkflowGraphEdge = {
   source: string
   target: string
   type: 'depends_on'
 }
 
-export type PlanGraph = {
-  plan: {
+export type WorkflowGraph = {
+  workflow: {
     id: string
+    userId: string
     goal: string
     context: string
     createdAt: string
     taskCount: number
   }
-  nodes: PlanGraphNode[]
-  edges: PlanGraphEdge[]
+  run?: {
+    runId: string
+    status: WorkflowRunStatus
+    activeTaskIds: string[]
+  }
+  nodes: WorkflowGraphNode[]
+  edges: WorkflowGraphEdge[]
 }
 
-export type PlanStoreReply =
-  | { ok: true; plans: PlanSummary[] }
-  | { ok: true; plan: Plan; filepath: string }
-  | { ok: true; graph: PlanGraph }
-  | { ok: true; deleted: true; planId: string }
-  | { ok: true; updated: true; plan: Plan; filepath: string }
+export type ExecutionToolSummary = {
+  name: string
+  description: string
+  mayBeLongRunning?: boolean
+}
+
+export type WorkflowStoreReply =
+  | { ok: true; workflows: WorkflowSummary[] }
+  | { ok: true; workflow: Workflow; filepath: string }
+  | { ok: true; graph: WorkflowGraph }
+  | { ok: true; deleted: true; workflowId: string }
+  | { ok: true; updated: true; workflow: Workflow; filepath: string }
   | { ok: false; error: string; status?: number }
 
-export type PlanStoreMsg =
-  | { type: 'list'; replyTo: ActorRef<PlanStoreReply> }
-  | { type: 'get'; planId: string; replyTo: ActorRef<PlanStoreReply> }
-  | { type: 'graph'; planId: string; replyTo: ActorRef<PlanStoreReply> }
-  | { type: 'update'; planId: string; patch: { goal?: string; context?: string; tasks?: PlanTask[] }; replyTo: ActorRef<PlanStoreReply> }
-  | { type: 'delete'; planId: string; replyTo: ActorRef<PlanStoreReply> }
+export type WorkflowStoreMsg =
+  | { type: 'list'; userId: string; replyTo: ActorRef<WorkflowStoreReply> }
+  | { type: 'get'; userId: string; workflowId: string; replyTo: ActorRef<WorkflowStoreReply> }
+  | { type: 'graph'; userId: string; workflowId: string; run?: WorkflowRunState; replyTo: ActorRef<WorkflowStoreReply> }
+  | { type: 'save'; workflow: Workflow; replyTo: ActorRef<WorkflowStoreReply> }
+  | { type: 'update'; userId: string; workflowId: string; patch: { goal?: string; context?: string; executionTools?: string[]; tasks?: WorkflowTask[] }; replyTo: ActorRef<WorkflowStoreReply> }
+  | { type: 'delete'; userId: string; workflowId: string; replyTo: ActorRef<WorkflowStoreReply> }
   | { type: '_done' }
+
+export type WorkflowRunnerReply =
+  | { ok: true; run: WorkflowRunState }
+  | { ok: true; runs: WorkflowRunState[] }
+  | { ok: false; error: string; status?: number }
+
+export type WorkflowRunnerMsg =
+  | { type: 'start'; userId: string; clientId?: string; workflowId: string; replyTo: ActorRef<WorkflowRunnerReply> }
+  | { type: 'list'; userId: string; replyTo: ActorRef<WorkflowRunnerReply> }
+  | { type: 'get'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
+  | { type: 'pause'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
+  | { type: 'resume'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
+  | { type: '_reply'; replyTo: ActorRef<WorkflowRunnerReply>; reply: WorkflowRunnerReply; live?: Record<string, ActorRef<WorkflowRunExecutorMsg>> }
+  | { type: '_done' }
+
+export type WorkflowRunExecutorReply =
+  | { ok: true; run: WorkflowRunState }
+  | { ok: false; error: string; status?: number }
+
+export type WorkflowRunExecutorMsg =
+  | { type: 'start'; replyTo: ActorRef<WorkflowRunExecutorReply> }
+  | { type: 'get'; replyTo: ActorRef<WorkflowRunExecutorReply> }
+  | { type: 'pause'; replyTo: ActorRef<WorkflowRunExecutorReply> }
+  | { type: 'resume'; replyTo: ActorRef<WorkflowRunExecutorReply> }
+  | { type: 'taskWaiting'; taskId: string; actorName: string; jobId: string; toolName: string; toolCallId?: string }
+  | { type: 'taskCompleted'; taskId: string; summary: string }
+  | { type: 'taskBlocked'; taskId: string; message: string }
+  | { type: 'taskFailed'; taskId: string; error: string }
+  | { type: '_jobRegistry'; event: import('../../types/tools.ts').JobLifecycleEvent }
+  | { type: '_recoverPending' }
+  | { type: '_done' }
+
+export type WorkflowTaskExecutorMsg =
+  | LoopMsg<{
+      type: 'startTask'
+      workflow: Workflow
+      task: WorkflowTask
+      dependencySummaries: Record<string, string>
+      allowedTools: string[]
+      userId: string
+      clientId?: string
+    }>
+  | { type: '_toolRegistered'; name: string; schema: import('../../types/tools.ts').ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
+  | { type: '_toolUnregistered'; name: string }
 
 export type WorkflowToolsMsg =
   | ToolInvokeMsg
   | { type: '_done' }
-  | { type: '_writeDone'; filepath: string; taskCount: number; planId: string; clientId?: string; replyTo: ActorRef<import('../../types/tools.ts').ToolReply>; span: import('../../system/index.ts').SpanHandle | null }
-  | { type: '_writeErr';  error: string;    replyTo: ActorRef<import('../../types/tools.ts').ToolReply>; span: import('../../system/index.ts').SpanHandle | null }
+  | { type: '_reply'; replyTo: ActorRef<ToolReply>; reply: ToolReply }
+  | { type: '_toolRegistered'; name: string; summary: ExecutionToolSummary }
+  | { type: '_toolUnregistered'; name: string }
 
-
-export type ExecutorAgentExtra =
-  | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
-  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
-  | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
-
-export type ExecutorAgentMsg = LoopMsg<ExecutorAgentExtra>
-
-export type PlannerExtra =
+export type WorkflowsAgentExtra =
   | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
   | { type: '_toolRegistered'; name: string; schema: import('../../types/tools.ts').ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
+  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
 
-export type PlannerAgentMsg = LoopMsg<PlannerExtra>
+export type WorkflowsAgentMsg = LoopMsg<WorkflowsAgentExtra>
 
-export type PlannerAgentState = {
-  loop:                    LoopState
-  contextView:             ContextView
-  tools:                   ToolCollection
-  pendingFormalizeSummary: string | null
-  activeClientId:          string
+export type WorkflowsAgentState = {
+  loop: LoopState
+  contextView: ContextView
+  tools: ToolCollection
+  pendingSaveSummary: string | null
+  activeClientId: string
 }
