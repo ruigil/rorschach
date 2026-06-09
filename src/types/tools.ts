@@ -37,7 +37,7 @@ export type ToolReply =
   | { type: 'toolError'; error: string }
   | { type: 'toolPending'; jobId: string; placeholderText?: string }
 
-/** Final tool reply variants — what callers see from `invokeTool`. */
+/** Terminal tool replies; `toolPending` is a lifecycle event, not a result. */
 export type ToolFinalReply =
   | { type: 'toolResult'; result: ToolResultPayload }
   | { type: 'toolError'; error: string }
@@ -69,12 +69,14 @@ export type JobLifecycleEvent =
       toolName: string
       toolRef: ActorRef<ToolMsg>
       startedAt: number
-      clientId?: string
-      userId?: string
-      statusText?: string
-    }
-  | { jobId: string; status: 'completed'; result: ToolResultPayload; statusText?: string }
-  | { jobId: string; status: 'failed';    error: string }
-  | { jobId: string; status: 'cleared' }
+	      clientId?: string
+	      userId?: string
+	      statusText?: string
+	      progress?: { current: number; total: number }
+	      metadata?: Record<string, unknown>
+	    }
+	  | { jobId: string; status: 'completed'; result: ToolResultPayload; statusText?: string; metadata?: Record<string, unknown> }
+	  | { jobId: string; status: 'failed';    error: string; metadata?: Record<string, unknown> }
+	  | { jobId: string; status: 'cleared' }
 
 export const JobRegistryTopic = createTopic<JobLifecycleEvent>('tools.jobs')
