@@ -172,23 +172,6 @@ export const buildWorkflowsRoutes = (
     },
   },
   {
-    id: 'workflow-runs.pause',
-    method: 'POST',
-    path: '/workflow-runs/',
-    match: 'prefix',
-    handler: async (_req, url, identity) => {
-      const session = requireSession(identity)
-      if (session instanceof Response) return session
-      if (!workflowRunnerRef) return json({ error: 'Workflow runner unavailable' }, 503)
-      const runId = runIdFromPath(url.pathname, '/pause')
-      if (!runId) return json({ error: 'Not found' }, 404)
-      const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'pause', userId: session.userId, runId, replyTo }), { timeoutMs: 5_000 })
-      if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
-      if (!('run' in reply)) return json({ error: 'Unexpected workflow runner response' }, 500)
-      return json(reply.run)
-    },
-  },
-  {
     id: 'workflow-runs.resume',
     method: 'POST',
     path: '/workflow-runs/',

@@ -1,21 +1,26 @@
-import { readdir } from 'node:fs/promises'
+import { mkdir, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { ask } from '../../system/index.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
+import { ToolRegistrationTopic, type ToolCollection } from '../../types/tools.ts'
 import type {
   WorkflowRunExecutorMsg,
   WorkflowRunExecutorReply,
   WorkflowRunnerMsg,
   WorkflowRunnerReply,
   WorkflowRunState,
+  Workflow,
+  ExecutionToolSummary,
   WorkflowStoreMsg,
   WorkflowStoreReply,
 } from './types.ts'
 import { initialRunState, WorkflowRunExecutor } from './workflow-run-executor.ts'
+import { isWorkflowControlTool } from './tools.ts'
 
 type RunnerState = {
   live: Record<string, ActorRef<WorkflowRunExecutorMsg>>
+  executionTools: ToolCollection
 }
 
 const readRun = async (filepath: string): Promise<WorkflowRunState | null> => {
@@ -47,6 +52,48 @@ const getRunFromDisk = async (workflowRunsDir: string, userId: string, runId: st
   return { ok: true, run }
 }
 
+const writeRun = async (workflowRunsDir: string, run: WorkflowRunState): Promise<void> => {
+  await mkdir(workflowRunsDir, { recursive: true })
+  await Bun.write(join(workflowRunsDir, `${run.runId}.json`), JSON.stringify(run, null, 2))
+}
+
+const filterWorkflowTools = (workflow: Workflow, tools: ToolCollection): ToolCollection => {
+  const filtered: ToolCollection = {}
+  for (const name of workflow.executionTools) {
+    const tool = tools[name]
+    if (tool) filtered[name] = tool
+  }
+  return filtered
+}
+
+const missingExecutionTool = (workflow: Workflow, tools: ToolCollection): string | undefined =>
+  workflow.executionTools.find(name => !tools[name])
+
+const summarizeExecutionTools = (tools: ToolCollection): ExecutionToolSummary[] =>
+  Object.values(tools).map(tool => ({
+    name: tool.name,
+    description: tool.schema.function.description,
+    mayBeLongRunning: tool.mayBeLongRunning,
+  }))
+
+const blockedMissingToolRun = (run: WorkflowRunState, missingTool: string): WorkflowRunState => {
+  const message = `Required execution tool is unavailable: ${missingTool}`
+  return {
+    ...run,
+    status: 'blocked',
+    taskStates: Object.fromEntries(Object.entries(run.taskStates).map(([taskId, task]) => [
+      taskId,
+      {
+        ...task,
+        status: 'blocked' as const,
+        error: message,
+        blockedReason: { type: 'task_blocked' as const, message },
+      },
+    ])),
+    events: [...run.events, { timestamp: new Date().toISOString(), type: 'runBlocked', message }],
+  }
+}
+
 export const WorkflowRunner = (
   workflowStoreRef: ActorRef<WorkflowStoreMsg>,
   workflowRunsDir: string,
@@ -70,21 +117,49 @@ export const WorkflowRunner = (
     if (!workflowReply.ok || !('workflow' in workflowReply)) {
       return { ok: false, error: workflowReply.ok ? 'Unexpected workflow store response.' : workflowReply.error, status: workflowReply.ok ? 500 : workflowReply.status }
     }
+    const missingTool = missingExecutionTool(workflowReply.workflow, state.executionTools)
+    if (missingTool) {
+      const blocked = blockedMissingToolRun(run, missingTool)
+      await writeRun(workflowRunsDir, blocked)
+      return { ok: true, run: blocked }
+    }
 
     const ref = ctx.spawn(
       `workflow-run-${run.runId}`,
-      WorkflowRunExecutor(workflowReply.workflow, workflowRunsDir, llmRef, model, maxToolLoops, run),
+      WorkflowRunExecutor(workflowReply.workflow, workflowRunsDir, llmRef, model, maxToolLoops, run, filterWorkflowTools(workflowReply.workflow, state.executionTools)),
     ) as ActorRef<WorkflowRunExecutorMsg>
     return { ref, state: { ...state, live: { ...state.live, [run.runId]: ref } } }
   }
 
   return {
-    initialState: { live: {} },
+    initialState: { live: {}, executionTools: {} },
+    lifecycle: (state, event, ctx) => {
+      if (event.type === 'start') {
+        ctx.subscribe(ToolRegistrationTopic, toolEvent => {
+          if (isWorkflowControlTool(toolEvent.name)) return null
+          if ('schema' in toolEvent) return { type: '_toolRegistered' as const, tool: toolEvent }
+          return { type: '_toolUnregistered' as const, name: toolEvent.name }
+        })
+      }
+      return { state }
+    },
     handler: (state, msg, ctx) => {
+      if (msg.type === '_toolRegistered') {
+        return { state: { ...state, executionTools: { ...state.executionTools, [msg.tool.name]: msg.tool } } }
+      }
+      if (msg.type === '_toolUnregistered') {
+        const { [msg.name]: _, ...executionTools } = state.executionTools
+        return { state: { ...state, executionTools } }
+      }
       if (msg.type === '_done') return { state }
       if (msg.type === '_reply') {
         msg.replyTo.send(msg.reply)
         return { state: msg.live ? { ...state, live: msg.live } : state }
+      }
+
+      if (msg.type === 'listExecutionTools') {
+        msg.replyTo.send({ ok: true, executionTools: summarizeExecutionTools(state.executionTools) })
+        return { state }
       }
 
       if (msg.type === 'list') {
@@ -114,9 +189,15 @@ export const WorkflowRunner = (
               return { reply: { ok: false, error: workflowReply.ok ? 'Unexpected workflow store response.' : workflowReply.error, status: workflowReply.ok ? 500 : workflowReply.status } }
             }
             const run = initialRunState(workflowReply.workflow, crypto.randomUUID(), msg.clientId)
+            const missingTool = missingExecutionTool(workflowReply.workflow, state.executionTools)
+            if (missingTool) {
+              const blocked = blockedMissingToolRun(run, missingTool)
+              await writeRun(workflowRunsDir, blocked)
+              return { reply: { ok: true, run: blocked } }
+            }
             const ref = ctx.spawn(
               `workflow-run-${run.runId}`,
-              WorkflowRunExecutor(workflowReply.workflow, workflowRunsDir, llmRef, model, maxToolLoops, run),
+              WorkflowRunExecutor(workflowReply.workflow, workflowRunsDir, llmRef, model, maxToolLoops, run, filterWorkflowTools(workflowReply.workflow, state.executionTools)),
             ) as ActorRef<WorkflowRunExecutorMsg>
             const startReply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
               ref,
@@ -136,14 +217,14 @@ export const WorkflowRunner = (
         return { state }
       }
 
-      if (msg.type === 'get' || msg.type === 'pause' || msg.type === 'resume') {
+      if (msg.type === 'get' || msg.type === 'resume') {
         ctx.pipeToSelf(
           (async (): Promise<{ reply: WorkflowRunnerReply; live?: Record<string, ActorRef<WorkflowRunExecutorMsg>> }> => {
             const live = state.live[msg.runId]
             if (live) {
               const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
                 live,
-                replyTo => ({ type: msg.type, replyTo } as any),
+                replyTo => msg.type === 'get' ? { type: 'get', replyTo } : { type: 'resume', replyTo },
                 { timeoutMs: 5_000 },
               )
               return { reply }
@@ -155,7 +236,7 @@ export const WorkflowRunner = (
             if ('ok' in ensured) return { reply: ensured }
             const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
               ensured.ref,
-              replyTo => ({ type: msg.type, replyTo } as any),
+              replyTo => ({ type: 'resume', replyTo }),
               { timeoutMs: 5_000 },
             )
             return { reply, live: ensured.state.live }

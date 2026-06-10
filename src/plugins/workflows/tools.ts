@@ -1,9 +1,8 @@
 import type { ActorDef, ActorRef } from '../../system/index.ts'
-import { ask, defineTool, onLifecycle, onMessage, parseToolArgs } from '../../system/index.ts'
+import { ask, defineTool, onMessage, parseToolArgs } from '../../system/index.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
-import { ToolRegistrationTopic, type ToolReply } from '../../types/tools.ts'
+import type { ToolReply } from '../../types/tools.ts'
 import type {
-  ExecutionToolSummary,
   Workflow,
   WorkflowRunnerMsg,
   WorkflowRunnerReply,
@@ -97,13 +96,7 @@ export const getWorkflowRunTool = defineTool('get_workflow_run', 'Read workflow 
   properties: { runId: { type: 'string' } },
 })
 
-export const pauseWorkflowRunTool = defineTool('pause_workflow_run', 'Pause a running workflow run by run id.', {
-  type: 'object',
-  required: ['runId'],
-  properties: { runId: { type: 'string' } },
-})
-
-export const resumeWorkflowRunTool = defineTool('resume_workflow_run', 'Resume a paused or missing-job-blocked workflow run by run id.', {
+export const resumeWorkflowRunTool = defineTool('resume_workflow_run', 'Resume a missing-job-blocked workflow run by run id.', {
   type: 'object',
   required: ['runId'],
   properties: { runId: { type: 'string' } },
@@ -120,11 +113,12 @@ export const workflowControlTools = [
   startWorkflowRunTool,
   listWorkflowRunsTool,
   getWorkflowRunTool,
-  pauseWorkflowRunTool,
   resumeWorkflowRunTool,
 ]
 
 const workflowControlToolNames = new Set(workflowControlTools.map(tool => tool.name))
+
+export const isWorkflowControlTool = (name: string): boolean => workflowControlToolNames.has(name)
 
 const replyError = (replyTo: ActorRef<ToolReply>, error: string): void => {
   replyTo.send({ type: 'toolError', error })
@@ -203,44 +197,21 @@ const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch:
 export const WorkflowTools = (
   workflowStoreRef: ActorRef<WorkflowStoreMsg>,
   workflowRunnerRef: ActorRef<WorkflowRunnerMsg>,
-): ActorDef<WorkflowToolsMsg, { executionTools: Record<string, ExecutionToolSummary> }> => ({
-  initialState: { executionTools: {} },
-  lifecycle: onLifecycle({
-    start: (state, ctx) => {
-      ctx.subscribe(ToolRegistrationTopic, event => {
-        if (workflowControlToolNames.has(event.name)) return null
-        if ('schema' in event) {
-          return {
-            type: '_toolRegistered' as const,
-            name: event.name,
-            summary: {
-              name: event.name,
-              description: event.schema.function.description,
-              mayBeLongRunning: event.mayBeLongRunning,
-            },
-          }
-        }
-        return { type: '_toolUnregistered' as const, name: event.name }
-      })
-      return { state }
-    },
-  }),
-  handler: onMessage<WorkflowToolsMsg, { executionTools: Record<string, ExecutionToolSummary> }>({
+): ActorDef<WorkflowToolsMsg, null> => ({
+  initialState: null,
+  handler: onMessage<WorkflowToolsMsg, null>({
     _done: state => ({ state }),
     _reply: (state, msg) => {
       msg.replyTo.send(msg.reply)
       return { state }
     },
-    _toolRegistered: (state, msg) => ({
-      state: { ...state, executionTools: { ...state.executionTools, [msg.name]: msg.summary } },
-    }),
-    _toolUnregistered: (state, msg) => {
-      const { [msg.name]: _, ...executionTools } = state.executionTools
-      return { state: { ...state, executionTools } }
-    },
     invoke: (state, msg, ctx) => {
       if (msg.toolName === listExecutionToolsTool.name) {
-        msg.replyTo.send({ type: 'toolResult', result: { text: JSON.stringify(Object.values(state.executionTools), null, 2) } })
+        ctx.pipeToSelf(
+          ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'listExecutionTools', replyTo }), { timeoutMs: 5_000 }),
+          reply => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: reply.ok && 'executionTools' in reply ? { type: 'toolResult' as const, result: { text: JSON.stringify(reply.executionTools, null, 2) } } : { type: 'toolError' as const, error: reply.ok ? 'Unexpected workflow runner response.' : reply.error } }),
+          error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: String(error) } }),
+        )
         return { state }
       }
 
@@ -345,15 +316,21 @@ export const WorkflowTools = (
         return { state }
       }
 
-      if ([getWorkflowRunTool.name, pauseWorkflowRunTool.name, resumeWorkflowRunTool.name].includes(msg.toolName)) {
+      if ([getWorkflowRunTool.name, resumeWorkflowRunTool.name].includes(msg.toolName)) {
         const arg = runIdArg(msg.arguments)
         if (!arg.ok) {
           replyError(msg.replyTo, arg.error)
           return { state }
         }
-        const type = msg.toolName === getWorkflowRunTool.name ? 'get' : msg.toolName === pauseWorkflowRunTool.name ? 'pause' : 'resume'
+        const type = msg.toolName === getWorkflowRunTool.name ? 'get' : 'resume'
         ctx.pipeToSelf(
-          ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type, userId: msg.userId, runId: arg.runId, replyTo } as any), { timeoutMs: 10_000 }),
+          ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+            workflowRunnerRef,
+            replyTo => type === 'get'
+              ? { type: 'get', userId: msg.userId, runId: arg.runId, replyTo }
+              : { type: 'resume', userId: msg.userId, runId: arg.runId, replyTo },
+            { timeoutMs: 10_000 },
+          ),
           reply => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: reply.ok && 'run' in reply ? { type: 'toolResult' as const, result: { text: JSON.stringify(reply.run, null, 2) } } : { type: 'toolError' as const, error: reply.ok ? 'Unexpected workflow runner response.' : reply.error } }),
           error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: String(error) } }),
         )

@@ -14,7 +14,6 @@ import {
   listExecutionToolsTool,
   listWorkflowRunsTool,
   listWorkflowsTool,
-  pauseWorkflowRunTool,
   resumeWorkflowRunTool,
   saveWorkflowTool,
   showWorkflowGraphTool,
@@ -189,7 +188,6 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
           startWorkflowRunTool,
           listWorkflowRunsTool,
           getWorkflowRunTool,
-          pauseWorkflowRunTool,
           resumeWorkflowRunTool,
         ]
         const tools: ToolCollection = {}

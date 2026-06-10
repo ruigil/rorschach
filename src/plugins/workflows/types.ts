@@ -1,5 +1,5 @@
 import type { ActorRef } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolCollection, ToolFilter, ToolMsg, ToolReply } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolCollection, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { LoopMsg, LoopState } from '../../system/index.ts'
 import type { MessageAttachment } from '../../types/events.ts'
@@ -30,7 +30,6 @@ export type WorkflowsConfig = {
   workflows: {
     model: string
     maxToolLoops: number
-    toolFilter?: ToolFilter
   }
 }
 
@@ -44,7 +43,7 @@ export type WorkflowSummary = {
 }
 
 export type WorkflowTaskStatus = 'pending' | 'running' | 'blocked' | 'failed' | 'completed'
-export type WorkflowRunStatus = 'running' | 'paused' | 'blocked' | 'failed' | 'completed'
+export type WorkflowRunStatus = 'running' | 'blocked' | 'failed' | 'completed'
 
 export type WorkflowTaskBlockedReason =
   | { type: 'missing_pending_job'; jobId: string; toolName: string }
@@ -151,15 +150,18 @@ export type WorkflowStoreMsg =
 export type WorkflowRunnerReply =
   | { ok: true; run: WorkflowRunState }
   | { ok: true; runs: WorkflowRunState[] }
+  | { ok: true; executionTools: ExecutionToolSummary[] }
   | { ok: false; error: string; status?: number }
 
 export type WorkflowRunnerMsg =
   | { type: 'start'; userId: string; clientId?: string; workflowId: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'list'; userId: string; replyTo: ActorRef<WorkflowRunnerReply> }
+  | { type: 'listExecutionTools'; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'get'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
-  | { type: 'pause'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'resume'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: '_reply'; replyTo: ActorRef<WorkflowRunnerReply>; reply: WorkflowRunnerReply; live?: Record<string, ActorRef<WorkflowRunExecutorMsg>> }
+  | { type: '_toolRegistered'; tool: import('../../types/tools.ts').Tool }
+  | { type: '_toolUnregistered'; name: string }
   | { type: '_done' }
 
 export type WorkflowRunExecutorReply =
@@ -169,14 +171,12 @@ export type WorkflowRunExecutorReply =
 export type WorkflowRunExecutorMsg =
   | { type: 'start'; replyTo: ActorRef<WorkflowRunExecutorReply> }
   | { type: 'get'; replyTo: ActorRef<WorkflowRunExecutorReply> }
-  | { type: 'pause'; replyTo: ActorRef<WorkflowRunExecutorReply> }
   | { type: 'resume'; replyTo: ActorRef<WorkflowRunExecutorReply> }
   | { type: 'taskWaiting'; taskId: string; actorName: string; jobId: string; toolName: string; toolCallId?: string }
   | { type: 'taskCompleted'; taskId: string; summary: string }
   | { type: 'taskBlocked'; taskId: string; message: string }
   | { type: 'taskFailed'; taskId: string; error: string }
   | { type: '_jobRegistry'; event: import('../../types/tools.ts').JobLifecycleEvent }
-  | { type: '_recoverPending' }
   | { type: '_done' }
 
 export type WorkflowTaskExecutorMsg =
@@ -185,24 +185,17 @@ export type WorkflowTaskExecutorMsg =
       workflow: Workflow
       task: WorkflowTask
       dependencySummaries: Record<string, string>
-      allowedTools: string[]
       userId: string
       clientId?: string
     }>
-  | { type: '_toolRegistered'; name: string; schema: import('../../types/tools.ts').ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
-  | { type: '_toolUnregistered'; name: string }
 
 export type WorkflowToolsMsg =
   | ToolInvokeMsg
   | { type: '_done' }
   | { type: '_reply'; replyTo: ActorRef<ToolReply>; reply: ToolReply }
-  | { type: '_toolRegistered'; name: string; summary: ExecutionToolSummary }
-  | { type: '_toolUnregistered'; name: string }
 
 export type WorkflowsAgentExtra =
   | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
-  | { type: '_toolRegistered'; name: string; schema: import('../../types/tools.ts').ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
-  | { type: '_toolUnregistered'; name: string }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
 

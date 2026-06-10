@@ -1,0 +1,131 @@
+import { afterEach, describe, expect, test } from 'bun:test'
+import { mkdir, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { AgentSystem, ask, defineTool, type ActorDef } from '../system/index.ts'
+import { WorkflowRunExecutor, initialRunState } from '../plugins/workflows/workflow-run-executor.ts'
+import type { Workflow, WorkflowRunExecutorMsg, WorkflowRunExecutorReply, WorkflowRunState } from '../plugins/workflows/types.ts'
+import type { ToolCollection, ToolMsg, ToolReply } from '../types/tools.ts'
+
+const tempDirs: string[] = []
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
+})
+
+const makeDir = async (): Promise<string> => {
+  const dir = join(tmpdir(), `rorschach-workflow-runs-${crypto.randomUUID()}`)
+  tempDirs.push(dir)
+  await mkdir(dir, { recursive: true })
+  return dir
+}
+
+const workflow: Workflow = {
+  id: 'workflow-1',
+  userId: 'u1',
+  goal: 'Read a file',
+  context: 'Regression test workflow.',
+  createdAt: '2026-06-10T10:00:00.000Z',
+  executionTools: ['read'],
+  tasks: [
+    {
+      id: 'read-task',
+      name: 'Read task',
+      description: 'Read a file.',
+      validationCriteria: 'A file has been read.',
+      dependencies: [],
+    },
+  ],
+}
+
+const readTool = defineTool('read', 'Read a file.', {
+  type: 'object',
+  properties: {
+    path: { type: 'string' },
+  },
+})
+
+const FakeTool = (): ActorDef<ToolMsg, null> => ({
+  initialState: null,
+  handler: (state, msg) => {
+    const reply: ToolReply = { type: 'toolResult', result: { text: `called ${msg.toolName}` } }
+    msg.replyTo.send(reply)
+    return { state }
+  },
+})
+
+describe('workflow run executor', () => {
+  test('schedules tasks with constructor-provided execution tools', async () => {
+    const dir = await makeDir()
+    const system = await AgentSystem()
+    const toolRef = system.spawn('fake-read-tool', FakeTool())
+    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+
+    const run = initialRunState(workflow, 'run-1')
+    const executor = system.spawn(
+      'workflow-run-run-1',
+      WorkflowRunExecutor(workflow, dir, null, 'test-model', 1, run, tools),
+    )
+
+    const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
+      executor,
+      replyTo => ({ type: 'start', replyTo }),
+      { timeoutMs: 1_000 },
+    )
+
+    expect(reply.ok).toBe(true)
+    if (reply.ok) {
+      expect(reply.run.status).toBe('running')
+      expect(reply.run.taskStates['read-task']?.status).toBe('running')
+      expect(reply.run.taskStates['read-task']?.error).toBeUndefined()
+    }
+
+    await system.shutdown()
+  })
+
+  test('resume abandons persisted pending jobs and retries their tasks', async () => {
+    const dir = await makeDir()
+    const system = await AgentSystem()
+    const toolRef = system.spawn('fake-read-tool-resume', FakeTool())
+    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+    const run: WorkflowRunState = {
+      ...initialRunState(workflow, 'run-2'),
+      status: 'running',
+      taskStates: {
+        'read-task': {
+          status: 'running',
+          attempts: 1,
+          startedAt: '2026-06-10T10:00:00.000Z',
+        },
+      },
+      pendingJobs: {
+        'job-1': {
+          taskId: 'read-task',
+          toolName: 'read',
+          toolCallId: 'call-1',
+          startedAt: '2026-06-10T10:00:01.000Z',
+        },
+      },
+    }
+    const executor = system.spawn(
+      'workflow-run-run-2',
+      WorkflowRunExecutor(workflow, dir, null, 'test-model', 1, run, tools),
+    )
+
+    const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
+      executor,
+      replyTo => ({ type: 'resume', replyTo }),
+      { timeoutMs: 1_000 },
+    )
+
+    expect(reply.ok).toBe(true)
+    if (reply.ok) {
+      expect(reply.run.status).toBe('running')
+      expect(reply.run.pendingJobs).toEqual({})
+      expect(reply.run.taskStates['read-task']?.status).toBe('running')
+      expect(reply.run.taskStates['read-task']?.attempts).toBe(2)
+    }
+
+    await system.shutdown()
+  })
+})

@@ -1,6 +1,6 @@
 import type { ActorContext, ActorDef, ActorRef, ActorResult, Interceptor } from '../../system/index.ts'
-import { agentLoop, idleLoopState, onLifecycle } from '../../system/index.ts'
-import { ToolRegistrationTopic, type ToolCollection, type ToolMsg } from '../../types/tools.ts'
+import { agentLoop, idleLoopState } from '../../system/index.ts'
+import type { ToolCollection } from '../../types/tools.ts'
 import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
 import type {
   WorkflowRunExecutorMsg,
@@ -14,21 +14,17 @@ type TaskExecutorState = {
   workflow: Workflow | null
   task: WorkflowTask | null
   dependencySummaries: Record<string, string>
-  allowedTools: string[]
-  registeredTools: ToolCollection
   tools: ToolCollection
   userId: string
   clientId?: string
 }
 
-const initialState = (): TaskExecutorState => ({
+const initialState = (tools: ToolCollection): TaskExecutorState => ({
   loop: idleLoopState(),
   workflow: null,
   task: null,
   dependencySummaries: {},
-  allowedTools: [],
-  registeredTools: {},
-  tools: {},
+  tools,
   userId: '',
 })
 
@@ -63,6 +59,7 @@ export const WorkflowTaskExecutor = (
   llmRef: ActorRef<LlmProviderMsg> | null,
   model: string,
   maxToolLoops: number,
+  tools: ToolCollection,
 ): ActorDef<WorkflowTaskExecutorMsg, TaskExecutorState> => {
   type M = WorkflowTaskExecutorMsg
   type S = TaskExecutorState
@@ -74,14 +71,14 @@ export const WorkflowTaskExecutor = (
     logPrefix: 'workflow-task',
     model,
     maxToolLoops,
-	    llmRef: () => llmRef,
-	    tools: state => state.tools,
-	    toolInvocation: {
-	      jobMetadata: (call, turn) => ({
-	        workflowTask: true,
-	        userId: turn.userId,
-	        toolCallId: call.id,
-	      }),
+    llmRef: () => llmRef,
+    tools: state => state.tools,
+    toolInvocation: {
+      jobMetadata: (call, turn) => ({
+        workflowTask: true,
+        userId: turn.userId,
+        toolCallId: call.id,
+      }),
     },
     onComplete: (state, finalText) => {
       if (state.task) {
@@ -114,17 +111,11 @@ export const WorkflowTaskExecutor = (
   })
 
   const startTask = (state: S, msg: Extract<M, { type: 'startTask' }>, ctx: Ctx): ActorResult<M, S> => {
-    const allowed = new Set(msg.allowedTools)
-    const tools = Object.fromEntries(
-      Object.entries(state.registeredTools).filter(([name]) => allowed.has(name)),
-    )
     const next: S = {
       ...state,
       workflow: msg.workflow,
       task: msg.task,
       dependencySummaries: msg.dependencySummaries,
-      allowedTools: msg.allowedTools,
-      tools,
       userId: msg.userId,
       clientId: msg.clientId,
     }
@@ -140,48 +131,11 @@ export const WorkflowTaskExecutor = (
       if (state.loop.phase !== 'idle') return { state, stash: true }
       return startTask(state, msg, ctx)
     }
-    if (msg.type === '_toolRegistered') {
-      if (!state.allowedTools.includes(msg.name)) return { state }
-      return {
-        state: {
-          ...state,
-          registeredTools: {
-            ...state.registeredTools,
-            [msg.name]: { name: msg.name, schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning },
-          },
-          ...(state.allowedTools.includes(msg.name)
-            ? { tools: { ...state.tools, [msg.name]: { name: msg.name, schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning } } }
-            : {}),
-        },
-      }
-    }
-    if (msg.type === '_toolUnregistered') {
-      const { [msg.name]: _oldRegistered, ...registeredTools } = state.registeredTools
-      const { [msg.name]: _, ...tools } = state.tools
-      return { state: { ...state, registeredTools, tools } }
-    }
     return next(state, msg)
   }
 
   return {
-    initialState,
-    lifecycle: onLifecycle({
-      start: (state, ctx) => {
-        ctx.subscribe(ToolRegistrationTopic, event => {
-          if ('schema' in event) {
-            return {
-              type: '_toolRegistered' as const,
-              name: event.name,
-              schema: event.schema,
-              ref: event.ref as ActorRef<ToolMsg>,
-              mayBeLongRunning: event.mayBeLongRunning,
-            }
-          }
-          return { type: '_toolUnregistered' as const, name: event.name }
-        })
-        return { state }
-      },
-    }),
+    initialState: () => initialState(tools),
     handler: loop.idle,
     interceptors: [host],
     supervision: { type: 'restart', maxRetries: 1, withinMs: 30_000 },

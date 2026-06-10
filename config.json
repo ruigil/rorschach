@@ -91,21 +91,11 @@
       }
     },
     "workflows": {
-      "plansDir": "workspace/plans",
-      "executor": {
+      "workflowsDir": "workspace/workflows",
+      "workflowRunsDir": "workspace/workflows/runs",
+      "workflows": {
         "model": "deepseek/deepseek-v4-flash",
         "maxToolLoops": 10
-      },
-      "planner": {
-        "model": "deepseek/deepseek-v4-flash",
-        "maxToolLoops": 10,
-        "toolFilter": {
-          "allow": [
-            "web_search",
-            "fetch_file",
-            "switch_mode"
-          ]
-        }
       }
     },
     "notebook": {

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { AgentSystem, ask } from '../system/index.ts'
 import { WorkflowStore } from '../plugins/workflows/workflow-store.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
-import { WorkflowTools, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool } from '../plugins/workflows/tools.ts'
+import { WorkflowTools, listExecutionToolsTool, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool } from '../plugins/workflows/tools.ts'
 import type { Workflow, WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowStoreMsg, WorkflowStoreReply } from '../plugins/workflows/types.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
@@ -54,7 +54,9 @@ const FakeRunner = (): ActorDef<WorkflowRunnerMsg, null> => ({
   initialState: null,
   handler: (state, msg) => {
     if ('replyTo' in msg) {
-      const reply: WorkflowRunnerReply = { ok: false, error: 'not implemented' }
+      const reply: WorkflowRunnerReply = msg.type === 'listExecutionTools'
+        ? { ok: true, executionTools: [{ name: 'read', description: 'Read a file.' }] }
+        : { ok: false, error: 'not implemented' }
       msg.replyTo.send(reply)
     }
     return { state }
@@ -186,6 +188,31 @@ describe('workflow store', () => {
     if (reply.type === 'toolResult') {
       expect(reply.result.text).toContain('Workflow saved')
       expect(reply.result.text).toContain('0 tasks')
+    }
+
+    await system.shutdown()
+  })
+
+  test('list_execution_tools reads execution tools from workflow runner', async () => {
+    const dir = await makeDir()
+    const system = await AgentSystem()
+    const store = system.spawn('workflow-store', WorkflowStore(dir))
+    const runner = system.spawn('workflow-runner', FakeRunner())
+    const tools = system.spawn('workflow-tools', WorkflowTools(store, runner as ActorRef<WorkflowRunnerMsg>))
+
+    const reply = await ask<ToolInvokeMsg, ToolReply>(tools, replyTo => ({
+      type: 'invoke',
+      toolName: listExecutionToolsTool.name,
+      arguments: '{}',
+      replyTo,
+      userId: 'u1',
+      clientId: 'c1',
+    }))
+
+    expect(reply.type).toBe('toolResult')
+    if (reply.type === 'toolResult') {
+      const listed = JSON.parse(reply.result.text) as Array<{ name: string; description: string }>
+      expect(listed).toEqual([{ name: 'read', description: 'Read a file.' }])
     }
 
     await system.shutdown()

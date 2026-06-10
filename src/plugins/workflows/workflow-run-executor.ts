@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ActorDef, ActorRef, PersistenceAdapter } from '../../system/index.ts'
-import { JobRegistryTopic, ToolRegistrationTopic, type JobLifecycleEvent, type ToolCollection } from '../../types/tools.ts'
+import { JobRegistryTopic, type JobLifecycleEvent, type ToolCollection } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type {
   Workflow,
@@ -16,7 +16,6 @@ type RunExecutorState = {
   run: WorkflowRunState
   workflow: Workflow
   tools: ToolCollection
-  seenPendingJobs: Record<string, true>
 }
 
 const now = (): string => new Date().toISOString()
@@ -32,11 +31,12 @@ const runPersistence = (
   workflowRunsDir: string,
   runId: string,
   workflow: Workflow,
+  tools: ToolCollection,
 ): PersistenceAdapter<RunExecutorState> => ({
   load: async () => {
     try {
       const parsed = JSON.parse(await Bun.file(join(workflowRunsDir, `${runId}.json`)).text()) as WorkflowRunState
-      return { run: parsed, workflow, tools: {}, seenPendingJobs: {} }
+      return { run: parsed, workflow, tools }
     } catch {
       return undefined
     }
@@ -117,37 +117,19 @@ export const WorkflowRunExecutor = (
   model: string,
   maxToolLoops: number,
   initialRun: WorkflowRunState,
+  tools: ToolCollection,
 ): ActorDef<WorkflowRunExecutorMsg, RunExecutorState> => {
   const schedule = (state: RunExecutorState, ctx: any): RunExecutorState => {
     if (state.run.status !== 'running') return state
     let run = state.run
     for (const task of readyTasks(state.workflow, run)) {
-      const missingTool = state.workflow.executionTools.find(name => !state.tools[name])
-      if (missingTool) {
-        run = appendEvent({
-          ...run,
-          status: 'blocked',
-          taskStates: {
-            ...run.taskStates,
-            [task.id]: {
-              ...(run.taskStates[task.id] ?? fallbackTaskState()),
-              status: 'blocked',
-              error: `Required execution tool is unavailable: ${missingTool}`,
-              blockedReason: { type: 'task_blocked', message: `Required execution tool is unavailable: ${missingTool}` },
-            },
-          },
-        }, 'taskBlocked', `Required execution tool is unavailable: ${missingTool}`, task.id)
-        continue
-      }
-
       const actorName = `workflow-task-${run.runId}-${task.id}-${(run.taskStates[task.id]?.attempts ?? 0) + 1}`
-      const child = ctx.spawn(actorName, WorkflowTaskExecutor(ctx.self, llmRef, model, maxToolLoops))
+      const child = ctx.spawn(actorName, WorkflowTaskExecutor(ctx.self, llmRef, model, maxToolLoops, state.tools))
       child.send({
         type: 'startTask',
         workflow: state.workflow,
         task,
         dependencySummaries: dependencySummaries(state.workflow, run, task),
-        allowedTools: state.workflow.executionTools,
         userId: run.userId,
         clientId: run.clientId,
       })
@@ -196,55 +178,28 @@ export const WorkflowRunExecutor = (
     return next
   }
 
-  const blockMissingJobs = (state: RunExecutorState): RunExecutorState => {
-    let run = state.run
-    for (const [jobId, pending] of Object.entries(state.run.pendingJobs)) {
-      if (state.seenPendingJobs[jobId]) continue
-      const taskState = run.taskStates[pending.taskId] ?? fallbackTaskState()
-      const { [jobId]: _missing, ...pendingJobs } = run.pendingJobs
-      run = appendEvent({
-        ...run,
-        status: 'blocked',
-        pendingJobs,
-        taskStates: {
-          ...run.taskStates,
-          [pending.taskId]: {
-            ...taskState,
-            status: 'blocked',
-            error: `Pending job not found after recovery: ${jobId}`,
-            blockedReason: { type: 'missing_pending_job', jobId, toolName: pending.toolName },
-          },
-        },
-      }, 'missingPendingJob', `Pending job ${jobId} was not found after recovery.`, pending.taskId)
-    }
-    return { ...state, run }
+  const resumeRun = (state: RunExecutorState, ctx: any): RunExecutorState => {
+    const pendingTaskIds = new Set(Object.values(state.run.pendingJobs).map(job => job.taskId))
+    const taskStates = Object.fromEntries(Object.entries(state.run.taskStates).map(([taskId, task]) => [
+      taskId,
+      pendingTaskIds.has(taskId) || (task.status === 'blocked' && task.blockedReason?.type === 'missing_pending_job')
+        ? { ...task, status: 'pending' as const, error: undefined, blockedReason: undefined }
+        : task,
+    ]))
+    const resumed = appendEvent({ ...state.run, status: 'running', pendingJobs: {}, taskStates }, 'runResumed', 'Workflow run resumed.')
+    return schedule({ ...state, run: resumed }, ctx)
   }
 
   return {
-    initialState: () => ({ run: initialRun, workflow, tools: {}, seenPendingJobs: {} }),
-    persistence: runPersistence(workflowRunsDir, initialRun.runId, workflow),
+    initialState: () => ({ run: initialRun, workflow, tools }),
+    persistence: runPersistence(workflowRunsDir, initialRun.runId, workflow, tools),
     lifecycle: (state, event, ctx) => {
       if (event.type === 'start') {
-        ctx.subscribe(ToolRegistrationTopic, toolEvent => {
-          if ('schema' in toolEvent) {
-            return { type: '_toolRegistered' as any, event: toolEvent }
-          }
-          return { type: '_toolUnregistered' as any, event: toolEvent }
-        })
         ctx.subscribe(JobRegistryTopic, jobEvent => ({ type: '_jobRegistry' as const, event: jobEvent }))
-        ctx.timers.startSingleTimer('recover-pending', { type: '_recoverPending' }, 10)
       }
       return { state }
     },
     handler: (state, msg, ctx) => {
-      if ((msg as any).type === '_toolRegistered') {
-        const tool = (msg as any).event
-        return { state: { ...state, tools: { ...state.tools, [tool.name]: tool } } }
-      }
-      if ((msg as any).type === '_toolUnregistered') {
-        const { [(msg as any).event.name]: _, ...tools } = state.tools
-        return { state: { ...state, tools } }
-      }
       switch (msg.type) {
         case 'start': {
           const next = schedule(state, ctx)
@@ -254,20 +209,8 @@ export const WorkflowRunExecutor = (
         case 'get':
           msg.replyTo.send({ ok: true, run: state.run })
           return { state }
-        case 'pause': {
-          const run = appendEvent({ ...state.run, status: 'paused' }, 'runPaused', 'Workflow run paused.')
-          msg.replyTo.send({ ok: true, run })
-          return { state: { ...state, run } }
-        }
         case 'resume': {
-          const taskStates = Object.fromEntries(Object.entries(state.run.taskStates).map(([taskId, task]) => [
-            taskId,
-            task.status === 'blocked' && task.blockedReason?.type === 'missing_pending_job'
-              ? { ...task, status: 'pending' as const, error: undefined, blockedReason: undefined }
-              : task,
-          ]))
-          const resumed = appendEvent({ ...state.run, status: 'running', taskStates }, 'runResumed', 'Workflow run resumed.')
-          const next = schedule({ ...state, run: resumed }, ctx)
+          const next = resumeRun(state, ctx)
           msg.replyTo.send({ ok: true, run: next.run })
           return { state: next }
         }
@@ -289,7 +232,7 @@ export const WorkflowRunExecutor = (
               },
             },
           }, 'taskWaiting', `Task ${msg.taskId} is waiting on ${msg.toolName} (${msg.jobId}).`, msg.taskId)
-          return { state: { ...state, run, seenPendingJobs: { ...state.seenPendingJobs, [msg.jobId]: true } } }
+          return { state: { ...state, run } }
         }
         case 'taskCompleted':
           return { state: completeTask(state, msg.taskId, msg.summary, ctx) }
@@ -326,9 +269,6 @@ export const WorkflowRunExecutor = (
         }
         case '_jobRegistry': {
           const jobEvent = msg.event as JobLifecycleEvent
-          if (jobEvent.status === 'running' && state.run.pendingJobs[jobEvent.jobId]) {
-            return { state: { ...state, seenPendingJobs: { ...state.seenPendingJobs, [jobEvent.jobId]: true } } }
-          }
           if ((jobEvent.status === 'completed' || jobEvent.status === 'failed') && state.run.pendingJobs[jobEvent.jobId]) {
             const pending = state.run.pendingJobs[jobEvent.jobId]
             if (!pending) return { state }
@@ -346,8 +286,6 @@ export const WorkflowRunExecutor = (
           }
           return { state }
         }
-        case '_recoverPending':
-          return { state: blockMissingJobs(state) }
         case '_done':
           return { state }
       }
