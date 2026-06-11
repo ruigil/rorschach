@@ -17,6 +17,8 @@ export const ask = <Request, Response>(
   options?: { timeoutMs?: number },
   headers?: MessageHeaders,
 ): Promise<Response> => {
+  const timeoutMs = options?.timeoutMs !== undefined ? options.timeoutMs : 5000
+
   return new Promise<Response>((resolve, reject) => {
     let settled = false
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -33,13 +35,13 @@ export const ask = <Request, Response>(
       isAlive: () => !settled,
     }
 
-    if (options?.timeoutMs !== undefined) {
+    if (timeoutMs > 0 && timeoutMs !== Infinity) {
       timer = setTimeout(() => {
         if (!settled) {
           settled = true
-          reject(new Error(`Ask to "${target.name}" timed out after ${options.timeoutMs}ms`))
+          reject(new Error(`Ask to "${target.name}" timed out after ${timeoutMs}ms`))
         }
-      }, options.timeoutMs)
+      }, timeoutMs)
     }
 
     target.send(messageFactory(replyTo), headers)

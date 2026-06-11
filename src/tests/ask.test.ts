@@ -173,7 +173,7 @@ describe('Ask pattern', () => {
     await system.shutdown()
   })
 
-  test('ask without timeout waits indefinitely for a reply', async () => {
+  test('ask with explicit timeoutMs: 0 or Infinity waits indefinitely for a reply', async () => {
     type Msg =
       | { type: 'delayed-reply'; replyTo: ActorRef<string> }
       | { type: 'do-reply'; replyTo: ActorRef<string> }
@@ -199,12 +199,41 @@ describe('Ask pattern', () => {
     const ref = system.spawn('delayed', def)
     await tick()
 
-    const result = await ask<Msg, string>(
+    // Test that passing 0 disables the timeout (waits indefinitely/until resolution)
+    const result0 = await ask<Msg, string>(
       ref,
       (replyTo) => ({ type: 'delayed-reply', replyTo }),
+      { timeoutMs: 0 },
     )
+    expect(result0).toBe('finally')
 
-    expect(result).toBe('finally')
+    // Test that passing Infinity disables the timeout
+    const resultInfinity = await ask<Msg, string>(
+      ref,
+      (replyTo) => ({ type: 'delayed-reply', replyTo }),
+      { timeoutMs: Infinity },
+    )
+    expect(resultInfinity).toBe('finally')
+
     await system.shutdown()
   })
+
+  test('ask without timeout options times out after default 5000ms', async () => {
+    const def: ActorDef<{ replyTo: ActorRef<string> }, null> = {
+      handler: (state) => ({ state }),
+    }
+
+    const system = await AgentSystem()
+    const ref = system.spawn('silent-default-timeout', def)
+    await tick()
+
+    const startTime = Date.now()
+    await expect(
+      ask(ref, (replyTo) => ({ replyTo })),
+    ).rejects.toThrow('timed out after 5000ms')
+
+    expect(Date.now() - startTime).toBeGreaterThanOrEqual(4900)
+
+    await system.shutdown()
+  }, 10000)
 })
