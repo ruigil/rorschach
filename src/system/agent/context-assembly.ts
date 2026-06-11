@@ -56,7 +56,7 @@ export const assembleAgentMessages = (
   policy: ContextAssemblyPolicy,
   currentUserMessage: ApiMessage,
 ): ApiMessage[] => {
-  const recentLimit = policy.recentMessageLimit ?? 40
+  const recentLimit = policy.recentMessageLimit ?? Infinity
   const toolLimit = policy.toolSummaryLimit ?? 8
 
   const recent = view.recentMessages.slice(-recentLimit)
