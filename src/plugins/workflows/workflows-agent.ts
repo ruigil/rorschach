@@ -5,6 +5,7 @@ import { OutboundMessageTopic } from '../../types/events.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import type { ToolMsg } from '../../types/tools.ts'
+import { ToolRegistrationTopic } from '../../types/tools.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
 import { assembleAgentMessages, type ContextView } from '../../system/index.ts'
 import {
@@ -29,6 +30,7 @@ export type WorkflowsAgentConfig = {
 }
 
 const WORKFLOWS_MODE = 'workflows'
+const SWITCH_MODE_TOOL_NAME = 'switch_mode'
 
 const emptyContextView = (userId = ''): ContextView => ({
   userId,
@@ -167,6 +169,21 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
         },
       }
     }
+    if (msg.type === '_toolRegistered') {
+      return {
+        state: {
+          ...state,
+          tools: {
+            ...state.tools,
+            [msg.name]: { name: msg.name, schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning },
+          },
+        },
+      }
+    }
+    if (msg.type === '_toolUnregistered') {
+      const { [msg.name]: _, ...tools } = state.tools
+      return { state: { ...state, tools } }
+    }
     return next(state, msg)
   }
 
@@ -175,6 +192,19 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(ContextSnapshotTopic, event => event.userId === userId ? { type: '_contextSnapshot' as const, ...event } : null)
+        ctx.subscribe(ToolRegistrationTopic, event => {
+          if (event.name !== SWITCH_MODE_TOOL_NAME) return null
+          if ('schema' in event) {
+            return {
+              type: '_toolRegistered' as const,
+              name: event.name,
+              schema: event.schema,
+              ref: event.ref,
+              mayBeLongRunning: event.mayBeLongRunning,
+            }
+          }
+          return { type: '_toolUnregistered' as const, name: event.name }
+        })
 
         const ref = workflowToolsRef as unknown as ActorRef<ToolMsg>
         const controlTools = [

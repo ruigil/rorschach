@@ -18,6 +18,8 @@ import type {
 import { initialRunState, WorkflowRunExecutor } from './workflow-run-executor.ts'
 import { isWorkflowControlTool } from './tools.ts'
 
+const SWITCH_MODE_TOOL_NAME = 'switch_mode'
+
 type RunnerState = {
   live: Record<string, ActorRef<WorkflowRunExecutorMsg>>
   executionTools: ToolCollection
@@ -136,7 +138,7 @@ export const WorkflowRunner = (
     lifecycle: (state, event, ctx) => {
       if (event.type === 'start') {
         ctx.subscribe(ToolRegistrationTopic, toolEvent => {
-          if (isWorkflowControlTool(toolEvent.name)) return null
+          if (isWorkflowControlTool(toolEvent.name) || toolEvent.name === SWITCH_MODE_TOOL_NAME) return null
           if ('schema' in toolEvent) return { type: '_toolRegistered' as const, tool: toolEvent }
           return { type: '_toolUnregistered' as const, name: toolEvent.name }
         })
