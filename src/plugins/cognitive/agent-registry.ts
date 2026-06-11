@@ -155,9 +155,8 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
         })
 
         msg.replyTo.send({
-          type:            'toolPending',
-          jobId:           crypto.randomUUID(),
-          placeholderText: `Switched to ${descriptor.displayName}. Send your next message to start.`,
+          type: 'toolResult',
+          result: { text: `Switched to ${descriptor.displayName}. Send your next message to start.` },
         })
 
         return { state }

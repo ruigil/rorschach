@@ -1,5 +1,5 @@
 import type { ActorRef } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolCollection, ToolReply } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolCollection, ToolReply, ToolMsg, ToolSchema } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { LoopMsg, LoopState } from '../../system/index.ts'
 import type { MessageAttachment } from '../../types/events.ts'
@@ -198,6 +198,8 @@ export type WorkflowsAgentExtra =
   | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
+  | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
+  | { type: '_toolUnregistered'; name: string }
 
 export type WorkflowsAgentMsg = LoopMsg<WorkflowsAgentExtra>
 
