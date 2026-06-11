@@ -4,7 +4,7 @@ import type { ActorDef } from '../system/index.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import { ClientPresenceTopic, InboundMessageTopic, OutboundMessageTopic } from '../types/events.ts'
 import { AgentRegistrationTopic, SwitchAgentTopic, SessionLifecycleTopic, type AgentDescriptor } from '../types/agents.ts'
-import { JobRegistryTopic } from '../types/tools.ts'
+import { JobRegistryTopic, type ToolMsg } from '../types/tools.ts'
 import { SessionManager } from '../plugins/cognitive/session-manager.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
@@ -15,6 +15,11 @@ const NullLlm = (): ActorDef<LlmProviderMsg, null> => ({
 })
 
 const NullAgent = (): ActorDef<any, null> => ({
+  initialState: null,
+  handler: (state) => ({ state }),
+})
+
+const NullTool = (): ActorDef<ToolMsg, null> => ({
   initialState: null,
   handler: (state) => ({ state }),
 })
@@ -145,6 +150,7 @@ describe('session manager mode UI events', () => {
   test('does not destroy session on disconnect if active jobs are running, and destroys it once jobs complete', async () => {
     const system = await AgentSystem()
     const llmRef = system.spawn('null-llm', NullLlm())
+    const toolRef = system.spawn('null-tool', NullTool())
     system.spawn('session-manager', SessionManager({
       llmRef,
       defaultMode:        'chatbot',
@@ -172,7 +178,7 @@ describe('session manager mode UI events', () => {
       jobId: 'job-1',
       status: 'running',
       toolName: 'dummy-tool',
-      toolRef: llmRef,
+      toolRef,
       startedAt: Date.now(),
       clientId: 'c1',
       userId: 'u1',
