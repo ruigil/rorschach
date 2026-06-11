@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdirSync } from 'node:fs'
+import { join, relative, resolve, sep } from 'node:path'
 import type { ActorDef, ActorRef, PersistenceAdapter } from '../../system/index.ts'
 import { JobRegistryTopic, type JobLifecycleEvent, type ToolCollection } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
@@ -10,7 +11,8 @@ import type {
   WorkflowTask,
   WorkflowTaskRunState,
 } from './types.ts'
-import { WorkflowTaskExecutor } from './workflow-task-executor.ts'
+import { parseTaskCompletion, WorkflowTaskExecutor } from './workflow-task-executor.ts'
+import { validateOutputValues } from './validation.ts'
 
 type RunExecutorState = {
   run: WorkflowRunState
@@ -27,6 +29,26 @@ const appendEvent = (run: WorkflowRunState, type: string, message: string, taskI
 
 const fallbackTaskState = (): WorkflowTaskRunState => ({ status: 'pending', attempts: 0 })
 
+const withRunDefaults = (run: WorkflowRunState): WorkflowRunState => ({
+  ...run,
+  inputs: run.inputs ?? {},
+  outputs: run.outputs ?? {},
+})
+
+const hostArtifactRoot = (workflowRunsDir: string, runId: string): string => join(workflowRunsDir, runId)
+
+const toolArtifactRoot = (workflowRunsDir: string, runId: string): string => {
+  const workspaceRoot = resolve('workspace')
+  const runsRoot = resolve(workflowRunsDir)
+  const rel = relative(workspaceRoot, runsRoot)
+  if (rel && !rel.startsWith('..') && rel !== '..') return `/workspace/${rel.split(sep).join('/')}/${runId}`
+  return `/workspace/workflows/runs/${runId}`
+}
+
+const ensureArtifactRoot = (workflowRunsDir: string, runId: string): void => {
+  mkdirSync(hostArtifactRoot(workflowRunsDir, runId), { recursive: true })
+}
+
 const runPersistence = (
   workflowRunsDir: string,
   runId: string,
@@ -36,7 +58,7 @@ const runPersistence = (
   load: async () => {
     try {
       const parsed = JSON.parse(await Bun.file(join(workflowRunsDir, `${runId}.json`)).text()) as WorkflowRunState
-      return { run: parsed, workflow, tools }
+      return { run: withRunDefaults(parsed), workflow, tools }
     } catch {
       return undefined
     }
@@ -53,6 +75,7 @@ const initialTaskStates = (workflow: Workflow): Record<string, WorkflowTaskRunSt
 export const initialRunState = (
   workflow: Workflow,
   runId: string,
+  inputs: Record<string, unknown> = {},
   clientId?: string,
 ): WorkflowRunState => ({
   schemaVersion: 1,
@@ -61,6 +84,8 @@ export const initialRunState = (
   userId: workflow.userId,
   clientId,
   status: 'running',
+  inputs,
+  outputs: {},
   activeTaskIds: [],
   taskStates: initialTaskStates(workflow),
   activeTasks: {},
@@ -68,8 +93,14 @@ export const initialRunState = (
   events: [{ timestamp: now(), type: 'runStarted', message: `Workflow run ${runId} started.` }],
 })
 
-const dependencySummaries = (workflow: Workflow, run: WorkflowRunState, task: WorkflowTask): Record<string, string> =>
-  Object.fromEntries(task.dependencies.map(depId => [depId, run.taskStates[depId]?.summary ?? 'Completed.']))
+const dependencyOutputs = (run: WorkflowRunState, task: WorkflowTask) =>
+  Object.fromEntries(task.dependencies.map(depId => [
+    depId,
+    {
+      ...(run.taskStates[depId]?.summary ? { summary: run.taskStates[depId]?.summary } : {}),
+      ...(run.taskStates[depId]?.outputs ? { outputs: run.taskStates[depId]?.outputs } : {}),
+    },
+  ]))
 
 const readyTasks = (workflow: Workflow, run: WorkflowRunState): WorkflowTask[] =>
   workflow.tasks.filter(task =>
@@ -80,12 +111,28 @@ const readyTasks = (workflow: Workflow, run: WorkflowRunState): WorkflowTask[] =
 
 const terminalRun = (workflow: Workflow, run: WorkflowRunState): WorkflowRunState => {
   const states = workflow.tasks.map(task => run.taskStates[task.id]?.status)
-  if (states.every(status => status === 'completed')) return appendEvent({ ...run, status: 'completed' }, 'runCompleted', 'Workflow run completed.')
+  if (states.every(status => status === 'completed')) {
+    const outputs = resolveWorkflowOutputs(workflow, run)
+    if (!outputs.ok) return appendEvent({ ...run, status: 'failed' }, 'runFailed', outputs.error)
+    return appendEvent({ ...run, outputs: outputs.outputs, status: 'completed' }, 'runCompleted', 'Workflow run completed.')
+  }
   if (states.some(status => status === 'failed')) return appendEvent({ ...run, status: 'failed' }, 'runFailed', 'Workflow run failed.')
   if (!run.activeTaskIds.length && !Object.keys(run.pendingJobs).length && states.some(status => status === 'blocked')) {
     return appendEvent({ ...run, status: 'blocked' }, 'runBlocked', 'Workflow run blocked.')
   }
   return run
+}
+
+const resolveWorkflowOutputs = (workflow: Workflow, run: WorkflowRunState): { ok: true; outputs: WorkflowRunState['outputs'] } | { ok: false; error: string } => {
+  const values: Record<string, unknown> = {}
+  for (const key of Object.keys(workflow.outputs ?? {})) {
+    for (const task of workflow.tasks) {
+      const taskOutputs = run.taskStates[task.id]?.outputs
+      if (taskOutputs && taskOutputs[key] !== undefined) values[key] = taskOutputs[key]
+    }
+  }
+  const validated = validateOutputValues('workflow', workflow.outputs, values)
+  return validated.ok ? { ok: true, outputs: validated.values } : { ok: false, error: validated.error }
 }
 
 const publishTerminalJob = (ctx: any, run: WorkflowRunState): void => {
@@ -123,13 +170,16 @@ export const WorkflowRunExecutor = (
     if (state.run.status !== 'running') return state
     let run = state.run
     for (const task of readyTasks(state.workflow, run)) {
+      ensureArtifactRoot(workflowRunsDir, run.runId)
       const actorName = `workflow-task-${run.runId}-${task.id}-${(run.taskStates[task.id]?.attempts ?? 0) + 1}`
       const child = ctx.spawn(actorName, WorkflowTaskExecutor(ctx.self, llmRef, model, maxToolLoops, state.tools))
       child.send({
         type: 'startTask',
         workflow: state.workflow,
         task,
-        dependencySummaries: dependencySummaries(state.workflow, run, task),
+        inputs: run.inputs,
+        artifactRoot: toolArtifactRoot(workflowRunsDir, run.runId),
+        dependencyOutputs: dependencyOutputs(run, task),
         userId: run.userId,
         clientId: run.clientId,
       })
@@ -155,7 +205,7 @@ export const WorkflowRunExecutor = (
     return { ...state, run: next }
   }
 
-  const completeTask = (state: RunExecutorState, taskId: string, summary: string, ctx: any): RunExecutorState => {
+  const completeTask = (state: RunExecutorState, taskId: string, summary: string, outputs: WorkflowRunState['outputs'], ctx: any): RunExecutorState => {
     const actorName = state.run.activeTasks[taskId]?.actorName
     if (actorName) ctx.stop({ name: actorName })
     const { [taskId]: _active, ...activeTasks } = state.run.activeTasks
@@ -170,6 +220,7 @@ export const WorkflowRunExecutor = (
           status: 'completed',
           completedAt: now(),
           summary,
+          outputs,
         },
       },
     }, 'taskCompleted', summary, taskId)
@@ -202,6 +253,7 @@ export const WorkflowRunExecutor = (
     handler: (state, msg, ctx) => {
       switch (msg.type) {
         case 'start': {
+          ensureArtifactRoot(workflowRunsDir, state.run.runId)
           const next = schedule(state, ctx)
           msg.replyTo.send({ ok: true, run: next.run })
           return { state: next }
@@ -235,12 +287,16 @@ export const WorkflowRunExecutor = (
           return { state: { ...state, run } }
         }
         case 'taskCompleted':
-          return { state: completeTask(state, msg.taskId, msg.summary, ctx) }
+          return { state: completeTask(state, msg.taskId, msg.summary, msg.outputs, ctx) }
         case 'taskBlocked': {
+          const actorName = state.run.activeTasks[msg.taskId]?.actorName
+          if (actorName) ctx.stop({ name: actorName })
+          const { [msg.taskId]: _active, ...activeTasks } = state.run.activeTasks
           const run = appendEvent({
             ...state.run,
             status: 'blocked',
             activeTaskIds: state.run.activeTaskIds.filter(id => id !== msg.taskId),
+            activeTasks,
             taskStates: {
               ...state.run.taskStates,
               [msg.taskId]: {
@@ -255,10 +311,14 @@ export const WorkflowRunExecutor = (
           return { state: { ...state, run } }
         }
         case 'taskFailed': {
+          const actorName = state.run.activeTasks[msg.taskId]?.actorName
+          if (actorName) ctx.stop({ name: actorName })
+          const { [msg.taskId]: _active, ...activeTasks } = state.run.activeTasks
           const run = appendEvent({
             ...state.run,
             status: 'failed',
             activeTaskIds: state.run.activeTaskIds.filter(id => id !== msg.taskId),
+            activeTasks,
             taskStates: {
               ...state.run.taskStates,
               [msg.taskId]: { ...(state.run.taskStates[msg.taskId] ?? fallbackTaskState()), status: 'failed', error: msg.error },
@@ -278,7 +338,15 @@ export const WorkflowRunExecutor = (
               : `Tool ${pending.toolName} failed: ${jobEvent.error}`
             const withJobCleared = { ...state, run: { ...state.run, pendingJobs } }
             if (jobEvent.status === 'completed') {
-              return { state: completeTask(withJobCleared, pending.taskId, summary, ctx) }
+              const task = state.workflow.tasks.find(item => item.id === pending.taskId)
+              if (!task) return { state }
+              const parsed = parseTaskCompletion(task, summary)
+              if (!parsed.ok) {
+                const failedRun = appendEvent({ ...withJobCleared.run, status: 'failed' }, 'taskFailed', parsed.error, pending.taskId)
+                publishTerminalJob(ctx, failedRun)
+                return { state: { ...withJobCleared, run: failedRun } }
+              }
+              return { state: completeTask(withJobCleared, pending.taskId, parsed.summary, parsed.outputs, ctx) }
             }
             const failedRun = appendEvent({ ...withJobCleared.run, status: 'failed' }, 'taskFailed', summary, pending.taskId)
             publishTerminalJob(ctx, failedRun)

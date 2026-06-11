@@ -4,6 +4,8 @@ import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import type { Identity } from '../../types/identity.ts'
 import type { WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowStoreMsg, WorkflowStoreReply } from './types.ts'
+import { isArtifactRef, validArtifactPath } from './validation.ts'
+import { join, relative, resolve } from 'node:path'
 
 export const workflowsStorageSchema: ConfigSchemaSection = {
   id: 'workflows.storage',
@@ -76,6 +78,7 @@ const runIdFromPath = (pathname: string, suffix = ''): string | null => {
 export const buildWorkflowsRoutes = (
   workflowStoreRef: ActorRef<WorkflowStoreMsg> | null,
   workflowRunnerRef: ActorRef<WorkflowRunnerMsg> | null,
+  workflowRunsDir = 'workspace/workflows/runs',
 ): RouteRegistration[] => [
   {
     id: 'workflows.list',
@@ -152,6 +155,45 @@ export const buildWorkflowsRoutes = (
       if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
       if (!('runs' in reply)) return json({ error: 'Unexpected workflow runner response' }, 500)
       return json(reply.runs)
+    },
+  },
+  {
+    id: 'workflow-runs.artifact',
+    method: 'GET',
+    path: '/workflow-runs/',
+    match: 'prefix',
+    handler: async (_req, url, identity) => {
+      const session = requireSession(identity)
+      if (session instanceof Response) return session
+      if (!workflowRunnerRef) return json({ error: 'Workflow runner unavailable' }, 503)
+      const runId = runIdFromPath(url.pathname, '/artifact')
+      if (!runId) return json({ error: 'Not found' }, 404)
+      const artifactPath = url.searchParams.get('path')
+      if (!artifactPath || !validArtifactPath(artifactPath)) return json({ error: 'Invalid artifact path' }, 400)
+
+      const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'get', userId: session.userId, runId, replyTo }), { timeoutMs: 5_000 })
+      if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
+      if (!('run' in reply)) return json({ error: 'Unexpected workflow runner response' }, 500)
+
+      const refs = [
+        ...Object.values(reply.run.outputs ?? {}),
+        ...Object.values(reply.run.taskStates)
+          .filter(task => task.status === 'completed')
+          .flatMap(task => Object.values(task.outputs ?? {})),
+      ].filter(isArtifactRef)
+      const ref = refs.find(item => item.path === artifactPath)
+      if (!ref) return json({ error: 'Artifact is not referenced by completed workflow outputs' }, 404)
+
+      const root = resolve(workflowRunsDir, runId)
+      const filePath = resolve(root, ref.path)
+      const rel = relative(root, filePath)
+      if (rel.startsWith('..') || rel === '..') return json({ error: 'Invalid artifact path' }, 400)
+
+      const file = Bun.file(join(root, ref.path))
+      if (!(await file.exists())) return json({ error: 'Artifact file not found' }, 404)
+      return new Response(file, {
+        headers: { 'Content-Type': ref.mimeType ?? 'application/octet-stream' },
+      })
     },
   },
   {

@@ -170,25 +170,31 @@ describe('workflow store', () => {
     const runner = system.spawn('workflow-runner', FakeRunner())
     const tools = system.spawn('workflow-tools', WorkflowTools(store, runner as ActorRef<WorkflowRunnerMsg>))
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(tools, replyTo => ({
-      type: 'invoke',
-      toolName: saveWorkflowTool.name,
-      arguments: JSON.stringify({
-        goal: 'Learn antigravity',
-        summary: 'Decided to use Gemini 3.5.',
-        executionTools: ['read'],
-        tasks: [],
-      }),
-      replyTo,
-      userId: 'u1',
+	    const reply = await ask<ToolInvokeMsg, ToolReply>(tools, replyTo => ({
+	      type: 'invoke',
+	      toolName: saveWorkflowTool.name,
+	      arguments: JSON.stringify({
+	        goal: 'Learn antigravity',
+	        summary: 'Decided to use Gemini 3.5.',
+	        executionTools: ['read'],
+	        tasks: [{
+	          id: 'research',
+	          name: 'Research',
+	          description: 'Read the source material.',
+	          validationCriteria: 'A summary exists.',
+	          dependencies: [],
+	        }],
+	      }),
+	      replyTo,
+	      userId: 'u1',
       clientId: 'c1',
     }))
 
     expect(reply.type).toBe('toolResult')
-    if (reply.type === 'toolResult') {
-      expect(reply.result.text).toContain('Workflow saved')
-      expect(reply.result.text).toContain('0 tasks')
-    }
+	    if (reply.type === 'toolResult') {
+	      expect(reply.result.text).toContain('Workflow saved')
+	      expect(reply.result.text).toContain('1 tasks')
+	    }
 
     await system.shutdown()
   })

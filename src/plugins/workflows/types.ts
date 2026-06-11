@@ -12,6 +12,7 @@ export type WorkflowTask = {
   description: string
   validationCriteria: string
   dependencies: string[]
+  outputs?: Record<string, WorkflowValueSpec>
 }
 
 export type Workflow = {
@@ -21,7 +22,34 @@ export type Workflow = {
   context: string
   createdAt: string
   executionTools: string[]
+  inputs?: Record<string, WorkflowValueSpec>
+  outputs?: Record<string, WorkflowValueSpec>
   tasks: WorkflowTask[]
+}
+
+export type WorkflowValueSpec = {
+  type: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'artifact'
+  required?: boolean
+  description?: string
+}
+
+export type WorkflowArtifactRef = {
+  type: 'artifact'
+  path: string
+  mimeType?: string
+}
+
+export type WorkflowOutputValue =
+  | string
+  | number
+  | boolean
+  | Record<string, unknown>
+  | unknown[]
+  | WorkflowArtifactRef
+
+export type WorkflowDependencyOutput = {
+  summary?: string
+  outputs?: Record<string, WorkflowOutputValue>
 }
 
 export type WorkflowsConfig = {
@@ -55,6 +83,7 @@ export type WorkflowTaskRunState = {
   startedAt?: string
   completedAt?: string
   summary?: string
+  outputs?: Record<string, WorkflowOutputValue>
   error?: string
   blockedReason?: WorkflowTaskBlockedReason
 }
@@ -66,6 +95,8 @@ export type WorkflowRunState = {
   userId: string
   clientId?: string
   status: WorkflowRunStatus
+  inputs: Record<string, unknown>
+  outputs: Record<string, WorkflowOutputValue>
   activeTaskIds: string[]
   taskStates: Record<string, WorkflowTaskRunState>
   activeTasks: Record<string, {
@@ -96,6 +127,7 @@ export type WorkflowGraphNode = {
   status: WorkflowTaskStatus | 'not_tracked'
   attempts?: number
   summary?: string
+  outputs?: Record<string, WorkflowOutputValue>
   error?: string
   blockedReason?: WorkflowTaskBlockedReason
 }
@@ -119,6 +151,7 @@ export type WorkflowGraph = {
     runId: string
     status: WorkflowRunStatus
     activeTaskIds: string[]
+    outputs?: Record<string, WorkflowOutputValue>
   }
   nodes: WorkflowGraphNode[]
   edges: WorkflowGraphEdge[]
@@ -143,7 +176,7 @@ export type WorkflowStoreMsg =
   | { type: 'get'; userId: string; workflowId: string; replyTo: ActorRef<WorkflowStoreReply> }
   | { type: 'graph'; userId: string; workflowId: string; run?: WorkflowRunState; replyTo: ActorRef<WorkflowStoreReply> }
   | { type: 'save'; workflow: Workflow; replyTo: ActorRef<WorkflowStoreReply> }
-  | { type: 'update'; userId: string; workflowId: string; patch: { goal?: string; context?: string; executionTools?: string[]; tasks?: WorkflowTask[] }; replyTo: ActorRef<WorkflowStoreReply> }
+  | { type: 'update'; userId: string; workflowId: string; patch: { goal?: string; context?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }; replyTo: ActorRef<WorkflowStoreReply> }
   | { type: 'delete'; userId: string; workflowId: string; replyTo: ActorRef<WorkflowStoreReply> }
   | { type: '_done' }
 
@@ -154,7 +187,7 @@ export type WorkflowRunnerReply =
   | { ok: false; error: string; status?: number }
 
 export type WorkflowRunnerMsg =
-  | { type: 'start'; userId: string; clientId?: string; workflowId: string; replyTo: ActorRef<WorkflowRunnerReply> }
+  | { type: 'start'; userId: string; clientId?: string; workflowId: string; inputs?: Record<string, unknown>; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'list'; userId: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'listExecutionTools'; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'get'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
@@ -173,7 +206,7 @@ export type WorkflowRunExecutorMsg =
   | { type: 'get'; replyTo: ActorRef<WorkflowRunExecutorReply> }
   | { type: 'resume'; replyTo: ActorRef<WorkflowRunExecutorReply> }
   | { type: 'taskWaiting'; taskId: string; actorName: string; jobId: string; toolName: string; toolCallId?: string }
-  | { type: 'taskCompleted'; taskId: string; summary: string }
+  | { type: 'taskCompleted'; taskId: string; summary: string; outputs: Record<string, WorkflowOutputValue> }
   | { type: 'taskBlocked'; taskId: string; message: string }
   | { type: 'taskFailed'; taskId: string; error: string }
   | { type: '_jobRegistry'; event: import('../../types/tools.ts').JobLifecycleEvent }
@@ -184,7 +217,9 @@ export type WorkflowTaskExecutorMsg =
       type: 'startTask'
       workflow: Workflow
       task: WorkflowTask
-      dependencySummaries: Record<string, string>
+      inputs: Record<string, unknown>
+      artifactRoot: string
+      dependencyOutputs: Record<string, WorkflowDependencyOutput>
       userId: string
       clientId?: string
     }>

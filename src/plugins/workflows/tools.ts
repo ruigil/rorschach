@@ -9,8 +9,20 @@ import type {
   WorkflowStoreMsg,
   WorkflowStoreReply,
   WorkflowTask,
+  WorkflowValueSpec,
   WorkflowToolsMsg,
 } from './types.ts'
+import { validateWorkflow } from './validation.ts'
+
+const valueSpecSchema = {
+  type: 'object',
+  required: ['type'],
+  properties: {
+    type: { type: 'string', enum: ['string', 'number', 'boolean', 'object', 'array', 'artifact'] },
+    required: { type: 'boolean' },
+    description: { type: 'string' },
+  },
+}
 
 export const listExecutionToolsTool = defineTool('list_execution_tools', 'List tools that workflow tasks may use during execution.', {
   type: 'object',
@@ -24,6 +36,8 @@ export const saveWorkflowTool = defineTool('save_workflow', 'Save an accepted wo
     goal: { type: 'string' },
     summary: { type: 'string' },
     executionTools: { type: 'array', items: { type: 'string' } },
+    inputs: { type: 'object', additionalProperties: valueSpecSchema },
+    outputs: { type: 'object', additionalProperties: valueSpecSchema },
     tasks: {
       type: 'array',
       items: {
@@ -35,6 +49,7 @@ export const saveWorkflowTool = defineTool('save_workflow', 'Save an accepted wo
           description: { type: 'string' },
           validationCriteria: { type: 'string' },
           dependencies: { type: 'array', items: { type: 'string' } },
+          outputs: { type: 'object', additionalProperties: valueSpecSchema },
         },
       },
     },
@@ -49,6 +64,8 @@ export const updateWorkflowTool = defineTool('update_workflow', 'Update an exist
     goal: { type: 'string' },
     summary: { type: 'string' },
     executionTools: { type: 'array', items: { type: 'string' } },
+    inputs: { type: 'object', additionalProperties: valueSpecSchema },
+    outputs: { type: 'object', additionalProperties: valueSpecSchema },
     tasks: { type: 'array', items: { type: 'object' } },
   },
 })
@@ -82,7 +99,10 @@ export const showWorkflowGraphTool = defineTool('show_workflow_graph', 'Open the
 export const startWorkflowRunTool = defineTool('start_workflow_run', 'Start executing a saved workflow. Returns a background workflow run job.', {
   type: 'object',
   required: ['workflowId'],
-  properties: { workflowId: { type: 'string' } },
+  properties: {
+    workflowId: { type: 'string' },
+    inputs: { type: 'object' },
+  },
 })
 
 export const listWorkflowRunsTool = defineTool('list_workflow_runs', 'List workflow runs for the current user.', {
@@ -143,6 +163,17 @@ const runIdArg = (raw: string): { ok: true; runId: string } | { ok: false; error
   return parsed.ok ? { ok: true, runId: parsed.value.runId } : parsed
 }
 
+const startWorkflowArg = (raw: string): { ok: true; workflowId: string; inputs?: Record<string, unknown> } | { ok: false; error: string } => {
+  const parsed = parseToolArgs(raw, obj => {
+    const workflowId = obj.workflowId
+    const inputs = obj.inputs
+    if (typeof workflowId !== 'string' || !workflowId.trim()) return null
+    if (inputs !== undefined && (!inputs || typeof inputs !== 'object' || Array.isArray(inputs))) return null
+    return { workflowId: workflowId.trim(), ...(inputs !== undefined ? { inputs: inputs as Record<string, unknown> } : {}) }
+  }, 'Missing required argument: workflowId')
+  return parsed.ok ? { ok: true, ...parsed.value } : parsed
+}
+
 const formatWorkflowList = (workflows: Array<{ id: string; goal: string; createdAt: string; taskCount: number }>): string =>
   workflows.length
     ? workflows.map(workflow => `- ${workflow.goal} (id: ${workflow.id}, created: ${workflow.createdAt.slice(0, 10)}, tasks: ${workflow.taskCount})`).join('\n')
@@ -155,36 +186,41 @@ const formatRunList = (runs: Array<{ runId: string; workflowId: string; status: 
 
 const parseWorkflow = (raw: string, userId: string): { ok: true; workflow: Workflow } | { ok: false; error: string } => {
   try {
-    const args = JSON.parse(raw) as { goal?: string; summary?: string; executionTools?: string[]; tasks?: WorkflowTask[] }
+    const args = JSON.parse(raw) as { goal?: string; summary?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
     if (!args.goal || typeof args.goal !== 'string') throw new Error('missing goal')
     if (!args.summary || typeof args.summary !== 'string') throw new Error('missing summary')
     if (!Array.isArray(args.executionTools) || !args.executionTools.every(item => typeof item === 'string')) throw new Error('missing executionTools')
     if (!Array.isArray(args.tasks)) throw new Error('missing tasks')
-    return {
-      ok: true,
-      workflow: {
-        id: crypto.randomUUID(),
-        userId,
-        goal: args.goal,
-        context: args.summary,
-        createdAt: new Date().toISOString(),
-        executionTools: args.executionTools,
-        tasks: args.tasks,
-      },
+    const workflow: Workflow = {
+      id: crypto.randomUUID(),
+      userId,
+      goal: args.goal,
+      context: args.summary,
+      createdAt: new Date().toISOString(),
+      executionTools: args.executionTools,
+      ...(args.inputs !== undefined ? { inputs: args.inputs } : {}),
+      ...(args.outputs !== undefined ? { outputs: args.outputs } : {}),
+      tasks: args.tasks,
     }
+    const errors = validateWorkflow(workflow, { disallowedExecutionTool: isWorkflowControlTool })
+    if (errors.length) throw new Error(errors.join('; '))
+    return { ok: true, workflow }
   } catch (error) {
     return { ok: false, error: `invalid arguments: ${String(error)}` }
   }
 }
 
-const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch: { goal?: string; context?: string; executionTools?: string[]; tasks?: WorkflowTask[] } } | { ok: false; error: string } => {
+const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch: { goal?: string; context?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] } } | { ok: false; error: string } => {
   try {
-    const args = JSON.parse(raw) as { workflowId?: string; goal?: string; summary?: string; executionTools?: string[]; tasks?: WorkflowTask[] }
+    const args = JSON.parse(raw) as { workflowId?: string; goal?: string; summary?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
     if (!args.workflowId || typeof args.workflowId !== 'string') throw new Error('missing workflowId')
+    if (args.executionTools?.some(isWorkflowControlTool)) throw new Error('executionTools cannot include workflow control tools')
     const patch = {
       ...(args.goal !== undefined ? { goal: args.goal } : {}),
       ...(args.summary !== undefined ? { context: args.summary } : {}),
       ...(args.executionTools !== undefined ? { executionTools: args.executionTools } : {}),
+      ...(args.inputs !== undefined ? { inputs: args.inputs } : {}),
+      ...(args.outputs !== undefined ? { outputs: args.outputs } : {}),
       ...(args.tasks !== undefined ? { tasks: args.tasks } : {}),
     }
     if (!Object.keys(patch).length) throw new Error('provide at least one field to update')
@@ -290,13 +326,13 @@ export const WorkflowTools = (
       }
 
       if (msg.toolName === startWorkflowRunTool.name) {
-        const arg = workflowIdArg(msg.arguments)
+        const arg = startWorkflowArg(msg.arguments)
         if (!arg.ok) {
           replyError(msg.replyTo, arg.error)
           return { state }
         }
         ctx.pipeToSelf(
-          ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'start', userId: msg.userId, clientId: msg.clientId, workflowId: arg.workflowId, replyTo }), { timeoutMs: 10_000 }),
+          ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'start', userId: msg.userId, clientId: msg.clientId, workflowId: arg.workflowId, inputs: arg.inputs, replyTo }), { timeoutMs: 10_000 }),
           reply => {
             if (!reply.ok || !('run' in reply)) return { type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: reply.ok ? 'Unexpected workflow runner response.' : reply.error } }
             if (msg.clientId) ctx.publish(OutboundMessageTopic, { clientId: msg.clientId, text: JSON.stringify({ type: 'workflowGraph', workflowId: reply.run.workflowId, runId: reply.run.runId }) })

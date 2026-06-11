@@ -17,6 +17,7 @@ import type {
 } from './types.ts'
 import { initialRunState, WorkflowRunExecutor } from './workflow-run-executor.ts'
 import { isWorkflowControlTool } from './tools.ts'
+import { validateInputValues } from './validation.ts'
 
 const SWITCH_MODE_TOOL_NAME = 'switch_mode'
 
@@ -28,7 +29,9 @@ type RunnerState = {
 const readRun = async (filepath: string): Promise<WorkflowRunState | null> => {
   try {
     const parsed = JSON.parse(await Bun.file(filepath).text()) as WorkflowRunState
-    return parsed && typeof parsed.runId === 'string' && typeof parsed.userId === 'string' ? parsed : null
+    return parsed && typeof parsed.runId === 'string' && typeof parsed.userId === 'string'
+      ? { ...parsed, inputs: parsed.inputs ?? {}, outputs: parsed.outputs ?? {} }
+      : null
   } catch {
     return null
   }
@@ -190,7 +193,9 @@ export const WorkflowRunner = (
             if (!workflowReply.ok || !('workflow' in workflowReply)) {
               return { reply: { ok: false, error: workflowReply.ok ? 'Unexpected workflow store response.' : workflowReply.error, status: workflowReply.ok ? 500 : workflowReply.status } }
             }
-            const run = initialRunState(workflowReply.workflow, crypto.randomUUID(), msg.clientId)
+            const inputValidation = validateInputValues(workflowReply.workflow.inputs, msg.inputs)
+            if (!inputValidation.ok) return { reply: { ok: false, error: inputValidation.error, status: 400 } }
+            const run = initialRunState(workflowReply.workflow, crypto.randomUUID(), inputValidation.values, msg.clientId)
             const missingTool = missingExecutionTool(workflowReply.workflow, state.executionTools)
             if (missingTool) {
               const blocked = blockedMissingToolRun(run, missingTool)

@@ -10,6 +10,7 @@ import type {
   WorkflowStoreReply,
   WorkflowSummary,
 } from './types.ts'
+import { validateWorkflow } from './validation.ts'
 
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every(item => typeof item === 'string')
@@ -76,7 +77,7 @@ export const toWorkflowGraph = (workflow: Workflow, run?: WorkflowRunState): Wor
       createdAt: workflow.createdAt,
       taskCount: workflow.tasks.length,
     },
-    ...(run ? { run: { runId: run.runId, status: run.status, activeTaskIds: run.activeTaskIds } } : {}),
+    ...(run ? { run: { runId: run.runId, status: run.status, activeTaskIds: run.activeTaskIds, outputs: run.outputs ?? {} } } : {}),
     nodes: workflow.tasks.map(task => {
       const taskState = run?.taskStates[task.id]
       return {
@@ -89,6 +90,7 @@ export const toWorkflowGraph = (workflow: Workflow, run?: WorkflowRunState): Wor
         status: taskState?.status ?? 'not_tracked',
         ...(taskState?.attempts !== undefined ? { attempts: taskState.attempts } : {}),
         ...(taskState?.summary ? { summary: taskState.summary } : {}),
+        ...(taskState?.outputs ? { outputs: taskState.outputs } : {}),
         ...(taskState?.error ? { error: taskState.error } : {}),
         ...(taskState?.blockedReason ? { blockedReason: taskState.blockedReason } : {}),
       }
@@ -180,6 +182,8 @@ export const WorkflowStore = (workflowsDir: string): ActorDef<WorkflowStoreMsg, 
     save: (state, msg, ctx) => {
       ctx.pipeToSelf(
         (async () => {
+          const errors = validateWorkflow(msg.workflow)
+          if (errors.length) return { ok: false as const, error: `Invalid workflow: ${errors.join('; ')}`, status: 400 }
           await mkdir(workflowsDir, { recursive: true })
           const filepath = join(workflowsDir, workflowFilename(msg.workflow))
           await Bun.write(filepath, JSON.stringify(msg.workflow, null, 2))
@@ -208,8 +212,12 @@ export const WorkflowStore = (workflowsDir: string): ActorDef<WorkflowStoreMsg, 
             goal: msg.patch.goal ?? existing.goal,
             context: msg.patch.context ?? existing.context,
             executionTools: msg.patch.executionTools ?? existing.executionTools,
+            inputs: msg.patch.inputs ?? existing.inputs,
+            outputs: msg.patch.outputs ?? existing.outputs,
             tasks: msg.patch.tasks ?? existing.tasks,
           }
+          const errors = validateWorkflow(updated)
+          if (errors.length) return { ok: false as const, error: `Invalid workflow: ${errors.join('; ')}`, status: 400 }
           await Bun.write(found.filepath, JSON.stringify(updated, null, 2))
           return { ok: true as const, updated: true as const, workflow: updated, filepath: found.filepath }
         })(),
