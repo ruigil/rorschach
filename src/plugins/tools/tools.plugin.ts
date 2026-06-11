@@ -229,6 +229,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
         ctx.deleteRetained(ToolRegistrationTopic, bashTool.name,  { name: bashTool.name,  ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, writeTool.name, { name: writeTool.name, ref: null })
         ctx.deleteRetained(ToolRegistrationTopic, readTool.name,  { name: readTool.name,  ref: null })
+        ctx.deleteRetained(ToolRegistrationTopic, editTool.name,  { name: editTool.name,  ref: null })
       }
       if (state.vision.ref) {
         ctx.deleteRetained(ToolRegistrationTopic, analyzeImageTool.name,  { name: analyzeImageTool.name,  ref: null })
@@ -279,6 +280,7 @@ const toolsPlugin: PluginDef<PluginMsg, PluginState, ToolsConfig> = {
       ctx.publishRetained(ToolRegistrationTopic, bashTool.name,  { ...bashTool,  ref: bashRef })
       ctx.publishRetained(ToolRegistrationTopic, writeTool.name, { ...writeTool, ref: bashRef })
       ctx.publishRetained(ToolRegistrationTopic, readTool.name,  { ...readTool,  ref: bashRef })
+      ctx.publishRetained(ToolRegistrationTopic, editTool.name,  { ...editTool,  ref: bashRef })
 
       let visionRef: ActorRef<ToolMsg> | null = null
       if (state.llmRef && newVisionConfig) {
