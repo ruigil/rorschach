@@ -87,6 +87,40 @@ const removeSession = (state: SessionManagerState, userId: string): SessionManag
   return { ...state, sessions, clientIndex }
 }
 
+const tryDestroySession = (
+  state: SessionManagerState,
+  userId: string,
+  ctx: any,
+  ts: number,
+): SessionManagerState => {
+  const session = state.sessions[userId]
+  if (!session) return state
+
+  const hasActiveJobs = Object.values(state.activeJobs).some(job => job.userId === userId)
+  if (session.clientCount > 0 || hasActiveJobs) {
+    return state
+  }
+
+  for (const ref of Object.values(session.agentRefs)) {
+    ctx.stop(ref)
+  }
+  ctx.stop(session.contextStoreRef)
+
+  const { [userId]: _, ...sessions } = state.sessions
+  const clientIndex = Object.fromEntries(
+    Object.entries(state.clientIndex).filter(([, uid]) => uid !== userId),
+  )
+
+  ctx.publish(SessionLifecycleTopic, {
+    type:      'sessionEnded',
+    userId,
+    reason:    'lastDisconnect',
+    timestamp: ts,
+  })
+
+  return { ...state, sessions, clientIndex }
+}
+
 const ensureAgent = (
   state: SessionManagerState,
   userId: string,
@@ -322,22 +356,8 @@ export const SessionManager = (
           timestamp:   ts,
         })
 
-        if (count > 0) {
-          const next = updateSession({ ...state, clientIndex }, userId, { clientCount: count })
-          return { state: next }
-        }
-
-        // Last client gone — tear down everything for this user.
-        for (const ref of Object.values(session.agentRefs)) ctx.stop(ref)
-        ctx.stop(session.contextStoreRef)
-        const { [userId]: __, ...sessions } = state.sessions
-        ctx.publish(SessionLifecycleTopic, {
-          type:      'sessionEnded',
-          userId,
-          reason:    'lastDisconnect',
-          timestamp: ts,
-        })
-        return { state: { ...state, sessions, clientIndex } }
+        const next = updateSession({ ...state, clientIndex }, userId, { clientCount: count })
+        return { state: tryDestroySession(next, userId, ctx, ts) }
       },
 
       _message: (state, msg) => {
@@ -443,17 +463,21 @@ export const SessionManager = (
 
           // 4. Remove from active jobs cache
           const { [event.jobId]: _, ...activeJobs } = state.activeJobs
-          return {
-            state: {
-              ...state,
-              activeJobs,
-            },
+          const next = {
+            ...state,
+            activeJobs,
           }
+          return { state: tryDestroySession(next, userId, ctx, Date.now()) }
         }
 
         if (event.status === 'cleared') {
+          const cached = state.activeJobs[event.jobId]
           const { [event.jobId]: _, ...activeJobs } = state.activeJobs
-          return { state: { ...state, activeJobs } }
+          let next = { ...state, activeJobs }
+          if (cached) {
+            next = tryDestroySession(next, cached.userId, ctx, Date.now())
+          }
+          return { state: next }
         }
 
         return { state }

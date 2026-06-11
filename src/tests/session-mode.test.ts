@@ -3,7 +3,8 @@ import { AgentSystem } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import { ClientPresenceTopic, InboundMessageTopic, OutboundMessageTopic } from '../types/events.ts'
-import { AgentRegistrationTopic, SwitchAgentTopic, type AgentDescriptor } from '../types/agents.ts'
+import { AgentRegistrationTopic, SwitchAgentTopic, SessionLifecycleTopic, type AgentDescriptor } from '../types/agents.ts'
+import { JobRegistryTopic } from '../types/tools.ts'
 import { SessionManager } from '../plugins/cognitive/session-manager.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
@@ -137,6 +138,65 @@ describe('session manager mode UI events', () => {
     await tick()
 
     expect(clientFrames.c1).toContain('agent-ready')
+
+    await system.shutdown()
+  })
+
+  test('does not destroy session on disconnect if active jobs are running, and destroys it once jobs complete', async () => {
+    const system = await AgentSystem()
+    const llmRef = system.spawn('null-llm', NullLlm())
+    system.spawn('session-manager', SessionManager({
+      llmRef,
+      defaultMode:        'chatbot',
+      contextWindowHours: 4,
+    }))
+
+    const lifecycleEvents: any[] = []
+    system.subscribe(SessionLifecycleTopic, (event) => {
+      lifecycleEvents.push(event)
+    })
+
+    await tick()
+    system.publish(AgentRegistrationTopic, { type: 'register', descriptor: descriptor('chatbot', 'Chatbot') })
+    await tick()
+
+    // 1. Connect client c1 for user u1
+    system.publishRetained(ClientPresenceTopic, 'c1', { status: 'connected', clientId: 'c1', userId: 'u1', roles: [] })
+    await tick()
+
+    // Verify session started
+    expect(lifecycleEvents.some(e => e.type === 'sessionStarted' && e.userId === 'u1')).toBe(true)
+
+    // 2. Start a background job for user u1
+    system.publishRetained(JobRegistryTopic, 'job-1', {
+      jobId: 'job-1',
+      status: 'running',
+      toolName: 'dummy-tool',
+      toolRef: llmRef,
+      startedAt: Date.now(),
+      clientId: 'c1',
+      userId: 'u1',
+    })
+    await tick()
+
+    // 3. Disconnect client c1
+    system.publishRetained(ClientPresenceTopic, 'c1', { status: 'disconnected', clientId: 'c1' })
+    await tick()
+
+    // Verify client detached, but sessionEnded has NOT occurred
+    expect(lifecycleEvents.some(e => e.type === 'clientDetached' && e.userId === 'u1')).toBe(true)
+    expect(lifecycleEvents.some(e => e.type === 'sessionEnded' && e.userId === 'u1')).toBe(false)
+
+    // 4. Complete/clear the job
+    system.publishRetained(JobRegistryTopic, 'job-1', {
+      jobId: 'job-1',
+      status: 'completed',
+      result: { text: 'Done' }
+    })
+    await tick()
+
+    // Verify sessionEnded has now occurred
+    expect(lifecycleEvents.some(e => e.type === 'sessionEnded' && e.userId === 'u1')).toBe(true)
 
     await system.shutdown()
   })
