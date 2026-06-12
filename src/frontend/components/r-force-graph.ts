@@ -24,6 +24,11 @@ export const formatKgEdgeLabel = (edge: { type?: unknown, properties?: Record<st
   return `${type} c=${confidence.toFixed(2)}`;
 };
 
+export const workflowTaskStatusClass = (status: unknown): string => {
+  const value = typeof status === 'string' && status.length > 0 ? status : 'not_tracked';
+  return `status-${value.replace(/[^a-z0-9_-]/gi, '-').toLowerCase()}`;
+};
+
 @customElement('r-force-graph')
 export class RForceGraph extends RorschachBase {
   @property({ type: Object }) planData: any = null;
@@ -88,6 +93,7 @@ export class RForceGraph extends RorschachBase {
 
   private _renderKnowledgeGraphD3() {
     if (!this.kgData) return;
+    if (typeof d3 === 'undefined') return;
     if (this._sim) this._sim.stop();
     const container = this.querySelector('#graph-container');
     if (!container) return;
@@ -216,6 +222,7 @@ export class RForceGraph extends RorschachBase {
 
   private _renderPlanGraphD3() {
     if (!this.planData) return;
+    if (typeof d3 === 'undefined') return;
     if (this._sim) this._sim.stop();
     const container = this.querySelector('#graph-container');
     if (!container) return;
@@ -259,7 +266,7 @@ export class RForceGraph extends RorschachBase {
 
     const node = g.append('g').selectAll('g').data(nodes).enter().append('g')
       .attr('class', (d: any) => {
-        let cls = 'plan-node';
+        let cls = `plan-node ${workflowTaskStatusClass(d.status)}`;
         if (d.id === this.selectedTaskId) cls += ' selected';
         if (!hasIncoming.has(d.id) && hasOutgoing.has(d.id)) cls += ' source';
         if (hasIncoming.has(d.id) && !hasOutgoing.has(d.id)) cls += ' sink';

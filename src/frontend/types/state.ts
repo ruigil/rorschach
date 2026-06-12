@@ -87,16 +87,39 @@ export interface WorkflowGraphNode {
   dependents: string[]
   status?: string
   attempts?: number
+  startedAt?: string
+  completedAt?: string
   summary?: string
+  outputs?: Record<string, unknown>
   error?: string
+  blockedReason?: Record<string, unknown>
 }
 
 export interface WorkflowGraph {
   workflowId?: string
   runId?: string
-  workflow?: { goal: string; createdAt: string; taskCount: number }
-  run?: { runId: string; status: string; activeTaskIds: string[] }
+  workflow?: {
+    id?: string
+    goal: string
+    context?: string
+    createdAt: string
+    taskCount: number
+    executionTools?: string[]
+    inputs?: Record<string, unknown>
+    outputs?: Record<string, unknown>
+  }
+  run?: {
+    runId: string
+    status: string
+    inputs?: Record<string, unknown>
+    activeTaskIds: string[]
+    activeTasks?: Record<string, unknown>
+    pendingJobs?: Record<string, unknown>
+    outputs?: Record<string, unknown>
+    events?: Array<{ timestamp: string; type: string; taskId?: string; message: string }>
+  }
   nodes: WorkflowGraphNode[]
+  edges?: Array<{ source: string; target: string; type: string }>
 }
 
 export interface RorschachState {
