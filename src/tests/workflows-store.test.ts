@@ -6,7 +6,7 @@ import { AgentSystem, ask } from '../system/index.ts'
 import { WorkflowStore } from '../plugins/workflows/workflow-store.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
 import { WorkflowTools, listExecutionToolsTool, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool } from '../plugins/workflows/tools.ts'
-import type { Workflow, WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowStoreMsg, WorkflowStoreReply } from '../plugins/workflows/types.ts'
+import type { Workflow, WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowRunState, WorkflowStoreMsg, WorkflowStoreReply } from '../plugins/workflows/types.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 import { OutboundMessageTopic } from '../types/events.ts'
@@ -32,6 +32,12 @@ const sampleWorkflow = (userId = 'u1'): Workflow => ({
   context: 'User accepted a workflow for execution UI.',
   createdAt: '2026-05-16T10:00:00.000Z',
   executionTools: ['read'],
+  inputs: {
+    topic: { type: 'string', required: true, description: 'Workflow topic' },
+  },
+  outputs: {
+    summary: { type: 'string', required: true, description: 'Final summary' },
+  },
   tasks: [
     {
       id: 'design',
@@ -47,6 +53,42 @@ const sampleWorkflow = (userId = 'u1'): Workflow => ({
       validationCriteria: 'The graph opens beside chat.',
       dependencies: ['design'],
     },
+  ],
+})
+
+const sampleRun = (): WorkflowRunState => ({
+  schemaVersion: 1,
+  runId: 'run-1',
+  workflowId: 'workflow-1',
+  userId: 'u1',
+  status: 'running',
+  inputs: { topic: 'workspace' },
+  outputs: {},
+  activeTaskIds: ['build'],
+  activeTasks: {
+    build: { actorName: 'workflow-task-run-1-build-1', startedAt: '2026-05-16T10:01:00.000Z' },
+  },
+  pendingJobs: {
+    'job-1': { taskId: 'build', toolName: 'read', startedAt: '2026-05-16T10:01:05.000Z' },
+  },
+  taskStates: {
+    design: {
+      status: 'completed',
+      attempts: 1,
+      startedAt: '2026-05-16T10:00:00.000Z',
+      completedAt: '2026-05-16T10:00:30.000Z',
+      summary: 'Designed the UI.',
+      outputs: { summary: 'Design done.' },
+    },
+    build: {
+      status: 'running',
+      attempts: 1,
+      startedAt: '2026-05-16T10:01:00.000Z',
+    },
+  },
+  events: [
+    { timestamp: '2026-05-16T10:00:00.000Z', type: 'runStarted', message: 'Run started.' },
+    { timestamp: '2026-05-16T10:01:00.000Z', type: 'taskStarted', taskId: 'build', message: 'Task build started.' },
   ],
 })
 
@@ -90,11 +132,29 @@ describe('workflow store', () => {
     const system = await AgentSystem()
     const store = system.spawn('workflow-store', WorkflowStore(dir))
 
-    const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(store, replyTo => ({ type: 'graph', userId: 'u1', workflowId: 'workflow-1', replyTo }))
+    const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(store, replyTo => ({ type: 'graph', userId: 'u1', workflowId: 'workflow-1', run: sampleRun(), replyTo }))
     expect(reply.ok).toBe(true)
     if (reply.ok && 'graph' in reply) {
       expect(reply.graph.nodes.map((node) => node.id)).toEqual(['design', 'build'])
       expect(reply.graph.edges).toEqual([{ source: 'design', target: 'build', type: 'depends_on' }])
+      expect(reply.graph.workflow).toMatchObject({
+        context: 'User accepted a workflow for execution UI.',
+        executionTools: ['read'],
+        inputs: { topic: { type: 'string', required: true, description: 'Workflow topic' } },
+        outputs: { summary: { type: 'string', required: true, description: 'Final summary' } },
+      })
+      expect(reply.graph.run?.runId).toBe('run-1')
+      expect(reply.graph.run?.status).toBe('running')
+      expect(reply.graph.run?.inputs).toEqual({ topic: 'workspace' })
+      expect(reply.graph.run?.activeTaskIds).toEqual(['build'])
+      expect(reply.graph.run?.pendingJobs['job-1']).toMatchObject({ taskId: 'build', toolName: 'read' })
+      expect(reply.graph.run?.events[0]).toEqual({ timestamp: '2026-05-16T10:00:00.000Z', type: 'runStarted', message: 'Run started.' })
+      expect(reply.graph.nodes[0]).toMatchObject({
+        status: 'completed',
+        startedAt: '2026-05-16T10:00:00.000Z',
+        completedAt: '2026-05-16T10:00:30.000Z',
+        outputs: { summary: 'Design done.' },
+      })
     }
 
     await system.shutdown()

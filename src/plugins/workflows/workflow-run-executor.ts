@@ -6,12 +6,13 @@ import { JobRegistryTopic, type JobLifecycleEvent, type ToolCollection } from '.
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type {
   Workflow,
+  WorkflowDependencyOutput,
   WorkflowRunExecutorMsg,
   WorkflowRunState,
   WorkflowTask,
   WorkflowTaskRunState,
 } from './types.ts'
-import { parseTaskCompletion, WorkflowTaskExecutor } from './workflow-task-executor.ts'
+import { WorkflowTaskExecutor } from './workflow-task-executor.ts'
 import { validateOutputValues } from './validation.ts'
 
 type RunExecutorState = {
@@ -93,7 +94,7 @@ export const initialRunState = (
   events: [{ timestamp: now(), type: 'runStarted', message: `Workflow run ${runId} started.` }],
 })
 
-const dependencyOutputs = (run: WorkflowRunState, task: WorkflowTask) =>
+const dependencyOutputs = (run: WorkflowRunState, task: WorkflowTask): Record<string, WorkflowDependencyOutput> =>
   Object.fromEntries(task.dependencies.map(depId => [
     depId,
     {
@@ -101,6 +102,9 @@ const dependencyOutputs = (run: WorkflowRunState, task: WorkflowTask) =>
       ...(run.taskStates[depId]?.outputs ? { outputs: run.taskStates[depId]?.outputs } : {}),
     },
   ]))
+
+const formatResumeContext = (toolName: string, text: string): string =>
+  `A previously pending tool completed.\n\nTool: ${toolName}\nResult:\n${text}\n\nContinue from this result. When done, call complete_workflow_task. If blocked, call block_workflow_task.`
 
 const readyTasks = (workflow: Workflow, run: WorkflowRunState): WorkflowTask[] =>
   workflow.tasks.filter(task =>
@@ -166,7 +170,7 @@ export const WorkflowRunExecutor = (
   initialRun: WorkflowRunState,
   tools: ToolCollection,
 ): ActorDef<WorkflowRunExecutorMsg, RunExecutorState> => {
-  const schedule = (state: RunExecutorState, ctx: any): RunExecutorState => {
+  const schedule = (state: RunExecutorState, ctx: any, resumeContexts: Record<string, string> = {}): RunExecutorState => {
     if (state.run.status !== 'running') return state
     let run = state.run
     for (const task of readyTasks(state.workflow, run)) {
@@ -180,6 +184,7 @@ export const WorkflowRunExecutor = (
         inputs: run.inputs,
         artifactRoot: toolArtifactRoot(workflowRunsDir, run.runId),
         dependencyOutputs: dependencyOutputs(run, task),
+        ...(resumeContexts[task.id] ? { resumeContext: resumeContexts[task.id] } : {}),
         userId: run.userId,
         clientId: run.clientId,
       })
@@ -338,15 +343,20 @@ export const WorkflowRunExecutor = (
               : `Tool ${pending.toolName} failed: ${jobEvent.error}`
             const withJobCleared = { ...state, run: { ...state.run, pendingJobs } }
             if (jobEvent.status === 'completed') {
-              const task = state.workflow.tasks.find(item => item.id === pending.taskId)
-              if (!task) return { state }
-              const parsed = parseTaskCompletion(task, summary)
-              if (!parsed.ok) {
-                const failedRun = appendEvent({ ...withJobCleared.run, status: 'failed' }, 'taskFailed', parsed.error, pending.taskId)
-                publishTerminalJob(ctx, failedRun)
-                return { state: { ...withJobCleared, run: failedRun } }
-              }
-              return { state: completeTask(withJobCleared, pending.taskId, parsed.summary, parsed.outputs, ctx) }
+              const run = appendEvent({
+                ...withJobCleared.run,
+                status: 'running',
+                taskStates: {
+                  ...withJobCleared.run.taskStates,
+                  [pending.taskId]: {
+                    ...(withJobCleared.run.taskStates[pending.taskId] ?? fallbackTaskState()),
+                    status: 'pending',
+                    error: undefined,
+                    blockedReason: undefined,
+                  },
+                },
+              }, 'taskToolCompleted', `Pending tool ${pending.toolName} completed; retrying task ${pending.taskId}.`, pending.taskId)
+              return { state: schedule({ ...withJobCleared, run }, ctx, { [pending.taskId]: formatResumeContext(pending.toolName, summary) }) }
             }
             const failedRun = appendEvent({ ...withJobCleared.run, status: 'failed' }, 'taskFailed', summary, pending.taskId)
             publishTerminalJob(ctx, failedRun)

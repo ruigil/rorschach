@@ -1,6 +1,6 @@
 import type { ActorContext, ActorDef, ActorRef, ActorResult, Interceptor } from '../../system/index.ts'
-import { agentLoop, idleLoopState } from '../../system/index.ts'
-import type { ToolCollection } from '../../types/tools.ts'
+import { agentLoop, defineTool, idleLoopState, parseToolArgs } from '../../system/index.ts'
+import type { ToolCollection, ToolReply } from '../../types/tools.ts'
 import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
 import type {
   WorkflowRunExecutorMsg,
@@ -22,6 +22,7 @@ type TaskExecutorState = {
   tools: ToolCollection
   userId: string
   clientId?: string
+  terminalSignaled: boolean
 }
 
 const initialState = (tools: ToolCollection): TaskExecutorState => ({
@@ -33,25 +34,51 @@ const initialState = (tools: ToolCollection): TaskExecutorState => ({
   dependencyOutputs: {},
   tools,
   userId: '',
+  terminalSignaled: false,
 })
 
-export const parseTaskCompletion = (
+export const completeWorkflowTaskTool = defineTool('complete_workflow_task', 'Complete the current workflow task with validated structured outputs.', {
+  type: 'object',
+  required: ['summary', 'outputs'],
+  properties: {
+    summary: { type: 'string' },
+    outputs: { type: 'object' },
+  },
+})
+
+export const blockWorkflowTaskTool = defineTool('block_workflow_task', 'Mark the current workflow task blocked with a short reason.', {
+  type: 'object',
+  required: ['reason'],
+  properties: {
+    reason: { type: 'string' },
+  },
+})
+
+export const parseTaskCompletionArgs = (
   task: WorkflowTask,
-  finalText: string,
+  rawArgs: string,
 ): { ok: true; summary: string; outputs: Record<string, WorkflowOutputValue> } | { ok: false; error: string } => {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(finalText)
-  } catch {
-    return { ok: false, error: 'Task final response must be valid JSON.' }
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ok: false, error: 'Task final response must be a JSON object.' }
-  const obj = parsed as Record<string, unknown>
-  if (typeof obj.summary !== 'string' || !obj.summary.trim()) return { ok: false, error: 'Task final response must include a non-empty summary string.' }
-  const outputs = obj.outputs ?? {}
-  const validated = validateOutputValues(`task ${task.id}`, task.outputs, outputs as Record<string, unknown>)
+  const parsed = parseToolArgs(rawArgs, obj => {
+    const summary = obj.summary
+    const outputs = obj.outputs
+    if (typeof summary !== 'string' || !summary.trim()) return null
+    if (!outputs || typeof outputs !== 'object' || Array.isArray(outputs)) return null
+    return { summary: summary.trim(), outputs: outputs as Record<string, unknown> }
+  }, 'complete_workflow_task requires non-empty summary and outputs object')
+  if (!parsed.ok) return { ok: false, error: parsed.error }
+  const validated = validateOutputValues(`task ${task.id}`, task.outputs, parsed.value.outputs)
   if (!validated.ok) return validated
-  return { ok: true, summary: obj.summary, outputs: validated.values }
+  return { ok: true, summary: parsed.value.summary, outputs: validated.values }
+}
+
+export const parseTaskBlockArgs = (
+  rawArgs: string,
+): { ok: true; reason: string } | { ok: false; error: string } => {
+  const parsed = parseToolArgs(rawArgs, obj => {
+    const reason = obj.reason
+    return typeof reason === 'string' && reason.trim() ? { reason: reason.trim() } : null
+  }, 'block_workflow_task requires non-empty reason')
+  return parsed.ok ? { ok: true, reason: parsed.value.reason } : parsed
 }
 
 const buildMessages = (
@@ -60,17 +87,25 @@ const buildMessages = (
   inputs: Record<string, unknown>,
   artifactRoot: string,
   dependencyOutputs: Record<string, WorkflowDependencyOutput>,
+  resumeContext?: string,
 ): ApiMessage[] => [
   {
     role: 'system',
     content: `You execute exactly one workflow task.
 
-Complete the task using only available tools. If the task cannot be completed, explain why it is blocked.
+Complete the task using only available tools.
 
-When the task is complete, respond with exactly one JSON object and no surrounding prose:
+Do not finish by writing the task result in the assistant message.
+
+When the validation criteria are satisfied, call complete_workflow_task with:
 {
   "summary": "short human-readable completion summary",
   "outputs": {}
+}
+
+When the task cannot be completed, call block_workflow_task with:
+{
+  "reason": "short explanation of what is blocking the task"
 }
 
 The outputs object must contain only declared task output keys. Required outputs must be present. If an output is an artifact, write the file under artifactRoot using an available execution tool and return an artifact reference with a relative path, for example { "type": "artifact", "path": "generated-page.html", "mimeType": "text/html" }. Do not inline large generated files into JSON outputs.
@@ -88,11 +123,11 @@ Validation criteria: ${task.validationCriteria}
 Declared task outputs:
 ${JSON.stringify(task.outputs ?? {}, null, 2)}
 Dependency outputs:
-${JSON.stringify(dependencyOutputs, null, 2)}`,
+${JSON.stringify(dependencyOutputs, null, 2)}${resumeContext ? `\nResume context:\n${resumeContext}` : ''}`,
   },
   {
     role: 'user',
-    content: `Execute workflow task "${task.name}" and finish with the required JSON object once the validation criteria are satisfied.`,
+    content: `Execute workflow task "${task.name}". When complete, call complete_workflow_task. If blocked, call block_workflow_task.`,
   },
 ]
 
@@ -122,16 +157,18 @@ export const WorkflowTaskExecutor = (
         toolCallId: call.id,
       }),
     },
-    onComplete: (state, finalText) => {
-      if (state.task) {
-        const parsed = parseTaskCompletion(state.task, finalText)
-        if (parsed.ok) parentRef.send({ type: 'taskCompleted', taskId: state.task.id, summary: parsed.summary, outputs: parsed.outputs })
-        else parentRef.send({ type: 'taskFailed', taskId: state.task.id, error: parsed.error })
+    onComplete: (state) => {
+      if (state.task && !state.terminalSignaled) {
+        parentRef.send({
+          type: 'taskFailed',
+          taskId: state.task.id,
+          error: 'Task ended without calling complete_workflow_task or block_workflow_task.',
+        })
       }
       return { state }
     },
     onError: (state, err) => {
-      if (state.task) {
+      if (state.task && !state.terminalSignaled) {
         const error = err.kind === 'loopLimit'
           ? `Tool loop limit reached. ${err.finalText}`.trim()
           : String(err.error)
@@ -162,20 +199,60 @@ export const WorkflowTaskExecutor = (
       inputs: msg.inputs,
       artifactRoot: msg.artifactRoot,
       dependencyOutputs: msg.dependencyOutputs,
+      tools: {
+        ...tools,
+        [completeWorkflowTaskTool.name]: { ...completeWorkflowTaskTool, ref: ctx.self as unknown as ActorRef<any> },
+        [blockWorkflowTaskTool.name]: { ...blockWorkflowTaskTool, ref: ctx.self as unknown as ActorRef<any> },
+      },
       userId: msg.userId,
       clientId: msg.clientId,
+      terminalSignaled: false,
     }
     return loop.startTurn(next, {
-      messages: buildMessages(msg.workflow, msg.task, msg.inputs, msg.artifactRoot, msg.dependencyOutputs),
+      messages: buildMessages(msg.workflow, msg.task, msg.inputs, msg.artifactRoot, msg.dependencyOutputs, msg.resumeContext),
       userId: msg.userId,
       clientId: msg.clientId,
     }, ctx)
+  }
+
+  const invokeControlTool = (state: S, msg: Extract<M, { type: 'invoke' }>): ActorResult<M, S> => {
+    if (!state.task) {
+      msg.replyTo.send({ type: 'toolError', error: 'No workflow task is active.' })
+      return { state }
+    }
+    if (msg.toolName === completeWorkflowTaskTool.name) {
+      const parsed = parseTaskCompletionArgs(state.task, msg.arguments)
+      if (!parsed.ok) {
+        msg.replyTo.send({ type: 'toolError', error: parsed.error })
+        return { state }
+      }
+      parentRef.send({ type: 'taskCompleted', taskId: state.task.id, summary: parsed.summary, outputs: parsed.outputs })
+      const reply: ToolReply = { type: 'toolResult', result: { text: 'Task completed.' } }
+      msg.replyTo.send(reply)
+      return { state: { ...state, terminalSignaled: true } }
+    }
+    if (msg.toolName === blockWorkflowTaskTool.name) {
+      const parsed = parseTaskBlockArgs(msg.arguments)
+      if (!parsed.ok) {
+        msg.replyTo.send({ type: 'toolError', error: parsed.error })
+        return { state }
+      }
+      parentRef.send({ type: 'taskBlocked', taskId: state.task.id, message: parsed.reason })
+      const reply: ToolReply = { type: 'toolResult', result: { text: 'Task blocked.' } }
+      msg.replyTo.send(reply)
+      return { state: { ...state, terminalSignaled: true } }
+    }
+    msg.replyTo.send({ type: 'toolError', error: `Unknown workflow task control tool: ${msg.toolName}` })
+    return { state }
   }
 
   const host: Interceptor<M, S> = (state, msg, ctx, next) => {
     if (msg.type === 'startTask') {
       if (state.loop.phase !== 'idle') return { state, stash: true }
       return startTask(state, msg, ctx)
+    }
+    if (msg.type === 'invoke' && (msg.toolName === completeWorkflowTaskTool.name || msg.toolName === blockWorkflowTaskTool.name)) {
+      return invokeControlTool(state, msg)
     }
     return next(state, msg)
   }

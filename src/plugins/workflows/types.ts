@@ -126,6 +126,8 @@ export type WorkflowGraphNode = {
   dependents: string[]
   status: WorkflowTaskStatus | 'not_tracked'
   attempts?: number
+  startedAt?: string
+  completedAt?: string
   summary?: string
   outputs?: Record<string, WorkflowOutputValue>
   error?: string
@@ -146,12 +148,19 @@ export type WorkflowGraph = {
     context: string
     createdAt: string
     taskCount: number
+    executionTools: string[]
+    inputs?: Record<string, WorkflowValueSpec>
+    outputs?: Record<string, WorkflowValueSpec>
   }
   run?: {
     runId: string
     status: WorkflowRunStatus
+    inputs: Record<string, unknown>
     activeTaskIds: string[]
+    activeTasks: WorkflowRunState['activeTasks']
+    pendingJobs: WorkflowRunState['pendingJobs']
     outputs?: Record<string, WorkflowOutputValue>
+    events: WorkflowRunState['events']
   }
   nodes: WorkflowGraphNode[]
   edges: WorkflowGraphEdge[]
@@ -220,9 +229,11 @@ export type WorkflowTaskExecutorMsg =
       inputs: Record<string, unknown>
       artifactRoot: string
       dependencyOutputs: Record<string, WorkflowDependencyOutput>
+      resumeContext?: string
       userId: string
       clientId?: string
     }>
+  | ToolInvokeMsg
 
 export type WorkflowToolsMsg =
   | ToolInvokeMsg

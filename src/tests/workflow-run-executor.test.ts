@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { AgentSystem, ask, defineTool, type ActorDef } from '../system/index.ts'
 import { WorkflowRunExecutor, initialRunState } from '../plugins/workflows/workflow-run-executor.ts'
 import type { Workflow, WorkflowRunExecutorMsg, WorkflowRunExecutorReply, WorkflowRunState } from '../plugins/workflows/types.ts'
-import type { ToolCollection, ToolMsg, ToolReply } from '../types/tools.ts'
+import type { LlmProviderMsg } from '../types/llm.ts'
+import { JobRegistryTopic, type ToolCollection, type ToolMsg, type ToolReply } from '../types/tools.ts'
 
 const tempDirs: string[] = []
 
@@ -50,6 +51,14 @@ const FakeTool = (): ActorDef<ToolMsg, null> => ({
   handler: (state, msg) => {
     const reply: ToolReply = { type: 'toolResult', result: { text: `called ${msg.toolName}` } }
     msg.replyTo.send(reply)
+    return { state }
+  },
+})
+
+const CapturingLlm = (streams: Array<Extract<LlmProviderMsg, { type: 'stream' }>>): ActorDef<LlmProviderMsg, null> => ({
+  initialState: null,
+  handler: (state, msg) => {
+    if (msg.type === 'stream') streams.push(msg)
     return { state }
   },
 })
@@ -125,6 +134,63 @@ describe('workflow run executor', () => {
       expect(reply.run.taskStates['read-task']?.status).toBe('running')
       expect(reply.run.taskStates['read-task']?.attempts).toBe(2)
     }
+
+    await system.shutdown()
+  })
+
+  test('completed pending jobs retry the task with resume context instead of parsing tool text as JSON', async () => {
+    const dir = await makeDir()
+    const system = await AgentSystem()
+    const toolRef = system.spawn('fake-read-tool-pending-complete', FakeTool())
+    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+    const streams: Array<Extract<LlmProviderMsg, { type: 'stream' }>> = []
+    const llmRef = system.spawn('capturing-llm-pending-complete', CapturingLlm(streams))
+    const run: WorkflowRunState = {
+      ...initialRunState(workflow, 'run-3'),
+      status: 'running',
+      taskStates: {
+        'read-task': {
+          status: 'running',
+          attempts: 1,
+          startedAt: '2026-06-10T10:00:00.000Z',
+        },
+      },
+      pendingJobs: {
+        'job-1': {
+          taskId: 'read-task',
+          toolName: 'read',
+          toolCallId: 'call-1',
+          startedAt: '2026-06-10T10:00:01.000Z',
+        },
+      },
+    }
+    const executor = system.spawn(
+      'workflow-run-run-3',
+      WorkflowRunExecutor(workflow, dir, llmRef, 'test-model', 1, run, tools),
+    )
+    await Bun.sleep(30)
+
+    system.publish(JobRegistryTopic, {
+      jobId: 'job-1',
+      status: 'completed',
+      result: { text: 'finished work without JSON' },
+    })
+    await Bun.sleep(80)
+
+    const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
+      executor,
+      replyTo => ({ type: 'get', replyTo }),
+      { timeoutMs: 1_000 },
+    )
+
+    expect(reply.ok).toBe(true)
+    if (reply.ok) {
+      expect(reply.run.status).toBe('running')
+      expect(reply.run.pendingJobs).toEqual({})
+      expect(reply.run.taskStates['read-task']?.status).toBe('running')
+      expect(reply.run.taskStates['read-task']?.attempts).toBe(2)
+    }
+    expect(JSON.stringify(streams[0]?.messages ?? [])).toContain('finished work without JSON')
 
     await system.shutdown()
   })

@@ -76,8 +76,22 @@ export const toWorkflowGraph = (workflow: Workflow, run?: WorkflowRunState): Wor
       context: workflow.context,
       createdAt: workflow.createdAt,
       taskCount: workflow.tasks.length,
+      executionTools: workflow.executionTools,
+      ...(workflow.inputs ? { inputs: workflow.inputs } : {}),
+      ...(workflow.outputs ? { outputs: workflow.outputs } : {}),
     },
-    ...(run ? { run: { runId: run.runId, status: run.status, activeTaskIds: run.activeTaskIds, outputs: run.outputs ?? {} } } : {}),
+    ...(run ? {
+      run: {
+        runId: run.runId,
+        status: run.status,
+        inputs: run.inputs ?? {},
+        activeTaskIds: run.activeTaskIds,
+        activeTasks: run.activeTasks ?? {},
+        pendingJobs: run.pendingJobs ?? {},
+        outputs: run.outputs ?? {},
+        events: run.events ?? [],
+      },
+    } : {}),
     nodes: workflow.tasks.map(task => {
       const taskState = run?.taskStates[task.id]
       return {
@@ -89,6 +103,8 @@ export const toWorkflowGraph = (workflow: Workflow, run?: WorkflowRunState): Wor
         dependents: dependents.get(task.id) ?? [],
         status: taskState?.status ?? 'not_tracked',
         ...(taskState?.attempts !== undefined ? { attempts: taskState.attempts } : {}),
+        ...(taskState?.startedAt ? { startedAt: taskState.startedAt } : {}),
+        ...(taskState?.completedAt ? { completedAt: taskState.completedAt } : {}),
         ...(taskState?.summary ? { summary: taskState.summary } : {}),
         ...(taskState?.outputs ? { outputs: taskState.outputs } : {}),
         ...(taskState?.error ? { error: taskState.error } : {}),

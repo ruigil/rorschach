@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { AgentSystem, ask, type ActorDef } from '../system/index.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
 import { startWorkflowRunTool, WorkflowTools } from '../plugins/workflows/tools.ts'
-import { parseTaskCompletion } from '../plugins/workflows/workflow-task-executor.ts'
+import { parseTaskCompletionArgs } from '../plugins/workflows/workflow-task-executor.ts'
 import { validateInputValues, validateWorkflow } from '../plugins/workflows/validation.ts'
 import type {
   Workflow,
@@ -105,22 +105,22 @@ describe('workflow IO and artifacts', () => {
     expect(validateWorkflow(invalid)).toContain('duplicate task output key: report (write-report, duplicate)')
   })
 
-  test('parses strict task completion JSON and rejects undeclared outputs', () => {
+  test('parses task completion tool arguments and rejects undeclared outputs', () => {
     const task = workflow().tasks[0]
     if (!task) throw new Error('missing sample task')
-    const parsed = parseTaskCompletion(task, JSON.stringify({
+    const parsed = parseTaskCompletionArgs(task, JSON.stringify({
       summary: 'Wrote the report.',
       outputs: { report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' } },
     }))
     expect(parsed.ok).toBe(true)
     if (parsed.ok) expect(parsed.outputs.report).toEqual({ type: 'artifact', path: 'report.html', mimeType: 'text/html' })
 
-    expect(parseTaskCompletion(task, JSON.stringify({
+    expect(parseTaskCompletionArgs(task, JSON.stringify({
       summary: 'Wrote the report.',
       outputs: { report: { type: 'artifact', path: '../report.html' } },
     }))).toEqual({ ok: false, error: 'task write-report.report must be an artifact reference with a safe relative path' })
 
-    expect(parseTaskCompletion(task, JSON.stringify({
+    expect(parseTaskCompletionArgs(task, JSON.stringify({
       summary: 'Wrote the report.',
       outputs: {
         report: { type: 'artifact', path: 'report.html' },
