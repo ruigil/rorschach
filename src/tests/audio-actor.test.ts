@@ -1,12 +1,25 @@
-import { describe, test, expect } from 'bun:test'
+import { afterEach, describe, test, expect } from 'bun:test'
 import { AgentSystem, ask } from '../system/index.ts'
 import { Audio } from '../plugins/tools/audio.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
-import { unlink, writeFile, mkdir } from 'node:fs/promises'
+import { unlink, writeFile, mkdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const tick = (ms = 50) => Bun.sleep(ms)
+const tempDirs: string[] = []
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
+})
+
+const makeDir = async (prefix: string): Promise<string> => {
+  const dir = join(tmpdir(), `${prefix}-${crypto.randomUUID()}`)
+  tempDirs.push(dir)
+  await mkdir(dir, { recursive: true })
+  return dir
+}
 
 describe('audio actor', () => {
   test('text_to_speech saves audio and returns public url', async () => {
@@ -65,8 +78,7 @@ describe('audio actor', () => {
 
   test('transcribe_audio transcribes an audio file', async () => {
      // This requires a real (small) wav file since ffmpeg will be called
-     const testDir = join(import.meta.dir, '../../workspace/test-audio')
-     await mkdir(testDir, { recursive: true })
+     const testDir = await makeDir('rorschach-audio')
      const testFile = join(testDir, 'test-transcribe.wav')
      
      // Create a minimal valid WAV file (44 bytes header + some silence)
@@ -118,7 +130,6 @@ describe('audio actor', () => {
       expect(reply.result.text).toBe('The User said: "hello"')
     }
 
-    try { await unlink(testFile) } catch {}
     await system.shutdown()
   })
 })
