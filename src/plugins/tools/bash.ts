@@ -109,8 +109,8 @@ export const BashTool = (options?: BashOptions): ActorDef<BashToolMsg, null> => 
             : null
 
           ctx.pipeToSelf(
-            bash.exec(`cat > ${args.path}`, { stdin: args.content }),
-            (_) => ({ type: '_writeDone' as const, path: args.path, replyTo, span }),
+            fs.writeFile(args.path, args.content),
+            () => ({ type: '_writeDone' as const, path: args.path, replyTo, span }),
             (error) => ({ type: '_writeErr' as const, error: String(error), replyTo, span }),
           )
         } else if (toolName === readTool.name) {
@@ -130,7 +130,7 @@ export const BashTool = (options?: BashOptions): ActorDef<BashToolMsg, null> => 
           const args = JSON.parse(rawArgs) as { path: string; target: string; replacement: string }
 
           // Ensure safety check: path must be under /workspace
-          if (!args.path.startsWith('/workspace')) {
+          if (args.path !== '/workspace' && !args.path.startsWith('/workspace/')) {
             replyTo.send({ type: 'toolError', error: 'Permission denied: edit target path must reside inside /workspace' })
             return { state }
           }
@@ -141,21 +141,16 @@ export const BashTool = (options?: BashOptions): ActorDef<BashToolMsg, null> => 
             : null
 
           ctx.pipeToSelf(
-            bash.exec(`cat ${args.path}`),
-            (result) => {
-              if (result.exitCode !== 0) {
-                return { type: '_readErr' as const, error: result.stderr || `File not found: ${args.path}`, replyTo, span }
-              }
-              return {
-                type: '_editReadDone' as const,
-                path: args.path,
-                target: args.target,
-                replacement: args.replacement,
-                content: result.stdout,
-                replyTo,
-                span,
-              }
-            },
+            fs.readFile(args.path),
+            (content) => ({
+              type: '_editReadDone' as const,
+              path: args.path,
+              target: args.target,
+              replacement: args.replacement,
+              content,
+              replyTo,
+              span,
+            }),
             (error) => ({ type: '_readErr' as const, error: String(error), replyTo, span }),
           )
         } else {
@@ -236,8 +231,8 @@ export const BashTool = (options?: BashOptions): ActorDef<BashToolMsg, null> => 
         // 3. Write back the updated content
         ctx.log.info('bash edit write', { path })
         ctx.pipeToSelf(
-          bash.exec(`cat > ${path}`, { stdin: updatedContent }),
-          (_) => ({ type: '_editWriteDone' as const, path, replyTo, span }),
+          fs.writeFile(path, updatedContent),
+          () => ({ type: '_editWriteDone' as const, path, replyTo, span }),
           (error) => ({ type: '_writeErr' as const, error: String(error), replyTo, span }),
         )
 

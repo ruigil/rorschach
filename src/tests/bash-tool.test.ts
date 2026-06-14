@@ -258,6 +258,137 @@ describe('BashTool Actor', () => {
     await system.shutdown()
   })
 
+  test('write supports paths with spaces', async () => {
+    const system = await AgentSystem()
+    const ref = system.spawn('bash-test-spaced-path', BashTool())
+    await tick()
+
+    const spacedFilePath = '/workspace/sao paulo.html'
+    const content = '<h1>Sao Paulo</h1>'
+
+    const writeReply = await ask<ToolInvokeMsg, ToolReply>(
+      ref,
+      (replyTo) => ({
+        type: 'invoke',
+        toolName: 'write',
+        arguments: JSON.stringify({ path: spacedFilePath, content }),
+        replyTo,
+        userId: 'test-user',
+      }),
+      { timeoutMs: 1000 },
+    )
+
+    expect(writeReply.type).toBe('toolResult')
+    if (writeReply.type === 'toolResult') {
+      expect(writeReply.result.text).toContain(spacedFilePath)
+    }
+
+    const catReply = await ask<ToolInvokeMsg, ToolReply>(
+      ref,
+      (replyTo) => ({
+        type: 'invoke',
+        toolName: 'bash',
+        arguments: JSON.stringify({ command: "cat '/workspace/sao paulo.html'" }),
+        replyTo,
+        userId: 'test-user',
+      }),
+      { timeoutMs: 1000 },
+    )
+
+    expect(catReply.type).toBe('toolResult')
+    if (catReply.type === 'toolResult') {
+      expect(catReply.result.text).toBe(content)
+    }
+
+    await ask<ToolInvokeMsg, ToolReply>(
+      ref,
+      (replyTo) => ({
+        type: 'invoke',
+        toolName: 'bash',
+        arguments: JSON.stringify({ command: "rm -f '/workspace/sao paulo.html'" }),
+        replyTo,
+        userId: 'test-user',
+      }),
+      { timeoutMs: 1000 },
+    )
+
+    await system.shutdown()
+  })
+
+  test('edit supports paths with spaces', async () => {
+    const system = await AgentSystem()
+    const ref = system.spawn('bash-test-edit-spaced-path', BashTool())
+    await tick()
+
+    const spacedFilePath = '/workspace/sao paulo edit.html'
+    const initialContent = '<h1>Sao Paulo</h1>\n<p>Draft</p>'
+    const expectedContent = '<h1>Sao Paulo</h1>\n<p>Final</p>'
+
+    await ask<ToolInvokeMsg, ToolReply>(
+      ref,
+      (replyTo) => ({
+        type: 'invoke',
+        toolName: 'write',
+        arguments: JSON.stringify({ path: spacedFilePath, content: initialContent }),
+        replyTo,
+        userId: 'test-user',
+      }),
+      { timeoutMs: 1000 },
+    )
+
+    const editReply = await ask<ToolInvokeMsg, ToolReply>(
+      ref,
+      (replyTo) => ({
+        type: 'invoke',
+        toolName: 'edit',
+        arguments: JSON.stringify({
+          path: spacedFilePath,
+          target: '<p>Draft</p>',
+          replacement: '<p>Final</p>',
+        }),
+        replyTo,
+        userId: 'test-user',
+      }),
+      { timeoutMs: 1000 },
+    )
+
+    expect(editReply.type).toBe('toolResult')
+    if (editReply.type === 'toolResult') {
+      expect(editReply.result.text).toContain(spacedFilePath)
+    }
+
+    const catReply = await ask<ToolInvokeMsg, ToolReply>(
+      ref,
+      (replyTo) => ({
+        type: 'invoke',
+        toolName: 'bash',
+        arguments: JSON.stringify({ command: "cat '/workspace/sao paulo edit.html'" }),
+        replyTo,
+        userId: 'test-user',
+      }),
+      { timeoutMs: 1000 },
+    )
+
+    expect(catReply.type).toBe('toolResult')
+    if (catReply.type === 'toolResult') {
+      expect(catReply.result.text).toBe(expectedContent)
+    }
+
+    await ask<ToolInvokeMsg, ToolReply>(
+      ref,
+      (replyTo) => ({
+        type: 'invoke',
+        toolName: 'bash',
+        arguments: JSON.stringify({ command: "rm -f '/workspace/sao paulo edit.html'" }),
+        replyTo,
+        userId: 'test-user',
+      }),
+      { timeoutMs: 1000 },
+    )
+
+    await system.shutdown()
+  })
+
   test('edit fails with permission error if path is not under /workspace', async () => {
     const system = await AgentSystem()
     const ref = system.spawn('bash-test-6', BashTool())
@@ -270,6 +401,35 @@ describe('BashTool Actor', () => {
         toolName: 'edit',
         arguments: JSON.stringify({
           path: '/rorschach/config.json', // knowledge base is read-only and not under /workspace
+          target: 'something',
+          replacement: 'else',
+        }),
+        replyTo,
+        userId: 'test-user',
+      }),
+      { timeoutMs: 1000 },
+    )
+
+    expect(editReply.type).toBe('toolError')
+    if (editReply.type === 'toolError') {
+      expect(editReply.error).toContain('Permission denied')
+    }
+
+    await system.shutdown()
+  })
+
+  test('edit rejects workspace prefix lookalike paths', async () => {
+    const system = await AgentSystem()
+    const ref = system.spawn('bash-test-workspace-prefix', BashTool())
+    await tick()
+
+    const editReply = await ask<ToolInvokeMsg, ToolReply>(
+      ref,
+      (replyTo) => ({
+        type: 'invoke',
+        toolName: 'edit',
+        arguments: JSON.stringify({
+          path: '/workspace2/file.txt',
           target: 'something',
           replacement: 'else',
         }),
