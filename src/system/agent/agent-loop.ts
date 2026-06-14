@@ -14,6 +14,7 @@ import type {
 	ToolMsg,
 	ToolReply,
 	ToolFilter,
+	ToolResultPayload,
 } from '../../types/tools.ts'
 import type {
   ApiMessage,
@@ -59,6 +60,18 @@ const initialLoopTurn = (): LoopTurn => ({
   clientId: undefined,
   pendingUsage: { promptTokens: 0, completionTokens: 0 },
 })
+
+const formatToolResultContent = (result: ToolResultPayload): string => {
+  if (!result.attachments?.length && !result.sources?.length) return result.text
+  return [
+    result.text,
+    'Tool result metadata:',
+    JSON.stringify({
+      ...(result.attachments?.length ? { attachments: result.attachments } : {}),
+      ...(result.sources?.length ? { sources: result.sources } : {}),
+    }, null, 2),
+  ].join('\n')
+}
 
 // ─── Explicit loop state ────────────────────────────────────────────────────
 
@@ -441,7 +454,7 @@ const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, 
           span?.error(msg.reply.error)
           ctx.log.warn(`${log}: tool error`, { tool: msg.toolName, error: msg.reply.error })
         }
-        const content = msg.reply.type === 'toolResult' ? msg.reply.result.text : `Tool error: ${msg.reply.error}`
+        const content = msg.reply.type === 'toolResult' ? formatToolResultContent(msg.reply.result) : `Tool error: ${msg.reply.error}`
         batch.results.set(msg.toolCallId, { toolCallId: msg.toolCallId, toolName: msg.toolName, content })
         batch.pending.delete(msg.toolCallId)
 

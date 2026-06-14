@@ -355,6 +355,73 @@ describe('AgentLoop: full integration', () => {
 	    await system.shutdown()
 	  })
 
+	  test('tool results include attachments and sources in model-visible content', async () => {
+    const system = await AgentSystem()
+    const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
+
+    const toolRef = system.spawn('metadata-tool', makeToolMock('search', {
+      type: 'toolResult',
+      result: {
+        text: 'generated image',
+        attachments: [{ kind: 'image', url: 'generated/image.png', name: 'image.png', mimeType: 'image/png' }],
+        sources: [{ title: 'Source', url: 'https://example.test', snippet: 'snippet' }],
+      },
+    }))
+
+    const llmDef: ActorDef<LlmProviderMsg, null> = {
+      initialState: null,
+      handler: (state, msg) => {
+        if (msg.type === 'stream') streams.push({ msg })
+        return { state }
+      },
+    }
+    const llmRef = system.spawn('metadata-llm', llmDef)
+    const batchHistories: ApiMessage[][] = []
+
+    const loop = agentLoop<TestState, TestMsg>({
+      role: 'test',
+      spanName: 'test',
+      model: 'test-model',
+      maxToolLoops: 3,
+      llmRef: (s) => s.llmRef,
+      tools: (s) => s.tools,
+      onComplete: (state, finalText) => ({ state: { ...state, finalText } }),
+      onBatchHistoryReady: (state, messages) => {
+        batchHistories.push([...messages])
+        return { state }
+      },
+      onError: (state, err) => ({
+        state: { ...state, log: [...state.log, err.kind === 'llm' ? `error:${String(err.error)}` : `limit:${err.finalText}`] },
+      }),
+    })
+
+    const agentRef = system.spawn('metadata-agent', makeAgentDef(loop, { ...emptyState(), llmRef, tools: { search: { name: 'search', schema: SEARCH_SCHEMA, ref: toolRef } } }))
+    await tick()
+
+    agentRef.send({
+      type: 'start',
+      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
+    })
+    await tick()
+
+    const msg1 = streams[0]!.msg
+    msg1.replyTo.send({
+      type: 'llmToolCalls',
+      requestId: msg1.requestId,
+      calls: [{ id: 'c1', name: 'search', arguments: '{}' }],
+      usage: { promptTokens: 2, completionTokens: 3 },
+    })
+    await tick(150)
+
+    const toolMessage = batchHistories[0]!.find(msg => msg.role === 'tool')
+    expect(toolMessage?.content).toContain('generated image')
+    expect(toolMessage?.content).toContain('Tool result metadata:')
+    expect(toolMessage?.content).toContain('"url": "generated/image.png"')
+    expect(toolMessage?.content).toContain('"sources"')
+
+    await system.shutdown()
+	  })
+
 	  test('pending tool suspends the turn without sending a fake tool result to the LLM', async () => {
 	    const system = await AgentSystem()
 	    const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
