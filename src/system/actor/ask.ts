@@ -17,7 +17,7 @@ export const ask = <Request, Response>(
   options?: { timeoutMs?: number },
   headers?: MessageHeaders,
 ): Promise<Response> => {
-  const timeoutMs = options?.timeoutMs !== undefined ? options.timeoutMs : 5000
+  const timeoutMs = options?.timeoutMs !== undefined ? options.timeoutMs : 30_000
 
   return new Promise<Response>((resolve, reject) => {
     let settled = false

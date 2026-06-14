@@ -218,7 +218,7 @@ describe('Ask pattern', () => {
     await system.shutdown()
   })
 
-  test('ask without timeout options times out after default 5000ms', async () => {
+  test('ask without timeout options times out after default 30000ms', async () => {
     const def: ActorDef<{ replyTo: ActorRef<string> }, null> = {
       handler: (state) => ({ state }),
     }
@@ -230,10 +230,10 @@ describe('Ask pattern', () => {
     const startTime = Date.now()
     await expect(
       ask(ref, (replyTo) => ({ replyTo })),
-    ).rejects.toThrow('timed out after 5000ms')
+    ).rejects.toThrow('timed out after 30000ms')
 
-    expect(Date.now() - startTime).toBeGreaterThanOrEqual(4900)
+    expect(Date.now() - startTime).toBeGreaterThanOrEqual(29900)
 
     await system.shutdown()
-  }, 10000)
+  }, 35000)
 })
