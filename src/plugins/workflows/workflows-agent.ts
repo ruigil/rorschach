@@ -64,7 +64,7 @@ Workflow rules:
 - Workflows may declare inputs, final outputs, and per-task outputs using value specs.
 - Use explicit task output names when later tasks or final workflow outputs depend on them.
 - Workflow final outputs resolve from same-named task outputs.
-- Artifact-producing tasks must write files under /workspace/workflows/runs/<runId> using an allowed execution tool and return artifact references, not inline HTML, markdown, images, or generated documents.
+- Artifact-producing tasks may write files under /workspace/workflows/runs/<runId> using an allowed execution tool and return path artifact references, or use public URLs returned by tools and return URL artifact references. Do not inline HTML, markdown, images, or generated documents as artifact outputs.
 - Artifact-consuming tasks need an allowed read-capable execution tool.
 
 After save_workflow or update_workflow, briefly acknowledge the save and stop.`

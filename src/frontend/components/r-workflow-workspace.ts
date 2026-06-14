@@ -399,12 +399,13 @@ export class RWorkflowWorkspace extends RorschachBase {
   }
 
   private _renderValue(value: unknown) {
-    if (this._isArtifactRef(value) && this._runId) {
-      const href = `workflow-runs/${encodeURIComponent(this._runId)}/artifact?path=${encodeURIComponent(value.path)}`;
+    if (this._isArtifactRef(value)) {
+      const href = this._artifactHref(value);
+      if (!href) return this._renderJson(value);
       return html`
         <a class="workflow-artifact-link" href=${href} target="_blank" rel="noopener noreferrer">
           ${this.renderIcon('file-text')}
-          <span>${value.path}</span>
+          <span>${value.path ?? value.url}</span>
         </a>
       `;
     }
@@ -469,9 +470,16 @@ export class RWorkflowWorkspace extends RorschachBase {
     return await res.json();
   }
 
-  private _isArtifactRef(value: unknown): value is { type: 'artifact'; path: string; mimeType?: string } {
+  private _isArtifactRef(value: unknown): value is { type: 'artifact'; path?: string; url?: string; mimeType?: string } {
     return !!value && typeof value === 'object' && !Array.isArray(value) &&
-      (value as any).type === 'artifact' && typeof (value as any).path === 'string';
+      (value as any).type === 'artifact' &&
+      (typeof (value as any).path === 'string' || typeof (value as any).url === 'string');
+  }
+
+  private _artifactHref(value: { path?: string; url?: string }) {
+    if (value.url) return value.url;
+    if (value.path && this._runId) return `workflow-runs/${encodeURIComponent(this._runId)}/artifact?path=${encodeURIComponent(value.path)}`;
+    return null;
   }
 
   private _formatDateTime(value: any) {

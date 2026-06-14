@@ -137,4 +137,22 @@ describe('workflow runner', () => {
 
     await system.shutdown()
   })
+
+  test('resume returns not found for an unknown run id', async () => {
+    const { system, runner } = await spawnRunner(workflow(['read']))
+
+    const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+      runner,
+      replyTo => ({ type: 'resume', userId: 'u1', runId: 'missing-run', replyTo }),
+      { timeoutMs: 1_000 },
+    )
+
+    expect(reply.ok).toBe(false)
+    if (!reply.ok) {
+      expect(reply.status).toBe(404)
+      expect(reply.error).toBe('Workflow run not found: missing-run')
+    }
+
+    await system.shutdown()
+  })
 })

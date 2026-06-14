@@ -108,7 +108,7 @@ When the task cannot be completed, call block_workflow_task with:
   "reason": "short explanation of what is blocking the task"
 }
 
-The outputs object must contain only declared task output keys. Required outputs must be present. If an output is an artifact, write the file under artifactRoot using an available execution tool and return an artifact reference with a relative path, for example { "type": "artifact", "path": "generated-page.html", "mimeType": "text/html" }. Do not inline large generated files into JSON outputs.
+The outputs object must contain only declared task output keys. Required outputs must be present. If an output is an artifact, return either a run-local artifact reference after writing under artifactRoot, for example { "type": "artifact", "path": "generated-page.html", "mimeType": "text/html" }, or a public URL artifact reference returned by a tool, for example { "type": "artifact", "url": "generated/image.png", "mimeType": "image/png" }. Do not inline large generated files into JSON outputs.
 
 Workflow goal: ${workflow.goal}
 Workflow context: ${workflow.context}

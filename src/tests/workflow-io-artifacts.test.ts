@@ -84,6 +84,21 @@ const runState = (): WorkflowRunState => ({
   events: [],
 })
 
+const runningRunState = (inputs: Record<string, unknown> = {}): WorkflowRunState => ({
+  ...runState(),
+  status: 'running',
+  inputs,
+  outputs: {},
+  activeTaskIds: ['write-report'],
+  taskStates: {
+    'write-report': {
+      status: 'running',
+      attempts: 1,
+      startedAt: '2026-06-11T10:00:01.000Z',
+    },
+  },
+})
+
 describe('workflow IO and artifacts', () => {
   test('validates workflow output contracts and input values', () => {
     expect(validateWorkflow(workflow())).toEqual([])
@@ -118,7 +133,24 @@ describe('workflow IO and artifacts', () => {
     expect(parseTaskCompletionArgs(task, JSON.stringify({
       summary: 'Wrote the report.',
       outputs: { report: { type: 'artifact', path: '../report.html' } },
-    }))).toEqual({ ok: false, error: 'task write-report.report must be an artifact reference with a safe relative path' })
+    }))).toEqual({ ok: false, error: 'task write-report.report must be an artifact reference with either a safe relative path or a public URL' })
+
+    const urlParsed = parseTaskCompletionArgs(task, JSON.stringify({
+      summary: 'Generated the image.',
+      outputs: { report: { type: 'artifact', url: 'generated/image.png', mimeType: 'image/png' } },
+    }))
+    expect(urlParsed.ok).toBe(true)
+    if (urlParsed.ok) expect(urlParsed.outputs.report).toEqual({ type: 'artifact', url: 'generated/image.png', mimeType: 'image/png' })
+
+    expect(parseTaskCompletionArgs(task, JSON.stringify({
+      summary: 'Generated the image.',
+      outputs: { report: { type: 'artifact', url: 'javascript:alert(1)' } },
+    }))).toEqual({ ok: false, error: 'task write-report.report must be an artifact reference with either a safe relative path or a public URL' })
+
+    expect(parseTaskCompletionArgs(task, JSON.stringify({
+      summary: 'Generated the image.',
+      outputs: { report: { type: 'artifact', url: 'generated/%2e%2e/secret.png' } },
+    }))).toEqual({ ok: false, error: 'task write-report.report must be an artifact reference with either a safe relative path or a public URL' })
 
     expect(parseTaskCompletionArgs(task, JSON.stringify({
       summary: 'Wrote the report.',
@@ -150,6 +182,40 @@ describe('workflow IO and artifacts', () => {
     await system.shutdown()
   })
 
+  test('start_workflow_run returns immediate run state when start blocks before execution', async () => {
+    const system = await AgentSystem()
+    const store = system.spawn('noop-workflow-store-blocked', NoopStore())
+    const runner = system.spawn('blocked-workflow-runner', StaticStartRunner({
+      ...runState(),
+      status: 'blocked',
+      outputs: {},
+      taskStates: {
+        'write-report': {
+          status: 'blocked',
+          attempts: 0,
+          error: 'Required execution tool is unavailable: write',
+          blockedReason: { type: 'task_blocked', message: 'Required execution tool is unavailable: write' },
+        },
+      },
+    }))
+    const tools = system.spawn('workflow-tools-blocked', WorkflowTools(store, runner as ActorRef<WorkflowRunnerMsg>))
+
+    const reply = await ask<ToolInvokeMsg, ToolReply>(tools, replyTo => ({
+      type: 'invoke',
+      toolName: startWorkflowRunTool.name,
+      arguments: JSON.stringify({ workflowId: 'workflow-1' }),
+      replyTo,
+      userId: 'anonymous',
+      clientId: 'client-1',
+    }))
+
+    expect(reply.type).toBe('toolResult')
+    if (reply.type === 'toolResult') {
+      expect(JSON.parse(reply.result.text).status).toBe('blocked')
+    }
+    await system.shutdown()
+  })
+
   test('artifact route serves only referenced completed artifacts', async () => {
     const dir = await makeDir()
     await mkdir(join(dir, 'run-1'), { recursive: true })
@@ -175,6 +241,13 @@ describe('workflow IO and artifacts', () => {
       ANONYMOUS_IDENTITY,
     )
     expect(missing.status).toBe(404)
+
+    const urlOnly = await route.handler(
+      new Request('http://localhost/workflow-runs/run-url/artifact?path=generated/image.png'),
+      new URL('http://localhost/workflow-runs/run-url/artifact?path=generated/image.png'),
+      ANONYMOUS_IDENTITY,
+    )
+    expect(urlOnly.status).toBe(404)
     await system.shutdown()
   })
 })
@@ -195,7 +268,7 @@ const CapturingRunner = (capture: (inputs: Record<string, unknown> | undefined) 
   handler: (state, msg) => {
     if (msg.type === 'start') {
       capture(msg.inputs)
-      const reply: WorkflowRunnerReply = { ok: true, run: { ...runState(), inputs: msg.inputs ?? {} } }
+      const reply: WorkflowRunnerReply = { ok: true, run: runningRunState(msg.inputs ?? {}) }
       msg.replyTo.send(reply)
     } else if ('replyTo' in msg) {
       msg.replyTo.send({ ok: false, error: 'not implemented' })
@@ -204,10 +277,35 @@ const CapturingRunner = (capture: (inputs: Record<string, unknown> | undefined) 
   },
 })
 
+const StaticStartRunner = (run: WorkflowRunState): ActorDef<WorkflowRunnerMsg, null> => ({
+  initialState: null,
+  handler: (state, msg) => {
+    if (msg.type === 'start') msg.replyTo.send({ ok: true, run })
+    else if ('replyTo' in msg) msg.replyTo.send({ ok: false, error: 'not implemented' })
+    return { state }
+  },
+})
+
 const StaticRunRunner = (run: WorkflowRunState): ActorDef<WorkflowRunnerMsg, null> => ({
   initialState: null,
   handler: (state, msg) => {
-    if (msg.type === 'get') msg.replyTo.send({ ok: true, run })
+    if (msg.type === 'get' && msg.runId === 'run-url') {
+      msg.replyTo.send({
+        ok: true,
+        run: {
+          ...run,
+          runId: 'run-url',
+          outputs: { report: { type: 'artifact', url: 'generated/image.png', mimeType: 'image/png' } },
+          taskStates: {
+            'write-report': {
+              status: 'completed',
+              attempts: 1,
+              outputs: { report: { type: 'artifact', url: 'generated/image.png', mimeType: 'image/png' } },
+            },
+          },
+        },
+      })
+    } else if (msg.type === 'get') msg.replyTo.send({ ok: true, run })
     else if ('replyTo' in msg) msg.replyTo.send({ ok: false, error: 'not implemented' })
     return { state }
   },

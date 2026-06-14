@@ -175,12 +175,41 @@ export const validArtifactPath = (path: string): boolean => {
   return parts.every(part => part && part !== '.' && part !== '..')
 }
 
+export const validArtifactUrl = (url: string): boolean => {
+  if (!url || /[\0-\x1f\x7f]/.test(url) || url.includes('\\')) return false
+  const rawPath = url.split(/[?#]/, 1)[0] ?? ''
+  if (!rawPath) return false
+  let decodedRawPath = rawPath
+  try {
+    decodedRawPath = decodeURIComponent(rawPath)
+  } catch {
+    return false
+  }
+  if (decodedRawPath.split('/').some(part => part === '..')) return false
+  try {
+    const parsed = new URL(url, 'http://rorschach.local')
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+    if (parsed.username || parsed.password) return false
+    const isRelative = !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(url)
+    if (isRelative && (url.startsWith('//') || parsed.origin !== 'http://rorschach.local')) return false
+    return parsed.pathname.split('/').every(part => part !== '..')
+  } catch {
+    return false
+  }
+}
+
 export const isArtifactRef = (value: unknown): value is WorkflowArtifactRef =>
   isRecord(value) &&
   value.type === 'artifact' &&
-  typeof value.path === 'string' &&
-  validArtifactPath(value.path) &&
-  (value.mimeType === undefined || typeof value.mimeType === 'string')
+  (
+    (typeof value.path === 'string' && value.url === undefined && validArtifactPath(value.path)) ||
+    (typeof value.url === 'string' && value.path === undefined && validArtifactUrl(value.url))
+  ) &&
+  (value.mimeType === undefined || typeof value.mimeType === 'string') &&
+  (value.name === undefined || typeof value.name === 'string')
+
+export const isRunArtifactRef = (value: unknown): value is Extract<WorkflowArtifactRef, { path: string }> =>
+  isArtifactRef(value) && 'path' in value
 
 const validateValue = (label: string, spec: WorkflowValueSpec, value: unknown): string | null => {
   switch (spec.type) {
@@ -195,6 +224,6 @@ const validateValue = (label: string, spec: WorkflowValueSpec, value: unknown): 
     case 'array':
       return Array.isArray(value) ? null : `${label} must be an array`
     case 'artifact':
-      return isArtifactRef(value) ? null : `${label} must be an artifact reference with a safe relative path`
+      return isArtifactRef(value) ? null : `${label} must be an artifact reference with either a safe relative path or a public URL`
   }
 }

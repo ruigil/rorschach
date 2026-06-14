@@ -33,11 +33,18 @@ export type WorkflowValueSpec = {
   description?: string
 }
 
-export type WorkflowArtifactRef = {
-  type: 'artifact'
-  path: string
-  mimeType?: string
-}
+export type WorkflowArtifactRef =
+  | {
+      type: 'artifact'
+      path: string
+      mimeType?: string
+    }
+  | {
+      type: 'artifact'
+      url: string
+      mimeType?: string
+      name?: string
+    }
 
 export type WorkflowOutputValue =
   | string

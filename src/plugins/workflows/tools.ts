@@ -96,7 +96,7 @@ export const showWorkflowGraphTool = defineTool('show_workflow_graph', 'Open the
   },
 })
 
-export const startWorkflowRunTool = defineTool('start_workflow_run', 'Start executing a saved workflow. Returns a background workflow run job.', {
+export const startWorkflowRunTool = defineTool('start_workflow_run', 'Start executing a saved workflow. Returns a background workflow run job when execution starts, or the run state if it blocks immediately.', {
   type: 'object',
   required: ['workflowId'],
   properties: {
@@ -336,6 +336,9 @@ export const WorkflowTools = (
           reply => {
             if (!reply.ok || !('run' in reply)) return { type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: reply.ok ? 'Unexpected workflow runner response.' : reply.error } }
             if (msg.clientId) ctx.publish(OutboundMessageTopic, { clientId: msg.clientId, text: JSON.stringify({ type: 'workflowGraph', workflowId: reply.run.workflowId, runId: reply.run.runId }) })
+            if (reply.run.status !== 'running') {
+              return { type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolResult' as const, result: { text: JSON.stringify(reply.run, null, 2) } } }
+            }
             return { type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolPending' as const, jobId: reply.run.runId, placeholderText: `Workflow run started (runId=${reply.run.runId}).` } }
           },
           error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: String(error) } }),

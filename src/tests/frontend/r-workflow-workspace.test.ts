@@ -106,6 +106,26 @@ describe('r-workflow-workspace', () => {
     expect(link?.getAttribute('href')).toBe('workflow-runs/run-1/artifact?path=report.html')
   })
 
+  test('renders public URL artifact links directly', async () => {
+    const data: any = graph('completed')
+    data.run.outputs = {
+      report: { type: 'artifact', url: 'generated/image.png', mimeType: 'image/png' },
+    }
+    data.nodes[0]!.outputs = data.run.outputs
+    globalThis.fetch = (async () => new Response(JSON.stringify(data), {
+      headers: { 'Content-Type': 'application/json' },
+    })) as unknown as typeof fetch
+
+    const el = await mountClass(RWorkflowWorkspace) as any
+    await el.openGraph('workflow-1', 'run-1')
+    el._inspectorTab = 'run'
+    el.requestUpdate()
+    await el.updateComplete
+
+    const link = el.querySelector('.workflow-artifact-link') as HTMLAnchorElement | null
+    expect(link?.getAttribute('href')).toBe('generated/image.png')
+  })
+
   test('polls live run graphs and stops once the run is terminal', async () => {
     const responses = [graph('running'), graph('completed')]
     globalThis.fetch = (async () => new Response(JSON.stringify(responses.shift() ?? graph('completed')), {

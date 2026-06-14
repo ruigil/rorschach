@@ -138,6 +138,169 @@ describe('workflow run executor', () => {
     await system.shutdown()
   })
 
+  test('resume retries task-blocked tasks', async () => {
+    const dir = await makeDir()
+    const system = await AgentSystem()
+    const toolRef = system.spawn('fake-read-tool-task-blocked-resume', FakeTool())
+    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+    const run: WorkflowRunState = {
+      ...initialRunState(workflow, 'run-task-blocked'),
+      status: 'blocked',
+      taskStates: {
+        'read-task': {
+          status: 'blocked',
+          attempts: 1,
+          startedAt: '2026-06-10T10:00:00.000Z',
+          error: 'External dependency was unavailable.',
+          blockedReason: { type: 'task_blocked', message: 'External dependency was unavailable.' },
+        },
+      },
+    }
+    const executor = system.spawn(
+      'workflow-run-task-blocked',
+      WorkflowRunExecutor(workflow, dir, null, 'test-model', 1, run, tools),
+    )
+
+    const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
+      executor,
+      replyTo => ({ type: 'resume', replyTo }),
+      { timeoutMs: 1_000 },
+    )
+
+    expect(reply.ok).toBe(true)
+    if (reply.ok) {
+      expect(reply.run.status).toBe('running')
+      expect(reply.run.taskStates['read-task']?.status).toBe('running')
+      expect(reply.run.taskStates['read-task']?.attempts).toBe(2)
+      expect(reply.run.taskStates['read-task']?.error).toBeUndefined()
+      expect(reply.run.taskStates['read-task']?.blockedReason).toBeUndefined()
+    }
+
+    await system.shutdown()
+  })
+
+  test('resume retries stale active tasks', async () => {
+    const dir = await makeDir()
+    const system = await AgentSystem()
+    const toolRef = system.spawn('fake-read-tool-stale-active-resume', FakeTool())
+    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+    const run: WorkflowRunState = {
+      ...initialRunState(workflow, 'run-stale-active'),
+      status: 'running',
+      activeTaskIds: ['read-task'],
+      activeTasks: {
+        'read-task': {
+          actorName: 'workflow-task-run-stale-active-read-task-1',
+          startedAt: '2026-06-10T10:00:00.000Z',
+        },
+      },
+      taskStates: {
+        'read-task': {
+          status: 'running',
+          attempts: 1,
+          startedAt: '2026-06-10T10:00:00.000Z',
+        },
+      },
+    }
+    const executor = system.spawn(
+      'workflow-run-stale-active',
+      WorkflowRunExecutor(workflow, dir, null, 'test-model', 1, run, tools),
+    )
+
+    const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
+      executor,
+      replyTo => ({ type: 'resume', replyTo }),
+      { timeoutMs: 1_000 },
+    )
+
+    expect(reply.ok).toBe(true)
+    if (reply.ok) {
+      expect(reply.run.status).toBe('running')
+      expect(reply.run.activeTaskIds).toEqual(['read-task'])
+      expect(reply.run.taskStates['read-task']?.status).toBe('running')
+      expect(reply.run.taskStates['read-task']?.attempts).toBe(2)
+      expect(reply.run.events.some(event => event.type === 'runResumed')).toBe(true)
+    }
+
+    await system.shutdown()
+  })
+
+  test('resume rejects terminal failed runs', async () => {
+    const dir = await makeDir()
+    const system = await AgentSystem()
+    const toolRef = system.spawn('fake-read-tool-failed-resume', FakeTool())
+    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+    const run: WorkflowRunState = {
+      ...initialRunState(workflow, 'run-failed'),
+      status: 'failed',
+      taskStates: {
+        'read-task': {
+          status: 'failed',
+          attempts: 1,
+          startedAt: '2026-06-10T10:00:00.000Z',
+          error: 'Tool loop limit reached.',
+        },
+      },
+    }
+    const executor = system.spawn(
+      'workflow-run-failed',
+      WorkflowRunExecutor(workflow, dir, null, 'test-model', 1, run, tools),
+    )
+
+    const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
+      executor,
+      replyTo => ({ type: 'resume', replyTo }),
+      { timeoutMs: 1_000 },
+    )
+
+    expect(reply.ok).toBe(false)
+    if (!reply.ok) {
+      expect(reply.status).toBe(409)
+      expect(reply.error).toBe('Workflow run is not resumable: failed')
+    }
+
+    await system.shutdown()
+  })
+
+  test('resume rejects runs with no retryable work', async () => {
+    const dir = await makeDir()
+    const system = await AgentSystem()
+    const toolRef = system.spawn('fake-read-tool-noop-resume', FakeTool())
+    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+    const run: WorkflowRunState = {
+      ...initialRunState(workflow, 'run-noop'),
+      status: 'running',
+      taskStates: {
+        'read-task': {
+          status: 'completed',
+          attempts: 1,
+          startedAt: '2026-06-10T10:00:00.000Z',
+          completedAt: '2026-06-10T10:00:01.000Z',
+          summary: 'Done.',
+          outputs: {},
+        },
+      },
+    }
+    const executor = system.spawn(
+      'workflow-run-noop',
+      WorkflowRunExecutor(workflow, dir, null, 'test-model', 1, run, tools),
+    )
+
+    const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
+      executor,
+      replyTo => ({ type: 'resume', replyTo }),
+      { timeoutMs: 1_000 },
+    )
+
+    expect(reply.ok).toBe(false)
+    if (!reply.ok) {
+      expect(reply.status).toBe(409)
+      expect(reply.error).toBe('Workflow run is not resumable: no pending, active, or blocked tasks to retry.')
+    }
+
+    await system.shutdown()
+  })
+
   test('completed pending jobs retry the task with resume context instead of parsing tool text as JSON', async () => {
     const dir = await makeDir()
     const system = await AgentSystem()

@@ -7,6 +7,7 @@ import type { LlmProviderMsg } from '../../types/llm.ts'
 import type {
   Workflow,
   WorkflowDependencyOutput,
+  WorkflowRunExecutorReply,
   WorkflowRunExecutorMsg,
   WorkflowRunState,
   WorkflowTask,
@@ -234,16 +235,46 @@ export const WorkflowRunExecutor = (
     return next
   }
 
-  const resumeRun = (state: RunExecutorState, ctx: any): RunExecutorState => {
+  const resumeRun = (state: RunExecutorState, ctx: any): { ok: true; state: RunExecutorState } | Extract<WorkflowRunExecutorReply, { ok: false }> => {
+    if (state.run.status === 'completed' || state.run.status === 'failed') {
+      return { ok: false, error: `Workflow run is not resumable: ${state.run.status}`, status: 409 }
+    }
     const pendingTaskIds = new Set(Object.values(state.run.pendingJobs).map(job => job.taskId))
+    const activeTaskIds = new Set(state.run.activeTaskIds)
+    const shouldRetryTask = (taskId: string, task: WorkflowTaskRunState): boolean =>
+      pendingTaskIds.has(taskId) ||
+      (activeTaskIds.has(taskId) && task.status === 'running') ||
+      (task.status === 'blocked' && (
+        task.blockedReason?.type === 'missing_pending_job' ||
+        task.blockedReason?.type === 'task_blocked'
+      ))
+    const retryTaskIds = Object.entries(state.run.taskStates)
+      .filter(([taskId, task]) => shouldRetryTask(taskId, task))
+      .map(([taskId]) => taskId)
+    if (!retryTaskIds.length) {
+      return { ok: false, error: 'Workflow run is not resumable: no pending, active, or blocked tasks to retry.', status: 409 }
+    }
+    for (const taskId of retryTaskIds) {
+      const actorName = state.run.activeTasks[taskId]?.actorName
+      if (actorName) ctx.stop({ name: actorName })
+    }
+    const retryTaskIdSet = new Set(retryTaskIds)
+    const activeTasks = Object.fromEntries(Object.entries(state.run.activeTasks).filter(([taskId]) => !retryTaskIdSet.has(taskId)))
     const taskStates = Object.fromEntries(Object.entries(state.run.taskStates).map(([taskId, task]) => [
       taskId,
-      pendingTaskIds.has(taskId) || (task.status === 'blocked' && task.blockedReason?.type === 'missing_pending_job')
+      retryTaskIdSet.has(taskId)
         ? { ...task, status: 'pending' as const, error: undefined, blockedReason: undefined }
         : task,
     ]))
-    const resumed = appendEvent({ ...state.run, status: 'running', pendingJobs: {}, taskStates }, 'runResumed', 'Workflow run resumed.')
-    return schedule({ ...state, run: resumed }, ctx)
+    const resumed = appendEvent({
+      ...state.run,
+      status: 'running',
+      activeTaskIds: state.run.activeTaskIds.filter(taskId => !retryTaskIdSet.has(taskId)),
+      activeTasks,
+      pendingJobs: {},
+      taskStates,
+    }, 'runResumed', 'Workflow run resumed.')
+    return { ok: true, state: schedule({ ...state, run: resumed }, ctx) }
   }
 
   return {
@@ -268,8 +299,12 @@ export const WorkflowRunExecutor = (
           return { state }
         case 'resume': {
           const next = resumeRun(state, ctx)
-          msg.replyTo.send({ ok: true, run: next.run })
-          return { state: next }
+          if (!next.ok) {
+            msg.replyTo.send(next)
+            return { state }
+          }
+          msg.replyTo.send({ ok: true, run: next.state.run })
+          return { state: next.state }
         }
         case 'taskWaiting': {
           const actorName = state.run.activeTasks[msg.taskId]?.actorName

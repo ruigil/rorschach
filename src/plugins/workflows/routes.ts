@@ -4,7 +4,7 @@ import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import type { Identity } from '../../types/identity.ts'
 import type { WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowStoreMsg, WorkflowStoreReply } from './types.ts'
-import { isArtifactRef, validArtifactPath } from './validation.ts'
+import { isRunArtifactRef, validArtifactPath } from './validation.ts'
 import { join, relative, resolve } from 'node:path'
 
 export const workflowsStorageSchema: ConfigSchemaSection = {
@@ -180,7 +180,7 @@ export const buildWorkflowsRoutes = (
         ...Object.values(reply.run.taskStates)
           .filter(task => task.status === 'completed')
           .flatMap(task => Object.values(task.outputs ?? {})),
-      ].filter(isArtifactRef)
+      ].filter(isRunArtifactRef)
       const ref = refs.find(item => item.path === artifactPath)
       if (!ref) return json({ error: 'Artifact is not referenced by completed workflow outputs' }, 404)
 
