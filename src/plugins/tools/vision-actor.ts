@@ -92,6 +92,15 @@ const saveGeneratedImage = async (dataUrl: string): Promise<{ filePath: string; 
   return { filePath, publicUrl: `${GENERATED_PUBLIC_PREFIX}/${name}` }
 }
 
+const mimeTypeForImagePath = (path: string): string => {
+  const ext = path.split('.').pop()?.toLowerCase()
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  if (ext === 'gif') return 'image/gif'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'svg') return 'image/svg+xml'
+  return 'image/png'
+}
+
 // ─── Actor definition ───
 
 export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState> => {
@@ -206,7 +215,13 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
           type: 'toolResult',
           result: {
             text,
-            attachments: [{ kind: 'image', url: message.publicUrl, alt: snippet }],
+            attachments: [{
+              kind: 'image',
+              url: message.publicUrl,
+              name: message.publicUrl.split('/').pop(),
+              mimeType: mimeTypeForImagePath(message.publicUrl),
+              alt: snippet,
+            }],
           },
         })
         return { state: { ...state, pending: rest } }
