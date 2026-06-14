@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { AgentSystem, ask, defineTool, type ActorDef } from '../system/index.ts'
 import { WorkflowRunExecutor, initialRunState } from '../plugins/workflows/workflow-run-executor.ts'
-import type { Workflow, WorkflowRunExecutorMsg, WorkflowRunExecutorReply, WorkflowRunState } from '../plugins/workflows/types.ts'
+import { WorkflowRunUpdateTopic, type Workflow, type WorkflowRunExecutorMsg, type WorkflowRunExecutorReply, type WorkflowRunState } from '../plugins/workflows/types.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import { JobRegistryTopic, type ToolCollection, type ToolMsg, type ToolReply } from '../types/tools.ts'
 
@@ -67,6 +67,8 @@ describe('workflow run executor', () => {
   test('schedules tasks with constructor-provided execution tools', async () => {
     const dir = await makeDir()
     const system = await AgentSystem()
+    const updates: WorkflowRunState[] = []
+    system.subscribe(WorkflowRunUpdateTopic, event => updates.push(event.run))
     const toolRef = system.spawn('fake-read-tool', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
 
@@ -88,6 +90,48 @@ describe('workflow run executor', () => {
       expect(reply.run.taskStates['read-task']?.status).toBe('running')
       expect(reply.run.taskStates['read-task']?.error).toBeUndefined()
     }
+    expect(updates.at(-1)?.status).toBe('running')
+    expect(updates.at(-1)?.taskStates['read-task']?.status).toBe('running')
+
+    await system.shutdown()
+  })
+
+  test('publishes run update after task completion final snapshot', async () => {
+    const dir = await makeDir()
+    const system = await AgentSystem()
+    const updates: WorkflowRunState[] = []
+    system.subscribe(WorkflowRunUpdateTopic, event => updates.push(event.run))
+    const toolRef = system.spawn('fake-read-tool-complete-update', FakeTool())
+    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+
+    const run: WorkflowRunState = {
+      ...initialRunState(workflow, 'run-complete-update'),
+      activeTaskIds: ['read-task'],
+      activeTasks: {
+        'read-task': {
+          actorName: 'workflow-task-run-complete-update-read-task-1',
+          startedAt: '2026-06-10T10:00:00.000Z',
+        },
+      },
+      taskStates: {
+        'read-task': {
+          status: 'running',
+          attempts: 1,
+          startedAt: '2026-06-10T10:00:00.000Z',
+        },
+      },
+    }
+    const executor = system.spawn(
+      'workflow-run-complete-update',
+      WorkflowRunExecutor(workflow, dir, null, 'test-model', 1, run, tools),
+    )
+
+    executor.send({ type: 'taskCompleted', taskId: 'read-task', summary: 'Read the file.', outputs: {} })
+    await Bun.sleep(30)
+
+    expect(updates.at(-1)?.status).toBe('completed')
+    expect(updates.at(-1)?.taskStates['read-task']?.status).toBe('completed')
+    expect(updates.at(-1)?.taskStates['read-task']?.summary).toBe('Read the file.')
 
     await system.shutdown()
   })

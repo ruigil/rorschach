@@ -4,6 +4,8 @@ import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { ask } from '../../system/index.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import { ToolRegistrationTopic, type ToolCollection } from '../../types/tools.ts'
+import { ClientPresenceTopic, OutboundMessageTopic } from '../../types/events.ts'
+import { WorkflowRunUpdateTopic } from './types.ts'
 import type {
   WorkflowRunExecutorMsg,
   WorkflowRunExecutorReply,
@@ -24,6 +26,8 @@ const SWITCH_MODE_TOOL_NAME = 'switch_mode'
 type RunnerState = {
   live: Record<string, ActorRef<WorkflowRunExecutorMsg>>
   executionTools: ToolCollection
+  clientsByUser: Record<string, string[]>
+  clientUsers: Record<string, string>
 }
 
 const readRun = async (filepath: string): Promise<WorkflowRunState | null> => {
@@ -99,6 +103,41 @@ const blockedMissingToolRun = (run: WorkflowRunState, missingTool: string): Work
   }
 }
 
+const publishRunUpdate = (ctx: any, run: WorkflowRunState): void => {
+  ctx.publish(WorkflowRunUpdateTopic, {
+    userId: run.userId,
+    workflowId: run.workflowId,
+    runId: run.runId,
+    run,
+  })
+}
+
+const addClientForUser = (state: RunnerState, userId: string, clientId: string): RunnerState => {
+  const base = state.clientUsers[clientId] && state.clientUsers[clientId] !== userId
+    ? removeClient(state, clientId)
+    : state
+  const current = base.clientsByUser[userId] ?? []
+  const clients = current.includes(clientId) ? current : [...current, clientId]
+  return {
+    ...base,
+    clientsByUser: { ...base.clientsByUser, [userId]: clients },
+    clientUsers: { ...base.clientUsers, [clientId]: userId },
+  }
+}
+
+const removeClient = (state: RunnerState, clientId: string): RunnerState => {
+  const userId = state.clientUsers[clientId]
+  if (!userId) return state
+  const { [clientId]: _, ...clientUsers } = state.clientUsers
+  const clients = (state.clientsByUser[userId] ?? []).filter(id => id !== clientId)
+  const { [userId]: __, ...clientsByUser } = state.clientsByUser
+  return {
+    ...state,
+    clientUsers,
+    clientsByUser: clients.length ? { ...clientsByUser, [userId]: clients } : clientsByUser,
+  }
+}
+
 export const WorkflowRunner = (
   workflowStoreRef: ActorRef<WorkflowStoreMsg>,
   workflowRunsDir: string,
@@ -126,6 +165,7 @@ export const WorkflowRunner = (
     if (missingTool) {
       const blocked = blockedMissingToolRun(run, missingTool)
       await writeRun(workflowRunsDir, blocked)
+      publishRunUpdate(ctx, blocked)
       return { ok: true, run: blocked }
     }
 
@@ -137,7 +177,7 @@ export const WorkflowRunner = (
   }
 
   return {
-    initialState: { live: {}, executionTools: {} },
+    initialState: { live: {}, executionTools: {}, clientsByUser: {}, clientUsers: {} },
     lifecycle: (state, event, ctx) => {
       if (event.type === 'start') {
         ctx.subscribe(ToolRegistrationTopic, toolEvent => {
@@ -145,6 +185,11 @@ export const WorkflowRunner = (
           if ('schema' in toolEvent) return { type: '_toolRegistered' as const, tool: toolEvent }
           return { type: '_toolUnregistered' as const, name: toolEvent.name }
         })
+        ctx.subscribe(ClientPresenceTopic, clientEvent => {
+          if (clientEvent.status === 'connected') return { type: '_clientConnected' as const, userId: clientEvent.userId, clientId: clientEvent.clientId }
+          return { type: '_clientDisconnected' as const, clientId: clientEvent.clientId }
+        })
+        ctx.subscribe(WorkflowRunUpdateTopic, event => ({ type: '_runUpdated' as const, event }))
       }
       return { state }
     },
@@ -155,6 +200,25 @@ export const WorkflowRunner = (
       if (msg.type === '_toolUnregistered') {
         const { [msg.name]: _, ...executionTools } = state.executionTools
         return { state: { ...state, executionTools } }
+      }
+      if (msg.type === '_clientConnected') {
+        return { state: addClientForUser(state, msg.userId, msg.clientId) }
+      }
+      if (msg.type === '_clientDisconnected') {
+        return { state: removeClient(state, msg.clientId) }
+      }
+      if (msg.type === '_runUpdated') {
+        const clients = state.clientsByUser[msg.event.userId] ?? []
+        const text = JSON.stringify({
+          type: 'workflowRunUpdated',
+          workflowId: msg.event.workflowId,
+          runId: msg.event.runId,
+          run: msg.event.run,
+        })
+        for (const clientId of clients) {
+          ctx.publish(OutboundMessageTopic, { clientId, text })
+        }
+        return { state }
       }
       if (msg.type === '_done') return { state }
       if (msg.type === '_reply') {
@@ -195,11 +259,12 @@ export const WorkflowRunner = (
             }
             const inputValidation = validateInputValues(workflowReply.workflow.inputs, msg.inputs)
             if (!inputValidation.ok) return { reply: { ok: false, error: inputValidation.error, status: 400 } }
-            const run = initialRunState(workflowReply.workflow, crypto.randomUUID(), inputValidation.values, msg.clientId)
+            const run = initialRunState(workflowReply.workflow, crypto.randomUUID(), inputValidation.values)
             const missingTool = missingExecutionTool(workflowReply.workflow, state.executionTools)
             if (missingTool) {
               const blocked = blockedMissingToolRun(run, missingTool)
               await writeRun(workflowRunsDir, blocked)
+              publishRunUpdate(ctx, blocked)
               return { reply: { ok: true, run: blocked } }
             }
             const ref = ctx.spawn(

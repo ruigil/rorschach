@@ -9,6 +9,7 @@ export type WSFrameType =
   | 'modeChanged'
   | 'agents'
   | 'workflowGraph'
+  | 'workflowRunUpdated'
   | 'usage'
   | 'log'
   | 'metrics'

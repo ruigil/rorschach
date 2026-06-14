@@ -4,6 +4,8 @@ import { type TraceSpan, type UsageEntry, type WorkflowGraph, type LogEvent } fr
 import { toolActionLabel } from './core/utils.js'
 import { updateActiveStream, commitActiveStream, setMode, addLog } from './actions.js'
 
+export const WORKFLOW_RUN_UPDATED_EVENT = 'workflow-run-updated'
+
 const frameHandlers: Record<string, (msg: Record<string, any>) => void> = {
   chunk: (msg) => {
     updateActiveStream({
@@ -49,6 +51,9 @@ const frameHandlers: Record<string, (msg: Record<string, any>) => void> = {
     store.set('tools', nextTools)
   },
   workflowGraph: (msg) => store.set('currentWorkflowGraph', msg as WorkflowGraph),
+  workflowRunUpdated: (msg) => {
+    window.dispatchEvent(new CustomEvent(WORKFLOW_RUN_UPDATED_EVENT, { detail: msg }))
+  },
   docWorkspace: (msg) => {
     store.set('currentDocArtifact', msg.artifactName);
     store.set('docWorkspaceOpen', !!msg.artifactName);

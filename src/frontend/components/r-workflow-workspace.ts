@@ -2,11 +2,44 @@ import { html, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 import { StoreController } from '../store.js';
+import { WORKFLOW_RUN_UPDATED_EVENT } from '../connection.js';
 
 type InspectorTab = 'task' | 'workflow' | 'run' | 'events';
 
 export const isLiveWorkflowRunStatus = (status: unknown): boolean =>
   status === 'running' || status === 'blocked';
+
+export const mergeWorkflowRunIntoGraph = (graph: any, run: any) => {
+  if (!graph || !run) return graph;
+  return {
+    ...graph,
+    run: {
+      runId: run.runId,
+      status: run.status,
+      inputs: run.inputs ?? {},
+      activeTaskIds: run.activeTaskIds ?? [],
+      activeTasks: run.activeTasks ?? {},
+      pendingJobs: run.pendingJobs ?? {},
+      outputs: run.outputs ?? {},
+      events: run.events ?? [],
+    },
+    nodes: (graph.nodes ?? []).map((node: any) => {
+      const taskState = run.taskStates?.[node.id];
+      if (!taskState) return node;
+      return {
+        ...node,
+        status: taskState.status,
+        attempts: taskState.attempts,
+        startedAt: taskState.startedAt,
+        completedAt: taskState.completedAt,
+        summary: taskState.summary,
+        outputs: taskState.outputs,
+        error: taskState.error,
+        blockedReason: taskState.blockedReason,
+      };
+    }),
+  };
+};
 
 @customElement('r-workflow-workspace')
 export class RWorkflowWorkspace extends RorschachBase {
@@ -19,12 +52,13 @@ export class RWorkflowWorkspace extends RorschachBase {
   @state() private _workflowId: string | null = null;
   @state() private _runId: string | null = null;
   @state() private _inspectorTab: InspectorTab = 'task';
-  @state() private _lastRefreshedAt: string | null = null;
-  @state() private _refreshError = '';
+  @state() private _lastUpdatedAt: string | null = null;
 
   private _lastMode = '';
   private _lastWorkflowGraph: any = null;
-  private _pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private _onWorkflowRunUpdated = (event: Event) => {
+    this._applyWorkflowRunUpdate((event as CustomEvent).detail);
+  };
 
   private _currentMode = new StoreController(this, 'currentMode');
   private _currentWorkflowGraph = new StoreController(this, 'currentWorkflowGraph');
@@ -33,9 +67,14 @@ export class RWorkflowWorkspace extends RorschachBase {
     return this;
   }
 
+  override connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener(WORKFLOW_RUN_UPDATED_EVENT, this._onWorkflowRunUpdated);
+  }
+
   override disconnectedCallback() {
+    window.removeEventListener(WORKFLOW_RUN_UPDATED_EVENT, this._onWorkflowRunUpdated);
     super.disconnectedCallback();
-    this._clearPoll();
   }
 
   override updated() {
@@ -63,14 +102,12 @@ export class RWorkflowWorkspace extends RorschachBase {
         if (workflowGraph.workflowId) {
           this.openGraph(workflowGraph.workflowId, workflowGraph.runId);
         } else if (workflowGraph.nodes && workflowGraph.nodes.length) {
-          this._clearPoll();
           this._view = 'graph';
           this._currentGraph = workflowGraph;
           this._workflowId = workflowGraph.workflow?.id ?? workflowGraph.workflowId ?? null;
           this._runId = workflowGraph.run?.runId ?? workflowGraph.runId ?? null;
           this._selectedTaskId = this._currentGraph.nodes[0]?.id ?? null;
-          this._lastRefreshedAt = new Date().toISOString();
-          this._schedulePoll();
+          this._lastUpdatedAt = new Date().toISOString();
         } else {
           this.openList();
         }
@@ -79,12 +116,10 @@ export class RWorkflowWorkspace extends RorschachBase {
   }
 
   async openList() {
-    this._clearPoll();
     this._view = 'loading';
     this._workflowId = null;
     this._runId = null;
     this._currentGraph = null;
-    this._refreshError = '';
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('rorschach.workflowWorkspaceView', 'list');
       localStorage.removeItem('rorschach.workflowWorkspaceWorkflowId');
@@ -105,11 +140,9 @@ export class RWorkflowWorkspace extends RorschachBase {
   }
 
   async openGraph(workflowId: string, runId?: string) {
-    this._clearPoll();
     this._view = 'loading';
     this._workflowId = workflowId;
     this._runId = runId ?? null;
-    this._refreshError = '';
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('rorschach.workflowWorkspaceView', 'graph');
       localStorage.setItem('rorschach.workflowWorkspaceWorkflowId', workflowId);
@@ -119,7 +152,6 @@ export class RWorkflowWorkspace extends RorschachBase {
     try {
       await this._loadGraph(workflowId, runId, false);
       this._view = 'graph';
-      this._schedulePoll();
     } catch {
       this._errorMsg = 'could not load workflow graph';
       this._view = 'error';
@@ -206,8 +238,7 @@ export class RWorkflowWorkspace extends RorschachBase {
         </div>
         <div class="plan-run-refresh">
           ${this._runId ? html`<span>${isLiveWorkflowRunStatus(this._currentGraph.run?.status) ? 'live' : 'snapshot'}</span>` : html`<span>definition</span>`}
-          ${this._lastRefreshedAt ? html`<span>${this._formatTime(this._lastRefreshedAt)}</span>` : nothing}
-          ${this._refreshError ? html`<span class="plan-run-refresh-error">${this._refreshError}</span>` : nothing}
+          ${this._lastUpdatedAt ? html`<span>${this._formatTime(this._lastUpdatedAt)}</span>` : nothing}
         </div>
       </div>
       <div class="plan-graph-shell">
@@ -436,31 +467,30 @@ export class RWorkflowWorkspace extends RorschachBase {
     this._selectedTaskId = candidate && graph.nodes.some((n: any) => n.id === candidate)
       ? candidate
       : (graph.nodes[0]?.id ?? null);
-    this._lastRefreshedAt = new Date().toISOString();
-    this._refreshError = '';
+    this._lastUpdatedAt = new Date().toISOString();
   }
 
-  private _schedulePoll() {
-    this._clearPoll();
-    if (!this._workflowId || !this._runId || !isLiveWorkflowRunStatus(this._currentGraph?.run?.status)) return;
-    this._pollTimer = setTimeout(() => this._pollGraph(), 2000);
-  }
+  private _applyWorkflowRunUpdate(frame: any) {
+    const workflowId = frame?.workflowId;
+    const runId = frame?.runId;
+    const run = frame?.run;
+    if (!workflowId || !runId || !run) return;
 
-  private async _pollGraph() {
-    if (!this._workflowId || !this._runId) return;
-    try {
-      await this._loadGraph(this._workflowId, this._runId, true);
-    } catch {
-      this._refreshError = 'refresh failed';
-    } finally {
-      this._schedulePoll();
+    if (this._view === 'graph' && this._workflowId === workflowId && this._runId === runId && this._currentGraph) {
+      const selectedTaskId = this._selectedTaskId;
+      this._currentGraph = mergeWorkflowRunIntoGraph(this._currentGraph, run);
+      this._selectedTaskId = selectedTaskId && this._currentGraph.nodes.some((node: any) => node.id === selectedTaskId)
+        ? selectedTaskId
+        : (this._currentGraph.nodes[0]?.id ?? null);
+      this._lastUpdatedAt = new Date().toISOString();
+      return;
     }
-  }
 
-  private _clearPoll() {
-    if (this._pollTimer) {
-      clearTimeout(this._pollTimer);
-      this._pollTimer = null;
+    if (this._view === 'list' && this._workflows.some(workflow => workflow.id === workflowId)) {
+      const existingIndex = this._runs.findIndex(existing => existing.runId === runId);
+      this._runs = existingIndex >= 0
+        ? this._runs.map((existing, index) => index === existingIndex ? run : existing)
+        : [run, ...this._runs];
     }
   }
 

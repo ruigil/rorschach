@@ -4,6 +4,7 @@ import { join, relative, resolve, sep } from 'node:path'
 import type { ActorDef, ActorRef, PersistenceAdapter } from '../../system/index.ts'
 import { JobRegistryTopic, type JobLifecycleEvent, type ToolCollection } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
+import { WorkflowRunUpdateTopic } from './types.ts'
 import type {
   Workflow,
   WorkflowDependencyOutput,
@@ -78,13 +79,11 @@ export const initialRunState = (
   workflow: Workflow,
   runId: string,
   inputs: Record<string, unknown> = {},
-  clientId?: string,
 ): WorkflowRunState => ({
   schemaVersion: 1,
   runId,
   workflowId: workflow.id,
   userId: workflow.userId,
-  clientId,
   status: 'running',
   inputs,
   outputs: {},
@@ -160,6 +159,15 @@ const publishTerminalJob = (ctx: any, run: WorkflowRunState): void => {
       result: { text: `Workflow run ${run.runId} is blocked.` },
     })
   }
+}
+
+const publishRunUpdate = (ctx: any, run: WorkflowRunState): void => {
+  ctx.publish(WorkflowRunUpdateTopic, {
+    userId: run.userId,
+    workflowId: run.workflowId,
+    runId: run.runId,
+    run,
+  })
 }
 
 export const WorkflowRunExecutor = (
@@ -291,6 +299,7 @@ export const WorkflowRunExecutor = (
         case 'start': {
           ensureArtifactRoot(workflowRunsDir, state.run.runId)
           const next = schedule(state, ctx)
+          publishRunUpdate(ctx, next.run)
           msg.replyTo.send({ ok: true, run: next.run })
           return { state: next }
         }
@@ -303,6 +312,7 @@ export const WorkflowRunExecutor = (
             msg.replyTo.send(next)
             return { state }
           }
+          publishRunUpdate(ctx, next.state.run)
           msg.replyTo.send({ ok: true, run: next.state.run })
           return { state: next.state }
         }
@@ -324,10 +334,14 @@ export const WorkflowRunExecutor = (
               },
             },
           }, 'taskWaiting', `Task ${msg.taskId} is waiting on ${msg.toolName} (${msg.jobId}).`, msg.taskId)
+          publishRunUpdate(ctx, run)
           return { state: { ...state, run } }
         }
-        case 'taskCompleted':
-          return { state: completeTask(state, msg.taskId, msg.summary, msg.outputs, ctx) }
+        case 'taskCompleted': {
+          const next = completeTask(state, msg.taskId, msg.summary, msg.outputs, ctx)
+          publishRunUpdate(ctx, next.run)
+          return { state: next }
+        }
         case 'taskBlocked': {
           const actorName = state.run.activeTasks[msg.taskId]?.actorName
           if (actorName) ctx.stop({ name: actorName })
@@ -348,6 +362,7 @@ export const WorkflowRunExecutor = (
             },
           }, 'taskBlocked', msg.message, msg.taskId)
           publishTerminalJob(ctx, run)
+          publishRunUpdate(ctx, run)
           return { state: { ...state, run } }
         }
         case 'taskFailed': {
@@ -365,6 +380,7 @@ export const WorkflowRunExecutor = (
             },
           }, 'taskFailed', msg.error, msg.taskId)
           publishTerminalJob(ctx, run)
+          publishRunUpdate(ctx, run)
           return { state: { ...state, run } }
         }
         case '_jobRegistry': {
@@ -391,10 +407,13 @@ export const WorkflowRunExecutor = (
                   },
                 },
               }, 'taskToolCompleted', `Pending tool ${pending.toolName} completed; retrying task ${pending.taskId}.`, pending.taskId)
-              return { state: schedule({ ...withJobCleared, run }, ctx, { [pending.taskId]: formatResumeContext(pending.toolName, summary) }) }
+              const next = schedule({ ...withJobCleared, run }, ctx, { [pending.taskId]: formatResumeContext(pending.toolName, summary) })
+              publishRunUpdate(ctx, next.run)
+              return { state: next }
             }
             const failedRun = appendEvent({ ...withJobCleared.run, status: 'failed' }, 'taskFailed', summary, pending.taskId)
             publishTerminalJob(ctx, failedRun)
+            publishRunUpdate(ctx, failedRun)
             return { state: { ...withJobCleared, run: failedRun } }
           }
           return { state }

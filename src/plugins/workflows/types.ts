@@ -1,4 +1,4 @@
-import type { ActorRef } from '../../system/index.ts'
+import { createTopic, type ActorRef } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolCollection, ToolReply, ToolMsg, ToolSchema } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { LoopMsg, LoopState } from '../../system/index.ts'
@@ -124,6 +124,15 @@ export type WorkflowRunState = {
   }>
 }
 
+export type WorkflowRunUpdateEvent = {
+  userId: string
+  workflowId: string
+  runId: string
+  run: WorkflowRunState
+}
+
+export const WorkflowRunUpdateTopic = createTopic<WorkflowRunUpdateEvent>('workflow.run.updated')
+
 export type WorkflowGraphNode = {
   id: string
   label: string
@@ -211,6 +220,9 @@ export type WorkflowRunnerMsg =
   | { type: '_reply'; replyTo: ActorRef<WorkflowRunnerReply>; reply: WorkflowRunnerReply; live?: Record<string, ActorRef<WorkflowRunExecutorMsg>> }
   | { type: '_toolRegistered'; tool: import('../../types/tools.ts').Tool }
   | { type: '_toolUnregistered'; name: string }
+  | { type: '_clientConnected'; userId: string; clientId: string }
+  | { type: '_clientDisconnected'; clientId: string }
+  | { type: '_runUpdated'; event: WorkflowRunUpdateEvent }
   | { type: '_done' }
 
 export type WorkflowRunExecutorReply =

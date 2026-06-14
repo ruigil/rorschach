@@ -6,8 +6,9 @@ import { AgentSystem, ask, defineTool, type ActorDef } from '../system/index.ts'
 import { WorkflowRunner } from '../plugins/workflows/workflow-runner.ts'
 import { WorkflowStore } from '../plugins/workflows/workflow-store.ts'
 import { startWorkflowRunTool } from '../plugins/workflows/tools.ts'
-import type { Workflow, WorkflowRunnerMsg, WorkflowRunnerReply } from '../plugins/workflows/types.ts'
+import { WorkflowRunUpdateTopic, type Workflow, type WorkflowRunnerMsg, type WorkflowRunnerReply } from '../plugins/workflows/types.ts'
 import { ToolRegistrationTopic, type ToolMsg, type ToolReply } from '../types/tools.ts'
+import { ClientPresenceTopic, OutboundMessageTopic } from '../types/events.ts'
 
 const tempDirs: string[] = []
 
@@ -95,6 +96,8 @@ describe('workflow runner', () => {
 
   test('blocks before spawning when a required execution tool is missing', async () => {
     const { system, runner } = await spawnRunner(workflow(['missing_tool']))
+    const updates: Array<{ userId: string; runId: string; runStatus: string }> = []
+    system.subscribe(WorkflowRunUpdateTopic, event => updates.push({ userId: event.userId, runId: event.runId, runStatus: event.run.status }))
 
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       runner,
@@ -108,6 +111,71 @@ describe('workflow runner', () => {
       expect(reply.run.taskStates['task-1']?.status).toBe('blocked')
       expect(reply.run.taskStates['task-1']?.error).toBe('Required execution tool is unavailable: missing_tool')
     }
+    expect(updates.at(-1)?.userId).toBe('u1')
+    expect(updates.at(-1)?.runStatus).toBe('blocked')
+
+    await system.shutdown()
+  })
+
+  test('bridges workflow run updates to all connected clients for the same user', async () => {
+    const { system } = await spawnRunner(workflow(['read']))
+    const outbound: Array<{ clientId: string; frame: any }> = []
+    system.subscribe(OutboundMessageTopic, event => outbound.push({ clientId: event.clientId, frame: JSON.parse(event.text) }))
+
+    system.publishRetained(ClientPresenceTopic, 'c1', { status: 'connected', clientId: 'c1', userId: 'u1', roles: [] })
+    system.publishRetained(ClientPresenceTopic, 'c2', { status: 'connected', clientId: 'c2', userId: 'u1', roles: [] })
+    system.publishRetained(ClientPresenceTopic, 'c3', { status: 'connected', clientId: 'c3', userId: 'u2', roles: [] })
+    await Bun.sleep(30)
+
+    system.publish(WorkflowRunUpdateTopic, {
+      userId: 'u1',
+      workflowId: 'workflow-1',
+      runId: 'run-bridge',
+      run: {
+        schemaVersion: 1,
+        runId: 'run-bridge',
+        workflowId: 'workflow-1',
+        userId: 'u1',
+        status: 'running',
+        inputs: {},
+        outputs: {},
+        activeTaskIds: [],
+        activeTasks: {},
+        pendingJobs: {},
+        taskStates: {},
+        events: [],
+      },
+    })
+    await Bun.sleep(30)
+
+    expect(outbound.map(event => event.clientId).sort()).toEqual(['c1', 'c2'])
+    expect(outbound[0]?.frame).toMatchObject({ type: 'workflowRunUpdated', workflowId: 'workflow-1', runId: 'run-bridge' })
+
+    outbound.length = 0
+    system.publishRetained(ClientPresenceTopic, 'c2', { status: 'disconnected', clientId: 'c2' })
+    await Bun.sleep(30)
+    system.publish(WorkflowRunUpdateTopic, {
+      userId: 'u1',
+      workflowId: 'workflow-1',
+      runId: 'run-bridge-2',
+      run: {
+        schemaVersion: 1,
+        runId: 'run-bridge-2',
+        workflowId: 'workflow-1',
+        userId: 'u1',
+        status: 'running',
+        inputs: {},
+        outputs: {},
+        activeTaskIds: [],
+        activeTasks: {},
+        pendingJobs: {},
+        taskStates: {},
+        events: [],
+      },
+    })
+    await Bun.sleep(30)
+
+    expect(outbound.map(event => event.clientId)).toEqual(['c1'])
 
     await system.shutdown()
   })

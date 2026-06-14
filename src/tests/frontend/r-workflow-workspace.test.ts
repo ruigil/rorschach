@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { cleanup, mountClass } from '../helpers/frontend.js'
-import { RWorkflowWorkspace, isLiveWorkflowRunStatus } from '../../frontend/components/r-workflow-workspace.js'
+import { WORKFLOW_RUN_UPDATED_EVENT } from '../../frontend/connection.js'
+import { RWorkflowWorkspace, isLiveWorkflowRunStatus, mergeWorkflowRunIntoGraph } from '../../frontend/components/r-workflow-workspace.js'
 
 const graph = (status = 'running') => ({
   workflow: {
@@ -62,7 +63,7 @@ afterEach(() => {
 })
 
 describe('r-workflow-workspace', () => {
-  test('knows which run statuses should poll', () => {
+  test('knows which run statuses are live', () => {
     expect(isLiveWorkflowRunStatus('running')).toBe(true)
     expect(isLiveWorkflowRunStatus('blocked')).toBe(true)
     expect(isLiveWorkflowRunStatus('completed')).toBe(false)
@@ -126,18 +127,133 @@ describe('r-workflow-workspace', () => {
     expect(link?.getAttribute('href')).toBe('generated/image.png')
   })
 
-  test('polls live run graphs and stops once the run is terminal', async () => {
-    const responses = [graph('running'), graph('completed')]
-    globalThis.fetch = (async () => new Response(JSON.stringify(responses.shift() ?? graph('completed')), {
+  test('merges workflowRunUpdated frames into the current graph and preserves selection', async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify(graph('running')), {
       headers: { 'Content-Type': 'application/json' },
     })) as unknown as typeof fetch
 
     const el = await mountClass(RWorkflowWorkspace) as any
     await el.openGraph('workflow-1', 'run-1')
-    expect(el._pollTimer).toBeTruthy()
+    el._selectedTaskId = 'write-report'
+    el._inspectorTab = 'run'
 
-    await el._pollGraph()
+    window.dispatchEvent(new CustomEvent(WORKFLOW_RUN_UPDATED_EVENT, {
+      detail: {
+        type: 'workflowRunUpdated',
+        workflowId: 'workflow-1',
+        runId: 'run-1',
+        run: {
+          schemaVersion: 1,
+          runId: 'run-1',
+          workflowId: 'workflow-1',
+          userId: 'anonymous',
+          status: 'completed',
+          inputs: { city: 'Rio' },
+          outputs: { report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' } },
+          activeTaskIds: [],
+          activeTasks: {},
+          pendingJobs: {},
+          taskStates: {
+            'write-report': {
+              status: 'completed',
+              attempts: 2,
+              startedAt: '2026-06-12T10:00:00.000Z',
+              completedAt: '2026-06-12T10:02:00.000Z',
+              summary: 'Report finished.',
+              outputs: { report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' } },
+            },
+          },
+          events: [
+            { timestamp: '2026-06-12T10:00:00.000Z', type: 'runStarted', message: 'Run started.' },
+            { timestamp: '2026-06-12T10:02:00.000Z', type: 'runCompleted', message: 'Workflow run completed.' },
+          ],
+        },
+      },
+    }))
+    await el.updateComplete
+
     expect(el._currentGraph.run.status).toBe('completed')
-    expect(el._pollTimer).toBeNull()
+    expect(el._currentGraph.nodes[0].status).toBe('completed')
+    expect(el._currentGraph.nodes[0].attempts).toBe(2)
+    expect(el._currentGraph.nodes[0].summary).toBe('Report finished.')
+    expect(el._selectedTaskId).toBe('write-report')
+    expect(el._inspectorTab).toBe('run')
+  })
+
+  test('ignores unrelated workflowRunUpdated frames', async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify(graph('running')), {
+      headers: { 'Content-Type': 'application/json' },
+    })) as unknown as typeof fetch
+
+    const el = await mountClass(RWorkflowWorkspace) as any
+    await el.openGraph('workflow-1', 'run-1')
+
+    window.dispatchEvent(new CustomEvent(WORKFLOW_RUN_UPDATED_EVENT, {
+      detail: {
+        type: 'workflowRunUpdated',
+        workflowId: 'workflow-1',
+        runId: 'other-run',
+        run: { ...graph('completed').run, runId: 'other-run' },
+      },
+    }))
+    await el.updateComplete
+
+    expect(el._currentGraph.run.status).toBe('running')
+  })
+
+  test('updates list view run chips from workflowRunUpdated frames', async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const body = url.endsWith('/workflows')
+        ? [{ id: 'workflow-1', goal: 'Build a report', createdAt: '2026-06-12T10:00:00.000Z', taskCount: 1 }]
+        : []
+      return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } })
+    }) as unknown as typeof fetch
+
+    const el = await mountClass(RWorkflowWorkspace) as any
+    await el.openList()
+
+    window.dispatchEvent(new CustomEvent(WORKFLOW_RUN_UPDATED_EVENT, {
+      detail: {
+        type: 'workflowRunUpdated',
+        workflowId: 'workflow-1',
+        runId: 'run-2',
+        run: {
+          schemaVersion: 1,
+          runId: 'run-2',
+          workflowId: 'workflow-1',
+          userId: 'anonymous',
+          status: 'running',
+          inputs: {},
+          outputs: {},
+          activeTaskIds: [],
+          activeTasks: {},
+          pendingJobs: {},
+          taskStates: {},
+          events: [],
+        },
+      },
+    }))
+    await el.updateComplete
+
+    expect(el.textContent).toContain('running')
+    expect(el.textContent).toContain('run-2')
+  })
+
+  test('pure graph merge projects taskStates onto nodes', () => {
+    const merged = mergeWorkflowRunIntoGraph(graph('running'), {
+      ...graph('completed').run,
+      taskStates: {
+        'write-report': {
+          status: 'failed',
+          attempts: 3,
+          error: 'Tool failed.',
+        },
+      },
+    })
+
+    expect(merged.nodes[0].status).toBe('failed')
+    expect(merged.nodes[0].attempts).toBe(3)
+    expect(merged.nodes[0].error).toBe('Tool failed.')
   })
 })
