@@ -6,6 +6,17 @@ import { WORKFLOW_RUN_UPDATED_EVENT } from '../connection.js';
 
 type InspectorTab = 'task' | 'workflow' | 'run' | 'events';
 
+const DEFAULT_INSPECTOR_HEIGHT_PERCENT = 34;
+const MIN_INSPECTOR_HEIGHT_PERCENT = 18;
+const MAX_INSPECTOR_HEIGHT_PERCENT = 72;
+const INSPECTOR_HEIGHT_STORAGE_KEY = 'rorschach.workflowWorkspaceInspectorHeightPercent';
+
+export const clampWorkflowInspectorHeightPercent = (value: unknown): number => {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric)) return DEFAULT_INSPECTOR_HEIGHT_PERCENT;
+  return Math.max(MIN_INSPECTOR_HEIGHT_PERCENT, Math.min(MAX_INSPECTOR_HEIGHT_PERCENT, numeric));
+};
+
 export const isLiveWorkflowRunStatus = (status: unknown): boolean =>
   status === 'running' || status === 'blocked';
 
@@ -53,6 +64,7 @@ export class RWorkflowWorkspace extends RorschachBase {
   @state() private _runId: string | null = null;
   @state() private _inspectorTab: InspectorTab = 'task';
   @state() private _lastUpdatedAt: string | null = null;
+  @state() private _inspectorHeightPercent = this._readInspectorHeightPercent();
 
   private _lastMode = '';
   private _lastWorkflowGraph: any = null;
@@ -230,6 +242,7 @@ export class RWorkflowWorkspace extends RorschachBase {
     if (!this._currentGraph || !this._currentGraph.nodes.length) {
       return html`<div class="plan-empty"><span>workflow has no tasks</span></div>`;
     }
+    const graphShellStyle = `grid-template-rows: minmax(180px, 1fr) 9px minmax(120px, ${this._inspectorHeightPercent}%);`;
     return html`
       <div class="plan-run-header">
         <div class="plan-run-title">
@@ -241,7 +254,7 @@ export class RWorkflowWorkspace extends RorschachBase {
           ${this._lastUpdatedAt ? html`<span>${this._formatTime(this._lastUpdatedAt)}</span>` : nothing}
         </div>
       </div>
-      <div class="plan-graph-shell">
+      <div class="plan-graph-shell" style=${graphShellStyle}>
         <r-force-graph
           class="plan-graph"
           .planData=${this._currentGraph}
@@ -254,11 +267,57 @@ export class RWorkflowWorkspace extends RorschachBase {
             }
           }}
         ></r-force-graph>
+        <div
+          class="workflow-inspector-resizer"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize workflow inspector"
+          aria-valuemin=${MIN_INSPECTOR_HEIGHT_PERCENT}
+          aria-valuemax=${MAX_INSPECTOR_HEIGHT_PERCENT}
+          aria-valuenow=${Math.round(this._inspectorHeightPercent)}
+          @pointerdown=${this._handleInspectorResizeStart}
+        ></div>
         <div class="plan-task-detail-wrap">
           ${this._renderInspector()}
         </div>
       </div>
     `;
+  }
+
+  private _handleInspectorResizeStart(e: PointerEvent) {
+    if (e.button !== 0) return;
+    const shell = this.querySelector('.plan-graph-shell') as HTMLElement | null;
+    if (!shell) return;
+
+    e.preventDefault();
+    const resizer = e.currentTarget as HTMLElement;
+    resizer.setPointerCapture(e.pointerId);
+    document.body.classList.add('workflow-inspector-resizing');
+
+    const updateFromPointer = (clientY: number) => {
+      const rect = shell.getBoundingClientRect();
+      if (rect.height <= 0) return;
+      const next = ((rect.bottom - clientY) / rect.height) * 100;
+      this._inspectorHeightPercent = clampWorkflowInspectorHeightPercent(next);
+    };
+
+    const onPointerMove = (moveEv: PointerEvent) => {
+      updateFromPointer(moveEv.clientY);
+    };
+
+    const onPointerUp = () => {
+      if (resizer.hasPointerCapture(e.pointerId)) {
+        resizer.releasePointerCapture(e.pointerId);
+      }
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      document.body.classList.remove('workflow-inspector-resizing');
+      this._persistInspectorHeightPercent();
+    };
+
+    updateFromPointer(e.clientY);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
   }
 
   private _renderInspector() {
@@ -498,6 +557,16 @@ export class RWorkflowWorkspace extends RorschachBase {
     const res = await fetch(new URL(path, location.href));
     if (!res.ok) throw new Error(await res.text());
     return await res.json();
+  }
+
+  private _readInspectorHeightPercent() {
+    if (typeof localStorage === 'undefined') return DEFAULT_INSPECTOR_HEIGHT_PERCENT;
+    return clampWorkflowInspectorHeightPercent(localStorage.getItem(INSPECTOR_HEIGHT_STORAGE_KEY));
+  }
+
+  private _persistInspectorHeightPercent() {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(INSPECTOR_HEIGHT_STORAGE_KEY, String(Math.round(this._inspectorHeightPercent)));
   }
 
   private _isArtifactRef(value: unknown): value is { type: 'artifact'; path?: string; url?: string; mimeType?: string } {

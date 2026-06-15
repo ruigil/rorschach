@@ -110,6 +110,7 @@ export class RWindow extends RorschachBase {
     e.preventDefault();
     const resizer = e.target as HTMLElement;
     resizer.setPointerCapture(e.pointerId);
+    document.body.classList.add('r-window-resizing');
 
     const initialWidth = win.w;
     const startX = e.clientX;
@@ -133,6 +134,7 @@ export class RWindow extends RorschachBase {
       }
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
+      document.body.classList.remove('r-window-resizing');
     };
 
     window.addEventListener('pointermove', onPointerMove);
@@ -192,18 +194,20 @@ export class RWindow extends RorschachBase {
     const win = this.config;
     if (!win || !win.isOpen) return html``;
 
+    const windowConfig = WINDOW_REGISTRY[this.windowId];
+    const showDockResizer = win.isDocked && windowConfig?.dockResizable !== false;
     const contentEl = this._getContentElement();
 
     return html`
-      ${win.isDocked && this.windowId !== 'chat' ? html`
+      ${showDockResizer && this.windowId !== 'chat' ? html`
         <div class="r-window-resizer resizer-left" @pointerdown=${this._handleDockResize}></div>
       ` : ''}
 
       <div class="r-window-chrome ${this.isFocused ? 'active-focus' : ''}" @pointerdown=${() => focusWindow(this.windowId)}>
         <div class="r-window-header" @pointerdown=${this._handleDragStart}>
           <div class="r-window-title">
-            ${this.renderIcon((WINDOW_REGISTRY[this.windowId]?.icon ?? 'file') as any)}
-            <span>${WINDOW_REGISTRY[this.windowId]?.title ?? this.windowId}</span>
+            ${this.renderIcon((windowConfig?.icon ?? 'file') as any)}
+            <span>${windowConfig?.title ?? this.windowId}</span>
           </div>
           <div class="r-window-controls">
             <button class="win-btn dock-btn" @click=${this._toggleDock} title="${win.isDocked ? 'Undock floating window' : 'Dock to main panel'}">
@@ -220,7 +224,7 @@ export class RWindow extends RorschachBase {
         </div>
       </div>
 
-      ${win.isDocked && this.windowId === 'chat' ? html`
+      ${showDockResizer && this.windowId === 'chat' ? html`
         <div class="r-window-resizer resizer-right" @pointerdown=${this._handleDockResize}></div>
       ` : ''}
     `;

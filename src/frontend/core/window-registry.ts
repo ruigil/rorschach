@@ -3,6 +3,7 @@ export interface WindowConfig {
   title: string;
   icon: string;
   contentTag: string;
+  dockResizable?: boolean;
   defaultWidth: number;
   defaultHeight: number;
   minWidth: number;
@@ -25,6 +26,7 @@ export const WINDOW_REGISTRY: Record<string, WindowConfig> = {
     title: 'Documentation',
     icon: 'file-text',
     contentTag: 'r-doc-workspace',
+    dockResizable: false,
     defaultWidth: 500,
     defaultHeight: 600,
     minWidth: 350,
@@ -35,6 +37,7 @@ export const WINDOW_REGISTRY: Record<string, WindowConfig> = {
     title: 'Workflows',
     icon: 'git-branch',
     contentTag: 'r-workflow-workspace',
+    dockResizable: false,
     defaultWidth: 460,
     defaultHeight: 600,
     minWidth: 320,

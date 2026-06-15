@@ -14,7 +14,8 @@ r-window {
   position: relative;
   width: 9px;
   cursor: col-resize;
-  background: transparent;
+  touch-action: none;
+  background: rgb(4, 13, 20);
   flex: 0 0 9px;
   z-index: 10;
   transition: background 0.15s, box-shadow 0.15s;
@@ -33,19 +34,24 @@ r-window {
 .r-window-resizer::before {
   content: '';
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: 50%;
   left: 50%;
   width: 1px;
-  transform: translateX(-50%);
-  background: rgba(0, 196, 212, 0.12);
+  height: 3.2rem;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 196, 212, 0.18);
   transition: background 0.15s, box-shadow 0.15s;
 }
 
 .r-window-resizer:hover::before,
-body.dragging .r-window-resizer::before {
+body.r-window-resizing .r-window-resizer::before {
   background: var(--accent);
   box-shadow: 0 0 8px rgba(0, 196, 212, 0.45);
+}
+
+body.r-window-resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 
 /* Glassmorphic Chrome Frame */
@@ -583,16 +589,15 @@ r-window.floating {
 
 .plan-graph-shell {
   display: grid;
-  grid-template-rows: minmax(260px, 1fr) minmax(190px, 34%);
+  grid-template-rows: minmax(180px, 1fr) 9px minmax(120px, 34%);
   height: 100%;
   min-height: 0;
 }
 
 .plan-graph {
   position: relative;
-  min-height: 260px;
+  min-height: 180px;
   overflow: hidden;
-  border-bottom: 1px solid var(--border);
 }
 
 .plan-graph svg {
@@ -683,6 +688,39 @@ r-window.floating {
   overflow-y: auto;
 }
 
+.workflow-inspector-resizer {
+  position: relative;
+  min-height: 9px;
+  cursor: row-resize;
+  touch-action: none;
+  background: rgba(4, 13, 20, 0.48);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid rgba(0, 196, 212, 0.08);
+}
+
+.workflow-inspector-resizer::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3.2rem;
+  height: 1px;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 196, 212, 0.18);
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.workflow-inspector-resizer:hover::before,
+body.workflow-inspector-resizing .workflow-inspector-resizer::before {
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(0, 196, 212, 0.45);
+}
+
+body.workflow-inspector-resizing {
+  cursor: row-resize;
+  user-select: none;
+}
+
 .plan-task-detail {
   padding: 0.9rem;
 }
@@ -753,6 +791,8 @@ r-window.floating {
 }
 
 .plan-task-detail pre {
+  scrollbar-color: var(--border-mid) transparent;
+  scrollbar-width: thin;
   max-height: 12rem;
   margin: 0;
   padding: 0.5rem;
@@ -765,6 +805,20 @@ r-window.floating {
   font-size: 0.66rem;
   line-height: 1.42;
   white-space: pre-wrap;
+}
+
+.plan-task-detail pre::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+
+.plan-task-detail pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.plan-task-detail pre::-webkit-scrollbar-thumb {
+  background: var(--border-mid);
+  border-radius: 2px;
 }
 
 .workflow-kv-list,

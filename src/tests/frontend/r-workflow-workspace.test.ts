@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { cleanup, mountClass } from '../helpers/frontend.js'
 import { WORKFLOW_RUN_UPDATED_EVENT } from '../../frontend/connection.js'
-import { RWorkflowWorkspace, isLiveWorkflowRunStatus, mergeWorkflowRunIntoGraph } from '../../frontend/components/r-workflow-workspace.js'
+import {
+  RWorkflowWorkspace,
+  clampWorkflowInspectorHeightPercent,
+  isLiveWorkflowRunStatus,
+  mergeWorkflowRunIntoGraph,
+} from '../../frontend/components/r-workflow-workspace.js'
 
 const graph = (status = 'running') => ({
   workflow: {
@@ -68,6 +73,31 @@ describe('r-workflow-workspace', () => {
     expect(isLiveWorkflowRunStatus('blocked')).toBe(true)
     expect(isLiveWorkflowRunStatus('completed')).toBe(false)
     expect(isLiveWorkflowRunStatus('failed')).toBe(false)
+  })
+
+  test('clamps workflow inspector height percentages', () => {
+    expect(clampWorkflowInspectorHeightPercent(10)).toBe(18)
+    expect(clampWorkflowInspectorHeightPercent(44)).toBe(44)
+    expect(clampWorkflowInspectorHeightPercent(90)).toBe(72)
+    expect(clampWorkflowInspectorHeightPercent('bad')).toBe(34)
+  })
+
+  test('renders a horizontal inspector splitter with saved height', async () => {
+    localStorage.setItem('rorschach.workflowWorkspaceInspectorHeightPercent', '62')
+    globalThis.fetch = (async () => new Response(JSON.stringify(graph()), {
+      headers: { 'Content-Type': 'application/json' },
+    })) as unknown as typeof fetch
+
+    const el = await mountClass(RWorkflowWorkspace) as any
+    await el.openGraph('workflow-1', 'run-1')
+    await el.updateComplete
+
+    const shell = el.querySelector('.plan-graph-shell') as HTMLElement | null
+    const splitter = el.querySelector('.workflow-inspector-resizer') as HTMLElement | null
+    expect(shell?.getAttribute('style')).toContain('minmax(120px, 62%)')
+    expect(splitter?.getAttribute('role')).toBe('separator')
+    expect(splitter?.getAttribute('aria-orientation')).toBe('horizontal')
+    expect(splitter?.getAttribute('aria-valuenow')).toBe('62')
   })
 
   test('renders workflow context and declared IO in the inspector', async () => {
