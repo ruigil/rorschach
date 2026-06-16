@@ -49,18 +49,12 @@ const validateStringArray = (label: string, value: unknown, errors: string[]): s
   return value
 }
 
-export const validateWorkflow = (
-  workflow: Workflow,
-  options: { disallowedExecutionTool?: (name: string) => boolean } = {},
-): string[] => {
+export const validateWorkflow = (workflow: Workflow): string[] => {
   const errors: string[] = []
   if (!workflow || typeof workflow !== 'object' || Array.isArray(workflow)) return ['workflow must be an object']
   if (typeof workflow.goal !== 'string' || !workflow.goal.trim()) errors.push('goal must be a non-empty string')
   if (typeof workflow.context !== 'string' || !workflow.context.trim()) errors.push('context must be a non-empty string')
   const executionTools = validateStringArray('executionTools', workflow.executionTools, errors)
-  for (const name of executionTools) {
-    if (options.disallowedExecutionTool?.(name)) errors.push(`executionTools cannot include workflow control tool: ${name}`)
-  }
   const workflowInputs = validateSpecMap('inputs', workflow.inputs, errors)
   const workflowOutputs = validateSpecMap('outputs', workflow.outputs, errors)
 

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { AgentSystem, ask } from '../system/index.ts'
 import { WorkflowStore } from '../plugins/workflows/workflow-store.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
-import { WorkflowTools, listExecutionToolsTool, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool } from '../plugins/workflows/tools.ts'
+import { WorkflowTools, listExecutionToolsTool, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool, startWorkflowRunTool } from '../plugins/workflows/tools.ts'
 import type { Workflow, WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowRunState, WorkflowStoreMsg, WorkflowStoreReply } from '../plugins/workflows/types.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
@@ -236,7 +236,7 @@ describe('workflow store', () => {
 	      arguments: JSON.stringify({
 	        goal: 'Learn antigravity',
 	        summary: 'Decided to use Gemini 3.5.',
-	        executionTools: ['read'],
+	        executionTools: ['read', startWorkflowRunTool.name],
 	        tasks: [{
 	          id: 'research',
 	          name: 'Research',

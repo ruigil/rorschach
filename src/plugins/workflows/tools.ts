@@ -202,7 +202,7 @@ const parseWorkflow = (raw: string, userId: string): { ok: true; workflow: Workf
       ...(args.outputs !== undefined ? { outputs: args.outputs } : {}),
       tasks: args.tasks,
     }
-    const errors = validateWorkflow(workflow, { disallowedExecutionTool: isWorkflowControlTool })
+    const errors = validateWorkflow(workflow)
     if (errors.length) throw new Error(errors.join('; '))
     return { ok: true, workflow }
   } catch (error) {
@@ -214,7 +214,6 @@ const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch:
   try {
     const args = JSON.parse(raw) as { workflowId?: string; goal?: string; summary?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
     if (!args.workflowId || typeof args.workflowId !== 'string') throw new Error('missing workflowId')
-    if (args.executionTools?.some(isWorkflowControlTool)) throw new Error('executionTools cannot include workflow control tools')
     const patch = {
       ...(args.goal !== undefined ? { goal: args.goal } : {}),
       ...(args.summary !== undefined ? { context: args.summary } : {}),

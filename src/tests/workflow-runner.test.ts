@@ -30,6 +30,15 @@ const readTool = defineTool('read', 'Read a file.', {
   },
 })
 
+const switchModeTool = defineTool('switch_mode', 'Switch to another agent mode.', {
+  type: 'object',
+  required: ['mode', 'reason'],
+  properties: {
+    mode: { type: 'string' },
+    reason: { type: 'string' },
+  },
+})
+
 const FakeTool = (): ActorDef<ToolMsg, null> => ({
   initialState: null,
   handler: (state, msg) => {
@@ -180,16 +189,27 @@ describe('workflow runner', () => {
     await system.shutdown()
   })
 
-  test('does not treat workflow control tools as execution tools', async () => {
+  test('allows workflow control tools and switch_mode as execution tools', async () => {
     const system = await AgentSystem()
     const toolRef = system.spawn('fake-control-tool', FakeTool())
     system.publishRetained(ToolRegistrationTopic, startWorkflowRunTool.name, { ...startWorkflowRunTool, ref: toolRef })
+    system.publishRetained(ToolRegistrationTopic, switchModeTool.name, { ...switchModeTool, ref: toolRef })
 
     const workflowsDir = await makeDir('rorschach-workflows')
     const runsDir = await makeDir('rorschach-workflow-runs')
-    await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(workflow([startWorkflowRunTool.name])))
+    await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(workflow([startWorkflowRunTool.name, switchModeTool.name])))
     const store = system.spawn('workflow-store', WorkflowStore(workflowsDir))
     const runner = system.spawn('workflow-runner-control', WorkflowRunner(store, runsDir, null, 'test-model', 1))
+
+    const listed = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+      runner,
+      replyTo => ({ type: 'listExecutionTools', replyTo }),
+      { timeoutMs: 1_000 },
+    )
+    expect(listed.ok).toBe(true)
+    if (listed.ok && 'executionTools' in listed) {
+      expect(listed.executionTools.map(tool => tool.name).sort()).toEqual([startWorkflowRunTool.name, switchModeTool.name].sort())
+    }
 
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       runner,
@@ -199,8 +219,8 @@ describe('workflow runner', () => {
 
     expect(reply.ok).toBe(true)
     if (reply.ok && 'run' in reply) {
-      expect(reply.run.status).toBe('blocked')
-      expect(reply.run.taskStates['task-1']?.error).toBe('Required execution tool is unavailable: start_workflow_run')
+      expect(reply.run.status).toBe('running')
+      expect(reply.run.taskStates['task-1']?.status).toBe('running')
     }
 
     await system.shutdown()
