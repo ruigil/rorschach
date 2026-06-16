@@ -2,7 +2,8 @@ import { mkdir } from 'node:fs/promises'
 import { mkdirSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 import type { ActorDef, ActorRef, PersistenceAdapter } from '../../system/index.ts'
-import { JobRegistryTopic, type JobLifecycleEvent, type ToolCollection } from '../../types/tools.ts'
+import { onLifecycle, onMessage } from '../../system/index.ts'
+import { JobRegistryTopic, type ToolCollection } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import { WorkflowRunUpdateTopic } from './types.ts'
 import type {
@@ -288,139 +289,145 @@ export const WorkflowRunExecutor = (
   return {
     initialState: () => ({ run: initialRun, workflow, tools }),
     persistence: runPersistence(workflowRunsDir, initialRun.runId, workflow, tools),
-    lifecycle: (state, event, ctx) => {
-      if (event.type === 'start') {
+    lifecycle: onLifecycle<WorkflowRunExecutorMsg, RunExecutorState>({
+      start: (state, ctx) => {
         ctx.subscribe(JobRegistryTopic, jobEvent => ({ type: '_jobRegistry' as const, event: jobEvent }))
-      }
-      return { state }
-    },
-    handler: (state, msg, ctx) => {
-      switch (msg.type) {
-        case 'start': {
-          ensureArtifactRoot(workflowRunsDir, state.run.runId)
-          const next = schedule(state, ctx)
-          publishRunUpdate(ctx, next.run)
-          msg.replyTo.send({ ok: true, run: next.run })
-          return { state: next }
-        }
-        case 'get':
-          msg.replyTo.send({ ok: true, run: state.run })
+        return { state }
+      },
+    }),
+    handler: onMessage<WorkflowRunExecutorMsg, RunExecutorState>({
+      start: (state, msg, ctx) => {
+        ensureArtifactRoot(workflowRunsDir, state.run.runId)
+        const next = schedule(state, ctx)
+        publishRunUpdate(ctx, next.run)
+        msg.replyTo.send({ ok: true, run: next.run })
+        return { state: next }
+      },
+
+      get: (state, msg) => {
+        msg.replyTo.send({ ok: true, run: state.run })
+        return { state }
+      },
+
+      resume: (state, msg, ctx) => {
+        const next = resumeRun(state, ctx)
+        if (!next.ok) {
+          msg.replyTo.send(next)
           return { state }
-        case 'resume': {
-          const next = resumeRun(state, ctx)
-          if (!next.ok) {
-            msg.replyTo.send(next)
-            return { state }
-          }
-          publishRunUpdate(ctx, next.state.run)
-          msg.replyTo.send({ ok: true, run: next.state.run })
-          return { state: next.state }
         }
-        case 'taskWaiting': {
-          const actorName = state.run.activeTasks[msg.taskId]?.actorName
-          if (actorName) ctx.stop({ name: actorName })
-          const { [msg.taskId]: _active, ...activeTasks } = state.run.activeTasks
-          const run = appendEvent({
-            ...state.run,
-            activeTaskIds: state.run.activeTaskIds.filter(id => id !== msg.taskId),
-            activeTasks,
-            pendingJobs: {
-              ...state.run.pendingJobs,
-              [msg.jobId]: {
-                taskId: msg.taskId,
-                toolName: msg.toolName,
-                toolCallId: msg.toolCallId,
-                startedAt: now(),
-              },
+        publishRunUpdate(ctx, next.state.run)
+        msg.replyTo.send({ ok: true, run: next.state.run })
+        return { state: next.state }
+      },
+
+      taskWaiting: (state, msg, ctx) => {
+        const actorName = state.run.activeTasks[msg.taskId]?.actorName
+        if (actorName) ctx.stop({ name: actorName })
+        const { [msg.taskId]: _active, ...activeTasks } = state.run.activeTasks
+        const run = appendEvent({
+          ...state.run,
+          activeTaskIds: state.run.activeTaskIds.filter(id => id !== msg.taskId),
+          activeTasks,
+          pendingJobs: {
+            ...state.run.pendingJobs,
+            [msg.jobId]: {
+              taskId: msg.taskId,
+              toolName: msg.toolName,
+              toolCallId: msg.toolCallId,
+              startedAt: now(),
             },
-          }, 'taskWaiting', `Task ${msg.taskId} is waiting on ${msg.toolName} (${msg.jobId}).`, msg.taskId)
-          publishRunUpdate(ctx, run)
-          return { state: { ...state, run } }
-        }
-        case 'taskCompleted': {
-          const next = completeTask(state, msg.taskId, msg.summary, msg.outputs, ctx)
-          publishRunUpdate(ctx, next.run)
-          return { state: next }
-        }
-        case 'taskBlocked': {
-          const actorName = state.run.activeTasks[msg.taskId]?.actorName
-          if (actorName) ctx.stop({ name: actorName })
-          const { [msg.taskId]: _active, ...activeTasks } = state.run.activeTasks
-          const run = appendEvent({
-            ...state.run,
-            status: 'blocked',
-            activeTaskIds: state.run.activeTaskIds.filter(id => id !== msg.taskId),
-            activeTasks,
-            taskStates: {
-              ...state.run.taskStates,
-              [msg.taskId]: {
-                ...(state.run.taskStates[msg.taskId] ?? fallbackTaskState()),
-                status: 'blocked',
-                error: msg.message,
-                blockedReason: { type: 'task_blocked', message: msg.message },
-              },
+          },
+        }, 'taskWaiting', `Task ${msg.taskId} is waiting on ${msg.toolName} (${msg.jobId}).`, msg.taskId)
+        publishRunUpdate(ctx, run)
+        return { state: { ...state, run } }
+      },
+
+      taskCompleted: (state, msg, ctx) => {
+        const next = completeTask(state, msg.taskId, msg.summary, msg.outputs, ctx)
+        publishRunUpdate(ctx, next.run)
+        return { state: next }
+      },
+
+      taskBlocked: (state, msg, ctx) => {
+        const actorName = state.run.activeTasks[msg.taskId]?.actorName
+        if (actorName) ctx.stop({ name: actorName })
+        const { [msg.taskId]: _active, ...activeTasks } = state.run.activeTasks
+        const run = appendEvent({
+          ...state.run,
+          status: 'blocked',
+          activeTaskIds: state.run.activeTaskIds.filter(id => id !== msg.taskId),
+          activeTasks,
+          taskStates: {
+            ...state.run.taskStates,
+            [msg.taskId]: {
+              ...(state.run.taskStates[msg.taskId] ?? fallbackTaskState()),
+              status: 'blocked',
+              error: msg.message,
+              blockedReason: { type: 'task_blocked', message: msg.message },
             },
-          }, 'taskBlocked', msg.message, msg.taskId)
-          publishTerminalJob(ctx, run)
-          publishRunUpdate(ctx, run)
-          return { state: { ...state, run } }
-        }
-        case 'taskFailed': {
-          const actorName = state.run.activeTasks[msg.taskId]?.actorName
-          if (actorName) ctx.stop({ name: actorName })
-          const { [msg.taskId]: _active, ...activeTasks } = state.run.activeTasks
-          const run = appendEvent({
-            ...state.run,
-            status: 'failed',
-            activeTaskIds: state.run.activeTaskIds.filter(id => id !== msg.taskId),
-            activeTasks,
-            taskStates: {
-              ...state.run.taskStates,
-              [msg.taskId]: { ...(state.run.taskStates[msg.taskId] ?? fallbackTaskState()), status: 'failed', error: msg.error },
-            },
-          }, 'taskFailed', msg.error, msg.taskId)
-          publishTerminalJob(ctx, run)
-          publishRunUpdate(ctx, run)
-          return { state: { ...state, run } }
-        }
-        case '_jobRegistry': {
-          const jobEvent = msg.event as JobLifecycleEvent
-          if ((jobEvent.status === 'completed' || jobEvent.status === 'failed') && state.run.pendingJobs[jobEvent.jobId]) {
-            const pending = state.run.pendingJobs[jobEvent.jobId]
-            if (!pending) return { state }
-            const { [jobEvent.jobId]: _, ...pendingJobs } = state.run.pendingJobs
-            const summary = jobEvent.status === 'completed'
-              ? jobEvent.result.text
-              : `Tool ${pending.toolName} failed: ${jobEvent.error}`
-            const withJobCleared = { ...state, run: { ...state.run, pendingJobs } }
-            if (jobEvent.status === 'completed') {
-              const run = appendEvent({
-                ...withJobCleared.run,
-                status: 'running',
-                taskStates: {
-                  ...withJobCleared.run.taskStates,
-                  [pending.taskId]: {
-                    ...(withJobCleared.run.taskStates[pending.taskId] ?? fallbackTaskState()),
-                    status: 'pending',
-                    error: undefined,
-                    blockedReason: undefined,
-                  },
+          },
+        }, 'taskBlocked', msg.message, msg.taskId)
+        publishTerminalJob(ctx, run)
+        publishRunUpdate(ctx, run)
+        return { state: { ...state, run } }
+      },
+
+      taskFailed: (state, msg, ctx) => {
+        const actorName = state.run.activeTasks[msg.taskId]?.actorName
+        if (actorName) ctx.stop({ name: actorName })
+        const { [msg.taskId]: _active, ...activeTasks } = state.run.activeTasks
+        const run = appendEvent({
+          ...state.run,
+          status: 'failed',
+          activeTaskIds: state.run.activeTaskIds.filter(id => id !== msg.taskId),
+          activeTasks,
+          taskStates: {
+            ...state.run.taskStates,
+            [msg.taskId]: { ...(state.run.taskStates[msg.taskId] ?? fallbackTaskState()), status: 'failed', error: msg.error },
+          },
+        }, 'taskFailed', msg.error, msg.taskId)
+        publishTerminalJob(ctx, run)
+        publishRunUpdate(ctx, run)
+        return { state: { ...state, run } }
+      },
+
+      _jobRegistry: (state, msg, ctx) => {
+        const jobEvent = msg.event
+        if ((jobEvent.status === 'completed' || jobEvent.status === 'failed') && state.run.pendingJobs[jobEvent.jobId]) {
+          const pending = state.run.pendingJobs[jobEvent.jobId]
+          if (!pending) return { state }
+          const { [jobEvent.jobId]: _, ...pendingJobs } = state.run.pendingJobs
+          const summary = jobEvent.status === 'completed'
+            ? jobEvent.result.text
+            : `Tool ${pending.toolName} failed: ${jobEvent.error}`
+          const withJobCleared = { ...state, run: { ...state.run, pendingJobs } }
+          if (jobEvent.status === 'completed') {
+            const run = appendEvent({
+              ...withJobCleared.run,
+              status: 'running',
+              taskStates: {
+                ...withJobCleared.run.taskStates,
+                [pending.taskId]: {
+                  ...(withJobCleared.run.taskStates[pending.taskId] ?? fallbackTaskState()),
+                  status: 'pending',
+                  error: undefined,
+                  blockedReason: undefined,
                 },
-              }, 'taskToolCompleted', `Pending tool ${pending.toolName} completed; retrying task ${pending.taskId}.`, pending.taskId)
-              const next = schedule({ ...withJobCleared, run }, ctx, { [pending.taskId]: formatResumeContext(pending.toolName, summary) })
-              publishRunUpdate(ctx, next.run)
-              return { state: next }
-            }
-            const failedRun = appendEvent({ ...withJobCleared.run, status: 'failed' }, 'taskFailed', summary, pending.taskId)
-            publishTerminalJob(ctx, failedRun)
-            publishRunUpdate(ctx, failedRun)
-            return { state: { ...withJobCleared, run: failedRun } }
+              },
+            }, 'taskToolCompleted', `Pending tool ${pending.toolName} completed; retrying task ${pending.taskId}.`, pending.taskId)
+            const next = schedule({ ...withJobCleared, run }, ctx, { [pending.taskId]: formatResumeContext(pending.toolName, summary) })
+            publishRunUpdate(ctx, next.run)
+            return { state: next }
           }
-          return { state }
+          const failedRun = appendEvent({ ...withJobCleared.run, status: 'failed' }, 'taskFailed', summary, pending.taskId)
+          publishTerminalJob(ctx, failedRun)
+          publishRunUpdate(ctx, failedRun)
+          return { state: { ...withJobCleared, run: failedRun } }
         }
-        case '_done':
-          return { state }
-      }
-    },
+        return { state }
+      },
+
+      _done: (state) => ({ state }),
+    }),
   }
 }

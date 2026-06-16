@@ -1,7 +1,7 @@
 import { mkdir, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ActorDef, ActorRef } from '../../system/index.ts'
-import { ask } from '../../system/index.ts'
+import type { ActorContext, ActorDef, ActorRef, ActorResult } from '../../system/index.ts'
+import { ask, onLifecycle, onMessage } from '../../system/index.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import { ToolRegistrationTopic, type ToolCollection } from '../../types/tools.ts'
 import { ClientPresenceTopic, OutboundMessageTopic } from '../../types/events.ts'
@@ -173,10 +173,108 @@ export const WorkflowRunner = (
     return { ref, state: { ...state, live: { ...state.live, [run.runId]: ref } } }
   }
 
+  const listRuns = (
+    state: RunnerState,
+    msg: Extract<WorkflowRunnerMsg, { type: 'list' }>,
+    ctx: ActorContext<WorkflowRunnerMsg>,
+  ): ActorResult<WorkflowRunnerMsg, RunnerState> => {
+    ctx.pipeToSelf(
+      scanRuns(workflowRunsDir, msg.userId),
+      runs => {
+        msg.replyTo.send({ ok: true, runs })
+        return { type: '_done' }
+      },
+      error => {
+        msg.replyTo.send({ ok: false, error: String(error) })
+        return { type: '_done' }
+      },
+    )
+    return { state }
+  }
+
+  const startRun = (
+    state: RunnerState,
+    msg: Extract<WorkflowRunnerMsg, { type: 'start' }>,
+    ctx: ActorContext<WorkflowRunnerMsg>,
+  ): ActorResult<WorkflowRunnerMsg, RunnerState> => {
+    ctx.pipeToSelf(
+      (async (): Promise<{ reply: WorkflowRunnerReply; live?: Record<string, ActorRef<WorkflowRunExecutorMsg>> }> => {
+        const workflowReply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(
+          workflowStoreRef,
+          replyTo => ({ type: 'get', userId: msg.userId, workflowId: msg.workflowId, replyTo }),
+          { timeoutMs: 5_000 },
+        )
+        if (!workflowReply.ok || !('workflow' in workflowReply)) {
+          return { reply: { ok: false, error: workflowReply.ok ? 'Unexpected workflow store response.' : workflowReply.error, status: workflowReply.ok ? 500 : workflowReply.status } }
+        }
+        const inputValidation = validateInputValues(workflowReply.workflow.inputs, msg.inputs)
+        if (!inputValidation.ok) return { reply: { ok: false, error: inputValidation.error, status: 400 } }
+        const run = initialRunState(workflowReply.workflow, crypto.randomUUID(), inputValidation.values)
+        const missingTool = missingExecutionTool(workflowReply.workflow, state.executionTools)
+        if (missingTool) {
+          const blocked = blockedMissingToolRun(run, missingTool)
+          await writeRun(workflowRunsDir, blocked)
+          publishRunUpdate(ctx, blocked)
+          return { reply: { ok: true, run: blocked } }
+        }
+        const ref = ctx.spawn(
+          `workflow-run-${run.runId}`,
+          WorkflowRunExecutor(workflowReply.workflow, workflowRunsDir, llmRef, model, maxToolLoops, run, filterWorkflowTools(workflowReply.workflow, state.executionTools)),
+        ) as ActorRef<WorkflowRunExecutorMsg>
+        const startReply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
+          ref,
+          replyTo => ({ type: 'start', replyTo }),
+          { timeoutMs: 5_000 },
+        )
+        return {
+          reply: startReply.ok ? { ok: true, run: startReply.run } : startReply,
+          live: { ...state.live, [run.runId]: ref },
+        }
+      })(),
+      result => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: result.reply, live: result.live }),
+      error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { ok: false as const, error: String(error) } }),
+    )
+    return { state }
+  }
+
+  const getOrResumeRun = (
+    state: RunnerState,
+    msg: Extract<WorkflowRunnerMsg, { type: 'get' | 'resume' }>,
+    ctx: ActorContext<WorkflowRunnerMsg>,
+  ): ActorResult<WorkflowRunnerMsg, RunnerState> => {
+    ctx.pipeToSelf(
+      (async (): Promise<{ reply: WorkflowRunnerReply; live?: Record<string, ActorRef<WorkflowRunExecutorMsg>> }> => {
+        const live = state.live[msg.runId]
+        if (live) {
+          const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
+            live,
+            replyTo => msg.type === 'get' ? { type: 'get', replyTo } : { type: 'resume', replyTo },
+            { timeoutMs: 5_000 },
+          )
+          return { reply }
+        }
+        const diskReply = await getRunFromDisk(workflowRunsDir, msg.userId, msg.runId)
+        if (!diskReply.ok || !('run' in diskReply)) return { reply: diskReply }
+        if (msg.type === 'get') return { reply: diskReply }
+        const ensured = await ensureRunActor(state, ctx, diskReply.run)
+        if ('ok' in ensured) return { reply: ensured }
+        const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
+          ensured.ref,
+          replyTo => ({ type: 'resume', replyTo }),
+          { timeoutMs: 5_000 },
+        )
+        return { reply, live: ensured.state.live }
+      })(),
+      result => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: result.reply, live: result.live }),
+      error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { ok: false as const, error: String(error) } }),
+    )
+    return { state }
+  }
+
   return {
     initialState: { live: {}, executionTools: {}, clientsByUser: {}, clientUsers: {} },
-    lifecycle: (state, event, ctx) => {
-      if (event.type === 'start') {
+    lifecycle: onLifecycle<WorkflowRunnerMsg, RunnerState>({
+      start: (state, ctx) => {
         ctx.subscribe(ToolRegistrationTopic, toolEvent => {
           if ('schema' in toolEvent) return { type: '_toolRegistered' as const, tool: toolEvent }
           return { type: '_toolUnregistered' as const, name: toolEvent.name }
@@ -186,24 +284,28 @@ export const WorkflowRunner = (
           return { type: '_clientDisconnected' as const, clientId: clientEvent.clientId }
         })
         ctx.subscribe(WorkflowRunUpdateTopic, event => ({ type: '_runUpdated' as const, event }))
-      }
-      return { state }
-    },
-    handler: (state, msg, ctx) => {
-      if (msg.type === '_toolRegistered') {
+        return { state }
+      },
+    }),
+    handler: onMessage<WorkflowRunnerMsg, RunnerState>({
+      _toolRegistered: (state, msg) => {
         return { state: { ...state, executionTools: { ...state.executionTools, [msg.tool.name]: msg.tool } } }
-      }
-      if (msg.type === '_toolUnregistered') {
+      },
+
+      _toolUnregistered: (state, msg) => {
         const { [msg.name]: _, ...executionTools } = state.executionTools
         return { state: { ...state, executionTools } }
-      }
-      if (msg.type === '_clientConnected') {
+      },
+
+      _clientConnected: (state, msg) => {
         return { state: addClientForUser(state, msg.userId, msg.clientId) }
-      }
-      if (msg.type === '_clientDisconnected') {
+      },
+
+      _clientDisconnected: (state, msg) => {
         return { state: removeClient(state, msg.clientId) }
-      }
-      if (msg.type === '_runUpdated') {
+      },
+
+      _runUpdated: (state, msg, ctx) => {
         const clients = state.clientsByUser[msg.event.userId] ?? []
         const text = JSON.stringify({
           type: 'workflowRunUpdated',
@@ -215,109 +317,24 @@ export const WorkflowRunner = (
           ctx.publish(OutboundMessageTopic, { clientId, text })
         }
         return { state }
-      }
-      if (msg.type === '_done') return { state }
-      if (msg.type === '_reply') {
+      },
+
+      _done: (state) => ({ state }),
+
+      _reply: (state, msg) => {
         msg.replyTo.send(msg.reply)
         return { state: msg.live ? { ...state, live: msg.live } : state }
-      }
+      },
 
-      if (msg.type === 'listExecutionTools') {
+      listExecutionTools: (state, msg) => {
         msg.replyTo.send({ ok: true, executionTools: summarizeExecutionTools(state.executionTools) })
         return { state }
-      }
+      },
 
-      if (msg.type === 'list') {
-        ctx.pipeToSelf(
-          scanRuns(workflowRunsDir, msg.userId),
-          runs => {
-            msg.replyTo.send({ ok: true, runs })
-            return { type: '_done' }
-          },
-          error => {
-            msg.replyTo.send({ ok: false, error: String(error) })
-            return { type: '_done' }
-          },
-        )
-        return { state }
-      }
-
-      if (msg.type === 'start') {
-        ctx.pipeToSelf(
-          (async (): Promise<{ reply: WorkflowRunnerReply; live?: Record<string, ActorRef<WorkflowRunExecutorMsg>> }> => {
-            const workflowReply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(
-              workflowStoreRef,
-              replyTo => ({ type: 'get', userId: msg.userId, workflowId: msg.workflowId, replyTo }),
-              { timeoutMs: 5_000 },
-            )
-            if (!workflowReply.ok || !('workflow' in workflowReply)) {
-              return { reply: { ok: false, error: workflowReply.ok ? 'Unexpected workflow store response.' : workflowReply.error, status: workflowReply.ok ? 500 : workflowReply.status } }
-            }
-            const inputValidation = validateInputValues(workflowReply.workflow.inputs, msg.inputs)
-            if (!inputValidation.ok) return { reply: { ok: false, error: inputValidation.error, status: 400 } }
-            const run = initialRunState(workflowReply.workflow, crypto.randomUUID(), inputValidation.values)
-            const missingTool = missingExecutionTool(workflowReply.workflow, state.executionTools)
-            if (missingTool) {
-              const blocked = blockedMissingToolRun(run, missingTool)
-              await writeRun(workflowRunsDir, blocked)
-              publishRunUpdate(ctx, blocked)
-              return { reply: { ok: true, run: blocked } }
-            }
-            const ref = ctx.spawn(
-              `workflow-run-${run.runId}`,
-              WorkflowRunExecutor(workflowReply.workflow, workflowRunsDir, llmRef, model, maxToolLoops, run, filterWorkflowTools(workflowReply.workflow, state.executionTools)),
-            ) as ActorRef<WorkflowRunExecutorMsg>
-            const startReply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
-              ref,
-              replyTo => ({ type: 'start', replyTo }),
-              { timeoutMs: 5_000 },
-            )
-            return {
-              reply: startReply.ok ? { ok: true, run: startReply.run } : startReply,
-              live: { ...state.live, [run.runId]: ref },
-            }
-          })(),
-          result => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: result.reply, live: result.live }),
-          error => {
-            return { type: '_reply' as const, replyTo: msg.replyTo, reply: { ok: false as const, error: String(error) } }
-          },
-        )
-        return { state }
-      }
-
-      if (msg.type === 'get' || msg.type === 'resume') {
-        ctx.pipeToSelf(
-          (async (): Promise<{ reply: WorkflowRunnerReply; live?: Record<string, ActorRef<WorkflowRunExecutorMsg>> }> => {
-            const live = state.live[msg.runId]
-            if (live) {
-              const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
-                live,
-                replyTo => msg.type === 'get' ? { type: 'get', replyTo } : { type: 'resume', replyTo },
-                { timeoutMs: 5_000 },
-              )
-              return { reply }
-            }
-            const diskReply = await getRunFromDisk(workflowRunsDir, msg.userId, msg.runId)
-            if (!diskReply.ok || !('run' in diskReply)) return { reply: diskReply }
-            if (msg.type === 'get') return { reply: diskReply }
-            const ensured = await ensureRunActor(state, ctx, diskReply.run)
-            if ('ok' in ensured) return { reply: ensured }
-            const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
-              ensured.ref,
-              replyTo => ({ type: 'resume', replyTo }),
-              { timeoutMs: 5_000 },
-            )
-            return { reply, live: ensured.state.live }
-          })(),
-          result => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: result.reply, live: result.live }),
-          error => {
-            return { type: '_reply' as const, replyTo: msg.replyTo, reply: { ok: false as const, error: String(error) } }
-          },
-        )
-        return { state }
-      }
-
-      return { state }
-    },
+      list: listRuns,
+      start: startRun,
+      get: getOrResumeRun,
+      resume: getOrResumeRun,
+    }),
   }
 }
