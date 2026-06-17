@@ -138,10 +138,6 @@ const workflowControlToolNames = new Set(workflowControlTools.map(tool => tool.n
 
 export const isWorkflowControlTool = (name: string): boolean => workflowControlToolNames.has(name)
 
-const replyError = (replyTo: ActorRef<ToolReply>, error: string): void => {
-  replyTo.send({ type: 'toolError', error })
-}
-
 const workflowIdArg = (raw: string): { ok: true; workflowId: string; runId?: string } | { ok: false; error: string } => {
   const parsed = parseToolArgs(raw, obj => {
     const workflowId = obj.workflowId
