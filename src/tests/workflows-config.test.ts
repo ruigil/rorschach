@@ -48,7 +48,6 @@ describe('workflows config', () => {
     const response = await route.handler(new Request('http://localhost/config/workflows'), new URL('http://localhost/config/workflows'), null)
     expect(await response.json()).toMatchObject({
       workflowsDir: 'workspace/custom-workflows',
-      workflowRunsDir: 'workspace/workflows/runs',
       agent: { model: 'z-ai/glm-5.1', maxToolLoops: 10 },
     })
 
@@ -58,7 +57,6 @@ describe('workflows config', () => {
   test('registers workflows agent with configured model', async () => {
     const registrations = await loadWorkflows({
       workflowsDir: 'workspace/workflows-test',
-      workflowRunsDir: 'workspace/workflows-test/runs',
       agent: {
         model: 'test-workflow-model',
         maxToolLoops: 3,

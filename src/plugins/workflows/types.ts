@@ -61,7 +61,6 @@ export type WorkflowDependencyOutput = {
 
 export type WorkflowsConfig = {
   workflowsDir: string
-  workflowRunsDir: string
   agent: {
     model: string
     maxToolLoops: number

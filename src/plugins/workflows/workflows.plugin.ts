@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import type { ActorContext, ActorRef, ActorSlot, PluginDef } from '../../system/index.ts'
 import { createSlot, defineConfig, deleteConfigSurface, onLifecycle, onMessage, publishConfigSurface, spawnSlot, stopSlot } from '../../system/index.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
@@ -8,6 +9,8 @@ import { WorkflowRunner } from './workflow-runner.ts'
 import { WorkflowsAgentFactory } from './workflows-agent.ts'
 import { buildWorkflowsRoutes, workflowsSchemas } from './routes.ts'
 import type { WorkflowsConfig, WorkflowRunnerMsg, WorkflowStoreMsg } from './types.ts'
+
+const getWorkflowRunsDir = (workflowsDir: string): string => join(workflowsDir, 'runs')
 
 type PluginMsg =
   | { type: 'config'; slice: WorkflowsConfig | undefined }
@@ -23,7 +26,6 @@ type PluginState = {
 
 const defaultConfig: WorkflowsConfig = {
   workflowsDir: 'workspace/workflows',
-  workflowRunsDir: 'workspace/workflows/runs',
   agent: {
     model: 'z-ai/glm-5.1',
     maxToolLoops: 10,
@@ -97,7 +99,7 @@ const spawnChildren = (
     ctx,
     state.runner,
     'workflow-runner',
-    () => WorkflowRunner(store.ref as ActorRef<WorkflowStoreMsg>, cfg.workflowRunsDir, llmRef, cfg.agent.model, cfg.agent.maxToolLoops),
+    () => WorkflowRunner(store.ref as ActorRef<WorkflowStoreMsg>, getWorkflowRunsDir(cfg.workflowsDir), llmRef, cfg.agent.model, cfg.agent.maxToolLoops),
     null,
   )
   ctx.publish(AgentRegistrationTopic, {
@@ -113,11 +115,11 @@ const restart = (
   cfg: WorkflowsConfig,
   llmRef: ActorRef<LlmProviderMsg> | null,
 ): PluginState => {
-  deleteRoutes(ctx, state.store.ref as ActorRef<WorkflowStoreMsg> | null, state.runner.ref as ActorRef<WorkflowRunnerMsg> | null, state.config.workflowRunsDir)
+  deleteRoutes(ctx, state.store.ref as ActorRef<WorkflowStoreMsg> | null, state.runner.ref as ActorRef<WorkflowRunnerMsg> | null, getWorkflowRunsDir(state.config.workflowsDir))
   stopChildren(state, ctx)
   ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'workflows' })
   const children = spawnChildren(ctx, cfg, llmRef, state)
-  publishRoutes(ctx, children.store.ref as ActorRef<WorkflowStoreMsg>, children.runner.ref as ActorRef<WorkflowRunnerMsg>, cfg.workflowRunsDir)
+  publishRoutes(ctx, children.store.ref as ActorRef<WorkflowStoreMsg>, children.runner.ref as ActorRef<WorkflowRunnerMsg>, getWorkflowRunsDir(cfg.workflowsDir))
   return { ...state, config: cfg, llmRef, ...children }
 }
 
@@ -139,12 +141,12 @@ const workflowsPlugin: PluginDef<PluginMsg, PluginState, WorkflowsConfig> = {
       ctx.subscribe(LlmProviderTopic, event => ({ type: '_llmProvider' as const, ref: event.ref }))
       publishConfigSurface(ctx, config, () => cfg)
       const children = spawnChildren(ctx, cfg, state.llmRef, state)
-      publishRoutes(ctx, children.store.ref as ActorRef<WorkflowStoreMsg>, children.runner.ref as ActorRef<WorkflowRunnerMsg>, cfg.workflowRunsDir)
-      ctx.log.info('workflows plugin activated', { workflowsDir: cfg.workflowsDir, workflowRunsDir: cfg.workflowRunsDir })
+      publishRoutes(ctx, children.store.ref as ActorRef<WorkflowStoreMsg>, children.runner.ref as ActorRef<WorkflowRunnerMsg>, getWorkflowRunsDir(cfg.workflowsDir))
+      ctx.log.info('workflows plugin activated', { workflowsDir: cfg.workflowsDir, workflowRunsDir: getWorkflowRunsDir(cfg.workflowsDir) })
       return { state: { initialized: true, config: cfg, llmRef: state.llmRef, ...children } }
     },
     stopped: (state, ctx) => {
-      deleteRoutes(ctx, state.store.ref as ActorRef<WorkflowStoreMsg> | null, state.runner.ref as ActorRef<WorkflowRunnerMsg> | null, state.config.workflowRunsDir)
+      deleteRoutes(ctx, state.store.ref as ActorRef<WorkflowStoreMsg> | null, state.runner.ref as ActorRef<WorkflowRunnerMsg> | null, getWorkflowRunsDir(state.config.workflowsDir))
       stopChildren(state, ctx)
       ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'workflows' })
       deleteConfigSurface(ctx, config)

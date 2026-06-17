@@ -16,10 +16,9 @@ export const workflowsStorageSchema: ConfigSchemaSection = {
   routeId: 'config.workflows',
   schema: {
     type: 'object',
-    required: ['workflowsDir', 'workflowRunsDir'],
+    required: ['workflowsDir'],
     properties: {
       workflowsDir: { type: 'string', default: 'workspace/workflows', 'x-ui': { label: 'Workflows directory' } },
-      workflowRunsDir: { type: 'string', default: 'workspace/workflows/runs', 'x-ui': { label: 'Workflow runs directory' } },
     },
   },
 }
