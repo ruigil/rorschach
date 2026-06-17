@@ -264,10 +264,4 @@ export type WorkflowsAgentExtra =
 
 export type WorkflowsAgentMsg = LoopMsg<WorkflowsAgentExtra>
 
-export type WorkflowsAgentState = {
-  loop: LoopState
-  contextView: ContextView
-  tools: ToolCollection
-  pendingSaveSummary: string | null
-  activeClientId: string
-}
+

@@ -1,4 +1,4 @@
-import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/index.ts'
+import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor, LoopState } from '../../system/index.ts'
 import { onLifecycle } from '../../system/index.ts'
 import { agentLoop, idleLoopState, applyToolFilter } from '../../system/index.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
@@ -23,9 +23,16 @@ import {
   startWorkflowRunTool,
   updateWorkflowTool,
 } from './tools.ts'
-import type { WorkflowsAgentMsg, WorkflowsAgentState } from './types.ts'
+import type { WorkflowsAgentMsg } from './types.ts'
 
-export type WorkflowsAgentConfig = {
+type WorkflowsAgentState = {
+  loop: LoopState
+  contextView: ContextView
+  tools: ToolCollection
+  pendingSaveSummary: string | null
+  activeClientId: string
+}
+type WorkflowsAgentConfig = {
   model: string
   maxToolLoops: number
   workflowStoreRef: ActorRef<WorkflowStoreMsg>
@@ -34,7 +41,6 @@ export type WorkflowsAgentConfig = {
 }
 
 const WORKFLOWS_MODE = 'workflows'
-const SWITCH_MODE_TOOL_NAME = 'switch_mode'
 
 const emptyContextView = (userId = ''): ContextView => ({
   userId,

@@ -65,7 +65,8 @@
         "toolFilter": {
           "deny": [
             "bash",
-            "write"
+            "write",
+            "edit"
           ]
         }
       },
@@ -94,7 +95,12 @@
       "workflowsDir": "workspace/workflows",
       "agent": {
         "model": "deepseek/deepseek-v4-flash",
-        "maxToolLoops": 10
+        "maxToolLoops": 10,
+        "toolFilter": {
+          "allow": [
+            "switch_mode"
+          ]
+        }
       }
     },
     "notebook": {
