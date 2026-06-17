@@ -62,7 +62,7 @@ export type WorkflowDependencyOutput = {
 export type WorkflowsConfig = {
   workflowsDir: string
   workflowRunsDir: string
-  workflows: {
+  agent: {
     model: string
     maxToolLoops: number
   }
@@ -254,17 +254,13 @@ export type WorkflowTaskExecutorMsg =
     }>
   | ToolInvokeMsg
 
-export type WorkflowToolsMsg =
-  | ToolInvokeMsg
-  | { type: '_done' }
-  | { type: '_reply'; replyTo: ActorRef<ToolReply>; reply: ToolReply }
-
 export type WorkflowsAgentExtra =
   | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
   | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
+  | ToolInvokeMsg
 
 export type WorkflowsAgentMsg = LoopMsg<WorkflowsAgentExtra>
 

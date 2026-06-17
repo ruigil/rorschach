@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { AgentSystem, ask } from '../system/index.ts'
 import { WorkflowStore } from '../plugins/workflows/workflow-store.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
-import { WorkflowTools, listExecutionToolsTool, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool, startWorkflowRunTool } from '../plugins/workflows/tools.ts'
+import { handleWorkflowTool, listExecutionToolsTool, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool, startWorkflowRunTool } from '../plugins/workflows/tools.ts'
 import type { Workflow, WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowRunState, WorkflowStoreMsg, WorkflowStoreReply } from '../plugins/workflows/types.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
@@ -185,7 +185,7 @@ describe('workflow store', () => {
     await system.shutdown()
   })
 
-  test('workflow tools list workflows and publish workflow graph UI events', async () => {
+  test('control tools list workflows and publish workflow graph UI events', async () => {
     const dir = await makeDir()
     await writeFile(join(dir, 'workflow.json'), JSON.stringify(sampleWorkflow()))
 
@@ -195,66 +195,55 @@ describe('workflow store', () => {
 
     const store = system.spawn('workflow-store', WorkflowStore(dir))
     const runner = system.spawn('workflow-runner', FakeRunner())
-    const tools = system.spawn('workflow-tools', WorkflowTools(store, runner as ActorRef<WorkflowRunnerMsg>))
+    const publishGraph = (clientId: string | undefined, workflowId: string, runId?: string) => {
+      if (clientId) events.push({ clientId, text: JSON.stringify({ type: 'workflowGraph', workflowId, ...(runId ? { runId } : {}) }) })
+    }
 
-    const listReply = await ask<ToolInvokeMsg, ToolReply>(tools, replyTo => ({
-      type: 'invoke',
-      toolName: listWorkflowsTool.name,
-      arguments: '{}',
-      replyTo,
-      userId: 'u1',
-      clientId: 'c1',
-    }))
+    const listReply = await handleWorkflowTool(
+      { type: 'invoke', toolName: listWorkflowsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1', clientId: 'c1' },
+      { workflowStoreRef: store, workflowRunnerRef: runner, publishGraph },
+    )
     expect(listReply.type).toBe('toolResult')
     if (listReply.type === 'toolResult') expect(listReply.result.text).toContain('Ship workflow workspace')
 
-    const graphReply = await ask<ToolInvokeMsg, ToolReply>(tools, replyTo => ({
-      type: 'invoke',
-      toolName: showWorkflowGraphTool.name,
-      arguments: JSON.stringify({ workflowId: 'workflow-1' }),
-      replyTo,
-      userId: 'u1',
-      clientId: 'c1',
-    }))
+    const graphReply = await handleWorkflowTool(
+      { type: 'invoke', toolName: showWorkflowGraphTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1' }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1', clientId: 'c1' },
+      { workflowStoreRef: store, workflowRunnerRef: runner, publishGraph },
+    )
     expect(graphReply.type).toBe('toolResult')
     expect(events.map(event => JSON.parse(event.text))).toContainEqual({ type: 'workflowGraph', workflowId: 'workflow-1' })
 
     await system.shutdown()
   })
 
-  test('workflow tools can save workflow with executionTools', async () => {
+  test('control tools can save workflow with executionTools', async () => {
     const dir = await makeDir()
     const system = await AgentSystem()
 
     const store = system.spawn('workflow-store', WorkflowStore(dir))
     const runner = system.spawn('workflow-runner', FakeRunner())
-    const tools = system.spawn('workflow-tools', WorkflowTools(store, runner as ActorRef<WorkflowRunnerMsg>))
 
-	    const reply = await ask<ToolInvokeMsg, ToolReply>(tools, replyTo => ({
-	      type: 'invoke',
-	      toolName: saveWorkflowTool.name,
-	      arguments: JSON.stringify({
-	        goal: 'Learn antigravity',
-	        summary: 'Decided to use Gemini 3.5.',
-	        executionTools: ['read', startWorkflowRunTool.name],
-	        tasks: [{
-	          id: 'research',
-	          name: 'Research',
-	          description: 'Read the source material.',
-	          validationCriteria: 'A summary exists.',
-	          dependencies: [],
-	        }],
-	      }),
-	      replyTo,
-	      userId: 'u1',
-      clientId: 'c1',
-    }))
+    const reply = await handleWorkflowTool(
+      { type: 'invoke', toolName: saveWorkflowTool.name, arguments: JSON.stringify({
+        goal: 'Learn antigravity',
+        summary: 'Decided to use Gemini 3.5.',
+        executionTools: ['read', startWorkflowRunTool.name],
+        tasks: [{
+          id: 'research',
+          name: 'Research',
+          description: 'Read the source material.',
+          validationCriteria: 'A summary exists.',
+          dependencies: [],
+        }],
+      }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1', clientId: 'c1' },
+      { workflowStoreRef: store, workflowRunnerRef: runner, publishGraph: () => {} },
+    )
 
     expect(reply.type).toBe('toolResult')
-	    if (reply.type === 'toolResult') {
-	      expect(reply.result.text).toContain('Workflow saved')
-	      expect(reply.result.text).toContain('1 tasks')
-	    }
+    if (reply.type === 'toolResult') {
+      expect(reply.result.text).toContain('Workflow saved')
+      expect(reply.result.text).toContain('1 tasks')
+    }
 
     await system.shutdown()
   })
@@ -264,16 +253,11 @@ describe('workflow store', () => {
     const system = await AgentSystem()
     const store = system.spawn('workflow-store', WorkflowStore(dir))
     const runner = system.spawn('workflow-runner', FakeRunner())
-    const tools = system.spawn('workflow-tools', WorkflowTools(store, runner as ActorRef<WorkflowRunnerMsg>))
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(tools, replyTo => ({
-      type: 'invoke',
-      toolName: listExecutionToolsTool.name,
-      arguments: '{}',
-      replyTo,
-      userId: 'u1',
-      clientId: 'c1',
-    }))
+    const reply = await handleWorkflowTool(
+      { type: 'invoke', toolName: listExecutionToolsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1', clientId: 'c1' },
+      { workflowStoreRef: store, workflowRunnerRef: runner, publishGraph: () => {} },
+    )
 
     expect(reply.type).toBe('toolResult')
     if (reply.type === 'toolResult') {

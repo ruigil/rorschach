@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { mkdirSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
-import type { ActorDef, ActorRef, PersistenceAdapter } from '../../system/index.ts'
+import type { ActorContext, ActorDef, ActorRef, PersistenceAdapter } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { JobRegistryTopic, type ToolCollection } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
@@ -140,7 +140,7 @@ const resolveWorkflowOutputs = (workflow: Workflow, run: WorkflowRunState): { ok
   return validated.ok ? { ok: true, outputs: validated.values } : { ok: false, error: validated.error }
 }
 
-const publishTerminalJob = (ctx: any, run: WorkflowRunState): void => {
+const publishTerminalJob = (ctx: ActorContext<WorkflowRunExecutorMsg>, run: WorkflowRunState): void => {
   if (run.status === 'completed') {
     ctx.publishRetained(JobRegistryTopic, run.runId, {
       jobId: run.runId,
@@ -162,7 +162,7 @@ const publishTerminalJob = (ctx: any, run: WorkflowRunState): void => {
   }
 }
 
-const publishRunUpdate = (ctx: any, run: WorkflowRunState): void => {
+const publishRunUpdate = (ctx: ActorContext<WorkflowRunExecutorMsg>, run: WorkflowRunState): void => {
   ctx.publish(WorkflowRunUpdateTopic, {
     userId: run.userId,
     workflowId: run.workflowId,
@@ -180,7 +180,7 @@ export const WorkflowRunExecutor = (
   initialRun: WorkflowRunState,
   tools: ToolCollection,
 ): ActorDef<WorkflowRunExecutorMsg, RunExecutorState> => {
-  const schedule = (state: RunExecutorState, ctx: any, resumeContexts: Record<string, string> = {}): RunExecutorState => {
+  const schedule = (state: RunExecutorState, ctx: ActorContext<WorkflowRunExecutorMsg>, resumeContexts: Record<string, string> = {}): RunExecutorState => {
     if (state.run.status !== 'running') return state
     let run = state.run
     for (const task of readyTasks(state.workflow, run)) {
@@ -220,7 +220,7 @@ export const WorkflowRunExecutor = (
     return { ...state, run: next }
   }
 
-  const completeTask = (state: RunExecutorState, taskId: string, summary: string, outputs: WorkflowRunState['outputs'], ctx: any): RunExecutorState => {
+  const completeTask = (state: RunExecutorState, taskId: string, summary: string, outputs: WorkflowRunState['outputs'], ctx: ActorContext<WorkflowRunExecutorMsg>): RunExecutorState => {
     const actorName = state.run.activeTasks[taskId]?.actorName
     if (actorName) ctx.stop({ name: actorName })
     const { [taskId]: _active, ...activeTasks } = state.run.activeTasks
@@ -244,7 +244,7 @@ export const WorkflowRunExecutor = (
     return next
   }
 
-  const resumeRun = (state: RunExecutorState, ctx: any): { ok: true; state: RunExecutorState } | Extract<WorkflowRunExecutorReply, { ok: false }> => {
+  const resumeRun = (state: RunExecutorState, ctx: ActorContext<WorkflowRunExecutorMsg>): { ok: true; state: RunExecutorState } | Extract<WorkflowRunExecutorReply, { ok: false }> => {
     if (state.run.status === 'completed' || state.run.status === 'failed') {
       return { ok: false, error: `Workflow run is not resumable: ${state.run.status}`, status: 409 }
     }

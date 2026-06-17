@@ -1,7 +1,6 @@
-import type { ActorDef, ActorRef } from '../../system/index.ts'
-import { ask, defineTool, onMessage, parseToolArgs } from '../../system/index.ts'
-import { OutboundMessageTopic } from '../../types/events.ts'
-import type { ToolReply } from '../../types/tools.ts'
+import type { ActorRef } from '../../system/index.ts'
+import { ask, defineTool, parseToolArgs } from '../../system/index.ts'
+import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type {
   Workflow,
   WorkflowRunnerMsg,
@@ -10,7 +9,6 @@ import type {
   WorkflowStoreReply,
   WorkflowTask,
   WorkflowValueSpec,
-  WorkflowToolsMsg,
 } from './types.ts'
 import { validateWorkflow } from './validation.ts'
 
@@ -229,154 +227,105 @@ const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch:
   }
 }
 
-export const WorkflowTools = (
-  workflowStoreRef: ActorRef<WorkflowStoreMsg>,
-  workflowRunnerRef: ActorRef<WorkflowRunnerMsg>,
-): ActorDef<WorkflowToolsMsg, null> => ({
-  initialState: null,
-  handler: onMessage<WorkflowToolsMsg, null>({
-    _done: state => ({ state }),
-    _reply: (state, msg) => {
-      msg.replyTo.send(msg.reply)
-      return { state }
-    },
-    invoke: (state, msg, ctx) => {
-      if (msg.toolName === listExecutionToolsTool.name) {
-        ctx.pipeToSelf(
-          ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'listExecutionTools', replyTo }), { timeoutMs: 5_000 }),
-          reply => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: reply.ok && 'executionTools' in reply ? { type: 'toolResult' as const, result: { text: JSON.stringify(reply.executionTools, null, 2) } } : { type: 'toolError' as const, error: reply.ok ? 'Unexpected workflow runner response.' : reply.error } }),
-          error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: String(error) } }),
-        )
-        return { state }
-      }
+export type WorkflowToolDeps = {
+  workflowStoreRef: ActorRef<WorkflowStoreMsg>
+  workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
+  publishGraph: (clientId: string | undefined, workflowId: string, runId?: string) => void
+}
 
-      if (msg.toolName === listWorkflowsTool.name) {
-        ctx.pipeToSelf(
-          ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'list', userId: msg.userId, replyTo }), { timeoutMs: 5_000 }),
-          reply => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: reply.ok && 'workflows' in reply ? { type: 'toolResult' as const, result: { text: formatWorkflowList(reply.workflows) } } : { type: 'toolError' as const, error: reply.ok ? 'Unexpected workflow store response.' : reply.error } }),
-          error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: String(error) } }),
-        )
-        return { state }
-      }
+const toolError = (error: string): ToolReply => ({ type: 'toolError', error })
 
-      if (msg.toolName === saveWorkflowTool.name) {
-        const parsed = parseWorkflow(msg.arguments, msg.userId)
-        if (!parsed.ok) {
-          replyError(msg.replyTo, parsed.error)
-          return { state }
-        }
-        ctx.pipeToSelf(
-          ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'save', workflow: parsed.workflow, replyTo }), { timeoutMs: 5_000 }),
-          reply => {
-            if (!reply.ok || !('workflow' in reply)) return { type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: reply.ok ? 'Unexpected workflow store response.' : reply.error } }
-            if (msg.clientId) ctx.publish(OutboundMessageTopic, { clientId: msg.clientId, text: JSON.stringify({ type: 'workflowGraph', workflowId: reply.workflow.id }) })
-            return { type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolResult' as const, result: { text: `Workflow saved to ${reply.filepath} - ${reply.workflow.tasks.length} tasks.` } } }
-          },
-          error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: String(error) } }),
-        )
-        return { state }
-      }
+export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolDeps): Promise<ToolReply> => {
+  const { workflowStoreRef, workflowRunnerRef, publishGraph } = deps
 
-      if (msg.toolName === getWorkflowTool.name || msg.toolName === showWorkflowGraphTool.name) {
-        const arg = workflowIdArg(msg.arguments)
-        if (!arg.ok) {
-          replyError(msg.replyTo, arg.error)
-          return { state }
-        }
-        if (msg.toolName === getWorkflowTool.name) {
-          ctx.pipeToSelf(
-            ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'get', userId: msg.userId, workflowId: arg.workflowId, replyTo }), { timeoutMs: 5_000 }),
-            reply => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: reply.ok && 'workflow' in reply ? { type: 'toolResult' as const, result: { text: JSON.stringify(reply.workflow, null, 2) } } : { type: 'toolError' as const, error: reply.ok ? 'Unexpected workflow store response.' : reply.error } }),
-            error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: String(error) } }),
-          )
-          return { state }
-        }
-        if (msg.clientId) ctx.publish(OutboundMessageTopic, { clientId: msg.clientId, text: JSON.stringify({ type: 'workflowGraph', workflowId: arg.workflowId, ...(arg.runId ? { runId: arg.runId } : {}) }) })
-        msg.replyTo.send({ type: 'toolResult', result: { text: `Opened workflow graph for ${arg.workflowId}.` } })
-        return { state }
-      }
+  if (msg.toolName === listExecutionToolsTool.name) {
+    const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'listExecutionTools', replyTo }), { timeoutMs: 5_000 })
+    return reply.ok && 'executionTools' in reply
+      ? { type: 'toolResult', result: { text: JSON.stringify(reply.executionTools, null, 2) } }
+      : toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
+  }
 
-      if (msg.toolName === updateWorkflowTool.name) {
-        const parsed = parseWorkflowPatch(msg.arguments)
-        if (!parsed.ok) {
-          replyError(msg.replyTo, parsed.error)
-          return { state }
-        }
-        ctx.pipeToSelf(
-          ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'update', userId: msg.userId, workflowId: parsed.workflowId, patch: parsed.patch, replyTo }), { timeoutMs: 5_000 }),
-          reply => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: reply.ok && 'updated' in reply ? { type: 'toolResult' as const, result: { text: `Workflow ${parsed.workflowId} updated successfully.` } } : { type: 'toolError' as const, error: reply.ok ? 'Unexpected workflow store response.' : reply.error } }),
-          error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: String(error) } }),
-        )
-        return { state }
-      }
+  if (msg.toolName === listWorkflowsTool.name) {
+    const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'list', userId: msg.userId, replyTo }), { timeoutMs: 5_000 })
+    return reply.ok && 'workflows' in reply
+      ? { type: 'toolResult', result: { text: formatWorkflowList(reply.workflows) } }
+      : toolError(reply.ok ? 'Unexpected workflow store response.' : reply.error)
+  }
 
-      if (msg.toolName === deleteWorkflowTool.name) {
-        const arg = workflowIdArg(msg.arguments)
-        if (!arg.ok) {
-          replyError(msg.replyTo, arg.error)
-          return { state }
-        }
-        ctx.pipeToSelf(
-          ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'delete', userId: msg.userId, workflowId: arg.workflowId, replyTo }), { timeoutMs: 5_000 }),
-          reply => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: reply.ok && 'deleted' in reply ? { type: 'toolResult' as const, result: { text: `Workflow ${arg.workflowId} deleted.` } } : { type: 'toolError' as const, error: reply.ok ? 'Unexpected workflow store response.' : reply.error } }),
-          error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: String(error) } }),
-        )
-        return { state }
-      }
+  if (msg.toolName === saveWorkflowTool.name) {
+    const parsed = parseWorkflow(msg.arguments, msg.userId)
+    if (!parsed.ok) return toolError(parsed.error)
+    const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'save', workflow: parsed.workflow, replyTo }), { timeoutMs: 5_000 })
+    if (!reply.ok || !('workflow' in reply)) return toolError(reply.ok ? 'Unexpected workflow store response.' : reply.error)
+    publishGraph(msg.clientId, reply.workflow.id)
+    return { type: 'toolResult', result: { text: `Workflow saved to ${reply.filepath} - ${reply.workflow.tasks.length} tasks.` } }
+  }
 
-      if (msg.toolName === startWorkflowRunTool.name) {
-        const arg = startWorkflowArg(msg.arguments)
-        if (!arg.ok) {
-          replyError(msg.replyTo, arg.error)
-          return { state }
-        }
-        ctx.pipeToSelf(
-          ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'start', userId: msg.userId, clientId: msg.clientId, workflowId: arg.workflowId, inputs: arg.inputs, replyTo }), { timeoutMs: 10_000 }),
-          reply => {
-            if (!reply.ok || !('run' in reply)) return { type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: reply.ok ? 'Unexpected workflow runner response.' : reply.error } }
-            if (msg.clientId) ctx.publish(OutboundMessageTopic, { clientId: msg.clientId, text: JSON.stringify({ type: 'workflowGraph', workflowId: reply.run.workflowId, runId: reply.run.runId }) })
-            if (reply.run.status !== 'running') {
-              return { type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolResult' as const, result: { text: JSON.stringify(reply.run, null, 2) } } }
-            }
-            return { type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolPending' as const, jobId: reply.run.runId, placeholderText: `Workflow run started (runId=${reply.run.runId}).` } }
-          },
-          error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: String(error) } }),
-        )
-        return { state }
-      }
+  if (msg.toolName === getWorkflowTool.name || msg.toolName === showWorkflowGraphTool.name) {
+    const arg = workflowIdArg(msg.arguments)
+    if (!arg.ok) return toolError(arg.error)
+    if (msg.toolName === getWorkflowTool.name) {
+      const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'get', userId: msg.userId, workflowId: arg.workflowId, replyTo }), { timeoutMs: 5_000 })
+      return reply.ok && 'workflow' in reply
+        ? { type: 'toolResult', result: { text: JSON.stringify(reply.workflow, null, 2) } }
+        : toolError(reply.ok ? 'Unexpected workflow store response.' : reply.error)
+    }
+    publishGraph(msg.clientId, arg.workflowId, arg.runId)
+    return { type: 'toolResult', result: { text: `Opened workflow graph for ${arg.workflowId}.` } }
+  }
 
-      if (msg.toolName === listWorkflowRunsTool.name) {
-        ctx.pipeToSelf(
-          ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'list', userId: msg.userId, replyTo }), { timeoutMs: 5_000 }),
-          reply => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: reply.ok && 'runs' in reply ? { type: 'toolResult' as const, result: { text: formatRunList(reply.runs) } } : { type: 'toolError' as const, error: reply.ok ? 'Unexpected workflow runner response.' : reply.error } }),
-          error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: String(error) } }),
-        )
-        return { state }
-      }
+  if (msg.toolName === updateWorkflowTool.name) {
+    const parsed = parseWorkflowPatch(msg.arguments)
+    if (!parsed.ok) return toolError(parsed.error)
+    const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'update', userId: msg.userId, workflowId: parsed.workflowId, patch: parsed.patch, replyTo }), { timeoutMs: 5_000 })
+    return reply.ok && 'updated' in reply
+      ? { type: 'toolResult', result: { text: `Workflow ${parsed.workflowId} updated successfully.` } }
+      : toolError(reply.ok ? 'Unexpected workflow store response.' : reply.error)
+  }
 
-      if ([getWorkflowRunTool.name, resumeWorkflowRunTool.name].includes(msg.toolName)) {
-        const arg = runIdArg(msg.arguments)
-        if (!arg.ok) {
-          replyError(msg.replyTo, arg.error)
-          return { state }
-        }
-        const type = msg.toolName === getWorkflowRunTool.name ? 'get' : 'resume'
-        ctx.pipeToSelf(
-          ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
-            workflowRunnerRef,
-            replyTo => type === 'get'
-              ? { type: 'get', userId: msg.userId, runId: arg.runId, replyTo }
-              : { type: 'resume', userId: msg.userId, runId: arg.runId, replyTo },
-            { timeoutMs: 10_000 },
-          ),
-          reply => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: reply.ok && 'run' in reply ? { type: 'toolResult' as const, result: { text: JSON.stringify(reply.run, null, 2) } } : { type: 'toolError' as const, error: reply.ok ? 'Unexpected workflow runner response.' : reply.error } }),
-          error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { type: 'toolError' as const, error: String(error) } }),
-        )
-        return { state }
-      }
+  if (msg.toolName === deleteWorkflowTool.name) {
+    const arg = workflowIdArg(msg.arguments)
+    if (!arg.ok) return toolError(arg.error)
+    const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'delete', userId: msg.userId, workflowId: arg.workflowId, replyTo }), { timeoutMs: 5_000 })
+    return reply.ok && 'deleted' in reply
+      ? { type: 'toolResult', result: { text: `Workflow ${arg.workflowId} deleted.` } }
+      : toolError(reply.ok ? 'Unexpected workflow store response.' : reply.error)
+  }
 
-      replyError(msg.replyTo, `Unknown tool: ${msg.toolName}`)
-      return { state }
-    },
-  }),
-})
+  if (msg.toolName === startWorkflowRunTool.name) {
+    const arg = startWorkflowArg(msg.arguments)
+    if (!arg.ok) return toolError(arg.error)
+    const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'start', userId: msg.userId, clientId: msg.clientId, workflowId: arg.workflowId, inputs: arg.inputs, replyTo }), { timeoutMs: 10_000 })
+    if (!reply.ok || !('run' in reply)) return toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
+    publishGraph(msg.clientId, reply.run.workflowId, reply.run.runId)
+    if (reply.run.status !== 'running') {
+      return { type: 'toolResult', result: { text: JSON.stringify(reply.run, null, 2) } }
+    }
+    return { type: 'toolPending', jobId: reply.run.runId, placeholderText: `Workflow run started (runId=${reply.run.runId}).` }
+  }
+
+  if (msg.toolName === listWorkflowRunsTool.name) {
+    const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'list', userId: msg.userId, replyTo }), { timeoutMs: 5_000 })
+    return reply.ok && 'runs' in reply
+      ? { type: 'toolResult', result: { text: formatRunList(reply.runs) } }
+      : toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
+  }
+
+  if ([getWorkflowRunTool.name, resumeWorkflowRunTool.name].includes(msg.toolName)) {
+    const arg = runIdArg(msg.arguments)
+    if (!arg.ok) return toolError(arg.error)
+    const type = msg.toolName === getWorkflowRunTool.name ? 'get' : 'resume'
+    const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+      workflowRunnerRef,
+      replyTo => type === 'get'
+        ? { type: 'get', userId: msg.userId, runId: arg.runId, replyTo }
+        : { type: 'resume', userId: msg.userId, runId: arg.runId, replyTo },
+      { timeoutMs: 10_000 },
+    )
+    return reply.ok && 'run' in reply
+      ? { type: 'toolResult', result: { text: JSON.stringify(reply.run, null, 2) } }
+      : toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
+  }
+
+  return toolError(`Unknown tool: ${msg.toolName}`)
+}

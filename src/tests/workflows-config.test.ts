@@ -49,7 +49,7 @@ describe('workflows config', () => {
     expect(await response.json()).toMatchObject({
       workflowsDir: 'workspace/custom-workflows',
       workflowRunsDir: 'workspace/workflows/runs',
-      workflows: { model: 'z-ai/glm-5.1', maxToolLoops: 10 },
+      agent: { model: 'z-ai/glm-5.1', maxToolLoops: 10 },
     })
 
     await system.shutdown()
@@ -59,7 +59,7 @@ describe('workflows config', () => {
     const registrations = await loadWorkflows({
       workflowsDir: 'workspace/workflows-test',
       workflowRunsDir: 'workspace/workflows-test/runs',
-      workflows: {
+      agent: {
         model: 'test-workflow-model',
         maxToolLoops: 3,
       },

@@ -2,16 +2,18 @@ import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from 
 import { onLifecycle } from '../../system/index.ts'
 import { agentLoop, idleLoopState } from '../../system/index.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
-import type { ToolCollection } from '../../types/tools.ts'
-import type { ApiMessage } from '../../types/llm.ts'
-import type { ToolMsg } from '../../types/tools.ts'
+import type { ToolCollection, ToolInvokeMsg, ToolMsg } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
+import type { ApiMessage } from '../../types/llm.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
 import { assembleAgentMessages, type ContextView } from '../../system/index.ts'
+import type { WorkflowRunnerMsg, WorkflowStoreMsg } from './types.ts'
 import {
   deleteWorkflowTool,
   getWorkflowRunTool,
   getWorkflowTool,
+  handleWorkflowTool,
+  isWorkflowControlTool,
   listExecutionToolsTool,
   listWorkflowRunsTool,
   listWorkflowsTool,
@@ -26,7 +28,8 @@ import type { WorkflowsAgentMsg, WorkflowsAgentState } from './types.ts'
 export type WorkflowsAgentConfig = {
   model: string
   maxToolLoops: number
-  workflowToolsRef?: ActorRef<any>
+  workflowStoreRef: ActorRef<WorkflowStoreMsg>
+  workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
 }
 
 const WORKFLOWS_MODE = 'workflows'
@@ -73,7 +76,7 @@ export const WorkflowsAgentFactory = (config: WorkflowsAgentConfig) =>
   (opts: AgentFactoryOpts): ActorDef<WorkflowsAgentMsg, WorkflowsAgentState> => WorkflowsAgent(config, opts)
 
 const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): ActorDef<WorkflowsAgentMsg, WorkflowsAgentState> => {
-  const { model, maxToolLoops, workflowToolsRef } = config
+  const { model, maxToolLoops, workflowStoreRef, workflowRunnerRef } = config
   const { userId, contextStoreRef, llmRef } = opts
 
   type M = WorkflowsAgentMsg
@@ -189,6 +192,23 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
       const { [msg.name]: _, ...tools } = state.tools
       return { state: { ...state, tools } }
     }
+    if (msg.type === 'invoke' && isWorkflowControlTool(msg.toolName)) {
+      handleWorkflowTool(msg, {
+        workflowStoreRef,
+        workflowRunnerRef,
+        publishGraph: (clientId, workflowId, runId) => {
+          if (!clientId) return
+          ctx.publish(OutboundMessageTopic, {
+            clientId,
+            text: JSON.stringify({ type: 'workflowGraph', workflowId, ...(runId ? { runId } : {}) }),
+          })
+        },
+      }).then(
+        reply => msg.replyTo.send(reply),
+        error => msg.replyTo.send({ type: 'toolError', error: String(error) }),
+      )
+      return { state }
+    }
     return next(state, msg)
   }
 
@@ -211,7 +231,7 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
           return { type: '_toolUnregistered' as const, name: event.name }
         })
 
-        const ref = workflowToolsRef as unknown as ActorRef<ToolMsg>
+        const selfToolRef = ctx.self as ActorRef<ToolMsg>
         const controlTools = [
           listExecutionToolsTool,
           saveWorkflowTool,
@@ -226,7 +246,7 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
           resumeWorkflowRunTool,
         ]
         const tools: ToolCollection = {}
-        for (const tool of controlTools) tools[tool.name] = { ...tool, ref }
+        for (const tool of controlTools) tools[tool.name] = { ...tool, ref: selfToolRef }
         return { state: { ...state, tools } }
       },
     }),

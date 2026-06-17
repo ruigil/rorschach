@@ -29,7 +29,7 @@ export const workflowsAgentSchema: ConfigSchemaSection = {
   title: 'Workflows',
   subtitle: 'workflow model',
   tab: 'workflows',
-  configKey: 'workflows',
+  configKey: 'agent',
   routeId: 'config.workflows',
   schema: {
     type: 'object',

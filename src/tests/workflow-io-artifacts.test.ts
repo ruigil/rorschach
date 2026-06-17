@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { AgentSystem, ask, type ActorDef } from '../system/index.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
-import { startWorkflowRunTool, WorkflowTools } from '../plugins/workflows/tools.ts'
+import { handleWorkflowTool, startWorkflowRunTool } from '../plugins/workflows/tools.ts'
 import { parseTaskCompletionArgs } from '../plugins/workflows/workflow-task-executor.ts'
 import { validateInputValues, validateWorkflow } from '../plugins/workflows/validation.ts'
 import type {
@@ -14,10 +14,9 @@ import type {
   WorkflowRunState,
   WorkflowStoreMsg,
   WorkflowStoreReply,
-  WorkflowToolsMsg,
 } from '../plugins/workflows/types.ts'
 import type { ActorRef } from '../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
+import type { ToolReply } from '../types/tools.ts'
 import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
 
 const tempDirs: string[] = []
@@ -166,16 +165,11 @@ describe('workflow IO and artifacts', () => {
     let capturedInputs: Record<string, unknown> | undefined
     const store = system.spawn('noop-workflow-store', NoopStore())
     const runner = system.spawn('capturing-workflow-runner', CapturingRunner(inputs => { capturedInputs = inputs }))
-    const tools = system.spawn('workflow-tools', WorkflowTools(store, runner as ActorRef<WorkflowRunnerMsg>))
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(tools, replyTo => ({
-      type: 'invoke',
-      toolName: startWorkflowRunTool.name,
-      arguments: JSON.stringify({ workflowId: 'workflow-1', inputs: { city: 'Paris' } }),
-      replyTo,
-      userId: 'anonymous',
-      clientId: 'client-1',
-    }))
+    const reply = await handleWorkflowTool(
+      { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1', inputs: { city: 'Paris' } }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'anonymous', clientId: 'client-1' },
+      { workflowStoreRef: store, workflowRunnerRef: runner, publishGraph: () => {} },
+    )
 
     expect(reply.type).toBe('toolPending')
     expect(capturedInputs).toEqual({ city: 'Paris' })
@@ -198,16 +192,11 @@ describe('workflow IO and artifacts', () => {
         },
       },
     }))
-    const tools = system.spawn('workflow-tools-blocked', WorkflowTools(store, runner as ActorRef<WorkflowRunnerMsg>))
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(tools, replyTo => ({
-      type: 'invoke',
-      toolName: startWorkflowRunTool.name,
-      arguments: JSON.stringify({ workflowId: 'workflow-1' }),
-      replyTo,
-      userId: 'anonymous',
-      clientId: 'client-1',
-    }))
+    const reply = await handleWorkflowTool(
+      { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1' }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'anonymous', clientId: 'client-1' },
+      { workflowStoreRef: store, workflowRunnerRef: runner, publishGraph: () => {} },
+    )
 
     expect(reply.type).toBe('toolResult')
     if (reply.type === 'toolResult') {

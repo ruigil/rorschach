@@ -100,7 +100,7 @@ const blockedMissingToolRun = (run: WorkflowRunState, missingTool: string): Work
   }
 }
 
-const publishRunUpdate = (ctx: any, run: WorkflowRunState): void => {
+const publishRunUpdate = (ctx: ActorContext<WorkflowRunnerMsg>, run: WorkflowRunState): void => {
   ctx.publish(WorkflowRunUpdateTopic, {
     userId: run.userId,
     workflowId: run.workflowId,
@@ -144,7 +144,7 @@ export const WorkflowRunner = (
 ): ActorDef<WorkflowRunnerMsg, RunnerState> => {
   const ensureRunActor = async (
     state: RunnerState,
-    ctx: any,
+    ctx: ActorContext<WorkflowRunnerMsg>,
     run: WorkflowRunState,
   ): Promise<{ ref: ActorRef<WorkflowRunExecutorMsg>; state: RunnerState } | WorkflowRunnerReply> => {
     const live = state.live[run.runId]

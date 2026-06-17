@@ -93,7 +93,7 @@
     "workflows": {
       "workflowsDir": "workspace/workflows",
       "workflowRunsDir": "workspace/workflows/runs",
-      "workflows": {
+      "agent": {
         "model": "deepseek/deepseek-v4-flash",
         "maxToolLoops": 10
       }

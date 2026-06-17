@@ -1,6 +1,6 @@
 import type { ActorContext, ActorDef, ActorRef, ActorResult, Interceptor } from '../../system/index.ts'
 import { agentLoop, defineTool, idleLoopState, parseToolArgs } from '../../system/index.ts'
-import type { ToolCollection, ToolReply } from '../../types/tools.ts'
+import type { ToolCollection, ToolMsg, ToolReply } from '../../types/tools.ts'
 import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
 import type {
   WorkflowRunExecutorMsg,
@@ -201,8 +201,8 @@ export const WorkflowTaskExecutor = (
       dependencyOutputs: msg.dependencyOutputs,
       tools: {
         ...tools,
-        [completeWorkflowTaskTool.name]: { ...completeWorkflowTaskTool, ref: ctx.self as unknown as ActorRef<any> },
-        [blockWorkflowTaskTool.name]: { ...blockWorkflowTaskTool, ref: ctx.self as unknown as ActorRef<any> },
+        [completeWorkflowTaskTool.name]: { ...completeWorkflowTaskTool, ref: ctx.self as ActorRef<ToolMsg> },
+        [blockWorkflowTaskTool.name]: { ...blockWorkflowTaskTool, ref: ctx.self as ActorRef<ToolMsg> },
       },
       userId: msg.userId,
       clientId: msg.clientId,
