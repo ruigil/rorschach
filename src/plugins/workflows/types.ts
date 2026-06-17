@@ -68,6 +68,14 @@ export type WorkflowsConfig = {
   }
 }
 
+export type WorkflowRunnerConfig = {
+  workflowsDir: string
+  workflowRunsDir: string
+  llmRef: ActorRef<LlmProviderMsg> | null
+  model: string
+  maxToolLoops: number
+}
+
 export type WorkflowSummary = {
   id: string
   userId: string

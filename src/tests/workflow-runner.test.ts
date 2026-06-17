@@ -70,7 +70,7 @@ const spawnRunner = async (runWorkflow: Workflow) => {
   const runsDir = await makeDir('rorschach-workflow-runs')
   await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(runWorkflow))
   const system = await AgentSystem()
-  const runner = system.spawn('workflow-runner', WorkflowRunner(workflowsDir, runsDir, null, 'test-model', 1))
+  const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowsDir, workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
   return { system, runner }
 }
 
@@ -83,7 +83,7 @@ describe('workflow runner', () => {
     const workflowsDir = await makeDir('rorschach-workflows')
     const runsDir = await makeDir('rorschach-workflow-runs')
     await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(workflow(['read'])))
-    const runner = system.spawn('workflow-runner', WorkflowRunner(workflowsDir, runsDir, null, 'test-model', 1))
+    const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowsDir, workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
 
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       runner,
@@ -195,7 +195,7 @@ describe('workflow runner', () => {
     const workflowsDir = await makeDir('rorschach-workflows')
     const runsDir = await makeDir('rorschach-workflow-runs')
     await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(workflow([startWorkflowRunTool.name, switchModeTool.name])))
-    const runner = system.spawn('workflow-runner-control', WorkflowRunner(workflowsDir, runsDir, null, 'test-model', 1))
+    const runner = system.spawn('workflow-runner-control', WorkflowRunner({ workflowsDir, workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
 
     const listed = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       runner,

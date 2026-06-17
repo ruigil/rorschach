@@ -14,6 +14,7 @@ import type {
   WorkflowRunState,
   Workflow,
   ExecutionToolSummary,
+  WorkflowRunnerConfig,
 } from './types.ts'
 import { initialRunState, WorkflowRunExecutor } from './workflow-run-executor.ts'
 import { getWorkflow, type StoreResult, type GetResult } from './workflow-store.ts'
@@ -135,17 +136,16 @@ const removeClient = (state: RunnerState, clientId: string): RunnerState => {
 }
 
 export const WorkflowRunner = (
-  workflowsDir: string,
-  workflowRunsDir: string,
-  llmRef: ActorRef<LlmProviderMsg> | null,
-  model: string,
-  maxToolLoops: number,
+  config: WorkflowRunnerConfig,
 ): ActorDef<WorkflowRunnerMsg, RunnerState> => {
+  const { workflowsDir, workflowRunsDir, llmRef, model, maxToolLoops } = config
+
   const ensureRunActor = async (
     state: RunnerState,
     ctx: ActorContext<WorkflowRunnerMsg>,
     run: WorkflowRunState,
   ): Promise<{ ref: ActorRef<WorkflowRunExecutorMsg>; state: RunnerState } | WorkflowRunnerReply> => {
+
     const live = state.live[run.runId]
     if (live) return { ref: live, state }
 

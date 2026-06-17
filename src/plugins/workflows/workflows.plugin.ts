@@ -7,7 +7,7 @@ import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import { WorkflowRunner } from './workflow-runner.ts'
 import { WorkflowsAgentFactory } from './workflows-agent.ts'
 import { buildWorkflowsRoutes, workflowsSchemas } from './routes.ts'
-import type { WorkflowsConfig, WorkflowRunnerMsg } from './types.ts'
+import type { WorkflowsConfig, WorkflowRunnerMsg, WorkflowRunnerConfig } from './types.ts'
 
 const getWorkflowRunsDir = (workflowsDir: string): string => join(workflowsDir, 'runs')
 
@@ -19,7 +19,7 @@ type PluginState = {
   initialized: boolean
   config: WorkflowsConfig
   llmRef: ActorRef<LlmProviderMsg> | null
-  runner: ActorSlot<null>
+  runner: ActorSlot<WorkflowRunnerConfig>
 }
 
 const defaultConfig: WorkflowsConfig = {
@@ -94,8 +94,14 @@ const spawnChildren = (
     ctx,
     state.runner,
     'workflow-runner',
-    () => WorkflowRunner(cfg.workflowsDir, getWorkflowRunsDir(cfg.workflowsDir), llmRef, cfg.agent.model, cfg.agent.maxToolLoops),
-    null,
+    WorkflowRunner,
+    {
+      workflowsDir: cfg.workflowsDir,
+      workflowRunsDir: getWorkflowRunsDir(cfg.workflowsDir),
+      llmRef,
+      model: cfg.agent.model,
+      maxToolLoops: cfg.agent.maxToolLoops,
+    },
   )
   ctx.publish(AgentRegistrationTopic, {
     type: 'register',
@@ -110,7 +116,7 @@ const restart = (
   cfg: WorkflowsConfig,
   llmRef: ActorRef<LlmProviderMsg> | null,
 ): PluginState => {
-  deleteRoutes(ctx, state.runner.ref as ActorRef<WorkflowRunnerMsg> | null, getWorkflowRunsDir(state.config.workflowsDir), getWorkflowRunsDir(state.config.workflowsDir))
+  deleteRoutes(ctx, state.runner.ref as ActorRef<WorkflowRunnerMsg> | null, state.config.workflowsDir, getWorkflowRunsDir(state.config.workflowsDir))
   stopChildren(state, ctx)
   ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'workflows' })
   const children = spawnChildren(ctx, cfg, llmRef, state)
@@ -127,7 +133,7 @@ const workflowsPlugin: PluginDef<PluginMsg, PluginState, WorkflowsConfig> = {
     initialized: false,
     config: defaultConfig,
     llmRef: null,
-    runner: createSlot<null>(),
+    runner: createSlot<WorkflowRunnerConfig>(),
   },
   lifecycle: onLifecycle({
     start: (state, ctx) => {
