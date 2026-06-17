@@ -76,10 +76,10 @@ export const WorkflowRunner = (
     state: RunnerState,
     ctx: ActorContext<WorkflowRunnerMsg>,
     run: WorkflowRunState,
-  ): Promise<{ ref: ActorRef<WorkflowRunExecutorMsg>; state: RunnerState } | WorkflowRunnerReply> => {
+  ): Promise<{ ref: ActorRef<WorkflowRunExecutorMsg>; spawned: boolean } | WorkflowRunnerReply> => {
 
     const live = state.live[run.runId]
-    if (live) return { ref: live, state }
+    if (live) return { ref: live, spawned: false }
 
     const workflowResult = await getWorkflow(workflowsDir, run.userId, run.workflowId)
     if (!workflowResult.ok) return { ok: false, error: workflowResult.error, status: workflowResult.status }
@@ -89,7 +89,7 @@ export const WorkflowRunner = (
       `workflow-run-${run.runId}`,
       WorkflowRunExecutor(workflow, workflowRunsDir, llmRef, model, maxToolLoops, run, filterWorkflowTools(workflow, state.executionTools)),
     ) as ActorRef<WorkflowRunExecutorMsg>
-    return { ref, state: { ...state, live: { ...state.live, [run.runId]: ref } } }
+    return { ref, spawned: true }
   }
 
   const listRuns = (
@@ -117,7 +117,7 @@ export const WorkflowRunner = (
     ctx: ActorContext<WorkflowRunnerMsg>,
   ): ActorResult<WorkflowRunnerMsg, RunnerState> => {
     ctx.pipeToSelf(
-      (async (): Promise<{ reply: WorkflowRunnerReply; live?: Record<string, ActorRef<WorkflowRunExecutorMsg>> }> => {
+      (async (): Promise<{ reply: WorkflowRunnerReply; runId?: string; spawnedRef?: ActorRef<WorkflowRunExecutorMsg> }> => {
         const workflowResult = await getWorkflow(workflowsDir, msg.userId, msg.workflowId)
         if (!workflowResult.ok) {
           return { reply: { ok: false, error: workflowResult.error, status: workflowResult.status } }
@@ -137,10 +137,11 @@ export const WorkflowRunner = (
         )
         return {
           reply: startReply.ok ? { ok: true, run: startReply.run } : startReply,
-          live: { ...state.live, [run.runId]: ref },
+          runId: run.runId,
+          spawnedRef: ref,
         }
       })(),
-      result => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: result.reply, live: result.live }),
+      result => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: result.reply, runId: result.runId, spawnedRef: result.spawnedRef }),
       error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { ok: false as const, error: String(error) } }),
     )
     return { state }
@@ -177,7 +178,7 @@ export const WorkflowRunner = (
     ctx: ActorContext<WorkflowRunnerMsg>,
   ): ActorResult<WorkflowRunnerMsg, RunnerState> => {
     ctx.pipeToSelf(
-      (async (): Promise<{ reply: WorkflowRunnerReply; live?: Record<string, ActorRef<WorkflowRunExecutorMsg>> }> => {
+      (async (): Promise<{ reply: WorkflowRunnerReply; runId?: string; spawnedRef?: ActorRef<WorkflowRunExecutorMsg> }> => {
         const live = state.live[msg.runId]
         if (live) {
           const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
@@ -196,9 +197,12 @@ export const WorkflowRunner = (
           replyTo => ({ type: 'resume', replyTo }),
           { timeoutMs: 5_000 },
         )
-        return { reply, live: ensured.state.live }
+        return {
+          reply,
+          ...(ensured.spawned ? { runId: msg.runId, spawnedRef: ensured.ref } : {}),
+        }
       })(),
-      result => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: result.reply, live: result.live }),
+      result => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: result.reply, runId: result.runId, spawnedRef: result.spawnedRef }),
       error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { ok: false as const, error: String(error) } }),
     )
     return { state }
@@ -256,7 +260,10 @@ export const WorkflowRunner = (
 
       _reply: (state, msg) => {
         msg.replyTo.send(msg.reply)
-        return { state: msg.live ? { ...state, live: msg.live } : state }
+        if (msg.runId && msg.spawnedRef) {
+          return { state: { ...state, live: { ...state.live, [msg.runId]: msg.spawnedRef } } }
+        }
+        return { state }
       },
 
       listExecutionTools: (state, msg) => {

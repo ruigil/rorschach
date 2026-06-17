@@ -208,7 +208,7 @@ export type WorkflowRunnerMsg =
   | { type: 'listExecutionTools'; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'get'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'resume'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
-  | { type: '_reply'; replyTo: ActorRef<WorkflowRunnerReply>; reply: WorkflowRunnerReply; live?: Record<string, ActorRef<WorkflowRunExecutorMsg>> }
+  | { type: '_reply'; replyTo: ActorRef<WorkflowRunnerReply>; reply: WorkflowRunnerReply; runId?: string; spawnedRef?: ActorRef<WorkflowRunExecutorMsg> }
   | { type: '_toolRegistered'; tool: import('../../types/tools.ts').Tool }
   | { type: '_toolUnregistered'; name: string }
   | { type: '_clientConnected'; userId: string; clientId: string }
