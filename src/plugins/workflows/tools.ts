@@ -5,11 +5,10 @@ import type {
   Workflow,
   WorkflowRunnerMsg,
   WorkflowRunnerReply,
-  WorkflowStoreMsg,
-  WorkflowStoreReply,
   WorkflowTask,
   WorkflowValueSpec,
 } from './types.ts'
+import { getWorkflow, getWorkflowGraph, listWorkflows, saveWorkflow, updateWorkflow, deleteWorkflow } from './workflow-store.ts'
 import { validateWorkflow } from './validation.ts'
 
 const valueSpecSchema = {
@@ -224,7 +223,7 @@ const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch:
 }
 
 export type WorkflowToolDeps = {
-  workflowStoreRef: ActorRef<WorkflowStoreMsg>
+  workflowsDir: string
   workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
   publishGraph: (clientId: string | undefined, workflowId: string, runId?: string) => void
 }
@@ -232,7 +231,7 @@ export type WorkflowToolDeps = {
 const toolError = (error: string): ToolReply => ({ type: 'toolError', error })
 
 export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolDeps): Promise<ToolReply> => {
-  const { workflowStoreRef, workflowRunnerRef, publishGraph } = deps
+  const { workflowsDir, workflowRunnerRef, publishGraph } = deps
 
   if (msg.toolName === listExecutionToolsTool.name) {
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'listExecutionTools', replyTo }), { timeoutMs: 5_000 })
@@ -242,29 +241,26 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
   }
 
   if (msg.toolName === listWorkflowsTool.name) {
-    const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'list', userId: msg.userId, replyTo }), { timeoutMs: 5_000 })
-    return reply.ok && 'workflows' in reply
-      ? { type: 'toolResult', result: { text: formatWorkflowList(reply.workflows) } }
-      : toolError(reply.ok ? 'Unexpected workflow store response.' : reply.error)
+    const workflows = await listWorkflows(workflowsDir, msg.userId)
+    return { type: 'toolResult', result: { text: formatWorkflowList(workflows) } }
   }
 
   if (msg.toolName === saveWorkflowTool.name) {
     const parsed = parseWorkflow(msg.arguments, msg.userId)
     if (!parsed.ok) return toolError(parsed.error)
-    const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'save', workflow: parsed.workflow, replyTo }), { timeoutMs: 5_000 })
-    if (!reply.ok || !('workflow' in reply)) return toolError(reply.ok ? 'Unexpected workflow store response.' : reply.error)
-    publishGraph(msg.clientId, reply.workflow.id)
-    return { type: 'toolResult', result: { text: `Workflow saved to ${reply.filepath} - ${reply.workflow.tasks.length} tasks.` } }
+    const result = await saveWorkflow(workflowsDir, parsed.workflow)
+    if (!result.ok) return toolError(result.error)
+    publishGraph(msg.clientId, result.data.workflow.id)
+    return { type: 'toolResult', result: { text: `Workflow saved to ${result.data.filepath} - ${result.data.workflow.tasks.length} tasks.` } }
   }
 
   if (msg.toolName === getWorkflowTool.name || msg.toolName === showWorkflowGraphTool.name) {
     const arg = workflowIdArg(msg.arguments)
     if (!arg.ok) return toolError(arg.error)
     if (msg.toolName === getWorkflowTool.name) {
-      const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'get', userId: msg.userId, workflowId: arg.workflowId, replyTo }), { timeoutMs: 5_000 })
-      return reply.ok && 'workflow' in reply
-        ? { type: 'toolResult', result: { text: JSON.stringify(reply.workflow, null, 2) } }
-        : toolError(reply.ok ? 'Unexpected workflow store response.' : reply.error)
+      const result = await getWorkflow(workflowsDir, msg.userId, arg.workflowId)
+      if (!result.ok) return toolError(result.error)
+      return { type: 'toolResult', result: { text: JSON.stringify(result.data.workflow, null, 2) } }
     }
     publishGraph(msg.clientId, arg.workflowId, arg.runId)
     return { type: 'toolResult', result: { text: `Opened workflow graph for ${arg.workflowId}.` } }
@@ -273,19 +269,17 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
   if (msg.toolName === updateWorkflowTool.name) {
     const parsed = parseWorkflowPatch(msg.arguments)
     if (!parsed.ok) return toolError(parsed.error)
-    const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'update', userId: msg.userId, workflowId: parsed.workflowId, patch: parsed.patch, replyTo }), { timeoutMs: 5_000 })
-    return reply.ok && 'updated' in reply
-      ? { type: 'toolResult', result: { text: `Workflow ${parsed.workflowId} updated successfully.` } }
-      : toolError(reply.ok ? 'Unexpected workflow store response.' : reply.error)
+    const result = await updateWorkflow(workflowsDir, msg.userId, parsed.workflowId, parsed.patch)
+    if (!result.ok) return toolError(result.error)
+    return { type: 'toolResult', result: { text: `Workflow ${parsed.workflowId} updated successfully.` } }
   }
 
   if (msg.toolName === deleteWorkflowTool.name) {
     const arg = workflowIdArg(msg.arguments)
     if (!arg.ok) return toolError(arg.error)
-    const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'delete', userId: msg.userId, workflowId: arg.workflowId, replyTo }), { timeoutMs: 5_000 })
-    return reply.ok && 'deleted' in reply
-      ? { type: 'toolResult', result: { text: `Workflow ${arg.workflowId} deleted.` } }
-      : toolError(reply.ok ? 'Unexpected workflow store response.' : reply.error)
+    const result = await deleteWorkflow(workflowsDir, msg.userId, arg.workflowId)
+    if (!result.ok) return toolError(result.error)
+    return { type: 'toolResult', result: { text: `Workflow ${arg.workflowId} deleted.` } }
   }
 
   if (msg.toolName === startWorkflowRunTool.name) {

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentSystem, ask, type ActorDef } from '../system/index.ts'
+import { AgentSystem, type ActorDef, type ActorRef } from '../system/index.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
 import { handleWorkflowTool, startWorkflowRunTool } from '../plugins/workflows/tools.ts'
 import { parseTaskCompletionArgs } from '../plugins/workflows/workflow-task-executor.ts'
@@ -12,10 +12,7 @@ import type {
   WorkflowRunnerMsg,
   WorkflowRunnerReply,
   WorkflowRunState,
-  WorkflowStoreMsg,
-  WorkflowStoreReply,
 } from '../plugins/workflows/types.ts'
-import type { ActorRef } from '../system/index.ts'
 import type { ToolReply } from '../types/tools.ts'
 import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
 
@@ -161,14 +158,16 @@ describe('workflow IO and artifacts', () => {
   })
 
   test('start_workflow_run passes tool-only inputs to the runner', async () => {
+    const dir = await makeDir()
+    await mkdir(join(dir, '..'), { recursive: true })
+    await writeFile(join(dir, '..', 'workflow.json'), JSON.stringify(workflow()))
     const system = await AgentSystem()
     let capturedInputs: Record<string, unknown> | undefined
-    const store = system.spawn('noop-workflow-store', NoopStore())
     const runner = system.spawn('capturing-workflow-runner', CapturingRunner(inputs => { capturedInputs = inputs }))
 
     const reply = await handleWorkflowTool(
       { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1', inputs: { city: 'Paris' } }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'anonymous', clientId: 'client-1' },
-      { workflowStoreRef: store, workflowRunnerRef: runner, publishGraph: () => {} },
+      { workflowsDir: join(dir, '..'), workflowRunnerRef: runner, publishGraph: () => {} },
     )
 
     expect(reply.type).toBe('toolPending')
@@ -177,8 +176,10 @@ describe('workflow IO and artifacts', () => {
   })
 
   test('start_workflow_run returns immediate run state when start blocks before execution', async () => {
+    const dir = await makeDir()
+    await mkdir(join(dir, '..'), { recursive: true })
+    await writeFile(join(dir, '..', 'workflow.json'), JSON.stringify(workflow()))
     const system = await AgentSystem()
-    const store = system.spawn('noop-workflow-store-blocked', NoopStore())
     const runner = system.spawn('blocked-workflow-runner', StaticStartRunner({
       ...runState(),
       status: 'blocked',
@@ -195,7 +196,7 @@ describe('workflow IO and artifacts', () => {
 
     const reply = await handleWorkflowTool(
       { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1' }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'anonymous', clientId: 'client-1' },
-      { workflowStoreRef: store, workflowRunnerRef: runner, publishGraph: () => {} },
+      { workflowsDir: join(dir, '..'), workflowRunnerRef: runner, publishGraph: () => {} },
     )
 
     expect(reply.type).toBe('toolResult')
@@ -212,7 +213,7 @@ describe('workflow IO and artifacts', () => {
 
     const system = await AgentSystem()
     const runner = system.spawn('artifact-runner', StaticRunRunner(runState()))
-    const routes = buildWorkflowsRoutes(null, runner as ActorRef<WorkflowRunnerMsg>, dir)
+    const routes = buildWorkflowsRoutes(dir, runner as ActorRef<WorkflowRunnerMsg>, dir)
     const route = routes.find(item => item.id === 'workflow-runs.artifact')
     if (!route || route.handler === null) throw new Error('missing artifact route')
 
@@ -239,17 +240,6 @@ describe('workflow IO and artifacts', () => {
     expect(urlOnly.status).toBe(404)
     await system.shutdown()
   })
-})
-
-const NoopStore = (): ActorDef<WorkflowStoreMsg, null> => ({
-  initialState: null,
-  handler: (state, msg) => {
-    if ('replyTo' in msg) {
-      const reply: WorkflowStoreReply = { ok: false, error: 'not implemented' }
-      msg.replyTo.send(reply)
-    }
-    return { state }
-  },
 })
 
 const CapturingRunner = (capture: (inputs: Record<string, unknown> | undefined) => void): ActorDef<WorkflowRunnerMsg, null> => ({

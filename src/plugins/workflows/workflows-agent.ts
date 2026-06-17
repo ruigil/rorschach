@@ -7,7 +7,7 @@ import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
 import { assembleAgentMessages, type ContextView } from '../../system/index.ts'
-import type { WorkflowRunnerMsg, WorkflowStoreMsg } from './types.ts'
+import type { WorkflowRunnerMsg } from './types.ts'
 import {
   deleteWorkflowTool,
   getWorkflowRunTool,
@@ -35,7 +35,7 @@ type WorkflowsAgentState = {
 type WorkflowsAgentConfig = {
   model: string
   maxToolLoops: number
-  workflowStoreRef: ActorRef<WorkflowStoreMsg>
+  workflowsDir: string
   workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
   toolFilter?: ToolFilter
 }
@@ -83,7 +83,7 @@ export const WorkflowsAgentFactory = (config: WorkflowsAgentConfig) =>
   (opts: AgentFactoryOpts): ActorDef<WorkflowsAgentMsg, WorkflowsAgentState> => WorkflowsAgent(config, opts)
 
 const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): ActorDef<WorkflowsAgentMsg, WorkflowsAgentState> => {
-  const { model, maxToolLoops, workflowStoreRef, workflowRunnerRef, toolFilter } = config
+  const { model, maxToolLoops, workflowsDir, workflowRunnerRef, toolFilter } = config
   const { userId, contextStoreRef, llmRef } = opts
 
   type M = WorkflowsAgentMsg
@@ -201,7 +201,7 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
     }
     if (msg.type === 'invoke' && isWorkflowControlTool(msg.toolName)) {
       handleWorkflowTool(msg, {
-        workflowStoreRef,
+        workflowsDir,
         workflowRunnerRef,
         publishGraph: (clientId, workflowId, runId) => {
           if (!clientId) return

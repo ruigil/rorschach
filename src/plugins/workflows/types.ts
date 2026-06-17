@@ -1,5 +1,5 @@
 import { createTopic, type ActorRef } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolCollection, ToolReply, ToolMsg, ToolSchema, ToolFilter } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolCollection, ToolReply, ToolMsg, ToolFilter, ToolSchema } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { LoopMsg, LoopState } from '../../system/index.ts'
 import type { MessageAttachment } from '../../types/events.ts'
@@ -187,23 +187,6 @@ export type ExecutionToolSummary = {
   description: string
   mayBeLongRunning?: boolean
 }
-
-export type WorkflowStoreReply =
-  | { ok: true; workflows: WorkflowSummary[] }
-  | { ok: true; workflow: Workflow; filepath: string }
-  | { ok: true; graph: WorkflowGraph }
-  | { ok: true; deleted: true; workflowId: string }
-  | { ok: true; updated: true; workflow: Workflow; filepath: string }
-  | { ok: false; error: string; status?: number }
-
-export type WorkflowStoreMsg =
-  | { type: 'list'; userId: string; replyTo: ActorRef<WorkflowStoreReply> }
-  | { type: 'get'; userId: string; workflowId: string; replyTo: ActorRef<WorkflowStoreReply> }
-  | { type: 'graph'; userId: string; workflowId: string; run?: WorkflowRunState; replyTo: ActorRef<WorkflowStoreReply> }
-  | { type: 'save'; workflow: Workflow; replyTo: ActorRef<WorkflowStoreReply> }
-  | { type: 'update'; userId: string; workflowId: string; patch: { goal?: string; context?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }; replyTo: ActorRef<WorkflowStoreReply> }
-  | { type: 'delete'; userId: string; workflowId: string; replyTo: ActorRef<WorkflowStoreReply> }
-  | { type: '_done' }
 
 export type WorkflowRunnerReply =
   | { ok: true; run: WorkflowRunState }

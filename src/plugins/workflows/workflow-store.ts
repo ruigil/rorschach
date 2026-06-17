@@ -1,14 +1,11 @@
 import { mkdir, readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ActorDef } from '../../system/index.ts'
-import { onMessage } from '../../system/index.ts'
 import type {
   Workflow,
   WorkflowGraph,
   WorkflowRunState,
-  WorkflowStoreMsg,
-  WorkflowStoreReply,
   WorkflowSummary,
+  WorkflowValueSpec,
 } from './types.ts'
 import { validateWorkflow } from './validation.ts'
 
@@ -129,11 +126,29 @@ const loadWorkflows = async (workflowsDir: string, userId: string): Promise<Arra
     .sort((a, b) => Date.parse(b.workflow.createdAt) - Date.parse(a.workflow.createdAt))
 }
 
-const getWorkflow = async (workflowsDir: string, userId: string, workflowId: string): Promise<WorkflowStoreReply> => {
+export type StoreResult<T> = { ok: true; data: T } | { ok: false; error: string; status: number }
+
+export type GetResult = { workflow: Workflow; filepath: string }
+export type SaveResult = { workflow: Workflow; filepath: string }
+export type UpdateResult = { updated: true; workflow: Workflow; filepath: string }
+export type DeleteResult = { deleted: true; workflowId: string }
+
+export async function listWorkflows(workflowsDir: string, userId: string): Promise<WorkflowSummary[]> {
+  const entries = await loadWorkflows(workflowsDir, userId)
+  return entries.map(entry => summarize(entry.workflow, entry.filepath))
+}
+
+export async function getWorkflow(workflowsDir: string, userId: string, workflowId: string): Promise<StoreResult<GetResult>> {
   const workflows = await loadWorkflows(workflowsDir, userId)
   const found = workflows.find(entry => entry.workflow.id === workflowId)
   if (!found) return { ok: false, error: `Workflow not found: ${workflowId}`, status: 404 }
-  return { ok: true, workflow: found.workflow, filepath: found.filepath }
+  return { ok: true, data: { workflow: found.workflow, filepath: found.filepath } }
+}
+
+export async function getWorkflowGraph(workflowsDir: string, userId: string, workflowId: string, run?: WorkflowRunState): Promise<StoreResult<{ graph: WorkflowGraph }>> {
+  const result = await getWorkflow(workflowsDir, userId, workflowId)
+  if (!result.ok) return result
+  return { ok: true, data: { graph: toWorkflowGraph(result.data.workflow, run) } }
 }
 
 const workflowFilename = (workflow: Workflow): string => {
@@ -142,131 +157,50 @@ const workflowFilename = (workflow: Workflow): string => {
   return `${date}-${slug || 'workflow'}-${workflow.id.slice(0, 8)}.json`
 }
 
-export const WorkflowStore = (workflowsDir: string): ActorDef<WorkflowStoreMsg, null> => ({
-  initialState: null,
-  handler: onMessage<WorkflowStoreMsg, null>({
-    _done: (state) => ({ state }),
+export async function saveWorkflow(workflowsDir: string, workflow: Workflow): Promise<StoreResult<SaveResult>> {
+  const errors = validateWorkflow(workflow)
+  if (errors.length) return { ok: false, error: `Invalid workflow: ${errors.join('; ')}`, status: 400 }
+  await mkdir(workflowsDir, { recursive: true })
+  const filepath = join(workflowsDir, workflowFilename(workflow))
+  await Bun.write(filepath, JSON.stringify(workflow, null, 2))
+  return { ok: true, data: { workflow, filepath } }
+}
 
-    list: (state, msg, ctx) => {
-      ctx.pipeToSelf(
-        loadWorkflows(workflowsDir, msg.userId).then(workflows => ({ ok: true as const, workflows: workflows.map(entry => summarize(entry.workflow, entry.filepath)) })),
-        reply => {
-          msg.replyTo.send(reply)
-          return { type: '_done' }
-        },
-        error => {
-          msg.replyTo.send({ ok: false, error: String(error) })
-          return { type: '_done' }
-        },
-      )
-      return { state }
-    },
+export type WorkflowPatch = {
+  goal?: string
+  context?: string
+  executionTools?: string[]
+  inputs?: Record<string, WorkflowValueSpec>
+  outputs?: Record<string, WorkflowValueSpec>
+  tasks?: Workflow['tasks']
+}
 
-    get: (state, msg, ctx) => {
-      ctx.pipeToSelf(
-        getWorkflow(workflowsDir, msg.userId, msg.workflowId),
-        reply => {
-          msg.replyTo.send(reply)
-          return { type: '_done' }
-        },
-        error => {
-          msg.replyTo.send({ ok: false, error: String(error) })
-          return { type: '_done' }
-        },
-      )
-      return { state }
-    },
+// Mutations (save/update/delete) are only called from the workflows agent tool handler,
+// which serializes turns via the agent loop. There is no concurrent writer — if a second
+// mutation path is added (e.g. an HTTP PUT route), the read-then-write in updateWorkflow
+// will need serialization or atomic writes to avoid lost updates.
+export async function updateWorkflow(workflowsDir: string, userId: string, workflowId: string, patch: WorkflowPatch): Promise<StoreResult<UpdateResult>> {
+  const found = await getWorkflow(workflowsDir, userId, workflowId)
+  if (!found.ok) return found
+  const existing = found.data.workflow
+  const updated: Workflow = {
+    ...existing,
+    goal: patch.goal ?? existing.goal,
+    context: patch.context ?? existing.context,
+    executionTools: patch.executionTools ?? existing.executionTools,
+    inputs: patch.inputs ?? existing.inputs,
+    outputs: patch.outputs ?? existing.outputs,
+    tasks: patch.tasks ?? existing.tasks,
+  }
+  const errors = validateWorkflow(updated)
+  if (errors.length) return { ok: false, error: `Invalid workflow: ${errors.join('; ')}`, status: 400 }
+  await Bun.write(found.data.filepath, JSON.stringify(updated, null, 2))
+  return { ok: true, data: { updated: true, workflow: updated, filepath: found.data.filepath } }
+}
 
-    graph: (state, msg, ctx) => {
-      ctx.pipeToSelf(
-        getWorkflow(workflowsDir, msg.userId, msg.workflowId).then(reply => {
-          if (!reply.ok || !('workflow' in reply)) return reply
-          return { ok: true as const, graph: toWorkflowGraph(reply.workflow, msg.run) }
-        }),
-        reply => {
-          msg.replyTo.send(reply)
-          return { type: '_done' }
-        },
-        error => {
-          msg.replyTo.send({ ok: false, error: String(error) })
-          return { type: '_done' }
-        },
-      )
-      return { state }
-    },
-
-    save: (state, msg, ctx) => {
-      ctx.pipeToSelf(
-        (async () => {
-          const errors = validateWorkflow(msg.workflow)
-          if (errors.length) return { ok: false as const, error: `Invalid workflow: ${errors.join('; ')}`, status: 400 }
-          await mkdir(workflowsDir, { recursive: true })
-          const filepath = join(workflowsDir, workflowFilename(msg.workflow))
-          await Bun.write(filepath, JSON.stringify(msg.workflow, null, 2))
-          return { ok: true as const, workflow: msg.workflow, filepath }
-        })(),
-        reply => {
-          msg.replyTo.send(reply)
-          return { type: '_done' }
-        },
-        error => {
-          msg.replyTo.send({ ok: false, error: String(error) })
-          return { type: '_done' }
-        },
-      )
-      return { state }
-    },
-
-    update: (state, msg, ctx) => {
-      ctx.pipeToSelf(
-        (async () => {
-          const found = await getWorkflow(workflowsDir, msg.userId, msg.workflowId)
-          if (!found.ok || !('workflow' in found)) return found
-          const existing = found.workflow
-          const updated: Workflow = {
-            ...existing,
-            goal: msg.patch.goal ?? existing.goal,
-            context: msg.patch.context ?? existing.context,
-            executionTools: msg.patch.executionTools ?? existing.executionTools,
-            inputs: msg.patch.inputs ?? existing.inputs,
-            outputs: msg.patch.outputs ?? existing.outputs,
-            tasks: msg.patch.tasks ?? existing.tasks,
-          }
-          const errors = validateWorkflow(updated)
-          if (errors.length) return { ok: false as const, error: `Invalid workflow: ${errors.join('; ')}`, status: 400 }
-          await Bun.write(found.filepath, JSON.stringify(updated, null, 2))
-          return { ok: true as const, updated: true as const, workflow: updated, filepath: found.filepath }
-        })(),
-        reply => {
-          msg.replyTo.send(reply)
-          return { type: '_done' }
-        },
-        error => {
-          msg.replyTo.send({ ok: false, error: String(error) })
-          return { type: '_done' }
-        },
-      )
-      return { state }
-    },
-
-    delete: (state, msg, ctx) => {
-      ctx.pipeToSelf(
-        (async () => {
-          const found = await getWorkflow(workflowsDir, msg.userId, msg.workflowId)
-          if (!found.ok || !('filepath' in found)) return found
-          await unlink(found.filepath)
-          return { ok: true as const, deleted: true as const, workflowId: msg.workflowId }
-        })(),
-        reply => {
-          msg.replyTo.send(reply)
-          return { type: '_done' }
-        },
-        error => {
-          msg.replyTo.send({ ok: false, error: String(error) })
-          return { type: '_done' }
-        },
-      )
-      return { state }
-    },
-  }),
-})
+export async function deleteWorkflow(workflowsDir: string, userId: string, workflowId: string): Promise<StoreResult<DeleteResult>> {
+  const found = await getWorkflow(workflowsDir, userId, workflowId)
+  if (!found.ok) return found
+  await unlink(found.data.filepath)
+  return { ok: true, data: { deleted: true, workflowId } }
+}

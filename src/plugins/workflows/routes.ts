@@ -3,7 +3,8 @@ import { ask } from '../../system/index.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import type { Identity } from '../../types/identity.ts'
-import type { WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowStoreMsg, WorkflowStoreReply } from './types.ts'
+import type { WorkflowRunnerMsg, WorkflowRunnerReply } from './types.ts'
+import { getWorkflow, getWorkflowGraph, listWorkflows, type StoreResult } from './workflow-store.ts'
 import { isRunArtifactRef, validArtifactPath } from './validation.ts'
 import { join, relative, resolve } from 'node:path'
 
@@ -75,7 +76,7 @@ const runIdFromPath = (pathname: string, suffix = ''): string | null => {
 }
 
 export const buildWorkflowsRoutes = (
-  workflowStoreRef: ActorRef<WorkflowStoreMsg> | null,
+  workflowsDir: string,
   workflowRunnerRef: ActorRef<WorkflowRunnerMsg> | null,
   workflowRunsDir = 'workspace/workflows/runs',
 ): RouteRegistration[] => [
@@ -86,11 +87,8 @@ export const buildWorkflowsRoutes = (
     handler: async (_req, _url, identity) => {
       const session = requireSession(identity)
       if (session instanceof Response) return session
-      if (!workflowStoreRef) return json([])
-      const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'list', userId: session.userId, replyTo }), { timeoutMs: 5_000 })
-      if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
-      if (!('workflows' in reply)) return json({ error: 'Unexpected workflow store response' }, 500)
-      return json(reply.workflows)
+      const workflows = await listWorkflows(workflowsDir, session.userId)
+      return json(workflows)
     },
   },
   {
@@ -101,7 +99,6 @@ export const buildWorkflowsRoutes = (
     handler: async (_req, url, identity) => {
       const session = requireSession(identity)
       if (session instanceof Response) return session
-      if (!workflowStoreRef) return json({ error: 'Workflow store unavailable' }, 503)
 
       const graphWorkflowId = workflowIdFromPath(url.pathname, '/graph')
       if (graphWorkflowId) {
@@ -111,18 +108,16 @@ export const buildWorkflowsRoutes = (
           const runReply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'get', userId: session.userId, runId, replyTo }), { timeoutMs: 5_000 })
           if (runReply.ok && 'run' in runReply) run = runReply.run
         }
-        const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'graph', userId: session.userId, workflowId: graphWorkflowId, run, replyTo }), { timeoutMs: 5_000 })
-        if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
-        if (!('graph' in reply)) return json({ error: 'Unexpected workflow store response' }, 500)
-        return json(reply.graph)
+        const result = await getWorkflowGraph(workflowsDir, session.userId, graphWorkflowId, run)
+        if (!result.ok) return json({ error: result.error }, result.status)
+        return json(result.data.graph)
       }
 
       const workflowId = workflowIdFromPath(url.pathname)
       if (!workflowId) return json({ error: 'Not found' }, 404)
-      const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(workflowStoreRef, replyTo => ({ type: 'get', userId: session.userId, workflowId, replyTo }), { timeoutMs: 5_000 })
-      if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
-      if (!('workflow' in reply)) return json({ error: 'Unexpected workflow store response' }, 500)
-      return json(reply.workflow)
+      const result = await getWorkflow(workflowsDir, session.userId, workflowId)
+      if (!result.ok) return json({ error: result.error }, result.status)
+      return json(result.data.workflow)
     },
   },
   {

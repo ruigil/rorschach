@@ -2,12 +2,12 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentSystem, ask } from '../system/index.ts'
-import { WorkflowStore } from '../plugins/workflows/workflow-store.ts'
+import { AgentSystem, ask, type ActorDef } from '../system/index.ts'
+import { listWorkflows, getWorkflow, getWorkflowGraph, saveWorkflow } from '../plugins/workflows/workflow-store.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
 import { handleWorkflowTool, listExecutionToolsTool, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool, startWorkflowRunTool } from '../plugins/workflows/tools.ts'
-import type { Workflow, WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowRunState, WorkflowStoreMsg, WorkflowStoreReply } from '../plugins/workflows/types.ts'
-import type { ActorDef, ActorRef } from '../system/index.ts'
+import type { Workflow, WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowRunState } from '../plugins/workflows/types.ts'
+import type { ActorRef } from '../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 import { OutboundMessageTopic } from '../types/events.ts'
 import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
@@ -112,52 +112,39 @@ describe('workflow store', () => {
     await writeFile(join(dir, 'other.json'), JSON.stringify(sampleWorkflow('u2')))
     await writeFile(join(dir, 'bad.json'), '{nope')
 
-    const system = await AgentSystem()
-    const store = system.spawn('workflow-store', WorkflowStore(dir))
-
-    const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(store, replyTo => ({ type: 'list', userId: 'u1', replyTo }))
-    expect(reply.ok).toBe(true)
-    if (reply.ok && 'workflows' in reply) {
-      expect(reply.workflows).toHaveLength(1)
-      expect(reply.workflows[0]).toMatchObject({ id: 'workflow-1', taskCount: 2, userId: 'u1' })
-    }
-
-    await system.shutdown()
+    const workflows = await listWorkflows(dir, 'u1')
+    expect(workflows).toHaveLength(1)
+    expect(workflows[0]).toMatchObject({ id: 'workflow-1', taskCount: 2, userId: 'u1' })
   })
 
   test('returns graph edges from prerequisite to dependent task', async () => {
     const dir = await makeDir()
     await writeFile(join(dir, 'workflow.json'), JSON.stringify(sampleWorkflow()))
 
-    const system = await AgentSystem()
-    const store = system.spawn('workflow-store', WorkflowStore(dir))
-
-    const reply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(store, replyTo => ({ type: 'graph', userId: 'u1', workflowId: 'workflow-1', run: sampleRun(), replyTo }))
-    expect(reply.ok).toBe(true)
-    if (reply.ok && 'graph' in reply) {
-      expect(reply.graph.nodes.map((node) => node.id)).toEqual(['design', 'build'])
-      expect(reply.graph.edges).toEqual([{ source: 'design', target: 'build', type: 'depends_on' }])
-      expect(reply.graph.workflow).toMatchObject({
+    const result = await getWorkflowGraph(dir, 'u1', 'workflow-1', sampleRun())
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.graph.nodes.map((node) => node.id)).toEqual(['design', 'build'])
+      expect(result.data.graph.edges).toEqual([{ source: 'design', target: 'build', type: 'depends_on' }])
+      expect(result.data.graph.workflow).toMatchObject({
         context: 'User accepted a workflow for execution UI.',
         executionTools: ['read'],
         inputs: { topic: { type: 'string', required: true, description: 'Workflow topic' } },
         outputs: { summary: { type: 'string', required: true, description: 'Final summary' } },
       })
-      expect(reply.graph.run?.runId).toBe('run-1')
-      expect(reply.graph.run?.status).toBe('running')
-      expect(reply.graph.run?.inputs).toEqual({ topic: 'workspace' })
-      expect(reply.graph.run?.activeTaskIds).toEqual(['build'])
-      expect(reply.graph.run?.pendingJobs['job-1']).toMatchObject({ taskId: 'build', toolName: 'read' })
-      expect(reply.graph.run?.events[0]).toEqual({ timestamp: '2026-05-16T10:00:00.000Z', type: 'runStarted', message: 'Run started.' })
-      expect(reply.graph.nodes[0]).toMatchObject({
+      expect(result.data.graph.run?.runId).toBe('run-1')
+      expect(result.data.graph.run?.status).toBe('running')
+      expect(result.data.graph.run?.inputs).toEqual({ topic: 'workspace' })
+      expect(result.data.graph.run?.activeTaskIds).toEqual(['build'])
+      expect(result.data.graph.run?.pendingJobs['job-1']).toMatchObject({ taskId: 'build', toolName: 'read' })
+      expect(result.data.graph.run?.events[0]).toEqual({ timestamp: '2026-05-16T10:00:00.000Z', type: 'runStarted', message: 'Run started.' })
+      expect(result.data.graph.nodes[0]).toMatchObject({
         status: 'completed',
         startedAt: '2026-05-16T10:00:00.000Z',
         completedAt: '2026-05-16T10:00:30.000Z',
         outputs: { summary: 'Design done.' },
       })
     }
-
-    await system.shutdown()
   })
 
   test('routes return summaries and graph JSON', async () => {
@@ -165,9 +152,8 @@ describe('workflow store', () => {
     await writeFile(join(dir, 'workflow.json'), JSON.stringify(sampleWorkflow('anonymous')))
 
     const system = await AgentSystem()
-    const store = system.spawn('workflow-store', WorkflowStore(dir))
     const runner = system.spawn('workflow-runner', FakeRunner())
-    const routes = buildWorkflowsRoutes(store, runner)
+    const routes = buildWorkflowsRoutes(dir, runner)
 
     const listRoute = routes.find(route => route.id === 'workflows.list')
     expect(listRoute?.handler).not.toBeNull()
@@ -193,7 +179,6 @@ describe('workflow store', () => {
     const events: Array<{ clientId: string; text: string }> = []
     system.subscribe(OutboundMessageTopic, event => events.push(event))
 
-    const store = system.spawn('workflow-store', WorkflowStore(dir))
     const runner = system.spawn('workflow-runner', FakeRunner())
     const publishGraph = (clientId: string | undefined, workflowId: string, runId?: string) => {
       if (clientId) events.push({ clientId, text: JSON.stringify({ type: 'workflowGraph', workflowId, ...(runId ? { runId } : {}) }) })
@@ -201,14 +186,14 @@ describe('workflow store', () => {
 
     const listReply = await handleWorkflowTool(
       { type: 'invoke', toolName: listWorkflowsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1', clientId: 'c1' },
-      { workflowStoreRef: store, workflowRunnerRef: runner, publishGraph },
+      { workflowsDir: dir, workflowRunnerRef: runner, publishGraph },
     )
     expect(listReply.type).toBe('toolResult')
     if (listReply.type === 'toolResult') expect(listReply.result.text).toContain('Ship workflow workspace')
 
     const graphReply = await handleWorkflowTool(
       { type: 'invoke', toolName: showWorkflowGraphTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1' }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1', clientId: 'c1' },
-      { workflowStoreRef: store, workflowRunnerRef: runner, publishGraph },
+      { workflowsDir: dir, workflowRunnerRef: runner, publishGraph },
     )
     expect(graphReply.type).toBe('toolResult')
     expect(events.map(event => JSON.parse(event.text))).toContainEqual({ type: 'workflowGraph', workflowId: 'workflow-1' })
@@ -219,8 +204,6 @@ describe('workflow store', () => {
   test('control tools can save workflow with executionTools', async () => {
     const dir = await makeDir()
     const system = await AgentSystem()
-
-    const store = system.spawn('workflow-store', WorkflowStore(dir))
     const runner = system.spawn('workflow-runner', FakeRunner())
 
     const reply = await handleWorkflowTool(
@@ -236,7 +219,7 @@ describe('workflow store', () => {
           dependencies: [],
         }],
       }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1', clientId: 'c1' },
-      { workflowStoreRef: store, workflowRunnerRef: runner, publishGraph: () => {} },
+      { workflowsDir: dir, workflowRunnerRef: runner, publishGraph: () => {} },
     )
 
     expect(reply.type).toBe('toolResult')
@@ -251,12 +234,11 @@ describe('workflow store', () => {
   test('list_execution_tools reads execution tools from workflow runner', async () => {
     const dir = await makeDir()
     const system = await AgentSystem()
-    const store = system.spawn('workflow-store', WorkflowStore(dir))
     const runner = system.spawn('workflow-runner', FakeRunner())
 
     const reply = await handleWorkflowTool(
       { type: 'invoke', toolName: listExecutionToolsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1', clientId: 'c1' },
-      { workflowStoreRef: store, workflowRunnerRef: runner, publishGraph: () => {} },
+      { workflowsDir: dir, workflowRunnerRef: runner, publishGraph: () => {} },
     )
 
     expect(reply.type).toBe('toolResult')

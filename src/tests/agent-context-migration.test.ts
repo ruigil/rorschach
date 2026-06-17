@@ -5,7 +5,7 @@ import type { ActorDef } from '../system/index.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
 import { WorkflowsAgentFactory } from '../plugins/workflows/workflows-agent.ts'
-import type { WorkflowRunnerMsg, WorkflowStoreMsg } from '../plugins/workflows/types.ts'
+import type { WorkflowRunnerMsg } from '../plugins/workflows/types.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -34,11 +34,6 @@ const CapturingLlm = (streams: Array<Extract<LlmProviderMsg, { type: 'stream' }>
   },
 })
 
-const NullStore = (): ActorDef<WorkflowStoreMsg, null> => ({
-  initialState: null,
-  handler: (state) => ({ state }),
-})
-
 const NullRunner = (): ActorDef<WorkflowRunnerMsg, null> => ({
   initialState: null,
   handler: (state) => ({ state }),
@@ -49,8 +44,7 @@ describe('session agents use shared context snapshots', () => {
     const system = await AgentSystem()
     const streams: Array<Extract<LlmProviderMsg, { type: 'stream' }>> = []
     const llmRef = system.spawn('llm', CapturingLlm(streams))
-    const storeRef = system.spawn('workflow-store', NullStore())
-    const runnerRef = system.spawn('workflow-runner', NullRunner())
+const runnerRef = system.spawn('workflow-runner', NullRunner())
     const contextStoreRef = system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath: await tempContextPath() }))
     await tick()
 
@@ -67,7 +61,7 @@ describe('session agents use shared context snapshots', () => {
     const workflows = system.spawn('workflows', WorkflowsAgentFactory({
       model: 'test-model',
       maxToolLoops: 3,
-      workflowStoreRef: storeRef,
+      workflowsDir: '/tmp/nonexistent-workflows',
       workflowRunnerRef: runnerRef,
     })({ userId: 'u1', clientId: 'c1', llmRef, contextStoreRef }))
     await tick()

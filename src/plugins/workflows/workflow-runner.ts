@@ -14,10 +14,9 @@ import type {
   WorkflowRunState,
   Workflow,
   ExecutionToolSummary,
-  WorkflowStoreMsg,
-  WorkflowStoreReply,
 } from './types.ts'
 import { initialRunState, WorkflowRunExecutor } from './workflow-run-executor.ts'
+import { getWorkflow, type StoreResult, type GetResult } from './workflow-store.ts'
 import { validateInputValues } from './validation.ts'
 
 type RunnerState = {
@@ -136,7 +135,7 @@ const removeClient = (state: RunnerState, clientId: string): RunnerState => {
 }
 
 export const WorkflowRunner = (
-  workflowStoreRef: ActorRef<WorkflowStoreMsg>,
+  workflowsDir: string,
   workflowRunsDir: string,
   llmRef: ActorRef<LlmProviderMsg> | null,
   model: string,
@@ -150,15 +149,10 @@ export const WorkflowRunner = (
     const live = state.live[run.runId]
     if (live) return { ref: live, state }
 
-    const workflowReply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(
-      workflowStoreRef,
-      replyTo => ({ type: 'get', userId: run.userId, workflowId: run.workflowId, replyTo }),
-      { timeoutMs: 5_000 },
-    )
-    if (!workflowReply.ok || !('workflow' in workflowReply)) {
-      return { ok: false, error: workflowReply.ok ? 'Unexpected workflow store response.' : workflowReply.error, status: workflowReply.ok ? 500 : workflowReply.status }
-    }
-    const missingTool = missingExecutionTool(workflowReply.workflow, state.executionTools)
+    const workflowResult = await getWorkflow(workflowsDir, run.userId, run.workflowId)
+    if (!workflowResult.ok) return { ok: false, error: workflowResult.error, status: workflowResult.status }
+    const workflow = workflowResult.data.workflow
+    const missingTool = missingExecutionTool(workflow, state.executionTools)
     if (missingTool) {
       const blocked = blockedMissingToolRun(run, missingTool)
       await writeRun(workflowRunsDir, blocked)
@@ -168,7 +162,7 @@ export const WorkflowRunner = (
 
     const ref = ctx.spawn(
       `workflow-run-${run.runId}`,
-      WorkflowRunExecutor(workflowReply.workflow, workflowRunsDir, llmRef, model, maxToolLoops, run, filterWorkflowTools(workflowReply.workflow, state.executionTools)),
+      WorkflowRunExecutor(workflow, workflowRunsDir, llmRef, model, maxToolLoops, run, filterWorkflowTools(workflow, state.executionTools)),
     ) as ActorRef<WorkflowRunExecutorMsg>
     return { ref, state: { ...state, live: { ...state.live, [run.runId]: ref } } }
   }
@@ -199,18 +193,15 @@ export const WorkflowRunner = (
   ): ActorResult<WorkflowRunnerMsg, RunnerState> => {
     ctx.pipeToSelf(
       (async (): Promise<{ reply: WorkflowRunnerReply; live?: Record<string, ActorRef<WorkflowRunExecutorMsg>> }> => {
-        const workflowReply = await ask<WorkflowStoreMsg, WorkflowStoreReply>(
-          workflowStoreRef,
-          replyTo => ({ type: 'get', userId: msg.userId, workflowId: msg.workflowId, replyTo }),
-          { timeoutMs: 5_000 },
-        )
-        if (!workflowReply.ok || !('workflow' in workflowReply)) {
-          return { reply: { ok: false, error: workflowReply.ok ? 'Unexpected workflow store response.' : workflowReply.error, status: workflowReply.ok ? 500 : workflowReply.status } }
+        const workflowResult = await getWorkflow(workflowsDir, msg.userId, msg.workflowId)
+        if (!workflowResult.ok) {
+          return { reply: { ok: false, error: workflowResult.error, status: workflowResult.status } }
         }
-        const inputValidation = validateInputValues(workflowReply.workflow.inputs, msg.inputs)
+        const workflow = workflowResult.data.workflow
+        const inputValidation = validateInputValues(workflow.inputs, msg.inputs)
         if (!inputValidation.ok) return { reply: { ok: false, error: inputValidation.error, status: 400 } }
-        const run = initialRunState(workflowReply.workflow, crypto.randomUUID(), inputValidation.values)
-        const missingTool = missingExecutionTool(workflowReply.workflow, state.executionTools)
+        const run = initialRunState(workflow, crypto.randomUUID(), inputValidation.values)
+        const missingTool = missingExecutionTool(workflow, state.executionTools)
         if (missingTool) {
           const blocked = blockedMissingToolRun(run, missingTool)
           await writeRun(workflowRunsDir, blocked)
@@ -219,7 +210,7 @@ export const WorkflowRunner = (
         }
         const ref = ctx.spawn(
           `workflow-run-${run.runId}`,
-          WorkflowRunExecutor(workflowReply.workflow, workflowRunsDir, llmRef, model, maxToolLoops, run, filterWorkflowTools(workflowReply.workflow, state.executionTools)),
+          WorkflowRunExecutor(workflow, workflowRunsDir, llmRef, model, maxToolLoops, run, filterWorkflowTools(workflow, state.executionTools)),
         ) as ActorRef<WorkflowRunExecutorMsg>
         const startReply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
           ref,
