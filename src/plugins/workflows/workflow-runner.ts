@@ -1,5 +1,3 @@
-import { mkdir, readdir } from 'node:fs/promises'
-import { join } from 'node:path'
 import type { ActorContext, ActorDef, ActorRef, ActorResult } from '../../system/index.ts'
 import { ask, onLifecycle, onMessage } from '../../system/index.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
@@ -17,7 +15,7 @@ import type {
   WorkflowRunnerConfig,
 } from './types.ts'
 import { initialRunState, WorkflowRunExecutor } from './workflow-run-executor.ts'
-import { getWorkflow, type StoreResult, type GetResult } from './workflow-store.ts'
+import { getWorkflow, getWorkflowRun, listWorkflowRuns } from './workflow-store.ts'
 import { validateInputValues } from './validation.ts'
 
 type RunnerState = {
@@ -25,42 +23,6 @@ type RunnerState = {
   executionTools: ToolCollection
   clientsByUser: Record<string, string[]>
   clientUsers: Record<string, string>
-}
-
-const readRun = async (filepath: string): Promise<WorkflowRunState | null> => {
-  try {
-    const parsed = JSON.parse(await Bun.file(filepath).text()) as WorkflowRunState
-    return parsed && typeof parsed.runId === 'string' && typeof parsed.userId === 'string'
-      ? { ...parsed, inputs: parsed.inputs ?? {}, outputs: parsed.outputs ?? {} }
-      : null
-  } catch {
-    return null
-  }
-}
-
-const scanRuns = async (workflowRunsDir: string, userId: string): Promise<WorkflowRunState[]> => {
-  try {
-    const entries = await readdir(workflowRunsDir, { withFileTypes: true })
-    const loaded = await Promise.all(entries
-      .filter(entry => entry.isFile() && entry.name.endsWith('.json'))
-      .map(entry => readRun(join(workflowRunsDir, entry.name))))
-    return loaded
-      .filter((run): run is WorkflowRunState => run !== null && run.userId === userId)
-      .sort((a, b) => (b.events[0]?.timestamp ?? '').localeCompare(a.events[0]?.timestamp ?? ''))
-  } catch {
-    return []
-  }
-}
-
-const getRunFromDisk = async (workflowRunsDir: string, userId: string, runId: string): Promise<WorkflowRunnerReply> => {
-  const run = await readRun(join(workflowRunsDir, `${runId}.json`))
-  if (!run || run.userId !== userId) return { ok: false, error: `Workflow run not found: ${runId}`, status: 404 }
-  return { ok: true, run }
-}
-
-const writeRun = async (workflowRunsDir: string, run: WorkflowRunState): Promise<void> => {
-  await mkdir(workflowRunsDir, { recursive: true })
-  await Bun.write(join(workflowRunsDir, `${run.runId}.json`), JSON.stringify(run, null, 2))
 }
 
 const filterWorkflowTools = (workflow: Workflow, tools: ToolCollection): ToolCollection => {
@@ -72,42 +34,12 @@ const filterWorkflowTools = (workflow: Workflow, tools: ToolCollection): ToolCol
   return filtered
 }
 
-const missingExecutionTool = (workflow: Workflow, tools: ToolCollection): string | undefined =>
-  workflow.executionTools.find(name => !tools[name])
-
 const summarizeExecutionTools = (tools: ToolCollection): ExecutionToolSummary[] =>
   Object.values(tools).map(tool => ({
     name: tool.name,
     description: tool.schema.function.description,
     mayBeLongRunning: tool.mayBeLongRunning,
   }))
-
-const blockedMissingToolRun = (run: WorkflowRunState, missingTool: string): WorkflowRunState => {
-  const message = `Required execution tool is unavailable: ${missingTool}`
-  return {
-    ...run,
-    status: 'blocked',
-    taskStates: Object.fromEntries(Object.entries(run.taskStates).map(([taskId, task]) => [
-      taskId,
-      {
-        ...task,
-        status: 'blocked' as const,
-        error: message,
-        blockedReason: { type: 'task_blocked' as const, message },
-      },
-    ])),
-    events: [...run.events, { timestamp: new Date().toISOString(), type: 'runBlocked', message }],
-  }
-}
-
-const publishRunUpdate = (ctx: ActorContext<WorkflowRunnerMsg>, run: WorkflowRunState): void => {
-  ctx.publish(WorkflowRunUpdateTopic, {
-    userId: run.userId,
-    workflowId: run.workflowId,
-    runId: run.runId,
-    run,
-  })
-}
 
 const addClientForUser = (state: RunnerState, userId: string, clientId: string): RunnerState => {
   const base = state.clientUsers[clientId] && state.clientUsers[clientId] !== userId
@@ -152,13 +84,6 @@ export const WorkflowRunner = (
     const workflowResult = await getWorkflow(workflowsDir, run.userId, run.workflowId)
     if (!workflowResult.ok) return { ok: false, error: workflowResult.error, status: workflowResult.status }
     const workflow = workflowResult.data.workflow
-    const missingTool = missingExecutionTool(workflow, state.executionTools)
-    if (missingTool) {
-      const blocked = blockedMissingToolRun(run, missingTool)
-      await writeRun(workflowRunsDir, blocked)
-      publishRunUpdate(ctx, blocked)
-      return { ok: true, run: blocked }
-    }
 
     const ref = ctx.spawn(
       `workflow-run-${run.runId}`,
@@ -173,7 +98,7 @@ export const WorkflowRunner = (
     ctx: ActorContext<WorkflowRunnerMsg>,
   ): ActorResult<WorkflowRunnerMsg, RunnerState> => {
     ctx.pipeToSelf(
-      scanRuns(workflowRunsDir, msg.userId),
+      listWorkflowRuns(workflowRunsDir, msg.userId),
       runs => {
         msg.replyTo.send({ ok: true, runs })
         return { type: '_done' }
@@ -201,13 +126,6 @@ export const WorkflowRunner = (
         const inputValidation = validateInputValues(workflow.inputs, msg.inputs)
         if (!inputValidation.ok) return { reply: { ok: false, error: inputValidation.error, status: 400 } }
         const run = initialRunState(workflow, crypto.randomUUID(), inputValidation.values)
-        const missingTool = missingExecutionTool(workflow, state.executionTools)
-        if (missingTool) {
-          const blocked = blockedMissingToolRun(run, missingTool)
-          await writeRun(workflowRunsDir, blocked)
-          publishRunUpdate(ctx, blocked)
-          return { reply: { ok: true, run: blocked } }
-        }
         const ref = ctx.spawn(
           `workflow-run-${run.runId}`,
           WorkflowRunExecutor(workflow, workflowRunsDir, llmRef, model, maxToolLoops, run, filterWorkflowTools(workflow, state.executionTools)),
@@ -228,9 +146,34 @@ export const WorkflowRunner = (
     return { state }
   }
 
-  const getOrResumeRun = (
+  const getRun = (
     state: RunnerState,
-    msg: Extract<WorkflowRunnerMsg, { type: 'get' | 'resume' }>,
+    msg: Extract<WorkflowRunnerMsg, { type: 'get' }>,
+    ctx: ActorContext<WorkflowRunnerMsg>,
+  ): ActorResult<WorkflowRunnerMsg, RunnerState> => {
+    ctx.pipeToSelf(
+      (async (): Promise<WorkflowRunnerReply> => {
+        const live = state.live[msg.runId]
+        if (live) {
+          return await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
+            live,
+            replyTo => ({ type: 'get', replyTo }),
+            { timeoutMs: 5_000 },
+          )
+        }
+        const diskReply = await getWorkflowRun(workflowRunsDir, msg.userId, msg.runId)
+        if (!diskReply.ok) return diskReply
+        return { ok: true, run: diskReply.data }
+      })(),
+      reply => ({ type: '_reply' as const, replyTo: msg.replyTo, reply }),
+      error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { ok: false as const, error: String(error) } }),
+    )
+    return { state }
+  }
+
+  const resumeRun = (
+    state: RunnerState,
+    msg: Extract<WorkflowRunnerMsg, { type: 'resume' }>,
     ctx: ActorContext<WorkflowRunnerMsg>,
   ): ActorResult<WorkflowRunnerMsg, RunnerState> => {
     ctx.pipeToSelf(
@@ -239,15 +182,14 @@ export const WorkflowRunner = (
         if (live) {
           const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
             live,
-            replyTo => msg.type === 'get' ? { type: 'get', replyTo } : { type: 'resume', replyTo },
+            replyTo => ({ type: 'resume', replyTo }),
             { timeoutMs: 5_000 },
           )
           return { reply }
         }
-        const diskReply = await getRunFromDisk(workflowRunsDir, msg.userId, msg.runId)
-        if (!diskReply.ok || !('run' in diskReply)) return { reply: diskReply }
-        if (msg.type === 'get') return { reply: diskReply }
-        const ensured = await ensureRunActor(state, ctx, diskReply.run)
+        const diskReply = await getWorkflowRun(workflowRunsDir, msg.userId, msg.runId)
+        if (!diskReply.ok) return { reply: diskReply }
+        const ensured = await ensureRunActor(state, ctx, diskReply.data)
         if ('ok' in ensured) return { reply: ensured }
         const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
           ensured.ref,
@@ -324,8 +266,8 @@ export const WorkflowRunner = (
 
       list: listRuns,
       start: startRun,
-      get: getOrResumeRun,
-      resume: getOrResumeRun,
+      get: getRun,
+      resume: resumeRun,
     }),
   }
 }

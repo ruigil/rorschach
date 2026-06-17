@@ -204,3 +204,54 @@ export async function deleteWorkflow(workflowsDir: string, userId: string, workf
   await unlink(found.data.filepath)
   return { ok: true, data: { deleted: true, workflowId } }
 }
+
+const withRunDefaults = (run: WorkflowRunState): WorkflowRunState => ({
+  ...run,
+  inputs: run.inputs ?? {},
+  outputs: run.outputs ?? {},
+})
+
+const readRunFile = async (filepath: string): Promise<WorkflowRunState | null> => {
+  try {
+    const parsed = JSON.parse(await Bun.file(filepath).text()) as WorkflowRunState
+    return parsed && typeof parsed.runId === 'string' && typeof parsed.userId === 'string'
+      ? withRunDefaults(parsed)
+      : null
+  } catch {
+    return null
+  }
+}
+
+export async function listWorkflowRuns(workflowRunsDir: string, userId: string): Promise<WorkflowRunState[]> {
+  try {
+    const entries = await readdir(workflowRunsDir, { withFileTypes: true })
+    const loaded = await Promise.all(entries
+      .filter(entry => entry.isFile() && entry.name.endsWith('.json'))
+      .map(entry => readRunFile(join(workflowRunsDir, entry.name))))
+    return loaded
+      .filter((run): run is WorkflowRunState => run !== null && run.userId === userId)
+      .sort((a, b) => (b.events[0]?.timestamp ?? '').localeCompare(a.events[0]?.timestamp ?? ''))
+  } catch {
+    return []
+  }
+}
+
+export async function getWorkflowRun(workflowRunsDir: string, userId: string, runId: string): Promise<StoreResult<WorkflowRunState>> {
+  const filepath = join(workflowRunsDir, `${runId}.json`)
+  const run = await readRunFile(filepath)
+  if (!run || run.userId !== userId) {
+    return { ok: false, error: `Workflow run not found: ${runId}`, status: 404 }
+  }
+  return { ok: true, data: run }
+}
+
+export async function saveWorkflowRun(workflowRunsDir: string, run: WorkflowRunState): Promise<StoreResult<WorkflowRunState>> {
+  try {
+    await mkdir(workflowRunsDir, { recursive: true })
+    const filepath = join(workflowRunsDir, `${run.runId}.json`)
+    await Bun.write(filepath, JSON.stringify(run, null, 2))
+    return { ok: true, data: run }
+  } catch (err) {
+    return { ok: false, error: `Failed to save workflow run: ${String(err)}`, status: 500 }
+  }
+}

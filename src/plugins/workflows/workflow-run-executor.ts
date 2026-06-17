@@ -17,6 +17,7 @@ import type {
 } from './types.ts'
 import { WorkflowTaskExecutor } from './workflow-task-executor.ts'
 import { validateOutputValues } from './validation.ts'
+import { getWorkflowRun, saveWorkflowRun } from './workflow-store.ts'
 
 type RunExecutorState = {
   run: WorkflowRunState
@@ -53,6 +54,27 @@ const ensureArtifactRoot = (workflowRunsDir: string, runId: string): void => {
   mkdirSync(hostArtifactRoot(workflowRunsDir, runId), { recursive: true })
 }
 
+const missingExecutionTool = (workflow: Workflow, tools: ToolCollection): string | undefined =>
+  workflow.executionTools.find(name => !tools[name])
+
+const blockedMissingToolRun = (run: WorkflowRunState, missingTool: string): WorkflowRunState => {
+  const message = `Required execution tool is unavailable: ${missingTool}`
+  return {
+    ...run,
+    status: 'blocked',
+    taskStates: Object.fromEntries(Object.entries(run.taskStates).map(([taskId, task]) => [
+      taskId,
+      {
+        ...task,
+        status: 'blocked' as const,
+        error: message,
+        blockedReason: { type: 'task_blocked' as const, message },
+      },
+    ])),
+    events: [...run.events, { timestamp: new Date().toISOString(), type: 'runBlocked', message }],
+  }
+}
+
 const runPersistence = (
   workflowRunsDir: string,
   runId: string,
@@ -60,16 +82,11 @@ const runPersistence = (
   tools: ToolCollection,
 ): PersistenceAdapter<RunExecutorState> => ({
   load: async () => {
-    try {
-      const parsed = JSON.parse(await Bun.file(join(workflowRunsDir, `${runId}.json`)).text()) as WorkflowRunState
-      return { run: withRunDefaults(parsed), workflow, tools }
-    } catch {
-      return undefined
-    }
+    const result = await getWorkflowRun(workflowRunsDir, workflow.userId, runId)
+    return result.ok ? { run: result.data, workflow, tools } : undefined
   },
   save: async (state) => {
-    await mkdir(workflowRunsDir, { recursive: true })
-    await Bun.write(join(workflowRunsDir, `${state.run.runId}.json`), JSON.stringify(state.run, null, 2))
+    await saveWorkflowRun(workflowRunsDir, state.run)
   },
 })
 
@@ -298,6 +315,14 @@ export const WorkflowRunExecutor = (
     handler: onMessage<WorkflowRunExecutorMsg, RunExecutorState>({
       start: (state, msg, ctx) => {
         ensureArtifactRoot(workflowRunsDir, state.run.runId)
+        const missingTool = missingExecutionTool(state.workflow, state.tools)
+        if (missingTool) {
+          const blocked = blockedMissingToolRun(state.run, missingTool)
+          publishTerminalJob(ctx, blocked)
+          publishRunUpdate(ctx, blocked)
+          msg.replyTo.send({ ok: true, run: blocked })
+          return { state: { ...state, run: blocked } }
+        }
         const next = schedule(state, ctx)
         publishRunUpdate(ctx, next.run)
         msg.replyTo.send({ ok: true, run: next.run })
@@ -310,6 +335,14 @@ export const WorkflowRunExecutor = (
       },
 
       resume: (state, msg, ctx) => {
+        const missingTool = missingExecutionTool(state.workflow, state.tools)
+        if (missingTool) {
+          const blocked = blockedMissingToolRun(state.run, missingTool)
+          publishTerminalJob(ctx, blocked)
+          publishRunUpdate(ctx, blocked)
+          msg.replyTo.send({ ok: true, run: blocked })
+          return { state: { ...state, run: blocked } }
+        }
         const next = resumeRun(state, ctx)
         if (!next.ok) {
           msg.replyTo.send(next)
