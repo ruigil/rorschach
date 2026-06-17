@@ -138,24 +138,24 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
       contextStoreRef.send({ type: 'append', mode: WORKFLOWS_MODE, messages })
       return { state }
     },
-	    onToolResult: (state, result) => {
-	      if ((result.toolName === saveWorkflowTool.name || result.toolName === updateWorkflowTool.name) && result.reply.type === 'toolResult') {
-	        return { state: { ...state, pendingSaveSummary: result.reply.result.text } }
-	      }
-	      return { state }
-	    },
-	    onToolPending: (state, pending) => {
-	      const text = pending.placeholderText ?? `Background job started for ${pending.toolName} (jobId=${pending.jobId}).`
-	      contextStoreRef.send({
-	        type: 'append',
-	        mode: WORKFLOWS_MODE,
-	        source: 'assistant',
-	        clientId: state.activeClientId,
-	        messages: [{ role: 'assistant', content: text }],
-	      })
-	      return { state }
-	    },
-	  })
+    onToolResult: (state, result) => {
+      if ((result.toolName === saveWorkflowTool.name || result.toolName === updateWorkflowTool.name) && result.reply.type === 'toolResult') {
+        return { state: { ...state, pendingSaveSummary: result.reply.result.text } }
+      }
+      return { state }
+    },
+    onToolPending: (state, pending) => {
+      const text = pending.placeholderText ?? `Background job started for ${pending.toolName} (jobId=${pending.jobId}).`
+      contextStoreRef.send({
+        type: 'append',
+        mode: WORKFLOWS_MODE,
+        source: 'assistant',
+        clientId: state.activeClientId,
+        messages: [{ role: 'assistant', content: text }],
+      })
+      return { state }
+    },
+  })
 
   const host: Interceptor<M, S> = (state, msg, ctx, next) => {
     if (msg.type === 'userMessage') {
