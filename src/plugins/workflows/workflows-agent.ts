@@ -1,8 +1,8 @@
 import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/index.ts'
 import { onLifecycle } from '../../system/index.ts'
-import { agentLoop, idleLoopState } from '../../system/index.ts'
+import { agentLoop, idleLoopState, applyToolFilter } from '../../system/index.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
-import type { ToolCollection, ToolInvokeMsg, ToolMsg } from '../../types/tools.ts'
+import type { ToolCollection, ToolFilter, ToolInvokeMsg, ToolMsg } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
@@ -30,6 +30,7 @@ export type WorkflowsAgentConfig = {
   maxToolLoops: number
   workflowStoreRef: ActorRef<WorkflowStoreMsg>
   workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
+  toolFilter?: ToolFilter
 }
 
 const WORKFLOWS_MODE = 'workflows'
@@ -76,7 +77,7 @@ export const WorkflowsAgentFactory = (config: WorkflowsAgentConfig) =>
   (opts: AgentFactoryOpts): ActorDef<WorkflowsAgentMsg, WorkflowsAgentState> => WorkflowsAgent(config, opts)
 
 const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): ActorDef<WorkflowsAgentMsg, WorkflowsAgentState> => {
-  const { model, maxToolLoops, workflowStoreRef, workflowRunnerRef } = config
+  const { model, maxToolLoops, workflowStoreRef, workflowRunnerRef, toolFilter } = config
   const { userId, contextStoreRef, llmRef } = opts
 
   type M = WorkflowsAgentMsg
@@ -218,7 +219,7 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
       start: (state, ctx) => {
         ctx.subscribe(ContextSnapshotTopic, event => event.userId === userId ? { type: '_contextSnapshot' as const, ...event } : null)
         ctx.subscribe(ToolRegistrationTopic, event => {
-          if (event.name !== SWITCH_MODE_TOOL_NAME) return null
+          if (!applyToolFilter(event.name, toolFilter)) return null
           if ('schema' in event) {
             return {
               type: '_toolRegistered' as const,

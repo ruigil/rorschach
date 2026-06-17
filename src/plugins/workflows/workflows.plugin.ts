@@ -8,6 +8,7 @@ import { WorkflowRunner } from './workflow-runner.ts'
 import { WorkflowsAgentFactory } from './workflows-agent.ts'
 import { buildWorkflowsRoutes, workflowsSchemas } from './routes.ts'
 import type { WorkflowsConfig, WorkflowRunnerMsg, WorkflowStoreMsg } from './types.ts'
+import type { ToolFilter } from '../../types/tools.ts'
 
 type PluginMsg =
   | { type: 'config'; slice: WorkflowsConfig | undefined }
@@ -27,6 +28,7 @@ const defaultConfig: WorkflowsConfig = {
   agent: {
     model: 'z-ai/glm-5.1',
     maxToolLoops: 10,
+    toolFilter: { allow: ['switch_mode'] },
   },
 }
 
@@ -47,6 +49,7 @@ const buildDescriptor = (
     maxToolLoops: cfg.agent.maxToolLoops,
     workflowStoreRef: storeRef,
     workflowRunnerRef: runnerRef,
+    toolFilter: cfg.agent.toolFilter,
   }),
   capabilities: { userVisible: true },
 })

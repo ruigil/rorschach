@@ -1,5 +1,5 @@
 import { createTopic, type ActorRef } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolCollection, ToolReply, ToolMsg, ToolSchema } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolCollection, ToolReply, ToolMsg, ToolSchema, ToolFilter } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { LoopMsg, LoopState } from '../../system/index.ts'
 import type { MessageAttachment } from '../../types/events.ts'
@@ -65,6 +65,7 @@ export type WorkflowsConfig = {
   agent: {
     model: string
     maxToolLoops: number
+    toolFilter?: ToolFilter
   }
 }
 
