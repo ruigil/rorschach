@@ -1,6 +1,6 @@
 import { createTopic, type ActorRef } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolCollection, ToolReply, ToolMsg, ToolFilter, ToolSchema } from '../../types/tools.ts'
-import type { LlmProviderMsg } from '../../types/llm.ts'
+import type { ToolInvokeMsg, ToolCollection, ToolReply, ToolMsg, ToolFilter, ToolSchema, Tool, JobLifecycleEvent } from '../../types/tools.ts'
+import type { LlmProviderMsg, ApiMessage } from '../../types/llm.ts'
 import type { LoopMsg, LoopState } from '../../system/index.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 import type { ContextView } from '../../system/index.ts'
@@ -101,6 +101,7 @@ export type WorkflowTaskRunState = {
   outputs?: Record<string, WorkflowOutputValue>
   error?: string
   blockedReason?: WorkflowTaskBlockedReason
+  history?: ApiMessage[]
 }
 
 export type WorkflowRunState = {
@@ -209,7 +210,7 @@ export type WorkflowRunnerMsg =
   | { type: 'get'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'resume'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: '_reply'; replyTo: ActorRef<WorkflowRunnerReply>; reply: WorkflowRunnerReply; runId?: string; spawnedRef?: ActorRef<WorkflowRunExecutorMsg> }
-  | { type: '_toolRegistered'; tool: import('../../types/tools.ts').Tool }
+  | { type: '_toolRegistered'; tool: Tool }
   | { type: '_toolUnregistered'; name: string }
   | { type: '_clientConnected'; userId: string; clientId: string }
   | { type: '_clientDisconnected'; clientId: string }
@@ -224,11 +225,11 @@ export type WorkflowRunExecutorMsg =
   | { type: 'start'; replyTo: ActorRef<WorkflowRunExecutorReply> }
   | { type: 'get'; replyTo: ActorRef<WorkflowRunExecutorReply> }
   | { type: 'resume'; replyTo: ActorRef<WorkflowRunExecutorReply> }
-  | { type: 'taskWaiting'; taskId: string; actorName: string; jobId: string; toolName: string; toolCallId?: string }
+  | { type: 'taskWaiting'; taskId: string; actorName: string; jobId: string; toolName: string; toolCallId?: string; history?: ApiMessage[] }
   | { type: 'taskCompleted'; taskId: string; summary: string; outputs: Record<string, WorkflowOutputValue> }
   | { type: 'taskBlocked'; taskId: string; message: string }
   | { type: 'taskFailed'; taskId: string; error: string }
-  | { type: '_jobRegistry'; event: import('../../types/tools.ts').JobLifecycleEvent }
+  | { type: '_jobRegistry'; event: JobLifecycleEvent }
   | { type: '_done' }
 
 export type WorkflowTaskExecutorMsg =
@@ -239,7 +240,7 @@ export type WorkflowTaskExecutorMsg =
       inputs: Record<string, unknown>
       artifactRoot: string
       dependencyOutputs: Record<string, WorkflowDependencyOutput>
-      resumeContext?: string
+      history?: ApiMessage[]
       userId: string
       clientId?: string
     }>

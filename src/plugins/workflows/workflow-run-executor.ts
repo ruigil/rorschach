@@ -121,8 +121,7 @@ const dependencyOutputs = (run: WorkflowRunState, task: WorkflowTask): Record<st
     },
   ]))
 
-const formatResumeContext = (toolName: string, text: string): string =>
-  `A previously pending tool completed.\n\nTool: ${toolName}\nResult:\n${text}\n\nContinue from this result. When done, call complete_workflow_task. If blocked, call block_workflow_task.`
+
 
 const readyTasks = (workflow: Workflow, run: WorkflowRunState): WorkflowTask[] =>
   workflow.tasks.filter(task =>
@@ -197,7 +196,7 @@ export const WorkflowRunExecutor = (
   initialRun: WorkflowRunState,
   tools: ToolCollection,
 ): ActorDef<WorkflowRunExecutorMsg, RunExecutorState> => {
-  const schedule = (state: RunExecutorState, ctx: ActorContext<WorkflowRunExecutorMsg>, resumeContexts: Record<string, string> = {}): RunExecutorState => {
+  const schedule = (state: RunExecutorState, ctx: ActorContext<WorkflowRunExecutorMsg>): RunExecutorState => {
     if (state.run.status !== 'running') return state
     let run = state.run
     for (const task of readyTasks(state.workflow, run)) {
@@ -211,7 +210,7 @@ export const WorkflowRunExecutor = (
         inputs: run.inputs,
         artifactRoot: toolArtifactRoot(workflowRunsDir, run.runId),
         dependencyOutputs: dependencyOutputs(run, task),
-        ...(resumeContexts[task.id] ? { resumeContext: resumeContexts[task.id] } : {}),
+        history: run.taskStates[task.id]?.history,
         userId: run.userId,
         clientId: run.clientId,
       })
@@ -361,6 +360,13 @@ export const WorkflowRunExecutor = (
           ...state.run,
           activeTaskIds: state.run.activeTaskIds.filter(id => id !== msg.taskId),
           activeTasks,
+          taskStates: {
+            ...state.run.taskStates,
+            [msg.taskId]: {
+              ...(state.run.taskStates[msg.taskId] ?? fallbackTaskState()),
+              history: msg.history,
+            }
+          },
           pendingJobs: {
             ...state.run.pendingJobs,
             [msg.jobId]: {
@@ -435,6 +441,15 @@ export const WorkflowRunExecutor = (
             : `Tool ${pending.toolName} failed: ${jobEvent.error}`
           const withJobCleared = { ...state, run: { ...state.run, pendingJobs } }
           if (jobEvent.status === 'completed') {
+            const prevHistory = state.run.taskStates[pending.taskId]?.history ?? []
+            const updatedHistory = [
+              ...prevHistory,
+              {
+                role: 'tool' as const,
+                tool_call_id: pending.toolCallId ?? '',
+                content: summary,
+              }
+            ]
             const run = appendEvent({
               ...withJobCleared.run,
               status: 'running',
@@ -445,10 +460,11 @@ export const WorkflowRunExecutor = (
                   status: 'pending',
                   error: undefined,
                   blockedReason: undefined,
+                  history: updatedHistory,
                 },
               },
             }, 'taskToolCompleted', `Pending tool ${pending.toolName} completed; retrying task ${pending.taskId}.`, pending.taskId)
-            const next = schedule({ ...withJobCleared, run }, ctx, { [pending.taskId]: formatResumeContext(pending.toolName, summary) })
+            const next = schedule({ ...withJobCleared, run }, ctx)
             publishRunUpdate(ctx, next.run)
             return { state: next }
           }

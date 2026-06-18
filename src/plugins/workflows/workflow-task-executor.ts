@@ -178,6 +178,17 @@ export const WorkflowTaskExecutor = (
     },
     onToolPending: (state, pending, ctx) => {
       if (state.task) {
+        const assistantToolCalls = state.loop.turn.pendingBatch?.calls.map(c => ({
+          id: c.id,
+          type: 'function' as const,
+          function: { name: c.name, arguments: c.arguments }
+        }))
+        const assistantMsg = { role: 'assistant' as const, content: null, tool_calls: assistantToolCalls }
+        const history = [
+          ...(state.loop.turn.turnMessages ?? []),
+          assistantMsg
+        ]
+
         parentRef.send({
           type: 'taskWaiting',
           taskId: state.task.id,
@@ -185,6 +196,7 @@ export const WorkflowTaskExecutor = (
           jobId: pending.jobId,
           toolName: pending.toolName,
           toolCallId: pending.toolCallId,
+          history,
         })
       }
       return { state }
@@ -208,8 +220,9 @@ export const WorkflowTaskExecutor = (
       clientId: msg.clientId,
       terminalSignaled: false,
     }
+    const messages = msg.history ?? buildMessages(msg.workflow, msg.task, msg.inputs, msg.artifactRoot, msg.dependencyOutputs)
     return loop.startTurn(next, {
-      messages: buildMessages(msg.workflow, msg.task, msg.inputs, msg.artifactRoot, msg.dependencyOutputs, msg.resumeContext),
+      messages,
       userId: msg.userId,
       clientId: msg.clientId,
     }, ctx)

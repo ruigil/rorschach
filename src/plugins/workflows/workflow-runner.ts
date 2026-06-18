@@ -223,6 +223,18 @@ export const WorkflowRunner = (
         ctx.subscribe(WorkflowRunUpdateTopic, event => ({ type: '_runUpdated' as const, event }))
         return { state }
       },
+      terminated: (state, event, ctx) => {
+        const match = event.ref.name.match(/^workflow-run-(.+)$/)
+        if (match && match[1]) {
+          const runId = match[1]
+          if (state.live[runId]) {
+            const { [runId]: _, ...live } = state.live
+            ctx.log.info('Workflow run executor terminated; removed from runner cache.', { runId })
+            return { state: { ...state, live } }
+          }
+        }
+        return { state }
+      }
     }),
     handler: onMessage<WorkflowRunnerMsg, RunnerState>({
       _toolRegistered: (state, msg) => {
@@ -243,24 +255,43 @@ export const WorkflowRunner = (
       },
 
       _runUpdated: (state, msg, ctx) => {
+        const run = msg.event.run
         const clients = state.clientsByUser[msg.event.userId] ?? []
         const text = JSON.stringify({
           type: 'workflowRunUpdated',
           workflowId: msg.event.workflowId,
           runId: msg.event.runId,
-          run: msg.event.run,
+          run,
         })
         for (const clientId of clients) {
           ctx.publish(OutboundMessageTopic, { clientId, text })
+        }
+
+        const isTerminal = run.status === 'completed' || run.status === 'failed' || run.status === 'blocked'
+        if (isTerminal) {
+          const liveRef = state.live[msg.event.runId]
+          if (liveRef) {
+            ctx.stop(liveRef)
+            const { [msg.event.runId]: _, ...live } = state.live
+            ctx.log.info('Workflow run is terminal; stopping executor actor and removing from live cache.', { runId: msg.event.runId, status: run.status })
+            return { state: { ...state, live } }
+          }
         }
         return { state }
       },
 
       _done: (state) => ({ state }),
 
-      _reply: (state, msg) => {
+      _reply: (state, msg, ctx) => {
         msg.replyTo.send(msg.reply)
         if (msg.runId && msg.spawnedRef) {
+          const run = msg.reply.ok && 'run' in msg.reply ? msg.reply.run : null
+          const isTerminal = run && (run.status === 'completed' || run.status === 'failed' || run.status === 'blocked')
+          if (isTerminal) {
+            ctx.stop(msg.spawnedRef)
+            ctx.log.info('Immediate terminal reply; stopping run executor and bypassing live cache.', { runId: msg.runId, status: run.status })
+            return { state }
+          }
           return { state: { ...state, live: { ...state.live, [msg.runId]: msg.spawnedRef } } }
         }
         return { state }
