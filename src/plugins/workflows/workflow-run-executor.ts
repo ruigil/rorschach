@@ -78,20 +78,14 @@ const blockedMissingToolRun = (run: WorkflowRunState, missingTool: string): Work
   }
 }
 
-const runPersistence = (
-  workflowRunsDir: string,
-  runId: string,
-  workflow: Workflow,
-  tools: ToolCollection,
-): PersistenceAdapter<RunExecutorState> => ({
-  load: async () => {
-    const result = await getWorkflowRun(workflowRunsDir, workflow.userId, runId)
-    return result.ok ? { run: result.data, workflow, tools } : undefined
-  },
-  save: async (state) => {
-    await saveWorkflowRun(workflowRunsDir, state.run)
-  },
-})
+const filterWorkflowTools = (workflow: Workflow, tools: ToolCollection): ToolCollection => {
+  const filtered: ToolCollection = {}
+  for (const name of workflow.executionTools) {
+    const tool = tools[name]
+    if (tool) filtered[name] = tool
+  }
+  return filtered
+}
 
 const initialTaskStates = (workflow: Workflow): Record<string, WorkflowTaskRunState> =>
   Object.fromEntries(workflow.tasks.map(task => [task.id, { status: 'pending', attempts: 0 }]))
@@ -113,6 +107,7 @@ export const initialRunState = (
   activeTasks: {},
   pendingJobs: {},
   events: [{ timestamp: now(), type: 'runStarted', message: `Workflow run ${runId} started.` }],
+  workflow,
 })
 
 const dependencyOutputs = (run: WorkflowRunState, task: WorkflowTask): Record<string, WorkflowDependencyOutput> =>
@@ -191,14 +186,30 @@ const publishRunUpdate = (ctx: ActorContext<WorkflowRunExecutorMsg>, run: Workfl
 }
 
 export const WorkflowRunExecutor = (
-  workflow: Workflow,
   workflowRunsDir: string,
   llmRef: ActorRef<LlmProviderMsg> | null,
   model: string,
   maxToolLoops: number,
-  initialRun: WorkflowRunState,
-  tools: ToolCollection,
+  allTools: ToolCollection,
+  userId: string,
+  runId: string,
 ): ActorDef<WorkflowRunExecutorMsg, RunExecutorState> => {
+
+  const runPersistence = (): PersistenceAdapter<RunExecutorState> => ({
+    load: async () => {
+      const result = await getWorkflowRun(workflowRunsDir, userId, runId)
+      if (result.ok) {
+        const run = result.data
+        const workflow = run.workflow
+        const tools = filterWorkflowTools(workflow, allTools)
+        return { run, workflow, tools }
+      }
+      return undefined
+    },
+    save: async (state) => {
+      await saveWorkflowRun(workflowRunsDir, state.run)
+    },
+  })
   const schedule = (state: RunExecutorState, ctx: ActorContext<WorkflowRunExecutorMsg>): RunExecutorState => {
     if (state.run.status !== 'running') return state
     let run = state.run
@@ -306,8 +317,8 @@ export const WorkflowRunExecutor = (
   }
 
   return {
-    initialState: () => ({ run: initialRun, workflow, tools }),
-    persistence: runPersistence(workflowRunsDir, initialRun.runId, workflow, tools),
+    initialState: () => ({ run: null as any, workflow: null as any, tools: {} }),
+    persistence: runPersistence(),
     lifecycle: onLifecycle<WorkflowRunExecutorMsg, RunExecutorState>({
       start: (state, ctx) => {
         ctx.subscribe(JobRegistryTopic, jobEvent => ({ type: '_jobRegistry' as const, event: jobEvent }))
@@ -335,12 +346,22 @@ export const WorkflowRunExecutor = (
         return { state: next }
       },
 
-      get: (state, msg) => {
+      get: (state, msg, ctx) => {
+        if (!state.run) {
+          msg.replyTo.send({ ok: false, error: `Workflow run not found: ${runId}`, status: 404 })
+          ctx.stop(ctx.self)
+          return { state }
+        }
         msg.replyTo.send({ ok: true, run: state.run })
         return { state }
       },
 
       resume: (state, msg, ctx) => {
+        if (!state.run) {
+          msg.replyTo.send({ ok: false, error: `Workflow run not found: ${runId}`, status: 404 })
+          ctx.stop(ctx.self)
+          return { state }
+        }
         const missingTool = missingExecutionTool(state.workflow, state.tools)
         if (missingTool) {
           const blocked = blockedMissingToolRun(state.run, missingTool)

@@ -90,6 +90,7 @@ const sampleRun = (): WorkflowRunState => ({
     { timestamp: '2026-05-16T10:00:00.000Z', type: 'runStarted', message: 'Run started.' },
     { timestamp: '2026-05-16T10:01:00.000Z', type: 'taskStarted', taskId: 'build', message: 'Task build started.' },
   ],
+  workflow: sampleWorkflow('u1'),
 })
 
 const FakeRunner = (): ActorDef<WorkflowRunnerMsg, null> => ({

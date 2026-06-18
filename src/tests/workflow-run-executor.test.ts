@@ -7,6 +7,7 @@ import { WorkflowRunExecutor, initialRunState } from '../plugins/workflows/workf
 import { WorkflowRunUpdateTopic, type Workflow, type WorkflowRunExecutorMsg, type WorkflowRunExecutorReply, type WorkflowRunState } from '../plugins/workflows/types.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import { JobRegistryTopic, type ToolCollection, type ToolMsg, type ToolReply } from '../types/tools.ts'
+import { saveWorkflowRun } from '../plugins/workflows/workflow-store.ts'
 
 const tempDirs: string[] = []
 
@@ -73,9 +74,10 @@ describe('workflow run executor', () => {
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
 
     const run = initialRunState(workflow, 'run-1')
+    await saveWorkflowRun(dir, run)
     const executor = system.spawn(
       'workflow-run-run-1',
-      WorkflowRunExecutor(workflow, dir, null, 'test-model', 1, run, tools),
+      WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
     const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
@@ -121,9 +123,10 @@ describe('workflow run executor', () => {
         },
       },
     }
+    await saveWorkflowRun(dir, run)
     const executor = system.spawn(
       'workflow-run-complete-update',
-      WorkflowRunExecutor(workflow, dir, null, 'test-model', 1, run, tools),
+      WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
     executor.send({ type: 'taskCompleted', taskId: 'read-task', summary: 'Read the file.', outputs: {} })
@@ -160,9 +163,10 @@ describe('workflow run executor', () => {
         },
       },
     }
+    await saveWorkflowRun(dir, run)
     const executor = system.spawn(
       'workflow-run-run-2',
-      WorkflowRunExecutor(workflow, dir, null, 'test-model', 1, run, tools),
+      WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
     const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
@@ -200,9 +204,10 @@ describe('workflow run executor', () => {
         },
       },
     }
+    await saveWorkflowRun(dir, run)
     const executor = system.spawn(
       'workflow-run-task-blocked',
-      WorkflowRunExecutor(workflow, dir, null, 'test-model', 1, run, tools),
+      WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
     const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
@@ -246,9 +251,10 @@ describe('workflow run executor', () => {
         },
       },
     }
+    await saveWorkflowRun(dir, run)
     const executor = system.spawn(
       'workflow-run-stale-active',
-      WorkflowRunExecutor(workflow, dir, null, 'test-model', 1, run, tools),
+      WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
     const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
@@ -286,9 +292,10 @@ describe('workflow run executor', () => {
         },
       },
     }
+    await saveWorkflowRun(dir, run)
     const executor = system.spawn(
       'workflow-run-failed',
-      WorkflowRunExecutor(workflow, dir, null, 'test-model', 1, run, tools),
+      WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
     const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
@@ -325,9 +332,10 @@ describe('workflow run executor', () => {
         },
       },
     }
+    await saveWorkflowRun(dir, run)
     const executor = system.spawn(
       'workflow-run-noop',
-      WorkflowRunExecutor(workflow, dir, null, 'test-model', 1, run, tools),
+      WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
     const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
@@ -371,9 +379,10 @@ describe('workflow run executor', () => {
         },
       },
     }
+    await saveWorkflowRun(dir, run)
     const executor = system.spawn(
       'workflow-run-run-3',
-      WorkflowRunExecutor(workflow, dir, llmRef, 'test-model', 1, run, tools),
+      WorkflowRunExecutor(dir, llmRef, 'test-model', 1, tools, workflow.userId, run.runId),
     )
     await Bun.sleep(30)
 

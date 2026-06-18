@@ -78,6 +78,7 @@ const runState = (): WorkflowRunState => ({
     },
   },
   events: [],
+  workflow: workflow(),
 })
 
 const runningRunState = (inputs: Record<string, unknown> = {}): WorkflowRunState => ({

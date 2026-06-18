@@ -131,6 +131,7 @@ export type WorkflowRunState = {
     taskId?: string
     message: string
   }>
+  workflow: Workflow
 }
 
 export type WorkflowRunUpdateEvent = {

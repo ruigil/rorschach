@@ -150,6 +150,7 @@ describe('workflow runner', () => {
         pendingJobs: {},
         taskStates: {},
         events: [],
+        workflow: workflow(['read']),
       },
     })
     await Bun.sleep(30)
@@ -177,6 +178,7 @@ describe('workflow runner', () => {
         pendingJobs: {},
         taskStates: {},
         events: [],
+        workflow: workflow(['read']),
       },
     })
     await Bun.sleep(30)
