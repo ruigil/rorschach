@@ -27,6 +27,9 @@ type RunExecutorState = {
 
 const now = (): string => new Date().toISOString()
 
+const isTerminalStatus = (status: string): boolean =>
+  status === 'completed' || status === 'failed' || status === 'blocked'
+
 const appendEvent = (run: WorkflowRunState, type: string, message: string, taskId?: string): WorkflowRunState => ({
   ...run,
   events: [...run.events, { timestamp: now(), type, message, ...(taskId ? { taskId } : {}) }],
@@ -320,10 +323,14 @@ export const WorkflowRunExecutor = (
           publishTerminalJob(ctx, blocked)
           publishRunUpdate(ctx, blocked)
           msg.replyTo.send({ ok: true, run: blocked })
+          ctx.stop(ctx.self)
           return { state: { ...state, run: blocked } }
         }
         const next = schedule(state, ctx)
         publishRunUpdate(ctx, next.run)
+        if (isTerminalStatus(next.run.status)) {
+          ctx.stop(ctx.self)
+        }
         msg.replyTo.send({ ok: true, run: next.run })
         return { state: next }
       },
@@ -340,6 +347,7 @@ export const WorkflowRunExecutor = (
           publishTerminalJob(ctx, blocked)
           publishRunUpdate(ctx, blocked)
           msg.replyTo.send({ ok: true, run: blocked })
+          ctx.stop(ctx.self)
           return { state: { ...state, run: blocked } }
         }
         const next = resumeRun(state, ctx)
@@ -348,6 +356,9 @@ export const WorkflowRunExecutor = (
           return { state }
         }
         publishRunUpdate(ctx, next.state.run)
+        if (isTerminalStatus(next.state.run.status)) {
+          ctx.stop(ctx.self)
+        }
         msg.replyTo.send({ ok: true, run: next.state.run })
         return { state: next.state }
       },
@@ -384,6 +395,9 @@ export const WorkflowRunExecutor = (
       taskCompleted: (state, msg, ctx) => {
         const next = completeTask(state, msg.taskId, msg.summary, msg.outputs, ctx)
         publishRunUpdate(ctx, next.run)
+        if (isTerminalStatus(next.run.status)) {
+          ctx.stop(ctx.self)
+        }
         return { state: next }
       },
 
@@ -408,6 +422,7 @@ export const WorkflowRunExecutor = (
         }, 'taskBlocked', msg.message, msg.taskId)
         publishTerminalJob(ctx, run)
         publishRunUpdate(ctx, run)
+        ctx.stop(ctx.self)
         return { state: { ...state, run } }
       },
 
@@ -427,6 +442,7 @@ export const WorkflowRunExecutor = (
         }, 'taskFailed', msg.error, msg.taskId)
         publishTerminalJob(ctx, run)
         publishRunUpdate(ctx, run)
+        ctx.stop(ctx.self)
         return { state: { ...state, run } }
       },
 
@@ -466,11 +482,15 @@ export const WorkflowRunExecutor = (
             }, 'taskToolCompleted', `Pending tool ${pending.toolName} completed; retrying task ${pending.taskId}.`, pending.taskId)
             const next = schedule({ ...withJobCleared, run }, ctx)
             publishRunUpdate(ctx, next.run)
+            if (isTerminalStatus(next.run.status)) {
+              ctx.stop(ctx.self)
+            }
             return { state: next }
           }
           const failedRun = appendEvent({ ...withJobCleared.run, status: 'failed' }, 'taskFailed', summary, pending.taskId)
           publishTerminalJob(ctx, failedRun)
           publishRunUpdate(ctx, failedRun)
+          ctx.stop(ctx.self)
           return { state: { ...withJobCleared, run: failedRun } }
         }
         return { state }

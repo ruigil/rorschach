@@ -266,17 +266,6 @@ export const WorkflowRunner = (
         for (const clientId of clients) {
           ctx.publish(OutboundMessageTopic, { clientId, text })
         }
-
-        const isTerminal = run.status === 'completed' || run.status === 'failed' || run.status === 'blocked'
-        if (isTerminal) {
-          const liveRef = state.live[msg.event.runId]
-          if (liveRef) {
-            ctx.stop(liveRef)
-            const { [msg.event.runId]: _, ...live } = state.live
-            ctx.log.info('Workflow run is terminal; stopping executor actor and removing from live cache.', { runId: msg.event.runId, status: run.status })
-            return { state: { ...state, live } }
-          }
-        }
         return { state }
       },
 
@@ -285,13 +274,6 @@ export const WorkflowRunner = (
       _reply: (state, msg, ctx) => {
         msg.replyTo.send(msg.reply)
         if (msg.runId && msg.spawnedRef) {
-          const run = msg.reply.ok && 'run' in msg.reply ? msg.reply.run : null
-          const isTerminal = run && (run.status === 'completed' || run.status === 'failed' || run.status === 'blocked')
-          if (isTerminal) {
-            ctx.stop(msg.spawnedRef)
-            ctx.log.info('Immediate terminal reply; stopping run executor and bypassing live cache.', { runId: msg.runId, status: run.status })
-            return { state }
-          }
           return { state: { ...state, live: { ...state.live, [msg.runId]: msg.spawnedRef } } }
         }
         return { state }
