@@ -1,5 +1,4 @@
-import { mkdir } from 'node:fs/promises'
-import { mkdirSync } from 'node:fs'
+
 import { join, relative, resolve, sep } from 'node:path'
 import type { ActorContext, ActorDef, ActorRef, PersistenceAdapter } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
@@ -17,7 +16,7 @@ import type {
 } from './types.ts'
 import { WorkflowTaskExecutor } from './workflow-task-executor.ts'
 import { validateOutputValues } from './validation.ts'
-import { getWorkflowRun, saveWorkflowRun } from './workflow-store.ts'
+import { getWorkflowRun, saveWorkflowRun, initialRunState } from './workflow-store.ts'
 
 type RunExecutorState = {
   run: WorkflowRunState
@@ -42,19 +41,12 @@ const withRunDefaults = (run: WorkflowRunState): WorkflowRunState => ({
   inputs: run.inputs ?? {},
   outputs: run.outputs ?? {},
 })
-
-const hostArtifactRoot = (workflowRunsDir: string, runId: string): string => join(workflowRunsDir, runId)
-
 const toolArtifactRoot = (workflowRunsDir: string, runId: string): string => {
   const workspaceRoot = resolve('workspace')
   const runsRoot = resolve(workflowRunsDir)
   const rel = relative(workspaceRoot, runsRoot)
   if (rel && !rel.startsWith('..') && rel !== '..') return `/workspace/${rel.split(sep).join('/')}/${runId}`
   return `/workspace/workflows/runs/${runId}`
-}
-
-const ensureArtifactRoot = (workflowRunsDir: string, runId: string): void => {
-  mkdirSync(hostArtifactRoot(workflowRunsDir, runId), { recursive: true })
 }
 
 const missingExecutionTool = (workflow: Workflow, tools: ToolCollection): string | undefined =>
@@ -86,29 +78,6 @@ const filterWorkflowTools = (workflow: Workflow, tools: ToolCollection): ToolCol
   }
   return filtered
 }
-
-const initialTaskStates = (workflow: Workflow): Record<string, WorkflowTaskRunState> =>
-  Object.fromEntries(workflow.tasks.map(task => [task.id, { status: 'pending', attempts: 0 }]))
-
-export const initialRunState = (
-  workflow: Workflow,
-  runId: string,
-  inputs: Record<string, unknown> = {},
-): WorkflowRunState => ({
-  schemaVersion: 1,
-  runId,
-  workflowId: workflow.id,
-  userId: workflow.userId,
-  status: 'running',
-  inputs,
-  outputs: {},
-  activeTaskIds: [],
-  taskStates: initialTaskStates(workflow),
-  activeTasks: {},
-  pendingJobs: {},
-  events: [{ timestamp: now(), type: 'runStarted', message: `Workflow run ${runId} started.` }],
-  workflow,
-})
 
 const dependencyOutputs = (run: WorkflowRunState, task: WorkflowTask): Record<string, WorkflowDependencyOutput> =>
   Object.fromEntries(task.dependencies.map(depId => [
@@ -214,7 +183,6 @@ export const WorkflowRunExecutor = (
     if (state.run.status !== 'running') return state
     let run = state.run
     for (const task of readyTasks(state.workflow, run)) {
-      ensureArtifactRoot(workflowRunsDir, run.runId)
       const actorName = `workflow-task-${run.runId}-${task.id}-${(run.taskStates[task.id]?.attempts ?? 0) + 1}`
       const child = ctx.spawn(actorName, WorkflowTaskExecutor(ctx.self, llmRef, model, maxToolLoops, state.tools))
       child.send({
@@ -327,7 +295,6 @@ export const WorkflowRunExecutor = (
     }),
     handler: onMessage<WorkflowRunExecutorMsg, RunExecutorState>({
       start: (state, msg, ctx) => {
-        ensureArtifactRoot(workflowRunsDir, state.run.runId)
         const missingTool = missingExecutionTool(state.workflow, state.tools)
         if (missingTool) {
           const blocked = blockedMissingToolRun(state.run, missingTool)

@@ -4,7 +4,7 @@ import type { RouteRegistration } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import type { Identity } from '../../types/identity.ts'
 import type { WorkflowRunnerMsg, WorkflowRunnerReply } from './types.ts'
-import { getWorkflow, getWorkflowGraph, listWorkflows, type StoreResult } from './workflow-store.ts'
+import { getWorkflow, getWorkflowGraph, listWorkflows, type StoreResult, createWorkflowRun } from './workflow-store.ts'
 import { isRunArtifactRef, validArtifactPath } from './validation.ts'
 import { join, relative, resolve } from 'node:path'
 
@@ -148,7 +148,25 @@ export const buildWorkflowsRoutes = (
       if (!workflowRunnerRef) return json({ error: 'Workflow runner unavailable' }, 503)
       const workflowId = workflowIdFromPath(url.pathname, '/runs')
       if (!workflowId) return json({ error: 'Not found' }, 404)
-      const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'start', userId: session.userId, workflowId, replyTo }), { timeoutMs: 10_000 })
+
+      // 1. Initialize the run using the store helper
+      const body = await _req.json().catch(() => ({}))
+      const result = await createWorkflowRun(workflowsDir, workflowRunsDir, session.userId, workflowId, body.inputs)
+      if (!result.ok) return json({ error: result.error }, result.status ?? 500)
+      const { run, workflow } = result.data
+
+      // 2. Invoke runner actor synchronously
+      const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+        workflowRunnerRef,
+        replyTo => ({
+          type: 'start',
+          run,
+          workflow,
+          replyTo,
+        }),
+        { timeoutMs: 10_000 },
+      )
+
       if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
       if (!('run' in reply)) return json({ error: 'Unexpected workflow runner response' }, 500)
       return json(reply.run, 202)

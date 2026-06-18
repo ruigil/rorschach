@@ -14,9 +14,8 @@ import type {
   ExecutionToolSummary,
   WorkflowRunnerConfig,
 } from './types.ts'
-import { initialRunState, WorkflowRunExecutor } from './workflow-run-executor.ts'
-import { getWorkflow, getWorkflowRun, listWorkflowRuns, saveWorkflowRun } from './workflow-store.ts'
-import { validateInputValues } from './validation.ts'
+import { WorkflowRunExecutor } from './workflow-run-executor.ts'
+import { getWorkflowRun, listWorkflowRuns } from './workflow-store.ts'
 
 type RunnerState = {
   live: Record<string, ActorRef<WorkflowRunExecutorMsg>>
@@ -103,39 +102,29 @@ export const WorkflowRunner = (
     msg: Extract<WorkflowRunnerMsg, { type: 'start' }>,
     ctx: ActorContext<WorkflowRunnerMsg>,
   ): ActorResult<WorkflowRunnerMsg, RunnerState> => {
+    const runId = msg.run.runId
+    if (state.live[runId]) {
+      msg.replyTo.send({ ok: false, error: `Workflow run ${runId} is already active.`, status: 409 })
+      return { state }
+    }
+
+    const ref = ctx.spawn(
+      `workflow-run-${runId}`,
+      WorkflowRunExecutor(workflowRunsDir, llmRef, model, maxToolLoops, state.executionTools, msg.run.userId, runId),
+    ) as ActorRef<WorkflowRunExecutorMsg>
+
+    const nextState = { ...state, live: { ...state.live, [runId]: ref } }
+
     ctx.pipeToSelf(
-      (async (): Promise<{ reply: WorkflowRunnerReply; runId?: string; spawnedRef?: ActorRef<WorkflowRunExecutorMsg> }> => {
-        const workflowResult = await getWorkflow(workflowsDir, msg.userId, msg.workflowId)
-        if (!workflowResult.ok) {
-          return { reply: { ok: false, error: workflowResult.error, status: workflowResult.status } }
-        }
-        const workflow = workflowResult.data.workflow
-        const inputValidation = validateInputValues(workflow.inputs, msg.inputs)
-        if (!inputValidation.ok) return { reply: { ok: false, error: inputValidation.error, status: 400 } }
-        const run = initialRunState(workflow, crypto.randomUUID(), inputValidation.values)
-        const saveResult = await saveWorkflowRun(workflowRunsDir, run)
-        if (!saveResult.ok) {
-          return { reply: { ok: false, error: saveResult.error, status: saveResult.status } }
-        }
-        const ref = ctx.spawn(
-          `workflow-run-${run.runId}`,
-          WorkflowRunExecutor(workflowRunsDir, llmRef, model, maxToolLoops, state.executionTools, msg.userId, run.runId),
-        ) as ActorRef<WorkflowRunExecutorMsg>
-        const startReply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
-          ref,
-          replyTo => ({ type: 'start', replyTo }),
-          { timeoutMs: 5_000 },
-        )
-        return {
-          reply: startReply.ok ? { ok: true, run: startReply.run } : startReply,
-          runId: run.runId,
-          spawnedRef: ref,
-        }
-      })(),
-      result => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: result.reply, runId: result.runId, spawnedRef: result.spawnedRef }),
+      ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
+        ref,
+        replyTo => ({ type: 'start', replyTo }),
+        { timeoutMs: 5_000 },
+      ),
+      reply => ({ type: '_reply' as const, replyTo: msg.replyTo, reply }),
       error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { ok: false as const, error: String(error) } }),
     )
-    return { state }
+    return { state: nextState }
   }
 
   const getRun = (
@@ -260,11 +249,8 @@ export const WorkflowRunner = (
 
       _done: (state) => ({ state }),
 
-      _reply: (state, msg, ctx) => {
+      _reply: (state, msg) => {
         msg.replyTo.send(msg.reply)
-        if (msg.runId && msg.spawnedRef) {
-          return { state: { ...state, live: { ...state.live, [msg.runId]: msg.spawnedRef } } }
-        }
         return { state }
       },
 

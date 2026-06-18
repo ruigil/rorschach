@@ -7,9 +7,11 @@ import type {
   WorkflowRunnerReply,
   WorkflowTask,
   WorkflowValueSpec,
+  WorkflowRunState,
 } from './types.ts'
-import { getWorkflow, getWorkflowGraph, listWorkflows, saveWorkflow, updateWorkflow, deleteWorkflow } from './workflow-store.ts'
+import { getWorkflow, getWorkflowGraph, listWorkflows, saveWorkflow, updateWorkflow, deleteWorkflow, createWorkflowRun } from './workflow-store.ts'
 import { validateWorkflow } from './validation.ts'
+import { join } from 'node:path'
 
 const valueSpecSchema = {
   type: 'object',
@@ -285,7 +287,25 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
   if (msg.toolName === startWorkflowRunTool.name) {
     const arg = startWorkflowArg(msg.arguments)
     if (!arg.ok) return toolError(arg.error)
-    const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'start', userId: msg.userId, clientId: msg.clientId, workflowId: arg.workflowId, inputs: arg.inputs, replyTo }), { timeoutMs: 10_000 })
+
+    // 1. Initialize the run using the store helper
+    const runsDir = join(workflowsDir, 'runs')
+    const result = await createWorkflowRun(workflowsDir, runsDir, msg.userId, arg.workflowId, arg.inputs)
+    if (!result.ok) return toolError(result.error)
+    const { run, workflow } = result.data
+
+    // 2. Invoke runner actor synchronously
+    const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+      workflowRunnerRef,
+      replyTo => ({
+        type: 'start',
+        run,
+        workflow,
+        replyTo,
+      }),
+      { timeoutMs: 10_000 },
+    )
+
     if (!reply.ok || !('run' in reply)) return toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
     publishGraph(msg.clientId, reply.run.workflowId, reply.run.runId)
     if (reply.run.status !== 'running') {

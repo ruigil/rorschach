@@ -3,11 +3,11 @@ import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { AgentSystem, ask, defineTool, type ActorDef } from '../system/index.ts'
-import { WorkflowRunExecutor, initialRunState } from '../plugins/workflows/workflow-run-executor.ts'
+import { WorkflowRunExecutor } from '../plugins/workflows/workflow-run-executor.ts'
 import { WorkflowRunUpdateTopic, type Workflow, type WorkflowRunExecutorMsg, type WorkflowRunExecutorReply, type WorkflowRunState } from '../plugins/workflows/types.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import { JobRegistryTopic, type ToolCollection, type ToolMsg, type ToolReply } from '../types/tools.ts'
-import { saveWorkflowRun } from '../plugins/workflows/workflow-store.ts'
+import { saveWorkflowRun, initialRunState } from '../plugins/workflows/workflow-store.ts'
 
 const tempDirs: string[] = []
 

@@ -205,7 +205,7 @@ export type WorkflowRunnerReply =
   | { ok: false; error: string; status?: number }
 
 export type WorkflowRunnerMsg =
-  | { type: 'start'; userId: string; clientId?: string; workflowId: string; inputs?: Record<string, unknown>; replyTo: ActorRef<WorkflowRunnerReply> }
+  | { type: 'start'; run: WorkflowRunState; workflow: Workflow; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'list'; userId: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'listExecutionTools'; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'get'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }

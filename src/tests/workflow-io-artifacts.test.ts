@@ -196,7 +196,7 @@ describe('workflow IO and artifacts', () => {
     }))
 
     const reply = await handleWorkflowTool(
-      { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1' }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'anonymous', clientId: 'client-1' },
+      { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1', inputs: { city: 'Paris' } }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'anonymous', clientId: 'client-1' },
       { workflowsDir: join(dir, '..'), workflowRunnerRef: runner, publishGraph: () => {} },
     )
 
@@ -247,8 +247,8 @@ const CapturingRunner = (capture: (inputs: Record<string, unknown> | undefined) 
   initialState: null,
   handler: (state, msg) => {
     if (msg.type === 'start') {
-      capture(msg.inputs)
-      const reply: WorkflowRunnerReply = { ok: true, run: runningRunState(msg.inputs ?? {}) }
+      capture(msg.run.inputs)
+      const reply: WorkflowRunnerReply = { ok: true, run: msg.run }
       msg.replyTo.send(reply)
     } else if ('replyTo' in msg) {
       msg.replyTo.send({ ok: false, error: 'not implemented' })

@@ -6,8 +6,9 @@ import type {
   WorkflowRunState,
   WorkflowSummary,
   WorkflowValueSpec,
+  WorkflowTaskRunState,
 } from './types.ts'
-import { validateWorkflow } from './validation.ts'
+import { validateWorkflow, validateInputValues } from './validation.ts'
 
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every(item => typeof item === 'string')
@@ -254,4 +255,51 @@ export async function saveWorkflowRun(workflowRunsDir: string, run: WorkflowRunS
   } catch (err) {
     return { ok: false, error: `Failed to save workflow run: ${String(err)}`, status: 500 }
   }
+}
+
+const initialTaskStates = (workflow: Workflow): Record<string, WorkflowTaskRunState> =>
+  Object.fromEntries(workflow.tasks.map(task => [task.id, { status: 'pending', attempts: 0 }]))
+
+export const initialRunState = (
+  workflow: Workflow,
+  runId: string,
+  inputs: Record<string, unknown> = {},
+): WorkflowRunState => ({
+  schemaVersion: 1,
+  runId,
+  workflowId: workflow.id,
+  userId: workflow.userId,
+  status: 'running',
+  inputs,
+  outputs: {},
+  activeTaskIds: [],
+  taskStates: initialTaskStates(workflow),
+  activeTasks: {},
+  pendingJobs: {},
+  events: [{ timestamp: new Date().toISOString(), type: 'runStarted', message: `Workflow run ${runId} started.` }],
+  workflow,
+})
+
+export async function createWorkflowRun(
+  workflowsDir: string,
+  workflowRunsDir: string,
+  userId: string,
+  workflowId: string,
+  inputs: Record<string, unknown> | undefined,
+): Promise<StoreResult<{ run: WorkflowRunState; workflow: Workflow }>> {
+  const workflowResult = await getWorkflow(workflowsDir, userId, workflowId)
+  if (!workflowResult.ok) return workflowResult
+
+  const inputValidation = validateInputValues(workflowResult.data.workflow.inputs, inputs)
+  if (!inputValidation.ok) return { ok: false, error: inputValidation.error, status: 400 }
+
+  const run = initialRunState(workflowResult.data.workflow, crypto.randomUUID(), inputValidation.values)
+
+  const saveResult = await saveWorkflowRun(workflowRunsDir, run)
+  if (!saveResult.ok) return saveResult
+
+  const runArtifactDir = join(workflowRunsDir, run.runId)
+  await mkdir(runArtifactDir, { recursive: true })
+
+  return { ok: true, data: { run, workflow: workflowResult.data.workflow } }
 }

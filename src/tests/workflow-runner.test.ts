@@ -4,10 +4,11 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { AgentSystem, ask, defineTool, type ActorDef } from '../system/index.ts'
 import { WorkflowRunner } from '../plugins/workflows/workflow-runner.ts'
-import { WorkflowRunUpdateTopic, type Workflow, type WorkflowRunnerMsg, type WorkflowRunnerReply } from '../plugins/workflows/types.ts'
+import { WorkflowRunUpdateTopic, type Workflow, type WorkflowRunnerMsg, type WorkflowRunnerReply, type WorkflowRunState } from '../plugins/workflows/types.ts'
 import { startWorkflowRunTool } from '../plugins/workflows/tools.ts'
 import { ToolRegistrationTopic, type ToolMsg, type ToolReply } from '../types/tools.ts'
 import { ClientPresenceTopic, OutboundMessageTopic } from '../types/events.ts'
+import { initialRunState } from '../plugins/workflows/workflow-store.ts'
 
 const tempDirs: string[] = []
 
@@ -71,7 +72,7 @@ const spawnRunner = async (runWorkflow: Workflow) => {
   await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(runWorkflow))
   const system = await AgentSystem()
   const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowsDir, workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
-  return { system, runner }
+  return { system, runner, runsDir, workflowsDir }
 }
 
 describe('workflow runner', () => {
@@ -82,12 +83,16 @@ describe('workflow runner', () => {
 
     const workflowsDir = await makeDir('rorschach-workflows')
     const runsDir = await makeDir('rorschach-workflow-runs')
-    await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(workflow(['read'])))
+    const wf = workflow(['read'])
+    await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(wf))
     const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowsDir, workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
+
+    const run = initialRunState(wf, 'run-id-1')
+    await writeFile(join(runsDir, 'run-id-1.json'), JSON.stringify(run))
 
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       runner,
-      replyTo => ({ type: 'start', userId: 'u1', workflowId: 'workflow-1', replyTo }),
+      replyTo => ({ type: 'start', run, workflow: wf, replyTo }),
       { timeoutMs: 1_000 },
     )
 
@@ -101,13 +106,17 @@ describe('workflow runner', () => {
   })
 
   test('blocks before spawning when a required execution tool is missing', async () => {
-    const { system, runner } = await spawnRunner(workflow(['missing_tool']))
+    const wf = workflow(['missing_tool'])
+    const { system, runner, runsDir } = await spawnRunner(wf)
     const updates: Array<{ userId: string; runId: string; runStatus: string }> = []
     system.subscribe(WorkflowRunUpdateTopic, event => updates.push({ userId: event.userId, runId: event.runId, runStatus: event.run.status }))
 
+    const run = initialRunState(wf, 'run-id-2')
+    await writeFile(join(runsDir, 'run-id-2.json'), JSON.stringify(run))
+
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       runner,
-      replyTo => ({ type: 'start', userId: 'u1', workflowId: 'workflow-1', replyTo }),
+      replyTo => ({ type: 'start', run, workflow: wf, replyTo }),
       { timeoutMs: 1_000 },
     )
 
@@ -196,7 +205,8 @@ describe('workflow runner', () => {
 
     const workflowsDir = await makeDir('rorschach-workflows')
     const runsDir = await makeDir('rorschach-workflow-runs')
-    await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(workflow([startWorkflowRunTool.name, switchModeTool.name])))
+    const wf = workflow([startWorkflowRunTool.name, switchModeTool.name])
+    await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(wf))
     const runner = system.spawn('workflow-runner-control', WorkflowRunner({ workflowsDir, workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
 
     const listed = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
@@ -209,9 +219,12 @@ describe('workflow runner', () => {
       expect(listed.executionTools.map(tool => tool.name).sort()).toEqual([startWorkflowRunTool.name, switchModeTool.name].sort())
     }
 
+    const run = initialRunState(wf, 'run-id-3')
+    await writeFile(join(runsDir, 'run-id-3.json'), JSON.stringify(run))
+
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       runner,
-      replyTo => ({ type: 'start', userId: 'u1', workflowId: 'workflow-1', replyTo }),
+      replyTo => ({ type: 'start', run, workflow: wf, replyTo }),
       { timeoutMs: 1_000 },
     )
 
