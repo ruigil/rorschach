@@ -55,7 +55,7 @@ export const validateWorkflow = (workflow: Workflow): string[] => {
   if (typeof workflow.goal !== 'string' || !workflow.goal.trim()) errors.push('goal must be a non-empty string')
   if (typeof workflow.context !== 'string' || !workflow.context.trim()) errors.push('context must be a non-empty string')
   const executionTools = validateStringArray('executionTools', workflow.executionTools, errors)
-  const workflowInputs = validateSpecMap('inputs', workflow.inputs, errors)
+  validateSpecMap('inputs', workflow.inputs, errors)
   const workflowOutputs = validateSpecMap('outputs', workflow.outputs, errors)
 
   if (!Array.isArray(workflow.tasks) || workflow.tasks.length === 0) {
@@ -114,7 +114,6 @@ export const validateWorkflow = (workflow: Workflow): string[] => {
   }
   if ([...byId.keys()].some(visit)) errors.push('workflow dependency graph must be acyclic')
 
-  void workflowInputs
   for (const key of Object.keys(workflowOutputs)) {
     if (!taskOutputOwners.has(key)) errors.push(`workflow output is not declared by any task output: ${key}`)
   }

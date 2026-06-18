@@ -206,7 +206,7 @@ export async function deleteWorkflow(workflowsDir: string, userId: string, workf
   return { ok: true, data: { deleted: true, workflowId } }
 }
 
-const withRunDefaults = (run: WorkflowRunState): WorkflowRunState => ({
+export const withRunDefaults = (run: WorkflowRunState): WorkflowRunState => ({
   ...run,
   inputs: run.inputs ?? {},
   outputs: run.outputs ?? {},

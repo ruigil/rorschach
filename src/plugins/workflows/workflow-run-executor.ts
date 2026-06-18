@@ -16,7 +16,7 @@ import type {
 } from './types.ts'
 import { WorkflowTaskExecutor } from './workflow-task-executor.ts'
 import { validateOutputValues } from './validation.ts'
-import { getWorkflowRun, saveWorkflowRun, initialRunState } from './workflow-store.ts'
+import { getWorkflowRun, saveWorkflowRun, initialRunState, withRunDefaults } from './workflow-store.ts'
 
 type RunExecutorState = {
   run: WorkflowRunState
@@ -36,11 +36,6 @@ const appendEvent = (run: WorkflowRunState, type: string, message: string, taskI
 
 const fallbackTaskState = (): WorkflowTaskRunState => ({ status: 'pending', attempts: 0 })
 
-const withRunDefaults = (run: WorkflowRunState): WorkflowRunState => ({
-  ...run,
-  inputs: run.inputs ?? {},
-  outputs: run.outputs ?? {},
-})
 const toolArtifactRoot = (workflowRunsDir: string, runId: string): string => {
   const workspaceRoot = resolve('workspace')
   const runsRoot = resolve(workflowRunsDir)
