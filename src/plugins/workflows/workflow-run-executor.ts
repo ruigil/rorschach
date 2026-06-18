@@ -1,5 +1,5 @@
 
-import { join, relative, resolve, sep } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
 import type { ActorContext, ActorDef, ActorRef, PersistenceAdapter } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { JobRegistryTopic, type ToolCollection } from '../../types/tools.ts'

@@ -1,6 +1,5 @@
 import type { ActorContext, ActorDef, ActorRef, ActorResult } from '../../system/index.ts'
 import { ask, onLifecycle, onMessage } from '../../system/index.ts'
-import type { LlmProviderMsg } from '../../types/llm.ts'
 import { ToolRegistrationTopic, type ToolCollection } from '../../types/tools.ts'
 import { ClientPresenceTopic, OutboundMessageTopic } from '../../types/events.ts'
 import { WorkflowRunUpdateTopic } from './types.ts'
@@ -9,8 +8,6 @@ import type {
   WorkflowRunExecutorReply,
   WorkflowRunnerMsg,
   WorkflowRunnerReply,
-  WorkflowRunState,
-  Workflow,
   ExecutionToolSummary,
   WorkflowRunnerConfig,
 } from './types.ts'
