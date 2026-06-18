@@ -199,7 +199,9 @@ export const WorkflowRunner = (
         return { state }
       },
       terminated: (state, event, ctx) => {
-        const match = event.ref.name.match(/^workflow-run-(.+)$/)
+        const parts = event.ref.name.split('/')
+        const childName = parts[parts.length - 1] || ''
+        const match = childName.match(/^workflow-run-(.+)$/)
         if (match && match[1]) {
           const runId = match[1]
           if (state.live[runId]) {

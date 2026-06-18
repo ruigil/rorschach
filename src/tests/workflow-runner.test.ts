@@ -254,4 +254,44 @@ describe('workflow runner', () => {
 
     await system.shutdown()
   })
+
+  test('removes terminated workflow run from runner cache and resolves via disk', async () => {
+    const system = await AgentSystem()
+    const toolRef = system.spawn('fake-read-tool', FakeTool())
+    system.publishRetained(ToolRegistrationTopic, readTool.name, { ...readTool, ref: toolRef })
+
+    const workflowsDir = await makeDir('rorschach-workflows')
+    const runsDir = await makeDir('rorschach-workflow-runs')
+    const wf = workflow(['read'])
+    await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(wf))
+    const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowsDir, workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
+
+    const run = initialRunState(wf, 'run-id-cleanup')
+    await writeFile(join(runsDir, 'run-id-cleanup.json'), JSON.stringify(run))
+
+    const startReply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+      runner,
+      replyTo => ({ type: 'start', run, workflow: wf, replyTo }),
+      { timeoutMs: 1_000 },
+    )
+    expect(startReply.ok).toBe(true)
+
+    // Stop the child actor representing the workflow run
+    await system.stop({ name: 'system/workflow-runner/workflow-run-run-id-cleanup' })
+    await Bun.sleep(100) // allow lifecycle/termination to process
+
+    // Call get: since the actor was terminated, it should have been removed from the runner cache
+    // and fetched successfully from the disk (runsDir)
+    const getReply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+      runner,
+      replyTo => ({ type: 'get', userId: 'u1', runId: 'run-id-cleanup', replyTo }),
+      { timeoutMs: 1_000 },
+    )
+    expect(getReply.ok).toBe(true)
+    if (getReply.ok && 'run' in getReply) {
+      expect(getReply.run.runId).toBe('run-id-cleanup')
+    }
+
+    await system.shutdown()
+  })
 })
