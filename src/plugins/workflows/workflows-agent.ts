@@ -22,7 +22,7 @@ import {
   showWorkflowGraphTool,
   startWorkflowRunTool,
   updateWorkflowTool,
-} from './tools.ts'
+} from './workflow-tools.ts'
 import type { WorkflowsAgentMsg } from './types.ts'
 
 type WorkflowsAgentState = {

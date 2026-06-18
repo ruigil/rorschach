@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { AgentSystem, type ActorDef, type ActorRef } from '../system/index.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
-import { handleWorkflowTool, startWorkflowRunTool } from '../plugins/workflows/tools.ts'
+import { handleWorkflowTool, startWorkflowRunTool } from '../plugins/workflows/workflow-tools.ts'
 import { parseTaskCompletionArgs } from '../plugins/workflows/workflow-task-executor.ts'
 import { validateInputValues, validateWorkflow } from '../plugins/workflows/validation.ts'
 import type {
