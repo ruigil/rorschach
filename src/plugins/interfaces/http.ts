@@ -5,7 +5,7 @@ import { emit } from '../../system/index.ts'
 import {
   InboundMessageTopic,
   UserPresenceTopic,
-  OutboundUserMessageTopic, OutboundBroadcastTopic, OutboundAdminBroadcastTopic,
+  OutboundUserMessageTopic, OutboundAdminBroadcastTopic,
   type MessageAttachment,
 } from '../../types/events.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
@@ -48,7 +48,6 @@ export type HttpMessage =
   | { type: 'listAgents'; clientId: string }
   | { type: '_mediaSaved'; clientId: string; userId: string; text: string; attachments: MessageAttachment[] }
   | { type: 'closed'; clientId: string }
-  | { type: 'broadcast'; text: string }
   | { type: 'adminBroadcast'; text: string }
   | { type: 'send'; userId: string; text: string }
   | { type: '_configSchemaChanged'; section: ConfigSchemaSection }
@@ -395,10 +394,6 @@ export const HTTP = (
         }
       },
 
-      broadcast: (state, message) => {
-        state.server?.publish(CHANNEL, message.text)
-        return { state }
-      },
 
       adminBroadcast: (state, message) => {
         state.server?.publish(ADMIN_CHANNEL, message.text)
@@ -488,11 +483,6 @@ export const HTTP = (
         context.subscribe(OutboundUserMessageTopic, (e) => ({
           type: 'send' as const,
           userId: e.userId,
-          text: e.text,
-        }))
-
-        context.subscribe(OutboundBroadcastTopic, (e) => ({
-          type: 'broadcast' as const,
           text: e.text,
         }))
 

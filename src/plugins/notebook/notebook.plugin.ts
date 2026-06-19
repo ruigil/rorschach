@@ -5,14 +5,13 @@ import { defineTool } from '../../system/index.ts'
 import { ToolRegistrationTopic, type ToolCollection, type ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 
-import type { NotebookConfig, NoteAgentMsg, TodoReminderMsg } from './types.ts'
+import type { NotebookConfig, NoteAgentMsg } from './types.ts'
 
 import { Journal, journalWriteTool, journalReadTool, journalSearchTool } from './tools/journal.ts'
 import { Tracker, trackerLogTool, trackerStatsTool, trackerDefineHabitTool, trackerListHabitsTool } from './tools/tracker.ts'
 import { Todos, todosCreateTool, todosCompleteTool, todosListTool, todosDeleteTool, todosUpdateTool } from './tools/todos.ts'
 import { Search, notebookSearchTool } from './tools/search.ts'
 import { NoteAgent } from './note-agent.ts'
-import { TodoReminder } from './todo-reminder.ts'
 import { buildNotebookRoutes, notebookSchemas } from './routes.ts'
 
 // ─── Public tool schema ───
@@ -74,7 +73,6 @@ type PluginState = {
   todosRef:             ActorRef<ToolMsg> | null
   searchRef:            ActorRef<ToolMsg> | null
   noteAgentRef:         ActorRef<NoteAgentMsg>  | null
-  reminderRef:          ActorRef<TodoReminderMsg> | null
 }
 
 const config = defineConfig<NotebookConfig>('notebook', {
@@ -112,7 +110,7 @@ const buildToolCollection = (
 
 type SpawnResult = Pick<PluginState,
   'journalRef' | 'trackerRef' | 'todosRef' | 'searchRef' |
-  'noteAgentRef' | 'reminderRef'
+  'noteAgentRef'
 >
 
 const spawnChildren = (
@@ -143,13 +141,7 @@ const spawnChildren = (
     ref: noteAgentRef as unknown as ActorRef<ToolMsg>,
   })
 
-  // Spawn todo reminder
-  const reminderRef = ctx.spawn(
-    `todo-reminder-${gen}`,
-    TodoReminder(notebookDir),
-  ) as ActorRef<TodoReminderMsg>
-
-  return { journalRef, trackerRef, todosRef, searchRef, noteAgentRef, reminderRef }
+  return { journalRef, trackerRef, todosRef, searchRef, noteAgentRef }
 }
 
 const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void => {
@@ -158,7 +150,6 @@ const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void =>
   if (state.todosRef)     ctx.stop(state.todosRef)
   if (state.searchRef)    ctx.stop(state.searchRef)
   if (state.noteAgentRef) ctx.stop(state.noteAgentRef)
-  if (state.reminderRef)  ctx.stop(state.reminderRef)
   ctx.deleteRetained(ToolRegistrationTopic, noteTool.name, { name: noteTool.name, ref: null })
 }
 
@@ -182,7 +173,6 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
     todosRef:            null,
     searchRef:           null,
     noteAgentRef:        null,
-    reminderRef:         null,
   },
 
   lifecycle: onLifecycle({

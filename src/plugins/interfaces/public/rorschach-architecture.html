@@ -871,13 +871,13 @@
 <span class="kw">const</span> createTopic = &lt;T&gt;(name: <span class="ty">string</span>) =&gt; name <span class="kw">as</span> <span class="ty">EventTopic</span>&lt;T&gt;
 
 <span class="cm">// Exemple de topics de domaine</span>
-<span class="kw">const</span> <span class="ty">InboundTopic</span> = createTopic&lt;<span class="ty">InboundMessageEvent</span>&gt;(<span class="st">'client.inbound'</span>)
+<span class="kw">const</span> <span class="ty">InboundTopic</span> = createTopic&lt;<span class="ty">InboundMessageEvent</span>&gt;(<span class="st">'user.inbound'</span>)
 <span class="kw">const</span> <span class="ty">OutboundTopic</span> = createTopic&lt;<span class="ty">OutboundMessageEvent</span>&gt;(<span class="st">'client.outbound'</span>)</div>
 
           <div style="margin-top:16px">
             <table class="compare" style="font-size:11px">
               <tr><th>Topic</th><th>Éditeur</th><th>Abonné(s)</th></tr>
-              <tr><td>client.inbound</td><td>Interfaces</td><td>Session Manager</td></tr>
+              <tr><td>user.inbound</td><td>Interfaces</td><td>Session Manager</td></tr>
               <tr><td>client.outbound</td><td>Chatbot</td><td>Interfaces → clients</td></tr>
               <tr><td>cognitive.llm-provider</td><td>Plugin LLM</td><td>Chatbot, Outils</td></tr>
               <tr><td>context.snapshot</td><td>Context Store</td><td>Agents, User Context, Consolidation</td></tr>              <tr><td>tools.registration</td><td>Actors outils</td><td>Chatbot (registre)</td></tr>

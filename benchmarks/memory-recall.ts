@@ -5,7 +5,7 @@ import memoryPlugin from '../src/plugins/memory/memory.plugin.ts'
 import observabilityPlugin from '../src/plugins/observability/observability.plugin.ts'
 import {
   UserPresenceTopic,
-  InboundMessageTopic, OutboundUserMessageTopic, OutboundBroadcastTopic,
+  InboundMessageTopic, OutboundUserMessageTopic, OutboundAdminBroadcastTopic,
 } from '../src/types/events.ts'
 import type { OutboundUserMessageEvent } from '../src/types/events.ts'
 import { TraceTopic } from '../src/system/index.ts'
@@ -93,7 +93,7 @@ system.subscribe(TraceTopic, (span: TraceSpan) => {
     names.push(span.data.toolName as string)
     toolCallsPerTrace.set(span.traceId, names)
   }
-  system.publish(OutboundBroadcastTopic, { text: JSON.stringify({ type: 'trace', ...span }) })
+  system.publish(OutboundAdminBroadcastTopic, { text: JSON.stringify({ type: 'trace', ...span }) })
 })
 
 // ─── Log subscription ───
@@ -104,14 +104,14 @@ system.subscribe(LogTopic, (event) => {
     console.log(`[${log.level.toUpperCase()}] [${log.source}] ${log.message}`)
   }
   // Forward to UI
-  system.publish(OutboundBroadcastTopic, { text: JSON.stringify({ type: 'log', ...log }) })
+  system.publish(OutboundAdminBroadcastTopic, { text: JSON.stringify({ type: 'log', ...log }) })
 })
 
 // ─── Metrics subscription ───
 
 system.subscribe(MetricsTopic, (event) => {
   // Forward to UI
-  system.publish(OutboundBroadcastTopic, { text: JSON.stringify({ type: 'metrics', ...event }) })
+  system.publish(OutboundAdminBroadcastTopic, { text: JSON.stringify({ type: 'metrics', ...event }) })
 })
 
 // ─── Judge Implementation ───

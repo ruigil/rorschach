@@ -24,7 +24,7 @@ export type InboundMessageEvent = {
 }
 
 /** Topic published when any interface (HTTP/WS, Signal, CLI) receives a message from a client. */
-export const InboundMessageTopic = createTopic<InboundMessageEvent>('client.inbound')
+export const InboundMessageTopic = createTopic<InboundMessageEvent>('user.inbound')
 
 export type UserPresenceEvent =
   | { status: 'present'; userId: string; source: 'http' | 'signal' | 'cli' }
@@ -44,11 +44,8 @@ export const OutboundUserMessageTopic = createTopic<OutboundUserMessageEvent>('u
 
 export type OutboundBroadcastEvent = { text: string }
 
-/** Topic for broadcasting a message to all connected clients across all interfaces. */
-export const OutboundBroadcastTopic = createTopic<OutboundBroadcastEvent>('client.outbound.broadcast')
-
 /** Topic for broadcasting admin-only observability messages to privileged clients. */
-export const OutboundAdminBroadcastTopic = createTopic<OutboundBroadcastEvent>('client.outbound.admin.broadcast')
+export const OutboundAdminBroadcastTopic = createTopic<OutboundBroadcastEvent>('admin.outbound.broadcast')
 
 // ─── Domain event: emitted by cron actor to trigger a user-specific proactive message ───
 

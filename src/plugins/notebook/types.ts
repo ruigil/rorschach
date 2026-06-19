@@ -32,9 +32,3 @@ export type NotebookConfig = {
 // ─── Note agent message protocol ───
 
 export type NoteAgentMsg = LoopMsg | ToolInvokeMsg | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
-
-// ─── Todo reminder message protocol ───
-
-export type TodoReminderMsg =
-  | { type: '_scan' }
-  | { type: '_tick'; todoId: string; text: string }
