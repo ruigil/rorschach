@@ -47,23 +47,41 @@ export type CodingAgentState = {
   activeClientId: string
 }
 
-export type DocsAgentExtra =
-  | { type: 'invoke' } & ToolInvokeMsg
-  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_finishJob'; jobId: string; clientId?: string; userId: string }
+export type DocsJobExecutorExtra =
+  | { type: 'startJob'; clientId?: string; userId: string }
 
-export type DocsAgentMsg = LoopMsg<DocsAgentExtra>
+export type DocsJobExecutorMsg = LoopMsg<DocsJobExecutorExtra>
 
-export type DocsAgentState = {
+export type DocsJobExecutorState = {
   loop: LoopState
   llmRef: ActorRef<LlmProviderMsg> | null
-  currentJob: {
+  pagesWritten: number
+  startedAt: number
+  clientId?: string
+  userId?: string
+}
+
+export type DocsAgentMsg =
+  | { type: 'invoke' } & ToolInvokeMsg
+  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_pagesWrittenUpdated'; jobId: string; pagesWritten: number }
+  | { type: '_jobCompleted'; jobId: string }
+  | { type: '_jobFailed'; jobId: string; error: string }
+
+export type DocsAgentState = {
+  llmRef: ActorRef<LlmProviderMsg> | null
+  activeJobs: Record<string, {
     jobId: string
+    executorRef: ActorRef<DocsJobExecutorMsg>
     query: string
     clientId?: string
     userId: string
     pagesWritten: number
-  } | null
+  }>
+}
+
+export type ArtifactState = {
+  writing: boolean
 }
 
 export type ProjectShellMsg =

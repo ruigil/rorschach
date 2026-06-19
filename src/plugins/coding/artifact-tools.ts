@@ -1,9 +1,9 @@
 import { mkdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
+import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../system/index.ts'
 import { defineTool, onMessage, parseToolArgs } from '../../system/index.ts'
 import type { ToolReply } from '../../types/tools.ts'
-import type { ArtifactToolsMsg, DocPageMeta, DocsManifest } from './types.ts'
+import type { ArtifactState, ArtifactToolsMsg, DocPageMeta, DocsManifest } from './types.ts'
 
 export const writeDocPageTool = defineTool('write_doc_page', 'Write one generated documentation page. Content should be semantic HTML for the page body; the tool wraps it in the app documentation shell.', {
   type: 'object',
@@ -32,8 +32,6 @@ type PageArgs = {
   bodyHtml: string
   sourcePaths: string[]
 }
-
-type ArtifactState = Record<string, never>
 
 const escapeHtml = (value: string): string =>
   value
@@ -242,12 +240,15 @@ const tocScript = `(async () => {
   }
 })();`
 
-export const ArtifactTools = (artifactsDir: string): ActorDef<ArtifactToolsMsg, ArtifactState> => ({
-  initialState: () => ({}),
-  handler: onMessage<ArtifactToolsMsg, ArtifactState>({
+export const ArtifactTools = (artifactsDir: string): ActorDef<ArtifactToolsMsg, ArtifactState> => {
+  const handler: MessageHandler<ArtifactToolsMsg, ArtifactState> = onMessage<ArtifactToolsMsg, ArtifactState>({
     _done: (state) => ({ state }),
 
     invoke: (state, msg, ctx) => {
+      if (state.writing) {
+        return { state, stash: true }
+      }
+
       const parent = ctx.trace.fromHeaders()
       const span: SpanHandle | null = parent
         ? ctx.trace.child(parent.traceId, parent.spanId, msg.toolName, { toolName: msg.toolName })
@@ -300,7 +301,7 @@ export const ArtifactTools = (artifactsDir: string): ActorDef<ArtifactToolsMsg, 
           () => ({ type: '_writeDone' as const, replyTo: msg.replyTo, text: `Wrote ${filename}`, span }),
           error => ({ type: '_writeErr' as const, replyTo: msg.replyTo, error: String(error), span }),
         )
-        return { state }
+        return { state: { ...state, writing: true } }
       }
 
       if (msg.toolName === deleteDocTool.name) {
@@ -340,7 +341,7 @@ export const ArtifactTools = (artifactsDir: string): ActorDef<ArtifactToolsMsg, 
           () => ({ type: '_writeDone' as const, replyTo: msg.replyTo, text: `Deleted ${filename}`, span }),
           error => ({ type: '_writeErr' as const, replyTo: msg.replyTo, error: String(error), span }),
         )
-        return { state }
+        return { state: { ...state, writing: true } }
       }
 
       msg.replyTo.send({ type: 'toolError', error: `Unknown tool: ${msg.toolName}` })
@@ -350,13 +351,18 @@ export const ArtifactTools = (artifactsDir: string): ActorDef<ArtifactToolsMsg, 
     _writeDone: (state, msg) => {
       msg.span?.done()
       msg.replyTo.send({ type: 'toolResult', result: { text: msg.text } })
-      return { state }
+      return { state: { ...state, writing: false }, become: handler, unstashAll: true }
     },
 
     _writeErr: (state, msg) => {
       msg.span?.error(msg.error)
       msg.replyTo.send({ type: 'toolError', error: msg.error })
-      return { state }
+      return { state: { ...state, writing: false }, become: handler, unstashAll: true }
     },
-  }),
-})
+  })
+
+  return {
+    initialState: () => ({ writing: false }),
+    handler,
+  }
+}

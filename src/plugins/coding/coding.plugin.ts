@@ -3,7 +3,7 @@ import { dirname } from 'node:path'
 import { defineConfig, deleteConfigSurface, onLifecycle, onMessage, publishConfigSurface } from '../../system/index.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
+import { ToolRegistrationTopic, type ToolCollection, type ToolMsg } from '../../types/tools.ts'
 import { ArtifactTools, deleteDocTool, writeDocPageTool } from './artifact-tools.ts'
 import { CodingAgentFactory } from './coding-agent.ts'
 import { DocsAgent, showDocsTool, updateDocsTool } from './docs-agent.ts'
@@ -135,6 +135,12 @@ const spawnChildren = (
     tools: buildDocsTools(shellRef, artifactToolsRef),
   })) as ActorRef<DocsAgentMsg>
 
+  ctx.publishRetained(ToolRegistrationTopic, updateDocsTool.name, {
+    ...updateDocsTool,
+    ref: docsAgentRef as unknown as ActorRef<ToolMsg>,
+    mayBeLongRunning: true,
+  })
+
   ctx.publish(AgentRegistrationTopic, {
     type: 'register',
     descriptor: buildDescriptor(cfg, shellRef, docsAgentRef),
@@ -170,6 +176,7 @@ const codingPlugin: PluginDef<PluginMsg, PluginState, CodingConfig> = {
     },
 
     stopped: (state, ctx) => {
+      ctx.deleteRetained(ToolRegistrationTopic, updateDocsTool.name, { name: updateDocsTool.name, ref: null })
       deleteRoutes(ctx, state.cfg)
       stopChildren(state, ctx)
       ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'coding' })
@@ -181,6 +188,7 @@ const codingPlugin: PluginDef<PluginMsg, PluginState, CodingConfig> = {
 
   handler: onMessage<PluginMsg, PluginState>({
     config: (state, msg, ctx) => {
+      ctx.deleteRetained(ToolRegistrationTopic, updateDocsTool.name, { name: updateDocsTool.name, ref: null })
       deleteRoutes(ctx, state.cfg)
       stopChildren(state, ctx)
       ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'coding' })

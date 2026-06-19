@@ -1,11 +1,11 @@
 import type { ActorContext, ActorDef, ActorRef, ActorResult, Interceptor } from '../../system/index.ts'
-import { agentLoop, idleLoopState, onLifecycle } from '../../system/index.ts'
+import { agentLoop, idleLoopState, onLifecycle, onMessage } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
 import { OutboundMessageTopic } from '../../types/events.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import { JobRegistryTopic, type ToolCollection, type ToolFinalReply, type ToolMsg } from '../../types/tools.ts'
-import type { ApiMessage } from '../../types/llm.ts'
-import type { DocsAgentMsg, DocsAgentOptions, DocsAgentState } from './types.ts'
+import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
+import type { DocsAgentMsg, DocsAgentOptions, DocsAgentState, DocsJobExecutorMsg, DocsJobExecutorState } from './types.ts'
 
 export const updateDocsTool = defineTool('update_docs', 'Generate or refresh project documentation from the read-only project files. This is a long-running operation and returns a job id immediately.', {
   type: 'object',
@@ -58,156 +58,239 @@ const parseQuery = (raw: string): string | null => {
   }
 }
 
-export const DocsAgent = (options: DocsAgentOptions): ActorDef<DocsAgentMsg, DocsAgentState> => {
-  type M = DocsAgentMsg
-  type S = DocsAgentState
+export const DocsJobExecutor = (
+  query: string,
+  jobId: string,
+  options: DocsAgentOptions & { parentRef: ActorRef<DocsAgentMsg>; llmRef: ActorRef<LlmProviderMsg> | null },
+): ActorDef<DocsJobExecutorMsg, DocsJobExecutorState> => {
+  type M = DocsJobExecutorMsg
+  type S = DocsJobExecutorState
   type Ctx = ActorContext<M>
-
-  const publishRunning = (ctx: Ctx, state: S, statusText: string): void => {
-    const job = state.currentJob
-    if (!job) return
-    ctx.publishRetained(JobRegistryTopic, job.jobId, {
-      jobId: job.jobId,
-      status: 'running',
-      toolName: updateDocsTool.name,
-      toolRef: ctx.self as unknown as ActorRef<ToolMsg>,
-      startedAt: Date.now(),
-      clientId: job.clientId,
-      userId: job.userId,
-      statusText,
-    })
-  }
-
-  const handleInvoke = (state: S, msg: Extract<M, { type: 'invoke' }>, ctx: Ctx): ActorResult<M, S> => {
-    if (msg.toolName === showDocsTool.name) {
-      if (msg.clientId) {
-        ctx.publish(OutboundMessageTopic, {
-          clientId: msg.clientId,
-          text: JSON.stringify({ type: 'docWorkspace', artifactName: 'index.html' }),
-        })
-      }
-      msg.replyTo.send({ type: 'toolResult', result: { text: 'Opened documentation index.' } })
-      return { state }
-    }
-
-    if (msg.toolName !== updateDocsTool.name) {
-      msg.replyTo.send({ type: 'toolError', error: `Unknown tool: ${msg.toolName}` })
-      return { state }
-    }
-
-    if (state.loop.phase !== 'idle' || state.currentJob) {
-      msg.replyTo.send({ type: 'toolError', error: 'Documentation generation is already running.' })
-      return { state }
-    }
-
-    if (!state.llmRef) {
-      msg.replyTo.send({ type: 'toolError', error: 'Docs agent not ready (no LLM provider).' })
-      return { state }
-    }
-
-    const query = parseQuery(msg.arguments)
-    if (!query) {
-      msg.replyTo.send({ type: 'toolError', error: 'Missing required argument: query' })
-      return { state }
-    }
-
-    const jobId = crypto.randomUUID()
-    msg.replyTo.send({
-      type: 'toolPending',
-      jobId,
-      placeholderText: `Documentation generation started (jobId=${jobId}). Use tool_status to check progress.`,
-    })
-
-    const nextState: S = {
-      ...state,
-      currentJob: {
-        jobId,
-        query,
-        clientId: msg.clientId,
-        userId: msg.userId,
-        pagesWritten: 0,
-      },
-    }
-    publishRunning(ctx, nextState, 'Starting documentation generation.')
-
-    const messages: ApiMessage[] = [
-      { role: 'system', content: buildSystemPrompt(options.projectMount) },
-      { role: 'user', content: query },
-    ]
-    return loop.startTurn(nextState, {
-      messages,
-      userId: msg.userId,
-      clientId: msg.clientId,
-    }, ctx)
-  }
 
   const loop = agentLoop<S, M>({
     role: 'docs',
     spanName: 'docs-generation',
-    logPrefix: 'docs-agent',
+    logPrefix: `docs-job-executor-${jobId}`,
     model: options.model,
     maxToolLoops: options.maxToolLoops,
     llmRef: s => s.llmRef,
     tools: options.tools,
 
     onComplete: (state, finalText, _usage, ctx) => {
-      const job = state.currentJob
-      if (job) {
-        ctx.publishRetained(JobRegistryTopic, job.jobId, {
-          jobId: job.jobId,
-          status: 'completed',
-          statusText: 'Documentation generation completed.',
-          result: {
-            text: finalText || `Documentation generated in ${options.artifactsDir}/index.html.`,
-          },
-        })
-      }
-      return { state: { ...state, currentJob: null } }
+      ctx.publishRetained(JobRegistryTopic, jobId, {
+        jobId,
+        status: 'completed',
+        statusText: 'Documentation generation completed.',
+        result: {
+          text: finalText || `Documentation generated in ${options.artifactsDir}/index.html.`,
+        },
+      })
+      options.parentRef.send({ type: '_jobCompleted', jobId })
+      return { state }
     },
 
     onError: (state, err, ctx) => {
-      const job = state.currentJob
-      if (job) {
-        ctx.publishRetained(JobRegistryTopic, job.jobId, {
-          jobId: job.jobId,
-          status: 'failed',
-          error: err.kind === 'llm' ? 'Docs agent encountered an LLM error.' : 'Docs agent reached the tool loop limit.',
-        })
-      }
-      return { state: { ...state, currentJob: null } }
+      const errorMsg = err.kind === 'llm' ? 'Docs agent encountered an LLM error.' : 'Docs agent reached the tool loop limit.'
+      ctx.publishRetained(JobRegistryTopic, jobId, {
+        jobId,
+        status: 'failed',
+        error: errorMsg,
+      })
+      options.parentRef.send({ type: '_jobFailed', jobId, error: errorMsg })
+      return { state }
     },
 
     onToolResult: (state, result, ctx) => {
-      if (!state.currentJob) return { state }
       const status = result.reply.type === 'toolResult'
         ? `${result.toolName}: ${result.reply.result.text.slice(0, 180)}`
         : `${result.toolName} failed: ${result.reply.error}`
-      const nextState = result.toolName === 'write_doc_page' && result.reply.type === 'toolResult'
-        ? { ...state, currentJob: { ...state.currentJob, pagesWritten: state.currentJob.pagesWritten + 1 } }
-        : state
-      publishRunning(ctx, nextState, status)
-      return { state: nextState }
+
+      const isWritePage = result.toolName === 'write_doc_page' && result.reply.type === 'toolResult'
+      const nextPagesWritten = isWritePage ? state.pagesWritten + 1 : state.pagesWritten
+
+      ctx.publishRetained(JobRegistryTopic, jobId, {
+        jobId,
+        status: 'running',
+        toolName: updateDocsTool.name,
+        toolRef: options.parentRef as unknown as ActorRef<ToolMsg>,
+        startedAt: state.startedAt,
+        clientId: state.clientId,
+        userId: state.userId,
+        statusText: status,
+      })
+
+      if (isWritePage) {
+        options.parentRef.send({ type: '_pagesWrittenUpdated', jobId, pagesWritten: nextPagesWritten })
+      }
+
+      return { state: { ...state, pagesWritten: nextPagesWritten } }
     },
   })
 
   const hostInterceptor: Interceptor<M, S> = (state, msg, ctx, next) => {
     const m = msg as M
-    if (m.type === 'invoke') return handleInvoke(state, m as Extract<M, { type: 'invoke' }>, ctx)
-    if (m.type === '_llmProvider') return { state: { ...state, llmRef: m.ref } }
+    if (m.type === 'startJob') {
+      const messages: ApiMessage[] = [
+        { role: 'system', content: buildSystemPrompt(options.projectMount) },
+        { role: 'user', content: query },
+      ]
+      return loop.startTurn({
+        ...state,
+        startedAt: Date.now(),
+        clientId: m.clientId,
+        userId: m.userId,
+      }, {
+        messages,
+        userId: m.userId,
+        clientId: m.clientId,
+      }, ctx)
+    }
     return next(state, msg)
   }
 
   return {
-    initialState: () => ({ loop: idleLoopState(), llmRef: null, currentJob: null }),
+    initialState: () => ({
+      loop: idleLoopState(),
+      llmRef: options.llmRef,
+      pagesWritten: 0,
+      startedAt: 0,
+    }),
+    handler: loop.idle,
+    interceptors: [hostInterceptor],
+    stashCapacity: 100,
+    supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
+  }
+}
+
+export const DocsAgent = (options: DocsAgentOptions): ActorDef<DocsAgentMsg, DocsAgentState> => {
+  type M = DocsAgentMsg
+  type S = DocsAgentState
+  type Ctx = ActorContext<M>
+
+  const publishRunning = (ctx: Ctx, jobId: string, query: string, clientId: string | undefined, userId: string, statusText: string): void => {
+    ctx.publishRetained(JobRegistryTopic, jobId, {
+      jobId,
+      status: 'running',
+      toolName: updateDocsTool.name,
+      toolRef: ctx.self as unknown as ActorRef<ToolMsg>,
+      startedAt: Date.now(),
+      clientId,
+      userId,
+      statusText,
+    })
+  }
+
+  const handler = onMessage<M, S>({
+    _llmProvider: (state, msg) => {
+      return { state: { ...state, llmRef: msg.ref } }
+    },
+
+    _pagesWrittenUpdated: (state, msg) => {
+      const activeJob = state.activeJobs[msg.jobId]
+      if (!activeJob) return { state }
+      return {
+        state: {
+          ...state,
+          activeJobs: {
+            ...state.activeJobs,
+            [msg.jobId]: {
+              ...activeJob,
+              pagesWritten: msg.pagesWritten,
+            },
+          },
+        },
+      }
+    },
+
+    _jobCompleted: (state, msg) => {
+      const nextJobs = { ...state.activeJobs }
+      delete nextJobs[msg.jobId]
+      return { state: { ...state, activeJobs: nextJobs } }
+    },
+
+    _jobFailed: (state, msg) => {
+      const nextJobs = { ...state.activeJobs }
+      delete nextJobs[msg.jobId]
+      return { state: { ...state, activeJobs: nextJobs } }
+    },
+
+    invoke: (state, msg, ctx) => {
+      if (msg.toolName === showDocsTool.name) {
+        if (msg.clientId) {
+          ctx.publish(OutboundMessageTopic, {
+            clientId: msg.clientId,
+            text: JSON.stringify({ type: 'docWorkspace', artifactName: 'index.html' }),
+          })
+        }
+        msg.replyTo.send({ type: 'toolResult', result: { text: 'Opened documentation index.' } })
+        return { state }
+      }
+
+      if (msg.toolName !== updateDocsTool.name) {
+        msg.replyTo.send({ type: 'toolError', error: `Unknown tool: ${msg.toolName}` })
+        return { state }
+      }
+
+      if (!state.llmRef) {
+        msg.replyTo.send({ type: 'toolError', error: 'Docs agent not ready (no LLM provider).' })
+        return { state }
+      }
+
+      const query = parseQuery(msg.arguments)
+      if (!query) {
+        msg.replyTo.send({ type: 'toolError', error: 'Missing required argument: query' })
+        return { state }
+      }
+
+      const jobId = crypto.randomUUID()
+      msg.replyTo.send({
+        type: 'toolPending',
+        jobId,
+        placeholderText: `Documentation generation started (jobId=${jobId}). Use tool_status to check progress.`,
+      })
+
+      const executorRef = ctx.spawn(`docs-job-executor-${jobId}`, DocsJobExecutor(query, jobId, {
+        model: options.model,
+        maxToolLoops: options.maxToolLoops,
+        projectMount: options.projectMount,
+        artifactsDir: options.artifactsDir,
+        tools: options.tools,
+        parentRef: ctx.self as ActorRef<DocsAgentMsg>,
+        llmRef: state.llmRef,
+      })) as ActorRef<DocsJobExecutorMsg>
+
+      const nextState: S = {
+        ...state,
+        activeJobs: {
+          ...state.activeJobs,
+          [jobId]: {
+            jobId,
+            executorRef,
+            query,
+            clientId: msg.clientId,
+            userId: msg.userId,
+            pagesWritten: 0,
+          },
+        },
+      }
+
+      publishRunning(ctx, jobId, query, msg.clientId, msg.userId, 'Starting documentation generation.')
+
+      executorRef.send({ type: 'startJob', clientId: msg.clientId, userId: msg.userId })
+
+      return { state: nextState }
+    },
+  })
+
+  return {
+    initialState: () => ({ llmRef: null, activeJobs: {} }),
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(LlmProviderTopic, (event) => ({ type: '_llmProvider' as const, ref: event.ref }))
         return { state }
       },
     }),
-    handler: loop.idle,
-    interceptors: [hostInterceptor],
-    stashCapacity: 100,
+    handler,
     supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }
 }
