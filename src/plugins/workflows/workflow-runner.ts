@@ -1,7 +1,7 @@
 import type { ActorContext, ActorDef, ActorRef, ActorResult } from '../../system/index.ts'
 import { ask, onLifecycle, onMessage } from '../../system/index.ts'
 import { ToolRegistrationTopic, type ToolCollection } from '../../types/tools.ts'
-import { ClientPresenceTopic, OutboundMessageTopic } from '../../types/events.ts'
+import { OutboundUserMessageTopic } from '../../types/events.ts'
 import { WorkflowRunUpdateTopic } from './types.ts'
 import type {
   WorkflowRunExecutorMsg,
@@ -17,8 +17,6 @@ import { getWorkflowRun, listWorkflowRuns } from './workflow-store.ts'
 type RunnerState = {
   live: Record<string, ActorRef<WorkflowRunExecutorMsg>>
   executionTools: ToolCollection
-  clientsByUser: Record<string, string[]>
-  clientUsers: Record<string, string>
 }
 
 const summarizeExecutionTools = (tools: ToolCollection): ExecutionToolSummary[] =>
@@ -27,32 +25,6 @@ const summarizeExecutionTools = (tools: ToolCollection): ExecutionToolSummary[] 
     description: tool.schema.function.description,
     mayBeLongRunning: tool.mayBeLongRunning,
   }))
-
-const addClientForUser = (state: RunnerState, userId: string, clientId: string): RunnerState => {
-  const base = state.clientUsers[clientId] && state.clientUsers[clientId] !== userId
-    ? removeClient(state, clientId)
-    : state
-  const current = base.clientsByUser[userId] ?? []
-  const clients = current.includes(clientId) ? current : [...current, clientId]
-  return {
-    ...base,
-    clientsByUser: { ...base.clientsByUser, [userId]: clients },
-    clientUsers: { ...base.clientUsers, [clientId]: userId },
-  }
-}
-
-const removeClient = (state: RunnerState, clientId: string): RunnerState => {
-  const userId = state.clientUsers[clientId]
-  if (!userId) return state
-  const { [clientId]: _, ...clientUsers } = state.clientUsers
-  const clients = (state.clientsByUser[userId] ?? []).filter(id => id !== clientId)
-  const { [userId]: __, ...clientsByUser } = state.clientsByUser
-  return {
-    ...state,
-    clientUsers,
-    clientsByUser: clients.length ? { ...clientsByUser, [userId]: clients } : clientsByUser,
-  }
-}
 
 export const WorkflowRunner = (
   config: WorkflowRunnerConfig,
@@ -184,16 +156,12 @@ export const WorkflowRunner = (
   }
 
   return {
-    initialState: { live: {}, executionTools: {}, clientsByUser: {}, clientUsers: {} },
+    initialState: { live: {}, executionTools: {} },
     lifecycle: onLifecycle<WorkflowRunnerMsg, RunnerState>({
       start: (state, ctx) => {
         ctx.subscribe(ToolRegistrationTopic, toolEvent => {
           if ('schema' in toolEvent) return { type: '_toolRegistered' as const, tool: toolEvent }
           return { type: '_toolUnregistered' as const, name: toolEvent.name }
-        })
-        ctx.subscribe(ClientPresenceTopic, clientEvent => {
-          if (clientEvent.status === 'connected') return { type: '_clientConnected' as const, userId: clientEvent.userId, clientId: clientEvent.clientId }
-          return { type: '_clientDisconnected' as const, clientId: clientEvent.clientId }
         })
         ctx.subscribe(WorkflowRunUpdateTopic, event => ({ type: '_runUpdated' as const, event }))
         return { state }
@@ -223,26 +191,15 @@ export const WorkflowRunner = (
         return { state: { ...state, executionTools } }
       },
 
-      _clientConnected: (state, msg) => {
-        return { state: addClientForUser(state, msg.userId, msg.clientId) }
-      },
-
-      _clientDisconnected: (state, msg) => {
-        return { state: removeClient(state, msg.clientId) }
-      },
-
       _runUpdated: (state, msg, ctx) => {
         const run = msg.event.run
-        const clients = state.clientsByUser[msg.event.userId] ?? []
         const text = JSON.stringify({
           type: 'workflowRunUpdated',
           workflowId: msg.event.workflowId,
           runId: msg.event.runId,
           run,
         })
-        for (const clientId of clients) {
-          ctx.publish(OutboundMessageTopic, { clientId, text })
-        }
+        ctx.publish(OutboundUserMessageTopic, { userId: msg.event.userId, text })
         return { state }
       },
 

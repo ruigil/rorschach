@@ -1,11 +1,12 @@
 import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import {
-  ClientPresenceTopic,
+  UserPresenceTopic,
   InboundMessageTopic,
   CronTriggerTopic,
-  OutboundMessageTopic,
+  OutboundUserMessageTopic,
   type MessageAttachment,
+  type UserPresenceEvent,
 } from '../../types/events.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import { ContextStore, type ContextStoreMsg} from './context-store.ts'
@@ -21,41 +22,39 @@ import { JobRegistryTopic, type JobLifecycleEvent } from '../../types/tools.ts'
 // ─── Message protocol ──────────────────────────────────────────────────────
 
 type SessionManagerMsg =
-  | { type: '_connected';        clientId: string; userId: string; roles: string[] }
-  | { type: '_disconnected';     clientId: string }
-  | { type: '_message';          clientId: string; text: string; attachments?: MessageAttachment[]; traceId: string; parentSpanId: string }
+  | { type: '_userPresence';     event: UserPresenceEvent }
+  | { type: '_message';          userId: string; text: string; attachments?: MessageAttachment[]; traceId: string; parentSpanId: string }
   | { type: '_cronTrigger';      userId: string; text: string; traceId: string; parentSpanId: string }
   | { type: '_agentRegistered';  descriptor: AgentDescriptor }
   | { type: '_agentUnregistered'; mode: string }
-  | { type: '_switchAgent';      clientId: string; mode: string; source: 'user' | 'llm' | 'programmatic'; reason?: string }
+  | { type: '_switchAgent';      userId: string; mode: string; source: 'user' | 'llm' | 'programmatic'; reason?: string }
   | { type: '_jobRegistry';      event: JobLifecycleEvent }
 
 // ─── State ─────────────────────────────────────────────────────────────────
 //
 // One Session record per active userId. Agents are spawned lazily on first
-// activation of a (userId, mode) pair. clientCount tracks how many client
-// connections are currently associated with the userId — the session is torn
+// activation of a (userId, mode) pair. activeInterfaces tracks which interface
+// channels currently have active connections for the userId — the session is torn
 // down when it hits zero.
 
 type Session = {
   contextStoreRef: ActorRef<ContextStoreMsg>
   agentRefs:       Record<string, ActorRef<any>>   // mode → agent
   activeMode:      string
-  clientCount:     number
 }
 
 type SessionManagerState = {
-  descriptors: Record<string, AgentDescriptor>     // mode → descriptor (catalog mirror)
-  sessions:    Record<string, Session>              // userId → Session
-  clientIndex: Record<string, string>               // clientId → userId
-  activeJobs:  Record<string, { userId: string; clientId: string; toolName: string }> // jobId → info
+  descriptors:      Record<string, AgentDescriptor> // mode → descriptor (catalog mirror)
+  sessions:         Record<string, Session>         // userId → Session
+  activeInterfaces: Record<string, Set<'http' | 'signal' | 'cli'>> // userId → Set of active interfaces
+  activeJobs:       Record<string, { userId: string; toolName: string }> // jobId → info
 }
 
 const initialSessionManagerState = (): SessionManagerState => ({
-  descriptors: {},
-  sessions:    {},
-  clientIndex: {},
-  activeJobs:  {},
+  descriptors:      {},
+  sessions:         {},
+  activeInterfaces: {},
+  activeJobs:       {},
 })
 
 // ─── Options ───────────────────────────────────────────────────────────────
@@ -81,10 +80,8 @@ const setSession = (state: SessionManagerState, userId: string, session: Session
 
 const removeSession = (state: SessionManagerState, userId: string): SessionManagerState => {
   const { [userId]: _, ...sessions } = state.sessions
-  const clientIndex = Object.fromEntries(
-    Object.entries(state.clientIndex).filter(([, uid]) => uid !== userId),
-  )
-  return { ...state, sessions, clientIndex }
+  const { [userId]: __, ...activeInterfaces } = state.activeInterfaces
+  return { ...state, sessions, activeInterfaces }
 }
 
 const tryDestroySession = (
@@ -97,7 +94,8 @@ const tryDestroySession = (
   if (!session) return state
 
   const hasActiveJobs = Object.values(state.activeJobs).some(job => job.userId === userId)
-  if (session.clientCount > 0 || hasActiveJobs) {
+  const hasActiveInterfaces = state.activeInterfaces[userId] && state.activeInterfaces[userId].size > 0
+  if (hasActiveInterfaces || hasActiveJobs) {
     return state
   }
 
@@ -107,9 +105,7 @@ const tryDestroySession = (
   ctx.stop(session.contextStoreRef)
 
   const { [userId]: _, ...sessions } = state.sessions
-  const clientIndex = Object.fromEntries(
-    Object.entries(state.clientIndex).filter(([, uid]) => uid !== userId),
-  )
+  const { [userId]: __, ...activeInterfaces } = state.activeInterfaces
 
   ctx.publish(SessionLifecycleTopic, {
     type:      'sessionEnded',
@@ -118,14 +114,13 @@ const tryDestroySession = (
     timestamp: ts,
   })
 
-  return { ...state, sessions, clientIndex }
+  return { ...state, sessions, activeInterfaces }
 }
 
 const ensureAgent = (
   state: SessionManagerState,
   userId: string,
   mode: string,
-  clientId: string,
   llmRef: ActorRef<LlmProviderMsg>,
   ctx: any,
 ): { state: SessionManagerState; ref: ActorRef<any> | null } => {
@@ -146,7 +141,6 @@ const ensureAgent = (
 
   const opts: AgentFactoryOpts = {
     userId,
-    clientId,
     llmRef,
     contextStoreRef: session.contextStoreRef,
   }
@@ -160,31 +154,18 @@ const ensureAgent = (
   }
 }
 
-const userIdOfClient = (state: SessionManagerState, clientId: string): string | undefined =>
-  state.clientIndex[clientId]
-
-const clientIdsForUser = (state: SessionManagerState, userId: string): string[] =>
-  Object.entries(state.clientIndex)
-    .filter(([, uid]) => uid === userId)
-    .map(([clientId]) => clientId)
-
-const firstClientIdForUser = (state: SessionManagerState, userId: string): string | undefined =>
-  Object.entries(state.clientIndex).find(([, uid]) => uid === userId)?.[0]
-
 const publishModeChanged = (
-  state: SessionManagerState,
-  clientIds: string[],
+  userId: string,
   mode: string,
+  state: SessionManagerState,
   ctx: any,
 ) => {
   const descriptor = state.descriptors[mode]
   const displayName = descriptor?.displayName ?? mode
-  for (const clientId of clientIds) {
-    ctx.publish(OutboundMessageTopic, {
-      clientId,
-      text: JSON.stringify({ type: 'modeChanged', mode, displayName }),
-    })
-  }
+  ctx.publish(OutboundUserMessageTopic, {
+    userId,
+    text: JSON.stringify({ type: 'modeChanged', mode, displayName }),
+  })
 }
 
 // ─── Actor ─────────────────────────────────────────────────────────────────
@@ -198,19 +179,15 @@ export const SessionManager = (
     initialState: initialSessionManagerState,
     lifecycle: onLifecycle({
       start: (state, ctx) => {
-        ctx.subscribe(ClientPresenceTopic, e =>
-          e.status === 'connected'
-            ? { type: '_connected' as const, clientId: e.clientId, userId: e.userId, roles: e.roles }
-            : { type: '_disconnected' as const, clientId: e.clientId },
-        )
-        ctx.subscribe(InboundMessageTopic,   e => ({ type: '_message'      as const, clientId: e.clientId, text: e.text, attachments: e.attachments, traceId: e.traceId, parentSpanId: e.parentSpanId }))
+        ctx.subscribe(UserPresenceTopic, e => ({ type: '_userPresence' as const, event: e }))
+        ctx.subscribe(InboundMessageTopic,   e => ({ type: '_message'      as const, userId: e.userId, text: e.text, attachments: e.attachments, traceId: e.traceId, parentSpanId: e.parentSpanId }))
         ctx.subscribe(CronTriggerTopic,      e => ({ type: '_cronTrigger'  as const, userId: e.userId, text: e.text, traceId: e.traceId, parentSpanId: e.parentSpanId }))
         ctx.subscribe(AgentRegistrationTopic, e =>
           e.type === 'register'
             ? { type: '_agentRegistered'   as const, descriptor: e.descriptor }
             : { type: '_agentUnregistered' as const, mode:       e.mode },
         )
-        ctx.subscribe(SwitchAgentTopic,      e => ({ type: '_switchAgent'  as const, clientId: e.clientId, mode: e.mode, source: e.source, reason: e.reason }))
+        ctx.subscribe(SwitchAgentTopic,      e => ({ type: '_switchAgent'  as const, userId: e.userId, mode: e.mode, source: e.source, reason: e.reason }))
         ctx.subscribe(JobRegistryTopic,      e => ({ type: '_jobRegistry'  as const, event: e }))
         return { state }
       },
@@ -237,7 +214,7 @@ export const SessionManager = (
               const patch: Partial<Session> = { agentRefs: remaining }
               if (session.activeMode === mode) {
                 patch.activeMode = defaultMode
-                publishModeChanged(state, clientIdsForUser(state, userId), defaultMode, ctx)
+                publishModeChanged(userId, defaultMode, state, ctx)
                 ctx.publish(SessionLifecycleTopic, {
                   type:         'modeActivated',
                   userId,
@@ -265,9 +242,7 @@ export const SessionManager = (
 
         for (const [userId, session] of Object.entries(next.sessions)) {
           if (session.activeMode !== msg.descriptor.mode || session.agentRefs[msg.descriptor.mode]) continue
-          const clientId = firstClientIdForUser(next, userId)
-          if (!clientId) continue
-          next = ensureAgent(next, userId, msg.descriptor.mode, clientId, llmRef, ctx).state
+          next = ensureAgent(next, userId, msg.descriptor.mode, llmRef, ctx).state
         }
 
         return { state: next }
@@ -278,99 +253,91 @@ export const SessionManager = (
         return { state: { ...state, descriptors } }
       },
 
-      _connected: (state, msg, ctx) => {
-        const { clientId, userId } = msg
-        if (state.clientIndex[clientId]) return { state }
-        const existing = state.sessions[userId]
+      _userPresence: (state, msg, ctx) => {
+        const { event } = msg
+        const { userId, status, source } = event
         const ts = Date.now()
 
-        // Reuse existing per-user resources if this user already has a session.
-        if (existing) {
-          const newCount = existing.clientCount + 1
-          const next = updateSession(state, userId, { clientCount: newCount })
+        const existingInterfaces = state.activeInterfaces[userId] || new Set<'http' | 'signal' | 'cli'>()
+
+        if (status === 'present') {
+          if (existingInterfaces.has(source)) return { state }
+
+          const newInterfaces = new Set(existingInterfaces)
+          newInterfaces.add(source)
+          const nextInterfaces = { ...state.activeInterfaces, [userId]: newInterfaces }
+          const nextState = { ...state, activeInterfaces: nextInterfaces }
+
+          const existingSession = nextState.sessions[userId]
+
+          if (existingSession) {
+            ctx.publish(SessionLifecycleTopic, {
+              type:      'presencePresent',
+              userId,
+              source,
+              timestamp: ts,
+            })
+            publishModeChanged(userId, existingSession.activeMode, nextState, ctx)
+            return { state: nextState }
+          }
+
+          // First connect for this userId — spawn context store + default agent.
+          const contextStoreRef = ctx.spawn(`context-store-${userId}`, ContextStore({ userId, contextWindowHours, contextPath })) as ActorRef<ContextStoreMsg>
+          const seeded: Session = {
+            contextStoreRef,
+            agentRefs:   {},
+            activeMode:  defaultMode,
+          }
+          const withSession = setSession(nextState, userId, seeded)
+          const afterAgent  = ensureAgent(withSession, userId, defaultMode, llmRef, ctx)
+
           ctx.publish(SessionLifecycleTopic, {
-            type:        'clientAttached',
+            type:          'sessionStarted',
             userId,
-            clientId,
-            clientCount: newCount,
+            defaultMode,
+            timestamp:     ts,
+          })
+          ctx.publish(SessionLifecycleTopic, {
+            type:        'presencePresent',
+            userId,
+            source,
             timestamp:   ts,
           })
-          publishModeChanged(next, [clientId], existing.activeMode, ctx)
+          publishModeChanged(userId, defaultMode, afterAgent.state, ctx)
+
           return {
-            state: { ...next, clientIndex: { ...next.clientIndex, [clientId]: userId } },
+            state: afterAgent.state,
           }
+        } else {
+          // status === 'absent'
+          if (!existingInterfaces.has(source)) return { state }
+
+          const newInterfaces = new Set(existingInterfaces)
+          newInterfaces.delete(source)
+
+          const nextInterfaces = { ...state.activeInterfaces, [userId]: newInterfaces }
+          const nextState = { ...state, activeInterfaces: nextInterfaces }
+
+          ctx.publish(SessionLifecycleTopic, {
+            type:        'presenceAbsent',
+            userId,
+            source,
+            timestamp:   ts,
+          })
+
+          return { state: tryDestroySession(nextState, userId, ctx, ts) }
         }
-
-        // First connect for this userId — spawn context store + default agent.
-        const contextStoreRef = ctx.spawn(`context-store-${userId}`, ContextStore({ userId, contextWindowHours, contextPath })) as ActorRef<ContextStoreMsg>
-        const seeded: Session = {
-          contextStoreRef,
-          agentRefs:   {},
-          activeMode:  defaultMode,
-          clientCount: 1,
-        }
-        const withSession = setSession(state, userId, seeded)
-        const afterAgent  = ensureAgent(withSession, userId, defaultMode, clientId, llmRef, ctx)
-
-        ctx.publish(SessionLifecycleTopic, {
-          type:          'sessionStarted',
-          userId,
-          firstClientId: clientId,
-          defaultMode,
-          timestamp:     ts,
-        })
-        ctx.publish(SessionLifecycleTopic, {
-          type:        'clientAttached',
-          userId,
-          clientId,
-          clientCount: 1,
-          timestamp:   ts,
-        })
-        publishModeChanged(afterAgent.state, [clientId], defaultMode, ctx)
-
-        return {
-          state: {
-            ...afterAgent.state,
-            clientIndex: { ...afterAgent.state.clientIndex, [clientId]: userId },
-          },
-        }
-      },
-
-      _disconnected: (state, msg, ctx) => {
-        const { clientId } = msg
-        const userId = userIdOfClient(state, clientId)
-        if (!userId) return { state }
-
-        const session = state.sessions[userId]
-        if (!session) return { state }
-
-        const { [clientId]: _, ...clientIndex } = state.clientIndex
-        const count = session.clientCount - 1
-        const ts    = Date.now()
-
-        ctx.publish(SessionLifecycleTopic, {
-          type:        'clientDetached',
-          userId,
-          clientId,
-          clientCount: count,
-          timestamp:   ts,
-        })
-
-        const next = updateSession({ ...state, clientIndex }, userId, { clientCount: count })
-        return { state: tryDestroySession(next, userId, ctx, ts) }
       },
 
       _message: (state, msg) => {
-        const { clientId, text, attachments, traceId, parentSpanId } = msg
-        const userId = userIdOfClient(state, clientId)
-        if (!userId) return { state }
+        const { userId, text, attachments, traceId, parentSpanId } = msg
         const session = state.sessions[userId]
         if (!session) return { state }
         const agent = session.agentRefs[session.activeMode]
         const headers = traceId && parentSpanId
           ? { traceparent: `00-${traceId}-${parentSpanId}-01` }
           : undefined
-        agent?.send({ type: 'userMessage', clientId, text, attachments }, headers)
+        agent?.send({ type: 'userMessage', text, attachments }, headers)
         return { state }
       },
 
@@ -384,23 +351,18 @@ export const SessionManager = (
           ctx.log.warn('cron job fired but user not connected', { userId })
           return { state }
         }
-        const clientId = Object.entries(state.clientIndex).find(([, uid]) => uid === userId)?.[0]
-        if (!clientId) {
-          ctx.log.warn('cron job fired but no clientId found for user', { userId })
-          return { state }
-        }
         const headers = traceId && parentSpanId
           ? { traceparent: `00-${traceId}-${parentSpanId}-01` }
           : undefined
         const formattedText = `[Internal Instruction] ${text}`
-        agent.send({ type: 'userMessage', clientId, text: formattedText, isInjected: true }, headers)
+        agent.send({ type: 'userMessage', text: formattedText, isInjected: true }, headers)
         return { state }
       },
 
       _jobRegistry: (state, msg, ctx) => {
         const { event } = msg
         if (event.status === 'running') {
-          if (event.userId && event.clientId) {
+          if (event.userId) {
             return {
               state: {
                 ...state,
@@ -408,7 +370,6 @@ export const SessionManager = (
                   ...state.activeJobs,
                   [event.jobId]: {
                     userId: event.userId,
-                    clientId: event.clientId,
                     toolName: event.toolName,
                   },
                 },
@@ -422,7 +383,7 @@ export const SessionManager = (
           const cached = state.activeJobs[event.jobId]
           if (!cached) return { state }
 
-          const { userId, clientId, toolName } = cached
+          const { userId, toolName } = cached
 
           // Format out-of-band text
           const resultText = event.status === 'completed'
@@ -434,14 +395,14 @@ export const SessionManager = (
           // 1. Publish sources and attachments outbound directly
           if (event.status === 'completed' && event.result) {
             if (event.result.sources?.length) {
-              ctx.publish(OutboundMessageTopic, {
-                clientId,
+              ctx.publish(OutboundUserMessageTopic, {
+                userId,
                 text: JSON.stringify({ type: 'sources', sources: event.result.sources }),
               })
             }
             if (event.result.attachments?.length) {
-              ctx.publish(OutboundMessageTopic, {
-                clientId,
+              ctx.publish(OutboundUserMessageTopic, {
+                userId,
                 text: JSON.stringify({ type: 'attachments', attachments: event.result.attachments }),
               })
             }
@@ -456,7 +417,7 @@ export const SessionManager = (
           const agent = session?.agentRefs[mode]
 
           if (agent) {
-            agent.send({ type: 'userMessage', clientId, text: userText, isInjected: true })
+            agent.send({ type: 'userMessage', text: userText, isInjected: true })
           } else {
             ctx.log.warn('job completion but no agent found to inject into', { userId, mode, jobId: event.jobId })
           }
@@ -484,32 +445,32 @@ export const SessionManager = (
       },
 
       _switchAgent: (state, msg, ctx) => {
-        const { clientId, mode, source, reason } = msg
-        const userId = userIdOfClient(state, clientId)
-        if (!userId) {
-          ctx.log.warn('switchAgent: unknown clientId', { clientId, mode })
+        const { userId, mode, source, reason } = msg
+        const session = state.sessions[userId]
+        if (!session) {
+          ctx.log.warn('switchAgent: unknown userId', { userId, mode })
           return { state }
         }
 
         const descriptor = state.descriptors[mode]
         if (!descriptor) {
-          ctx.log.warn('switchAgent: unknown mode', { clientId, mode })
-          ctx.publish(OutboundMessageTopic, {
-            clientId,
+          ctx.log.warn('switchAgent: unknown mode', { userId, mode })
+          ctx.publish(OutboundUserMessageTopic, {
+            userId,
             text: JSON.stringify({ type: 'error', text: `Unknown agent mode: ${mode}` }),
           })
           return { state }
         }
 
-        const previousMode = state.sessions[userId]?.activeMode ?? mode
+        const previousMode = session.activeMode
 
         // Ensure target agent exists, then mark it active.
-        const afterAgent = ensureAgent(state, userId, mode, clientId, llmRef, ctx)
+        const afterAgent = ensureAgent(state, userId, mode, llmRef, ctx)
         if (!afterAgent.ref) return { state: afterAgent.state }
 
         const next = updateSession(afterAgent.state, userId, { activeMode: mode })
 
-        publishModeChanged(next, clientIdsForUser(next, userId), mode, ctx)
+        publishModeChanged(userId, mode, next, ctx)
         ctx.publish(SessionLifecycleTopic, {
           type:         'modeActivated',
           userId,

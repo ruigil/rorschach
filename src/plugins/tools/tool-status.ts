@@ -22,7 +22,6 @@ type JobInfo = {
   toolName:  string
   toolRef:   ActorRef<ToolMsg>
   startedAt: number
-  clientId?: string
   userId?:   string
   statusText?: string
   result?:   ToolResultPayload
@@ -88,7 +87,6 @@ export const ToolStatus = (): ActorDef<ToolStatusMsg, ToolStatusState> => ({
             toolName:  event.toolName,
             toolRef:   event.toolRef,
             startedAt: event.startedAt,
-            clientId:  event.clientId,
             userId:    event.userId,
             statusText: event.statusText,
           },

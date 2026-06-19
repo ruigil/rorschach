@@ -75,7 +75,6 @@ export const GoogleAgent = (options: GoogleAgentOptions): ActorDef<GoogleAgentMs
           { role: 'user',   content: request },
         ],
         userId:   msg.userId,
-        clientId: msg.clientId,
       },
       ctx,
     )

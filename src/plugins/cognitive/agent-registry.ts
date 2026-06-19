@@ -141,14 +141,8 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
           return { state }
         }
 
-        const clientId = msg.clientId
-        if (!clientId) {
-          msg.replyTo.send({ type: 'toolError', error: 'switchMode requires a clientId' })
-          return { state }
-        }
-
         ctx.publish(SwitchAgentTopic, {
-          clientId,
+          userId: msg.userId,
           mode,
           source: 'llm',
           reason: parsed.reason,

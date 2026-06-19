@@ -1,7 +1,7 @@
 import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor, LoopState } from '../../system/index.ts'
 import { onLifecycle } from '../../system/index.ts'
 import { agentLoop, idleLoopState, applyToolFilter } from '../../system/index.ts'
-import { OutboundMessageTopic } from '../../types/events.ts'
+import { OutboundUserMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter, ToolInvokeMsg, ToolMsg } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage } from '../../types/llm.ts'
@@ -30,7 +30,6 @@ type WorkflowsAgentState = {
   contextView: ContextView
   tools: ToolCollection
   pendingSaveSummary: string | null
-  activeClientId: string
 }
 type WorkflowsAgentConfig = {
   model: string
@@ -56,7 +55,6 @@ const initialState = (): WorkflowsAgentState => ({
   contextView: emptyContextView(),
   tools: {},
   pendingSaveSummary: null,
-  activeClientId: '',
 })
 
 const buildSystemPrompt = (): string =>
@@ -102,12 +100,10 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
 
   const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
     const userMsg: ApiMessage = { role: 'user', content: msg.text }
-    const next: S = { ...state, activeClientId: msg.clientId }
-    contextStoreRef.send({ type: 'append', mode: WORKFLOWS_MODE, source: 'user', clientId: msg.clientId, injected: msg.isInjected || false, messages: [userMsg] })
-    return loop.startTurn(next, {
-      messages: buildTurnMessages(next, userMsg),
+    contextStoreRef.send({ type: 'append', mode: WORKFLOWS_MODE, source: 'user', injected: msg.isInjected || false, messages: [userMsg] })
+    return loop.startTurn(state, {
+      messages: buildTurnMessages(state, userMsg),
       userId,
-      clientId: msg.clientId,
     }, ctx)
   }
 
@@ -119,7 +115,7 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
     maxToolLoops,
     llmRef: () => llmRef,
     tools: state => state.tools,
-    uiEvents: OutboundMessageTopic,
+    uiEvents: OutboundUserMessageTopic,
     errorMessages: {
       llm: 'The workflows agent encountered an error. Please try again.',
       loopLimit: 'Tool loop limit reached in workflows. Please try again.',
@@ -130,13 +126,12 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
           type: 'append',
           mode: WORKFLOWS_MODE,
           source: 'assistant',
-          clientId: state.activeClientId,
           messages: [{ role: 'assistant', content: state.pendingSaveSummary }],
         })
         return { state: { ...state, pendingSaveSummary: null } }
       }
       if (finalText) {
-        contextStoreRef.send({ type: 'append', mode: WORKFLOWS_MODE, source: 'assistant', clientId: state.activeClientId, messages: [{ role: 'assistant', content: finalText }] })
+        contextStoreRef.send({ type: 'append', mode: WORKFLOWS_MODE, source: 'assistant', messages: [{ role: 'assistant', content: finalText }] })
       }
       return { state }
     },
@@ -157,7 +152,6 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
         type: 'append',
         mode: WORKFLOWS_MODE,
         source: 'assistant',
-        clientId: state.activeClientId,
         messages: [{ role: 'assistant', content: text }],
       })
       return { state }
@@ -203,10 +197,9 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
       handleWorkflowTool(msg, {
         workflowsDir,
         workflowRunnerRef,
-        publishGraph: (clientId, workflowId, runId) => {
-          if (!clientId) return
-          ctx.publish(OutboundMessageTopic, {
-            clientId,
+        publishGraph: (userId, workflowId, runId) => {
+          ctx.publish(OutboundUserMessageTopic, {
+            userId,
             text: JSON.stringify({ type: 'workflowGraph', workflowId, ...(runId ? { runId } : {}) }),
           })
         },

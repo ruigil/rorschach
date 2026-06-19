@@ -1,7 +1,7 @@
 import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/index.ts'
 import { onLifecycle } from '../../system/index.ts'
 import { agentLoop, idleLoopState, type LoopMsg, type LoopState } from '../../system/index.ts'
-import { OutboundMessageTopic } from '../../types/events.ts'
+import { OutboundUserMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter, ToolFinalReply, ToolMsg, ToolSchema } from '../../types/tools.ts'
 import { applyToolFilter } from '../../system/index.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
@@ -17,12 +17,11 @@ export type ChatbotState = {
   contextView:    ContextView
   tools:          ToolCollection
   sessionUsage:   TokenUsage
-  activeClientId: string
 }
 // ─── Chatbot actor message protocol ───
 
 type ChatbotExtra =
-  | { type: 'userMessage';      clientId: string; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
+  | { type: 'userMessage';      text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
   | { type: '_toolRegistered';  name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
@@ -100,7 +99,6 @@ const initialChatbotState = (): ChatbotState => ({
   contextView:    emptyContextView(),
   tools:          {},
   sessionUsage:   { promptTokens: 0, completionTokens: 0 },
-  activeClientId: '',
 })
 
 export const ChatbotAgentFactory = (config: ChatbotAgentConfig) =>
@@ -153,7 +151,7 @@ export const Chatbot = (
     llmRef:        () => llmRef,
     tools:         (s) => s.tools,
 
-    uiEvents:      OutboundMessageTopic,
+    uiEvents:      OutboundUserMessageTopic,
     errorMessages: {
       llm:      'Something went wrong. Please try again.',
       loopLimit: 'Tool loop limit reached. Please try again.',
@@ -166,7 +164,7 @@ export const Chatbot = (
 
 	    onComplete: (state, finalText, usage, ctx) => {
       if (finalText) {
-        contextStoreRef.send({ type: 'append', mode: CHATBOT_MODE, source: 'assistant', clientId: state.activeClientId, messages: [{ role: 'assistant', content: finalText }] })
+        contextStoreRef.send({ type: 'append', mode: CHATBOT_MODE, source: 'assistant', messages: [{ role: 'assistant', content: finalText }] })
       }
 
       const sessionUsage: TokenUsage = {
@@ -181,7 +179,7 @@ export const Chatbot = (
 
 	    onError: (state, err, ctx) => {
 	      if (err.kind === 'loopLimit') {
-	        ctx.log.warn('chatbot: tool loop limit reached', { clientId: state.activeClientId })
+	        ctx.log.warn('chatbot: tool loop limit reached')
 	      }
 	      return { state }
 	    },
@@ -192,7 +190,6 @@ export const Chatbot = (
 	        type: 'append',
 	        mode: CHATBOT_MODE,
 	        source: 'assistant',
-	        clientId: state.activeClientId,
 	        messages: [{ role: 'assistant', content: text }],
 	      })
 	      return { state }
@@ -202,29 +199,23 @@ export const Chatbot = (
   const doStartTurn = (
     state: S,
     userText: string,
-    clientId: string,
     isInjected: boolean,
     ctx: Ctx,
   ): ActorResult<M, S> => {
     const userMessage: ApiMessage = { role: 'user', content: userText }
-    const stateNext: S = {
-      ...state,
-      activeClientId: clientId,
-    }
 
-    contextStoreRef.send({ type: 'append', mode: CHATBOT_MODE, source: 'user', clientId, injected: isInjected, messages: [userMessage] })
+    contextStoreRef.send({ type: 'append', mode: CHATBOT_MODE, source: 'user', injected: isInjected, messages: [userMessage] })
 
-    return loop.startTurn(stateNext, {
-      messages: buildTurnMessages(stateNext, userMessage),
+    return loop.startTurn(state, {
+      messages: buildTurnMessages(state, userMessage),
       userId,
-      clientId,
     }, ctx)
   }
 
   const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
-    const { clientId: msgClientId, text, attachments, isInjected } = msg
+    const { text, attachments, isInjected } = msg
     const userText = assembleUserText(text, attachments)
-    return doStartTurn(state, userText, msgClientId, isInjected || false, ctx)
+    return doStartTurn(state, userText, isInjected || false, ctx)
   }
 
   const hostInterceptor: Interceptor<M, S> = (state, msg, ctx, next) => {

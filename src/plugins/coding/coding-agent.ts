@@ -1,6 +1,6 @@
 import type { ActorContext, ActorDef, ActorResult, Interceptor } from '../../system/index.ts'
 import { agentLoop, applyToolFilter, assembleAgentMessages, idleLoopState, onLifecycle, type ContextView } from '../../system/index.ts'
-import { OutboundMessageTopic } from '../../types/events.ts'
+import { OutboundUserMessageTopic } from '../../types/events.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
@@ -28,7 +28,6 @@ const emptyContextView = (userId = ''): ContextView => ({
 const initialState = (): CodingAgentState => ({
   loop: idleLoopState(),
   contextView: emptyContextView(),
-  activeClientId: '',
 })
 
 const buildSystemPrompt = (projectMount: string): string =>
@@ -74,29 +73,25 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
   const doStartTurn = (
     state: S,
     userText: string,
-    clientId: string,
     isInjected: boolean,
     ctx: Ctx,
   ): ActorResult<M, S> => {
     const userMsg: ApiMessage = { role: 'user', content: userText }
-    const nextState = { ...state, activeClientId: clientId }
     opts.contextStoreRef.send({
       type: 'append',
       mode: CODING_MODE,
       source: 'user',
-      clientId,
       injected: isInjected,
       messages: [userMsg],
     })
-    return loop.startTurn(nextState, {
-      messages: buildTurnMessages(nextState, userMsg),
+    return loop.startTurn(state, {
+      messages: buildTurnMessages(state, userMsg),
       userId: opts.userId,
-      clientId,
     }, ctx)
   }
 
   const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
-    return doStartTurn(state, msg.text, msg.clientId, msg.isInjected || false, ctx)
+    return doStartTurn(state, msg.text, msg.isInjected || false, ctx)
   }
 
   const loop = agentLoop<S, M>({
@@ -110,7 +105,7 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
       ...options.tools,
       ...registeredTools,
     }),
-    uiEvents: OutboundMessageTopic,
+    uiEvents: OutboundUserMessageTopic,
     errorMessages: {
       llm: 'The coding agent encountered an error. Please try again.',
       loopLimit: 'Tool loop limit reached in the coding agent. Please try again.',
@@ -122,7 +117,6 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
           type: 'append',
           mode: CODING_MODE,
           source: 'assistant',
-          clientId: state.activeClientId,
           messages: [{ role: 'assistant', content: finalText }],
         })
       }
@@ -142,7 +136,6 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
 	        type: 'append',
 	        mode: CODING_MODE,
 	        source: 'assistant',
-	        clientId: state.activeClientId,
 	        messages: [{ role: 'assistant', content: text }],
 	      })
 	      return { state }

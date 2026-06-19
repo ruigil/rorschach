@@ -6,7 +6,6 @@ import type { ToolMsg, ToolReply, ToolSchema, ToolFilter } from '../../types/too
 export type InvokeToolArgs = {
   toolName:  string
   arguments: string
-  clientId?: string
   userId:    string
 }
 
@@ -35,7 +34,6 @@ export const invokeTool = async <M = any>(
       type: 'invoke',
       toolName: args.toolName,
       arguments: args.arguments,
-      clientId: args.clientId,
       userId: args.userId,
       replyTo,
     }),
@@ -55,7 +53,6 @@ export const invokeTool = async <M = any>(
     toolName: args.toolName,
     toolRef,
     startedAt: Date.now(),
-    clientId: args.clientId,
     userId: args.userId,
     metadata: options?.jobMetadata,
   })

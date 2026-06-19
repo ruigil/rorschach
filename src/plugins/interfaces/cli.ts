@@ -1,9 +1,9 @@
 import type { ActorDef, SpanHandle } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import {
-  ClientPresenceTopic,
+  UserPresenceTopic,
   InboundMessageTopic,
-  OutboundMessageTopic,
+  OutboundUserMessageTopic,
 } from '../../types/events.ts'
 import { ANONYMOUS_USER_ID } from './types.ts'
 
@@ -42,7 +42,7 @@ const blueSep = () => `\x1b[34m${'─'.repeat(process.stdout.columns ?? 80)}${C.
 
 // ─── Message protocol ───
 type CliMsg =
-  | { type: '_send';      clientId: string; text: string }
+  | { type: '_send';      userId: string; text: string }
   | { type: '_userInput'; text: string }
 
 // ─── State ───
@@ -249,7 +249,7 @@ export const CLI = (): ActorDef<CliMsg, CliState> => {
       start: (state, ctx) => {
         currentState = state
 
-        ctx.subscribe(OutboundMessageTopic, e => ({ type: '_send' as const, clientId: e.clientId, text: e.text }))
+        ctx.subscribe(OutboundUserMessageTopic, e => ({ type: '_send' as const, userId: e.userId, text: e.text }))
 
         // ─── Raw-mode stdin ───
         if (process.stdin.isTTY) process.stdin.setRawMode(true)
@@ -308,9 +308,10 @@ export const CLI = (): ActorDef<CliMsg, CliState> => {
 
       stopped: (state, ctx) => {
         if (state.connected) {
-          ctx.deleteRetained(ClientPresenceTopic, CLI_CLIENT_ID, {
-            status: 'disconnected',
-            clientId: CLI_CLIENT_ID,
+          ctx.deleteRetained(UserPresenceTopic, ANONYMOUS_USER_ID, {
+            status: 'absent',
+            userId: ANONYMOUS_USER_ID,
+            source: 'cli',
           })
         }
         process.stdout.write('\x1b[r\x1b[2J\x1b[H')  // reset scroll region, clear, home
@@ -324,11 +325,10 @@ export const CLI = (): ActorDef<CliMsg, CliState> => {
         if (state.status === 'waiting') return { state }
 
         if (!state.connected) {
-          ctx.publishRetained(ClientPresenceTopic, CLI_CLIENT_ID, {
-            status: 'connected',
-            clientId: CLI_CLIENT_ID,
+          ctx.publishRetained(UserPresenceTopic, ANONYMOUS_USER_ID, {
+            status: 'present',
             userId: ANONYMOUS_USER_ID,
-            roles: [],
+            source: 'cli',
           })
         }
 
@@ -336,7 +336,7 @@ export const CLI = (): ActorDef<CliMsg, CliState> => {
         const activeSpans = { ...state.activeSpans, [CLI_CLIENT_ID]: span }
 
         ctx.publish(InboundMessageTopic, {
-          clientId: CLI_CLIENT_ID,
+          userId: ANONYMOUS_USER_ID,
           text:     message.text,
           traceId:  span.traceId,
           parentSpanId: span.spanId,
@@ -361,7 +361,7 @@ export const CLI = (): ActorDef<CliMsg, CliState> => {
       },
 
       _send: (state, message) => {
-        if (message.clientId !== CLI_CLIENT_ID) return { state }
+        if (message.userId !== ANONYMOUS_USER_ID) return { state }
 
         let ev: Record<string, unknown>
         try { ev = JSON.parse(message.text) } catch { return { state } }

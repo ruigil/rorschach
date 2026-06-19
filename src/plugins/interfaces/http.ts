@@ -4,8 +4,8 @@ import type { Server, ServerWebSocket } from 'bun'
 import { emit } from '../../system/index.ts'
 import {
   InboundMessageTopic,
-  ClientPresenceTopic,
-  OutboundMessageTopic, OutboundBroadcastTopic, OutboundAdminBroadcastTopic,
+  UserPresenceTopic,
+  OutboundUserMessageTopic, OutboundBroadcastTopic, OutboundAdminBroadcastTopic,
   type MessageAttachment,
 } from '../../types/events.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
@@ -43,14 +43,14 @@ const FALLBACK_MODELS = [
 
 export type HttpMessage =
   | { type: 'connected'; clientId: string; userId: string; roles: string[] }
-  | { type: 'message'; clientId: string; text: string; attachments?: MessageAttachment[] }
+  | { type: 'message'; clientId: string; userId: string; text: string; attachments?: MessageAttachment[] }
   | { type: 'switchMode'; clientId: string; mode: string }
   | { type: 'listAgents'; clientId: string }
-  | { type: '_mediaSaved'; clientId: string; text: string; attachments: MessageAttachment[] }
+  | { type: '_mediaSaved'; clientId: string; userId: string; text: string; attachments: MessageAttachment[] }
   | { type: 'closed'; clientId: string }
   | { type: 'broadcast'; text: string }
   | { type: 'adminBroadcast'; text: string }
-  | { type: 'send'; clientId: string; text: string }
+  | { type: 'send'; userId: string; text: string }
   | { type: '_configSchemaChanged'; section: ConfigSchemaSection }
   | { type: '_configUpdate'; pluginId: string; patch: Record<string, unknown> }
   | { type: '_llmProviderChanged'; ref: ActorRef<LlmProviderMsg> | null }
@@ -88,6 +88,7 @@ export type HttpState = {
   llmProviderRef:      ActorRef<LlmProviderMsg>      | null
   identityProviderRef: ActorRef<IdentityProviderMsg> | null
   agentCatalog:        AgentCatalogEvent['agents']
+  userIdsToClientIds:  Record<string, string[]>
 }
 
 // ─── WebSocket attachment data ───
@@ -249,32 +250,54 @@ export const HTTP = (
   }
 
   return {
-    initialState: { server: null, connections: 0, activeSpans: {}, llmProviderRef: null, identityProviderRef: null, agentCatalog: [] },
+    initialState: { server: null, connections: 0, activeSpans: {}, llmProviderRef: null, identityProviderRef: null, agentCatalog: [], userIdsToClientIds: {} },
     handler: onMessage({
 
       connected: (state, message, context) => {
         const connections = state.connections + 1
         context.log.info(`client connected: ${message.clientId} userId=${message.userId} (${connections} total)`)
-        context.publishRetained(ClientPresenceTopic, message.clientId, {
-          status: 'connected',
-          clientId: message.clientId,
-          userId:   message.userId,
-          roles:    message.roles,
-        })
+        
+        const currentClientIds = state.userIdsToClientIds[message.userId] ?? []
+        const userIdsToClientIds = {
+          ...state.userIdsToClientIds,
+          [message.userId]: [...currentClientIds.filter(id => id !== message.clientId), message.clientId]
+        }
+
+        const events = []
+        if (currentClientIds.length === 0) {
+          events.push(emit(UserPresenceTopic, {
+            status: 'present',
+            userId: message.userId,
+            source: 'http',
+          }))
+        }
+
         // Push the agent catalog as a welcome frame so the UI can render its mode selector.
         if (state.agentCatalog.length > 0) {
           state.server?.publish(`client:${message.clientId}`, JSON.stringify({ type: 'agents', agents: state.agentCatalog }))
         }
         return {
-          state: { ...state, connections },
+          state: { ...state, connections, userIdsToClientIds },
+          events,
         }
       },
 
       switchMode: (state, message, context) => {
         context.log.info(`switchMode: clientId=${message.clientId} mode=${message.mode}`)
+        let userId = ''
+        for (const [uid, clientIds] of Object.entries(state.userIdsToClientIds)) {
+          if (clientIds.includes(message.clientId)) {
+            userId = uid
+            break
+          }
+        }
+        if (!userId) {
+          context.log.warn(`switchMode: could not resolve userId for clientId=${message.clientId}`)
+          return { state }
+        }
         return {
           state,
-          events: [emit(SwitchAgentTopic, { clientId: message.clientId, mode: message.mode, source: 'user' })],
+          events: [emit(SwitchAgentTopic, { userId, mode: message.mode, source: 'user' })],
         }
       },
 
@@ -297,8 +320,8 @@ export const HTTP = (
         if (message.attachments && message.attachments.length > 0) {
           context.pipeToSelf(
             saveAttachmentsToTempFiles(message.attachments),
-            (attachments): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, text: message.text, attachments }),
-            (): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, text: message.text, attachments: [] }),
+            (attachments): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, userId: message.userId, text: message.text, attachments }),
+            (): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, userId: message.userId, text: message.text, attachments: [] }),
           )
           return { state: newState }
         }
@@ -306,7 +329,7 @@ export const HTTP = (
         return {
           state: newState,
           events: [emit(InboundMessageTopic, {
-            clientId: message.clientId,
+            userId: message.userId,
             text: message.text,
             traceId: span.traceId,
             parentSpanId: span.spanId,
@@ -315,13 +338,13 @@ export const HTTP = (
       },
 
       _mediaSaved: (state, message) => {
-        const { clientId, text, attachments } = message
+        const { clientId, userId, text, attachments } = message
         const span = state.activeSpans[clientId]
         if (!span) return { state }
         return {
           state,
           events: [emit(InboundMessageTopic, {
-            clientId,
+            userId,
             text,
             attachments: attachments.length > 0 ? attachments : undefined,
             traceId: span.traceId,
@@ -333,20 +356,42 @@ export const HTTP = (
       closed: (state, message, context) => {
         const connections = Math.max(0, state.connections - 1)
         context.log.info(`client disconnected: ${message.clientId} (${connections} remaining)`)
-        context.deleteRetained(ClientPresenceTopic, message.clientId, {
-          status:   'disconnected',
-          clientId: message.clientId,
-        })
+
+        let userId = ''
+        const nextUserIdsToClientIds = { ...state.userIdsToClientIds }
+        for (const [uid, clientIds] of Object.entries(state.userIdsToClientIds)) {
+          if (clientIds.includes(message.clientId)) {
+            userId = uid
+            nextUserIdsToClientIds[uid] = clientIds.filter(id => id !== message.clientId)
+            if (nextUserIdsToClientIds[uid].length === 0) {
+              delete nextUserIdsToClientIds[uid]
+            }
+            break
+          }
+        }
+
+        const events = []
+        const uClientIds = nextUserIdsToClientIds[userId]
+        if (userId && (!uClientIds || uClientIds.length === 0)) {
+          events.push(emit(UserPresenceTopic, {
+            status: 'absent',
+            userId,
+            source: 'http',
+          }))
+        }
+
         const span = state.activeSpans[message.clientId]
         if (span) {
           span.error('client disconnected')
           const { [message.clientId]: _, ...rest } = state.activeSpans
           return {
-            state: { ...state, connections, activeSpans: rest },
+            state: { ...state, connections, activeSpans: rest, userIdsToClientIds: nextUserIdsToClientIds },
+            events,
           }
         }
         return {
-          state: { ...state, connections },
+          state: { ...state, connections, userIdsToClientIds: nextUserIdsToClientIds },
+          events,
         }
       },
 
@@ -375,19 +420,25 @@ export const HTTP = (
       },
 
       send: (state, message) => {
-        state.server?.publish(`client:${message.clientId}`, message.text)
-        try {
-          const parsed = JSON.parse(message.text) as { type: string }
-          if (parsed.type === 'done' || parsed.type === 'error') {
-            const span = state.activeSpans[message.clientId]
-            if (span) {
-              parsed.type === 'done' ? span.done() : span.error()
-              const { [message.clientId]: _, ...rest } = state.activeSpans
-              return { state: { ...state, activeSpans: rest } }
+        const clientIds = state.userIdsToClientIds[message.userId] ?? []
+        let activeSpans = { ...state.activeSpans }
+        let changed = false
+        for (const clientId of clientIds) {
+          state.server?.publish(`client:${clientId}`, message.text)
+          try {
+            const parsed = JSON.parse(message.text) as { type: string }
+            if (parsed.type === 'done' || parsed.type === 'error') {
+              const span = activeSpans[clientId]
+              if (span) {
+                parsed.type === 'done' ? span.done() : span.error()
+                const { [clientId]: _, ...remaining } = activeSpans
+                activeSpans = remaining
+                changed = true
+              }
             }
-          }
-        } catch { /* non-JSON text */ }
-        return { state }
+          } catch { /* non-JSON text */ }
+        }
+        return changed ? { state: { ...state, activeSpans } } : { state }
       },
 
       _configSchemaChanged: (state, message) => {
@@ -434,9 +485,9 @@ export const HTTP = (
       start: (state, context) => {
         selfRef = context.self
 
-        context.subscribe(OutboundMessageTopic, (e) => ({
+        context.subscribe(OutboundUserMessageTopic, (e) => ({
           type: 'send' as const,
-          clientId: e.clientId,
+          userId: e.userId,
           text: e.text,
         }))
 
@@ -615,7 +666,7 @@ export const HTTP = (
                   attachments = parsed.attachments
                 }
               } catch { /* plain text */ }
-              selfRef?.send({ type: 'message', clientId: ws.data.clientId, text, attachments })
+              selfRef?.send({ type: 'message', clientId: ws.data.clientId, userId: ws.data.userId, text, attachments })
             },
             close: (ws: ServerWebSocket<WsData>) => {
               ws.unsubscribe(CHANNEL)

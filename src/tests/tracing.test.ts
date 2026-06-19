@@ -31,7 +31,6 @@ const INITIAL_CHATBOT_STATE: ChatbotState = {
   contextView:    { userId: '', version: 0, recentMessages: [], userContext: null, modeSummaries: {}, toolSummaries: [] },
   tools:          {},
   sessionUsage:   { promptTokens: 0, completionTokens: 0 },
-  activeClientId: '',
 }
 
 // ─── SSE helpers ───
@@ -113,7 +112,7 @@ const spawnChatbot = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
   const contextStoreRef = system.spawn(`context-store-${userId}`, ContextStore({ userId, contextPath: tempContextPath() }))
   return system.spawn(
     'chatbot',
-    Chatbot({ model: LLM_PROVIDER_ADAPTER_OPTS.model }, { clientId: CLIENT_ID, userId, contextStoreRef, llmRef }),
+    Chatbot({ model: LLM_PROVIDER_ADAPTER_OPTS.model }, { userId, contextStoreRef, llmRef }),
     { state: { ...INITIAL_CHATBOT_STATE } },
   )
 }
@@ -131,7 +130,7 @@ describe('distributed tracing', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hi' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
+    react.send({ type: 'userMessage', text: 'hi' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
     await tick(300)
 
     const reactStart  = spanFor(spans, 'chatbot',  'started')
@@ -184,7 +183,7 @@ describe('distributed tracing', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for ai news' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
+    react.send({ type: 'userMessage', text: 'search for ai news' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
     await tick(400)
 
     const reactStart       = spanFor(spans, 'chatbot',      'started')
@@ -224,7 +223,7 @@ describe('distributed tracing', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hi' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
+    react.send({ type: 'userMessage', text: 'hi' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
     await tick(300)
 
     const reactError = spanFor(spans, 'chatbot',  'error')
@@ -272,7 +271,7 @@ describe('distributed tracing', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search test' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
+    react.send({ type: 'userMessage', text: 'search test' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
     await tick(400)
 
     // The traceparent header must be present and well-formed (W3C trace context format)

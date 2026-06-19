@@ -7,7 +7,7 @@ import { onLifecycle, onMessage } from '../../system/index.ts'
 import { join } from 'node:path'
 import { ask } from '../../system/index.ts'
 
-import { ClientPresenceTopic, InboundMessageTopic, OutboundMessageTopic, type MessageAttachment } from '../../types/events.ts'
+import { UserPresenceTopic, InboundMessageTopic, OutboundUserMessageTopic, type MessageAttachment } from '../../types/events.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
 import { resolveIdentity } from './types.ts'
 import type { IdentityProviderMsg, Identity } from '../../types/identity.ts'
@@ -211,7 +211,7 @@ type SignalMsg =
   | { type: '_reconnect' }
   | { type: '_socketClosed' }
   | { type: '_line';                  line: string }
-  | { type: '_send';                  clientId: string; text: string }
+  | { type: '_send';                  userId: string; text: string }
   | { type: '_sendOk' }
   | { type: '_sendErr';               error: string }
   | { type: '_refreshTyping' }
@@ -229,6 +229,7 @@ export type SignalState = {
   activeSpans:         Record<string, SpanHandle>
   identityProviderRef: ActorRef<IdentityProviderMsg> | null
   pendingConnect:      Map<string, BufferedMsg[]>                // phone → buffered messages while resolving userId
+  userIdToPhones:      Map<string, string[]>                     // userId → phone numbers
 }
 
 // ─── Actor factory ───
@@ -290,10 +291,19 @@ export const Signal = (
       refreshPresenceExpiry(phone, ctx)
       const span = ctx.trace.start('request', { clientId: phone })
       const activeSpans = { ...state.activeSpans, [phone]: span }
+
+      let userId = ''
+      for (const [uid, phones] of state.userIdToPhones.entries()) {
+        if (phones.includes(phone)) {
+          userId = uid
+          break
+        }
+      }
+
       return {
         state: { ...state, activeSpans },
         events: [emit(InboundMessageTopic, {
-          clientId:    phone,
+          userId,
           text,
           attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
           traceId:      span.traceId,
@@ -325,10 +335,10 @@ export const Signal = (
   }
 
   return {
-    initialState: () => ({ seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() }),
+    initialState: () => ({ seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map(), userIdToPhones: new Map() }),
     lifecycle: onLifecycle({
       start: (state, ctx) => {
-        ctx.subscribe(OutboundMessageTopic,    e => ({ type: '_send'             as const, clientId: e.clientId, text: e.text }))
+        ctx.subscribe(OutboundUserMessageTopic,    e => ({ type: '_send'             as const, userId: e.userId, text: e.text }))
         ctx.subscribe(IdentityProviderTopic, e => ({ type: '_identityProviderChanged' as const, ref: e.ref }))
         ctx.timers.startSingleTimer('reconnect', { type: '_reconnect' }, 0)
         ctx.log.info(`signal actor: connecting to ${host}:${port}`)
@@ -336,10 +346,11 @@ export const Signal = (
       },
 
       stopped: (state, ctx) => {
-        for (const phone of state.seenIds) {
-          ctx.deleteRetained(ClientPresenceTopic, phone, {
-            status: 'disconnected',
-            clientId: phone,
+        for (const userId of state.userIdToPhones.keys()) {
+          ctx.deleteRetained(UserPresenceTopic, userId, {
+            status: 'absent',
+            userId,
+            source: 'signal',
           })
         }
         activeSocket?.destroy()
@@ -450,106 +461,111 @@ export const Signal = (
         let ev: Record<string, unknown>
         try { ev = JSON.parse(msg.text) } catch { return { state } }
 
-        switch (ev.type) {
-          case 'start':
-          case 'reasoningChunk':
-          case 'tooling':
-          case 'chunk': {
-            const isFirst = !state.pending.has(msg.clientId)
-            if (isFirst) {
-              sendTyping(msg.clientId)
-              if (!ctx.timers.isActive('typing')) {
-                ctx.timers.startPeriodicTimer('typing', { type: '_refreshTyping' }, 10_000)
+        const phones = state.userIdToPhones.get(msg.userId) ?? []
+        let pending = new Map(state.pending)
+        let activeSpans = { ...state.activeSpans }
+        let stateChanged = false
+
+        for (const phone of phones) {
+          switch (ev.type) {
+            case 'start':
+            case 'reasoningChunk':
+            case 'tooling':
+            case 'chunk': {
+              const isFirst = !pending.has(phone)
+              if (isFirst) {
+                sendTyping(phone)
+                if (!ctx.timers.isActive('typing')) {
+                  ctx.timers.startPeriodicTimer('typing', { type: '_refreshTyping' }, 10_000)
+                }
               }
-            }
-            const pending = new Map(state.pending)
-            const cur     = pending.get(msg.clientId) ?? { text: '', attachments: [], sources: [] }
-            if (ev.type === 'chunk') {
-              pending.set(msg.clientId, { ...cur, text: cur.text + String(ev.text ?? '') })
-            } else {
-              pending.set(msg.clientId, cur)
-            }
-            return { state: { ...state, pending } }
-          }
-
-          case 'attachments': {
-            const incoming = (ev.attachments as MessageAttachment[] | undefined) ?? []
-            if (incoming.length === 0) return { state }
-            const pending = new Map(state.pending)
-            const cur     = pending.get(msg.clientId) ?? { text: '', attachments: [], sources: [] }
-            pending.set(msg.clientId, { ...cur, attachments: [...cur.attachments, ...incoming] })
-            return { state: { ...state, pending } }
-          }
-
-          case 'sources': {
-            const incoming = (ev.sources as ToolSource[] | undefined) ?? []
-            if (incoming.length === 0) return { state }
-            const pending = new Map(state.pending)
-            const cur     = pending.get(msg.clientId) ?? { text: '', attachments: [], sources: [] }
-            pending.set(msg.clientId, { ...cur, sources: [...cur.sources, ...incoming] })
-            return { state: { ...state, pending } }
-          }
-
-          case 'done': {
-            const buf = state.pending.get(msg.clientId)
-            if (!buf) return { state }
-            const pending = new Map(state.pending)
-            pending.delete(msg.clientId)
-            sendTyping(msg.clientId, true)
-            if (pending.size === 0) ctx.timers.cancel('typing')
-
-            const rendered = renderForSignal(buf.text)
-            const allAttachments = buf.attachments.map(a => join(MEDIA_DIR, a.url))
-
-            const sendSeq = async () => {
-              // If both text and attachments exist, send them in two separate messages (attachments first).
-              if (rendered.message && allAttachments.length > 0) {
-                await sendOverSocket(msg.clientId, { message: '', textStyles: [] }, allAttachments)
-                await sendOverSocket(msg.clientId, rendered, [])
+              const cur = pending.get(phone) ?? { text: '', attachments: [], sources: [] }
+              if (ev.type === 'chunk') {
+                pending.set(phone, { ...cur, text: cur.text + String(ev.text ?? '') })
               } else {
-                // Otherwise just send whatever we have in a single message.
-                await sendOverSocket(msg.clientId, rendered, allAttachments)
+                pending.set(phone, cur)
               }
+              stateChanged = true
+              break
             }
 
-            ctx.pipeToSelf(
-              sendSeq(),
-              ()    => ({ type: '_sendOk'  as const }),
-              (err) => ({ type: '_sendErr' as const, error: String(err) }),
-            )
-
-            const span = state.activeSpans[msg.clientId]
-            if (span) {
-              span.done()
-              const { [msg.clientId]: _, ...activeSpans } = state.activeSpans
-              return { state: { ...state, pending, activeSpans } }
+            case 'attachments': {
+              const incoming = (ev.attachments as MessageAttachment[] | undefined) ?? []
+              if (incoming.length > 0) {
+                const cur = pending.get(phone) ?? { text: '', attachments: [], sources: [] }
+                pending.set(phone, { ...cur, attachments: [...cur.attachments, ...incoming] })
+                stateChanged = true
+              }
+              break
             }
-            return { state: { ...state, pending } }
+
+            case 'sources': {
+              const incoming = (ev.sources as ToolSource[] | undefined) ?? []
+              if (incoming.length > 0) {
+                const cur = pending.get(phone) ?? { text: '', attachments: [], sources: [] }
+                pending.set(phone, { ...cur, sources: [...cur.sources, ...incoming] })
+                stateChanged = true
+              }
+              break
+            }
+
+            case 'done': {
+              const buf = pending.get(phone)
+              if (buf) {
+                pending.delete(phone)
+                sendTyping(phone, true)
+                if (pending.size === 0) ctx.timers.cancel('typing')
+
+                const rendered = renderForSignal(buf.text)
+                const allAttachments = buf.attachments.map(a => join(MEDIA_DIR, a.url))
+
+                const sendSeq = async () => {
+                  if (rendered.message && allAttachments.length > 0) {
+                    await sendOverSocket(phone, { message: '', textStyles: [] }, allAttachments)
+                    await sendOverSocket(phone, rendered, [])
+                  } else {
+                    await sendOverSocket(phone, rendered, allAttachments)
+                  }
+                }
+
+                ctx.pipeToSelf(
+                  sendSeq(),
+                  ()    => ({ type: '_sendOk'  as const }),
+                  (err) => ({ type: '_sendErr' as const, error: String(err) }),
+                )
+
+                const span = activeSpans[phone]
+                if (span) {
+                  span.done()
+                  delete activeSpans[phone]
+                }
+                stateChanged = true
+              }
+              break
+            }
+
+            case 'error': {
+              const text = String(ev.text ?? 'unknown error')
+              sendTyping(phone, true)
+              pending.delete(phone)
+              if (pending.size === 0) ctx.timers.cancel('typing')
+              ctx.pipeToSelf(
+                sendOverSocket(phone, { message: `⚠️ ${text}`, textStyles: [] }),
+                ()    => ({ type: '_sendOk'  as const }),
+                (err) => ({ type: '_sendErr' as const, error: String(err) }),
+              )
+              const errSpan = activeSpans[phone]
+              if (errSpan) {
+                errSpan.error(text)
+                delete activeSpans[phone]
+              }
+              stateChanged = true
+              break
+            }
           }
-
-          case 'error': {
-            const text = String(ev.text ?? 'unknown error')
-            sendTyping(msg.clientId, true)
-            const pendingAfterErr = new Map(state.pending)
-            pendingAfterErr.delete(msg.clientId)
-            if (pendingAfterErr.size === 0) ctx.timers.cancel('typing')
-            ctx.pipeToSelf(
-              sendOverSocket(msg.clientId, { message: `⚠️ ${text}`, textStyles: [] }),
-              ()    => ({ type: '_sendOk'  as const }),
-              (err) => ({ type: '_sendErr' as const, error: String(err) }),
-            )
-            const errSpan = state.activeSpans[msg.clientId]
-            if (errSpan) {
-              errSpan.error(text)
-              const { [msg.clientId]: _, ...activeSpans } = state.activeSpans
-              return { state: { ...state, activeSpans } }
-            }
-            return { state }
-          }
-
-          default:
-            return { state }
         }
+
+        return stateChanged ? { state: { ...state, pending, activeSpans } } : { state }
       },
 
       _identityProviderChanged: (state, msg) => ({
@@ -562,15 +578,23 @@ export const Signal = (
         const pendingConnect = new Map(state.pendingConnect)
         pendingConnect.delete(phone)
 
-        // Mark seen, emit connect, then flush buffered messages.
+        // Mark seen, then update mappings
         const seenIds = new Set(state.seenIds)
         seenIds.add(phone)
-        ctx.publishRetained(ClientPresenceTopic, phone, {
-          status: 'connected',
-          clientId: phone,
-          userId,
-          roles: [],
-        })
+
+        const userIdToPhones = new Map(state.userIdToPhones)
+        const currentPhones = userIdToPhones.get(userId) ?? []
+        const isFirstConnection = currentPhones.length === 0
+        userIdToPhones.set(userId, [...currentPhones.filter(p => p !== phone), phone])
+
+        if (isFirstConnection) {
+          ctx.publishRetained(UserPresenceTopic, userId, {
+            status: 'present',
+            userId,
+            source: 'signal',
+          })
+        }
+
         refreshPresenceExpiry(phone, ctx)
         const events: ReturnType<typeof emit>[] = []
         let activeSpans = { ...state.activeSpans }
@@ -578,14 +602,14 @@ export const Signal = (
           const span = ctx.trace.start('request', { clientId: phone })
           activeSpans = { ...activeSpans, [phone]: span }
           events.push(emit(InboundMessageTopic, {
-            clientId:     phone,
+            userId,
             text:         buf.text,
             attachments:  buf.attachments,
             traceId:      span.traceId,
             parentSpanId: span.spanId,
           }))
         }
-        return { state: { ...state, seenIds, pendingConnect, activeSpans }, events }
+        return { state: { ...state, seenIds, pendingConnect, activeSpans, userIdToPhones }, events }
       },
 
       _phoneRejected: (state, msg) => {
@@ -600,11 +624,32 @@ export const Signal = (
         if (!state.seenIds.has(msg.phone)) return { state }
         const seenIds = new Set(state.seenIds)
         seenIds.delete(msg.phone)
-        ctx.deleteRetained(ClientPresenceTopic, msg.phone, {
-          status: 'disconnected',
-          clientId: msg.phone,
-        })
-        return { state: { ...state, seenIds } }
+
+        let userId = ''
+        const userIdToPhones = new Map(state.userIdToPhones)
+        for (const [uid, phones] of userIdToPhones.entries()) {
+          if (phones.includes(msg.phone)) {
+            userId = uid
+            const remaining = phones.filter(p => p !== msg.phone)
+            if (remaining.length === 0) {
+              userIdToPhones.delete(uid)
+            } else {
+              userIdToPhones.set(uid, remaining)
+            }
+            break
+          }
+        }
+
+        const events = []
+        if (userId && !userIdToPhones.has(userId)) {
+          events.push(emit(UserPresenceTopic, {
+            status: 'absent',
+            userId,
+            source: 'signal',
+          }))
+        }
+
+        return { state: { ...state, seenIds, userIdToPhones }, events }
       },
 
       _sendOk: (state) => ({ state }),

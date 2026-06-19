@@ -64,7 +64,6 @@ export const NoteAgent = (options: NoteAgentOptions): ActorDef<NoteAgentMsg, Not
           { role: 'user',   content: request },
         ],
         userId:   msg.userId,
-        clientId: msg.clientId,
       },
       ctx,
     )

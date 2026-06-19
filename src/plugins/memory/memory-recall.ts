@@ -315,7 +315,6 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
           { role: 'user', content: `Query:\n${parsed.value.query}` },
         ],
         userId: msg.userId,
-        clientId: msg.clientId,
       },
       ctx,
     )
@@ -350,7 +349,7 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
             state.recordsRef,
             (replyTo) => ({ type: 'readMany', recordIds: state.seedRecordIds, userId: state.loop.turn.userId, replyTo }),
           ),
-          (sources) => ({ type: '_fallbackSources' as const, sources, userId: state.loop.turn.userId, clientId: state.loop.turn.clientId }),
+          (sources) => ({ type: '_fallbackSources' as const, sources, userId: state.loop.turn.userId }),
           (error) => ({ type: '_fallbackErr' as const, error: String(error) }),
         )
         return { state: { ...state, fallbackUsed: true } }
@@ -412,7 +411,6 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
             { role: 'user', content: buildUserPrompt(state.currentQuery, m.sources) },
           ],
           userId: m.userId,
-          clientId: m.clientId,
         },
         ctx,
       )

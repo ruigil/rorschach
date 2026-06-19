@@ -47,7 +47,7 @@ type AnalysisPending = {
   kind: 'analysis'
   accumulated: string
   replyTo: ActorRef<ToolReply>
-  clientId?: string
+  userId?: string
 }
 
 type GenerationPending = {
@@ -55,7 +55,7 @@ type GenerationPending = {
   prompt: string
   accumulatedImage: string
   replyTo: ActorRef<ToolReply>
-  clientId?: string
+  userId?: string
 }
 
 type PendingRequest = AnalysisPending | GenerationPending
@@ -112,7 +112,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
 
       // ── analyze_image invoke ──
       invoke: (state, message, context) => {
-        const { toolName, arguments: args, replyTo, clientId } = message
+        const { toolName, arguments: args, replyTo, userId } = message
 
         if (toolName === generateImageTool.name) {
           let prompt = ''
@@ -132,7 +132,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
             model,
             messages: [{ role: 'user', content: prompt }],
             role: 'vision',
-            clientId,
+            clientId: userId,
             replyTo: context.self as unknown as ActorRef<VisionProviderReply>,
           })
           return {
@@ -140,7 +140,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
               ...state,
               pending: {
                 ...state.pending,
-                [requestId]: { kind: 'generation', prompt, accumulatedImage: '', replyTo, clientId },
+                [requestId]: { kind: 'generation', prompt, accumulatedImage: '', replyTo, userId },
               },
             },
           }
@@ -168,7 +168,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
         return {
           state: {
             ...state,
-            pending: { ...state.pending, [requestId]: { kind: 'analysis', accumulated: '', replyTo, clientId } },
+            pending: { ...state.pending, [requestId]: { kind: 'analysis', accumulated: '', replyTo, userId } },
           },
         }
       },
@@ -191,7 +191,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
             },
           ],
           role: 'vision',
-          clientId: req?.clientId,
+          clientId: req?.userId,
           replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
         })
         return { state }

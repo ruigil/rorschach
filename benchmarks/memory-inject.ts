@@ -4,10 +4,10 @@ import cognitivePlugin from '../src/plugins/cognitive/cognitive.plugin.ts'
 import memoryPlugin from '../src/plugins/memory/memory.plugin.ts'
 import observabilityPlugin from '../src/plugins/observability/observability.plugin.ts'
 import {
-  ClientPresenceTopic,
-  InboundMessageTopic, OutboundMessageTopic, OutboundBroadcastTopic,
+  UserPresenceTopic,
+  InboundMessageTopic, OutboundUserMessageTopic, OutboundBroadcastTopic,
 } from '../src/types/events.ts'
-import type { OutboundMessageEvent } from '../src/types/events.ts'
+import type { OutboundUserMessageEvent } from '../src/types/events.ts'
 import { TraceTopic } from '../src/system/index.ts'
 import type { TraceSpan } from '../src/system/index.ts'
 import { CostTopic } from '../src/types/llm.ts'
@@ -119,7 +119,7 @@ system.subscribe(MetricsTopic, (event) => {
 
 // ─── sendTurn ───
 
-const sendTurn = async (text: string, clientId: string, traceId: string): Promise<{ reply: string; latency: number }> => {
+const sendTurn = async (text: string, traceId: string): Promise<{ reply: string; latency: number }> => {
   const start = Date.now()
   const spanId = newBenchmarkId()
   let reply = ''
@@ -165,9 +165,9 @@ const sendTurn = async (text: string, clientId: string, traceId: string): Promis
       TURN_TIMEOUT_MS,
     )
 
-    msgUnsub = system.subscribe(OutboundMessageTopic, (event) => {
-      const e = event as OutboundMessageEvent
-      if (e.clientId !== clientId) return
+    msgUnsub = system.subscribe(OutboundUserMessageTopic, (event) => {
+      const e = event as OutboundUserMessageEvent
+      if (e.userId !== USER_ID) return
       try {
         const data = JSON.parse(e.text)
         if (data.type === 'chunk') {
@@ -183,18 +183,16 @@ const sendTurn = async (text: string, clientId: string, traceId: string): Promis
       } catch { }
     })
 
-    system.publish(InboundMessageTopic, { clientId, text, traceId, parentSpanId: spanId })
+    system.publish(InboundMessageTopic, { userId: USER_ID, text, traceId, parentSpanId: spanId })
   })
 }
 
 console.log('\n🚀 Starting Injection Phase\n')
 
-const INJECT_CLIENT_ID = 'benchmark-inject'
-system.publishRetained(ClientPresenceTopic, INJECT_CLIENT_ID, {
-  status: 'connected',
-  clientId: INJECT_CLIENT_ID,
+system.publishRetained(UserPresenceTopic, USER_ID, {
+  status: 'present',
   userId: USER_ID,
-  roles: ['user'],
+  source: 'cli',
 })
 
 // Wait for the chatbot actor to fully initialize and register its tools
@@ -206,7 +204,7 @@ for (const statement of factualStatements) {
   const traceId = newBenchmarkId()
   console.log(`User: ${statement}`)
   process.stdout.write('Assistant: ')
-  const result     = await sendTurn(statement, INJECT_CLIENT_ID, traceId)
+  const result     = await sendTurn(statement, traceId)
   const storedMemory = storeMemoryCalls.has(traceId)
   const toolCalls    = toolCallsPerTrace.get(traceId) ?? []
   injectionResults.push({ latency: result.latency, storedMemory, toolCalls })

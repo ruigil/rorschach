@@ -51,7 +51,7 @@ type TranscriptionPending = {
   kind: 'transcription'
   accumulated: string
   replyTo: ActorRef<ToolReply>
-  clientId?: string
+  userId?: string
 }
 
 type TtsPending = {
@@ -61,7 +61,7 @@ type TtsPending = {
   spokenText: string
   voice: string
   replyTo: ActorRef<ToolReply>
-  clientId?: string
+  userId?: string
 }
 
 export type AudioState = {
@@ -136,7 +136,7 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
     handler: onMessage<AudioMsg, AudioState>({
 
       invoke: (state, message, context) => {
-        const { toolName, arguments: args, replyTo, clientId } = message
+        const { toolName, arguments: args, replyTo, userId } = message
 
         if (toolName === textToSpeechTool.name) {
           let text = ''
@@ -164,13 +164,13 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
             instructions: instructions || undefined,
             format: ttsFormat,
             role: 'audio',
-            clientId,
+            clientId: userId,
             replyTo: context.self as unknown as ActorRef<SpeechProviderReply>,
           })
           return {
             state: {
               ...state,
-              pending: { ...state.pending, [requestId]: { kind: 'tts', audioData: null, audioFormat: ttsFormat, spokenText: text, voice: ttsVoice, replyTo, clientId } },
+              pending: { ...state.pending, [requestId]: { kind: 'tts', audioData: null, audioFormat: ttsFormat, spokenText: text, voice: ttsVoice, replyTo, userId } },
             },
           }
         }
@@ -197,7 +197,7 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
         return {
           state: {
             ...state,
-            pending: { ...state.pending, [requestId]: { kind: 'transcription', accumulated: '', replyTo, clientId } },
+            pending: { ...state.pending, [requestId]: { kind: 'transcription', accumulated: '', replyTo, userId } },
           },
         }
       },
@@ -214,7 +214,7 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
           model: sttModel,
           audio: { data, format },
           role: 'audio',
-          clientId: req.clientId,
+          clientId: req.userId,
           replyTo: context.self as unknown as ActorRef<TranscriptionProviderReply>,
         })
         return { state }

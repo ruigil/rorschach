@@ -25,7 +25,6 @@ type ContextRecord = {
   timestamp: number
   mode:      string
   source:    ContextRecordSource
-  clientId?: string
   injected?: boolean
 }
 
@@ -238,7 +237,6 @@ export const ContextStore = (
             timestamp: now,
             mode:      msg.mode,
             source:    sourceForMessage(message, msg.source),
-            ...(msg.clientId ? { clientId: msg.clientId } : {}),
             ...(msg.injected !== undefined ? { injected: msg.injected } : {}),
           })),
         ]

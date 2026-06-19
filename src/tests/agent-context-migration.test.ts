@@ -63,10 +63,10 @@ const runnerRef = system.spawn('workflow-runner', NullRunner())
       maxToolLoops: 3,
       workflowsDir: '/tmp/nonexistent-workflows',
       workflowRunnerRef: runnerRef,
-    })({ userId: 'u1', clientId: 'c1', llmRef, contextStoreRef }))
+    })({ userId: 'u1', llmRef, contextStoreRef }))
     await tick()
 
-    workflows.send({ type: 'userMessage', clientId: 'c1', text: 'make a workflow' })
+    workflows.send({ type: 'userMessage', text: 'make a workflow' })
     await tick()
 
     const contents = streams[0]!.messages.map(m => typeof m.content === 'string' ? m.content : '').join('\n')

@@ -27,7 +27,6 @@ export type AgentContextMsg =
       messages:   ApiMessage[]
       mode:       string
       source?:    ContextRecordSource
-      clientId?:  string
       injected?:  boolean
       timestamp?: number
     }
@@ -48,7 +47,6 @@ export const ContextSnapshotTopic = createTopic<ContextSnapshotEvent>('context.s
 
 export type AgentFactoryOpts = {
   userId:          string
-  clientId:        string
   llmRef:          ActorRef<LlmProviderMsg>
   contextStoreRef: ActorRef<AgentContextMsg>
 }
@@ -70,7 +68,7 @@ export type AgentRegistrationEvent =
 export const AgentRegistrationTopic = createTopic<AgentRegistrationEvent>('agent.registration')
 
 export type SwitchAgentEvent = {
-  clientId: string
+  userId:   string
   mode:     string
   source:   'user' | 'llm' | 'programmatic'
   reason?:  string
@@ -85,10 +83,10 @@ export type AgentCatalogEvent = {
 export const AgentCatalogTopic = createTopic<AgentCatalogEvent>('agent.catalog')
 
 export type SessionLifecycleEvent =
-  | { type: 'sessionStarted';  userId: string; firstClientId: string; defaultMode: string; timestamp: number }
+  | { type: 'sessionStarted';  userId: string; defaultMode: string; timestamp: number }
   | { type: 'sessionEnded';    userId: string; reason: 'lastDisconnect' | 'contextStoreCrash'; timestamp: number }
   | { type: 'modeActivated';   userId: string; mode: string; previousMode: string; source: 'user' | 'llm' | 'programmatic' | 'crashFallback'; timestamp: number }
-  | { type: 'clientAttached';  userId: string; clientId: string; clientCount: number; timestamp: number }
-  | { type: 'clientDetached';  userId: string; clientId: string; clientCount: number; timestamp: number }
+  | { type: 'presencePresent'; userId: string; source: 'http' | 'signal' | 'cli'; timestamp: number }
+  | { type: 'presenceAbsent';  userId: string; source: 'http' | 'signal' | 'cli'; timestamp: number }
 
 export const SessionLifecycleTopic = createTopic<SessionLifecycleEvent>('session.lifecycle')

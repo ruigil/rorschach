@@ -26,7 +26,6 @@ export type ToolInvokeMsg = {
   toolName: string
   arguments: string  // raw JSON string from LLM
   replyTo: ActorRef<ToolReply>
-  clientId?: string
   userId: string
 }
 
@@ -69,14 +68,13 @@ export type JobLifecycleEvent =
       toolName: string
       toolRef: ActorRef<ToolMsg>
       startedAt: number
-	      clientId?: string
-	      userId?: string
-	      statusText?: string
-	      progress?: { current: number; total: number }
-	      metadata?: Record<string, unknown>
-	    }
-	  | { jobId: string; status: 'completed'; result: ToolResultPayload; statusText?: string; metadata?: Record<string, unknown> }
-	  | { jobId: string; status: 'failed';    error: string; metadata?: Record<string, unknown> }
-	  | { jobId: string; status: 'cleared' }
+      userId?: string
+      statusText?: string
+      progress?: { current: number; total: number }
+      metadata?: Record<string, unknown>
+    }
+  | { jobId: string; status: 'completed'; result: ToolResultPayload; statusText?: string; metadata?: Record<string, unknown> }
+  | { jobId: string; status: 'failed';    error: string; metadata?: Record<string, unknown> }
+  | { jobId: string; status: 'cleared' }
 
 export const JobRegistryTopic = createTopic<JobLifecycleEvent>('tools.jobs')

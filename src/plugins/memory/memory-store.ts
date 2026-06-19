@@ -65,7 +65,6 @@ export type MemoryStoreWorkerState = {
   record:          MemoryRecord | null
   accumulatedText: string
   userId:          string
-  clientId?:       string
 }
 
 const parseExtraction = (text: string): ExtractionResult => {
@@ -255,10 +254,10 @@ export const MemoryStoreWorker = (parent: ActorRef<MemorySupervisorMsg>, options
           ),
           (record) => 'error' in record
             ? ({ type: '_recordStoreErr' as const, replyTo: msg.replyTo, error: record.error })
-            : ({ type: '_recordStored' as const, replyTo: msg.replyTo, record, topic: parsed.value.topic, userId: msg.userId, clientId: msg.clientId }),
+            : ({ type: '_recordStored' as const, replyTo: msg.replyTo, record, topic: parsed.value.topic, userId: msg.userId }),
           (error) => ({ type: '_recordStoreErr' as const, replyTo: msg.replyTo, error: String(error) }),
         )
-        return { state: { ...state, userId: msg.userId, clientId: msg.clientId } }
+        return { state: { ...state, userId: msg.userId } }
       },
 
       _recordStored: (state, msg, ctx) => {
@@ -272,7 +271,7 @@ export const MemoryStoreWorker = (parent: ActorRef<MemorySupervisorMsg>, options
             { role: 'user', content: msg.record.content },
           ],
           role: 'memory-store',
-          clientId: msg.clientId,
+          clientId: msg.userId,
           replyTo: ctx.self as unknown as ActorRef<LlmProviderReply>,
         })
 

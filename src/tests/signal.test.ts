@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { mkdirSync } from 'node:fs'
 import { AgentSystem } from '../system/index.ts'
 import { Signal, renderForSignal } from '../plugins/interfaces/signal.ts'
-import { ClientPresenceTopic, InboundMessageTopic, OutboundMessageTopic } from '../types/events.ts'
-import type { ClientPresenceEvent, InboundMessageEvent, MessageAttachment } from '../types/events.ts'
+import { UserPresenceTopic, InboundMessageTopic, OutboundUserMessageTopic } from '../types/events.ts'
+import type { UserPresenceEvent, InboundMessageEvent, MessageAttachment } from '../types/events.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -12,6 +12,7 @@ const tick = (ms = 50) => Bun.sleep(ms)
 //
 // Accepts TCP connections, pushes newline-delimited JSON-RPC notifications,
 // and captures any JSON-RPC requests sent back by the actor.
+//
 //
 function startMockSignalDaemon(port: number) {
   type BunSocket = Parameters<NonNullable<Parameters<typeof Bun.listen>[0]['socket']['open']>>[0]
@@ -59,23 +60,23 @@ describe('signal actor: TCP socket', () => {
   })
 
   test('emits WsConnect + WsMessage when the daemon pushes an envelope', async () => {
-    const connectEvents: ClientPresenceEvent[] = []
+    const connectEvents: UserPresenceEvent[] = []
     const messageEvents: InboundMessageEvent[] = []
 
     daemon = startMockSignalDaemon(17590)
     const system = await AgentSystem()
-    system.subscribe(ClientPresenceTopic,  e => { if (e.status === 'connected') connectEvents.push(e) })
+    system.subscribe(UserPresenceTopic,  e => { if (e.status === 'present') connectEvents.push(e) })
     system.subscribe(InboundMessageTopic,  e => messageEvents.push(e))
 
     system.spawn('signal', Signal({ host: '127.0.0.1', port: 17590 }),
-      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
+      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map(), userIdToPhones: new Map() } })
 
     await tick(100)
     daemon.pushEnvelope({ source: '+1111111111', dataMessage: { message: 'hello via tcp' } })
     await tick(100)
 
     expect(connectEvents).toHaveLength(1)
-    expect(connectEvents[0]!.clientId).toBe('+1111111111')
+    expect(connectEvents[0]!.userId).toBe('anonymous')
     expect(messageEvents).toHaveLength(1)
     expect(messageEvents[0]!.text).toBe('hello via tcp')
 
@@ -83,21 +84,21 @@ describe('signal actor: TCP socket', () => {
   })
 
   test('does not re-emit WsConnect for the same sender on a second message', async () => {
-    const connectEvents: ClientPresenceEvent[] = []
+    const connectEvents: UserPresenceEvent[] = []
 
     daemon = startMockSignalDaemon(17591)
     const system = await AgentSystem()
-    system.subscribe(ClientPresenceTopic, e => { if (e.status === 'connected') connectEvents.push(e) })
+    system.subscribe(UserPresenceTopic, e => { if (e.status === 'present') connectEvents.push(e) })
 
     system.spawn('signal', Signal({ host: '127.0.0.1', port: 17591 }),
-      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
+      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map(), userIdToPhones: new Map() } })
 
     await tick(100)
     daemon.pushEnvelope({ source: '+2222222222', dataMessage: { message: 'first' } })
     daemon.pushEnvelope({ source: '+2222222222', dataMessage: { message: 'second' } })
     await tick(100)
 
-    expect(connectEvents.filter(e => e.clientId === '+2222222222')).toHaveLength(1)
+    expect(connectEvents.filter(e => e.userId === 'anonymous')).toHaveLength(1)
 
     await system.shutdown()
   })
@@ -107,13 +108,13 @@ describe('signal actor: TCP socket', () => {
 
     const system = await AgentSystem()
     system.spawn('signal', Signal({ host: '127.0.0.1', port: 17592, account: '+0000000000' }),
-      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
+      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map(), userIdToPhones: new Map([['u1', ['+3333333333']]]) } })
 
     await tick(100)
 
     const md = '**hello** _world_'
-    system.publish(OutboundMessageTopic, { clientId: '+3333333333', text: JSON.stringify({ type: 'chunk', text: md }) })
-    system.publish(OutboundMessageTopic, { clientId: '+3333333333', text: JSON.stringify({ type: 'done' }) })
+    system.publish(OutboundUserMessageTopic, { userId: 'u1', text: JSON.stringify({ type: 'chunk', text: md }) })
+    system.publish(OutboundUserMessageTopic, { userId: 'u1', text: JSON.stringify({ type: 'done' }) })
     await tick(200)
 
     const sendLine = daemon.receivedLines.find(l => {
@@ -135,14 +136,14 @@ describe('signal actor: TCP socket', () => {
 
     const system = await AgentSystem()
     system.spawn('signal', Signal({ host: '127.0.0.1', port: 17596 }),
-      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
+      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map(), userIdToPhones: new Map([['u1', ['+6666666666']]]) } })
 
     await tick(100)
 
     const attachment: MessageAttachment = { kind: 'image', url: 'test.jpg', mimeType: 'image/jpeg' }
-    system.publish(OutboundMessageTopic, { clientId: '+6666666666', text: JSON.stringify({ type: 'chunk', text: 'here is some text' }) })
-    system.publish(OutboundMessageTopic, { clientId: '+6666666666', text: JSON.stringify({ type: 'attachments', attachments: [attachment] }) })
-    system.publish(OutboundMessageTopic, { clientId: '+6666666666', text: JSON.stringify({ type: 'done' }) })
+    system.publish(OutboundUserMessageTopic, { userId: 'u1', text: JSON.stringify({ type: 'chunk', text: 'here is some text' }) })
+    system.publish(OutboundUserMessageTopic, { userId: 'u1', text: JSON.stringify({ type: 'attachments', attachments: [attachment] }) })
+    system.publish(OutboundUserMessageTopic, { userId: 'u1', text: JSON.stringify({ type: 'done' }) })
     await tick(200)
 
     const sendLines = daemon.receivedLines.filter(l => {
@@ -170,14 +171,14 @@ describe('signal actor: TCP socket', () => {
     const attachmentsDir = `${tmpdir()}/rorschach-test-${crypto.randomUUID()}`
     const attachmentId   = 'test-attach-001'
     mkdirSync(attachmentsDir, { recursive: true })
-    Bun.write(`${attachmentsDir}/${attachmentId}`, 'dummy image data')
+    await Bun.write(`${attachmentsDir}/${attachmentId}`, 'dummy image data')
 
     daemon = startMockSignalDaemon(17595)
     const system = await AgentSystem()
     system.subscribe(InboundMessageTopic, e => messageEvents.push(e))
 
     system.spawn('signal', Signal({ host: '127.0.0.1', port: 17595, attachmentsDir }),
-      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
+      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map(), userIdToPhones: new Map() } })
 
     await tick(100)
     daemon.pushEnvelope({
@@ -190,7 +191,7 @@ describe('signal actor: TCP socket', () => {
     await tick(200)
 
     expect(messageEvents).toHaveLength(1)
-    expect(messageEvents[0]!.clientId).toBe('+5555555555')
+    expect(messageEvents[0]!.userId).toBe('anonymous')
     expect(messageEvents[0]!.text).toBe('check this out')
     expect(messageEvents[0]!.attachments).toHaveLength(1)
     const inboundPath = messageEvents[0]!.attachments![0]!.url
@@ -209,7 +210,7 @@ describe('signal actor: TCP socket', () => {
     system.subscribe(InboundMessageTopic, e => messageEvents.push(e))
 
     system.spawn('signal', Signal({ host: '127.0.0.1', port: 17593, reconnectMs: 200 }),
-      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
+      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map(), userIdToPhones: new Map() } })
 
     await tick(100)
     daemon.closeClients()
@@ -238,7 +239,7 @@ describe('signal actor: TCP socket', () => {
 
     const system = await AgentSystem()
     const ref = system.spawn('signal', Signal({ host: '127.0.0.1', port: 17594 }),
-      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
+      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map(), userIdToPhones: new Map() } })
 
     await tick(100)
     clientSocket!.write('this is not json\n')
@@ -254,7 +255,7 @@ describe('signal actor: TCP socket', () => {
   test('stays alive when no daemon is listening', async () => {
     const system = await AgentSystem()
     const ref = system.spawn('signal', Signal({ host: '127.0.0.1', port: 19998, reconnectMs: 100 }),
-      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
+      { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map(), userIdToPhones: new Map() } })
 
     await tick(400)
 
@@ -264,24 +265,24 @@ describe('signal actor: TCP socket', () => {
   })
 
   test('integration: receives messages and attachments from signal-cli TCP at 127.0.0.1:7583', async () => {
-    const connectEvents: ClientPresenceEvent[] = []
+    const connectEvents: UserPresenceEvent[] = []
     const messageEvents: InboundMessageEvent[] = []
 
     const system = await AgentSystem()
-    system.subscribe(ClientPresenceTopic, e => { if (e.status === 'connected') connectEvents.push(e) })
+    system.subscribe(UserPresenceTopic, e => { if (e.status === 'present') connectEvents.push(e) })
     system.subscribe(InboundMessageTopic, e => messageEvents.push(e))
 
     const ref = system.spawn('signal', Signal({
       host: '127.0.0.1',
       port: 7583,
-    }), { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
+    }), { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map(), userIdToPhones: new Map() } })
 
     await tick(2_000)  // wait for any queued messages to be pushed by the daemon
 
     expect(ref.isAlive()).toBe(true)
     console.log(`received ${messageEvents.length} message(s) from ${connectEvents.length} sender(s)`)
     for (const e of messageEvents) {
-      console.log(`  [${e.clientId}] ${e.text}`)
+      console.log(`  [${e.userId}] ${e.text}`)
       if (e.attachments) {
         console.log(`    attachments (${e.attachments.length}):`)
         for (const attachment of e.attachments) {
@@ -301,12 +302,12 @@ describe('signal actor: TCP socket', () => {
       host:    '127.0.0.1',
       port:    7583,
       account: '+41762189620',
-    }), { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map() } })
+    }), { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map(), userIdToPhones: new Map([['u1', ['+41762189620']]]) } })
 
     await tick(200)  // wait for connection
 
-    system.publish(OutboundMessageTopic, { clientId: '+41762189620', text: JSON.stringify({ type: 'chunk', text: 'test from rorschach TCP actor' }) })
-    system.publish(OutboundMessageTopic, { clientId: '+41762189620', text: JSON.stringify({ type: 'done' }) })
+    system.publish(OutboundUserMessageTopic, { userId: 'u1', text: JSON.stringify({ type: 'chunk', text: 'test from rorschach TCP actor' }) })
+    system.publish(OutboundUserMessageTopic, { userId: 'u1', text: JSON.stringify({ type: 'done' }) })
 
     await tick(500)
 

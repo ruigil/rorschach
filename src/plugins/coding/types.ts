@@ -36,7 +36,7 @@ export type DocsManifest = {
 }
 
 export type CodingAgentExtra =
-  | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
+  | { type: 'userMessage'; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
 
 export type CodingAgentMsg = LoopMsg<CodingAgentExtra>
@@ -44,11 +44,10 @@ export type CodingAgentMsg = LoopMsg<CodingAgentExtra>
 export type CodingAgentState = {
   loop: LoopState
   contextView: ContextView
-  activeClientId: string
 }
 
 export type DocsJobExecutorExtra =
-  | { type: 'startJob'; clientId?: string; userId: string }
+  | { type: 'startJob'; userId: string }
 
 export type DocsJobExecutorMsg = LoopMsg<DocsJobExecutorExtra>
 
@@ -57,7 +56,6 @@ export type DocsJobExecutorState = {
   llmRef: ActorRef<LlmProviderMsg> | null
   pagesWritten: number
   startedAt: number
-  clientId?: string
   userId?: string
 }
 
@@ -74,7 +72,6 @@ export type DocsAgentState = {
     jobId: string
     executorRef: ActorRef<DocsJobExecutorMsg>
     query: string
-    clientId?: string
     userId: string
     pagesWritten: number
   }>

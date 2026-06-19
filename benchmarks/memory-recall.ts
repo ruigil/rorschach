@@ -4,10 +4,10 @@ import cognitivePlugin from '../src/plugins/cognitive/cognitive.plugin.ts'
 import memoryPlugin from '../src/plugins/memory/memory.plugin.ts'
 import observabilityPlugin from '../src/plugins/observability/observability.plugin.ts'
 import {
-  ClientPresenceTopic,
-  InboundMessageTopic, OutboundMessageTopic, OutboundBroadcastTopic,
+  UserPresenceTopic,
+  InboundMessageTopic, OutboundUserMessageTopic, OutboundBroadcastTopic,
 } from '../src/types/events.ts'
-import type { OutboundMessageEvent } from '../src/types/events.ts'
+import type { OutboundUserMessageEvent } from '../src/types/events.ts'
 import { TraceTopic } from '../src/system/index.ts'
 import type { TraceSpan } from '../src/system/index.ts'
 import { CostTopic, LlmProviderTopic } from '../src/types/llm.ts'
@@ -207,9 +207,9 @@ const sendTurn = async (text: string, clientId: string, traceId: string): Promis
       TURN_TIMEOUT_MS,
     )
 
-    msgUnsub = system.subscribe(OutboundMessageTopic, (event) => {
-      const e = event as OutboundMessageEvent
-      if (e.clientId !== clientId) return
+    msgUnsub = system.subscribe(OutboundUserMessageTopic, (event) => {
+      const e = event as OutboundUserMessageEvent
+      if (e.userId !== USER_ID) return
       try {
         const data = JSON.parse(e.text)
         if (data.type === 'chunk') {
@@ -225,7 +225,7 @@ const sendTurn = async (text: string, clientId: string, traceId: string): Promis
       } catch { }
     })
 
-    system.publish(InboundMessageTopic, { clientId, text, traceId, parentSpanId: spanId })
+    system.publish(InboundMessageTopic, { userId: USER_ID, text, traceId, parentSpanId: spanId })
   })
 }
 
@@ -237,12 +237,10 @@ const allRunResults: RecallResult[][] = []
 for (let run = 0; run < RUNS; run++) {
   if (RUNS > 1) console.log(`Run ${run + 1}/${RUNS}`)
 
-  const RECALL_CLIENT_ID = `benchmark-recall-${run}`
-  system.publishRetained(ClientPresenceTopic, RECALL_CLIENT_ID, {
-    status: 'connected',
-    clientId: RECALL_CLIENT_ID,
+  system.publishRetained(UserPresenceTopic, USER_ID, {
+    status: 'present',
     userId: USER_ID,
-    roles: ['user'],
+    source: 'cli',
   })
 
   // Wait for the chatbot actor to fully initialize and register its tools
@@ -253,7 +251,7 @@ for (let run = 0; run < RUNS; run++) {
     const traceId = newBenchmarkId()
     console.log(`Question: ${q}`)
     process.stdout.write('Assistant: ')
-    const result    = await sendTurn(q, RECALL_CLIENT_ID, traceId)
+    const result    = await sendTurn(q, USER_ID, traceId)
     const isCorrect = a.every(kw => result.reply.toLowerCase().includes(kw.toLowerCase()))
     
     process.stdout.write('Judge: ')
@@ -266,9 +264,10 @@ for (let run = 0; run < RUNS; run++) {
     console.log(`(Latency: ${result.latency}ms, Keyword: ${isCorrect}, Judge: ${judge.score}, tools: [${toolCalls.join(', ')}], recall_memory: ${recallMemory})\n`)
   }
 
-  system.deleteRetained(ClientPresenceTopic, RECALL_CLIENT_ID, {
-    status: 'disconnected',
-    clientId: RECALL_CLIENT_ID,
+  system.publish(UserPresenceTopic, {
+    status: 'absent',
+    userId: USER_ID,
+    source: 'cli',
   })
   allRunResults.push(runResults)
 }

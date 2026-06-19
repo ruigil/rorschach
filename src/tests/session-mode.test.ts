@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
-import { ClientPresenceTopic, InboundMessageTopic, OutboundMessageTopic } from '../types/events.ts'
-import { AgentRegistrationTopic, SwitchAgentTopic, SessionLifecycleTopic, type AgentDescriptor } from '../types/agents.ts'
+import { UserPresenceTopic, InboundMessageTopic, OutboundUserMessageTopic } from '../types/events.ts'
+import { AgentRegistrationTopic, SwitchAgentTopic, SessionLifecycleTopic, type AgentDescriptor, type AgentFactoryOpts } from '../types/agents.ts'
 import { JobRegistryTopic, type ToolMsg } from '../types/tools.ts'
 import { SessionManager } from '../plugins/cognitive/session-manager.ts'
 
@@ -24,11 +24,11 @@ const NullTool = (): ActorDef<ToolMsg, null> => ({
   handler: (state) => ({ state }),
 })
 
-const EchoAgent = (): ActorDef<any, null> => ({
+const EchoAgent = (userId: string): ActorDef<any, null> => ({
   initialState: null,
   handler: (state, msg, ctx) => {
     if (msg.type === 'userMessage') {
-      ctx.publish(OutboundMessageTopic, { clientId: msg.clientId, text: 'agent-ready' })
+      ctx.publish(OutboundUserMessageTopic, { userId, text: 'agent-ready' })
     }
     return { state }
   },
@@ -46,13 +46,19 @@ const echoDescriptor = (mode: string, displayName: string): AgentDescriptor => (
   mode,
   displayName,
   shortDesc: `${displayName} mode`,
-  factory: () => EchoAgent(),
+  factory: (opts: AgentFactoryOpts) => EchoAgent(opts.userId),
   capabilities: { userVisible: true },
 })
 
 const parseModeFrames = (frames: string[]) =>
   frames
-    .map(text => JSON.parse(text) as { type: string; mode?: string; displayName?: string })
+    .map(text => {
+      try {
+        return JSON.parse(text) as { type: string; mode?: string; displayName?: string }
+      } catch {
+        return { type: '' }
+      }
+    })
     .filter(frame => frame.type === 'modeChanged')
 
 describe('session manager mode UI events', () => {
@@ -65,10 +71,11 @@ describe('session manager mode UI events', () => {
       contextWindowHours: 4,
     }))
 
-    const clientFrames: Record<string, string[]> = { c1: [], c2: [] }
-    system.subscribe(OutboundMessageTopic, (event) => {
-      clientFrames[event.clientId] ??= []
-      clientFrames[event.clientId]!.push(event.text)
+    const userFrames: Record<string, string[]> = { u1: [] }
+    system.subscribe(OutboundUserMessageTopic, (event) => {
+      const e = event as { userId: string; text: string }
+      userFrames[e.userId] ??= []
+      userFrames[e.userId]!.push(e.text)
     })
 
     await tick()
@@ -76,32 +83,28 @@ describe('session manager mode UI events', () => {
     system.publish(AgentRegistrationTopic, { type: 'register', descriptor: descriptor('planner', 'Planner') })
     await tick()
 
-    system.publishRetained(ClientPresenceTopic, 'c1', { status: 'connected', clientId: 'c1', userId: 'u1', roles: [] })
+    system.publishRetained(UserPresenceTopic, 'u1-cli', { status: 'present', userId: 'u1', source: 'cli' })
     await tick()
-    expect(parseModeFrames(clientFrames.c1!).at(-1)).toMatchObject({
+    expect(parseModeFrames(userFrames.u1!).at(-1)).toMatchObject({
       mode:        'chatbot',
       displayName: 'Chatbot',
     })
 
-    system.publishRetained(ClientPresenceTopic, 'c2', { status: 'connected', clientId: 'c2', userId: 'u1', roles: [] })
+    system.publishRetained(UserPresenceTopic, 'u1-http', { status: 'present', userId: 'u1', source: 'http' })
     await tick()
-    expect(parseModeFrames(clientFrames.c2!).at(-1)).toMatchObject({
+    expect(parseModeFrames(userFrames.u1!).at(-1)).toMatchObject({
       mode:        'chatbot',
       displayName: 'Chatbot',
     })
 
     system.publish(SwitchAgentTopic, {
-      clientId: 'c1',
+      userId:   'u1',
       mode:     'planner',
       source:   'user',
     })
     await tick()
 
-    expect(parseModeFrames(clientFrames.c1!).at(-1)).toMatchObject({
-      mode:        'planner',
-      displayName: 'Planner',
-    })
-    expect(parseModeFrames(clientFrames.c2!).at(-1)).toMatchObject({
+    expect(parseModeFrames(userFrames.u1!).at(-1)).toMatchObject({
       mode:        'planner',
       displayName: 'Planner',
     })
@@ -109,20 +112,20 @@ describe('session manager mode UI events', () => {
     await system.shutdown()
   })
 
-  test('rebuilds active retained clients when session manager restarts before agent registration', async () => {
+  test('rebuilds active interfaces when session manager restarts before agent registration', async () => {
     const system = await AgentSystem()
     const llmRef = system.spawn('null-llm', NullLlm())
-    const clientFrames: Record<string, string[]> = { c1: [] }
-    system.subscribe(OutboundMessageTopic, (event) => {
-      clientFrames[event.clientId] ??= []
-      clientFrames[event.clientId]!.push(event.text)
+    const userFrames: Record<string, string[]> = { u1: [] }
+    system.subscribe(OutboundUserMessageTopic, (event) => {
+      const e = event as { userId: string; text: string }
+      userFrames[e.userId] ??= []
+      userFrames[e.userId]!.push(e.text)
     })
 
-    system.publishRetained(ClientPresenceTopic, 'c1', {
-      status:   'connected',
-      clientId: 'c1',
+    system.publishRetained(UserPresenceTopic, 'u1-cli', {
+      status:   'present',
       userId:   'u1',
-      roles:    [],
+      source:   'cli',
     })
 
     system.spawn('session-manager', SessionManager({
@@ -135,14 +138,14 @@ describe('session manager mode UI events', () => {
     system.publish(AgentRegistrationTopic, { type: 'register', descriptor: echoDescriptor('chatbot', 'Chatbot') })
     await tick()
     system.publish(InboundMessageTopic, {
-      clientId:     'c1',
+      userId:       'u1',
       text:         'hello',
       traceId:      '00000000000000000000000000000001',
       parentSpanId: '0000000000000001',
     })
     await tick()
 
-    expect(clientFrames.c1).toContain('agent-ready')
+    expect(userFrames.u1).toContain('agent-ready')
 
     await system.shutdown()
   })
@@ -166,8 +169,8 @@ describe('session manager mode UI events', () => {
     system.publish(AgentRegistrationTopic, { type: 'register', descriptor: descriptor('chatbot', 'Chatbot') })
     await tick()
 
-    // 1. Connect client c1 for user u1
-    system.publishRetained(ClientPresenceTopic, 'c1', { status: 'connected', clientId: 'c1', userId: 'u1', roles: [] })
+    // 1. Connect client u1
+    system.publishRetained(UserPresenceTopic, 'u1-cli', { status: 'present', userId: 'u1', source: 'cli' })
     await tick()
 
     // Verify session started
@@ -180,17 +183,16 @@ describe('session manager mode UI events', () => {
       toolName: 'dummy-tool',
       toolRef,
       startedAt: Date.now(),
-      clientId: 'c1',
       userId: 'u1',
     })
     await tick()
 
-    // 3. Disconnect client c1
-    system.publishRetained(ClientPresenceTopic, 'c1', { status: 'disconnected', clientId: 'c1' })
+    // 3. Disconnect client u1
+    system.publishRetained(UserPresenceTopic, 'u1-cli', { status: 'absent', userId: 'u1', source: 'cli' })
     await tick()
 
-    // Verify client detached, but sessionEnded has NOT occurred
-    expect(lifecycleEvents.some(e => e.type === 'clientDetached' && e.userId === 'u1')).toBe(true)
+    // Verify client detached (presenceAbsent), but sessionEnded has NOT occurred
+    expect(lifecycleEvents.some(e => e.type === 'presenceAbsent' && e.userId === 'u1')).toBe(true)
     expect(lifecycleEvents.some(e => e.type === 'sessionEnded' && e.userId === 'u1')).toBe(false)
 
     // 4. Complete/clear the job

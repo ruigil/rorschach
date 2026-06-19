@@ -145,13 +145,13 @@ export type MemoryRecallMsg =
   | ToolInvokeMsg
   | { type: '_localToolDone'; replyTo: ActorRef<ToolReply>; text: string }
   | { type: '_localToolErr'; replyTo: ActorRef<ToolReply>; error: string }
-  | { type: '_fallbackSources'; sources: MemoryRecord[]; userId: string; clientId?: string }
+  | { type: '_fallbackSources'; sources: MemoryRecord[]; userId: string }
   | { type: '_fallbackErr'; error: string }
 
 export type MemoryStoreMsg =
   | LlmProviderReply
   | ToolInvokeMsg
-  | { type: '_recordStored'; replyTo: ActorRef<ToolReply>; record: MemoryRecord; topic?: string; userId: string; clientId?: string }
+  | { type: '_recordStored'; replyTo: ActorRef<ToolReply>; record: MemoryRecord; topic?: string; userId: string }
   | { type: '_recordStoreErr'; replyTo: ActorRef<ToolReply>; error: string }
   | { type: '_indexed'; summary: string }
   | { type: '_indexErr'; error: string }

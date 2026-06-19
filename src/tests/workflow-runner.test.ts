@@ -7,7 +7,7 @@ import { WorkflowRunner } from '../plugins/workflows/workflow-runner.ts'
 import { WorkflowRunUpdateTopic, type Workflow, type WorkflowRunnerMsg, type WorkflowRunnerReply, type WorkflowRunState } from '../plugins/workflows/types.ts'
 import { startWorkflowRunTool } from '../plugins/workflows/workflow-tools.ts'
 import { ToolRegistrationTopic, type ToolMsg, type ToolReply } from '../types/tools.ts'
-import { ClientPresenceTopic, OutboundMessageTopic } from '../types/events.ts'
+import { OutboundUserMessageTopic } from '../types/events.ts'
 import { initialRunState } from '../plugins/workflows/workflow-store.ts'
 
 const tempDirs: string[] = []
@@ -132,15 +132,13 @@ describe('workflow runner', () => {
     await system.shutdown()
   })
 
-  test('bridges workflow run updates to all connected clients for the same user', async () => {
+  test('publishes workflow run updates to OutboundUserMessageTopic for the user', async () => {
     const { system } = await spawnRunner(workflow(['read']))
-    const outbound: Array<{ clientId: string; frame: any }> = []
-    system.subscribe(OutboundMessageTopic, event => outbound.push({ clientId: event.clientId, frame: JSON.parse(event.text) }))
-
-    system.publishRetained(ClientPresenceTopic, 'c1', { status: 'connected', clientId: 'c1', userId: 'u1', roles: [] })
-    system.publishRetained(ClientPresenceTopic, 'c2', { status: 'connected', clientId: 'c2', userId: 'u1', roles: [] })
-    system.publishRetained(ClientPresenceTopic, 'c3', { status: 'connected', clientId: 'c3', userId: 'u2', roles: [] })
-    await Bun.sleep(30)
+    const outbound: Array<{ userId: string; frame: any }> = []
+    system.subscribe(OutboundUserMessageTopic, event => {
+      const e = event as { userId: string; text: string }
+      outbound.push({ userId: e.userId, frame: JSON.parse(e.text) })
+    })
 
     system.publish(WorkflowRunUpdateTopic, {
       userId: 'u1',
@@ -164,35 +162,9 @@ describe('workflow runner', () => {
     })
     await Bun.sleep(30)
 
-    expect(outbound.map(event => event.clientId).sort()).toEqual(['c1', 'c2'])
+    expect(outbound).toHaveLength(1)
+    expect(outbound[0]?.userId).toBe('u1')
     expect(outbound[0]?.frame).toMatchObject({ type: 'workflowRunUpdated', workflowId: 'workflow-1', runId: 'run-bridge' })
-
-    outbound.length = 0
-    system.publishRetained(ClientPresenceTopic, 'c2', { status: 'disconnected', clientId: 'c2' })
-    await Bun.sleep(30)
-    system.publish(WorkflowRunUpdateTopic, {
-      userId: 'u1',
-      workflowId: 'workflow-1',
-      runId: 'run-bridge-2',
-      run: {
-        schemaVersion: 1,
-        runId: 'run-bridge-2',
-        workflowId: 'workflow-1',
-        userId: 'u1',
-        status: 'running',
-        inputs: {},
-        outputs: {},
-        activeTaskIds: [],
-        activeTasks: {},
-        pendingJobs: {},
-        taskStates: {},
-        events: [],
-        workflow: workflow(['read']),
-      },
-    })
-    await Bun.sleep(30)
-
-    expect(outbound.map(event => event.clientId)).toEqual(['c1'])
 
     await system.shutdown()
   })

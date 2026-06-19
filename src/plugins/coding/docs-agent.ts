@@ -1,7 +1,7 @@
 import type { ActorContext, ActorDef, ActorRef, ActorResult, Interceptor } from '../../system/index.ts'
 import { agentLoop, idleLoopState, onLifecycle, onMessage } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
-import { OutboundMessageTopic } from '../../types/events.ts'
+import { OutboundUserMessageTopic } from '../../types/events.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import { JobRegistryTopic, type ToolCollection, type ToolFinalReply, type ToolMsg } from '../../types/tools.ts'
 import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
@@ -114,7 +114,6 @@ export const DocsJobExecutor = (
         toolName: updateDocsTool.name,
         toolRef: options.parentRef as unknown as ActorRef<ToolMsg>,
         startedAt: state.startedAt,
-        clientId: state.clientId,
         userId: state.userId,
         statusText: status,
       })
@@ -137,12 +136,10 @@ export const DocsJobExecutor = (
       return loop.startTurn({
         ...state,
         startedAt: Date.now(),
-        clientId: m.clientId,
         userId: m.userId,
       }, {
         messages,
         userId: m.userId,
-        clientId: m.clientId,
       }, ctx)
     }
     return next(state, msg)
@@ -167,14 +164,13 @@ export const DocsAgent = (options: DocsAgentOptions): ActorDef<DocsAgentMsg, Doc
   type S = DocsAgentState
   type Ctx = ActorContext<M>
 
-  const publishRunning = (ctx: Ctx, jobId: string, query: string, clientId: string | undefined, userId: string, statusText: string): void => {
+  const publishRunning = (ctx: Ctx, jobId: string, query: string, userId: string, statusText: string): void => {
     ctx.publishRetained(JobRegistryTopic, jobId, {
       jobId,
       status: 'running',
       toolName: updateDocsTool.name,
       toolRef: ctx.self as unknown as ActorRef<ToolMsg>,
       startedAt: Date.now(),
-      clientId,
       userId,
       statusText,
     })
@@ -216,12 +212,10 @@ export const DocsAgent = (options: DocsAgentOptions): ActorDef<DocsAgentMsg, Doc
 
     invoke: (state, msg, ctx) => {
       if (msg.toolName === showDocsTool.name) {
-        if (msg.clientId) {
-          ctx.publish(OutboundMessageTopic, {
-            clientId: msg.clientId,
-            text: JSON.stringify({ type: 'docWorkspace', artifactName: 'index.html' }),
-          })
-        }
+        ctx.publish(OutboundUserMessageTopic, {
+          userId: msg.userId,
+          text: JSON.stringify({ type: 'docWorkspace', artifactName: 'index.html' }),
+        })
         msg.replyTo.send({ type: 'toolResult', result: { text: 'Opened documentation index.' } })
         return { state }
       }
@@ -267,16 +261,15 @@ export const DocsAgent = (options: DocsAgentOptions): ActorDef<DocsAgentMsg, Doc
             jobId,
             executorRef,
             query,
-            clientId: msg.clientId,
             userId: msg.userId,
             pagesWritten: 0,
           },
         },
       }
 
-      publishRunning(ctx, jobId, query, msg.clientId, msg.userId, 'Starting documentation generation.')
+      publishRunning(ctx, jobId, query, msg.userId, 'Starting documentation generation.')
 
-      executorRef.send({ type: 'startJob', clientId: msg.clientId, userId: msg.userId })
+      executorRef.send({ type: 'startJob', userId: msg.userId })
 
       return { state: nextState }
     },

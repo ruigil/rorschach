@@ -147,7 +147,6 @@ describe('AgentLoop: startTurn + streaming', () => {
       params: {
         messages: [{ role: 'user', content: 'hello' }],
         userId: 'u1',
-        clientId: 'c1',
       },
     })
     await tick()
@@ -156,7 +155,6 @@ describe('AgentLoop: startTurn + streaming', () => {
     expect(streams[0]!.type).toBe('stream')
     expect(streams[0]!.messages).toEqual([{ role: 'user', content: 'hello' }])
     expect(streams[0]!.role).toBe('test')
-    expect(streams[0]!.clientId).toBe('c1')
 
     await system.shutdown()
   })

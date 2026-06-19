@@ -189,7 +189,6 @@ export const WorkflowRunExecutor = (
         dependencyOutputs: dependencyOutputs(run, task),
         history: run.taskStates[task.id]?.history,
         userId: run.userId,
-        clientId: run.clientId,
       })
       run = appendEvent({
         ...run,

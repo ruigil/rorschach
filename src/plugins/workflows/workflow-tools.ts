@@ -227,7 +227,7 @@ const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch:
 export type WorkflowToolDeps = {
   workflowsDir: string
   workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
-  publishGraph: (clientId: string | undefined, workflowId: string, runId?: string) => void
+  publishGraph: (userId: string, workflowId: string, runId?: string) => void
 }
 
 const toolError = (error: string): ToolReply => ({ type: 'toolError', error })
@@ -252,7 +252,7 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
     if (!parsed.ok) return toolError(parsed.error)
     const result = await saveWorkflow(workflowsDir, parsed.workflow)
     if (!result.ok) return toolError(result.error)
-    publishGraph(msg.clientId, result.data.workflow.id)
+    publishGraph(msg.userId, result.data.workflow.id)
     return { type: 'toolResult', result: { text: `Workflow saved to ${result.data.filepath} - ${result.data.workflow.tasks.length} tasks.` } }
   }
 
@@ -264,7 +264,7 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
       if (!result.ok) return toolError(result.error)
       return { type: 'toolResult', result: { text: JSON.stringify(result.data.workflow, null, 2) } }
     }
-    publishGraph(msg.clientId, arg.workflowId, arg.runId)
+    publishGraph(msg.userId, arg.workflowId, arg.runId)
     return { type: 'toolResult', result: { text: `Opened workflow graph for ${arg.workflowId}.` } }
   }
 
@@ -307,7 +307,7 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
     )
 
     if (!reply.ok || !('run' in reply)) return toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
-    publishGraph(msg.clientId, reply.run.workflowId, reply.run.runId)
+    publishGraph(msg.userId, reply.run.workflowId, reply.run.runId)
     if (reply.run.status !== 'running') {
       return { type: 'toolResult', result: { text: JSON.stringify(reply.run, null, 2) } }
     }

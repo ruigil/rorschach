@@ -21,7 +21,6 @@ type TaskExecutorState = {
   dependencyOutputs: Record<string, WorkflowDependencyOutput>
   tools: ToolCollection
   userId: string
-  clientId?: string
   terminalSignaled: boolean
 }
 
@@ -217,14 +216,12 @@ export const WorkflowTaskExecutor = (
         [blockWorkflowTaskTool.name]: { ...blockWorkflowTaskTool, ref: ctx.self as ActorRef<ToolMsg> },
       },
       userId: msg.userId,
-      clientId: msg.clientId,
       terminalSignaled: false,
     }
     const messages = msg.history ?? buildMessages(msg.workflow, msg.task, msg.inputs, msg.artifactRoot, msg.dependencyOutputs)
     return loop.startTurn(next, {
       messages,
       userId: msg.userId,
-      clientId: msg.clientId,
     }, ctx)
   }
 

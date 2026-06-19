@@ -213,8 +213,6 @@ export type WorkflowRunnerMsg =
   | { type: '_reply'; replyTo: ActorRef<WorkflowRunnerReply>; reply: WorkflowRunnerReply; runId?: string; spawnedRef?: ActorRef<WorkflowRunExecutorMsg> }
   | { type: '_toolRegistered'; tool: Tool }
   | { type: '_toolUnregistered'; name: string }
-  | { type: '_clientConnected'; userId: string; clientId: string }
-  | { type: '_clientDisconnected'; clientId: string }
   | { type: '_runUpdated'; event: WorkflowRunUpdateEvent }
   | { type: '_done' }
 
@@ -248,7 +246,7 @@ export type WorkflowTaskExecutorMsg =
   | ToolInvokeMsg
 
 export type WorkflowsAgentExtra =
-  | { type: 'userMessage'; clientId: string; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
+  | { type: 'userMessage'; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
   | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }

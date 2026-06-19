@@ -2,7 +2,7 @@ import { describe, test, expect, afterEach, afterAll } from 'bun:test'
 import { mkdirSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { AgentSystem } from '../system/index.ts'
-import { OutboundMessageTopic } from '../types/events.ts'
+import { OutboundUserMessageTopic } from '../types/events.ts'
 import { Chatbot, type ChatbotState } from '../plugins/cognitive/chatbot-agent.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
 import { LlmProvider, OpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
@@ -28,7 +28,6 @@ const INITIAL_CHATBOT_STATE: ChatbotState = {
   contextView:    { userId: '', version: 0, recentMessages: [], userContext: null, modeSummaries: {}, toolSummaries: [] },
   tools:          {},
   sessionUsage:   { promptTokens: 0, completionTokens: 0 },
-  activeClientId: '',
 }
 
 const mockBraveResponse: BraveLlmContextResponse = {
@@ -81,8 +80,11 @@ type ParsedEvent = Record<string, unknown> & { type: string }
 
 const collectEvents = (system: Awaited<ReturnType<typeof AgentSystem>>): ParsedEvent[] => {
   const events: ParsedEvent[] = []
-  system.subscribe(OutboundMessageTopic, ({ text }) => {
-    try { events.push(JSON.parse(text) as ParsedEvent) } catch { /* ignore */ }
+  system.subscribe(OutboundUserMessageTopic, (event) => {
+    try {
+      const { text } = event as { text: string }
+      events.push(JSON.parse(text) as ParsedEvent)
+    } catch { /* ignore */ }
   })
   return events
 }
@@ -124,7 +126,7 @@ const spawnChatbot = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
   const contextStoreRef = system.spawn(`context-store-${userId}`, ContextStore({ userId, contextPath: tempContextPath() }))
   return system.spawn(
     'chatbot',
-    Chatbot({ model: LLM_PROVIDER_ADAPTER_OPTS.model }, { clientId: CLIENT_ID, userId, contextStoreRef, llmRef }),
+    Chatbot({ model: LLM_PROVIDER_ADAPTER_OPTS.model }, { userId, contextStoreRef, llmRef }),
     { state: { ...INITIAL_CHATBOT_STATE } },
   )
 }
@@ -151,7 +153,7 @@ describe('chatbot search integration', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'What is the latest AI news?' })
+    react.send({ type: 'userMessage', text: 'What is the latest AI news?' })
     await tick(400)
 
     const types = events.map(e => e.type)
@@ -181,7 +183,7 @@ describe('chatbot search integration', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for something' })
+    react.send({ type: 'userMessage', text: 'search for something' })
     await tick(400)
 
     const sourcesEvent = events.find(e => e.type === 'sources')
@@ -213,7 +215,7 @@ describe('chatbot search integration', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hello' })
+    react.send({ type: 'userMessage', text: 'hello' })
     await tick(300)
 
     expect(capturedBody?.tools).toBeUndefined()
@@ -239,7 +241,7 @@ describe('chatbot search integration', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'search for something' })
+    react.send({ type: 'userMessage', text: 'search for something' })
     await tick(400)
 
     const types = events.map(e => e.type)
@@ -268,7 +270,7 @@ describe('chatbot search integration', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', clientId: 'test-client', text: 'hello' })
+    react.send({ type: 'userMessage', text: 'hello' })
     await tick(300)
 
     expect(capturedBody?.tools).toBeDefined()

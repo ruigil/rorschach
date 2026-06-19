@@ -5,7 +5,7 @@ import {
   TraceTopic,
   ConfigUpdateRequestTopic,
 } from './system/index.ts'
-import { OutboundAdminBroadcastTopic, ClientPresenceTopic, OutboundMessageTopic } from './types/events.ts'
+import { OutboundAdminBroadcastTopic, UserPresenceTopic, OutboundUserMessageTopic } from './types/events.ts'
 import { loadConfig, saveConfig } from './config.ts'
 import type { LogEvent, MetricsEvent, LifecycleEvent, TraceSpan } from './system/index.ts'
 import type { ConfigUpdateRequest } from './system/index.ts'
@@ -61,16 +61,15 @@ system.subscribe(ToolRegistrationTopic, (event: ToolRegistrationEvent) => {
   }
 })
 
-// ─── Replay current tools to each newly connected client ───
+// ─── Replay current tools to each newly connected user ───
 
-system.subscribe(ClientPresenceTopic, (event) => {
-  if (event.status !== 'connected') return
-  const { clientId, userId, roles } = event
-  if (userId !== 'anonymous' && !roles.includes('admin')) return
-  for (const event of Object.values(toolsSnapshot)) {
-    system.publish(OutboundMessageTopic, {
-      clientId,
-      text: JSON.stringify({ type: 'tool_registered', name: event.name, schema: event.schema }),
+system.subscribe(UserPresenceTopic, (event) => {
+  if (event.status !== 'present') return
+  const { userId } = event
+  for (const toolEvent of Object.values(toolsSnapshot)) {
+    system.publish(OutboundUserMessageTopic, {
+      userId,
+      text: JSON.stringify({ type: 'tool_registered', name: toolEvent.name, schema: toolEvent.schema }),
     })
   }
 })

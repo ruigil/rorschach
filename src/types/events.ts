@@ -16,7 +16,7 @@ export type MessageAttachment = {
 // ─── Domain event: published when a client sends a message (any interface) ───
 
 export type InboundMessageEvent = {
-  clientId:      string
+  userId:        string
   text:          string
   attachments?:  MessageAttachment[]
   traceId:       string
@@ -26,19 +26,19 @@ export type InboundMessageEvent = {
 /** Topic published when any interface (HTTP/WS, Signal, CLI) receives a message from a client. */
 export const InboundMessageTopic = createTopic<InboundMessageEvent>('client.inbound')
 
-export type ClientPresenceEvent =
-  | { status: 'connected'; clientId: string; userId: string; roles: string[] }
-  | { status: 'disconnected'; clientId: string }
+export type UserPresenceEvent =
+  | { status: 'present'; userId: string; source: 'http' | 'signal' | 'cli' }
+  | { status: 'absent'; userId: string; source: 'http' | 'signal' | 'cli' }
 
-/** Retained topic describing currently connected clients for actors that restart. */
-export const ClientPresenceTopic = createTopic<ClientPresenceEvent>('client.presence')
+/** Retained topic describing currently active users across interfaces. */
+export const UserPresenceTopic = createTopic<UserPresenceEvent>('user.presence')
 
-// ─── Domain event: emit to send a message to a specific client (any interface) ───
+// ─── Domain event: emit to send a message to a specific user (any interface) ───
 
-export type OutboundMessageEvent = { clientId: string; text: string }
+export type OutboundUserMessageEvent = { userId: string; text: string }
 
-/** Topic for sending a message to a specific client. Emit to push text to any interface. */
-export const OutboundMessageTopic = createTopic<OutboundMessageEvent>('client.outbound')
+/** Topic for sending a message to a specific user. Emit to push text to any interface. */
+export const OutboundUserMessageTopic = createTopic<OutboundUserMessageEvent>('user.outbound')
 
 // ─── Domain event: emit to broadcast a message to all connected clients ───
 
@@ -56,3 +56,4 @@ export type CronTriggerEvent = { userId: string; text: string; traceId: string; 
 
 /** Topic emitted when a cron job fires for a specific user. Session manager routes to that user's chatbot actor. */
 export const CronTriggerTopic = createTopic<CronTriggerEvent>('cron.trigger.user')
+

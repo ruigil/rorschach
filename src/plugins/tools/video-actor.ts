@@ -37,7 +37,7 @@ type PendingJob = {
   jobId: string
   pollingUrl: string
   replyTo: ActorRef<ToolReply>
-  clientId?: string
+  userId: string
   deadline: number
 }
 
@@ -82,7 +82,7 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
     handler: onMessage<VideoMsg, VideoState>({
 
       invoke: (state, message, context) => {
-        const { toolName, arguments: args, replyTo, clientId } = message
+        const { toolName, arguments: args, replyTo, userId } = message
 
         if (toolName !== generateVideoTool.name) {
           replyTo.send({ type: 'toolError', error: `Unknown tool: ${toolName}` })
@@ -109,13 +109,13 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
           duration,
           resolution,
           role: videoPollRole,
-          clientId,
+          clientId: userId,
           replyTo: context.self as unknown as ActorRef<VideoSubmitReply>,
         })
         return {
           state: {
             ...state,
-            pending: { ...state.pending, [requestId]: { requestId, jobId: '', pollingUrl: '', replyTo, clientId, deadline: 0 } },
+            pending: { ...state.pending, [requestId]: { requestId, jobId: '', pollingUrl: '', replyTo, userId, deadline: 0 } },
           },
         }
       },
@@ -134,7 +134,7 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
           requestId,
           pollingUrl,
           role: videoPollRole,
-          clientId: req.clientId,
+          clientId: req.userId,
           replyTo: context.self as unknown as ActorRef<VideoPollReply>,
         })
         return {
@@ -177,7 +177,7 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
             requestId,
             downloads,
             role: videoPollRole,
-            clientId: req.clientId,
+            clientId: req.userId,
             replyTo: context.self as unknown as ActorRef<VideoDownloadReply>,
           })
           return { state }
@@ -223,7 +223,7 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
           requestId,
           pollingUrl: req.pollingUrl,
           role: videoPollRole,
-          clientId: req.clientId,
+          clientId: req.userId,
           replyTo: context.self as unknown as ActorRef<VideoPollReply>,
         })
         return { state }
