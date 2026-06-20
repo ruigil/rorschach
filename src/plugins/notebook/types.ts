@@ -1,7 +1,6 @@
-import type { LoopMsg } from '../../system/index.ts'
-import type { ToolInvokeMsg } from '../../types/tools.ts'
-import type { ActorRef } from '../../system/index.ts'
-import type { LlmProviderMsg } from '../../types/llm.ts'
+import type { LoopMsg, LoopState, ActorRef, ContextView } from '../../system/index.ts'
+import type { ToolCollection, ToolSchema, ToolMsg } from '../../types/tools.ts'
+import type { MessageAttachment } from '../../types/events.ts'
 
 // ─── Domain types ───
 
@@ -29,6 +28,21 @@ export type NotebookConfig = {
   maxToolLoops?: number  // default: 10
 }
 
-// ─── Note agent message protocol ───
+import type { ContextSnapshotEvent } from '../../types/agents.ts'
 
-export type NoteAgentMsg = LoopMsg | ToolInvokeMsg | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
+// ─── Coach agent message protocol ───
+
+export type CoachExtraMsg =
+  | { type: 'userMessage'; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
+  | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
+  | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
+  | { type: '_toolUnregistered'; name: string }
+
+export type CoachAgentMsg = LoopMsg<CoachExtraMsg>
+
+
+export type CoachAgentState = {
+  loop:        LoopState
+  contextView: ContextView
+  tools:       ToolCollection
+}

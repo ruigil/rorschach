@@ -1,60 +1,42 @@
 import type { ActorContext, ActorRef, PluginDef } from '../../system/index.ts'
 import { defineConfig, publishConfigSurface, deleteConfigSurface } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
-import { defineTool } from '../../system/index.ts'
 import { ToolRegistrationTopic, type ToolCollection, type ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
+import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
 
-import type { NotebookConfig, NoteAgentMsg } from './types.ts'
+import type { NotebookConfig } from './types.ts'
 
 import { Journal, journalWriteTool, journalReadTool, journalSearchTool } from './tools/journal.ts'
 import { Tracker, trackerLogTool, trackerStatsTool, trackerDefineHabitTool, trackerListHabitsTool } from './tools/tracker.ts'
 import { Todos, todosCreateTool, todosCompleteTool, todosListTool, todosDeleteTool, todosUpdateTool } from './tools/todos.ts'
 import { Search, notebookSearchTool } from './tools/search.ts'
-import { NoteAgent } from './note-agent.ts'
+import { CoachAgentFactory } from './coach-agent.ts'
 import { buildNotebookRoutes, notebookSchemas } from './routes.ts'
 
 // ─── Public tool schema ───
 
-export const noteTool = defineTool('note', `Interact with your personal notebook via a natural language request. A sub-agent handles the request and returns a summary of what was done.
+// ─── Coach Agent Descriptor Builder ───
 
-This tool is for the user only — only call it when explicitly asked by the user. Never use it to take notes for yourself.
-
-The notebook has three areas — use the request field to describe exactly what you want:
-
-**Journal** — daily markdown diary entries:
-- "Write a journal entry: had a productive morning, finished the auth PR"
-- "Read my journal entry for 2025-11-03"
-- "Search the journal for mentions of 'deployment'"
-
-**Tracker** — CSV-based logging for habits, expenses, or any numeric metric:
-- "Define a new tracker called 'Expenses' with unit 'EUR' or 'CHF'"
-- "Define a new habit called 'Exercise' with unit 'minutes'"
-- "List all tracked metrics"
-- "Log 30 minutes of Exercise for today"
-- "Log 45 EUR for Expenses today — lunch"
-- "Show my Expenses stats" — includes weekly and monthly totals
-
-**Todos** — task list with due dates and optional recurrence:
-- "Create a todo: call dentist, due Friday"
-- "List all open todos"
-- "List todos due today"
-- "Mark the todo 'call dentist' as complete"
-- "Delete the todo 'old task'"
-- "Update the todo 'call dentist': change due date to next Monday"
-
-**Cross-area search**:
-- "Search journal and todos for 'budget'"
-
-Always include enough detail in the request so the sub-agent can act without ambiguity (e.g. specify habit names, dates, file paths, or todo text).`, {
-  type: 'object',
-  properties: {
-    request: {
-      type: 'string',
-      description: 'A natural language instruction describing what to do in the notebook. Be specific: include titles, tags, dates, file paths, or content as needed.',
-    },
-  },
-  required: ['request'],
+const buildCoachDescriptor = (
+  cfg: NotebookConfig,
+  journalRef: ActorRef<ToolMsg>,
+  trackerRef: ActorRef<ToolMsg>,
+  todosRef: ActorRef<ToolMsg>,
+  searchRef: ActorRef<ToolMsg>,
+  notebookDir: string,
+): AgentDescriptor => ({
+  mode: 'coach',
+  displayName: 'Coach',
+  shortDesc: 'Your personal coach for health, learning routines, and habit building.',
+  factory: CoachAgentFactory({
+    model: cfg.agentModel ?? 'google/gemini-3.5-flash',
+    maxToolLoops: cfg.maxToolLoops ?? 15,
+    notebookDir: notebookDir,
+    // Mount core local tools permanently
+    localTools: buildToolCollection(journalRef, trackerRef, todosRef, searchRef)
+  }),
+  capabilities: { userVisible: true },
 })
 
 // ─── Plugin message & state types ───
@@ -72,7 +54,6 @@ type PluginState = {
   trackerRef:           ActorRef<ToolMsg> | null
   todosRef:             ActorRef<ToolMsg> | null
   searchRef:            ActorRef<ToolMsg> | null
-  noteAgentRef:         ActorRef<NoteAgentMsg>  | null
 }
 
 const config = defineConfig<NotebookConfig>('notebook', {
@@ -109,8 +90,7 @@ const buildToolCollection = (
 // ─── Spawn helpers (typed with ActorContext<PluginMsg>) ───
 
 type SpawnResult = Pick<PluginState,
-  'journalRef' | 'trackerRef' | 'todosRef' | 'searchRef' |
-  'noteAgentRef'
+  'journalRef' | 'trackerRef' | 'todosRef' | 'searchRef'
 >
 
 const spawnChildren = (
@@ -119,6 +99,7 @@ const spawnChildren = (
   model: string,
   maxToolLoops: number,
   ctx: ActorContext<PluginMsg>,
+  cfg: NotebookConfig,
 ): SpawnResult => {
   // Spawn internal tool actors — NOT registered on ToolRegistrationTopic
   const journalRef = ctx.spawn(`journal-${gen}`, Journal(notebookDir)) as ActorRef<ToolMsg>
@@ -126,31 +107,21 @@ const spawnChildren = (
   const todosRef   = ctx.spawn(`todos-${gen}`,   Todos(notebookDir))   as ActorRef<ToolMsg>
   const searchRef  = ctx.spawn(`search-${gen}`,  Search(notebookDir))  as ActorRef<ToolMsg>
 
-  const internalTools = buildToolCollection(journalRef, trackerRef, todosRef, searchRef)
-
-  // Spawn note agent
-  const agentOpts = { model, notebookDir, maxToolLoops, tools: internalTools }
-  const noteAgentRef = ctx.spawn(
-    `note-agent-${gen}`,
-    NoteAgent(agentOpts),
-  ) as ActorRef<NoteAgentMsg>
-
-  // Register the single public tool
-  ctx.publishRetained(ToolRegistrationTopic, noteTool.name, {
-    ...noteTool,
-    ref: noteAgentRef as unknown as ActorRef<ToolMsg>,
+  // Register the coach agent mode
+  ctx.publish(AgentRegistrationTopic, {
+    type: 'register',
+    descriptor: buildCoachDescriptor(cfg, journalRef, trackerRef, todosRef, searchRef, notebookDir),
   })
 
-  return { journalRef, trackerRef, todosRef, searchRef, noteAgentRef }
+  return { journalRef, trackerRef, todosRef, searchRef }
 }
 
 const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void => {
-  if (state.journalRef)   ctx.stop(state.journalRef)
-  if (state.trackerRef)   ctx.stop(state.trackerRef)
-  if (state.todosRef)     ctx.stop(state.todosRef)
-  if (state.searchRef)    ctx.stop(state.searchRef)
-  if (state.noteAgentRef) ctx.stop(state.noteAgentRef)
-  ctx.deleteRetained(ToolRegistrationTopic, noteTool.name, { name: noteTool.name, ref: null })
+  if (state.journalRef) ctx.stop(state.journalRef)
+  if (state.trackerRef) ctx.stop(state.trackerRef)
+  if (state.todosRef)   ctx.stop(state.todosRef)
+  if (state.searchRef)  ctx.stop(state.searchRef)
+  ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'coach' })
 }
 
 // ─── Plugin definition ───
@@ -172,7 +143,6 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
     trackerRef:          null,
     todosRef:            null,
     searchRef:           null,
-    noteAgentRef:        null,
   },
 
   lifecycle: onLifecycle({
@@ -188,7 +158,7 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
         ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
       }
 
-      const children = spawnChildren(0, notebookDir, model, maxToolLoops, ctx)
+      const children = spawnChildren(0, notebookDir, model, maxToolLoops, ctx, cfg ?? {})
 
       ctx.log.info('notebook plugin activated', { notebookDir })
 
@@ -237,7 +207,7 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
         ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
       }
 
-      const children = spawnChildren(gen, notebookDir, model, maxToolLoops, ctx)
+      const children = spawnChildren(gen, notebookDir, model, maxToolLoops, ctx, cfg ?? {})
 
       return {
         state: {

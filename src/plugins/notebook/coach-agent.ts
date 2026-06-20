@@ -1,0 +1,262 @@
+import type { ActorDef, ActorContext, ActorRef, ActorResult, Interceptor } from '../../system/index.ts'
+import { onLifecycle, applyToolFilter } from '../../system/index.ts'
+import { agentLoop, idleLoopState } from '../../system/index.ts'
+import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
+import { ToolRegistrationTopic } from '../../types/tools.ts'
+import { OutboundUserMessageTopic, type MessageAttachment } from '../../types/events.ts'
+import { ContextSnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
+import { assembleAgentMessages, type ContextView } from '../../system/index.ts'
+import type { CoachAgentMsg, CoachAgentState } from './types.ts'
+import type { ApiMessage } from '../../types/llm.ts'
+
+// ─── Options ───
+
+export type CoachAgentOptions = {
+  model:        string
+  notebookDir:  string
+  maxToolLoops: number
+  localTools:   ToolCollection
+}
+
+const COACH_MODE = 'coach'
+
+export const COACH_TOOL_FILTER: ToolFilter = {
+  allow: [
+    'web_search',    // For research on workouts, health guidelines, and study topics
+    'cron_create',   // For scheduling daily coaching check-ins and habit reminders
+    'cron_delete',   // For cancelling habits/schedules
+    'cron_list',     // For viewing active reminders
+    'switch_mode',   // For handing the user back to coding or chatbot modes
+  ]
+}
+
+// ─── Helpers ───
+
+const todayISO = (): string => new Date().toISOString().slice(0, 10)
+
+const buildSystemPrompt = (notebookDir: string): string =>
+  `You are an encouraging, accountability-focused personal coach for health, learning routines, and habit building. Today is ${todayISO()}.\n` +
+  `You manage and coordinate the user's personal notebook stored at "${notebookDir}".\n\n` +
+  `Available notebook areas and tools:\n` +
+  `- Journal: daily markdown entries (journal_write, journal_read, journal_search)\n` +
+  `- Tracker: habit logging and statistics in CSV (tracker_log, tracker_stats, tracker_define_habit, tracker_list_habits)\n` +
+  `- Todos: task list with due dates and recurrence (todos_create, todos_complete, todos_list, todos_delete, todos_update)\n` +
+  `- Search: full-text search across journal and todos (notebook_search)\n\n` +
+  `You also have dynamic access to global tools if they are registered:\n` +
+  `- web_search: Research workouts, health guidelines, study topics, recipes, and more.\n` +
+  `- cron_create / cron_delete / cron_list: Schedule daily coaching check-ins and habit reminders (e.g., schedule a daily reminder to check if they completed their Spanish/exercise habit).\n` +
+  `- switch_mode: Hand the user back to other modes like coding or chatbot when requested.\n\n` +
+  `Coaching guidelines:\n` +
+  `1. Be proactive: offer to schedule reminders using cron_create if the user wants to build a new habit.\n` +
+  `2. Use tracker_stats and tracker_log to monitor and review user consistency. Encouragingly comment on their stats.\n` +
+  `3. Be structured, positive, and supportive. Focus on helping the user stay on track.`
+
+const emptyContextView = (userId = ''): ContextView => ({
+  userId,
+  version:        0,
+  recentMessages: [],
+  userContext:    null,
+  modeSummaries:  {},
+  toolSummaries:  [],
+})
+
+const assembleUserText = (
+  text:         string,
+  attachments?: MessageAttachment[],
+): string => {
+  let out = text
+  if (!attachments || attachments.length === 0) return out
+
+  const images = attachments.filter(a => a.kind === 'image').map(a => a.url)
+  if (images.length > 0) {
+    const note = images.length === 1
+      ? `[Image attached: "${images[0]}"] `
+      : `[Images attached: ${images.map(p => `"${p}"`).join(', ')}]`
+    out = out ? `${out}\n\n${note}` : note
+  }
+
+  const audio = attachments.filter(a => a.kind === 'audio').map(a => a.url)
+  if (audio.length > 0) {
+    const note = audio.length === 1
+      ? `[Audio attached: "${audio[0]}"]`
+      : `[Audio files attached: ${audio.map(p => `"${p}"`).join(', ')}]`
+    out = out ? `${out}\n\n${note}` : note
+  }
+
+  const pdfs = attachments.filter(a => a.kind === 'pdf').map(a => a.url)
+  if (pdfs.length > 0) {
+    const note = pdfs.length === 1
+      ? `[PDF attached: "${pdfs[0]}"] `
+      : `[PDFs attached: ${pdfs.map(p => `"${p}"`).join(', ')}]`
+    out = out ? `${out}\n\n${note}` : note
+  }
+
+  return out
+}
+
+// ─── Actor Factory ───
+
+export const CoachAgentFactory = (options: CoachAgentOptions) =>
+  (opts: AgentFactoryOpts): ActorDef<CoachAgentMsg, CoachAgentState> => CoachAgent(options, opts)
+
+// ─── Actor Definition ───
+
+export const CoachAgent = (
+  options: CoachAgentOptions,
+  opts:    AgentFactoryOpts,
+): ActorDef<CoachAgentMsg, CoachAgentState> => {
+  const { model, maxToolLoops, notebookDir, localTools } = options
+  const { userId, contextStoreRef, llmRef } = opts
+
+  const initialCoachState = (): CoachAgentState => ({
+    loop:        idleLoopState(),
+    contextView: emptyContextView(userId),
+    tools:       { ...localTools },
+  })
+
+  const buildTurnMessages = (state: CoachAgentState, userMsg: ApiMessage): ApiMessage[] =>
+    assembleAgentMessages(state.contextView, {
+      mode:                      COACH_MODE,
+      systemPrompt:              buildSystemPrompt(notebookDir),
+      includeUserContext:        true,
+      includeCurrentModeSummary: true,
+      includeOtherModeSummaries: true,
+      includeToolSummaries:      true,
+    }, userMsg)
+
+  const loop = agentLoop<CoachAgentState, CoachAgentMsg>({
+    role:          'reasoning',
+    spanName:      'coach-agent',
+    logPrefix:     'coach-agent',
+    model,
+    maxToolLoops,
+    llmRef:        () => llmRef,
+    tools:         (s) => s.tools,
+
+    uiEvents:      OutboundUserMessageTopic,
+
+    onComplete: (state, finalText) => {
+      if (finalText) {
+        contextStoreRef.send({
+          type:     'append',
+          mode:     COACH_MODE,
+          source:   'assistant',
+          messages: [{ role: 'assistant', content: finalText }]
+        })
+      }
+      return { state }
+    },
+
+    onError: (state, err, ctx) => {
+      if (err.kind === 'loopLimit') {
+        ctx.log.warn('coach-agent: tool loop limit reached')
+      }
+      return { state }
+    },
+  })
+
+  const hostInterceptor: Interceptor<CoachAgentMsg, CoachAgentState> = (state, msg, ctx, next) => {
+    const m = msg as CoachAgentMsg
+
+    if (m.type === '_contextSnapshot') {
+      return {
+        state: {
+          ...state,
+          contextView: {
+            userId:         m.userId,
+            version:        m.version,
+            recentMessages: m.recentMessages,
+            userContext:    m.userContext,
+            modeSummaries:  m.modeSummaries,
+            toolSummaries:  m.toolSummaries,
+          },
+        },
+      }
+    }
+
+    if (m.type === 'userMessage') {
+      if (state.loop.phase !== 'idle') return { state, stash: true }
+      const userText = assembleUserText(m.text, m.attachments)
+      const userMsg: ApiMessage = { role: 'user', content: userText }
+      contextStoreRef.send({
+        type:     'append',
+        mode:     COACH_MODE,
+        source:   'user',
+        injected: m.isInjected || false,
+        messages: [userMsg]
+      })
+      return loop.startTurn(state, {
+        messages: buildTurnMessages(state, userMsg),
+        userId,
+      }, ctx)
+    }
+
+    if (m.type === '_toolRegistered') {
+      return {
+        state: {
+          ...state,
+          tools: {
+            ...state.tools,
+            [m.name]: {
+              name:             m.name,
+              schema:           m.schema,
+              ref:              m.ref,
+              mayBeLongRunning: m.mayBeLongRunning,
+            },
+          },
+        },
+      }
+    }
+
+    if (m.type === '_toolUnregistered') {
+      const { [m.name]: _, ...rest } = state.tools
+      return {
+        state: {
+          ...state,
+          tools: rest,
+        },
+      }
+    }
+
+    return next(state, msg)
+  }
+
+  return {
+    initialState: initialCoachState,
+    lifecycle: onLifecycle({
+      start: (state, ctx) => {
+        // Subscribe to tool registrations
+        ctx.subscribe(ToolRegistrationTopic, (event) => {
+          if (!applyToolFilter(event.name, COACH_TOOL_FILTER)) return null
+          if ('schema' in event && event.ref) {
+            return {
+              type:             '_toolRegistered' as const,
+              name:             event.name,
+              schema:           event.schema,
+              ref:              event.ref,
+              mayBeLongRunning: event.mayBeLongRunning,
+            }
+          }
+          return { type: '_toolUnregistered' as const, name: event.name }
+        })
+
+        // Subscribe to context snapshots
+        ctx.subscribe(ContextSnapshotTopic, (event) => {
+          if (event.userId !== userId) return null
+          return {
+            type: '_contextSnapshot' as const,
+            ...event,
+          }
+        })
+
+        return { state }
+      },
+    }),
+
+    handler:      loop.idle,
+    interceptors: [hostInterceptor],
+
+    stashCapacity: 50,
+    supervision:   { type: 'restart', maxRetries: 3, withinMs: 30_000 },
+  }
+}
