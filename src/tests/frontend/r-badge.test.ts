@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { mountClass, cleanup } from '../helpers/frontend.js'
-import { RBadge } from '../../frontend/components/r-badge.js'
+import { RBadge } from '../../frontend/webkit/r-badge.js'
 
 beforeEach(cleanup)
 afterEach(cleanup)

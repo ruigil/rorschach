@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { mountClass, cleanup } from '../helpers/frontend.js'
-import { REmptyState } from '../../frontend/components/r-empty-state.js'
+import { REmptyState } from '../../frontend/webkit/r-empty-state.js'
 
 beforeEach(cleanup)
 afterEach(cleanup)

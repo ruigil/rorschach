@@ -3,6 +3,7 @@ import { dirname } from 'node:path'
 import { defineConfig, deleteConfigSurface, onLifecycle, onMessage, publishConfigSurface } from '../../system/index.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
+import { UiSurfaceRegistrationTopic, type UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import { ToolRegistrationTopic, type ToolCollection, type ToolMsg } from '../../types/tools.ts'
 import { ArtifactTools, deleteDocTool, writeDocPageTool } from './artifact-tools.ts'
 import { CodingAgentFactory } from './coding-agent.ts'
@@ -108,6 +109,36 @@ const deleteRoutes = (ctx: ActorContext<PluginMsg>, cfg: CodingConfig): void => 
   }
 }
 
+const docsSurfaceRegistration: UiSurfaceRegistration = {
+  id: 'docs',
+  version: '1.0.0',
+  window: {
+    title: 'Documentation',
+    icon: 'file-text',
+    contentTag: 'r-doc-workspace',
+    dockResizable: false,
+    defaultWidth: 500,
+    defaultHeight: 600,
+    minWidth: 350,
+    minHeight: 200,
+  },
+  moduleUrl: '/plugins/coding/ui/index.js',
+  frameTypes: ['docWorkspace'],
+}
+
+const publishSurface = (ctx: ActorContext<PluginMsg>): void => {
+  ctx.publishRetained(UiSurfaceRegistrationTopic, 'docs', docsSurfaceRegistration)
+}
+
+const deleteSurface = (ctx: ActorContext<PluginMsg>): void => {
+  ctx.deleteRetained(UiSurfaceRegistrationTopic, 'docs', {
+    id: 'docs',
+    window: null,
+    moduleUrl: null,
+    frameTypes: null,
+  })
+}
+
 const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void => {
   if (state.docsAgentRef) ctx.stop(state.docsAgentRef)
   if (state.artifactToolsRef) ctx.stop(state.artifactToolsRef)
@@ -170,6 +201,7 @@ const codingPlugin: PluginDef<PluginMsg, PluginState, CodingConfig> = {
       const cfg = mergeConfig(ctx.initialConfig() as CodingConfig | undefined)
       publishConfigSurface(ctx, config, () => cfg)
       publishRoutes(ctx, cfg)
+      publishSurface(ctx)
       const children = spawnChildren(ctx, cfg, 0)
       ctx.log.info('coding plugin activated', { projectRoot: cfg.projectRoot, artifactsDir: cfg.artifactsDir })
       return { state: { initialized: true, gen: 0, cfg, ...children } }
@@ -178,6 +210,7 @@ const codingPlugin: PluginDef<PluginMsg, PluginState, CodingConfig> = {
     stopped: (state, ctx) => {
       ctx.deleteRetained(ToolRegistrationTopic, updateDocsTool.name, { name: updateDocsTool.name, ref: null })
       deleteRoutes(ctx, state.cfg)
+      deleteSurface(ctx)
       stopChildren(state, ctx)
       ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'coding' })
       deleteConfigSurface(ctx, config)
@@ -190,12 +223,14 @@ const codingPlugin: PluginDef<PluginMsg, PluginState, CodingConfig> = {
     config: (state, msg, ctx) => {
       ctx.deleteRetained(ToolRegistrationTopic, updateDocsTool.name, { name: updateDocsTool.name, ref: null })
       deleteRoutes(ctx, state.cfg)
+      deleteSurface(ctx)
       stopChildren(state, ctx)
       ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'coding' })
 
       const cfg = mergeConfig(msg.slice)
       const gen = state.gen + 1
       publishRoutes(ctx, cfg)
+      publishSurface(ctx)
       const children = spawnChildren(ctx, cfg, gen)
       return { state: { initialized: true, gen, cfg, ...children } }
     },

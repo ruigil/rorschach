@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 
 import { mountClass, cleanup, mockStore } from '../helpers/frontend.js'
-import { RMessageBubble } from '../../frontend/components/r-message-bubble.js'
+import { RMessageBubble } from '../../frontend/webkit/r-message-bubble.js'
 
 beforeEach(cleanup)
 afterEach(cleanup)

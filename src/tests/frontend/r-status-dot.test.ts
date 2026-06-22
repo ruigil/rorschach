@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { mountClass, cleanup, mockStore } from '../helpers/frontend.js'
-import { RStatusDot } from '../../frontend/components/r-status-dot.js'
+import { RStatusDot } from '../../frontend/webkit/r-status-dot.js'
 
 beforeEach(cleanup)
 afterEach(cleanup)

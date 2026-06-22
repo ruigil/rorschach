@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { mountClass, cleanup } from '../helpers/frontend.js'
-import { RActorTree } from '../../frontend/components/r-actor-tree.js'
+import { RActorTree } from '../../frontend/webkit/r-actor-tree.js'
 
 beforeEach(cleanup)
 afterEach(cleanup)

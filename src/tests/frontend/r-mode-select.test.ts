@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { mountClass, cleanup, mockStore } from '../helpers/frontend.js'
-import { RModeSelect } from '../../frontend/components/r-mode-select.js'
+import { RModeSelect } from '../../frontend/shell/r-mode-select.js'
 
 beforeEach(cleanup)
 afterEach(cleanup)

@@ -1,23 +1,25 @@
-import { store } from './store.js'
+import { store } from '@rorschach/frontend/webkit/store.js'
 import { type WSFrame } from './types/websocket.js'
-import { type TraceSpan, type UsageEntry, type WorkflowGraph, type LogEvent } from './types/state.js'
-import { toolActionLabel } from './core/utils.js'
-import { updateActiveStream, commitActiveStream, setMode, addLog } from './actions.js'
+import { type TraceSpan, type UsageEntry, type LogEvent } from './types/state.js'
+import { toolActionLabel } from '@rorschach/frontend/webkit/utils.js'
+import { updateActiveStream, commitActiveStream, addLog } from './actions.js'
+import { setMode } from '@rorschach/frontend/webkit/window-actions.js'
+import { pluginHost } from './shell/plugin-host.js'
 
-export const WORKFLOW_RUN_UPDATED_EVENT = 'workflow-run-updated'
+const shell = () => store.namespace<import('./types/state.js').ShellState>('shell')
 
 const frameHandlers: Record<string, (msg: Record<string, any>) => void> = {
   chunk: (msg) => {
     updateActiveStream({
       isActive: true,
-      text: store.get('activeStream').text + msg.text,
+      text: shell().get('activeStream').text + msg.text,
       toolingLabel: undefined,
     })
   },
   reasoningChunk: (msg) => {
     updateActiveStream({
       isActive: true,
-      reasoning: store.get('activeStream').reasoning + msg.text,
+      reasoning: shell().get('activeStream').reasoning + msg.text,
       toolingLabel: undefined,
     })
   },
@@ -31,41 +33,36 @@ const frameHandlers: Record<string, (msg: Record<string, any>) => void> = {
   attachments: (msg) => updateActiveStream({ attachments: msg.attachments }),
   done: () => commitActiveStream(),
   error: (msg) => commitActiveStream('error', msg.text),
-  agents: (msg) => store.set('agents', Array.isArray(msg.agents) ? msg.agents : []),
+  agents: (msg) => shell().set('agents', Array.isArray(msg.agents) ? msg.agents : []),
   modeChanged: (msg) => setMode(msg.mode, msg.displayName),
   plannerMode: (msg) => {
     if (msg.active) setMode('planner', 'Planner')
-    else if (store.get('currentMode') === 'planner') setMode('chatbot', 'Chatbot')
+    else if (shell().get('currentMode') === 'planner') setMode('chatbot', 'Chatbot')
   },
   log: (msg) => addLog(msg as Partial<LogEvent> & { message: string }),
   metrics: (msg) => {
-    if (msg.actors) store.set('actors', msg.actors)
-    if (msg.topics) store.set('topics', msg.topics)
+    if (msg.actors) shell().set('actors', msg.actors)
+    if (msg.topics) shell().set('topics', msg.topics)
   },
-  trace: (msg) => store.set('traces', [...store.get('traces'), msg as TraceSpan]),
-  usage: (msg) => store.set('usage', [...store.get('usage'), msg as UsageEntry]),
-  tool_registered: (msg) => store.set('tools', { ...store.get('tools'), [msg.name]: msg.schema }),
+  trace: (msg) => shell().set('traces', [...shell().get('traces'), msg as TraceSpan]),
+  usage: (msg) => shell().set('usage', [...shell().get('usage'), msg as UsageEntry]),
+  tool_registered: (msg) => shell().set('tools', { ...shell().get('tools'), [msg.name]: msg.schema }),
   tool_unregistered: (msg) => {
-    const nextTools = { ...store.get('tools') }
+    const nextTools = { ...shell().get('tools') }
     delete nextTools[msg.name]
-    store.set('tools', nextTools)
-  },
-  workflowGraph: (msg) => store.set('currentWorkflowGraph', msg as WorkflowGraph),
-  workflowRunUpdated: (msg) => {
-    window.dispatchEvent(new CustomEvent(WORKFLOW_RUN_UPDATED_EVENT, { detail: msg }))
-  },
-  docWorkspace: (msg) => {
-    store.set('currentDocArtifact', msg.artifactName);
-    store.set('docWorkspaceOpen', !!msg.artifactName);
+    shell().set('tools', nextTools)
   },
 }
 
-
 function dispatchFrame(msg: WSFrame) {
+  if (msg.type === 'ui.surface') {
+    pluginHost.dispatch(msg.reg)
+    return
+  }
+  if (pluginHost.routeFrame(msg)) return
   const handler = frameHandlers[msg.type]
   if (handler) handler(msg)
 }
-
 
 export async function connect() {
   const wsUrl = new URL('ws', location.href)
@@ -86,10 +83,10 @@ export async function connect() {
   }
 
   const ws = new WebSocket(wsUrl.href)
-  store.set('ws', ws)
+  shell().set('ws', ws)
 
   ws.addEventListener('open', () => {
-    store.set('isConnected', true)
+    shell().set('isConnected', true)
 
     // Restore saved mode on reconnect/refresh
     const savedMode = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.currentMode') : null;
@@ -104,8 +101,8 @@ export async function connect() {
   })
 
   ws.addEventListener('close', () => {
-    store.set('isConnected', false)
-    store.set('isWaiting', false)
+    shell().set('isConnected', false)
+    shell().set('isWaiting', false)
     setTimeout(connect, 2000)
   })
 

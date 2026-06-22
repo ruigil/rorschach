@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { mountClass, cleanup } from '../helpers/frontend.js'
-import { RFlashMessage } from '../../frontend/components/r-flash-message.js'
+import { RFlashMessage } from '../../frontend/webkit/r-flash-message.js'
 
 beforeEach(cleanup)
 afterEach(cleanup)

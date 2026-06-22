@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { mountClass, cleanup } from '../helpers/frontend.js'
-import { RIcon } from '../../frontend/components/r-icon.js'
+import { RIcon } from '../../frontend/webkit/r-icon.js'
 
 beforeEach(cleanup)
 afterEach(cleanup)

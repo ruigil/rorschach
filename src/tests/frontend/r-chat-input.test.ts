@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { mountClass, cleanup, mockStore } from '../helpers/frontend.js'
-import { RChatInput } from '../../frontend/components/r-chat-input.js'
-import '../../frontend/components/r-media-previews.js'
+import { RChatInput } from '../../frontend/shell/r-chat-input.js'
+import '../../frontend/webkit/r-media-previews.js'
 
 beforeEach(cleanup)
 afterEach(cleanup)

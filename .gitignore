@@ -8,8 +8,7 @@ dist
 # antigravity
 .antigravitycli
 
-# frontend build
-src/plugins/interfaces/public/rorschach.js
+# frontend build — output now goes to dist/ (already ignored above)
 
 # code coverage
 coverage
@@ -20,7 +19,6 @@ coverage
 workspace
 docs
 generated
-scripts
 inbound
 
 # logs

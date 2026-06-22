@@ -15,6 +15,8 @@ import { LlmProviderTopic, CostTopic } from '../../types/llm.ts'
 import type { LlmProviderMsg, CostEvent } from '../../types/llm.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
+import { UiSurfaceRegistrationTopic } from '../../types/ui-surface.ts'
+import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import { ConfigSchemaTopic, ConfigUpdateRequestTopic } from '../../types/config.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import { IdentityProviderTopic, type Identity } from '../../types/identity.ts'
@@ -22,8 +24,14 @@ import { resolveIdentity, resolveCookieIdentity } from './types.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 import { AgentCatalogTopic, SwitchAgentTopic, type AgentCatalogEvent } from '../../types/agents.ts'
 
-// ─── Public directory (resolved relative to this module) ───
-const PUBLIC_DIR = join(import.meta.dir, 'public')
+// ─── Public directory (build output served by the HTTP handler) ───
+// Plugins are loaded via dynamic `import()` from source paths in config.json,
+// so `import.meta.dir` always resolves to `src/plugins/interfaces/` — even
+// when the entrypoint is `dist/index.js`. We can't rely on it to find the
+// build output. Instead we default to `dist/public` relative to the current
+// working directory (where `build:frontend` writes its output). The
+// `RORSCHACH_PUBLIC_DIR` env var overrides this for custom deployments.
+const PUBLIC_DIR = join(process.cwd(), 'dist', 'public')
 const MEDIA_DIR = join(import.meta.dir, '../../..', 'workspace/media')
 const INBOUND_DIR = join(MEDIA_DIR, 'inbound')
 
@@ -55,6 +63,7 @@ export type HttpMessage =
   | { type: '_llmProviderChanged'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
   | { type: '_routeChanged'; reg: RouteRegistration }
+  | { type: '_uiSurfaceChanged'; reg: UiSurfaceRegistration }
   | { type: '_agentCatalog'; agents: AgentCatalogEvent['agents'] }
   | { type: '_imageGenerated'; publicUrl: string }
   | { type: '_audioGenerated'; publicUrl: string }
@@ -88,6 +97,12 @@ export type HttpState = {
   identityProviderRef: ActorRef<IdentityProviderMsg> | null
   agentCatalog:        AgentCatalogEvent['agents']
   userIdsToClientIds:  Record<string, string[]>
+  // Live UI surface registrations keyed by id. Tombstones
+  // (`moduleUrl: null`) are removed. Replayed to each new client on
+  // `connected` so the shell's plugin-host receives the full surface
+  // set even when plugins published their registrations before the
+  // WS connection opened.
+  surfaces:             Record<string, UiSurfaceRegistration>
 }
 
 // ─── WebSocket attachment data ───
@@ -249,7 +264,7 @@ export const HTTP = (
   }
 
   return {
-    initialState: { server: null, connections: 0, activeSpans: {}, llmProviderRef: null, identityProviderRef: null, agentCatalog: [], userIdsToClientIds: {} },
+    initialState: { server: null, connections: 0, activeSpans: {}, llmProviderRef: null, identityProviderRef: null, agentCatalog: [], userIdsToClientIds: {}, surfaces: {} },
     handler: onMessage({
 
       connected: (state, message, context) => {
@@ -274,6 +289,15 @@ export const HTTP = (
         // Push the agent catalog as a welcome frame so the UI can render its mode selector.
         if (state.agentCatalog.length > 0) {
           state.server?.publish(`client:${message.clientId}`, JSON.stringify({ type: 'agents', agents: state.agentCatalog }))
+        }
+        // Replay the live surface registrations so a freshly connected
+        // shell receives the retained set even when plugins published
+        // before the WS opened. Without this, pluginHost.dispatch never
+        // fires for surfaces registered at plugin start and the shell's
+        // window registry / frame routing stays empty until a plugin is
+        // reloaded at runtime.
+        for (const reg of Object.values(state.surfaces)) {
+          state.server?.publish(`client:${message.clientId}`, JSON.stringify({ type: 'ui.surface', reg }))
         }
         return {
           state: { ...state, connections, userIdsToClientIds },
@@ -473,6 +497,23 @@ export const HTTP = (
         return { state }
       },
 
+      _uiSurfaceChanged: (state, message) => {
+        // Surface registrations are metadata — "this window exists, here's
+        // where its module lives, here are the frame types it claims" — and
+        // metadata is public, so fan out on CHANNEL (the 'broadcast' pub/sub
+        // every client subscribes to at ws.open). Retained semantics on the
+        // backend map to "send latest on connection" on the WS, so newly-
+        // connected clients receive the full surface set immediately — same
+        // property the `agents` catalog relies on. Gating `ui.surface` behind
+        // ADMIN_CHANNEL would make every plugin window admin-only.
+        const { reg } = message
+        const surfaces = { ...state.surfaces }
+        if (reg.moduleUrl === null) delete surfaces[reg.id]
+        else surfaces[reg.id] = reg
+        state.server?.publish(CHANNEL, JSON.stringify({ type: 'ui.surface', reg }))
+        return { state: { ...state, surfaces } }
+      },
+
 
     }),
 
@@ -513,6 +554,11 @@ export const HTTP = (
 
         context.subscribe(RouteRegistrationTopic, (reg) => ({
           type: '_routeChanged' as const,
+          reg,
+        }))
+
+        context.subscribe(UiSurfaceRegistrationTopic, (reg) => ({
+          type: '_uiSurfaceChanged' as const,
           reg,
         }))
 

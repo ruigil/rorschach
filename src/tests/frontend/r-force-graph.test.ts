@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { formatKgEdgeLabel, workflowTaskStatusClass } from '../../frontend/components/r-force-graph.js'
+import { formatKgEdgeLabel, workflowTaskStatusClass } from '../../frontend/webkit/r-force-graph.js'
 
 describe('r-force-graph', () => {
   test('formats kgraph edge confidence in the visible label', () => {

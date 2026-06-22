@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { cleanup, mountClass } from '../helpers/frontend.js'
-import { WORKFLOW_RUN_UPDATED_EVENT } from '../../frontend/connection.js'
+import { WORKFLOW_RUN_UPDATED_EVENT } from '../../plugins/workflows/ui/index.js'
 import {
   RWorkflowWorkspace,
   clampWorkflowInspectorHeightPercent,
   isLiveWorkflowRunStatus,
   mergeWorkflowRunIntoGraph,
-} from '../../frontend/components/r-workflow-workspace.js'
+} from '../../plugins/workflows/ui/r-workflow-workspace.js'
 
 const graph = (status = 'running') => ({
   workflow: {
@@ -231,17 +231,39 @@ describe('r-workflow-workspace', () => {
     expect(el._currentGraph.run.status).toBe('running')
   })
 
-  test('updates list view run chips from workflowRunUpdated frames', async () => {
+  test('renders and updates graph view run chips from workflowRunUpdated frames', async () => {
+    const initialRuns = [{
+      schemaVersion: 1,
+      runId: 'run-1',
+      workflowId: 'workflow-1',
+      userId: 'anonymous',
+      status: 'running',
+      inputs: {},
+      outputs: {},
+      activeTaskIds: [],
+      activeTasks: {},
+      pendingJobs: {},
+      taskStates: {},
+      events: [],
+    }]
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input)
-      const body = url.endsWith('/workflows')
-        ? [{ id: 'workflow-1', goal: 'Build a report', createdAt: '2026-06-12T10:00:00.000Z', taskCount: 1 }]
-        : []
+      const body = url.includes('/graph')
+        ? graph('running')
+        : url.endsWith('/workflow-runs')
+          ? initialRuns
+          : []
       return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } })
     }) as unknown as typeof fetch
 
     const el = await mountClass(RWorkflowWorkspace) as any
-    await el.openList()
+    await el.openGraph('workflow-1', 'run-1')
+    await el.updateComplete
+
+    const toolbar = el.querySelector('.plan-workspace-toolbar') as HTMLElement | null
+    expect(toolbar?.textContent).toContain('run-1')
+    const activeChip = toolbar?.querySelector('.workflow-run-chip.active') as HTMLElement | null
+    expect(activeChip?.textContent).toContain('run-1')
 
     window.dispatchEvent(new CustomEvent(WORKFLOW_RUN_UPDATED_EVENT, {
       detail: {
@@ -266,8 +288,11 @@ describe('r-workflow-workspace', () => {
     }))
     await el.updateComplete
 
-    expect(el.textContent).toContain('running')
-    expect(el.textContent).toContain('run-2')
+    expect(toolbar?.textContent).toContain('run-2')
+    const chips = toolbar?.querySelectorAll('.workflow-run-chip') as NodeListOf<HTMLElement> | undefined
+    expect(chips?.length).toBe(2)
+    const activeAfter = toolbar?.querySelector('.workflow-run-chip.active') as HTMLElement | null
+    expect(activeAfter?.textContent).toContain('run-1')
   })
 
   test('pure graph merge projects taskStates onto nodes', () => {

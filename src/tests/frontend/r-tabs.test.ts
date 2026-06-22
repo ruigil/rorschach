@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { mountClass, cleanup } from '../helpers/frontend.js'
-import { RTabs } from '../../frontend/components/r-tabs.js'
+import { RTabs } from '../../frontend/webkit/r-tabs.js'
 
 beforeEach(cleanup)
 afterEach(cleanup)

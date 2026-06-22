@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import type { ActorContext, ActorRef, ActorSlot, PluginDef } from '../../system/index.ts'
 import { createSlot, defineConfig, deleteConfigSurface, onLifecycle, onMessage, publishConfigSurface, spawnSlot, stopSlot } from '../../system/index.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
+import { UiSurfaceRegistrationTopic, type UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import { WorkflowRunner } from './workflow-runner.ts'
@@ -80,6 +81,37 @@ const deleteRoutes = (
   }
 }
 
+const workflowsSurfaceRegistration: UiSurfaceRegistration = {
+  id: 'workflows',
+  version: '1.0.0',
+  window: {
+    title: 'Workflows',
+    icon: 'git-branch',
+    contentTag: 'r-workflow-workspace',
+    dockResizable: false,
+    defaultWidth: 460,
+    defaultHeight: 600,
+    minWidth: 320,
+    minHeight: 200,
+    modes: ['workflows'],
+  },
+  moduleUrl: '/plugins/workflows/ui/index.js',
+  frameTypes: ['workflowGraph', 'workflowRunUpdated'],
+}
+
+const publishSurface = (ctx: ActorContext<PluginMsg>): void => {
+  ctx.publishRetained(UiSurfaceRegistrationTopic, 'workflows', workflowsSurfaceRegistration)
+}
+
+const deleteSurface = (ctx: ActorContext<PluginMsg>): void => {
+  ctx.deleteRetained(UiSurfaceRegistrationTopic, 'workflows', {
+    id: 'workflows',
+    window: null,
+    moduleUrl: null,
+    frameTypes: null,
+  })
+}
+
 const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void => {
   stopSlot(ctx, state.runner)
 }
@@ -117,10 +149,12 @@ const restart = (
   llmRef: ActorRef<LlmProviderMsg> | null,
 ): PluginState => {
   deleteRoutes(ctx, state.runner.ref as ActorRef<WorkflowRunnerMsg> | null, state.config.workflowsDir, getWorkflowRunsDir(state.config.workflowsDir))
+  deleteSurface(ctx)
   stopChildren(state, ctx)
   ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'workflows' })
   const children = spawnChildren(ctx, cfg, llmRef, state)
   publishRoutes(ctx, children.runner.ref as ActorRef<WorkflowRunnerMsg>, cfg.workflowsDir, getWorkflowRunsDir(cfg.workflowsDir))
+  publishSurface(ctx)
   return { ...state, config: cfg, llmRef, ...children }
 }
 
@@ -141,12 +175,14 @@ const workflowsPlugin: PluginDef<PluginMsg, PluginState, WorkflowsConfig> = {
       ctx.subscribe(LlmProviderTopic, event => ({ type: '_llmProvider' as const, ref: event.ref }))
       publishConfigSurface(ctx, config, () => cfg)
       const children = spawnChildren(ctx, cfg, state.llmRef, state)
-      publishRoutes(ctx, children.runner.ref as ActorRef<WorkflowRunnerMsg>, cfg.workflowsDir, getWorkflowRunsDir(cfg.workflowsDir))
-      ctx.log.info('workflows plugin activated', { workflowsDir: cfg.workflowsDir, workflowRunsDir: getWorkflowRunsDir(cfg.workflowsDir) })
+  publishRoutes(ctx, children.runner.ref as ActorRef<WorkflowRunnerMsg>, cfg.workflowsDir, getWorkflowRunsDir(cfg.workflowsDir))
+  publishSurface(ctx)
+  ctx.log.info('workflows plugin activated', { workflowsDir: cfg.workflowsDir, workflowRunsDir: getWorkflowRunsDir(cfg.workflowsDir) })
       return { state: { initialized: true, config: cfg, llmRef: state.llmRef, ...children } }
     },
     stopped: (state, ctx) => {
       deleteRoutes(ctx, state.runner.ref as ActorRef<WorkflowRunnerMsg> | null, state.config.workflowsDir, getWorkflowRunsDir(state.config.workflowsDir))
+      deleteSurface(ctx)
       stopChildren(state, ctx)
       ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'workflows' })
       deleteConfigSurface(ctx, config)

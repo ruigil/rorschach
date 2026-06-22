@@ -1,128 +1,35 @@
 import type { Tab, ObserveTab } from '../constants.js'
+import type {
+  Attachment,
+  Source,
+  Message,
+  ActiveStream,
+  Topic,
+  Actor,
+  LogEvent,
+  TraceSpan,
+  UsageEntry,
+} from '@rorschach/frontend/webkit/types.js'
+import type { WindowRuntimeState } from '@rorschach/frontend/webkit/host-types.js'
 
+// Re-export the kit types so existing shell code that imports from
+// `./types/state.js` keeps working. These are the neutral data shapes the
+// kit primitives render; the kit owns them, the shell re-exports for
+// convenience.
+export type { Attachment, Source, Message, ActiveStream, Topic, Actor, LogEvent, TraceSpan, UsageEntry, WindowRuntimeState }
+
+// Agent is shell/agent-registry specific — stays here, not in the kit.
 export interface Agent {
   mode: string
   displayName: string
   shortDesc: string
 }
 
-export interface Topic {
-  topic: string
-  subscribers: string[]
-}
-
-export interface Actor {
-  name: string
-  status: 'running' | 'stopped' | 'error' | null
-  messagesProcessed: number
-}
-
-export interface LogEvent {
-  timestamp: number
-  level: 'debug' | 'info' | 'warn' | 'error'
-  source: string
-  message: string
-  data?: Record<string, unknown>
-}
-
-export interface Attachment {
-  kind: 'image' | 'audio' | 'video' | 'file' | 'pdf'
-  url?: string
-  data?: string
-  name?: string
-}
-
-export interface Source {
-  url: string
-  title: string
-  snippet?: string
-}
-
-export interface Message {
-  id: string
-  role: 'user' | 'assistant' | 'error'
-  text: string
-  reasoning?: string
-  sources?: Source[]
-  attachments?: Attachment[]
-  timestamp: number
-}
-
-export interface ActiveStream {
-  isActive: boolean
-  toolingLabel?: string
-  reasoning: string
-  text: string
-  sources: Source[]
-  attachments: Attachment[]
-}
-
-export interface TraceSpan {
-  traceId: string
-  spanId: string
-  parentSpanId: string | null
-  actor: string
-  operation: string
-  timestamp: number
-  durationMs?: number
-  status: string
-  data?: Record<string, unknown>
-}
-
-export interface UsageEntry {
-  role: string
-  model: string
-  inputTokens: number
-  outputTokens: number
-  contextWindow: number | null
-  cost: number
-}
-
-export interface WorkflowGraphNode {
-  id: string
-  label: string
-  description?: string
-  validationCriteria?: string
-  dependencies: string[]
-  dependents: string[]
-  status?: string
-  attempts?: number
-  startedAt?: string
-  completedAt?: string
-  summary?: string
-  outputs?: Record<string, unknown>
-  error?: string
-  blockedReason?: Record<string, unknown>
-}
-
-export interface WorkflowGraph {
-  workflowId?: string
-  runId?: string
-  workflow?: {
-    id?: string
-    goal: string
-    context?: string
-    createdAt: string
-    taskCount: number
-    executionTools?: string[]
-    inputs?: Record<string, unknown>
-    outputs?: Record<string, unknown>
-  }
-  run?: {
-    runId: string
-    status: string
-    inputs?: Record<string, unknown>
-    activeTaskIds: string[]
-    activeTasks?: Record<string, unknown>
-    pendingJobs?: Record<string, unknown>
-    outputs?: Record<string, unknown>
-    events?: Array<{ timestamp: string; type: string; taskId?: string; message: string }>
-  }
-  nodes: WorkflowGraphNode[]
-  edges?: Array<{ source: string; target: string; type: string }>
-}
-
-export interface RorschachState {
+// Shape of `store.namespace('shell')`. The shell is just another namespace
+// owner, symmetric with `store.namespace('<pluginId>')` for plugins.
+// All plugin-leak keys have been removed — the docs and workflows plugins
+// now own their state in their own namespaces.
+export interface ShellState {
   isConnected: boolean
   isWaiting: boolean
   currentUserId: string | null
@@ -141,25 +48,7 @@ export interface RorschachState {
   activeTab: Tab
   observeActiveTab: ObserveTab
   activeStream: ActiveStream
-  currentWorkflowGraph: WorkflowGraph | null
-  workflowWorkspaceOpen: boolean
-  docWorkspaceOpen: boolean
-  currentDocArtifact: string | null
-  isChatUndocked: boolean
   windows: Record<string, WindowRuntimeState>
   activeWindowIds: string[]
   activeWorkspaceTab: string
-}
-
-export interface WindowRuntimeState {
-  id: string
-  isOpen: boolean
-  isDocked: boolean
-  isMinimized: boolean
-  x: number
-  y: number
-  w: number
-  h: number
-  zIndex: number
-  params: Record<string, any>
 }

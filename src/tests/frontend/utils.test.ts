@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { escHtml, tsStr, modeLabel, toolActionLabel } from '../../frontend/core/utils.js'
+import { escHtml, tsStr, modeLabel, toolActionLabel } from '../../frontend/webkit/utils.js'
 
 describe('escHtml', () => {
   test('escapes ampersand', () => {

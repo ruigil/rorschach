@@ -1,7 +1,8 @@
-import { store } from '../../frontend/store.js'
+import { store, __resetStoreForTests } from '../../frontend/webkit/store.js'
 import { DEFAULT_TAB, DEFAULT_OBSERVE_TAB } from '../../frontend/constants.js'
+import type { ShellState } from '../../frontend/types/state.js'
 
-const defaultState: Record<string, any> = {
+const defaultState: Partial<ShellState> = {
   isConnected: false,
   isWaiting: false,
   currentUserId: null,
@@ -26,20 +27,18 @@ const defaultState: Record<string, any> = {
     sources: [],
     attachments: [],
   },
-  currentWorkflowGraph: null,
-  workflowWorkspaceOpen: false,
+  windows: {},
+  activeWindowIds: [],
+  activeWorkspaceTab: 'docs',
 }
 
 export function resetStore() {
-  for (const [key, value] of Object.entries(defaultState)) {
-    store.set(key as any, typeof value === 'object' && value !== null
-      ? (Array.isArray(value) ? [...value] : { ...value })
-      : value)
-  }
+  __resetStoreForTests()
+  store.namespace<ShellState>('shell').init(defaultState)
 }
 
-export function mockStore(key: string, value: any) {
-  store.set(key as any, value)
+export function mockStore(key: keyof ShellState, value: any) {
+  store.namespace<ShellState>('shell').set(key, value)
 }
 
 const registry: Record<string, any> = {}

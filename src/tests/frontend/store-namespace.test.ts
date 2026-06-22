@@ -1,0 +1,166 @@
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { store, __resetStoreForTests } from '../../frontend/webkit/store.js'
+import { StoreController } from '../../frontend/webkit/store-controller.js'
+import type { ShellState } from '../../frontend/types/state.js'
+
+beforeEach(() => {
+  __resetStoreForTests()
+  localStorage.clear()
+})
+
+afterEach(() => {
+  __resetStoreForTests()
+  localStorage.clear()
+})
+
+// ─── store.namespace() isolation ───
+
+describe('store.namespace() isolation', () => {
+  test('set/get on one namespace does not leak to another', () => {
+    interface FooState { value: string }
+    interface BarState { value: string }
+
+    store.namespace<FooState>('foo').set('value', 'hello')
+    store.namespace<BarState>('bar').set('value', 'world')
+
+    expect(store.namespace<FooState>('foo').get('value')).toBe('hello')
+    expect(store.namespace<BarState>('bar').get('value')).toBe('world')
+  })
+
+  test('subscribe on one namespace does not fire for the same key on another', () => {
+    interface FooState { messages: string[] }
+    interface BarState { messages: string[] }
+
+    const fooCalls: string[][] = []
+    const barCalls: string[][] = []
+
+    store.namespace<FooState>('foo').init({ messages: [] })
+    store.namespace<BarState>('bar').init({ messages: [] })
+
+    store.namespace<FooState>('foo').subscribe('messages', (v) => fooCalls.push(v))
+    store.namespace<BarState>('bar').subscribe('messages', (v) => barCalls.push(v))
+
+    // Setting foo.messages should fire foo subscriber only
+    store.namespace<FooState>('foo').set('messages', ['a'])
+    expect(fooCalls).toEqual([[], ['a']])
+    expect(barCalls).toEqual([[]]) // only the initial fire, no update
+
+    // Setting bar.messages should fire bar subscriber only
+    store.namespace<BarState>('bar').set('messages', ['b'])
+    expect(barCalls).toEqual([[], ['b']])
+  })
+
+  test('init seeds defaults only for absent keys', () => {
+    interface S { a: string; b: string }
+    const ns = store.namespace<S>('test')
+    ns.init({ a: 'default-a', b: 'default-b' })
+    expect(ns.get('a')).toBe('default-a')
+    expect(ns.get('b')).toBe('default-b')
+
+    // Overwriting 'a' then re-init should not reset 'a'
+    ns.set('a', 'custom')
+    ns.init({ a: 'default-a', b: 'default-b' })
+    expect(ns.get('a')).toBe('custom')
+  })
+
+  test('init notifies subscribers that attached before init ran', () => {
+    // Reproduces the shell boot timing: a Lit StoreController subscribes
+    // during a custom-element upgrade (an import side-effect) before the
+    // top-level store.namespace('shell').init({...}) call runs. Without
+    // notify, the controller stays stuck on `undefined` and the shell never
+    // re-renders with the seeded value (e.g. activeTab === 'chat').
+    interface S { activeTab: string }
+    const ns = store.namespace<S>('lateinit')
+    const calls: (string | undefined)[] = []
+    ns.subscribe('activeTab', (v) => calls.push(v))
+    expect(calls).toEqual([undefined])
+
+    ns.init({ activeTab: 'chat' })
+    expect(ns.get('activeTab')).toBe('chat')
+    expect(calls).toEqual([undefined, 'chat'])
+  })
+
+  test('reset deletes the namespace and drops listeners', () => {
+    interface S { count: number }
+    const ns = store.namespace<S>('resettest')
+    ns.init({ count: 0 })
+    const calls: number[] = []
+    ns.subscribe('count', (v) => calls.push(v))
+    ns.set('count', 1)
+    expect(calls).toEqual([0, 1])
+
+    ns.reset()
+    // After reset, getting a key returns undefined
+    expect((store.namespace<S>('resettest') as any).get('count')).toBeUndefined()
+  })
+})
+
+// ─── store.ensureWindow / closeWindow ───
+
+describe('store.ensureWindow / closeWindow', () => {
+  test('ensureWindow seeds window runtime state with defaults', () => {
+    store.ensureWindow('testwin', {
+      id: 'testwin', title: 'Test', icon: 'file', contentTag: 'r-test',
+      defaultWidth: 400, defaultHeight: 500, minWidth: 200, minHeight: 200,
+    })
+    const win = store.namespace<ShellState>('shell').get('windows')['testwin']
+    expect(win).toBeDefined()
+    expect(win!.id).toBe('testwin')
+    expect(win!.w).toBe(400)
+    expect(win!.h).toBe(500)
+  })
+
+  test('ensureWindow is idempotent', () => {
+    const cfg = {
+      id: 'idem', title: 'T', icon: 'file', contentTag: 'r-t',
+      defaultWidth: 300, defaultHeight: 400, minWidth: 200, minHeight: 200,
+    }
+    store.ensureWindow('idem', cfg)
+    const first = store.namespace<ShellState>('shell').get('windows')['idem']
+    store.ensureWindow('idem', cfg)
+    const second = store.namespace<ShellState>('shell').get('windows')['idem']
+    expect(first).toBe(second) // same object reference
+  })
+
+  test('closeWindow sets isOpen to false', () => {
+    store.ensureWindow('closeme', {
+      id: 'closeme', title: 'C', icon: 'file', contentTag: 'r-c',
+      defaultWidth: 300, defaultHeight: 400, minWidth: 200, minHeight: 200,
+    })
+    store.namespace<ShellState>('shell').get('windows')['closeme']!.isOpen = true
+    store.closeWindow('closeme')
+    expect(store.namespace<ShellState>('shell').get('windows')['closeme']!.isOpen).toBe(false)
+  })
+})
+
+// ─── StoreController two-element path ───
+
+describe('StoreController two-element path', () => {
+  test('binds to a namespace key and updates on set', () => {
+    interface TestState { mode: string }
+
+    // A minimal fake host that implements ReactiveControllerHost
+    let updateRequested = false
+    const fakeHost = {
+      addController: () => {},
+      removeController: () => {},
+      requestUpdate: () => { updateRequested = true },
+      hasUpdated: true,
+      isConnected: true,
+    }
+
+    store.namespace<TestState>('ctrltest').init({ mode: 'initial' })
+    const ctrl = new StoreController<TestState, 'mode'>(fakeHost as any, ['ctrltest', 'mode'])
+    expect(ctrl.value).toBe('initial')
+
+    // Simulate hostConnected
+    ;(ctrl as any).hostConnected()
+
+    store.namespace<TestState>('ctrltest').set('mode', 'changed')
+    expect(ctrl.value).toBe('changed')
+    expect(updateRequested).toBe(true)
+
+    // Simulate hostDisconnected
+    ;(ctrl as any).hostDisconnected()
+  })
+})

@@ -1,0 +1,47 @@
+import { html } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
+import { RorschachBase } from './base.js';
+import { StoreController } from './store-controller.js';
+
+type ToolSchema = { type: 'function'; function: { name: string; description: string; parameters: object } }
+
+interface ShellToolsState {
+  tools: Record<string, ToolSchema>
+}
+
+@customElement('r-tools-list')
+export class RToolsList extends RorschachBase {
+  private _tools = new StoreController<ShellToolsState, 'tools'>(this, ['shell', 'tools']);
+
+  // Render to light DOM to reuse shell/observe styles
+  override createRenderRoot() {
+    return this;
+  }
+
+  override render() {
+    const toolsMap = this._tools.value;
+    const names = Object.keys(toolsMap).sort();
+
+    if (names.length === 0) {
+      return html`
+        <r-empty-state 
+          variant="panel" 
+          name="wrench" 
+          text="no tools registered"
+        ></r-empty-state>
+      `;
+    }
+
+    return html`
+      ${names.map(name => {
+        const desc = toolsMap[name]?.function?.description ?? '';
+        return html`
+          <div class="tool-row">
+            <span class="tool-name">${name}</span>
+            <span class="tool-desc">${desc}</span>
+          </div>
+        `;
+      })}
+    `;
+  }
+}
