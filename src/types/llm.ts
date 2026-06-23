@@ -100,18 +100,18 @@ export type VideoDownloadReply =
 // ─── Public provider messages ───
 
 export type LlmProviderMsg =
-  | { type: 'stream';            requestId: string; model: string; messages: ApiMessage[]; tools?: LlmTool[]; role: string; clientId?: string; replyTo: ActorRef<LlmProviderReply> }
-  | { type: 'streamImage';       requestId: string; model: string; messages: ApiMessage[]; role: string; clientId?: string; replyTo: ActorRef<VisionProviderReply> }
-  | { type: 'streamAudio';       requestId: string; model: string; messages: ApiMessage[]; voice?: string; role: string; clientId?: string; replyTo: ActorRef<AudioProviderReply> }
-  | { type: 'transcribe';        requestId: string; model: string; audio: { data: string; format: string }; role: string; clientId?: string; replyTo: ActorRef<TranscriptionProviderReply> }
-  | { type: 'speak';             requestId: string; model: string; input: string; voice: string; instructions?: string; format?: string | undefined; role: string; clientId?: string; replyTo: ActorRef<SpeechProviderReply> }
-  | { type: 'embed';             requestId: string; model: string; text: string; dimensions?: number; clientId?: string; replyTo: ActorRef<EmbeddingReply> }
+  | { type: 'stream';            requestId: string; model: string; messages: ApiMessage[]; tools?: LlmTool[]; role: string; userId?: string; replyTo: ActorRef<LlmProviderReply> }
+  | { type: 'streamImage';       requestId: string; model: string; messages: ApiMessage[]; role: string; userId?: string; replyTo: ActorRef<VisionProviderReply> }
+  | { type: 'streamAudio';       requestId: string; model: string; messages: ApiMessage[]; voice?: string; role: string; userId?: string; replyTo: ActorRef<AudioProviderReply> }
+  | { type: 'transcribe';        requestId: string; model: string; audio: { data: string; format: string }; role: string; userId?: string; replyTo: ActorRef<TranscriptionProviderReply> }
+  | { type: 'speak';             requestId: string; model: string; input: string; voice: string; instructions?: string; format?: string | undefined; role: string; userId?: string; replyTo: ActorRef<SpeechProviderReply> }
+  | { type: 'embed';             requestId: string; model: string; text: string; dimensions?: number; userId?: string; replyTo: ActorRef<EmbeddingReply> }
   | { type: 'fetchModelInfo';    model: string; replyTo: ActorRef<ModelInfo | null> }
   | { type: 'fetchModels';       replyTo: ActorRef<string[]> }
-  | { type: 'rerank';            requestId: string; model: string; query: string; documents: string[]; topN?: number; clientId?: string; replyTo: ActorRef<RerankReply> }
-  | { type: 'submitVideo';       requestId: string; model: string; prompt: string; aspectRatio?: string; duration?: number; resolution?: string; role: string; clientId?: string; replyTo: ActorRef<VideoSubmitReply> }
-  | { type: 'pollVideo';         requestId: string; pollingUrl: string; role: string; clientId?: string; replyTo: ActorRef<VideoPollReply> }
-  | { type: 'downloadVideos';    requestId: string; downloads: { url: string; destPath: string }[]; role: string; clientId?: string; replyTo: ActorRef<VideoDownloadReply> }
+  | { type: 'rerank';            requestId: string; model: string; query: string; documents: string[]; topN?: number; userId?: string; replyTo: ActorRef<RerankReply> }
+  | { type: 'submitVideo';       requestId: string; model: string; prompt: string; aspectRatio?: string; duration?: number; resolution?: string; role: string; userId?: string; replyTo: ActorRef<VideoSubmitReply> }
+  | { type: 'pollVideo';         requestId: string; pollingUrl: string; role: string; userId?: string; replyTo: ActorRef<VideoPollReply> }
+  | { type: 'downloadVideos';    requestId: string; downloads: { url: string; destPath: string }[]; role: string; userId?: string; replyTo: ActorRef<VideoDownloadReply> }
 
 // ─── Retained topic: announces the live llm-provider ref to subscribers ───
 
@@ -129,7 +129,7 @@ export type CostEvent = {
   outputTokens: number
   /** Cost in USD; null when model pricing is unavailable */
   cost: number | null
-  /** Present for per-client usage; absent for background tasks */
-  clientId?: string
+  /** Present for per-user usage; absent for background tasks */
+  userId?: string
 }
 export const CostTopic = createTopic<CostEvent>('cognitive.costs')

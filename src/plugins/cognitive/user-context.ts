@@ -78,6 +78,7 @@ export const UserContext = (options: UserContextOptions): ActorDef<UserContextMs
       model,
       messages: buildMessages(userId, currentContext, turns),
       role: 'user-context',
+      userId,
       replyTo: ctx.self as unknown as ActorRef<LlmProviderReply>,
     })
 

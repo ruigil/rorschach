@@ -219,6 +219,7 @@ const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, 
       messages,
       tools: schemas.length > 0 ? schemas : undefined,
       role: hooks.role,
+      userId: state.loop.turn.userId,
       replyTo: ctx.self as unknown as ActorRef<LlmProviderReply>,
     })
     return llmSpan

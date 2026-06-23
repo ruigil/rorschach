@@ -109,7 +109,7 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
           duration,
           resolution,
           role: videoPollRole,
-          clientId: userId,
+          userId: userId,
           replyTo: context.self as unknown as ActorRef<VideoSubmitReply>,
         })
         return {
@@ -134,7 +134,7 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
           requestId,
           pollingUrl,
           role: videoPollRole,
-          clientId: req.userId,
+          userId: req.userId,
           replyTo: context.self as unknown as ActorRef<VideoPollReply>,
         })
         return {
@@ -177,7 +177,7 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
             requestId,
             downloads,
             role: videoPollRole,
-            clientId: req.userId,
+            userId: req.userId,
             replyTo: context.self as unknown as ActorRef<VideoDownloadReply>,
           })
           return { state }
@@ -223,7 +223,7 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
           requestId,
           pollingUrl: req.pollingUrl,
           role: videoPollRole,
-          clientId: req.userId,
+          userId: req.userId,
           replyTo: context.self as unknown as ActorRef<VideoPollReply>,
         })
         return { state }

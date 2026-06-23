@@ -164,7 +164,7 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
             instructions: instructions || undefined,
             format: ttsFormat,
             role: 'audio',
-            clientId: userId,
+            userId: userId,
             replyTo: context.self as unknown as ActorRef<SpeechProviderReply>,
           })
           return {
@@ -214,7 +214,7 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
           model: sttModel,
           audio: { data, format },
           role: 'audio',
-          clientId: req.userId,
+          userId: req.userId,
           replyTo: context.self as unknown as ActorRef<TranscriptionProviderReply>,
         })
         return { state }

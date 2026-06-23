@@ -132,7 +132,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
             model,
             messages: [{ role: 'user', content: prompt }],
             role: 'vision',
-            clientId: userId,
+            userId: userId,
             replyTo: context.self as unknown as ActorRef<VisionProviderReply>,
           })
           return {
@@ -191,7 +191,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
             },
           ],
           role: 'vision',
-          clientId: req?.userId,
+          userId: req?.userId,
           replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
         })
         return { state }

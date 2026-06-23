@@ -73,7 +73,6 @@ describe('DocsAgent Concurrency Integration', () => {
       toolName: 'update_docs',
       arguments: JSON.stringify({ query: 'Write docs for Module A' }),
       userId: 'user-1',
-      clientId: 'client-1',
       replyTo,
     }))
 
@@ -82,7 +81,6 @@ describe('DocsAgent Concurrency Integration', () => {
       toolName: 'update_docs',
       arguments: JSON.stringify({ query: 'Write docs for Module B' }),
       userId: 'user-2',
-      clientId: 'client-2',
       replyTo,
     }))
 

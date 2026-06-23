@@ -83,19 +83,19 @@ export type OpenRouterAdapterOptions = {
 
 export type LlmProviderInternalMsg =
   | LlmProviderMsg
-  | { type: '_videoSubmitDone';   result: VideoSubmitReply;           model: string; role: string; clientId?: string; replyTo: ActorRef<VideoSubmitReply> }
-  | { type: '_videoPollDone';     result: VideoPollReply;             role: string; clientId?: string; replyTo: ActorRef<VideoPollReply> }
-  | { type: '_videoDownloadDone'; result: VideoDownloadReply;         role: string; clientId?: string; replyTo: ActorRef<VideoDownloadReply> }
-  | { type: '_streamDone';        result: LlmProviderReply;           model: string; role: string; clientId?: string; replyTo: ActorRef<LlmProviderReply> }
-  | { type: '_streamImageDone';   result: VisionProviderReply;        model: string; role: string; clientId?: string; replyTo: ActorRef<VisionProviderReply> }
-  | { type: '_streamAudioDone';   result: AudioProviderReply;         model: string; role: string; clientId?: string; replyTo: ActorRef<AudioProviderReply> }
-  | { type: '_transcribeDone';    result: TranscriptionProviderReply; model: string; role: string; clientId?: string; replyTo: ActorRef<TranscriptionProviderReply> }
-  | { type: '_speakDone';         result: SpeechProviderReply;        model: string; role: string; clientId?: string; replyTo: ActorRef<SpeechProviderReply> }
-  | { type: '_embedDone';         result: EmbeddingReply;             model: string; role: string; clientId?: string; usage: TokenUsage | null; replyTo: ActorRef<EmbeddingReply> }
+  | { type: '_videoSubmitDone';   result: VideoSubmitReply;           model: string; role: string; userId?: string; replyTo: ActorRef<VideoSubmitReply> }
+  | { type: '_videoPollDone';     result: VideoPollReply;             role: string; userId?: string; replyTo: ActorRef<VideoPollReply> }
+  | { type: '_videoDownloadDone'; result: VideoDownloadReply;         role: string; userId?: string; replyTo: ActorRef<VideoDownloadReply> }
+  | { type: '_streamDone';        result: LlmProviderReply;           model: string; role: string; userId?: string; replyTo: ActorRef<LlmProviderReply> }
+  | { type: '_streamImageDone';   result: VisionProviderReply;        model: string; role: string; userId?: string; replyTo: ActorRef<VisionProviderReply> }
+  | { type: '_streamAudioDone';   result: AudioProviderReply;         model: string; role: string; userId?: string; replyTo: ActorRef<AudioProviderReply> }
+  | { type: '_transcribeDone';    result: TranscriptionProviderReply; model: string; role: string; userId?: string; replyTo: ActorRef<TranscriptionProviderReply> }
+  | { type: '_speakDone';         result: SpeechProviderReply;        model: string; role: string; userId?: string; replyTo: ActorRef<SpeechProviderReply> }
+  | { type: '_embedDone';         result: EmbeddingReply;             model: string; role: string; userId?: string; usage: TokenUsage | null; replyTo: ActorRef<EmbeddingReply> }
   | { type: '_modelInfoDone';     info: ModelInfo | null;             replyTo: ActorRef<ModelInfo | null> }
   | { type: '_modelsDone';        models: string[];                   replyTo: ActorRef<string[]> }
-  | { type: '_rerankDone';        result: RerankReply;                model: string; role: string; clientId?: string; usage: TokenUsage | null; replyTo: ActorRef<RerankReply> }
-  | { type: '_costReady';         model: string; role: string; clientId?: string; usage: TokenUsage; info: ModelInfo | null }
+  | { type: '_rerankDone';        result: RerankReply;                model: string; role: string; userId?: string; usage: TokenUsage | null; replyTo: ActorRef<RerankReply> }
+  | { type: '_costReady';         model: string; role: string; userId?: string; usage: TokenUsage; info: ModelInfo | null }
 
 // ─── User context message protocol ───
 

@@ -271,7 +271,7 @@ export const MemoryStoreWorker = (parent: ActorRef<MemorySupervisorMsg>, options
             { role: 'user', content: msg.record.content },
           ],
           role: 'memory-store',
-          clientId: msg.userId,
+          userId: msg.userId,
           replyTo: ctx.self as unknown as ActorRef<LlmProviderReply>,
         })
 
