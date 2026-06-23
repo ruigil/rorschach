@@ -111,20 +111,21 @@ export const createEventStream = (): EventStream => {
   }
 
   const cleanup = (subscriberName: string): void => {
-    const topics = reverse.get(subscriberName)
-    if (topics) {
-      for (const topic of topics) {
-        const entries = forward.get(topic)
-        if (entries) {
-          for (const entry of entries) {
-            if (entry.name === subscriberName || entry.name.startsWith(subscriberName + '|')) {
-              entries.delete(entry)
+    for (const [key, topics] of reverse.entries()) {
+      if (key === subscriberName || key.startsWith(subscriberName + '|')) {
+        for (const topic of topics) {
+          const entries = forward.get(topic)
+          if (entries) {
+            for (const entry of entries) {
+              if (entry.name === key) {
+                entries.delete(entry)
+              }
             }
+            if (entries.size === 0) forward.delete(topic)
           }
-          if (entries.size === 0) forward.delete(topic)
         }
+        reverse.delete(key)
       }
-      reverse.delete(subscriberName)
     }
   }
 

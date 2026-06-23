@@ -182,6 +182,43 @@ describe('EventStream: pub-sub', () => {
     await system.shutdown()
   })
 
+  test('subscriptions with identifiers are cleaned up when actor stops', async () => {
+    const system = await AgentSystem()
+    const received: string[] = []
+
+    type Msg = { type: 'got'; value: string }
+    const subDef: ActorDef<Msg, null> = {
+      lifecycle: (state, event, ctx) => {
+        if (event.type === 'start') {
+          ctx.subscribe('topic', (e) => ({
+            type: 'got' as const,
+            value: (e as { value: string }).value,
+          }), 'my-identifier')
+        }
+        return { state }
+      },
+      handler: (state, msg) => {
+        received.push(msg.value)
+        return { state }
+      },
+    }
+
+    system.spawn('sub-with-id', subDef)
+    await tick()
+
+    system.publish('topic', { value: 'alive' })
+    await tick()
+
+    system.stop({ name: 'system/sub-with-id' })
+    await tick()
+
+    system.publish('topic', { value: 'dead' })
+    await tick()
+
+    expect(received).toEqual(['alive'])
+    await system.shutdown()
+  })
+
   test('system.subscribe returns an unsubscribe function', async () => {
     const system = await AgentSystem()
     const received: unknown[] = []
