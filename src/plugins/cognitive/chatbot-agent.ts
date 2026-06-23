@@ -55,11 +55,7 @@ const buildSystemPrompt = (basePrompt: string | undefined): string => {
   return [basePrompt, todayDateNote, HISTORY_MARKERS_NOTE].filter(Boolean).join('\n\n---\n\n')
 }
 
-const initialChatbotState = (): ChatbotState => ({
-  loop:           idleLoopState(),
-  contextView:    emptyContextView(),
-  tools:          {},
-})
+
 
 export const ChatbotAgentFactory = (config: ChatbotAgentConfig) =>
   (opts: AgentFactoryOpts): ActorDef<ChatbotMsg, ChatbotState> => Chatbot(config, opts)
@@ -199,7 +195,11 @@ export const Chatbot = (
   }
 
   return {
-    initialState: initialChatbotState,
+    initialState: () => ({
+      loop:           idleLoopState(),
+      contextView:    emptyContextView(userId),
+      tools:          {},
+    }),
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(ToolRegistrationTopic, (event) => {

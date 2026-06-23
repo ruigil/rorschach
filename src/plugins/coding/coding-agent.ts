@@ -17,11 +17,7 @@ const emptyContextView = (userId = ''): ContextView => ({
   toolSummaries: [],
 })
 
-const initialState = (): CodingAgentState => ({
-  loop: idleLoopState(),
-  contextView: emptyContextView(),
-  tools: {},
-})
+
 
 const buildSystemPrompt = (projectMount: string): string =>
   `You are the coding agent for a read-only software project.
@@ -175,7 +171,11 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
   }
 
   return {
-    initialState,
+    initialState: () => ({
+      loop: idleLoopState(),
+      contextView: emptyContextView(opts.userId),
+      tools: {},
+    }),
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(ContextSnapshotTopic, (event) => {

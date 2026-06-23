@@ -35,13 +35,6 @@ const emptyContextView = (userId = ''): ContextView => ({
   toolSummaries: [],
 })
 
-const initialState = (): WorkflowsAgentState => ({
-  loop: idleLoopState(),
-  contextView: emptyContextView(),
-  tools: {},
-  pendingSaveSummary: null,
-})
-
 const buildSystemPrompt = (): string =>
   `You are a workflow assistant. Today is ${new Date().toDateString()}.
 
@@ -179,7 +172,12 @@ const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts):
   }
 
   return {
-    initialState,
+    initialState: () => ({
+      loop: idleLoopState(),
+      contextView: emptyContextView(userId),
+      tools: {},
+      pendingSaveSummary: null,
+    }),
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(ContextSnapshotTopic, event => event.userId === userId ? { type: '_contextSnapshot' as const, ...event } : null)
