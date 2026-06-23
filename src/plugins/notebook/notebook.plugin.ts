@@ -1,7 +1,7 @@
 import type { ActorContext, ActorRef, PluginDef } from '../../system/index.ts'
 import { defineConfig, publishConfigSurface, deleteConfigSurface } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
-import { ToolRegistrationTopic, type ToolCollection, type ToolMsg } from '../../types/tools.ts'
+import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
 
