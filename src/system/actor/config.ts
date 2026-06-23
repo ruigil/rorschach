@@ -131,3 +131,34 @@ export const stopAllSlots = (
     if (slot.ref) ctx.stop(slot.ref)
   }
 }
+
+/**
+ * Recursively merges `override` into `base`.
+ * - If `override` specifies a key with `undefined`, the base value is kept.
+ * - Explicit `null` values in `override` are preserved (not reverted to defaults).
+ * - Arrays and primitives are replaced wholesale.
+ */
+export const deepMerge = (base: unknown, override: unknown): unknown => {
+  if (override === undefined) return base
+  if (
+    override === null ||
+    typeof override !== 'object' ||
+    Array.isArray(override)
+  ) {
+    return override
+  }
+  if (
+    base === null ||
+    typeof base !== 'object' ||
+    Array.isArray(base)
+  ) {
+    return override
+  }
+  const result: Record<string, unknown> = { ...(base as Record<string, unknown>) }
+  for (const [key, val] of Object.entries(override as Record<string, unknown>)) {
+    if (val !== undefined) {
+      result[key] = deepMerge(result[key], val)
+    }
+  }
+  return result
+}

@@ -5,6 +5,7 @@ import {
   buildConfigRoute,
   publishConfigSurface,
   deleteConfigSurface,
+  deepMerge,
 } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import { ConfigSchemaTopic, type ConfigSchemaSection } from '../types/config.ts'
@@ -80,5 +81,59 @@ describe('plugin config surface helpers', () => {
     expect(routes.at(-1)).toMatchObject({ id: 'config.sample', method: 'GET', path: '/config/sample', handler: null })
 
     await system.shutdown()
+  })
+})
+
+describe('deepMerge utility', () => {
+  test('recursively merges nested properties', () => {
+    const base = {
+      a: 1,
+      nested: { b: 2, c: 3 }
+    }
+    const override = {
+      nested: { c: 4 }
+    }
+    expect(deepMerge(base, override)).toEqual({
+      a: 1,
+      nested: { b: 2, c: 4 }
+    })
+  })
+
+  test('preserves explicit null overrides', () => {
+    const base = {
+      a: 1,
+      nested: { b: 2, c: 3 }
+    }
+    const override = {
+      nested: { b: null }
+    }
+    expect(deepMerge(base, override)).toEqual({
+      a: 1,
+      nested: { b: null, c: 3 }
+    })
+  })
+
+  test('replaces arrays wholesale', () => {
+    const base = {
+      arr: [1, 2, 3]
+    }
+    const override = {
+      arr: [4, 5]
+    }
+    expect(deepMerge(base, override)).toEqual({
+      arr: [4, 5]
+    })
+  })
+
+  test('handles undefined override values by keeping base', () => {
+    const base = {
+      a: 1
+    }
+    const override = {
+      a: undefined
+    }
+    expect(deepMerge(base, override)).toEqual({
+      a: 1
+    })
   })
 })

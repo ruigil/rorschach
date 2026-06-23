@@ -1,6 +1,7 @@
 import { createActor } from './actor.ts'
 import { createEventStream } from './services.ts'
 import { createMetricsRegistry } from './metrics.ts'
+import { deepMerge } from './config.ts'
 import {
   SystemLifecycleTopic,
   type ActorDef,
@@ -37,31 +38,6 @@ export type PluginSystemOptions = {
    * each plugin's configDescriptor.defaults at load time.
    */
   config?: Record<string, unknown>
-}
-
-// ─── Deep merge utility ──────────────────────────────────────────────────────
-//
-// Recursively merges `override` on top of `base`. Only plain objects are merged
-// deeply — arrays, primitives, and class instances are replaced wholesale.
-//
-const deepMerge = (base: unknown, override: unknown): unknown => {
-  if (
-    override === null ||
-    typeof override !== 'object' ||
-    Array.isArray(override)
-  ) {
-    return override !== undefined ? override : base
-  }
-  if (base === null || typeof base !== 'object' || Array.isArray(base)) {
-    return override
-  }
-  const result: Record<string, unknown> = { ...(base as Record<string, unknown>) }
-  for (const [key, val] of Object.entries(override as Record<string, unknown>)) {
-    if (val !== undefined) {
-      result[key] = deepMerge(result[key], val)
-    }
-  }
-  return result
 }
 
 // ─── AgentSystem ──────────────────────────────────────────────────────

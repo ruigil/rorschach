@@ -12,6 +12,7 @@ export {
   buildConfigRoute,
   publishConfigSurface,
   deleteConfigSurface,
+  deepMerge,
   createSlot,
   spawnSlot,
   stopSlot,
