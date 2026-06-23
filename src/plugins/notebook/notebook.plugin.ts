@@ -27,7 +27,7 @@ const buildCoachDescriptor = (
   notebookDir: string,
 ): AgentDescriptor => ({
   mode: 'coach',
-  displayName: 'Coach',
+  displayName: 'Life Coach',
   shortDesc: 'Your personal coach for health, learning routines, habit building, writing journal entries, and habit tracking.',
   factory: CoachAgentFactory({
     model: cfg.agent?.model ?? 'google/gemini-3.5-flash',

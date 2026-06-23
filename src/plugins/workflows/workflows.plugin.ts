@@ -55,8 +55,8 @@ const buildDescriptor = (
   toolsRef: ActorRef<ToolMsg>,
 ): AgentDescriptor => ({
   mode: 'workflows',
-  displayName: 'Workflows',
-  shortDesc: 'Design, save, inspect, and run workflows',
+  displayName: 'Plans & Workflows',
+  shortDesc: 'Design plans, save, inspect, and run workflows',
   factory: WorkflowsAgentFactory({
     model: cfg.agent.model,
     maxToolLoops: cfg.agent.maxToolLoops,

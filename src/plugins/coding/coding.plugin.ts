@@ -80,7 +80,7 @@ const buildDescriptor = (
   docsAgentRef: ActorRef<DocsAgentMsg>,
 ): AgentDescriptor => ({
   mode: 'coding',
-  displayName: 'Coding',
+  displayName: 'Coding & Docs',
   shortDesc: 'Inspect a read-only project and generate app-styled documentation',
   factory: CodingAgentFactory({
     model: cfg.coding.model,
