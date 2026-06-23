@@ -30,7 +30,6 @@ const INITIAL_CHATBOT_STATE: ChatbotState = {
   loop:           idleLoopState(),
   contextView:    { userId: '', version: 0, recentMessages: [], userContext: null, modeSummaries: {}, toolSummaries: [] },
   tools:          {},
-  sessionUsage:   { promptTokens: 0, completionTokens: 0 },
 }
 
 // ─── SSE helpers ───

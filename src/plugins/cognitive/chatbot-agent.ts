@@ -5,7 +5,7 @@ import { OutboundUserMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter, ToolFinalReply, ToolMsg, ToolSchema } from '../../types/tools.ts'
 import { applyToolFilter } from '../../system/index.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
-import type { ApiMessage, TokenUsage } from '../../types/llm.ts'
+import type { ApiMessage } from '../../types/llm.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts, type ContextSnapshotEvent } from '../../types/agents.ts'
 import { assembleAgentMessages, type ContextView } from '../../system/index.ts'
 import type { MessageAttachment } from '../../types/events.ts'
@@ -16,7 +16,6 @@ export type ChatbotState = {
   loop:           LoopState
   contextView:    ContextView
   tools:          ToolCollection
-  sessionUsage:   TokenUsage
 }
 // ─── Chatbot actor message protocol ───
 
@@ -98,7 +97,6 @@ const initialChatbotState = (): ChatbotState => ({
   loop:           idleLoopState(),
   contextView:    emptyContextView(),
   tools:          {},
-  sessionUsage:   { promptTokens: 0, completionTokens: 0 },
 })
 
 export const ChatbotAgentFactory = (config: ChatbotAgentConfig) =>
@@ -162,19 +160,11 @@ export const Chatbot = (
       return { state }
     },
 
-	    onComplete: (state, finalText, usage, ctx) => {
+	    onComplete: (state, finalText) => {
       if (finalText) {
         contextStoreRef.send({ type: 'append', mode: CHATBOT_MODE, source: 'assistant', messages: [{ role: 'assistant', content: finalText }] })
       }
-
-      const sessionUsage: TokenUsage = {
-        promptTokens:     state.sessionUsage.promptTokens     + usage.promptTokens,
-        completionTokens: state.sessionUsage.completionTokens + usage.completionTokens,
-      }
-
-      return {
-        state: { ...state, sessionUsage },
-      }
+      return { state }
     },
 
 	    onError: (state, err, ctx) => {
