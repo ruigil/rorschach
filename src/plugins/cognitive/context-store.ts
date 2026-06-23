@@ -34,7 +34,6 @@ export type ContextStoreState = {
   turns:              ContextTurn[]
   nextTurnSeq:        number
   userContext:        string | null
-  modeSummaries:      Record<string, string>
   version:            number
   pendingUserText:    string | null    // ephemeral — not persisted
   pendingUserInjected: boolean         // ephemeral — not persisted
@@ -46,7 +45,6 @@ const initialContextStoreState = (): ContextStoreState => ({
   turns:               [],
   nextTurnSeq:         1,
   userContext:         null,
-  modeSummaries:       {},
   version:             0,
   pendingUserText:     null,
   pendingUserInjected: false,
@@ -65,7 +63,6 @@ export type ContextStoreOptions = {
 type PersistedContextStore = {
   schemaVersion: number
   userContext:   string | null
-  modeSummaries: Record<string, string>
   records:       ContextRecord[]
   turns:         ContextTurn[]
   nextTurnSeq:   number
@@ -96,7 +93,6 @@ const createPersistence = (userId: string, contextPath: string = 'workspace/cont
         turns:         saved.turns,
         nextTurnSeq:   saved.nextTurnSeq,
         userContext:   saved.userContext ?? null,
-        modeSummaries: saved.modeSummaries ?? {},
         version:       0,
         pendingUserText:     null,
         pendingUserInjected: false,
@@ -106,7 +102,6 @@ const createPersistence = (userId: string, contextPath: string = 'workspace/cont
       const data: PersistedContextStore = {
         schemaVersion: CONTEXT_SCHEMA_VERSION,
         userContext:   state.userContext,
-        modeSummaries: state.modeSummaries,
         records:       state.records,
         turns:         state.turns,
         nextTurnSeq:   state.nextTurnSeq,
@@ -199,7 +194,6 @@ export const ContextStore = (
       recentMessages,
       turns:         state.turns,
       userContext:   state.userContext,
-      modeSummaries: state.modeSummaries,
       toolSummaries: buildToolSummaries(state.records),
     })
   }

@@ -25,7 +25,7 @@ import { idleLoopState } from '../system/index.ts'
 
 const INITIAL_CHATBOT_STATE: ChatbotState = {
   loop:           idleLoopState(),
-  contextView:    { userId: '', version: 0, recentMessages: [], userContext: null, modeSummaries: {}, toolSummaries: [] },
+  contextView:    { userId: '', version: 0, recentMessages: [], userContext: null, toolSummaries: [] },
   tools:          {},
 }
 

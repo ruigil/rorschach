@@ -42,7 +42,6 @@ const emptyContextView = (userId = ''): ContextView => ({
   version: 0,
   recentMessages: [],
   userContext: null,
-  modeSummaries: {},
   toolSummaries: [],
 })
 
@@ -88,9 +87,6 @@ const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts):
     assembleAgentMessages(state.contextView, {
       mode: WORKFLOWS_MODE,
       systemPrompt: buildSystemPrompt(),
-      includeUserContext: true,
-      includeCurrentModeSummary: true,
-      includeOtherModeSummaries: false,
       includeToolSummaries: true,
     }, userMsg)
 
@@ -169,7 +165,6 @@ const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts):
             version: msg.version,
             recentMessages: msg.recentMessages,
             userContext: msg.userContext,
-            modeSummaries: msg.modeSummaries,
             toolSummaries: msg.toolSummaries,
           },
         },

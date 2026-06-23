@@ -54,7 +54,6 @@ const emptyContextView = (userId = ''): ContextView => ({
   version:        0,
   recentMessages: [],
   userContext:    null,
-  modeSummaries:  {},
   toolSummaries:  [],
 })
 
@@ -82,9 +81,6 @@ export const CoachAgent = (
     assembleAgentMessages(state.contextView, {
       mode:                      COACH_MODE,
       systemPrompt:              buildSystemPrompt(notebookDir),
-      includeUserContext:        true,
-      includeCurrentModeSummary: true,
-      includeOtherModeSummaries: true,
       includeToolSummaries:      true,
     }, userMsg)
 
@@ -111,6 +107,22 @@ export const CoachAgent = (
       return { state }
     },
 
+    onBatchHistoryReady: (state, messages) => {
+      contextStoreRef.send({ type: 'append', mode: COACH_MODE, messages })
+      return { state }
+    },
+
+    onToolPending: (state, pending) => {
+      const text = pending.placeholderText ?? `Background job started for ${pending.toolName} (jobId=${pending.jobId}).`
+      contextStoreRef.send({
+        type:     'append',
+        mode:     COACH_MODE,
+        source:   'assistant',
+        messages: [{ role: 'assistant', content: text }],
+      })
+      return { state }
+    },
+
     onError: (state, err, ctx) => {
       if (err.kind === 'loopLimit') {
         ctx.log.warn('coach-agent: tool loop limit reached')
@@ -131,7 +143,6 @@ export const CoachAgent = (
             version:        m.version,
             recentMessages: m.recentMessages,
             userContext:    m.userContext,
-            modeSummaries:  m.modeSummaries,
             toolSummaries:  m.toolSummaries,
           },
         },

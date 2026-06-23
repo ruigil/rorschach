@@ -14,7 +14,6 @@ const emptyContextView = (userId = ''): ContextView => ({
   version: 0,
   recentMessages: [],
   userContext: null,
-  modeSummaries: {},
   toolSummaries: [],
 })
 
@@ -56,9 +55,6 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
     assembleAgentMessages(state.contextView, {
       mode: CODING_MODE,
       systemPrompt: buildSystemPrompt(options.projectMount),
-      includeUserContext: true,
-      includeCurrentModeSummary: true,
-      includeOtherModeSummaries: false,
       includeToolSummaries: true,
     }, userMsg)
 
@@ -169,7 +165,6 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
             version: m.version,
             recentMessages: m.recentMessages,
             userContext: m.userContext,
-            modeSummaries: m.modeSummaries,
             toolSummaries: m.toolSummaries,
           },
         },

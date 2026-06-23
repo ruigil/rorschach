@@ -44,7 +44,6 @@ export type ContextSnapshotEvent = {
   recentMessages: ApiMessage[]
   turns:         ContextTurn[]
   userContext:   string | null
-  modeSummaries: Record<string, string>
   toolSummaries: ToolSummary[]
 }
 

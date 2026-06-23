@@ -38,15 +38,12 @@ export const assembleUserText = (
 
 export type ContextView = Pick<
   ContextSnapshotEvent,
-  'userId' | 'version' | 'recentMessages' | 'userContext' | 'modeSummaries' | 'toolSummaries'
+  'userId' | 'version' | 'recentMessages' | 'userContext' | 'toolSummaries'
 >
 
 export type ContextAssemblyPolicy = {
   mode: string
   systemPrompt: string
-  includeUserContext?: boolean
-  includeCurrentModeSummary?: boolean
-  includeOtherModeSummaries?: boolean
   includeToolSummaries?: boolean
   recentMessageLimit?: number
   toolSummaryLimit?: number
@@ -60,21 +57,7 @@ const contextNote = (label: string, content: string): ApiMessage | null => {
   return text ? { role: 'system', content: `${label}:\n${text}` } : null
 }
 
-const renderModeSummaries = (
-  summaries: Record<string, string>,
-  mode: string,
-  includeCurrent: boolean,
-  includeOther: boolean,
-): string => {
-  const parts: string[] = []
-  for (const [summaryMode, summary] of Object.entries(summaries)) {
-    if (summaryMode === mode && !includeCurrent) continue
-    if (summaryMode !== mode && !includeOther) continue
-    const text = summary.trim()
-    if (text) parts.push(`${summaryMode}: ${text}`)
-  }
-  return parts.join('\n\n')
-}
+
 
 const renderToolSummaries = (summaries: ToolSummary[], mode: string, limit: number): string => {
   const selected = summaries
@@ -100,16 +83,8 @@ export const assembleAgentMessages = (
     : recent
 
   const notes = [
-    policy.includeUserContext === false ? null : contextNote('User context', view.userContext ?? ''),
-    contextNote(
-      'Mode context',
-      renderModeSummaries(
-        view.modeSummaries,
-        policy.mode,
-        policy.includeCurrentModeSummary !== false,
-        policy.includeOtherModeSummaries === true,
-      ),
-    ),
+    contextNote('User context', view.userContext ?? ''),
+
     policy.includeToolSummaries === false
       ? null
       : contextNote('Recent tool results', renderToolSummaries(view.toolSummaries, policy.mode, toolLimit)),

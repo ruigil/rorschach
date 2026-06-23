@@ -120,7 +120,6 @@ describe('MemoryConsolidation', () => {
       recentMessages: [],
       turns: [firstTurn],
       userContext: null,
-      modeSummaries: {},
       toolSummaries: [],
     })
     await tick()

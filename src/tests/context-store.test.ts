@@ -72,7 +72,6 @@ describe('ContextStore context snapshots', () => {
       { role: 'user', content: 'search for cats' },
       { role: 'assistant', content: 'Cats are mammals.' },
     ])
-    expect(latest.modeSummaries).toEqual({})
     expect(latest.toolSummaries).toEqual([
       {
         mode: 'chatbot',
@@ -173,13 +172,10 @@ describe('assembleAgentMessages', () => {
         { role: 'user', content: 'current' },
       ],
       userContext: 'The user prefers concise answers.',
-      modeSummaries: { chatbot: 'Discussed shared context.' },
       toolSummaries: [{ mode: 'chatbot', toolName: 'web_search', summary: 'Found docs.', timestamp: 1 }],
     }, {
       mode: 'chatbot',
       systemPrompt: 'Base prompt',
-      includeUserContext: true,
-      includeCurrentModeSummary: true,
       includeToolSummaries: true,
     }, { role: 'user', content: 'current' })
 

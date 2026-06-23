@@ -47,7 +47,6 @@ const emptyContextView = (userId = ''): ContextView => ({
   version:        0,
   recentMessages: [],
   userContext:    null,
-  modeSummaries:  {},
   toolSummaries:  [],
 })
 
@@ -85,7 +84,6 @@ export const Chatbot = (
           version:        msg.version,
           recentMessages: msg.recentMessages,
           userContext:    msg.userContext,
-          modeSummaries:  msg.modeSummaries,
           toolSummaries:  msg.toolSummaries,
         },
       },
@@ -96,9 +94,6 @@ export const Chatbot = (
     assembleAgentMessages(state.contextView, {
       mode:                      CHATBOT_MODE,
       systemPrompt:              buildSystemPrompt(systemPrompt),
-      includeUserContext:        true,
-      includeCurrentModeSummary: true,
-      includeOtherModeSummaries: true,
       includeToolSummaries:      true,
     }, userMessage)
 

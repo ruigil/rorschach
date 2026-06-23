@@ -63,7 +63,6 @@ describe('UserContext', () => {
       recentMessages: [],
       turns: [firstTurn],
       userContext: existingSummary,
-      modeSummaries: {},
       toolSummaries: [],
     })
     await tick()
@@ -74,7 +73,6 @@ describe('UserContext', () => {
       recentMessages: [],
       turns: [firstTurn, secondTurn],
       userContext: existingSummary,
-      modeSummaries: {},
       toolSummaries: [],
     })
     await tick()
