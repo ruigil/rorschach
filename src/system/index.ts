@@ -43,6 +43,7 @@ export {
 
 export {
   assembleAgentMessages,
+  assembleUserText,
   type ContextView,
   type ContextAssemblyPolicy,
 } from './agent/context-assembly.ts'

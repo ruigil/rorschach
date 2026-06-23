@@ -3,7 +3,7 @@ import type { BashExecResult } from 'just-bash'
 import type { ContextSnapshotEvent } from '../../types/agents.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
-import type { ToolCollection, ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolReply } from '../../types/tools.ts'
+import type { ToolCollection, ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
 import type { ContextView, LoopMsg, LoopState, SpanHandle } from '../../system/index.ts'
 
 export type CodingConfig = {
@@ -38,12 +38,15 @@ export type DocsManifest = {
 export type CodingAgentExtra =
   | { type: 'userMessage'; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
+  | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
+  | { type: '_toolUnregistered'; name: string }
 
 export type CodingAgentMsg = LoopMsg<CodingAgentExtra>
 
 export type CodingAgentState = {
   loop: LoopState
   contextView: ContextView
+  tools: ToolCollection
 }
 
 export type DocsJobExecutorExtra =

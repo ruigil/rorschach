@@ -1,5 +1,5 @@
 import type { ActorContext, ActorDef, ActorResult, Interceptor } from '../../system/index.ts'
-import { agentLoop, applyToolFilter, assembleAgentMessages, idleLoopState, onLifecycle, type ContextView } from '../../system/index.ts'
+import { agentLoop, applyToolFilter, assembleAgentMessages, assembleUserText, idleLoopState, onLifecycle, type ContextView } from '../../system/index.ts'
 import { OutboundUserMessageTopic } from '../../types/events.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
 import type { ApiMessage } from '../../types/llm.ts'
@@ -28,6 +28,7 @@ const emptyContextView = (userId = ''): ContextView => ({
 const initialState = (): CodingAgentState => ({
   loop: idleLoopState(),
   contextView: emptyContextView(),
+  tools: {},
 })
 
 const buildSystemPrompt = (projectMount: string): string =>
@@ -57,8 +58,6 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
   type M = CodingAgentMsg
   type S = CodingAgentState
   type Ctx = ActorContext<M>
-
-  const registeredTools: ToolCollection = {}
 
   const buildTurnMessages = (state: S, userMsg: ApiMessage): ApiMessage[] =>
     assembleAgentMessages(state.contextView, {
@@ -91,7 +90,8 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
   }
 
   const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
-    return doStartTurn(state, msg.text, msg.isInjected || false, ctx)
+    const userText = assembleUserText(msg.text, msg.attachments)
+    return doStartTurn(state, userText, msg.isInjected || false, ctx)
   }
 
   const loop = agentLoop<S, M>({
@@ -101,9 +101,9 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
     model: options.model,
     maxToolLoops: options.maxToolLoops,
     llmRef: () => opts.llmRef,
-    tools: () => ({
+    tools: (state) => ({
       ...options.tools,
-      ...registeredTools,
+      ...state.tools,
     }),
     uiEvents: OutboundUserMessageTopic,
     errorMessages: {
@@ -150,6 +150,23 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
       return handleUserMessage(state, m as Extract<M, { type: 'userMessage' }>, ctx)
     }
 
+    if (m.type === '_toolRegistered') {
+      return {
+        state: {
+          ...state,
+          tools: {
+            ...state.tools,
+            [m.name]: { name: m.name, schema: m.schema, ref: m.ref, mayBeLongRunning: m.mayBeLongRunning },
+          },
+        },
+      }
+    }
+
+    if (m.type === '_toolUnregistered') {
+      const { [m.name]: _, ...rest } = state.tools
+      return { state: { ...state, tools: rest } }
+    }
+
     if (m.type === '_contextSnapshot') {
       return {
         state: {
@@ -179,19 +196,17 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
         })
 
         ctx.subscribe(ToolRegistrationTopic, (event) => {
-          if (applyToolFilter(event.name, { allow: ['tool_status', 'switch_mode'] })) {
-            if ('schema' in event && event.ref) {
-              registeredTools[event.name] = {
-                name: event.name,
-                schema: event.schema,
-                ref: event.ref,
-                mayBeLongRunning: event.mayBeLongRunning,
-              }
-            } else {
-              delete registeredTools[event.name]
+          if (!applyToolFilter(event.name, { allow: ['tool_status', 'switch_mode'] })) return null
+          if ('schema' in event && event.ref) {
+            return {
+              type: '_toolRegistered' as const,
+              name: event.name,
+              schema: event.schema,
+              ref: event.ref,
+              mayBeLongRunning: event.mayBeLongRunning,
             }
           }
-          return null
+          return { type: '_toolUnregistered' as const, name: event.name }
         })
 
         return { state }

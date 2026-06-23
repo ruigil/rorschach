@@ -1,5 +1,40 @@
 import type { ApiMessage } from '../../types/llm.ts'
 import type { ContextSnapshotEvent, ToolSummary } from '../../types/agents.ts'
+import type { MessageAttachment } from '../../types/events.ts'
+
+export const assembleUserText = (
+  text:         string,
+  attachments?: MessageAttachment[],
+): string => {
+  let out = text
+  if (!attachments || attachments.length === 0) return out
+
+  const images = attachments.filter(a => a.kind === 'image').map(a => a.url)
+  if (images.length > 0) {
+    const note = images.length === 1
+      ? `[Image attached: "${images[0]}"] `
+      : `[Images attached: ${images.map(p => `"${p}"`).join(', ')}]`
+    out = out ? `${out}\n\n${note}` : note
+  }
+
+  const audio = attachments.filter(a => a.kind === 'audio').map(a => a.url)
+  if (audio.length > 0) {
+    const note = audio.length === 1
+      ? `[Audio attached: "${audio[0]}"]`
+      : `[Audio files attached: ${audio.map(p => `"${p}"`).join(', ')}]`
+    out = out ? `${out}\n\n${note}` : note
+  }
+
+  const pdfs = attachments.filter(a => a.kind === 'pdf').map(a => a.url)
+  if (pdfs.length > 0) {
+    const note = pdfs.length === 1
+      ? `[PDF attached: "${pdfs[0]}"] `
+      : `[PDFs attached: ${pdfs.map(p => `"${p}"`).join(', ')}]`
+    out = out ? `${out}\n\n${note}` : note
+  }
+
+  return out
+}
 
 export type ContextView = Pick<
   ContextSnapshotEvent,

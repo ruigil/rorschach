@@ -1,12 +1,11 @@
 import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor, LoopState } from '../../system/index.ts'
 import { onLifecycle } from '../../system/index.ts'
-import { agentLoop, idleLoopState, applyToolFilter } from '../../system/index.ts'
+import { agentLoop, idleLoopState, applyToolFilter, assembleAgentMessages, assembleUserText, type ContextView } from '../../system/index.ts'
 import { OutboundUserMessageTopic } from '../../types/events.ts'
-import type { ToolCollection, ToolFilter, ToolInvokeMsg, ToolMsg } from '../../types/tools.ts'
+import type { ToolCollection, ToolFilter, ToolMsg } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
-import { assembleAgentMessages, type ContextView } from '../../system/index.ts'
 import type { WorkflowRunnerMsg } from './types.ts'
 import {
   deleteWorkflowTool,
@@ -99,7 +98,8 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
     }, userMsg)
 
   const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
-    const userMsg: ApiMessage = { role: 'user', content: msg.text }
+    const userText = assembleUserText(msg.text, msg.attachments)
+    const userMsg: ApiMessage = { role: 'user', content: userText }
     contextStoreRef.send({ type: 'append', mode: WORKFLOWS_MODE, source: 'user', injected: msg.isInjected || false, messages: [userMsg] })
     return loop.startTurn(state, {
       messages: buildTurnMessages(state, userMsg),
