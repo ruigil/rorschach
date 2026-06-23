@@ -243,7 +243,6 @@ export type WorkflowTaskExecutorMsg =
 
 export type WorkflowsAgentExtra =
   | { type: 'userMessage'; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
-  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
   | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }

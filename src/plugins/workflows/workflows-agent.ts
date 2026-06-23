@@ -1,6 +1,6 @@
 import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor, LoopState } from '../../system/index.ts'
 import { onLifecycle } from '../../system/index.ts'
-import { agentLoop, idleLoopState, applyToolFilter, assembleAgentMessages, assembleUserText, type ContextView } from '../../system/index.ts'
+import { agentLoop, idleLoopState, applyToolFilter, assembleAgentMessages, assembleUserText, getTodayDateString, type ContextView } from '../../system/index.ts'
 import { OutboundUserMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter, ToolMsg } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
@@ -30,7 +30,7 @@ const emptyContextView = (userId = ''): ContextView => ({
 })
 
 const buildSystemPrompt = (): string =>
-  `You are a workflow assistant. Today is ${new Date().toDateString()}.
+  `You are a workflow assistant. Today is ${getTodayDateString('local')}.
 
 You help the user design, save, inspect, and run workflows.
 
@@ -59,6 +59,38 @@ const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts):
   type M = WorkflowsAgentMsg
   type S = WorkflowsAgentState
   type Ctx = ActorContext<M>
+
+  const handleContextSnapshot = (state: S, msg: Extract<M, { type: '_contextSnapshot' }>): ActorResult<M, S> => {
+    return {
+      state: {
+        ...state,
+        contextView: {
+          userId: msg.userId,
+          version: msg.version,
+          recentMessages: msg.recentMessages,
+          userContext: msg.userContext,
+          toolSummaries: msg.toolSummaries,
+        },
+      },
+    }
+  }
+
+  const handleToolRegistered = (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> => {
+    return {
+      state: {
+        ...state,
+        tools: {
+          ...state.tools,
+          [msg.name]: { name: msg.name, schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning },
+        },
+      },
+    }
+  }
+
+  const handleToolUnregistered = (state: S, msg: Extract<M, { type: '_toolUnregistered' }>): ActorResult<M, S> => {
+    const { [msg.name]: _, ...tools } = state.tools
+    return { state: { ...state, tools } }
+  }
 
   const buildTurnMessages = (state: S, userMsg: ApiMessage): ApiMessage[] =>
     assembleAgentMessages(state.contextView, {
@@ -119,33 +151,13 @@ const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts):
       return handleUserMessage(state, msg, ctx)
     }
     if (msg.type === '_contextSnapshot') {
-      return {
-        state: {
-          ...state,
-          contextView: {
-            userId: msg.userId,
-            version: msg.version,
-            recentMessages: msg.recentMessages,
-            userContext: msg.userContext,
-            toolSummaries: msg.toolSummaries,
-          },
-        },
-      }
+      return handleContextSnapshot(state, msg)
     }
     if (msg.type === '_toolRegistered') {
-      return {
-        state: {
-          ...state,
-          tools: {
-            ...state.tools,
-            [msg.name]: { name: msg.name, schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning },
-          },
-        },
-      }
+      return handleToolRegistered(state, msg)
     }
     if (msg.type === '_toolUnregistered') {
-      const { [msg.name]: _, ...tools } = state.tools
-      return { state: { ...state, tools } }
+      return handleToolUnregistered(state, msg)
     }
     return next(state, msg)
   }
@@ -154,7 +166,7 @@ const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts):
     initialState: () => ({
       loop: idleLoopState(),
       contextView: emptyContextView(userId),
-      tools: {},
+      tools: { ...initialTools },
     }),
     lifecycle: onLifecycle({
       start: (state, ctx) => {
@@ -173,19 +185,12 @@ const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts):
           return { type: '_toolUnregistered' as const, name: event.name }
         })
 
-        return {
-          state: {
-            ...state,
-            tools: {
-              ...initialTools,
-              ...state.tools,
-            },
-          },
-        }
+        return { state }
       },
     }),
     handler: loop.idle,
     interceptors: [host],
+    stashCapacity: 100,
     supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }
 }

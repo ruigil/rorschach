@@ -7,7 +7,7 @@ import { applyToolFilter } from '../../system/index.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentModelOptions } from '../../types/agents.ts'
-import { assembleAgentMessages, assembleUserText, type ContextView } from '../../system/index.ts'
+import { assembleAgentMessages, assembleUserText, getTodayDateString, type ContextView } from '../../system/index.ts'
 import type { ChatbotMsg } from './types.ts'
 
 // ─── State ───
@@ -35,27 +35,27 @@ const emptyContextView = (userId = ''): ContextView => ({
 })
 
 const buildSystemPrompt = (basePrompt: string | undefined): string => {
-  const todayDateNote = `Today's date is ${new Date().toDateString()}.`
+  const todayDateNote = `Today's date is ${getTodayDateString('local')}.`
   return [basePrompt, todayDateNote].filter(Boolean).join('\n\n---\n\n')
 }
 
 
 
-export const ChatbotAgentFactory = (config: ChatbotAgentConfig) =>
-  (opts: AgentFactoryOpts): ActorDef<ChatbotMsg, ChatbotState> => Chatbot(config, opts)
+export const ChatbotAgentFactory = (options: ChatbotAgentConfig) =>
+  (opts: AgentFactoryOpts): ActorDef<ChatbotMsg, ChatbotState> => Chatbot(options, opts)
 
 export const Chatbot = (
-  config: ChatbotAgentConfig,
+  options: ChatbotAgentConfig,
   opts:   AgentFactoryOpts,
 ): ActorDef<ChatbotMsg, ChatbotState> => {
-  const { model, systemPrompt, toolFilter, maxToolLoops = 25 } = config
+  const { model, systemPrompt, toolFilter, maxToolLoops = 25 } = options
   const { userId, contextStoreRef, llmRef } = opts
 
   type M   = ChatbotMsg
   type S   = ChatbotState
   type Ctx = ActorContext<M>
 
-  const contextSnapshot = (state: S, msg: Extract<M, { type: '_contextSnapshot' }>): ActorResult<M, S> => {
+  const handleContextSnapshot = (state: S, msg: Extract<M, { type: '_contextSnapshot' }>): ActorResult<M, S> => {
     return {
       state: {
         ...state,
@@ -68,6 +68,23 @@ export const Chatbot = (
         },
       },
     }
+  }
+
+  const handleToolRegistered = (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> => {
+    return {
+      state: {
+        ...state,
+        tools: {
+          ...state.tools,
+          [msg.name]: { name: msg.name, schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning },
+        },
+      },
+    }
+  }
+
+  const handleToolUnregistered = (state: S, msg: Extract<M, { type: '_toolUnregistered' }>): ActorResult<M, S> => {
+    const { [msg.name]: _, ...rest } = state.tools
+    return { state: { ...state, tools: rest } }
   }
 
   const buildTurnMessages = (state: S, userMessage: ApiMessage): ApiMessage[] =>
@@ -150,7 +167,7 @@ export const Chatbot = (
     const m = msg as M
 
     if (m.type === '_contextSnapshot') {
-      return contextSnapshot(state, m as Extract<M, { type: '_contextSnapshot' }>)
+      return handleContextSnapshot(state, m as Extract<M, { type: '_contextSnapshot' }>)
     }
 
     if (m.type === 'userMessage') {
@@ -159,20 +176,11 @@ export const Chatbot = (
     }
 
     if (m.type === '_toolRegistered') {
-      return {
-        state: {
-          ...state,
-          tools: {
-            ...state.tools,
-            [m.name]: { name: m.name, schema: m.schema, ref: m.ref, mayBeLongRunning: m.mayBeLongRunning },
-          },
-        },
-      }
+      return handleToolRegistered(state, m as Extract<M, { type: '_toolRegistered' }>)
     }
 
     if (m.type === '_toolUnregistered') {
-      const { [m.name]: _, ...rest } = state.tools
-      return { state: { ...state, tools: rest } }
+      return handleToolUnregistered(state, m as Extract<M, { type: '_toolUnregistered' }>)
     }
 
     return next(state, msg)
@@ -214,6 +222,7 @@ export const Chatbot = (
 
     handler:      loop.idle,
     interceptors: [hostInterceptor],
+    stashCapacity: 100,
 
     supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }

@@ -79,6 +79,38 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
     return doStartTurn(state, userText, msg.isInjected || false, ctx)
   }
 
+  const handleContextSnapshot = (state: S, msg: Extract<M, { type: '_contextSnapshot' }>): ActorResult<M, S> => {
+    return {
+      state: {
+        ...state,
+        contextView: {
+          userId: msg.userId,
+          version: msg.version,
+          recentMessages: msg.recentMessages,
+          userContext: msg.userContext,
+          toolSummaries: msg.toolSummaries,
+        },
+      },
+    }
+  }
+
+  const handleToolRegistered = (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> => {
+    return {
+      state: {
+        ...state,
+        tools: {
+          ...state.tools,
+          [msg.name]: { name: msg.name, schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning },
+        },
+      },
+    }
+  }
+
+  const handleToolUnregistered = (state: S, msg: Extract<M, { type: '_toolUnregistered' }>): ActorResult<M, S> => {
+    const { [msg.name]: _, ...rest } = state.tools
+    return { state: { ...state, tools: rest } }
+  }
+
   const loop = agentLoop<S, M>({
     role: 'coding',
     spanName: 'coding-turn',
@@ -86,10 +118,7 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
     model: options.model,
     maxToolLoops: options.maxToolLoops ?? 25,
     llmRef: () => opts.llmRef,
-    tools: (state) => ({
-      ...options.tools,
-      ...state.tools,
-    }),
+    tools: (state) => state.tools,
     uiEvents: OutboundUserMessageTopic,
     errorMessages: {
       llm: 'The coding agent encountered an error. Please try again.',
@@ -108,24 +137,24 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
       return { state }
     },
 
-	    onError: (state) => ({ state }),
+    onError: (state) => ({ state }),
 
-	    onBatchHistoryReady: (state, messages) => {
-	      opts.contextStoreRef.send({ type: 'append', mode: CODING_MODE, messages })
-	      return { state }
-	    },
+    onBatchHistoryReady: (state, messages) => {
+      opts.contextStoreRef.send({ type: 'append', mode: CODING_MODE, messages })
+      return { state }
+    },
 
-	    onToolPending: (state, pending) => {
-	      const text = pending.placeholderText ?? `Background job started for ${pending.toolName} (jobId=${pending.jobId}).`
-	      opts.contextStoreRef.send({
-	        type: 'append',
-	        mode: CODING_MODE,
-	        source: 'assistant',
-	        messages: [{ role: 'assistant', content: text }],
-	      })
-	      return { state }
-	    },
-	  })
+    onToolPending: (state, pending) => {
+      const text = pending.placeholderText ?? `Background job started for ${pending.toolName} (jobId=${pending.jobId}).`
+      opts.contextStoreRef.send({
+        type: 'append',
+        mode: CODING_MODE,
+        source: 'assistant',
+        messages: [{ role: 'assistant', content: text }],
+      })
+      return { state }
+    },
+  })
 
   const hostInterceptor: Interceptor<M, S> = (state, msg, ctx, next) => {
     const m = msg as M
@@ -136,35 +165,15 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
     }
 
     if (m.type === '_toolRegistered') {
-      return {
-        state: {
-          ...state,
-          tools: {
-            ...state.tools,
-            [m.name]: { name: m.name, schema: m.schema, ref: m.ref, mayBeLongRunning: m.mayBeLongRunning },
-          },
-        },
-      }
+      return handleToolRegistered(state, m as Extract<M, { type: '_toolRegistered' }>)
     }
 
     if (m.type === '_toolUnregistered') {
-      const { [m.name]: _, ...rest } = state.tools
-      return { state: { ...state, tools: rest } }
+      return handleToolUnregistered(state, m as Extract<M, { type: '_toolUnregistered' }>)
     }
 
     if (m.type === '_contextSnapshot') {
-      return {
-        state: {
-          ...state,
-          contextView: {
-            userId: m.userId,
-            version: m.version,
-            recentMessages: m.recentMessages,
-            userContext: m.userContext,
-            toolSummaries: m.toolSummaries,
-          },
-        },
-      }
+      return handleContextSnapshot(state, m as Extract<M, { type: '_contextSnapshot' }>)
     }
 
     return next(state, msg)
@@ -174,7 +183,7 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
     initialState: () => ({
       loop: idleLoopState(),
       contextView: emptyContextView(opts.userId),
-      tools: {},
+      tools: { ...options.tools },
     }),
     lifecycle: onLifecycle({
       start: (state, ctx) => {

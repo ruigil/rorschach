@@ -5,7 +5,7 @@ import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import { OutboundUserMessageTopic, type MessageAttachment } from '../../types/events.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentModelOptions } from '../../types/agents.ts'
-import { assembleAgentMessages, assembleUserText, type ContextView } from '../../system/index.ts'
+import { assembleAgentMessages, assembleUserText, getTodayDateString, type ContextView } from '../../system/index.ts'
 import type { CoachAgentMsg, CoachAgentState } from './types.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 
@@ -30,10 +30,8 @@ export const COACH_TOOL_FILTER: ToolFilter = {
 
 // ─── Helpers ───
 
-const todayISO = (): string => new Date().toISOString().slice(0, 10)
-
 const buildSystemPrompt = (notebookDir: string): string =>
-  `You are an encouraging, accountability-focused personal coach for health, learning routines, habit building, writing journal entries, and habit tracking. Today is ${todayISO()}.\n` +
+  `You are an encouraging, accountability-focused personal coach for health, learning routines, habit building, writing journal entries, and habit tracking. Today is ${getTodayDateString('iso')}.\n` +
   `You manage and coordinate the user's personal notebook stored at "${notebookDir}".\n\n` +
   `Available notebook areas and tools:\n` +
   `- Journal: daily markdown entries (journal_write, journal_read, journal_search)\n` +
@@ -131,66 +129,82 @@ export const CoachAgent = (
     },
   })
 
+  const handleContextSnapshot = (state: CoachAgentState, msg: Extract<CoachAgentMsg, { type: '_contextSnapshot' }>): ActorResult<CoachAgentMsg, CoachAgentState> => {
+    return {
+      state: {
+        ...state,
+        contextView: {
+          userId:         msg.userId,
+          version:        msg.version,
+          recentMessages: msg.recentMessages,
+          userContext:    msg.userContext,
+          toolSummaries:  msg.toolSummaries,
+        },
+      },
+    }
+  }
+
+  const handleUserMessage = (state: CoachAgentState, msg: Extract<CoachAgentMsg, { type: 'userMessage' }>, ctx: ActorContext<CoachAgentMsg>): ActorResult<CoachAgentMsg, CoachAgentState> => {
+    const userText = assembleUserText(msg.text, msg.attachments)
+    const userMsg: ApiMessage = { role: 'user', content: userText }
+    contextStoreRef.send({
+      type:     'append',
+      mode:     COACH_MODE,
+      source:   'user',
+      injected: msg.isInjected || false,
+      messages: [userMsg]
+    })
+    return loop.startTurn(state, {
+      messages: buildTurnMessages(state, userMsg),
+      userId,
+    }, ctx)
+  }
+
+  const handleToolRegistered = (state: CoachAgentState, msg: Extract<CoachAgentMsg, { type: '_toolRegistered' }>): ActorResult<CoachAgentMsg, CoachAgentState> => {
+    return {
+      state: {
+        ...state,
+        tools: {
+          ...state.tools,
+          [msg.name]: {
+            name:             msg.name,
+            schema:           msg.schema,
+            ref:              msg.ref,
+            mayBeLongRunning: msg.mayBeLongRunning,
+          },
+        },
+      },
+    }
+  }
+
+  const handleToolUnregistered = (state: CoachAgentState, msg: Extract<CoachAgentMsg, { type: '_toolUnregistered' }>): ActorResult<CoachAgentMsg, CoachAgentState> => {
+    const { [msg.name]: _, ...rest } = state.tools
+    return {
+      state: {
+        ...state,
+        tools: rest,
+      },
+    }
+  }
+
   const hostInterceptor: Interceptor<CoachAgentMsg, CoachAgentState> = (state, msg, ctx, next) => {
     const m = msg as CoachAgentMsg
 
     if (m.type === '_contextSnapshot') {
-      return {
-        state: {
-          ...state,
-          contextView: {
-            userId:         m.userId,
-            version:        m.version,
-            recentMessages: m.recentMessages,
-            userContext:    m.userContext,
-            toolSummaries:  m.toolSummaries,
-          },
-        },
-      }
+      return handleContextSnapshot(state, m as Extract<CoachAgentMsg, { type: '_contextSnapshot' }>)
     }
 
     if (m.type === 'userMessage') {
       if (state.loop.phase !== 'idle') return { state, stash: true }
-      const userText = assembleUserText(m.text, m.attachments)
-      const userMsg: ApiMessage = { role: 'user', content: userText }
-      contextStoreRef.send({
-        type:     'append',
-        mode:     COACH_MODE,
-        source:   'user',
-        injected: m.isInjected || false,
-        messages: [userMsg]
-      })
-      return loop.startTurn(state, {
-        messages: buildTurnMessages(state, userMsg),
-        userId,
-      }, ctx)
+      return handleUserMessage(state, m as Extract<CoachAgentMsg, { type: 'userMessage' }>, ctx)
     }
 
     if (m.type === '_toolRegistered') {
-      return {
-        state: {
-          ...state,
-          tools: {
-            ...state.tools,
-            [m.name]: {
-              name:             m.name,
-              schema:           m.schema,
-              ref:              m.ref,
-              mayBeLongRunning: m.mayBeLongRunning,
-            },
-          },
-        },
-      }
+      return handleToolRegistered(state, m as Extract<CoachAgentMsg, { type: '_toolRegistered' }>)
     }
 
     if (m.type === '_toolUnregistered') {
-      const { [m.name]: _, ...rest } = state.tools
-      return {
-        state: {
-          ...state,
-          tools: rest,
-        },
-      }
+      return handleToolUnregistered(state, m as Extract<CoachAgentMsg, { type: '_toolUnregistered' }>)
     }
 
     return next(state, msg)
@@ -232,7 +246,7 @@ export const CoachAgent = (
     handler:      loop.idle,
     interceptors: [hostInterceptor],
 
-    stashCapacity: 50,
+    stashCapacity: 100,
     supervision:   { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }
 }

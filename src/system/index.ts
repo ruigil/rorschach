@@ -44,6 +44,7 @@ export {
 export {
   assembleAgentMessages,
   assembleUserText,
+  getTodayDateString,
   type ContextView,
   type ContextAssemblyPolicy,
 } from './agent/context-assembly.ts'

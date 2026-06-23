@@ -107,3 +107,10 @@ export const assembleAgentMessages = (
   ]
 }
 
+export const getTodayDateString = (format: 'iso' | 'local' = 'local'): string => {
+  if (format === 'iso') {
+    return new Date().toISOString().slice(0, 10)
+  }
+  return new Date().toDateString()
+}
+
