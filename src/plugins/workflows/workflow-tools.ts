@@ -1,6 +1,6 @@
-import type { ActorRef } from '../../system/index.ts'
-import { ask, defineTool, parseToolArgs } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
+import type { ActorRef, ActorDef } from '../../system/index.ts'
+import { ask, defineTool, parseToolArgs, onMessage } from '../../system/index.ts'
+import type { ToolInvokeMsg, ToolReply, ToolMsg } from '../../types/tools.ts'
 import type {
   Workflow,
   WorkflowRunnerMsg,
@@ -339,3 +339,21 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
 
   return toolError(`Unknown tool: ${msg.toolName}`)
 }
+
+export const WorkflowToolsActor = (options: {
+  workflowsDir: string
+  workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
+  publishGraph: (userId: string, workflowId: string, runId?: string) => void
+}): ActorDef<ToolMsg, null> => ({
+  initialState: null,
+  handler: onMessage<ToolMsg, null>({
+    invoke: (state, msg, ctx) => {
+      handleWorkflowTool(msg, options).then(
+        reply => msg.replyTo.send(reply),
+        error => msg.replyTo.send({ type: 'toolError', error: String(error) }),
+      )
+      return { state }
+    },
+  }),
+  supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
+})

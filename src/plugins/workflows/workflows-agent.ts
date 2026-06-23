@@ -8,18 +8,7 @@ import type { ApiMessage } from '../../types/llm.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentModelOptions } from '../../types/agents.ts'
 import type { WorkflowRunnerMsg } from './types.ts'
 import {
-  deleteWorkflowTool,
-  getWorkflowRunTool,
-  getWorkflowTool,
-  handleWorkflowTool,
-  isWorkflowControlTool,
-  listExecutionToolsTool,
-  listWorkflowRunsTool,
-  listWorkflowsTool,
-  resumeWorkflowRunTool,
   saveWorkflowTool,
-  showWorkflowGraphTool,
-  startWorkflowRunTool,
   updateWorkflowTool,
 } from './workflow-tools.ts'
 import type { WorkflowsAgentMsg } from './types.ts'
@@ -33,6 +22,7 @@ type WorkflowsAgentState = {
 export type WorkflowsAgentOptions = AgentModelOptions & {
   workflowsDir: string
   workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
+  tools: ToolCollection
 }
 
 const WORKFLOWS_MODE = 'workflows'
@@ -76,7 +66,7 @@ export const WorkflowsAgentFactory = (options: WorkflowsAgentOptions) =>
   (opts: AgentFactoryOpts): ActorDef<WorkflowsAgentMsg, WorkflowsAgentState> => WorkflowsAgent(options, opts)
 
 const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts): ActorDef<WorkflowsAgentMsg, WorkflowsAgentState> => {
-  const { model, maxToolLoops, workflowsDir, workflowRunnerRef, toolFilter } = options
+  const { model, maxToolLoops, toolFilter, tools: initialTools } = options
   const { userId, contextStoreRef, llmRef } = opts
 
   type M = WorkflowsAgentMsg
@@ -185,22 +175,6 @@ const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts):
       const { [msg.name]: _, ...tools } = state.tools
       return { state: { ...state, tools } }
     }
-    if (msg.type === 'invoke' && isWorkflowControlTool(msg.toolName)) {
-      handleWorkflowTool(msg, {
-        workflowsDir,
-        workflowRunnerRef,
-        publishGraph: (userId, workflowId, runId) => {
-          ctx.publish(OutboundUserMessageTopic, {
-            userId,
-            text: JSON.stringify({ type: 'workflowGraph', workflowId, ...(runId ? { runId } : {}) }),
-          })
-        },
-      }).then(
-        reply => msg.replyTo.send(reply),
-        error => msg.replyTo.send({ type: 'toolError', error: String(error) }),
-      )
-      return { state }
-    }
     return next(state, msg)
   }
 
@@ -223,23 +197,15 @@ const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts):
           return { type: '_toolUnregistered' as const, name: event.name }
         })
 
-        const selfToolRef = ctx.self as ActorRef<ToolMsg>
-        const controlTools = [
-          listExecutionToolsTool,
-          saveWorkflowTool,
-          updateWorkflowTool,
-          deleteWorkflowTool,
-          listWorkflowsTool,
-          getWorkflowTool,
-          showWorkflowGraphTool,
-          startWorkflowRunTool,
-          listWorkflowRunsTool,
-          getWorkflowRunTool,
-          resumeWorkflowRunTool,
-        ]
-        const tools: ToolCollection = {}
-        for (const tool of controlTools) tools[tool.name] = { ...tool, ref: selfToolRef }
-        return { state: { ...state, tools } }
+        return {
+          state: {
+            ...state,
+            tools: {
+              ...initialTools,
+              ...state.tools,
+            },
+          },
+        }
       },
     }),
     handler: loop.idle,

@@ -63,6 +63,7 @@ const runnerRef = system.spawn('workflow-runner', NullRunner())
       maxToolLoops: 3,
       workflowsDir: '/tmp/nonexistent-workflows',
       workflowRunnerRef: runnerRef,
+      tools: {},
     })({ userId: 'u1', llmRef, contextStoreRef }))
     await tick()
 

@@ -5,8 +5,11 @@ import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { UiSurfaceRegistrationTopic, type UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
+import { OutboundUserMessageTopic } from '../../types/events.ts'
+import type { ToolMsg, ToolCollection } from '../../types/tools.ts'
 import { WorkflowRunner } from './workflow-runner.ts'
 import { WorkflowsAgentFactory } from './workflows-agent.ts'
+import { WorkflowToolsActor, workflowControlTools } from './workflow-tools.ts'
 import { buildWorkflowsRoutes, workflowsSchemas } from './routes.ts'
 import type { WorkflowsConfig, WorkflowRunnerMsg, WorkflowRunnerConfig } from './types.ts'
 
@@ -18,9 +21,11 @@ type PluginMsg =
 
 type PluginState = {
   initialized: boolean
+  gen: number
   config: WorkflowsConfig
   llmRef: ActorRef<LlmProviderMsg> | null
   runner: ActorSlot<WorkflowRunnerConfig>
+  toolsRef: ActorRef<ToolMsg> | null
 }
 
 const defaultConfig: WorkflowsConfig = {
@@ -36,9 +41,18 @@ const config = defineConfig<WorkflowsConfig>('workflows', defaultConfig, {
   schemas: workflowsSchemas,
 })
 
+const buildWorkflowsTools = (toolsRef: ActorRef<ToolMsg>): ToolCollection => {
+  const tools: ToolCollection = {}
+  for (const tool of workflowControlTools) {
+    tools[tool.name] = { ...tool, ref: toolsRef }
+  }
+  return tools
+}
+
 const buildDescriptor = (
   cfg: WorkflowsConfig,
   runnerRef: ActorRef<WorkflowRunnerMsg>,
+  toolsRef: ActorRef<ToolMsg>,
 ): AgentDescriptor => ({
   mode: 'workflows',
   displayName: 'Workflows',
@@ -49,6 +63,7 @@ const buildDescriptor = (
     workflowsDir: cfg.workflowsDir,
     workflowRunnerRef: runnerRef,
     toolFilter: cfg.agent.toolFilter,
+    tools: buildWorkflowsTools(toolsRef),
   }),
   capabilities: { userVisible: true },
 })
@@ -114,6 +129,7 @@ const deleteSurface = (ctx: ActorContext<PluginMsg>): void => {
 
 const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void => {
   stopSlot(ctx, state.runner)
+  if (state.toolsRef) ctx.stop(state.toolsRef)
 }
 
 const spawnChildren = (
@@ -121,7 +137,8 @@ const spawnChildren = (
   cfg: WorkflowsConfig,
   llmRef: ActorRef<LlmProviderMsg> | null,
   state: PluginState,
-): Pick<PluginState, 'runner'> => {
+  gen: number,
+): Pick<PluginState, 'runner' | 'toolsRef'> => {
   const runner = spawnSlot(
     ctx,
     state.runner,
@@ -135,11 +152,25 @@ const spawnChildren = (
       maxToolLoops: cfg.agent.maxToolLoops ?? 10,
     },
   )
+  const toolsRef = ctx.spawn(
+    `workflows-tools-${gen}`,
+    WorkflowToolsActor({
+      workflowsDir: cfg.workflowsDir,
+      workflowRunnerRef: runner.ref as ActorRef<WorkflowRunnerMsg>,
+      publishGraph: (userId, workflowId, runId) => {
+        ctx.publish(OutboundUserMessageTopic, {
+          userId,
+          text: JSON.stringify({ type: 'workflowGraph', workflowId, ...(runId ? { runId } : {}) }),
+        })
+      },
+    }),
+  ) as ActorRef<ToolMsg>
+
   ctx.publish(AgentRegistrationTopic, {
     type: 'register',
-    descriptor: buildDescriptor(cfg, runner.ref as ActorRef<WorkflowRunnerMsg>),
+    descriptor: buildDescriptor(cfg, runner.ref as ActorRef<WorkflowRunnerMsg>, toolsRef),
   })
-  return { runner }
+  return { runner, toolsRef }
 }
 
 const restart = (
@@ -152,10 +183,11 @@ const restart = (
   deleteSurface(ctx)
   stopChildren(state, ctx)
   ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'workflows' })
-  const children = spawnChildren(ctx, cfg, llmRef, state)
+  const gen = state.gen + 1
+  const children = spawnChildren(ctx, cfg, llmRef, state, gen)
   publishRoutes(ctx, children.runner.ref as ActorRef<WorkflowRunnerMsg>, cfg.workflowsDir, getWorkflowRunsDir(cfg.workflowsDir))
   publishSurface(ctx)
-  return { ...state, config: cfg, llmRef, ...children }
+  return { ...state, config: cfg, llmRef, gen, ...children }
 }
 
 const workflowsPlugin: PluginDef<PluginMsg, PluginState, WorkflowsConfig> = {
@@ -165,20 +197,22 @@ const workflowsPlugin: PluginDef<PluginMsg, PluginState, WorkflowsConfig> = {
   configDescriptor: config,
   initialState: {
     initialized: false,
+    gen: 0,
     config: defaultConfig,
     llmRef: null,
     runner: createSlot<WorkflowRunnerConfig>(),
+    toolsRef: null,
   },
   lifecycle: onLifecycle({
     start: (state, ctx) => {
       const cfg = { ...defaultConfig, ...(ctx.initialConfig() as WorkflowsConfig | undefined ?? {}) }
       ctx.subscribe(LlmProviderTopic, event => ({ type: '_llmProvider' as const, ref: event.ref }))
       publishConfigSurface(ctx, config, () => cfg)
-      const children = spawnChildren(ctx, cfg, state.llmRef, state)
-  publishRoutes(ctx, children.runner.ref as ActorRef<WorkflowRunnerMsg>, cfg.workflowsDir, getWorkflowRunsDir(cfg.workflowsDir))
-  publishSurface(ctx)
-  ctx.log.info('workflows plugin activated', { workflowsDir: cfg.workflowsDir, workflowRunsDir: getWorkflowRunsDir(cfg.workflowsDir) })
-      return { state: { initialized: true, config: cfg, llmRef: state.llmRef, ...children } }
+      const children = spawnChildren(ctx, cfg, state.llmRef, state, 0)
+      publishRoutes(ctx, children.runner.ref as ActorRef<WorkflowRunnerMsg>, cfg.workflowsDir, getWorkflowRunsDir(cfg.workflowsDir))
+      publishSurface(ctx)
+      ctx.log.info('workflows plugin activated', { workflowsDir: cfg.workflowsDir, workflowRunsDir: getWorkflowRunsDir(cfg.workflowsDir) })
+      return { state: { ...state, initialized: true, config: cfg, llmRef: state.llmRef, ...children } }
     },
     stopped: (state, ctx) => {
       deleteRoutes(ctx, state.runner.ref as ActorRef<WorkflowRunnerMsg> | null, state.config.workflowsDir, getWorkflowRunsDir(state.config.workflowsDir))

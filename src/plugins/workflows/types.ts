@@ -247,7 +247,6 @@ export type WorkflowsAgentExtra =
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
   | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
-  | ToolInvokeMsg
 
 export type WorkflowsAgentMsg = LoopMsg<WorkflowsAgentExtra>
 
