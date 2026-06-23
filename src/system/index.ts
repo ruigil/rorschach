@@ -49,6 +49,9 @@ export {
   type ContextAssemblyPolicy,
 } from './agent/context-assembly.ts'
 
+export { defineAgent } from './agent/define-agent.ts'
+export type { DefineAgentParams } from './agent/define-agent.ts'
+
 export { TraceTopic } from './actor/types.ts'
 export type { TraceSpan } from './actor/types.ts'
 export type { SpanHandle } from './actor/types.ts'

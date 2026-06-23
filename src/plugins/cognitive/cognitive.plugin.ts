@@ -6,7 +6,7 @@ import { UserContext } from './user-context.ts'
 import type { AgentDescriptor } from '../../types/agents.ts'
 import { AgentRegistry } from './agent-registry.ts'
 import { AgentRegistrationTopic } from '../../types/agents.ts'
-import { ChatbotAgentFactory, type ChatbotAgentConfig } from './chatbot-agent.ts'
+import { ChatbotAgentFactory, type ChatbotAgentOptions } from './chatbot-agent.ts'
 import { defineConfig, createSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/index.ts'
 import type { ActorContext, ActorRef, PluginDef } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
@@ -27,13 +27,13 @@ export type UserContextConfig = {
 
 export type CognitiveConfig = {
   llmProvider?: LlmProviderConfig
-  chatbot?:     ChatbotAgentConfig
+  chatbot?:     ChatbotAgentOptions
   session?:     SessionConfig
   userContext?: UserContextConfig
 }
 
 type ResolvedCognitiveConfig = CognitiveConfig & {
-  chatbot: ChatbotAgentConfig
+  chatbot: ChatbotAgentOptions
   session: SessionConfig
 }
 
@@ -65,7 +65,7 @@ type PluginState = {
   llmProvider:    ActorSlot<LlmProviderConfig>
   agentRegistry:  ActorSlot<never>
   sessionManager: ActorSlot<never>
-  chatbot:        ActorSlot<ChatbotAgentConfig>
+  chatbot:        ActorSlot<ChatbotAgentOptions>
   session:        ActorSlot<SessionConfig>
   userContext:    ActorSlot<UserContextConfig>
 }
@@ -82,7 +82,7 @@ const initialState: PluginState = {
 
 // ─── Descriptor builders ───
 
-const buildChatbotDescriptor = (cfg: ChatbotAgentConfig): AgentDescriptor => ({
+const buildChatbotDescriptor = (cfg: ChatbotAgentOptions): AgentDescriptor => ({
   mode:         'chatbot',
   displayName:  'Chatbot',
   shortDesc:    'General-purpose conversational assistant',
@@ -99,7 +99,7 @@ const buildChatbotDescriptor = (cfg: ChatbotAgentConfig): AgentDescriptor => ({
 const spawnAll = (
   ctx: ActorContext<PluginMsg>,
   llmProviderConfig: LlmProviderConfig,
-  chatbotConfig: ChatbotAgentConfig,
+  chatbotConfig: ChatbotAgentOptions,
   sessionConfig: SessionConfig,
   userContextConfig: UserContextConfig | null,
   contextPath: string | undefined,

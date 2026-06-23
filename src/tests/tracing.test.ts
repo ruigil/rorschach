@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { AgentSystem, TraceTopic, type TraceSpan } from '../system/index.ts'
 import type { MessageHeaders } from '../system/index.ts'
-import { Chatbot, type ChatbotState } from '../plugins/cognitive/chatbot-agent.ts'
+import { ChatbotAgentFactory, type ChatbotState } from '../plugins/cognitive/chatbot-agent.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
 import { LlmProvider, OpenRouterAdapter } from '../plugins/cognitive/llm-provider.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
@@ -111,7 +111,7 @@ const spawnChatbot = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
   const contextStoreRef = system.spawn(`context-store-${userId}`, ContextStore({ userId, contextPath: tempContextPath() }))
   return system.spawn(
     'chatbot',
-    Chatbot({ model: LLM_PROVIDER_ADAPTER_OPTS.model }, { userId, contextStoreRef, llmRef }),
+    ChatbotAgentFactory({ model: LLM_PROVIDER_ADAPTER_OPTS.model })({ userId, contextStoreRef, llmRef }),
     { state: { ...INITIAL_CHATBOT_STATE } },
   )
 }

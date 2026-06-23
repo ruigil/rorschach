@@ -61,7 +61,6 @@ const buildDescriptor = (
     model: cfg.agent.model,
     maxToolLoops: cfg.agent.maxToolLoops,
     workflowsDir: cfg.workflowsDir,
-    workflowRunnerRef: runnerRef,
     toolFilter: cfg.agent.toolFilter,
     tools: buildWorkflowsTools(toolsRef),
   }),

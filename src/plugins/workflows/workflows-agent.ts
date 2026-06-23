@@ -1,33 +1,21 @@
-import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor, LoopState } from '../../system/index.ts'
-import { onLifecycle } from '../../system/index.ts'
-import { agentLoop, idleLoopState, applyToolFilter, assembleAgentMessages, assembleUserText, getTodayDateString, type ContextView } from '../../system/index.ts'
-import { OutboundUserMessageTopic } from '../../types/events.ts'
-import type { ToolCollection, ToolFilter, ToolMsg } from '../../types/tools.ts'
-import { ToolRegistrationTopic } from '../../types/tools.ts'
-import type { ApiMessage } from '../../types/llm.ts'
-import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentModelOptions } from '../../types/agents.ts'
-import type { WorkflowsAgentMsg, WorkflowRunnerMsg } from './types.ts'
+import { defineAgent, getTodayDateString } from '../../system/index.ts'
+import type { ActorRef, LoopState } from '../../system/index.ts'
+import type { ToolCollection } from '../../types/tools.ts'
+import type { AgentModelOptions } from '../../types/agents.ts'
+import type { ContextView } from '../../system/index.ts'
+import type { WorkflowsAgentMsg } from './types.ts'
 
 type WorkflowsAgentState = {
   loop: LoopState
   contextView: ContextView
   tools: ToolCollection
 }
+
 export type WorkflowsAgentOptions = AgentModelOptions & {
   workflowsDir: string
-  workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
   tools: ToolCollection
 }
 
-const WORKFLOWS_MODE = 'workflows'
-
-const emptyContextView = (userId = ''): ContextView => ({
-  userId,
-  version: 0,
-  recentMessages: [],
-  userContext: null,
-  toolSummaries: [],
-})
 
 const buildSystemPrompt = (): string =>
   `You are a workflow assistant. Today is ${getTodayDateString('local')}.
@@ -49,148 +37,14 @@ Workflow rules:
 
 After save_workflow or update_workflow, briefly acknowledge the save and stop.`
 
-export const WorkflowsAgentFactory = (options: WorkflowsAgentOptions) =>
-  (opts: AgentFactoryOpts): ActorDef<WorkflowsAgentMsg, WorkflowsAgentState> => WorkflowsAgent(options, opts)
-
-const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts): ActorDef<WorkflowsAgentMsg, WorkflowsAgentState> => {
-  const { model, maxToolLoops, toolFilter, tools: initialTools } = options
-  const { userId, contextStoreRef, llmRef } = opts
-
-  type M = WorkflowsAgentMsg
-  type S = WorkflowsAgentState
-  type Ctx = ActorContext<M>
-
-  const handleContextSnapshot = (state: S, msg: Extract<M, { type: '_contextSnapshot' }>): ActorResult<M, S> => {
-    return {
-      state: {
-        ...state,
-        contextView: {
-          userId: msg.userId,
-          version: msg.version,
-          recentMessages: msg.recentMessages,
-          userContext: msg.userContext,
-          toolSummaries: msg.toolSummaries,
-        },
-      },
-    }
-  }
-
-  const handleToolRegistered = (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> => {
-    return {
-      state: {
-        ...state,
-        tools: {
-          ...state.tools,
-          [msg.name]: { name: msg.name, schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning },
-        },
-      },
-    }
-  }
-
-  const handleToolUnregistered = (state: S, msg: Extract<M, { type: '_toolUnregistered' }>): ActorResult<M, S> => {
-    const { [msg.name]: _, ...tools } = state.tools
-    return { state: { ...state, tools } }
-  }
-
-  const buildTurnMessages = (state: S, userMsg: ApiMessage): ApiMessage[] =>
-    assembleAgentMessages(state.contextView, {
-      mode: WORKFLOWS_MODE,
-      systemPrompt: buildSystemPrompt(),
-      includeToolSummaries: true,
-    }, userMsg)
-
-  const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
-    const userText = assembleUserText(msg.text, msg.attachments)
-    const userMsg: ApiMessage = { role: 'user', content: userText }
-    contextStoreRef.send({ type: 'append', mode: WORKFLOWS_MODE, source: 'user', injected: msg.isInjected || false, messages: [userMsg] })
-    return loop.startTurn(state, {
-      messages: buildTurnMessages(state, userMsg),
-      userId,
-    }, ctx)
-  }
-
-  const loop = agentLoop<S, M>({
-    role: 'workflows',
-    spanName: 'workflows-turn',
-    logPrefix: 'workflows',
-    model,
-    maxToolLoops: maxToolLoops ?? 10,
-    llmRef: () => llmRef,
-    tools: state => state.tools,
-    uiEvents: OutboundUserMessageTopic,
-    errorMessages: {
-      llm: 'The workflows agent encountered an error. Please try again.',
-      loopLimit: 'Tool loop limit reached in workflows. Please try again.',
-    },
-    onComplete: (state, finalText) => {
-      if (finalText) {
-        contextStoreRef.send({ type: 'append', mode: WORKFLOWS_MODE, source: 'assistant', messages: [{ role: 'assistant', content: finalText }] })
-      }
-      return { state }
-    },
-    onError: state => ({ state }),
-    onBatchHistoryReady: (state, messages) => {
-      contextStoreRef.send({ type: 'append', mode: WORKFLOWS_MODE, messages })
-      return { state }
-    },
-    onToolPending: (state, pending) => {
-      const text = pending.placeholderText ?? `Background job started for ${pending.toolName} (jobId=${pending.jobId}).`
-      contextStoreRef.send({
-        type: 'append',
-        mode: WORKFLOWS_MODE,
-        source: 'assistant',
-        messages: [{ role: 'assistant', content: text }],
-      })
-      return { state }
-    },
-  })
-
-  const host: Interceptor<M, S> = (state, msg, ctx, next) => {
-    if (msg.type === 'userMessage') {
-      if (state.loop.phase !== 'idle') return { state, stash: true }
-      return handleUserMessage(state, msg, ctx)
-    }
-    if (msg.type === '_contextSnapshot') {
-      return handleContextSnapshot(state, msg)
-    }
-    if (msg.type === '_toolRegistered') {
-      return handleToolRegistered(state, msg)
-    }
-    if (msg.type === '_toolUnregistered') {
-      return handleToolUnregistered(state, msg)
-    }
-    return next(state, msg)
-  }
-
-  return {
-    initialState: () => ({
-      loop: idleLoopState(),
-      contextView: emptyContextView(userId),
-      tools: { ...initialTools },
-    }),
-    lifecycle: onLifecycle({
-      start: (state, ctx) => {
-        ctx.subscribe(ContextSnapshotTopic, event => event.userId === userId ? { type: '_contextSnapshot' as const, ...event } : null)
-        ctx.subscribe(ToolRegistrationTopic, event => {
-          if (!applyToolFilter(event.name, toolFilter)) return null
-          if ('schema' in event) {
-            return {
-              type: '_toolRegistered' as const,
-              name: event.name,
-              schema: event.schema,
-              ref: event.ref,
-              mayBeLongRunning: event.mayBeLongRunning,
-            }
-          }
-          return { type: '_toolUnregistered' as const, name: event.name }
-        })
-
-        return { state }
-      },
-    }),
-    handler: loop.idle,
-    interceptors: [host],
-    stashCapacity: 100,
-    supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
-  }
-}
+export const WorkflowsAgentFactory = defineAgent<WorkflowsAgentOptions, WorkflowsAgentMsg, WorkflowsAgentState>({
+  role: 'reasoning',
+  spanName: 'workflows-agent',
+  logPrefix: 'workflows-agent',
+  mode: 'workflows',
+  buildSystemPrompt,
+  errorMessages: {
+    llm: 'The workflows agent encountered an error. Please try again.',
+    loopLimit: 'Tool loop limit reached in workflows. Please try again.',
+  },
+})

@@ -1,29 +1,11 @@
-import type { ActorContext, ActorDef, ActorResult, Interceptor } from '../../system/index.ts'
-import { agentLoop, applyToolFilter, assembleAgentMessages, assembleUserText, idleLoopState, onLifecycle, type ContextView } from '../../system/index.ts'
-import { OutboundUserMessageTopic } from '../../types/events.ts'
-import { ContextSnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
-import type { ApiMessage } from '../../types/llm.ts'
-import { ToolRegistrationTopic } from '../../types/tools.ts'
-import type { ToolCollection, ToolFinalReply } from '../../types/tools.ts'
+import { defineAgent } from '../../system/index.ts'
 import type { CodingAgentMsg, CodingAgentState, CodingAgentOptions } from './types.ts'
 
-const CODING_MODE = 'coding'
-
-const emptyContextView = (userId = ''): ContextView => ({
-  userId,
-  version: 0,
-  recentMessages: [],
-  userContext: null,
-  toolSummaries: [],
-})
-
-
-
-const buildSystemPrompt = (projectMount: string): string =>
+const buildSystemPrompt = (options: CodingAgentOptions): string =>
   `You are the coding agent for a read-only software project.
 
 Project boundary:
-- The project is mounted at ${projectMount}.
+- The project is mounted at ${options.projectMount}.
 - You may inspect and explain project files.
 - You must not claim to edit, patch, or save project source files.
 - Documentation artifacts are generated separately under /workspace/artifacts.
@@ -42,180 +24,15 @@ Behavior:
 - If update_docs returns a job id, you can tell the user to ask for a tool status to check progress. Do not do progress updates on your own.
 - Be direct and concise.`
 
-export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts): ActorDef<CodingAgentMsg, CodingAgentState> => {
-  type M = CodingAgentMsg
-  type S = CodingAgentState
-  type Ctx = ActorContext<M>
-
-  const buildTurnMessages = (state: S, userMsg: ApiMessage): ApiMessage[] =>
-    assembleAgentMessages(state.contextView, {
-      mode: CODING_MODE,
-      systemPrompt: buildSystemPrompt(options.projectMount),
-      includeToolSummaries: true,
-    }, userMsg)
-
-  const doStartTurn = (
-    state: S,
-    userText: string,
-    isInjected: boolean,
-    ctx: Ctx,
-  ): ActorResult<M, S> => {
-    const userMsg: ApiMessage = { role: 'user', content: userText }
-    opts.contextStoreRef.send({
-      type: 'append',
-      mode: CODING_MODE,
-      source: 'user',
-      injected: isInjected,
-      messages: [userMsg],
-    })
-    return loop.startTurn(state, {
-      messages: buildTurnMessages(state, userMsg),
-      userId: opts.userId,
-    }, ctx)
-  }
-
-  const handleUserMessage = (state: S, msg: Extract<M, { type: 'userMessage' }>, ctx: Ctx): ActorResult<M, S> => {
-    const userText = assembleUserText(msg.text, msg.attachments)
-    return doStartTurn(state, userText, msg.isInjected || false, ctx)
-  }
-
-  const handleContextSnapshot = (state: S, msg: Extract<M, { type: '_contextSnapshot' }>): ActorResult<M, S> => {
-    return {
-      state: {
-        ...state,
-        contextView: {
-          userId: msg.userId,
-          version: msg.version,
-          recentMessages: msg.recentMessages,
-          userContext: msg.userContext,
-          toolSummaries: msg.toolSummaries,
-        },
-      },
-    }
-  }
-
-  const handleToolRegistered = (state: S, msg: Extract<M, { type: '_toolRegistered' }>): ActorResult<M, S> => {
-    return {
-      state: {
-        ...state,
-        tools: {
-          ...state.tools,
-          [msg.name]: { name: msg.name, schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning },
-        },
-      },
-    }
-  }
-
-  const handleToolUnregistered = (state: S, msg: Extract<M, { type: '_toolUnregistered' }>): ActorResult<M, S> => {
-    const { [msg.name]: _, ...rest } = state.tools
-    return { state: { ...state, tools: rest } }
-  }
-
-  const loop = agentLoop<S, M>({
-    role: 'coding',
-    spanName: 'coding-turn',
-    logPrefix: 'coding',
-    model: options.model,
-    maxToolLoops: options.maxToolLoops ?? 25,
-    llmRef: () => opts.llmRef,
-    tools: (state) => state.tools,
-    uiEvents: OutboundUserMessageTopic,
-    errorMessages: {
-      llm: 'The coding agent encountered an error. Please try again.',
-      loopLimit: 'Tool loop limit reached in the coding agent. Please try again.',
-    },
-
-    onComplete: (state, finalText) => {
-      if (finalText) {
-        opts.contextStoreRef.send({
-          type: 'append',
-          mode: CODING_MODE,
-          source: 'assistant',
-          messages: [{ role: 'assistant', content: finalText }],
-        })
-      }
-      return { state }
-    },
-
-    onError: (state) => ({ state }),
-
-    onBatchHistoryReady: (state, messages) => {
-      opts.contextStoreRef.send({ type: 'append', mode: CODING_MODE, messages })
-      return { state }
-    },
-
-    onToolPending: (state, pending) => {
-      const text = pending.placeholderText ?? `Background job started for ${pending.toolName} (jobId=${pending.jobId}).`
-      opts.contextStoreRef.send({
-        type: 'append',
-        mode: CODING_MODE,
-        source: 'assistant',
-        messages: [{ role: 'assistant', content: text }],
-      })
-      return { state }
-    },
-  })
-
-  const hostInterceptor: Interceptor<M, S> = (state, msg, ctx, next) => {
-    const m = msg as M
-
-    if (m.type === 'userMessage') {
-      if (state.loop.phase !== 'idle') return { state, stash: true }
-      return handleUserMessage(state, m as Extract<M, { type: 'userMessage' }>, ctx)
-    }
-
-    if (m.type === '_toolRegistered') {
-      return handleToolRegistered(state, m as Extract<M, { type: '_toolRegistered' }>)
-    }
-
-    if (m.type === '_toolUnregistered') {
-      return handleToolUnregistered(state, m as Extract<M, { type: '_toolUnregistered' }>)
-    }
-
-    if (m.type === '_contextSnapshot') {
-      return handleContextSnapshot(state, m as Extract<M, { type: '_contextSnapshot' }>)
-    }
-
-    return next(state, msg)
-  }
-
-  return {
-    initialState: () => ({
-      loop: idleLoopState(),
-      contextView: emptyContextView(opts.userId),
-      tools: { ...options.tools },
-    }),
-    lifecycle: onLifecycle({
-      start: (state, ctx) => {
-        ctx.subscribe(ContextSnapshotTopic, (event) => {
-          if (event.userId !== opts.userId) return null
-          return { type: '_contextSnapshot' as const, ...event }
-        })
-
-        const filter = options.toolFilter ?? { allow: ['tool_status', 'switch_mode'] }
-        ctx.subscribe(ToolRegistrationTopic, (event) => {
-          if (!applyToolFilter(event.name, filter)) return null
-          if ('schema' in event && event.ref) {
-            return {
-              type: '_toolRegistered' as const,
-              name: event.name,
-              schema: event.schema,
-              ref: event.ref,
-              mayBeLongRunning: event.mayBeLongRunning,
-            }
-          }
-          return { type: '_toolUnregistered' as const, name: event.name }
-        })
-
-        return { state }
-      },
-    }),
-    handler: loop.idle,
-    interceptors: [hostInterceptor],
-    stashCapacity: 100,
-    supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
-  }
-}
-
-export const CodingAgentFactory = (options: CodingAgentOptions) =>
-  (opts: AgentFactoryOpts): ActorDef<CodingAgentMsg, CodingAgentState> => CodingAgent(options, opts)
+export const CodingAgentFactory = defineAgent<CodingAgentOptions, CodingAgentMsg, CodingAgentState>({
+  role: 'coding',
+  spanName: 'coding-turn',
+  logPrefix: 'coding',
+  mode: 'coding',
+  buildSystemPrompt,
+  defaultToolFilter: { allow: ['tool_status', 'switch_mode'] },
+  errorMessages: {
+    llm: 'The coding agent encountered an error. Please try again.',
+    loopLimit: 'Tool loop limit reached in the coding agent. Please try again.',
+  },
+})
