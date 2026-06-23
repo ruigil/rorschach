@@ -132,8 +132,8 @@ describe('distributed tracing', () => {
     react.send({ type: 'userMessage', text: 'hi' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
     await tick(300)
 
-    const reactStart  = spanFor(spans, 'chatbot',  'started')
-    const reactDone   = spanFor(spans, 'chatbot',  'done')
+    const reactStart  = spanFor(spans, 'chatbot-agent',  'started')
+    const reactDone   = spanFor(spans, 'chatbot-agent',  'done')
     const llmStart      = spanFor(spans, 'llm-call', 'started')
     const llmDone       = spanFor(spans, 'llm-call', 'done')
 
@@ -185,7 +185,7 @@ describe('distributed tracing', () => {
     react.send({ type: 'userMessage', text: 'search for ai news' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
     await tick(400)
 
-    const reactStart       = spanFor(spans, 'chatbot',      'started')
+    const reactStart       = spanFor(spans, 'chatbot-agent',      'started')
     const toolInvokeStart    = spanFor(spans, 'tool-invoke',  'started')
     const toolInvokeDone     = spanFor(spans, 'tool-invoke',  'done')
     // Both initial and follow-up LLM calls within a turn use the unified
@@ -225,7 +225,7 @@ describe('distributed tracing', () => {
     react.send({ type: 'userMessage', text: 'hi' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
     await tick(300)
 
-    const reactError = spanFor(spans, 'chatbot',  'error')
+    const reactError = spanFor(spans, 'chatbot-agent',  'error')
     const llmError     = spanFor(spans, 'llm-call', 'error')
 
     expect(reactError).toBeDefined()

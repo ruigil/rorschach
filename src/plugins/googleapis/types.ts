@@ -1,7 +1,7 @@
-import type { ActorRef } from '../../system/index.ts'
-import type { LoopMsg } from '../../system/index.ts'
-import type { ToolInvokeMsg } from '../../types/tools.ts'
-import type { LlmProviderMsg } from '../../types/llm.ts'
+import type { ActorRef, LoopMsg, LoopState, ContextView } from '../../system/index.ts'
+import type { ToolCollection, ToolSchema, ToolMsg } from '../../types/tools.ts'
+import type { ContextSnapshotEvent, AgentModelOptions } from '../../types/agents.ts'
+import type { MessageAttachment } from '../../types/events.ts'
 
 // ─── Domain types ───
 
@@ -36,7 +36,23 @@ export type OAuthStateMsg =
 export type GooglePluginMsg =
   | { type: 'config';            slice: GoogleApisConfig | undefined }
 
-export type GoogleAgentMsg = LoopMsg | ToolInvokeMsg | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
+export type GoogleAgentExtraMsg =
+  | { type: 'userMessage'; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
+  | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
+  | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
+  | { type: '_toolUnregistered'; name: string }
+
+export type GoogleAgentMsg = LoopMsg<GoogleAgentExtraMsg>
+
+export type GoogleAgentState = {
+  loop:        LoopState
+  contextView: ContextView
+  tools:       ToolCollection
+}
+
+export type GoogleAgentOptions = AgentModelOptions & {
+  tools: ToolCollection
+}
 
 // ─── Route handler options (passed into route factories) ───
 
