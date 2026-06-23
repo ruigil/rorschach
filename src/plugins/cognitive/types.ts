@@ -1,4 +1,4 @@
-import type { ActorRef } from '../../system/index.ts'
+import type { ActorRef, LoopMsg } from '../../system/index.ts'
 import { createTopic } from '../../system/index.ts'
 import type {
   ApiMessage,
@@ -17,7 +17,9 @@ import type {
   VideoSubmitReply,
   VisionProviderReply,
 } from '../../types/llm.ts'
-import type { ContextTurn } from '../../types/agents.ts'
+import type { ContextTurn, ContextSnapshotEvent } from '../../types/agents.ts'
+import type { MessageAttachment } from '../../types/events.ts'
+import type { ToolSchema, ToolMsg } from '../../types/tools.ts'
 
 // ─── Session configuration (consumed by SessionManager) ───
 
@@ -109,3 +111,13 @@ export type UserContextMsg =
 
 export type UserContextEvent = { userId: string; summary: string }
 export const UserContextTopic = createTopic<UserContextEvent>('user.context')
+
+// ─── Chatbot agent message protocol ───
+
+export type ChatbotExtra =
+  | { type: 'userMessage';      text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
+  | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
+  | { type: '_toolRegistered';  name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
+  | { type: '_toolUnregistered'; name: string }
+
+export type ChatbotMsg = LoopMsg<ChatbotExtra>

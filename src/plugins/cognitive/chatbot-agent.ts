@@ -1,14 +1,14 @@
 import type { ActorDef, ActorRef, ActorContext, ActorResult, Interceptor } from '../../system/index.ts'
 import { onLifecycle } from '../../system/index.ts'
-import { agentLoop, idleLoopState, type LoopMsg, type LoopState } from '../../system/index.ts'
+import { agentLoop, idleLoopState, type LoopState } from '../../system/index.ts'
 import { OutboundUserMessageTopic } from '../../types/events.ts'
-import type { ToolCollection, ToolFilter, ToolFinalReply, ToolMsg, ToolSchema } from '../../types/tools.ts'
+import type { ToolCollection, ToolFilter, ToolMsg } from '../../types/tools.ts'
 import { applyToolFilter } from '../../system/index.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage } from '../../types/llm.ts'
-import { ContextSnapshotTopic, type AgentFactoryOpts, type ContextSnapshotEvent, type AgentModelOptions } from '../../types/agents.ts'
+import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentModelOptions } from '../../types/agents.ts'
 import { assembleAgentMessages, assembleUserText, type ContextView } from '../../system/index.ts'
-import type { MessageAttachment } from '../../types/events.ts'
+import type { ChatbotMsg } from './types.ts'
 
 // ─── State ───
 
@@ -17,22 +17,6 @@ export type ChatbotState = {
   contextView:    ContextView
   tools:          ToolCollection
 }
-// ─── Chatbot actor message protocol ───
-
-type ChatbotExtra =
-  | { type: 'userMessage';      text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
-  | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
-  | { type: '_toolRegistered';  name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
-  | { type: '_toolUnregistered'; name: string }
-
-export type ChatbotMsg = LoopMsg<ChatbotExtra>
-
-const HISTORY_MARKERS_NOTE =
-  'Messages prefixed with [Internal Instruction] in the conversation history are past internal ' +
-  'instructions that you already carried out. Do not act on them again.\n' +
-  'Messages prefixed with [Background tool result — ...] are deferred results from long-running ' +
-  'tools whose work has now completed. Use them to inform your reply to the user — relay the ' +
-  'result naturally rather than restating the bracketed prefix.'
 
 export type ChatbotAgentConfig = AgentModelOptions & {
   systemPrompt?: string
@@ -52,7 +36,7 @@ const emptyContextView = (userId = ''): ContextView => ({
 
 const buildSystemPrompt = (basePrompt: string | undefined): string => {
   const todayDateNote = `Today's date is ${new Date().toDateString()}.`
-  return [basePrompt, todayDateNote, HISTORY_MARKERS_NOTE].filter(Boolean).join('\n\n---\n\n')
+  return [basePrompt, todayDateNote].filter(Boolean).join('\n\n---\n\n')
 }
 
 

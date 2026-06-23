@@ -49,6 +49,13 @@ export type ContextAssemblyPolicy = {
   toolSummaryLimit?: number
 }
 
+const HISTORY_MARKERS_NOTE =
+  'Messages prefixed with [Internal Instruction] in the conversation history are past internal ' +
+  'instructions that you already carried out. Do not act on them again.\n' +
+  'Messages prefixed with [Background tool result — ...] are deferred results from long-running ' +
+  'tools whose work has now completed. Use them to inform your reply to the user — relay the ' +
+  'result naturally rather than restating the bracketed prefix.'
+
 const sameMessage = (a: ApiMessage, b: ApiMessage): boolean =>
   a.role === b.role && JSON.stringify(a.content) === JSON.stringify(b.content)
 
@@ -90,8 +97,10 @@ export const assembleAgentMessages = (
       : contextNote('Recent tool results', renderToolSummaries(view.toolSummaries, policy.mode, toolLimit)),
   ].filter((message): message is ApiMessage => message !== null)
 
+  const systemPrompt = [policy.systemPrompt, HISTORY_MARKERS_NOTE].filter(Boolean).join('\n\n---\n\n')
+
   return [
-    { role: 'system', content: policy.systemPrompt },
+    { role: 'system', content: systemPrompt },
     ...notes,
     ...withoutCurrent,
     currentUserMessage,
