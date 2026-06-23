@@ -2,7 +2,7 @@ import type { ActorDef, ActorContext, ActorResult, Interceptor, ActorRef } from 
 import { onLifecycle } from '../actor/match.ts'
 import { agentLoop, idleLoopState, type LoopState, type LoopMsg } from './agent-loop.ts'
 import { assembleAgentMessages, assembleUserText, type ContextView } from './context-assembly.ts'
-import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentModelOptions } from '../../types/agents.ts'
+import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentModelOptions, type AgentDescriptor } from '../../types/agents.ts'
 import { ToolRegistrationTopic, type ToolCollection, type ToolFilter, type ToolMsg, type ToolSchema } from '../../types/tools.ts'
 import { applyToolFilter } from './tool-utils.ts'
 import { OutboundUserMessageTopic } from '../../types/events.ts'
@@ -18,12 +18,12 @@ export type AgentExtra =
 
 export type DefineAgentParams<OptionsType extends AgentModelOptions> = {
   role: string
-  spanName: string
-  logPrefix: string
   mode: string
+  displayName: string
+  shortDesc: string
+  capabilities?: { userVisible: boolean }
   buildSystemPrompt: (options: OptionsType, state: any) => string
   defaultToolFilter?: ToolFilter
-  errorMessages?: { llm?: string; loopLimit?: string }
 }
 
 const emptyContextView = (userId = ''): ContextView => ({
@@ -41,10 +41,26 @@ export const defineAgent = <
 >(
   params: DefineAgentParams<OptionsType>
 ) => {
-  const { role, spanName, logPrefix, mode, buildSystemPrompt, defaultToolFilter, errorMessages } = params
+  const {
+    role,
+    mode,
+    displayName,
+    shortDesc,
+    capabilities,
+    buildSystemPrompt,
+    defaultToolFilter,
+  } = params
 
-  return (options: OptionsType) => (opts: AgentFactoryOpts): ActorDef<MsgType, StateType> => {
-    const { userId, contextStoreRef, llmRef } = opts
+  const spanName = `${mode}-agent`
+  const logPrefix = `${mode}-agent`
+  const errorMessages = {
+    llm: `The ${mode} agent encountered an error. Please try again.`,
+    loopLimit: `Tool loop limit reached in ${mode}. Please try again.`,
+  }
+
+  return (options: OptionsType): AgentDescriptor => {
+    const factory = (opts: AgentFactoryOpts): ActorDef<MsgType, StateType> => {
+      const { userId, contextStoreRef, llmRef } = opts
     const maxToolLoops = options.maxToolLoops ?? 25
 
     type M = MsgType
@@ -115,10 +131,7 @@ export const defineAgent = <
       llmRef: () => llmRef,
       tools: (state) => state.tools,
       uiEvents: OutboundUserMessageTopic,
-      errorMessages: errorMessages || {
-        llm: 'Something went wrong. Please try again.',
-        loopLimit: 'Tool loop limit reached. Please try again.',
-      },
+      errorMessages,
 
       onComplete: (state, finalText) => {
         if (finalText) {
@@ -218,4 +231,13 @@ export const defineAgent = <
       supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
     }
   }
+
+  return {
+    mode,
+    displayName,
+    shortDesc,
+    capabilities: capabilities ?? { userVisible: true },
+    factory,
+  }
+}
 }

@@ -18,27 +18,7 @@ import { buildNotebookRoutes, notebookSchemas } from './routes.ts'
 
 // ─── Coach Agent Descriptor Builder ───
 
-const buildCoachDescriptor = (
-  cfg: NotebookConfig,
-  journalRef: ActorRef<ToolMsg>,
-  trackerRef: ActorRef<ToolMsg>,
-  todosRef: ActorRef<ToolMsg>,
-  searchRef: ActorRef<ToolMsg>,
-  notebookDir: string,
-): AgentDescriptor => ({
-  mode: 'coach',
-  displayName: 'Life Coach',
-  shortDesc: 'Your personal coach for health, learning routines, habit building, writing journal entries, and habit tracking.',
-  factory: CoachAgentFactory({
-    model: cfg.agent?.model ?? 'google/gemini-3.5-flash',
-    maxToolLoops: cfg.agent?.maxToolLoops ?? 15,
-    notebookDir: notebookDir,
-    // Mount core tools permanently
-    tools: buildToolCollection(journalRef, trackerRef, todosRef, searchRef),
-    toolFilter: cfg.agent?.toolFilter,
-  }),
-  capabilities: { userVisible: true },
-})
+
 
 // ─── Plugin message & state types ───
 
@@ -113,7 +93,14 @@ const spawnChildren = (
   // Register the coach agent mode
   ctx.publish(AgentRegistrationTopic, {
     type: 'register',
-    descriptor: buildCoachDescriptor(cfg, journalRef, trackerRef, todosRef, searchRef, notebookDir),
+    descriptor: CoachAgentFactory({
+      model: cfg.agent?.model ?? 'google/gemini-3.5-flash',
+      maxToolLoops: cfg.agent?.maxToolLoops ?? 15,
+      notebookDir: notebookDir,
+      // Mount core tools permanently
+      tools: buildToolCollection(journalRef, trackerRef, todosRef, searchRef),
+      toolFilter: cfg.agent?.toolFilter,
+    }),
   })
 
   return { journalRef, trackerRef, todosRef, searchRef }

@@ -39,12 +39,8 @@ After save_workflow or update_workflow, briefly acknowledge the save and stop.`
 
 export const WorkflowsAgentFactory = defineAgent<WorkflowsAgentOptions, WorkflowsAgentMsg, WorkflowsAgentState>({
   role: 'reasoning',
-  spanName: 'workflows-agent',
-  logPrefix: 'workflows-agent',
   mode: 'workflows',
+  displayName: 'Plans & Workflows',
+  shortDesc: 'Design plans, save, inspect, and run workflows',
   buildSystemPrompt,
-  errorMessages: {
-    llm: 'The workflows agent encountered an error. Please try again.',
-    loopLimit: 'Tool loop limit reached in workflows. Please try again.',
-  },
 })

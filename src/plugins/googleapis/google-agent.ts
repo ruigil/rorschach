@@ -26,13 +26,9 @@ const buildSystemPrompt = (_options: GoogleAgentOptions): string =>
 
 export const GoogleAgentFactory = defineAgent<GoogleAgentOptions, GoogleAgentMsg, GoogleAgentState>({
   role:          'reasoning',
-  spanName:      'google-agent',
-  logPrefix:     'google-agent',
   mode:          'google',
+  displayName:  'Google Workspace',
+  shortDesc:    'Access and manage Gmail, Calendar, Google Drive, and YouTube directly in chat.',
   buildSystemPrompt,
   defaultToolFilter: { allow: ['switch_mode'] },
-  errorMessages: {
-    llm:      'The Google Workspace agent encountered an LLM error.',
-    loopLimit: 'Tool loop limit reached.',
-  },
 })

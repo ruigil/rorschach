@@ -37,9 +37,9 @@ const buildSystemPrompt = (options: CoachAgentOptions): string =>
 
 export const CoachAgentFactory = defineAgent<CoachAgentOptions, CoachAgentMsg, CoachAgentState>({
   role:          'reasoning',
-  spanName:      'coach-agent',
-  logPrefix:     'coach-agent',
   mode:          'coach',
+  displayName:  'Life Coach',
+  shortDesc:    'Your personal coach for health, learning routines, habit building, writing journal entries, and habit tracking.',
   buildSystemPrompt,
   defaultToolFilter: COACH_TOOL_FILTER,
 })

@@ -80,19 +80,7 @@ const initialState: PluginState = {
   userContext:    createSlot(),
 }
 
-// ─── Descriptor builders ───
 
-const buildChatbotDescriptor = (cfg: ChatbotAgentOptions): AgentDescriptor => ({
-  mode:         'chatbot',
-  displayName:  'Chatbot',
-  shortDesc:    'General-purpose conversational assistant',
-  factory:      ChatbotAgentFactory({
-    model:        cfg.model,
-    systemPrompt: cfg.systemPrompt,
-    toolFilter:   cfg.toolFilter,
-  }),
-  capabilities: { userVisible: true },
-})
 
 // ─── Spawn helpers ───
 
@@ -133,7 +121,14 @@ const spawnAll = (
   }
 
   // Register built-in agents.
-  ctx.publish(AgentRegistrationTopic, { type: 'register', descriptor: buildChatbotDescriptor(chatbotConfig) })
+  ctx.publish(AgentRegistrationTopic, {
+    type: 'register',
+    descriptor: ChatbotAgentFactory({
+      model:        chatbotConfig.model,
+      systemPrompt: chatbotConfig.systemPrompt,
+      toolFilter:   chatbotConfig.toolFilter,
+    })
+  })
 
   return {
     llmProvider:    { config: llmProviderConfig, ref: llmProviderRef, gen },

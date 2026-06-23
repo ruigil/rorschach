@@ -49,23 +49,7 @@ const buildWorkflowsTools = (toolsRef: ActorRef<ToolMsg>): ToolCollection => {
   return tools
 }
 
-const buildDescriptor = (
-  cfg: WorkflowsConfig,
-  runnerRef: ActorRef<WorkflowRunnerMsg>,
-  toolsRef: ActorRef<ToolMsg>,
-): AgentDescriptor => ({
-  mode: 'workflows',
-  displayName: 'Plans & Workflows',
-  shortDesc: 'Design plans, save, inspect, and run workflows',
-  factory: WorkflowsAgentFactory({
-    model: cfg.agent.model,
-    maxToolLoops: cfg.agent.maxToolLoops,
-    workflowsDir: cfg.workflowsDir,
-    toolFilter: cfg.agent.toolFilter,
-    tools: buildWorkflowsTools(toolsRef),
-  }),
-  capabilities: { userVisible: true },
-})
+
 
 const publishRoutes = (
   ctx: ActorContext<PluginMsg>,
@@ -167,7 +151,13 @@ const spawnChildren = (
 
   ctx.publish(AgentRegistrationTopic, {
     type: 'register',
-    descriptor: buildDescriptor(cfg, runner.ref as ActorRef<WorkflowRunnerMsg>, toolsRef),
+    descriptor: WorkflowsAgentFactory({
+      model: cfg.agent.model,
+      maxToolLoops: cfg.agent.maxToolLoops,
+      workflowsDir: cfg.workflowsDir,
+      toolFilter: cfg.agent.toolFilter,
+      tools: buildWorkflowsTools(toolsRef),
+    }),
   })
   return { runner, toolsRef }
 }

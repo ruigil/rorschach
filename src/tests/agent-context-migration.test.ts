@@ -63,7 +63,7 @@ const runnerRef = system.spawn('workflow-runner', NullRunner())
       maxToolLoops: 3,
       workflowsDir: '/tmp/nonexistent-workflows',
       tools: {},
-    })({ userId: 'u1', llmRef, contextStoreRef }))
+    }).factory({ userId: 'u1', llmRef, contextStoreRef }))
     await tick()
 
     workflows.send({ type: 'userMessage', text: 'make a workflow' })

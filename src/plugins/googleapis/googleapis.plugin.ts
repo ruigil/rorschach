@@ -81,23 +81,7 @@ const buildGoogleTools = (
   [youtubeVideoDetailsTool.name]: { ...youtubeVideoDetailsTool, ref: youtubeRef },
 })
 
-const buildDescriptor = (
-  cfg: GoogleApisConfig,
-  gmailRef: ActorRef<ToolMsg>,
-  calendarRef: ActorRef<ToolMsg>,
-  driveRef: ActorRef<ToolMsg>,
-  youtubeRef: ActorRef<ToolMsg>,
-): AgentDescriptor => ({
-  mode: 'google',
-  displayName: 'Google Workspace',
-  shortDesc: 'Access and manage Gmail, Calendar, Google Drive, and YouTube directly in chat.',
-  factory: GoogleAgentFactory({
-    model: cfg.agentModel ?? 'google/gemini-2.5-flash',
-    maxToolLoops: cfg.maxToolLoops ?? 10,
-    tools: buildGoogleTools(gmailRef, calendarRef, driveRef, youtubeRef),
-  }),
-  capabilities: { userVisible: true },
-})
+
 
 type SpawnResult = Pick<PluginState, 'gmailRef' | 'calendarRef' | 'driveRef' | 'youtubeRef'>
 
@@ -116,7 +100,11 @@ const spawnChildren = (
 
   ctx.publish(AgentRegistrationTopic, {
     type: 'register',
-    descriptor: buildDescriptor(cfg, gmailRef, calendarRef, driveRef, youtubeRef),
+    descriptor: GoogleAgentFactory({
+      model: cfg.agentModel ?? 'google/gemini-2.5-flash',
+      maxToolLoops: cfg.maxToolLoops ?? 10,
+      tools: buildGoogleTools(gmailRef, calendarRef, driveRef, youtubeRef),
+    }),
   })
 
   return { gmailRef, calendarRef, driveRef, youtubeRef }

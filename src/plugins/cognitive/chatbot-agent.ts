@@ -21,13 +21,9 @@ const buildSystemPrompt = (options: ChatbotAgentOptions): string => {
 
 export const ChatbotAgentFactory = defineAgent<ChatbotAgentOptions, ChatbotMsg, ChatbotState>({
   role:          'reasoning',
-  spanName:      'chatbot-agent',
-  logPrefix:     'chatbot-agent',
   mode:          'chatbot',
+  displayName:  'Chatbot',
+  shortDesc:    'General-purpose conversational assistant',
   buildSystemPrompt,
-  errorMessages: {
-    llm:      'Something went wrong. Please try again.',
-    loopLimit: 'Tool loop limit reached. Please try again.',
-  },
 })
 

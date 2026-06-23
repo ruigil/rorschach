@@ -80,7 +80,7 @@ describe('coach mode integration tests', () => {
     // Verify switched to coach mode successfully
     expect(parseModeFrames(userFrames.u1!).at(-1)).toMatchObject({
       mode:        'coach',
-      displayName: 'Coach',
+      displayName: 'Life Coach',
     })
 
     await system.shutdown()
@@ -120,7 +120,7 @@ describe('coach mode integration tests', () => {
       tools,
     })
 
-    const agentRef = system.spawn('coach-agent', factory({
+    const agentRef = system.spawn('coach-agent', factory.factory({
       userId: 'u1',
       llmRef,
       contextStoreRef,

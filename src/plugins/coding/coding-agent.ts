@@ -26,13 +26,9 @@ Behavior:
 
 export const CodingAgentFactory = defineAgent<CodingAgentOptions, CodingAgentMsg, CodingAgentState>({
   role: 'coding',
-  spanName: 'coding-turn',
-  logPrefix: 'coding',
   mode: 'coding',
+  displayName: 'Coding & Docs',
+  shortDesc: 'Inspect a read-only project and generate app-styled documentation',
   buildSystemPrompt,
   defaultToolFilter: { allow: ['tool_status', 'switch_mode'] },
-  errorMessages: {
-    llm: 'The coding agent encountered an error. Please try again.',
-    loopLimit: 'Tool loop limit reached in the coding agent. Please try again.',
-  },
 })

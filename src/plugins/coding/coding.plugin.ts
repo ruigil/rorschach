@@ -74,23 +74,7 @@ const buildDocsTools = (
   [writeDocPageTool.name]: { ...writeDocPageTool, ref: artifactToolsRef as unknown as ActorRef<ToolMsg> },
 })
 
-const buildDescriptor = (
-  cfg: CodingConfig,
-  shellRef: ActorRef<ProjectShellMsg>,
-  docsAgentRef: ActorRef<DocsAgentMsg>,
-): AgentDescriptor => ({
-  mode: 'coding',
-  displayName: 'Coding & Docs',
-  shortDesc: 'Inspect a read-only project and generate app-styled documentation',
-  factory: CodingAgentFactory({
-    model: cfg.coding.model,
-    maxToolLoops: cfg.coding.maxToolLoops,
-    projectMount: cfg.projectMount,
-    tools: buildCodingTools(shellRef, docsAgentRef),
-    toolFilter: cfg.coding.toolFilter,
-  }),
-  capabilities: { userVisible: true },
-})
+
 
 const publishRoutes = (ctx: ActorContext<PluginMsg>, cfg: CodingConfig): void => {
   for (const reg of buildCodingRoutes(cfg.artifactsDir)) {
@@ -175,7 +159,13 @@ const spawnChildren = (
 
   ctx.publish(AgentRegistrationTopic, {
     type: 'register',
-    descriptor: buildDescriptor(cfg, shellRef, docsAgentRef),
+    descriptor: CodingAgentFactory({
+      model: cfg.coding.model,
+      maxToolLoops: cfg.coding.maxToolLoops,
+      projectMount: cfg.projectMount,
+      tools: buildCodingTools(shellRef, docsAgentRef),
+      toolFilter: cfg.coding.toolFilter,
+    }),
   })
 
   return { shellRef, artifactToolsRef, docsAgentRef }
