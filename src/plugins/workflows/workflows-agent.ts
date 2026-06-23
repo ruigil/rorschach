@@ -5,7 +5,7 @@ import { OutboundUserMessageTopic } from '../../types/events.ts'
 import type { ToolCollection, ToolFilter, ToolMsg } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage } from '../../types/llm.ts'
-import { ContextSnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
+import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentModelOptions } from '../../types/agents.ts'
 import type { WorkflowRunnerMsg } from './types.ts'
 import {
   deleteWorkflowTool,
@@ -30,12 +30,9 @@ type WorkflowsAgentState = {
   tools: ToolCollection
   pendingSaveSummary: string | null
 }
-type WorkflowsAgentConfig = {
-  model: string
-  maxToolLoops: number
+export type WorkflowsAgentOptions = AgentModelOptions & {
   workflowsDir: string
   workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
-  toolFilter?: ToolFilter
 }
 
 const WORKFLOWS_MODE = 'workflows'
@@ -76,11 +73,11 @@ Workflow rules:
 
 After save_workflow or update_workflow, briefly acknowledge the save and stop.`
 
-export const WorkflowsAgentFactory = (config: WorkflowsAgentConfig) =>
-  (opts: AgentFactoryOpts): ActorDef<WorkflowsAgentMsg, WorkflowsAgentState> => WorkflowsAgent(config, opts)
+export const WorkflowsAgentFactory = (options: WorkflowsAgentOptions) =>
+  (opts: AgentFactoryOpts): ActorDef<WorkflowsAgentMsg, WorkflowsAgentState> => WorkflowsAgent(options, opts)
 
-const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): ActorDef<WorkflowsAgentMsg, WorkflowsAgentState> => {
-  const { model, maxToolLoops, workflowsDir, workflowRunnerRef, toolFilter } = config
+const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts): ActorDef<WorkflowsAgentMsg, WorkflowsAgentState> => {
+  const { model, maxToolLoops, workflowsDir, workflowRunnerRef, toolFilter } = options
   const { userId, contextStoreRef, llmRef } = opts
 
   type M = WorkflowsAgentMsg
@@ -112,7 +109,7 @@ const WorkflowsAgent = (config: WorkflowsAgentConfig, opts: AgentFactoryOpts): A
     spanName: 'workflows-turn',
     logPrefix: 'workflows',
     model,
-    maxToolLoops,
+    maxToolLoops: maxToolLoops ?? 10,
     llmRef: () => llmRef,
     tools: state => state.tools,
     uiEvents: OutboundUserMessageTopic,

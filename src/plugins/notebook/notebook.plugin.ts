@@ -30,11 +30,12 @@ const buildCoachDescriptor = (
   displayName: 'Coach',
   shortDesc: 'Your personal coach for health, learning routines, habit building, writing journal entries, and habit tracking.',
   factory: CoachAgentFactory({
-    model: cfg.agentModel ?? 'google/gemini-3.5-flash',
-    maxToolLoops: cfg.maxToolLoops ?? 15,
+    model: cfg.agent?.model ?? 'google/gemini-3.5-flash',
+    maxToolLoops: cfg.agent?.maxToolLoops ?? 15,
     notebookDir: notebookDir,
     // Mount core local tools permanently
-    localTools: buildToolCollection(journalRef, trackerRef, todosRef, searchRef)
+    localTools: buildToolCollection(journalRef, trackerRef, todosRef, searchRef),
+    toolFilter: cfg.agent?.toolFilter,
   }),
   capabilities: { userVisible: true },
 })
@@ -58,8 +59,10 @@ type PluginState = {
 
 const config = defineConfig<NotebookConfig>('notebook', {
   notebookDir:  'workspace/notebook',
-  agentModel:   'google/gemini-3.1-pro-preview',
-  maxToolLoops: 10,
+  agent: {
+    model: 'google/gemini-3.1-pro-preview',
+    maxToolLoops: 10,
+  },
 }, {
   schemas: notebookSchemas,
 })
@@ -149,8 +152,8 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
     start: (state, ctx) => {
       const cfg          = ctx.initialConfig() as NotebookConfig | undefined
       const notebookDir  = cfg?.notebookDir  ?? 'workspace/notebook'
-      const model        = cfg?.agentModel   ?? 'google/gemini-3.1-pro-preview'
-      const maxToolLoops = cfg?.maxToolLoops ?? 10
+      const model        = cfg?.agent?.model   ?? 'google/gemini-3.1-pro-preview'
+      const maxToolLoops = cfg?.agent?.maxToolLoops ?? 10
 
       publishConfigSurface(ctx, config, () => cfg)
 
@@ -198,8 +201,8 @@ const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
       stopChildren(state, ctx)
       const cfg          = msg.slice
       const notebookDir  = cfg?.notebookDir  ?? 'workspace/notebook'
-      const model        = cfg?.agentModel   ?? 'google/gemini-3.1-pro-preview'
-      const maxToolLoops = cfg?.maxToolLoops ?? 10
+      const model        = cfg?.agent?.model   ?? 'google/gemini-3.1-pro-preview'
+      const maxToolLoops = cfg?.agent?.maxToolLoops ?? 10
       const gen          = state.gen + 1
 
       // Re-register routes with new notebookDir

@@ -6,7 +6,7 @@ import type { ToolCollection, ToolFilter, ToolFinalReply, ToolMsg, ToolSchema } 
 import { applyToolFilter } from '../../system/index.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage } from '../../types/llm.ts'
-import { ContextSnapshotTopic, type AgentFactoryOpts, type ContextSnapshotEvent } from '../../types/agents.ts'
+import { ContextSnapshotTopic, type AgentFactoryOpts, type ContextSnapshotEvent, type AgentModelOptions } from '../../types/agents.ts'
 import { assembleAgentMessages, assembleUserText, type ContextView } from '../../system/index.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 
@@ -34,11 +34,8 @@ const HISTORY_MARKERS_NOTE =
   'tools whose work has now completed. Use them to inform your reply to the user — relay the ' +
   'result naturally rather than restating the bracketed prefix.'
 
-export type ChatbotAgentConfig = {
-  model:         string
+export type ChatbotAgentConfig = AgentModelOptions & {
   systemPrompt?: string
-  toolFilter?:   ToolFilter
-  maxToolLoops?: number
 }
 
 

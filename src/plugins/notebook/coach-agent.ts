@@ -4,17 +4,15 @@ import { agentLoop, idleLoopState } from '../../system/index.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import { OutboundUserMessageTopic, type MessageAttachment } from '../../types/events.ts'
-import { ContextSnapshotTopic, type AgentFactoryOpts } from '../../types/agents.ts'
+import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentModelOptions } from '../../types/agents.ts'
 import { assembleAgentMessages, assembleUserText, type ContextView } from '../../system/index.ts'
 import type { CoachAgentMsg, CoachAgentState } from './types.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 
 // ─── Options ───
 
-export type CoachAgentOptions = {
-  model:        string
+export type CoachAgentOptions = AgentModelOptions & {
   notebookDir:  string
-  maxToolLoops: number
   localTools:   ToolCollection
 }
 
@@ -95,7 +93,7 @@ export const CoachAgent = (
     spanName:      'coach-agent',
     logPrefix:     'coach-agent',
     model,
-    maxToolLoops,
+    maxToolLoops: maxToolLoops ?? 10,
     llmRef:        () => llmRef,
     tools:         (s) => s.tools,
 
@@ -191,9 +189,10 @@ export const CoachAgent = (
     initialState: initialCoachState,
     lifecycle: onLifecycle({
       start: (state, ctx) => {
+        const filter = options.toolFilter ?? COACH_TOOL_FILTER
         // Subscribe to tool registrations
         ctx.subscribe(ToolRegistrationTopic, (event) => {
-          if (!applyToolFilter(event.name, COACH_TOOL_FILTER)) return null
+          if (!applyToolFilter(event.name, filter)) return null
           if ('schema' in event && event.ref) {
             return {
               type:             '_toolRegistered' as const,

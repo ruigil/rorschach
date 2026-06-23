@@ -132,7 +132,7 @@ const spawnChildren = (
       workflowRunsDir: getWorkflowRunsDir(cfg.workflowsDir),
       llmRef,
       model: cfg.agent.model,
-      maxToolLoops: cfg.agent.maxToolLoops,
+      maxToolLoops: cfg.agent.maxToolLoops ?? 10,
     },
   )
   ctx.publish(AgentRegistrationTopic, {

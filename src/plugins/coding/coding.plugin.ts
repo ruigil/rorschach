@@ -87,6 +87,7 @@ const buildDescriptor = (
     maxToolLoops: cfg.coding.maxToolLoops,
     projectMount: cfg.projectMount,
     tools: buildCodingTools(shellRef, docsAgentRef),
+    toolFilter: cfg.coding.toolFilter,
   }),
   capabilities: { userVisible: true },
 })
@@ -160,7 +161,7 @@ const spawnChildren = (
   const artifactToolsRef = ctx.spawn(`coding-artifacts-${gen}`, ArtifactTools(cfg.artifactsDir)) as ActorRef<ArtifactToolsMsg>
   const docsAgentRef = ctx.spawn(`coding-docs-agent-${gen}`, DocsAgent({
     model: cfg.docs.model,
-    maxToolLoops: cfg.docs.maxToolLoops,
+    maxToolLoops: cfg.docs.maxToolLoops ?? 30,
     projectMount: cfg.projectMount,
     artifactsDir: cfg.artifactsDir,
     tools: buildDocsTools(shellRef, artifactToolsRef),

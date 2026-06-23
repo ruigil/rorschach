@@ -105,8 +105,10 @@
     },
     "notebook": {
       "notebookDir": "workspace/notebook",
-      "agentModel": "google/gemini-3.5-flash",
-      "maxToolLoops": 10
+      "agent": {
+        "model": "google/gemini-3.5-flash",
+        "maxToolLoops": 10
+      }
     },
     "googleapis": {
       "clientId": "${GOOGLE_CLIENT_ID}",

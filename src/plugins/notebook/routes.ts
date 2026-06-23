@@ -14,8 +14,13 @@ export const notebookSchema: ConfigSchemaSection = {
     type: 'object',
     properties: {
       notebookDir: { type: 'string', default: 'workspace/notebook', 'x-ui': { label: 'Notebook directory' } },
-      agentModel: { type: 'string', 'x-ui': { widget: 'model-select', label: 'Agent model' } },
-      maxToolLoops: { type: 'number', default: 10, minimum: 1, maximum: 50 },
+      agent: {
+        type: 'object',
+        properties: {
+          model: { type: 'string', 'x-ui': { widget: 'model-select', label: 'Agent model' } },
+          maxToolLoops: { type: 'number', default: 10, minimum: 1, maximum: 50 },
+        },
+      },
     },
   },
 }

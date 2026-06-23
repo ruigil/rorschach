@@ -4,7 +4,7 @@ import type { LlmProviderMsg, ApiMessage } from '../../types/llm.ts'
 import type { LoopMsg, LoopState } from '../../system/index.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 import type { ContextView } from '../../system/index.ts'
-import type { ContextSnapshotEvent } from '../../types/agents.ts'
+import type { ContextSnapshotEvent, AgentModelOptions } from '../../types/agents.ts'
 
 export type WorkflowTask = {
   id: string
@@ -61,11 +61,7 @@ export type WorkflowDependencyOutput = {
 
 export type WorkflowsConfig = {
   workflowsDir: string
-  agent: {
-    model: string
-    maxToolLoops: number
-    toolFilter?: ToolFilter
-  }
+  agent: AgentModelOptions
 }
 
 export type WorkflowRunnerConfig = {

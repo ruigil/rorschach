@@ -5,14 +5,7 @@ import { ContextSnapshotTopic, type AgentFactoryOpts } from '../../types/agents.
 import type { ApiMessage } from '../../types/llm.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ToolCollection, ToolFinalReply } from '../../types/tools.ts'
-import type { CodingAgentMsg, CodingAgentState } from './types.ts'
-
-export type CodingAgentOptions = {
-  model: string
-  maxToolLoops: number
-  projectMount: string
-  tools: ToolCollection
-}
+import type { CodingAgentMsg, CodingAgentState, CodingAgentOptions } from './types.ts'
 
 const CODING_MODE = 'coding'
 
@@ -99,7 +92,7 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
     spanName: 'coding-turn',
     logPrefix: 'coding',
     model: options.model,
-    maxToolLoops: options.maxToolLoops,
+    maxToolLoops: options.maxToolLoops ?? 25,
     llmRef: () => opts.llmRef,
     tools: (state) => ({
       ...options.tools,
@@ -195,8 +188,9 @@ export const CodingAgent = (options: CodingAgentOptions, opts: AgentFactoryOpts)
           return { type: '_contextSnapshot' as const, ...event }
         })
 
+        const filter = options.toolFilter ?? { allow: ['tool_status', 'switch_mode'] }
         ctx.subscribe(ToolRegistrationTopic, (event) => {
-          if (!applyToolFilter(event.name, { allow: ['tool_status', 'switch_mode'] })) return null
+          if (!applyToolFilter(event.name, filter)) return null
           if ('schema' in event && event.ref) {
             return {
               type: '_toolRegistered' as const,

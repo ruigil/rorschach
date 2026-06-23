@@ -1,6 +1,6 @@
 import type { ActorRef } from '../../system/index.ts'
 import type { BashExecResult } from 'just-bash'
-import type { ContextSnapshotEvent } from '../../types/agents.ts'
+import type { ContextSnapshotEvent, AgentModelOptions } from '../../types/agents.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { ToolCollection, ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
@@ -11,14 +11,8 @@ export type CodingConfig = {
   projectMount: string
   artifactsDir: string
   workspaceDir?: string
-  coding: {
-    model: string
-    maxToolLoops: number
-  }
-  docs: {
-    model: string
-    maxToolLoops: number
-  }
+  coding: AgentModelOptions
+  docs: AgentModelOptions
 }
 
 export type DocPageMeta = {
@@ -97,8 +91,12 @@ export type ArtifactToolsMsg =
   | { type: '_writeDone'; replyTo: ActorRef<ToolReply>; text: string; span: SpanHandle | null }
   | { type: '_writeErr'; replyTo: ActorRef<ToolReply>; error: string; span: SpanHandle | null }
 
-export type DocsAgentOptions = {
-  model: string
+export type CodingAgentOptions = AgentModelOptions & {
+  projectMount: string
+  tools: ToolCollection
+}
+
+export type DocsAgentOptions = AgentModelOptions & {
   maxToolLoops: number
   projectMount: string
   artifactsDir: string

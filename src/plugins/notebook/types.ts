@@ -20,15 +20,12 @@ export type Todo = {
   createdAt:   number
 }
 
-// ─── Config ───
-
 export type NotebookConfig = {
   notebookDir?:  string  // default: workspace/notebook
-  agentModel?:   string
-  maxToolLoops?: number  // default: 10
+  agent?:        AgentModelOptions
 }
 
-import type { ContextSnapshotEvent } from '../../types/agents.ts'
+import type { ContextSnapshotEvent, AgentModelOptions } from '../../types/agents.ts'
 
 // ─── Coach agent message protocol ───
 

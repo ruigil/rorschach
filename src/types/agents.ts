@@ -1,6 +1,13 @@
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { createTopic } from '../system/index.ts'
 import type { ApiMessage, LlmProviderMsg } from './llm.ts'
+import type { ToolFilter } from './tools.ts'
+
+export type AgentModelOptions = {
+  model:         string
+  maxToolLoops?: number
+  toolFilter?:   ToolFilter
+}
 
 // ─── Shared context protocol for session-hosted agents ───
 
