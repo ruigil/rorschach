@@ -13,7 +13,7 @@ import type { ApiMessage } from '../../types/llm.ts'
 
 export type CoachAgentOptions = AgentModelOptions & {
   notebookDir:  string
-  localTools:   ToolCollection
+  tools:        ToolCollection
 }
 
 const COACH_MODE = 'coach'
@@ -66,13 +66,13 @@ export const CoachAgent = (
   options: CoachAgentOptions,
   opts:    AgentFactoryOpts,
 ): ActorDef<CoachAgentMsg, CoachAgentState> => {
-  const { model, maxToolLoops, notebookDir, localTools } = options
+  const { model, maxToolLoops, notebookDir, tools } = options
   const { userId, contextStoreRef, llmRef } = opts
 
   const initialCoachState = (): CoachAgentState => ({
     loop:        idleLoopState(),
     contextView: emptyContextView(userId),
-    tools:       { ...localTools },
+    tools:       { ...tools },
   })
 
   const buildTurnMessages = (state: CoachAgentState, userMsg: ApiMessage): ApiMessage[] =>

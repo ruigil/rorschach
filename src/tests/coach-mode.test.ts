@@ -104,7 +104,7 @@ describe('coach mode integration tests', () => {
     const contextStoreRef = system.spawn('mock-context-store', MockContextStore())
     const dummyToolRef = system.spawn('dummy-tool', DummyToolRef())
 
-    const localTools = {
+    const tools = {
       journal_write: {
         name: 'journal_write',
         schema: { type: 'function' as const, function: { name: 'journal_write', description: 'Write journal', parameters: {} } },
@@ -117,7 +117,7 @@ describe('coach mode integration tests', () => {
       model: 'test-coach-model',
       maxToolLoops: 5,
       notebookDir: 'workspace/notebook',
-      localTools,
+      tools,
     })
 
     const agentRef = system.spawn('coach-agent', factory({

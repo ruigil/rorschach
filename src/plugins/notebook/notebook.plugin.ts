@@ -33,8 +33,8 @@ const buildCoachDescriptor = (
     model: cfg.agent?.model ?? 'google/gemini-3.5-flash',
     maxToolLoops: cfg.agent?.maxToolLoops ?? 15,
     notebookDir: notebookDir,
-    // Mount core local tools permanently
-    localTools: buildToolCollection(journalRef, trackerRef, todosRef, searchRef),
+    // Mount core tools permanently
+    tools: buildToolCollection(journalRef, trackerRef, todosRef, searchRef),
     toolFilter: cfg.agent?.toolFilter,
   }),
   capabilities: { userVisible: true },
