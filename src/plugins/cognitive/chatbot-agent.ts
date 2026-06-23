@@ -21,8 +21,8 @@ const buildSystemPrompt = (options: ChatbotAgentOptions): string => {
 
 export const ChatbotAgentFactory = defineAgent<ChatbotAgentOptions, ChatbotMsg, ChatbotState>({
   role:          'reasoning',
-  spanName:      'chatbot',
-  logPrefix:     'chatbot',
+  spanName:      'chatbot-agent',
+  logPrefix:     'chatbot-agent',
   mode:          'chatbot',
   buildSystemPrompt,
   errorMessages: {
