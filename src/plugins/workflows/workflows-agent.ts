@@ -6,18 +6,12 @@ import type { ToolCollection, ToolFilter, ToolMsg } from '../../types/tools.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentModelOptions } from '../../types/agents.ts'
-import type { WorkflowRunnerMsg } from './types.ts'
-import {
-  saveWorkflowTool,
-  updateWorkflowTool,
-} from './workflow-tools.ts'
-import type { WorkflowsAgentMsg } from './types.ts'
+import type { WorkflowsAgentMsg, WorkflowRunnerMsg } from './types.ts'
 
 type WorkflowsAgentState = {
   loop: LoopState
   contextView: ContextView
   tools: ToolCollection
-  pendingSaveSummary: string | null
 }
 export type WorkflowsAgentOptions = AgentModelOptions & {
   workflowsDir: string
@@ -97,15 +91,6 @@ const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts):
       loopLimit: 'Tool loop limit reached in workflows. Please try again.',
     },
     onComplete: (state, finalText) => {
-      if (state.pendingSaveSummary) {
-        contextStoreRef.send({
-          type: 'append',
-          mode: WORKFLOWS_MODE,
-          source: 'assistant',
-          messages: [{ role: 'assistant', content: state.pendingSaveSummary }],
-        })
-        return { state: { ...state, pendingSaveSummary: null } }
-      }
       if (finalText) {
         contextStoreRef.send({ type: 'append', mode: WORKFLOWS_MODE, source: 'assistant', messages: [{ role: 'assistant', content: finalText }] })
       }
@@ -114,12 +99,6 @@ const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts):
     onError: state => ({ state }),
     onBatchHistoryReady: (state, messages) => {
       contextStoreRef.send({ type: 'append', mode: WORKFLOWS_MODE, messages })
-      return { state }
-    },
-    onToolResult: (state, result) => {
-      if ((result.toolName === saveWorkflowTool.name || result.toolName === updateWorkflowTool.name) && result.reply.type === 'toolResult') {
-        return { state: { ...state, pendingSaveSummary: result.reply.result.text } }
-      }
       return { state }
     },
     onToolPending: (state, pending) => {
@@ -176,7 +155,6 @@ const WorkflowsAgent = (options: WorkflowsAgentOptions, opts: AgentFactoryOpts):
       loop: idleLoopState(),
       contextView: emptyContextView(userId),
       tools: {},
-      pendingSaveSummary: null,
     }),
     lifecycle: onLifecycle({
       start: (state, ctx) => {
