@@ -7,7 +7,7 @@ import type { AgentDescriptor } from '../../types/agents.ts'
 import { AgentRegistry } from './agent-registry.ts'
 import { AgentRegistrationTopic } from '../../types/agents.ts'
 import { ChatbotAgentFactory, type ChatbotAgentOptions } from './chatbot-agent.ts'
-import { defineConfig, createSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/index.ts'
+import { defineConfig, createSlot, stopSlot, publishConfigSurface, deleteConfigSurface, type ActorSlot } from '../../system/index.ts'
 import type { ActorContext, ActorRef, PluginDef } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { redact } from '../../system/index.ts'
@@ -179,6 +179,10 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
     stopped: (state, ctx) => {
       ctx.log.info('cognitive plugin deactivating')
       ctx.deleteRetained(LlmProviderTopic, 'ref', { ref: null })
+      stopSlot(ctx, state.llmProvider)
+      stopSlot(ctx, state.agentRegistry)
+      stopSlot(ctx, state.sessionManager)
+      stopSlot(ctx, state.userContext)
       deleteConfigSurface(ctx, config)
       // AgentRegistry's own stopped lifecycle clears AgentCatalogTopic + switchMode tool registration.
       return { state }
