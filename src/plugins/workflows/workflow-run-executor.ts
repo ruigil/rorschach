@@ -3,7 +3,7 @@ import { relative, resolve, sep } from 'node:path'
 import type { ActorContext, ActorDef, ActorRef, PersistenceAdapter } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { JobRegistryTopic, type ToolCollection } from '../../types/tools.ts'
-import type { LlmProviderMsg } from '../../types/llm.ts'
+import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import { WorkflowRunUpdateTopic } from './types.ts'
 import type {
   Workflow,
@@ -22,6 +22,7 @@ type RunExecutorState = {
   run: WorkflowRunState
   workflow: Workflow
   tools: ToolCollection
+  llmRef: ActorRef<LlmProviderMsg> | null
 }
 
 const now = (): string => new Date().toISOString()
@@ -166,7 +167,7 @@ export const WorkflowRunExecutor = (
         const run = result.data
         const workflow = run.workflow
         const tools = filterWorkflowTools(workflow, allTools)
-        return { run, workflow, tools }
+        return { run, workflow, tools, llmRef }
       }
       return undefined
     },
@@ -179,7 +180,7 @@ export const WorkflowRunExecutor = (
     let run = state.run
     for (const task of readyTasks(state.workflow, run)) {
       const actorName = `workflow-task-${run.runId}-${task.id}-${(run.taskStates[task.id]?.attempts ?? 0) + 1}`
-      const child = ctx.spawn(actorName, WorkflowTaskExecutor(ctx.self, llmRef, model, maxToolLoops, state.tools))
+      const child = ctx.spawn(actorName, WorkflowTaskExecutor(ctx.self, state.llmRef, model, maxToolLoops, state.tools))
       child.send({
         type: 'startTask',
         workflow: state.workflow,
@@ -279,15 +280,20 @@ export const WorkflowRunExecutor = (
   }
 
   return {
-    initialState: () => ({ run: null as any, workflow: null as any, tools: {} }),
+    initialState: () => ({ run: null as any, workflow: null as any, tools: {}, llmRef }),
     persistence: runPersistence(),
     lifecycle: onLifecycle<WorkflowRunExecutorMsg, RunExecutorState>({
       start: (state, ctx) => {
+        ctx.subscribe(LlmProviderTopic, event => ({ type: '_llmProvider' as const, ref: event.ref }))
         ctx.subscribe(JobRegistryTopic, jobEvent => ({ type: '_jobRegistry' as const, event: jobEvent }))
         return { state }
       },
     }),
     handler: onMessage<WorkflowRunExecutorMsg, RunExecutorState>({
+      _llmProvider: (state, msg) => {
+        return { state: { ...state, llmRef: msg.ref } }
+      },
+
       start: (state, msg, ctx) => {
         const missingTool = missingExecutionTool(state.workflow, state.tools)
         if (missingTool) {

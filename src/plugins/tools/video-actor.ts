@@ -1,10 +1,10 @@
 import { join } from 'node:path'
 import type { ActorDef, ActorRef } from '../../system/index.ts'
-import { onMessage } from '../../system/index.ts'
+import { onMessage, onLifecycle } from '../../system/index.ts'
 import { JobRegistryTopic } from '../../types/tools.ts'
 import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
-import type { LlmProviderMsg, VideoSubmitReply, VideoPollReply, VideoDownloadReply } from '../../types/llm.ts'
+import { LlmProviderTopic, type LlmProviderMsg, type VideoSubmitReply, type VideoPollReply, type VideoDownloadReply } from '../../types/llm.ts'
 
 // ─── Output directory for generated videos ───
 
@@ -29,6 +29,7 @@ export type VideoMsg =
   | VideoPollReply
   | VideoDownloadReply
   | { type: '_pollTick'; requestId: string }
+  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── State ───
 
@@ -43,12 +44,13 @@ type PendingJob = {
 
 export type VideoState = {
   pending: Record<string, PendingJob>
+  llmRef: ActorRef<LlmProviderMsg> | null
 }
 
 // ─── Options ───
 
 export type VideoOptions = {
-  llmRef: ActorRef<LlmProviderMsg>
+  llmRef?: ActorRef<LlmProviderMsg> | null
   model: string
   aspectRatio?: string
   duration?: number
@@ -67,7 +69,7 @@ const DEFAULT_POLL_TIMEOUT_MS = 600_000
 
 export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => {
   const {
-    llmRef, model,
+    model,
     aspectRatio = DEFAULT_ASPECT_RATIO,
     duration = DEFAULT_DURATION,
     resolution = DEFAULT_RESOLUTION,
@@ -78,8 +80,18 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
   const videoPollRole = 'video'
 
   return {
-    initialState: { pending: {} },
+    initialState: () => ({ pending: {}, llmRef: options.llmRef ?? null }),
+    lifecycle: onLifecycle({
+      start: (state, ctx) => {
+        ctx.subscribe(LlmProviderTopic, (event) => ({ type: '_llmProvider' as const, ref: event.ref }))
+        return { state }
+      },
+    }),
     handler: onMessage<VideoMsg, VideoState>({
+
+      _llmProvider: (state, msg) => {
+        return { state: { ...state, llmRef: msg.ref } }
+      },
 
       invoke: (state, message, context) => {
         const { toolName, arguments: args, replyTo, userId } = message
@@ -100,7 +112,11 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
 
         const requestId = crypto.randomUUID()
         context.log.info('video: submitting generation request', { requestId, model, prompt, aspectRatio, duration, resolution })
-        llmRef.send({
+        if (!state.llmRef) {
+          replyTo.send({ type: 'toolError', error: 'Video model provider not ready.' })
+          return { state }
+        }
+        state.llmRef.send({
           type: 'submitVideo',
           requestId,
           model,
@@ -129,7 +145,11 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
         const deadline = Date.now() + pollTimeoutMs
         req.replyTo.send({ type: 'toolPending', jobId, placeholderText: `Video generation started (jobId=${jobId}).` })
 
-        llmRef.send({
+        if (!state.llmRef) {
+          req.replyTo.send({ type: 'toolError', error: 'Video model provider not ready.' })
+          return { state }
+        }
+        state.llmRef.send({
           type: 'pollVideo',
           requestId,
           pollingUrl,
@@ -172,7 +192,12 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
             destPath: join(GENERATED_DIR, `${crypto.randomUUID()}.mp4`),
           }))
           context.log.info('video: downloading', { requestId, jobId: req.jobId, count: downloads.length })
-          llmRef.send({
+          if (!state.llmRef) {
+            context.publishRetained(JobRegistryTopic, req.jobId, { jobId: req.jobId, status: 'failed', error: 'Video model provider not ready.' })
+            const { [requestId]: _, ...rest } = state.pending
+            return { state: { ...state, pending: rest } }
+          }
+          state.llmRef.send({
             type: 'downloadVideos',
             requestId,
             downloads,
@@ -218,7 +243,12 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
           return { state: { ...state, pending: rest } }
         }
 
-        llmRef.send({
+        if (!state.llmRef) {
+          context.publishRetained(JobRegistryTopic, req.jobId, { jobId: req.jobId, status: 'failed', error: 'Video model provider not ready.' })
+          const { [requestId]: _, ...rest } = state.pending
+          return { state: { ...state, pending: rest } }
+        }
+        state.llmRef.send({
           type: 'pollVideo',
           requestId,
           pollingUrl: req.pollingUrl,

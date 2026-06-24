@@ -48,7 +48,7 @@ export type HttpMessage =
   | { type: 'send'; userId: string; text: string }
   | { type: '_configSchemaChanged'; section: ConfigSchemaSection }
   | { type: '_configUpdate'; pluginId: string; patch: Record<string, unknown> }
-  | { type: '_llmProviderChanged'; ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
   | { type: '_routeChanged'; reg: RouteRegistration }
   | { type: '_uiSurfaceChanged'; reg: UiSurfaceRegistration }
@@ -310,7 +310,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         return { state }
       },
 
-      _llmProviderChanged: (state, message) => {
+      _llmProvider: (state, message) => {
         llmProviderRef = message.ref
         return { state: { ...state, llmProviderRef: message.ref } }
       },
@@ -362,7 +362,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         }))
 
         context.subscribe(LlmProviderTopic, (e) => ({
-          type: '_llmProviderChanged' as const,
+          type: '_llmProvider' as const,
           ref: e.ref,
         }))
 

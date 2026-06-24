@@ -6,7 +6,7 @@ import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentModelOptions, ty
 import { ToolRegistrationTopic, type ToolCollection, type ToolFilter, type ToolMsg, type ToolSchema } from '../../types/tools.ts'
 import { applyToolFilter } from './tool-utils.ts'
 import { OutboundUserMessageTopic } from '../../types/events.ts'
-import type { ApiMessage } from '../../types/llm.ts'
+import { LlmProviderTopic, type ApiMessage, type LlmProviderMsg } from '../../types/llm.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 import type { ContextSnapshotEvent } from '../../types/agents.ts'
 
@@ -15,6 +15,7 @@ export type AgentExtra =
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
   | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
+  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
 
 export type DefineAgentParams<OptionsType extends AgentModelOptions> = {
   role: string
@@ -128,7 +129,7 @@ export const defineAgent = <
       logPrefix,
       model: options.model,
       maxToolLoops,
-      llmRef: () => llmRef,
+      llmRef: (state: any) => state.llmRef || llmRef,
       tools: (state) => state.tools,
       uiEvents: OutboundUserMessageTopic,
       errorMessages,
@@ -171,6 +172,11 @@ export const defineAgent = <
 
     const hostInterceptor: Interceptor<M, S> = (state, msg, ctx, next) => {
       const m = msg as any
+
+      if (m.type === '_llmProvider') {
+        ;(state as any).llmRef = m.ref
+        return { state }
+      }
 
       if (m.type === 'userMessage') {
         if (state.loop.phase !== 'idle') return { state, stash: true }
@@ -219,6 +225,10 @@ export const defineAgent = <
               } as any
             }
             return { type: '_toolUnregistered' as const, name: event.name } as any
+          })
+
+          ctx.subscribe(LlmProviderTopic, (event) => {
+            return { type: '_llmProvider' as const, ref: event.ref } as any
           })
 
           return { state }

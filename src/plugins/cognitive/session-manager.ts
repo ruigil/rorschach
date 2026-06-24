@@ -8,7 +8,7 @@ import {
   type MessageAttachment,
   type UserPresenceEvent,
 } from '../../types/events.ts'
-import type { LlmProviderMsg } from '../../types/llm.ts'
+import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import { ContextStore, type ContextStoreMsg} from './context-store.ts'
 import {
   AgentRegistrationTopic,
@@ -29,6 +29,7 @@ type SessionManagerMsg =
   | { type: '_agentUnregistered'; mode: string }
   | { type: '_switchAgent';      userId: string; mode: string; source: 'user' | 'llm' | 'programmatic'; reason?: string }
   | { type: '_jobRegistry';      event: JobLifecycleEvent }
+  | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── State ─────────────────────────────────────────────────────────────────
 //
@@ -48,6 +49,7 @@ type SessionManagerState = {
   sessions:         Record<string, Session>         // userId → Session
   activeInterfaces: Record<string, Set<'http' | 'signal' | 'cli'>> // userId → Set of active interfaces
   activeJobs:       Record<string, { userId: string; toolName: string }> // jobId → info
+  llmRef:           ActorRef<LlmProviderMsg> | null
 }
 
 const initialSessionManagerState = (): SessionManagerState => ({
@@ -55,6 +57,7 @@ const initialSessionManagerState = (): SessionManagerState => ({
   sessions:         {},
   activeInterfaces: {},
   activeJobs:       {},
+  llmRef:           null,
 })
 
 // ─── Options ───────────────────────────────────────────────────────────────
@@ -189,7 +192,8 @@ export const SessionManager = (
         )
         ctx.subscribe(SwitchAgentTopic,      e => ({ type: '_switchAgent'  as const, userId: e.userId, mode: e.mode, source: e.source, reason: e.reason }))
         ctx.subscribe(JobRegistryTopic,      e => ({ type: '_jobRegistry'  as const, event: e }))
-        return { state }
+        ctx.subscribe(LlmProviderTopic,      event => ({ type: '_llmProvider' as const, ref: event.ref }))
+        return { state: { ...state, llmRef: state.llmRef ?? llmRef } }
       },
 
       terminated: (state, event, ctx) => {
@@ -234,6 +238,10 @@ export const SessionManager = (
 
     handler: onMessage<SessionManagerMsg, SessionManagerState>({
 
+      _llmProvider: (state, msg) => {
+        return { state: { ...state, llmRef: msg.ref } }
+      },
+
       _agentRegistered: (state, msg, ctx) => {
         let next: SessionManagerState = {
           ...state,
@@ -242,7 +250,7 @@ export const SessionManager = (
 
         for (const [userId, session] of Object.entries(next.sessions)) {
           if (session.activeMode !== msg.descriptor.mode || session.agentRefs[msg.descriptor.mode]) continue
-          next = ensureAgent(next, userId, msg.descriptor.mode, llmRef, ctx).state
+          next = ensureAgent(next, userId, msg.descriptor.mode, state.llmRef ?? llmRef, ctx).state
         }
 
         return { state: next }
@@ -289,7 +297,7 @@ export const SessionManager = (
             activeMode:  defaultMode,
           }
           const withSession = setSession(nextState, userId, seeded)
-          const afterAgent  = ensureAgent(withSession, userId, defaultMode, llmRef, ctx)
+          const afterAgent  = ensureAgent(withSession, userId, defaultMode, withSession.llmRef ?? llmRef, ctx)
 
           ctx.publish(SessionLifecycleTopic, {
             type:          'sessionStarted',
@@ -465,7 +473,7 @@ export const SessionManager = (
         const previousMode = session.activeMode
 
         // Ensure target agent exists, then mark it active.
-        const afterAgent = ensureAgent(state, userId, mode, llmRef, ctx)
+        const afterAgent = ensureAgent(state, userId, mode, state.llmRef ?? llmRef, ctx)
         if (!afterAgent.ref) return { state: afterAgent.state }
 
         const next = updateSession(afterAgent.state, userId, { activeMode: mode })

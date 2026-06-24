@@ -1,10 +1,10 @@
 import { join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef } from '../../system/index.ts'
-import { onMessage } from '../../system/index.ts'
+import { onMessage, onLifecycle } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
-import type { LlmProviderMsg, LlmProviderReply, VisionProviderReply } from '../../types/llm.ts'
+import { LlmProviderTopic, type LlmProviderMsg, type LlmProviderReply, type VisionProviderReply } from '../../types/llm.ts'
 
 // ─── Output directory for generated images ───
 
@@ -40,6 +40,7 @@ export type VisionMsg =
   | { type: '_resolveError'; requestId: string; error: string }
   | { type: '_imageSaved';   requestId: string; filePath: string; publicUrl: string }
   | { type: '_saveError';    requestId: string; error: string }
+  | { type: '_llmProvider';  ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── State ───
 
@@ -62,12 +63,13 @@ type PendingRequest = AnalysisPending | GenerationPending
 
 export type VisionState = {
   pending: Record<string, PendingRequest>
+  llmRef: ActorRef<LlmProviderMsg> | null
 }
 
 // ─── Options ───
 
 export type VisionOptions = {
-  llmRef: ActorRef<LlmProviderMsg>
+  llmRef?: ActorRef<LlmProviderMsg> | null
   model: string
 }
 
@@ -104,11 +106,21 @@ const mimeTypeForImagePath = (path: string): string => {
 // ─── Actor definition ───
 
 export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState> => {
-  const { llmRef, model } = options
+  const { model } = options
 
   return {
-    initialState: { pending: {} },
+    initialState: () => ({ pending: {}, llmRef: options.llmRef ?? null }),
+    lifecycle: onLifecycle({
+      start: (state, ctx) => {
+        ctx.subscribe(LlmProviderTopic, (event) => ({ type: '_llmProvider' as const, ref: event.ref }))
+        return { state }
+      },
+    }),
     handler: onMessage<VisionMsg, VisionState>({
+
+      _llmProvider: (state, msg) => {
+        return { state: { ...state, llmRef: msg.ref } }
+      },
 
       // ── analyze_image invoke ──
       invoke: (state, message, context) => {
@@ -126,7 +138,11 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
 
           const requestId = crypto.randomUUID()
           context.log.info('vision: generating image', { requestId, prompt })
-          llmRef.send({
+          if (!state.llmRef) {
+            replyTo.send({ type: 'toolError', error: 'Vision model provider not ready.' })
+            return { state }
+          }
+          state.llmRef.send({
             type: 'streamImage',
             requestId,
             model,
@@ -177,7 +193,11 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
         const { requestId, imageUrl, prompt } = message
         const req = state.pending[requestId]
         context.log.info('vision: image URL resolved, sending to LLM', { requestId })
-        llmRef.send({
+        if (!state.llmRef) {
+          req?.replyTo.send({ type: 'toolError', error: 'Vision model provider not ready.' })
+          return { state }
+        }
+        state.llmRef.send({
           type: 'stream',
           requestId,
           model,

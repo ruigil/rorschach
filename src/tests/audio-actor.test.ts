@@ -43,7 +43,7 @@ describe('audio actor', () => {
       ttsModel: 'test-tts-model',
       sttModel: 'test-stt-model',
       voice: 'alloy'
-    }), { state: { pending: {} } })
+    }), { state: { pending: {}, llmRef } })
 
     await tick()
 
@@ -109,7 +109,7 @@ describe('audio actor', () => {
       ttsModel: 'test-tts-model',
       sttModel: 'test-stt-model',
       voice: 'alloy'
-    }), { state: { pending: {} } })
+    }), { state: { pending: {}, llmRef } })
 
     await tick()
 

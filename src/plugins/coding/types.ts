@@ -45,6 +45,7 @@ export type CodingAgentState = {
 
 export type DocsJobExecutorExtra =
   | { type: 'startJob'; userId: string }
+  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
 
 export type DocsJobExecutorMsg = LoopMsg<DocsJobExecutorExtra>
 

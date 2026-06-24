@@ -2,6 +2,7 @@ import type { ActorContext, ActorDef, ActorRef, ActorResult } from '../../system
 import { ask, onLifecycle, onMessage } from '../../system/index.ts'
 import { ToolRegistrationTopic, type ToolCollection } from '../../types/tools.ts'
 import { OutboundUserMessageTopic } from '../../types/events.ts'
+import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import { WorkflowRunUpdateTopic } from './types.ts'
 import type {
   WorkflowRunExecutorMsg,
@@ -17,6 +18,7 @@ import { getWorkflowRun, listWorkflowRuns } from './workflow-store.ts'
 type RunnerState = {
   live: Record<string, ActorRef<WorkflowRunExecutorMsg>>
   executionTools: ToolCollection
+  llmRef: ActorRef<LlmProviderMsg> | null
 }
 
 const summarizeExecutionTools = (tools: ToolCollection): ExecutionToolSummary[] =>
@@ -42,7 +44,7 @@ export const WorkflowRunner = (
 
     const ref = ctx.spawn(
       `workflow-run-${runId}`,
-      WorkflowRunExecutor(workflowRunsDir, llmRef, model, maxToolLoops, state.executionTools, userId, runId),
+      WorkflowRunExecutor(workflowRunsDir, state.llmRef, model, maxToolLoops, state.executionTools, userId, runId),
     ) as ActorRef<WorkflowRunExecutorMsg>
     return { ref, spawned: true }
   }
@@ -79,7 +81,7 @@ export const WorkflowRunner = (
 
     const ref = ctx.spawn(
       `workflow-run-${runId}`,
-      WorkflowRunExecutor(workflowRunsDir, llmRef, model, maxToolLoops, state.executionTools, msg.run.userId, runId),
+      WorkflowRunExecutor(workflowRunsDir, state.llmRef, model, maxToolLoops, state.executionTools, msg.run.userId, runId),
     ) as ActorRef<WorkflowRunExecutorMsg>
 
     const nextState = { ...state, live: { ...state.live, [runId]: ref } }
@@ -156,9 +158,10 @@ export const WorkflowRunner = (
   }
 
   return {
-    initialState: { live: {}, executionTools: {} },
+    initialState: () => ({ live: {}, executionTools: {}, llmRef: config.llmRef }),
     lifecycle: onLifecycle<WorkflowRunnerMsg, RunnerState>({
       start: (state, ctx) => {
+        ctx.subscribe(LlmProviderTopic, event => ({ type: '_llmProvider' as const, ref: event.ref }))
         ctx.subscribe(ToolRegistrationTopic, toolEvent => {
           if ('schema' in toolEvent) return { type: '_toolRegistered' as const, tool: toolEvent }
           return { type: '_toolUnregistered' as const, name: toolEvent.name }
@@ -182,6 +185,10 @@ export const WorkflowRunner = (
       }
     }),
     handler: onMessage<WorkflowRunnerMsg, RunnerState>({
+      _llmProvider: (state, msg) => {
+        return { state: { ...state, llmRef: msg.ref } }
+      },
+
       _toolRegistered: (state, msg) => {
         return { state: { ...state, executionTools: { ...state.executionTools, [msg.tool.name]: msg.tool } } }
       },

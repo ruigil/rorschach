@@ -142,6 +142,9 @@ export const DocsJobExecutor = (
         userId: m.userId,
       }, ctx)
     }
+    if (m.type === '_llmProvider') {
+      return { state: { ...state, llmRef: m.ref } }
+    }
     return next(state, msg)
   }
 
@@ -151,6 +154,12 @@ export const DocsJobExecutor = (
       llmRef: options.llmRef,
       pagesWritten: 0,
       startedAt: 0,
+    }),
+    lifecycle: onLifecycle({
+      start: (state, ctx) => {
+        ctx.subscribe(LlmProviderTopic, (event) => ({ type: '_llmProvider' as const, ref: event.ref }))
+        return { state }
+      },
     }),
     handler: loop.idle,
     interceptors: [hostInterceptor],

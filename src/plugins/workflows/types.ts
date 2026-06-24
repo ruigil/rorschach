@@ -210,6 +210,7 @@ export type WorkflowRunnerMsg =
   | { type: '_toolRegistered'; tool: Tool }
   | { type: '_toolUnregistered'; name: string }
   | { type: '_runUpdated'; event: WorkflowRunUpdateEvent }
+  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_done' }
 
 export type WorkflowRunExecutorReply =
@@ -225,6 +226,7 @@ export type WorkflowRunExecutorMsg =
   | { type: 'taskBlocked'; taskId: string; message: string }
   | { type: 'taskFailed'; taskId: string; error: string }
   | { type: '_jobRegistry'; event: JobLifecycleEvent }
+  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_done' }
 
 export type WorkflowTaskExecutorMsg =
@@ -238,6 +240,9 @@ export type WorkflowTaskExecutorMsg =
       history?: ApiMessage[]
       userId: string
       clientId?: string
+    } | {
+      type: '_llmProvider'
+      ref: ActorRef<LlmProviderMsg> | null
     }>
   | ToolInvokeMsg
 

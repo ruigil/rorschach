@@ -1,10 +1,10 @@
 import { join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef } from '../../system/index.ts'
-import { onMessage } from '../../system/index.ts'
+import { onMessage, onLifecycle } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
-import type { LlmProviderMsg, SpeechProviderReply, TranscriptionProviderReply } from '../../types/llm.ts'
+import { LlmProviderTopic, type LlmProviderMsg, type SpeechProviderReply, type TranscriptionProviderReply } from '../../types/llm.ts'
 
 // ─── Output directory for generated audio ───
 
@@ -44,6 +44,7 @@ export type AudioMsg =
   | { type: '_audioLoadError'; requestId: string; error: string; replyTo: ActorRef<ToolReply> }
   | { type: '_audioSaved';     requestId: string; filePath: string; publicUrl: string; spokenText: string; voice: string; replyTo: ActorRef<ToolReply> }
   | { type: '_audioSaveError'; requestId: string; error: string; replyTo: ActorRef<ToolReply> }
+  | { type: '_llmProvider';    ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── State ───
 
@@ -66,12 +67,13 @@ type TtsPending = {
 
 export type AudioState = {
   pending: Record<string, TranscriptionPending | TtsPending>
+  llmRef: ActorRef<LlmProviderMsg> | null
 }
 
 // ─── Options ───
 
 export type AudioOptions = {
-  llmRef: ActorRef<LlmProviderMsg>
+  llmRef?: ActorRef<LlmProviderMsg> | null
   ttsModel: string
   sttModel: string
   voice: string
@@ -129,11 +131,21 @@ const saveAudio = async (data: string, format: string): Promise<{ filePath: stri
 // ─── Actor definition ───
 
 export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => {
-  const { llmRef, ttsModel, sttModel, voice, ttsFormat = DEFAULT_TTS_FORMAT } = options
+  const { ttsModel, sttModel, voice, ttsFormat = DEFAULT_TTS_FORMAT } = options
 
   return {
-    initialState: { pending: {} },
+    initialState: () => ({ pending: {}, llmRef: options.llmRef ?? null }),
+    lifecycle: onLifecycle({
+      start: (state, ctx) => {
+        ctx.subscribe(LlmProviderTopic, (event) => ({ type: '_llmProvider' as const, ref: event.ref }))
+        return { state }
+      },
+    }),
     handler: onMessage<AudioMsg, AudioState>({
+
+      _llmProvider: (state, msg) => {
+        return { state: { ...state, llmRef: msg.ref } }
+      },
 
       invoke: (state, message, context) => {
         const { toolName, arguments: args, replyTo, userId } = message
@@ -155,7 +167,11 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
           const requestId = crypto.randomUUID()
           
           context.log.info('audio: starting TTS', { requestId, voice: ttsVoice, textLength: text.length })
-          llmRef.send({
+          if (!state.llmRef) {
+            replyTo.send({ type: 'toolError', error: 'Audio model provider not ready.' })
+            return { state }
+          }
+          state.llmRef.send({
             type: 'speak',
             requestId,
             model: ttsModel,
@@ -208,7 +224,11 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
         if (!req) return { state }
 
         context.log.info('audio: audio loaded, sending to LLM for transcription', { requestId })
-        llmRef.send({
+        if (!state.llmRef) {
+          req.replyTo.send({ type: 'toolError', error: 'Audio model provider not ready.' })
+          return { state }
+        }
+        state.llmRef.send({
           type: 'transcribe',
           requestId,
           model: sttModel,

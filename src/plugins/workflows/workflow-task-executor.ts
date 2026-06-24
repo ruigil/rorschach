@@ -1,7 +1,7 @@
 import type { ActorContext, ActorDef, ActorRef, ActorResult, Interceptor } from '../../system/index.ts'
-import { agentLoop, defineTool, idleLoopState, parseToolArgs } from '../../system/index.ts'
+import { agentLoop, defineTool, idleLoopState, parseToolArgs, onLifecycle } from '../../system/index.ts'
 import type { ToolCollection, ToolMsg, ToolReply } from '../../types/tools.ts'
-import type { ApiMessage, LlmProviderMsg } from '../../types/llm.ts'
+import { LlmProviderTopic, type ApiMessage, type LlmProviderMsg } from '../../types/llm.ts'
 import type {
   WorkflowRunExecutorMsg,
   WorkflowTaskExecutorMsg,
@@ -22,9 +22,10 @@ type TaskExecutorState = {
   tools: ToolCollection
   userId: string
   terminalSignaled: boolean
+  llmRef: ActorRef<LlmProviderMsg> | null
 }
 
-const initialState = (tools: ToolCollection): TaskExecutorState => ({
+const initialState = (tools: ToolCollection, llmRef: ActorRef<LlmProviderMsg> | null): TaskExecutorState => ({
   loop: idleLoopState(),
   workflow: null,
   task: null,
@@ -34,6 +35,7 @@ const initialState = (tools: ToolCollection): TaskExecutorState => ({
   tools,
   userId: '',
   terminalSignaled: false,
+  llmRef,
 })
 
 export const completeWorkflowTaskTool = defineTool('complete_workflow_task', 'Complete the current workflow task with validated structured outputs.', {
@@ -147,7 +149,7 @@ export const WorkflowTaskExecutor = (
     logPrefix: 'workflow-task',
     model,
     maxToolLoops,
-    llmRef: () => llmRef,
+    llmRef: s => s.llmRef,
     tools: state => state.tools,
     toolInvocation: {
       jobMetadata: (call, turn) => ({
@@ -264,11 +266,20 @@ export const WorkflowTaskExecutor = (
     if (msg.type === 'invoke' && (msg.toolName === completeWorkflowTaskTool.name || msg.toolName === blockWorkflowTaskTool.name)) {
       return invokeControlTool(state, msg)
     }
+    if (msg.type === '_llmProvider') {
+      return { state: { ...state, llmRef: msg.ref } }
+    }
     return next(state, msg)
   }
 
   return {
-    initialState: () => initialState(tools),
+    initialState: () => initialState(tools, llmRef),
+    lifecycle: onLifecycle({
+      start: (state, ctx) => {
+        ctx.subscribe(LlmProviderTopic, event => ({ type: '_llmProvider' as const, ref: event.ref }))
+        return { state }
+      },
+    }),
     handler: loop.idle,
     interceptors: [host],
     supervision: { type: 'restart', maxRetries: 1, withinMs: 30_000 },

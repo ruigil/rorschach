@@ -199,25 +199,57 @@ const cognitivePlugin: PluginDef<PluginMsg, PluginState, CognitiveConfig> = {
       const newUserContextConfig = slice?.userContext ?? null
       const newContextPath       = slice?.session?.contextPath
 
-      // Stop all existing actors
-      if (state.llmProvider.ref)    ctx.stop(state.llmProvider.ref)
-      if (state.agentRegistry.ref)  ctx.stop(state.agentRegistry.ref)
-      if (state.sessionManager.ref) ctx.stop(state.sessionManager.ref)
-      if (state.userContext.ref)    ctx.stop(state.userContext.ref)
-
-      ctx.deleteRetained(LlmProviderTopic, 'ref', { ref: null })
-
       // No LLM provider → tear everything down.
       if (!newLlmProviderConfig) {
+        if (state.llmProvider.ref)    ctx.stop(state.llmProvider.ref)
+        if (state.agentRegistry.ref)  ctx.stop(state.agentRegistry.ref)
+        if (state.sessionManager.ref) ctx.stop(state.sessionManager.ref)
+        if (state.userContext.ref)    ctx.stop(state.userContext.ref)
+        ctx.deleteRetained(LlmProviderTopic, 'ref', { ref: null })
         return { state: { ...initialState, initialized: true } }
       }
 
-      // Respawn everything with new config
-      const gen = state.llmProvider.gen + 1
-      const resolvedSlice = slice as ResolvedCognitiveConfig
-      const children = spawnAll(ctx, newLlmProviderConfig, resolvedSlice.chatbot, resolvedSlice.session, newUserContextConfig, newContextPath, gen)
+      // Check what changed
+      const chatbotChanged = JSON.stringify(state.chatbot.config) !== JSON.stringify(slice?.chatbot)
+      const sessionChanged = JSON.stringify(state.session.config) !== JSON.stringify(slice?.session)
+      const userContextChanged = JSON.stringify(state.userContext.config) !== JSON.stringify(slice?.userContext)
+      const llmProviderChanged = JSON.stringify(state.llmProvider.config) !== JSON.stringify(slice?.llmProvider)
 
-      return { state: { initialized: true, ...children } }
+      if (chatbotChanged || sessionChanged || userContextChanged || !state.sessionManager.ref) {
+        // Structural changes: perform full restart of all child actors
+        if (state.llmProvider.ref)    ctx.stop(state.llmProvider.ref)
+        if (state.agentRegistry.ref)  ctx.stop(state.agentRegistry.ref)
+        if (state.sessionManager.ref) ctx.stop(state.sessionManager.ref)
+        if (state.userContext.ref)    ctx.stop(state.userContext.ref)
+        ctx.deleteRetained(LlmProviderTopic, 'ref', { ref: null })
+
+        const gen = state.llmProvider.gen + 1
+        const resolvedSlice = slice as ResolvedCognitiveConfig
+        const children = spawnAll(ctx, newLlmProviderConfig, resolvedSlice.chatbot, resolvedSlice.session, newUserContextConfig, newContextPath, gen)
+        return { state: { initialized: true, ...children } }
+      }
+
+      if (llmProviderChanged) {
+        // Only the LLM Provider configuration changed. Recreate only the LLM Provider in-place.
+        if (state.llmProvider.ref) ctx.stop(state.llmProvider.ref)
+        ctx.deleteRetained(LlmProviderTopic, 'ref', { ref: null })
+
+        const gen = state.llmProvider.gen + 1
+        const llmProviderRef = ctx.spawn(
+          `llm-provider-${gen}`,
+          LlmProvider({ adapter: OpenRouterAdapter({ apiKey: newLlmProviderConfig.apiKey, reasoning: newLlmProviderConfig.reasoning }) }),
+        ) as ActorRef<LlmProviderMsg>
+        ctx.publishRetained(LlmProviderTopic, 'ref', { ref: llmProviderRef })
+
+        return {
+          state: {
+            ...state,
+            llmProvider: { config: newLlmProviderConfig, ref: llmProviderRef, gen },
+          }
+        }
+      }
+
+      return { state }
     },
   }),
 }

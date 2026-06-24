@@ -215,9 +215,7 @@ const workflowsPlugin: PluginDef<PluginMsg, PluginState, WorkflowsConfig> = {
   }),
   handler: onMessage<PluginMsg, PluginState>({
     _llmProvider: (state, msg, ctx) => {
-      if (!state.initialized) return { state: { ...state, llmRef: msg.ref } }
-      const next = restart(state, ctx, state.config, msg.ref)
-      return { state: { ...next, llmRef: msg.ref } }
+      return { state: { ...state, llmRef: msg.ref } }
     },
     config: (state, msg, ctx) => {
       const cfg = { ...defaultConfig, ...(msg.slice ?? {}) }
