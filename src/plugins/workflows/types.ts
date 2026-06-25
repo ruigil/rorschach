@@ -130,14 +130,14 @@ export type WorkflowRunState = {
   workflow: Workflow
 }
 
-export type WorkflowRunUpdateEvent = {
+export type WorkflowEvent = {
   userId: string
   workflowId: string
-  runId: string
-  run: WorkflowRunState
+  runId?: string
+  run?: WorkflowRunState
 }
 
-export const WorkflowRunUpdateTopic = createTopic<WorkflowRunUpdateEvent>('workflow.run.updated')
+export const WorkflowEventTopic = createTopic<WorkflowEvent>('workflow.event')
 
 export type WorkflowGraphNode = {
   id: string
@@ -209,7 +209,7 @@ export type WorkflowRunnerMsg =
   | { type: '_reply'; replyTo: ActorRef<WorkflowRunnerReply>; reply: WorkflowRunnerReply; runId?: string; spawnedRef?: ActorRef<WorkflowRunExecutorMsg> }
   | { type: '_toolRegistered'; tool: Tool }
   | { type: '_toolUnregistered'; name: string }
-  | { type: '_runUpdated'; event: WorkflowRunUpdateEvent }
+  | { type: '_runUpdated'; event: WorkflowEvent }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_done' }
 

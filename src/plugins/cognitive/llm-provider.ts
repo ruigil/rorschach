@@ -1,6 +1,5 @@
 import type { ActorDef } from '../../system/index.ts'
-import { emit } from '../../system/index.ts'
-import { onMessage } from '../../system/index.ts'
+import { emit, onMessage, onLifecycle } from '../../system/index.ts'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type {
@@ -14,7 +13,7 @@ import type {
   VideoPollReply,
   VideoDownloadReply
 } from '../../types/llm.ts'
-import { CostTopic } from '../../types/llm.ts'
+import { CostTopic, LlmProviderTopic } from '../../types/llm.ts'
 import type { LlmProviderAdapter, LlmProviderInternalMsg, OpenRouterAdapterOptions } from './types.ts'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
@@ -724,6 +723,16 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderIn
 
       _modelsDone: (state, message) => {
         message.replyTo.send(message.models)
+        return { state }
+      },
+    }),
+    lifecycle: onLifecycle({
+      start: (state, ctx) => {
+        ctx.publishRetained(LlmProviderTopic, 'llm-provider', { ref: ctx.self })
+        return { state }
+      },
+      stopped: (state, ctx) => {
+        ctx.deleteRetained(LlmProviderTopic, 'llm-provider', { ref: null })
         return { state }
       },
     }),

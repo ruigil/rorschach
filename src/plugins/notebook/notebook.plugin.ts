@@ -1,10 +1,6 @@
-import type { ActorContext, ActorRef, PluginDef } from '../../system/index.ts'
-import { defineConfig, publishConfigSurface, deleteConfigSurface } from '../../system/index.ts'
-import { onLifecycle, onMessage } from '../../system/index.ts'
+import { createPluginFactory, defineConfig } from '../../system/index.ts'
+import type { ActorRef } from '../../system/index.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
-import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
-
 import type { NotebookConfig } from './types.ts'
 
 import { Journal, journalWriteTool, journalReadTool, journalSearchTool } from './tools/journal.ts'
@@ -13,29 +9,6 @@ import { Todos, todosCreateTool, todosCompleteTool, todosListTool, todosDeleteTo
 import { Search, notebookSearchTool } from './tools/search.ts'
 import { CoachAgentFactory } from './coach-agent.ts'
 import { buildNotebookRoutes, notebookSchemas } from './routes.ts'
-
-// ─── Public tool schema ───
-
-// ─── Coach Agent Descriptor Builder ───
-
-
-
-// ─── Plugin message & state types ───
-
-type PluginMsg =
-  | { type: 'config'; slice: NotebookConfig | undefined }
-
-type PluginState = {
-  initialized:          boolean
-  gen:                  number
-  notebookDir:          string
-  model:                string
-  maxToolLoops:         number
-  journalRef:           ActorRef<ToolMsg> | null
-  trackerRef:           ActorRef<ToolMsg> | null
-  todosRef:             ActorRef<ToolMsg> | null
-  searchRef:            ActorRef<ToolMsg> | null
-}
 
 const config = defineConfig<NotebookConfig>('notebook', {
   notebookDir:  'workspace/notebook',
@@ -70,147 +43,57 @@ const buildToolCollection = (
   [notebookSearchTool.name]:      { ...notebookSearchTool,      ref: searchRef   },
 })
 
-// ─── Spawn helpers (typed with ActorContext<PluginMsg>) ───
-
-type SpawnResult = Pick<PluginState,
-  'journalRef' | 'trackerRef' | 'todosRef' | 'searchRef'
->
-
-const spawnChildren = (
-  gen: number,
-  notebookDir: string,
-  model: string,
-  maxToolLoops: number,
-  ctx: ActorContext<PluginMsg>,
-  cfg: NotebookConfig,
-): SpawnResult => {
-  // Spawn internal tool actors — NOT registered on ToolRegistrationTopic
-  const journalRef = ctx.spawn(`journal-${gen}`, Journal(notebookDir)) as ActorRef<ToolMsg>
-  const trackerRef = ctx.spawn(`tracker-${gen}`, Tracker(notebookDir)) as ActorRef<ToolMsg>
-  const todosRef   = ctx.spawn(`todos-${gen}`,   Todos(notebookDir))   as ActorRef<ToolMsg>
-  const searchRef  = ctx.spawn(`search-${gen}`,  Search(notebookDir))  as ActorRef<ToolMsg>
-
-  // Register the coach agent mode
-  ctx.publish(AgentRegistrationTopic, {
-    type: 'register',
-    descriptor: CoachAgentFactory({
-      model: cfg.agent?.model ?? 'google/gemini-3.5-flash',
-      maxToolLoops: cfg.agent?.maxToolLoops ?? 15,
-      notebookDir: notebookDir,
-      // Mount core tools permanently
-      tools: buildToolCollection(journalRef, trackerRef, todosRef, searchRef),
-      toolFilter: cfg.agent?.toolFilter,
-    }),
-  })
-
-  return { journalRef, trackerRef, todosRef, searchRef }
-}
-
-const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void => {
-  if (state.journalRef) ctx.stop(state.journalRef)
-  if (state.trackerRef) ctx.stop(state.trackerRef)
-  if (state.todosRef)   ctx.stop(state.todosRef)
-  if (state.searchRef)  ctx.stop(state.searchRef)
-  ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'coach' })
-}
-
-// ─── Plugin definition ───
-
-const notebookPlugin: PluginDef<PluginMsg, PluginState, NotebookConfig> = {
+export default createPluginFactory<NotebookConfig>({
   id:          'notebook',
   version:     '1.0.0',
   description: 'Personal notebook: journal, tracker (habits, expenses, or any numeric metric), todos — exposed as a single "note" tool.',
-
   configDescriptor: config,
-
-  initialState: {
-    initialized:         false,
-    gen:                 0,
-    notebookDir:         'workspace/notebook',
-    model:               '',
-    maxToolLoops:        10,
-    journalRef:          null,
-    trackerRef:          null,
-    todosRef:            null,
-    searchRef:           null,
+  slots: {
+    journal: {
+      factory: (cfg) => {
+        const notebookDir = cfg.notebookDir ?? 'workspace/notebook'
+        return Journal(notebookDir)
+      },
+    },
+    tracker: {
+      factory: (cfg) => {
+        const notebookDir = cfg.notebookDir ?? 'workspace/notebook'
+        return Tracker(notebookDir)
+      },
+    },
+    todos: {
+      factory: (cfg) => {
+        const notebookDir = cfg.notebookDir ?? 'workspace/notebook'
+        return Todos(notebookDir)
+      },
+    },
+    search: {
+      factory: (cfg) => {
+        const notebookDir = cfg.notebookDir ?? 'workspace/notebook'
+        return Search(notebookDir)
+      },
+    },
   },
-
-  lifecycle: onLifecycle({
-    start: (state, ctx) => {
-      const cfg          = ctx.initialConfig() as NotebookConfig | undefined
-      const notebookDir  = cfg?.notebookDir  ?? 'workspace/notebook'
-      const model        = cfg?.agent?.model   ?? 'google/gemini-3.1-pro-preview'
-      const maxToolLoops = cfg?.agent?.maxToolLoops ?? 10
-
-      publishConfigSurface(ctx, config, () => cfg)
-
-      for (const reg of buildNotebookRoutes(notebookDir)) {
-        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
-      }
-
-      const children = spawnChildren(0, notebookDir, model, maxToolLoops, ctx, cfg ?? {})
-
-      ctx.log.info('notebook plugin activated', { notebookDir })
-
-      return {
-        state: {
-          ...state,
-          initialized: true,
-          gen: 0,
-          notebookDir,
-          model,
-          maxToolLoops,
-          ...children,
-        },
-      }
+  agents: {
+    coach: {
+      factory: CoachAgentFactory,
+      options: (cfg, deps) => ({
+        model: cfg.agent?.model ?? 'google/gemini-3.5-flash',
+        maxToolLoops: cfg.agent?.maxToolLoops ?? 15,
+        notebookDir: cfg.notebookDir ?? 'workspace/notebook',
+        tools: buildToolCollection(
+          deps.journal as ActorRef<ToolMsg>,
+          deps.tracker as ActorRef<ToolMsg>,
+          deps.todos as ActorRef<ToolMsg>,
+          deps.search as ActorRef<ToolMsg>,
+        ),
+        toolFilter: cfg.agent?.toolFilter,
+      }),
+      dependsOn: ['journal', 'tracker', 'todos', 'search'],
     },
-
-    stopped: (state, ctx) => {
-      stopChildren(state, ctx)
-      for (const reg of buildNotebookRoutes(state.notebookDir)) {
-        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, match: reg.match, handler: null })
-      }
-
-      deleteConfigSurface(ctx, config)
-
-      ctx.log.info('notebook plugin deactivating')
-      return { state }
-    },
-  }),
-
-  handler: onMessage<PluginMsg, PluginState>({
-    config: (state, msg, ctx) => {
-      // Tombstone old routes
-      for (const reg of buildNotebookRoutes(state.notebookDir)) {
-        ctx.deleteRetained(RouteRegistrationTopic, reg.id, { id: reg.id, method: reg.method, path: reg.path, match: reg.match, handler: null })
-      }
-
-      stopChildren(state, ctx)
-      const cfg          = msg.slice
-      const notebookDir  = cfg?.notebookDir  ?? 'workspace/notebook'
-      const model        = cfg?.agent?.model   ?? 'google/gemini-3.1-pro-preview'
-      const maxToolLoops = cfg?.agent?.maxToolLoops ?? 10
-      const gen          = state.gen + 1
-
-      // Re-register routes with new notebookDir
-      for (const reg of buildNotebookRoutes(notebookDir)) {
-        ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
-      }
-
-      const children = spawnChildren(gen, notebookDir, model, maxToolLoops, ctx, cfg ?? {})
-
-      return {
-        state: {
-          ...state,
-          gen,
-          notebookDir,
-          model,
-          maxToolLoops,
-          ...children,
-        },
-      }
-    },
-  }),
-}
-
-export default notebookPlugin
+  },
+  routes: (cfg) => {
+    const notebookDir = cfg.notebookDir ?? 'workspace/notebook'
+    return buildNotebookRoutes(notebookDir)
+  },
+})

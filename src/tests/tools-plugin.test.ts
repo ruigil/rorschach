@@ -238,7 +238,7 @@ describe('tools plugin', () => {
       tools: {},
     }
 
-    const masked = toolsPlugin.maskState!(state)
+    const masked = toolsPlugin.maskState!(state as any)
 
     expect((masked as typeof state).webSearch.config?.apiKey).toBe('[redacted]')
     expect((masked as typeof state).webSearch.config?.count).toBe(20)
@@ -260,7 +260,7 @@ describe('tools plugin', () => {
       tools: {},
     }
 
-    const masked = toolsPlugin.maskState!(state)
+    const masked = toolsPlugin.maskState!(state as any)
 
     expect((masked as typeof state).webSearch.config).toBeNull()
   })

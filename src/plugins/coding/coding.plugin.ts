@@ -1,9 +1,8 @@
-import type { ActorContext, ActorRef, PluginDef } from '../../system/index.ts'
+import { createPluginFactory, defineConfig } from '../../system/index.ts'
+import type { ActorRef } from '../../system/index.ts'
 import { dirname } from 'node:path'
-import { defineConfig, deleteConfigSurface, onLifecycle, onMessage, publishConfigSurface } from '../../system/index.ts'
-import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
+import { AgentRegistrationTopic } from '../../types/agents.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { UiSurfaceRegistrationTopic, type UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import { ToolRegistrationTopic, type ToolCollection, type ToolMsg } from '../../types/tools.ts'
 import { ArtifactTools, deleteDocTool, writeDocPageTool } from './artifact-tools.ts'
 import { CodingAgentFactory } from './coding-agent.ts'
@@ -11,18 +10,7 @@ import { DocsAgent, showDocsTool, updateDocsTool } from './docs-agent.ts'
 import { ProjectShell, codingBashTool, codingReadTool } from './project-shell.ts'
 import { buildCodingRoutes, codingSchemas } from './routes.ts'
 import type { ArtifactToolsMsg, CodingConfig, DocsAgentMsg, ProjectShellMsg } from './types.ts'
-
-type PluginMsg =
-  | { type: 'config'; slice: CodingConfig | undefined }
-
-type PluginState = {
-  initialized: boolean
-  gen: number
-  cfg: CodingConfig
-  shellRef: ActorRef<ProjectShellMsg> | null
-  artifactToolsRef: ActorRef<ArtifactToolsMsg> | null
-  docsAgentRef: ActorRef<DocsAgentMsg> | null
-}
+import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 
 const defaultConfig: CodingConfig = {
   projectRoot: '/home/rigel/rorschach/src',
@@ -74,26 +62,6 @@ const buildDocsTools = (
   [writeDocPageTool.name]: { ...writeDocPageTool, ref: artifactToolsRef as unknown as ActorRef<ToolMsg> },
 })
 
-
-
-const publishRoutes = (ctx: ActorContext<PluginMsg>, cfg: CodingConfig): void => {
-  for (const reg of buildCodingRoutes(cfg.artifactsDir)) {
-    ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
-  }
-}
-
-const deleteRoutes = (ctx: ActorContext<PluginMsg>, cfg: CodingConfig): void => {
-  for (const reg of buildCodingRoutes(cfg.artifactsDir)) {
-    ctx.deleteRetained(RouteRegistrationTopic, reg.id, {
-      id: reg.id,
-      method: reg.method,
-      path: reg.path,
-      match: reg.match,
-      handler: null,
-    })
-  }
-}
-
 const docsSurfaceRegistration: UiSurfaceRegistration = {
   id: 'docs',
   version: '1.0.0',
@@ -111,121 +79,75 @@ const docsSurfaceRegistration: UiSurfaceRegistration = {
   frameTypes: ['docWorkspace'],
 }
 
-const publishSurface = (ctx: ActorContext<PluginMsg>): void => {
-  ctx.publishRetained(UiSurfaceRegistrationTopic, 'docs', docsSurfaceRegistration)
-}
-
-const deleteSurface = (ctx: ActorContext<PluginMsg>): void => {
-  ctx.deleteRetained(UiSurfaceRegistrationTopic, 'docs', {
-    id: 'docs',
-    window: null,
-    moduleUrl: null,
-    frameTypes: null,
-  })
-}
-
-const stopChildren = (state: PluginState, ctx: ActorContext<PluginMsg>): void => {
-  if (state.docsAgentRef) ctx.stop(state.docsAgentRef)
-  if (state.artifactToolsRef) ctx.stop(state.artifactToolsRef)
-  if (state.shellRef) ctx.stop(state.shellRef)
-}
-
-const spawnChildren = (
-  ctx: ActorContext<PluginMsg>,
-  cfg: CodingConfig,
-  gen: number,
-): Pick<PluginState, 'shellRef' | 'artifactToolsRef' | 'docsAgentRef'> => {
-  const shellRef = ctx.spawn(`coding-shell-${gen}`, ProjectShell({
-    projectRoot: cfg.projectRoot,
-    projectMount: cfg.projectMount,
-    workspaceDir: cfg.workspaceDir ?? dirname(cfg.artifactsDir),
-    artifactsDir: cfg.artifactsDir,
-  })) as ActorRef<ProjectShellMsg>
-
-  const artifactToolsRef = ctx.spawn(`coding-artifacts-${gen}`, ArtifactTools(cfg.artifactsDir)) as ActorRef<ArtifactToolsMsg>
-  const docsAgentRef = ctx.spawn(`coding-docs-agent-${gen}`, DocsAgent({
-    model: cfg.docs.model,
-    maxToolLoops: cfg.docs.maxToolLoops ?? 30,
-    projectMount: cfg.projectMount,
-    artifactsDir: cfg.artifactsDir,
-    tools: buildDocsTools(shellRef, artifactToolsRef),
-  })) as ActorRef<DocsAgentMsg>
-
-  ctx.publishRetained(ToolRegistrationTopic, updateDocsTool.name, {
-    ...updateDocsTool,
-    ref: docsAgentRef as unknown as ActorRef<ToolMsg>,
-    mayBeLongRunning: true,
-  })
-
-  ctx.publish(AgentRegistrationTopic, {
-    type: 'register',
-    descriptor: CodingAgentFactory({
-      model: cfg.coding.model,
-      maxToolLoops: cfg.coding.maxToolLoops,
-      projectMount: cfg.projectMount,
-      tools: buildCodingTools(shellRef, docsAgentRef),
-      toolFilter: cfg.coding.toolFilter,
-    }),
-  })
-
-  return { shellRef, artifactToolsRef, docsAgentRef }
-}
-
-const codingPlugin: PluginDef<PluginMsg, PluginState, CodingConfig> = {
+export default createPluginFactory<CodingConfig>({
   id: 'coding',
   version: '1.0.0',
   description: 'Coding agent for read-only project inspection and app-styled documentation generation',
-
   configDescriptor: config,
-
-  initialState: {
-    initialized: false,
-    gen: 0,
-    cfg: defaultConfig,
-    shellRef: null,
-    artifactToolsRef: null,
-    docsAgentRef: null,
+  slots: {
+    shell: {
+      factory: (cfg) => {
+        const merged = mergeConfig(cfg)
+        return ProjectShell({
+          projectRoot: merged.projectRoot,
+          projectMount: merged.projectMount,
+          workspaceDir: merged.workspaceDir ?? dirname(merged.artifactsDir),
+          artifactsDir: merged.artifactsDir,
+        })
+      },
+    },
+    artifactTools: {
+      factory: (cfg) => {
+        const merged = mergeConfig(cfg)
+        return ArtifactTools(merged.artifactsDir)
+      },
+    },
+    docsAgent: {
+      factory: (cfg, deps) => {
+        const merged = mergeConfig(cfg)
+        return DocsAgent({
+          model: merged.docs.model,
+          maxToolLoops: merged.docs.maxToolLoops ?? 30,
+          projectMount: merged.projectMount,
+          artifactsDir: merged.artifactsDir,
+          tools: buildDocsTools(
+            deps.shell as ActorRef<ProjectShellMsg>,
+            deps.artifactTools as ActorRef<ArtifactToolsMsg>
+          ),
+        })
+      },
+      dependsOn: ['shell', 'artifactTools'],
+    },
   },
-
-  lifecycle: onLifecycle({
-    start: (_state, ctx) => {
-      const cfg = mergeConfig(ctx.initialConfig() as CodingConfig | undefined)
-      publishConfigSurface(ctx, config, () => cfg)
-      publishRoutes(ctx, cfg)
-      publishSurface(ctx)
-      const children = spawnChildren(ctx, cfg, 0)
-      ctx.log.info('coding plugin activated', { projectRoot: cfg.projectRoot, artifactsDir: cfg.artifactsDir })
-      return { state: { initialized: true, gen: 0, cfg, ...children } }
+  tools: {
+    updateDocs: {
+      schema: updateDocsTool.schema,
+      slot: 'docsAgent',
+      mayBeLongRunning: true,
     },
-
-    stopped: (state, ctx) => {
-      ctx.deleteRetained(ToolRegistrationTopic, updateDocsTool.name, { name: updateDocsTool.name, ref: null })
-      deleteRoutes(ctx, state.cfg)
-      deleteSurface(ctx)
-      stopChildren(state, ctx)
-      ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'coding' })
-      deleteConfigSurface(ctx, config)
-      ctx.log.info('coding plugin deactivated')
-      return { state }
+  },
+  agents: {
+    coding: {
+      factory: CodingAgentFactory,
+      options: (cfg, deps) => {
+        const merged = mergeConfig(cfg)
+        return {
+          model: merged.coding.model,
+          maxToolLoops: merged.coding.maxToolLoops,
+          projectMount: merged.projectMount,
+          tools: buildCodingTools(
+            deps.shell as ActorRef<ProjectShellMsg>,
+            deps.docsAgent as ActorRef<DocsAgentMsg>
+          ),
+          toolFilter: merged.coding.toolFilter,
+        }
+      },
+      dependsOn: ['shell', 'docsAgent'],
     },
-  }),
-
-  handler: onMessage<PluginMsg, PluginState>({
-    config: (state, msg, ctx) => {
-      ctx.deleteRetained(ToolRegistrationTopic, updateDocsTool.name, { name: updateDocsTool.name, ref: null })
-      deleteRoutes(ctx, state.cfg)
-      deleteSurface(ctx)
-      stopChildren(state, ctx)
-      ctx.publish(AgentRegistrationTopic, { type: 'unregister', mode: 'coding' })
-
-      const cfg = mergeConfig(msg.slice)
-      const gen = state.gen + 1
-      publishRoutes(ctx, cfg)
-      publishSurface(ctx)
-      const children = spawnChildren(ctx, cfg, gen)
-      return { state: { initialized: true, gen, cfg, ...children } }
-    },
-  }),
-}
-
-export default codingPlugin
+  },
+  routes: (cfg) => {
+    const merged = mergeConfig(cfg)
+    return buildCodingRoutes(merged.artifactsDir)
+  },
+  uiSurface: docsSurfaceRegistration,
+})

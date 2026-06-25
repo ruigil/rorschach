@@ -1,6 +1,7 @@
 import type { ActorDef, ActorRef } from '../../system/index.ts'
-import { onMessage } from '../../system/index.ts'
+import { onMessage, onLifecycle } from '../../system/index.ts'
 import { ask } from '../../system/index.ts'
+import { IdentityProviderTopic } from '../../types/identity.ts'
 import type { IdentityProviderMsg, Identity } from '../../types/identity.ts'
 import type { AuthenticatorMsg, AuthSession, UserStoreMsg, User } from './types.ts'
 
@@ -67,6 +68,16 @@ export const IdentityProvider = (opts: {
         )
           .then(user => replyTo.send(user ? userToIdentity(user) : null))
           .catch(() => replyTo.send(null))
+        return { state }
+      },
+    }),
+    lifecycle: onLifecycle({
+      start: (state, ctx) => {
+        ctx.publishRetained(IdentityProviderTopic, 'identity-provider', { ref: ctx.self })
+        return { state }
+      },
+      stopped: (state, ctx) => {
+        ctx.deleteRetained(IdentityProviderTopic, 'identity-provider', { ref: null })
         return { state }
       },
     }),

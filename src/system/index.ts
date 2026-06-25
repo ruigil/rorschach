@@ -5,6 +5,8 @@ export { invokeTool, defineTool, parseToolArgs, applyToolFilter } from './agent/
 export type { InvokeToolArgs, InvokeToolOptions } from './agent/tool-utils.ts'
 export { onLifecycle, onMessage } from './actor/match.ts'
 export { watchTopic } from './actor/services.ts'
+export { createPluginFactory } from './factory.ts'
+export type { SlotDeclaration, AgentDeclaration, ToolDeclaration, PluginBlueprint } from './factory.ts'
 
 // ─── Config utilities ───
 export {
