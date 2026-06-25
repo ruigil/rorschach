@@ -1,16 +1,9 @@
 import {
-  LogTopic,
-  MetricsTopic,
   SystemLifecycleTopic,
-  TraceTopic,
   ConfigUpdateRequestTopic,
 } from './system/index.ts'
-import { OutboundAdminBroadcastTopic, UserPresenceTopic, OutboundUserMessageTopic } from './types/events.ts'
 import { loadConfig, saveConfig } from './config.ts'
-import type { LogEvent, MetricsEvent, LifecycleEvent, TraceSpan } from './system/index.ts'
-import type { ConfigUpdateRequest } from './system/index.ts'
-import { ToolRegistrationTopic } from './types/tools.ts'
-import type { ToolRegistrationEvent } from './types/tools.ts'
+import type { LifecycleEvent, ConfigUpdateRequest } from './system/index.ts'
 import { AgentSystem } from './system/index.ts'
 
 if (!process.env.OPENROUTER_API_KEY) {
@@ -25,62 +18,6 @@ const { plugins, config, configPath } = await loadConfig()
 // ─── Create the actor system (plugins loaded in topo-sorted order) ───
 
 const system = await AgentSystem({ plugins, config })
-
-// ─── Forward logs to the observability page via WebSocket broadcast ───
-
-system.subscribe(LogTopic, (event: LogEvent) => {
-  system.publish(OutboundAdminBroadcastTopic, {
-    text: JSON.stringify({ type: 'log', ...event }),
-  })
-})
-
-// ─── Forward metrics snapshots to the observability page ───
-
-system.subscribe(MetricsTopic, (event: MetricsEvent) => {
-  system.publish(OutboundAdminBroadcastTopic, {
-    text: JSON.stringify({ type: 'metrics', ...event }),
-  })
-})
-
-// ─── Forward tool registrations to the observability page ───
-// Keep a local snapshot so new clients get the full list on connect.
-
-const toolsSnapshot: Record<string, Extract<ToolRegistrationEvent, { schema: unknown }>> = {}
-
-system.subscribe(ToolRegistrationTopic, (event: ToolRegistrationEvent) => {
-  if (event.ref === null) {
-    delete toolsSnapshot[event.name]
-    system.publish(OutboundAdminBroadcastTopic, {
-      text: JSON.stringify({ type: 'tool_unregistered', name: event.name }),
-    })
-  } else {
-    toolsSnapshot[event.name] = event
-    system.publish(OutboundAdminBroadcastTopic, {
-      text: JSON.stringify({ type: 'tool_registered', name: event.name, schema: event.schema }),
-    })
-  }
-})
-
-// ─── Replay current tools to each newly connected user ───
-
-system.subscribe(UserPresenceTopic, (event) => {
-  if (event.status !== 'present') return
-  const { userId } = event
-  for (const toolEvent of Object.values(toolsSnapshot)) {
-    system.publish(OutboundUserMessageTopic, {
-      userId,
-      text: JSON.stringify({ type: 'tool_registered', name: toolEvent.name, schema: toolEvent.schema }),
-    })
-  }
-})
-
-// ─── Forward trace spans to the observability page ───
-
-system.subscribe(TraceTopic, (span: TraceSpan) => {
-  system.publish(OutboundAdminBroadcastTopic, {
-    text: JSON.stringify({ type: 'trace', ...span }),
-  })
-})
 
 // ─── Apply config changes from the web UI ───
 
@@ -107,3 +44,4 @@ process.on('SIGINT', async () => {
   await system.shutdown()
   process.exit(0)
 })
+

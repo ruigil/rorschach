@@ -1,6 +1,7 @@
 import { MetricsTopic } from '../../system/index.ts'
 import type { ActorDef, MetricsEvent } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
+import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
 
 type MetricsMsg = { type: 'tick' }
 
@@ -25,6 +26,9 @@ export const Metrics = (options: MetricsActorOptions): ActorDef<MetricsMsg, null
         topics: ctx.topicSnapshots(),
       }
       ctx.publish(MetricsTopic, event)
+      ctx.publish(OutboundAdminBroadcastTopic, {
+        text: JSON.stringify({ type: 'metrics', ...event }),
+      })
       return { state }
     }
   }),

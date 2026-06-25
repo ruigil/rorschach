@@ -2,6 +2,7 @@ import { appendFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { ActorDef, MessageHandler } from '../../system/index.ts'
 import { LogTopic } from '../../system/index.ts'
+import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
 import type { JsonlLoggerMsg } from './types.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 
@@ -86,7 +87,12 @@ export const JsonlLogger = (
         return { state, stash: true }
       }
 
-      // Drop events below the minimum level
+      // Broadcast to admin WS clients
+      context.publish(OutboundAdminBroadcastTopic, {
+        text: JSON.stringify({ type: 'log', ...message.event }),
+      })
+
+      // Drop events below the minimum level for file storage
       if (LOG_LEVEL_ORDER[message.event.level] < minLevelValue) return { state }
 
       const line = JSON.stringify(message.event)

@@ -22,6 +22,8 @@ import { IdentityProviderTopic, type Identity } from '../../types/identity.ts'
 import { resolveIdentity, resolveCookieIdentity } from './types.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 import { AgentCatalogTopic, SwitchAgentTopic, type AgentCatalogEvent } from '../../types/agents.ts'
+import { ToolRegistrationTopic } from '../../types/tools.ts'
+import type { ToolRegistrationEvent } from '../../types/tools.ts'
 
 import { canAccessAdminSurface, authorizeConfigAccess } from './http/security.ts'
 import { saveAttachmentsToTempFiles } from './http/media.ts'
@@ -47,6 +49,7 @@ export type HttpMessage =
   | { type: 'adminBroadcast'; text: string }
   | { type: 'send'; userId: string; text: string }
   | { type: '_configSchemaChanged'; section: ConfigSchemaSection }
+  | { type: '_toolRegistration'; event: ToolRegistrationEvent }
   | { type: '_configUpdate'; pluginId: string; patch: Record<string, unknown> }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
@@ -68,6 +71,7 @@ export type HttpState = {
   agentCatalog:        AgentCatalogEvent['agents']
   userIdsToClientIds:  Record<string, string[]>
   surfaces:             Record<string, UiSurfaceRegistration>
+  toolsSnapshot:       Record<string, Extract<ToolRegistrationEvent, { schema: unknown }>>
 }
 
 // ─── Options ───
@@ -117,7 +121,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
   }
 
   return {
-    initialState: { server: null, connections: 0, activeSpans: {}, llmProviderRef: null, identityProviderRef: null, agentCatalog: [], userIdsToClientIds: {}, surfaces: {} },
+    initialState: { server: null, connections: 0, activeSpans: {}, llmProviderRef: null, identityProviderRef: null, agentCatalog: [], userIdsToClientIds: {}, surfaces: {}, toolsSnapshot: {} },
     handler: onMessage({
 
       connected: (state, message, context) => {
@@ -145,10 +149,26 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         for (const reg of Object.values(state.surfaces)) {
           state.server?.publish(`client:${message.clientId}`, JSON.stringify({ type: 'ui.surface', reg }))
         }
+        for (const toolEvent of Object.values(state.toolsSnapshot)) {
+          state.server?.publish(`client:${message.clientId}`, JSON.stringify({ type: 'tool_registered', name: toolEvent.name, schema: toolEvent.schema }))
+        }
         return {
           state: { ...state, connections, userIdsToClientIds },
           events,
         }
+      },
+
+      _toolRegistration: (state, message) => {
+        const { event } = message
+        const toolsSnapshot = { ...state.toolsSnapshot }
+        if (event.ref === null) {
+          delete toolsSnapshot[event.name]
+          state.server?.publish(ADMIN_CHANNEL, JSON.stringify({ type: 'tool_unregistered', name: event.name }))
+        } else {
+          toolsSnapshot[event.name] = event
+          state.server?.publish(ADMIN_CHANNEL, JSON.stringify({ type: 'tool_registered', name: event.name, schema: event.schema }))
+        }
+        return { state: { ...state, toolsSnapshot } }
       },
 
       switchMode: (state, message, context) => {
@@ -389,6 +409,11 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         context.subscribe(AgentCatalogTopic, (e) => ({
           type: '_agentCatalog' as const,
           agents: e.agents,
+        }))
+
+        context.subscribe(ToolRegistrationTopic, (e) => ({
+          type: '_toolRegistration' as const,
+          event: e,
         }))
 
         const server = startServer({

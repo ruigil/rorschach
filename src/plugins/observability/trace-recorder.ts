@@ -1,6 +1,7 @@
 import { appendFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { TraceTopic, type ActorDef } from '../../system/index.ts'
+import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
 import type { TraceRecorderMsg } from './types.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 
@@ -48,6 +49,11 @@ export const TraceRecorder = (
     initialState: { tracesDir, written: 0, buffer: [] },
     handler: onMessage({
       span(state, message, context) {
+        // Broadcast to admin WS clients
+        context.publish(OutboundAdminBroadcastTopic, {
+          text: JSON.stringify({ type: 'trace', ...message.span }),
+        })
+
         const line = JSON.stringify(message.span)
 
         if (flushIntervalMs && flushIntervalMs > 0) {
