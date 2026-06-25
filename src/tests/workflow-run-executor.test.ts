@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { AgentSystem, ask, defineTool, type ActorDef } from '../system/index.ts'
 import { WorkflowRunExecutor } from '../plugins/workflows/workflow-run-executor.ts'
-import { WorkflowRunUpdateTopic, type Workflow, type WorkflowRunExecutorMsg, type WorkflowRunExecutorReply, type WorkflowRunState } from '../plugins/workflows/types.ts'
+import { WorkflowEventTopic, type Workflow, type WorkflowRunExecutorMsg, type WorkflowRunExecutorReply, type WorkflowRunState } from '../plugins/workflows/types.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import { JobRegistryTopic, type ToolCollection, type ToolMsg, type ToolReply } from '../types/tools.ts'
 import { saveWorkflowRun, initialRunState } from '../plugins/workflows/workflow-store.ts'
@@ -69,7 +69,7 @@ describe('workflow run executor', () => {
     const dir = await makeDir()
     const system = await AgentSystem()
     const updates: WorkflowRunState[] = []
-    system.subscribe(WorkflowRunUpdateTopic, event => updates.push(event.run))
+    system.subscribe(WorkflowEventTopic, event => updates.push(event.run!))
     const toolRef = system.spawn('fake-read-tool', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
 
@@ -102,7 +102,7 @@ describe('workflow run executor', () => {
     const dir = await makeDir()
     const system = await AgentSystem()
     const updates: WorkflowRunState[] = []
-    system.subscribe(WorkflowRunUpdateTopic, event => updates.push(event.run))
+    system.subscribe(WorkflowEventTopic, event => updates.push(event.run!))
     const toolRef = system.spawn('fake-read-tool-complete-update', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
 

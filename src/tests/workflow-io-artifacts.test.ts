@@ -168,7 +168,7 @@ describe('workflow IO and artifacts', () => {
 
     const reply = await handleWorkflowTool(
       { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1', inputs: { city: 'Paris' } }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'anonymous' },
-      { workflowsDir: join(dir, '..'), workflowRunnerRef: runner, publishGraph: () => {} },
+      { workflowsDir: join(dir, '..'), workflowRunnerRef: runner, ctx: { publish: () => {} } },
     )
 
     expect(reply.type).toBe('toolPending')
@@ -197,7 +197,7 @@ describe('workflow IO and artifacts', () => {
 
     const reply = await handleWorkflowTool(
       { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1', inputs: { city: 'Paris' } }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'anonymous' },
-      { workflowsDir: join(dir, '..'), workflowRunnerRef: runner, publishGraph: () => {} },
+      { workflowsDir: join(dir, '..'), workflowRunnerRef: runner, ctx: { publish: () => {} } },
     )
 
     expect(reply.type).toBe('toolResult')

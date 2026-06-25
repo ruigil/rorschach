@@ -1,6 +1,7 @@
 import type { ActorRef, ActorDef } from '../../system/index.ts'
 import { ask, defineTool, parseToolArgs, onMessage } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply, ToolMsg } from '../../types/tools.ts'
+import { WorkflowEventTopic } from './types.ts'
 import type {
   Workflow,
   WorkflowRunnerMsg,
@@ -227,13 +228,13 @@ const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch:
 export type WorkflowToolDeps = {
   workflowsDir: string
   workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
-  publishGraph: (userId: string, workflowId: string, runId?: string) => void
+  ctx: any
 }
 
 const toolError = (error: string): ToolReply => ({ type: 'toolError', error })
 
 export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolDeps): Promise<ToolReply> => {
-  const { workflowsDir, workflowRunnerRef, publishGraph } = deps
+  const { workflowsDir, workflowRunnerRef, ctx } = deps
 
   if (msg.toolName === listExecutionToolsTool.name) {
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'listExecutionTools', replyTo }), { timeoutMs: 5_000 })
@@ -252,7 +253,7 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
     if (!parsed.ok) return toolError(parsed.error)
     const result = await saveWorkflow(workflowsDir, parsed.workflow)
     if (!result.ok) return toolError(result.error)
-    publishGraph(msg.userId, result.data.workflow.id)
+    ctx.publish(WorkflowEventTopic, { userId: msg.userId, workflowId: result.data.workflow.id })
     return { type: 'toolResult', result: { text: `Workflow saved to ${result.data.filepath} - ${result.data.workflow.tasks.length} tasks.` } }
   }
 
@@ -264,7 +265,7 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
       if (!result.ok) return toolError(result.error)
       return { type: 'toolResult', result: { text: JSON.stringify(result.data.workflow, null, 2) } }
     }
-    publishGraph(msg.userId, arg.workflowId, arg.runId)
+    ctx.publish(WorkflowEventTopic, { userId: msg.userId, workflowId: arg.workflowId, runId: arg.runId })
     return { type: 'toolResult', result: { text: `Opened workflow graph for ${arg.workflowId}.` } }
   }
 
@@ -307,7 +308,7 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
     )
 
     if (!reply.ok || !('run' in reply)) return toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
-    publishGraph(msg.userId, reply.run.workflowId, reply.run.runId)
+    ctx.publish(WorkflowEventTopic, { userId: msg.userId, workflowId: reply.run.workflowId, runId: reply.run.runId })
     if (reply.run.status !== 'running') {
       return { type: 'toolResult', result: { text: JSON.stringify(reply.run, null, 2) } }
     }
@@ -343,12 +344,11 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
 export const WorkflowToolsActor = (options: {
   workflowsDir: string
   workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
-  publishGraph: (userId: string, workflowId: string, runId?: string) => void
 }): ActorDef<ToolMsg, null> => ({
   initialState: null,
   handler: onMessage<ToolMsg, null>({
     invoke: (state, msg, ctx) => {
-      handleWorkflowTool(msg, options).then(
+      handleWorkflowTool(msg, { ...options, ctx }).then(
         reply => msg.replyTo.send(reply),
         error => msg.replyTo.send({ type: 'toolError', error: String(error) }),
       )

@@ -4,7 +4,7 @@ import type { ActorContext, ActorDef, ActorRef, PersistenceAdapter } from '../..
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { JobRegistryTopic, type ToolCollection } from '../../types/tools.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
-import { WorkflowRunUpdateTopic } from './types.ts'
+import { WorkflowEventTopic } from './types.ts'
 import type {
   Workflow,
   WorkflowDependencyOutput,
@@ -142,7 +142,7 @@ const publishTerminalJob = (ctx: ActorContext<WorkflowRunExecutorMsg>, run: Work
 }
 
 const publishRunUpdate = (ctx: ActorContext<WorkflowRunExecutorMsg>, run: WorkflowRunState): void => {
-  ctx.publish(WorkflowRunUpdateTopic, {
+  ctx.publish(WorkflowEventTopic, {
     userId: run.userId,
     workflowId: run.workflowId,
     runId: run.runId,

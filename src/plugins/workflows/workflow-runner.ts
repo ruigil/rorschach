@@ -3,7 +3,7 @@ import { ask, onLifecycle, onMessage } from '../../system/index.ts'
 import { ToolRegistrationTopic, type ToolCollection } from '../../types/tools.ts'
 import { OutboundUserMessageTopic } from '../../types/events.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
-import { WorkflowRunUpdateTopic } from './types.ts'
+import { WorkflowEventTopic } from './types.ts'
 import type {
   WorkflowRunExecutorMsg,
   WorkflowRunExecutorReply,
@@ -166,7 +166,7 @@ export const WorkflowRunner = (
           if ('schema' in toolEvent) return { type: '_toolRegistered' as const, tool: toolEvent }
           return { type: '_toolUnregistered' as const, name: toolEvent.name }
         })
-        ctx.subscribe(WorkflowRunUpdateTopic, event => ({ type: '_runUpdated' as const, event }))
+        ctx.subscribe(WorkflowEventTopic, event => ({ type: '_runUpdated' as const, event }))
         return { state }
       },
       terminated: (state, event, ctx) => {
@@ -199,14 +199,23 @@ export const WorkflowRunner = (
       },
 
       _runUpdated: (state, msg, ctx) => {
-        const run = msg.event.run
-        const text = JSON.stringify({
-          type: 'workflowRunUpdated',
-          workflowId: msg.event.workflowId,
-          runId: msg.event.runId,
-          run,
-        })
-        ctx.publish(OutboundUserMessageTopic, { userId: msg.event.userId, text })
+        const { userId, workflowId, runId, run } = msg.event
+        if (run && runId) {
+          const text = JSON.stringify({
+            type: 'workflowRunUpdated',
+            workflowId,
+            runId,
+            run,
+          })
+          ctx.publish(OutboundUserMessageTopic, { userId, text })
+        } else {
+          const text = JSON.stringify({
+            type: 'workflowGraph',
+            workflowId,
+            ...(runId ? { runId } : {}),
+          })
+          ctx.publish(OutboundUserMessageTopic, { userId, text })
+        }
         return { state }
       },
 

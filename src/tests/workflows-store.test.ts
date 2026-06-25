@@ -6,6 +6,7 @@ import { AgentSystem, ask, type ActorDef } from '../system/index.ts'
 import { listWorkflows, getWorkflow, getWorkflowGraph, saveWorkflow } from '../plugins/workflows/workflow-store.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
 import { handleWorkflowTool, listExecutionToolsTool, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool, startWorkflowRunTool } from '../plugins/workflows/workflow-tools.ts'
+import { WorkflowEventTopic } from '../plugins/workflows/types.ts'
 import type { Workflow, WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowRunState } from '../plugins/workflows/types.ts'
 import type { ActorRef } from '../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
@@ -184,20 +185,27 @@ describe('workflow store', () => {
     })
 
     const runner = system.spawn('workflow-runner', FakeRunner())
-    const publishGraph = (userId: string, workflowId: string, runId?: string) => {
-      events.push({ userId, text: JSON.stringify({ type: 'workflowGraph', workflowId, ...(runId ? { runId } : {}) }) })
+    const ctx = {
+      publish: (topic: any, event: any) => {
+        if (topic === WorkflowEventTopic) {
+          events.push({
+            userId: event.userId,
+            text: JSON.stringify({ type: 'workflowGraph', workflowId: event.workflowId, ...(event.runId ? { runId: event.runId } : {}) })
+          })
+        }
+      }
     }
 
     const listReply = await handleWorkflowTool(
       { type: 'invoke', toolName: listWorkflowsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { workflowsDir: dir, workflowRunnerRef: runner, publishGraph },
+      { workflowsDir: dir, workflowRunnerRef: runner, ctx },
     )
     expect(listReply.type).toBe('toolResult')
     if (listReply.type === 'toolResult') expect(listReply.result.text).toContain('Ship workflow workspace')
 
     const graphReply = await handleWorkflowTool(
       { type: 'invoke', toolName: showWorkflowGraphTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1' }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { workflowsDir: dir, workflowRunnerRef: runner, publishGraph },
+      { workflowsDir: dir, workflowRunnerRef: runner, ctx },
     )
     expect(graphReply.type).toBe('toolResult')
     expect(events.map(event => JSON.parse(event.text))).toContainEqual({ type: 'workflowGraph', workflowId: 'workflow-1' })
@@ -223,7 +231,7 @@ describe('workflow store', () => {
           dependencies: [],
         }],
       }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { workflowsDir: dir, workflowRunnerRef: runner, publishGraph: () => {} },
+      { workflowsDir: dir, workflowRunnerRef: runner, ctx: { publish: () => {} } },
     )
 
     expect(reply.type).toBe('toolResult')
@@ -242,7 +250,7 @@ describe('workflow store', () => {
 
     const reply = await handleWorkflowTool(
       { type: 'invoke', toolName: listExecutionToolsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { workflowsDir: dir, workflowRunnerRef: runner, publishGraph: () => {} },
+      { workflowsDir: dir, workflowRunnerRef: runner, ctx: { publish: () => {} } },
     )
 
     expect(reply.type).toBe('toolResult')

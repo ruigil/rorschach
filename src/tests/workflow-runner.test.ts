@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { AgentSystem, ask, defineTool, type ActorDef } from '../system/index.ts'
 import { WorkflowRunner } from '../plugins/workflows/workflow-runner.ts'
-import { WorkflowRunUpdateTopic, type Workflow, type WorkflowRunnerMsg, type WorkflowRunnerReply, type WorkflowRunState } from '../plugins/workflows/types.ts'
+import { WorkflowEventTopic, type Workflow, type WorkflowRunnerMsg, type WorkflowRunnerReply, type WorkflowRunState } from '../plugins/workflows/types.ts'
 import { startWorkflowRunTool } from '../plugins/workflows/workflow-tools.ts'
 import { ToolRegistrationTopic, type ToolMsg, type ToolReply } from '../types/tools.ts'
 import { OutboundUserMessageTopic } from '../types/events.ts'
@@ -109,7 +109,7 @@ describe('workflow runner', () => {
     const wf = workflow(['missing_tool'])
     const { system, runner, runsDir } = await spawnRunner(wf)
     const updates: Array<{ userId: string; runId: string; runStatus: string }> = []
-    system.subscribe(WorkflowRunUpdateTopic, event => updates.push({ userId: event.userId, runId: event.runId, runStatus: event.run.status }))
+    system.subscribe(WorkflowEventTopic, event => updates.push({ userId: event.userId, runId: event.runId!, runStatus: event.run!.status }))
 
     const run = initialRunState(wf, 'run-id-2')
     await writeFile(join(runsDir, 'run-id-2.json'), JSON.stringify(run))
@@ -140,7 +140,7 @@ describe('workflow runner', () => {
       outbound.push({ userId: e.userId, frame: JSON.parse(e.text) })
     })
 
-    system.publish(WorkflowRunUpdateTopic, {
+    system.publish(WorkflowEventTopic, {
       userId: 'u1',
       workflowId: 'workflow-1',
       runId: 'run-bridge',
