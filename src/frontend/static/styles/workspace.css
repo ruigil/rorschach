@@ -204,6 +204,33 @@ r-window.floating {
   display: flex;
 }
 
+#panel-chat:not(.workspaces-open) .chat-dock-slot {
+  width: 100% !important;
+}
+
+@media (min-width: 861px) {
+  #panel-chat.workspaces-open .chat-dock-slot {
+    width: var(--chat-resized-width, 50%) !important;
+  }
+}
+
+.chat-dock-slot .r-window-chrome {
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.chat-dock-slot .r-window-header {
+  height: 38px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  background: rgba(7, 21, 32, 0.95);
+}
+
+#panel-chat:not(.workspaces-open) .chat-dock-slot .r-window-resizer {
+  display: none !important;
+}
+
 /* Workspace tabbed slot (Right Slot) */
 .workspace-dock-slot {
   flex: 1;

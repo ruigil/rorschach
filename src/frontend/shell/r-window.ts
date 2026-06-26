@@ -113,7 +113,7 @@ export class RWindow extends RorschachBase {
     resizer.setPointerCapture(e.pointerId);
     document.body.classList.add('r-window-resizing');
 
-    const initialWidth = win.w;
+    const initialWidth = this.offsetWidth;
     const startX = e.clientX;
 
     const onPointerMove = (moveEv: PointerEvent) => {
@@ -127,6 +127,9 @@ export class RWindow extends RorschachBase {
       }
 
       this._updateState({ w: nextWidth });
+      if (this.windowId === 'chat') {
+        this.style.setProperty('--chat-resized-width', `${nextWidth}px`);
+      }
     };
 
     const onPointerUp = () => {
@@ -180,6 +183,9 @@ export class RWindow extends RorschachBase {
       this.style.width = `${win.w}px`;
       this.style.height = `${win.h}px`;
       this.style.zIndex = `${win.zIndex}`;
+      if (this.windowId === 'chat') {
+        this.style.removeProperty('--chat-resized-width');
+      }
     } else {
       this.classList.remove('floating', 'dragging');
       this.style.position = '';
@@ -188,6 +194,14 @@ export class RWindow extends RorschachBase {
       this.style.width = `${win.w}px`;
       this.style.height = '';
       this.style.zIndex = '';
+      if (this.windowId === 'chat') {
+        const windowConfig = pluginHost.windowRegistry.get(this.windowId);
+        if (windowConfig && win.w !== windowConfig.defaultWidth) {
+          this.style.setProperty('--chat-resized-width', `${win.w}px`);
+        } else {
+          this.style.removeProperty('--chat-resized-width');
+        }
+      }
     }
   }
 

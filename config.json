@@ -40,12 +40,12 @@
       "audio": {
         "ttsModel": "tts-gemini-3-1-flash",
         "sttModel": "stt-xai-v1",
-        "voice": "alloy"
+        "voice": "Achernar"
       },
       "video": {
         "model": "veo3.1-fast-text-to-video",
         "aspectRatio": "16:9",
-        "duration": 4,
+        "duration": "4s",
         "resolution": "720p",
         "pollIntervalMs": 5000,
         "pollTimeoutMs": 600000
@@ -63,7 +63,7 @@
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "model": "gemini-3-5-flash",
+        "model": "nvidia-nemotron-3-ultra-550b-a55b",
         "toolFilter": {
           "deny": [
             "bash",
@@ -109,7 +109,7 @@
     "notebook": {
       "notebookDir": "workspace/notebook",
       "agent": {
-        "model": "google/gemini-3.5-flash",
+        "model": "grok-4-3",
         "maxToolLoops": 10
       }
     },

@@ -46,6 +46,10 @@ export class RChatPanel extends RorschachBase {
     if (messagesChanged || streamActiveChanged || streamTextChanged) {
       this._scrollToBottom();
 
+      if (this._lastStreamActive && !activeStream.isActive) {
+        setTimeout(() => this.focus(), 100);
+      }
+
       this._lastMessagesLength = messages.length;
       this._lastStreamActive = activeStream.isActive;
       this._lastStreamText = activeStream.text;
