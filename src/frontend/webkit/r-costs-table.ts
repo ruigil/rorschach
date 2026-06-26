@@ -4,11 +4,11 @@ import { RorschachBase } from './base.js';
 import { StoreController } from './store-controller.js';
 import type { UsageEntry } from './types.js';
 
-interface ShellUsageState {
+type ShellUsageState = {
   usage: UsageEntry[]
-}
+};
 
-function formatTokens(n: number) {
+const formatTokens = (n: number) => {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
 }

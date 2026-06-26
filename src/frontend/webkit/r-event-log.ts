@@ -6,12 +6,12 @@ import { RorschachBase } from './base.js'
 // Used by the workflow inspector's events tab. Accepts clean, decoupled
 // data — no workflow-specific types.
 
-export interface EventLogEntry {
+export type EventLogEntry = {
   timestamp: string
   type: string
   taskId?: string
   message: string
-}
+};
 
 @customElement('r-event-log')
 export class REventLog extends RorschachBase {

@@ -2,14 +2,14 @@ import { html, type TemplateResult } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
 
-interface ConfigSchema {
+type ConfigSchema = {
   id: string;
   tab: string;
   title: string;
   subtitle?: string;
   configKey?: string;
   schema: any;
-}
+};
 
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
 import type { ShellState } from '../types/state.js';

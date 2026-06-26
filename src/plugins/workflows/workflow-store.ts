@@ -134,19 +134,19 @@ export type SaveResult = { workflow: Workflow; filepath: string }
 export type UpdateResult = { updated: true; workflow: Workflow; filepath: string }
 export type DeleteResult = { deleted: true; workflowId: string }
 
-export async function listWorkflows(workflowsDir: string, userId: string): Promise<WorkflowSummary[]> {
+export const listWorkflows = async (workflowsDir: string, userId: string): Promise<WorkflowSummary[]> => {
   const entries = await loadWorkflows(workflowsDir, userId)
   return entries.map(entry => summarize(entry.workflow, entry.filepath))
 }
 
-export async function getWorkflow(workflowsDir: string, userId: string, workflowId: string): Promise<StoreResult<GetResult>> {
+export const getWorkflow = async (workflowsDir: string, userId: string, workflowId: string): Promise<StoreResult<GetResult>> => {
   const workflows = await loadWorkflows(workflowsDir, userId)
   const found = workflows.find(entry => entry.workflow.id === workflowId)
   if (!found) return { ok: false, error: `Workflow not found: ${workflowId}`, status: 404 }
   return { ok: true, data: { workflow: found.workflow, filepath: found.filepath } }
 }
 
-export async function getWorkflowGraph(workflowsDir: string, userId: string, workflowId: string, run?: WorkflowRunState): Promise<StoreResult<{ graph: WorkflowGraph }>> {
+export const getWorkflowGraph = async (workflowsDir: string, userId: string, workflowId: string, run?: WorkflowRunState): Promise<StoreResult<{ graph: WorkflowGraph }>> => {
   const result = await getWorkflow(workflowsDir, userId, workflowId)
   if (!result.ok) return result
   return { ok: true, data: { graph: toWorkflowGraph(result.data.workflow, run) } }
@@ -158,7 +158,7 @@ const workflowFilename = (workflow: Workflow): string => {
   return `${date}-${slug || 'workflow'}-${workflow.id.slice(0, 8)}.json`
 }
 
-export async function saveWorkflow(workflowsDir: string, workflow: Workflow): Promise<StoreResult<SaveResult>> {
+export const saveWorkflow = async (workflowsDir: string, workflow: Workflow): Promise<StoreResult<SaveResult>> => {
   const errors = validateWorkflow(workflow)
   if (errors.length) return { ok: false, error: `Invalid workflow: ${errors.join('; ')}`, status: 400 }
   await mkdir(workflowsDir, { recursive: true })
@@ -180,7 +180,7 @@ export type WorkflowPatch = {
 // which serializes turns via the agent loop. There is no concurrent writer — if a second
 // mutation path is added (e.g. an HTTP PUT route), the read-then-write in updateWorkflow
 // will need serialization or atomic writes to avoid lost updates.
-export async function updateWorkflow(workflowsDir: string, userId: string, workflowId: string, patch: WorkflowPatch): Promise<StoreResult<UpdateResult>> {
+export const updateWorkflow = async (workflowsDir: string, userId: string, workflowId: string, patch: WorkflowPatch): Promise<StoreResult<UpdateResult>> => {
   const found = await getWorkflow(workflowsDir, userId, workflowId)
   if (!found.ok) return found
   const existing = found.data.workflow
@@ -199,7 +199,7 @@ export async function updateWorkflow(workflowsDir: string, userId: string, workf
   return { ok: true, data: { updated: true, workflow: updated, filepath: found.data.filepath } }
 }
 
-export async function deleteWorkflow(workflowsDir: string, userId: string, workflowId: string): Promise<StoreResult<DeleteResult>> {
+export const deleteWorkflow = async (workflowsDir: string, userId: string, workflowId: string): Promise<StoreResult<DeleteResult>> => {
   const found = await getWorkflow(workflowsDir, userId, workflowId)
   if (!found.ok) return found
   await unlink(found.data.filepath)
@@ -223,7 +223,7 @@ const readRunFile = async (filepath: string): Promise<WorkflowRunState | null> =
   }
 }
 
-export async function listWorkflowRuns(workflowRunsDir: string, userId: string): Promise<WorkflowRunState[]> {
+export const listWorkflowRuns = async (workflowRunsDir: string, userId: string): Promise<WorkflowRunState[]> => {
   try {
     const entries = await readdir(workflowRunsDir, { withFileTypes: true })
     const loaded = await Promise.all(entries
@@ -237,7 +237,7 @@ export async function listWorkflowRuns(workflowRunsDir: string, userId: string):
   }
 }
 
-export async function getWorkflowRun(workflowRunsDir: string, userId: string, runId: string): Promise<StoreResult<WorkflowRunState>> {
+export const getWorkflowRun = async (workflowRunsDir: string, userId: string, runId: string): Promise<StoreResult<WorkflowRunState>> => {
   const filepath = join(workflowRunsDir, `${runId}.json`)
   const run = await readRunFile(filepath)
   if (!run || run.userId !== userId) {
@@ -246,7 +246,7 @@ export async function getWorkflowRun(workflowRunsDir: string, userId: string, ru
   return { ok: true, data: run }
 }
 
-export async function saveWorkflowRun(workflowRunsDir: string, run: WorkflowRunState): Promise<StoreResult<WorkflowRunState>> {
+export const saveWorkflowRun = async (workflowRunsDir: string, run: WorkflowRunState): Promise<StoreResult<WorkflowRunState>> => {
   try {
     await mkdir(workflowRunsDir, { recursive: true })
     const filepath = join(workflowRunsDir, `${run.runId}.json`)
@@ -280,13 +280,13 @@ export const initialRunState = (
   workflow,
 })
 
-export async function createWorkflowRun(
+export const createWorkflowRun = async (
   workflowsDir: string,
   workflowRunsDir: string,
   userId: string,
   workflowId: string,
   inputs: Record<string, unknown> | undefined,
-): Promise<StoreResult<{ run: WorkflowRunState; workflow: Workflow }>> {
+): Promise<StoreResult<{ run: WorkflowRunState; workflow: Workflow }>> => {
   const workflowResult = await getWorkflow(workflowsDir, userId, workflowId)
   if (!workflowResult.ok) return workflowResult
 

@@ -12,13 +12,13 @@ import type { PluginHostActions } from '@rorschach/frontend/webkit/host-types.js
 
 export { RDocWorkspace }
 
-export interface DocsState {
+export type DocsState = {
   currentDocArtifact: string | null
-}
+};
 
 store.namespace<DocsState>('docs').init({ currentDocArtifact: null })
 
-export function reduceFrame(frame: any, host: PluginHostActions) {
+export const reduceFrame = (frame: any, host: PluginHostActions) => {
   console.log('docs plugin received frame', frame)
   if (frame.type === 'docWorkspace') {
     console.log('docs plugin opening workspace for artifact:', frame.artifactName)

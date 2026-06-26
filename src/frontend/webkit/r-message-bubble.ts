@@ -5,9 +5,9 @@ import { type Message, type ActiveStream } from './types.js';
 import { renderMarkdown } from './markdown.js';
 import { StoreController } from './store-controller.js';
 
-interface ShellModeState {
+type ShellModeState = {
   currentMode: string
-}
+};
 
 @customElement('r-message-bubble')
 export class RMessageBubble extends RorschachBase {

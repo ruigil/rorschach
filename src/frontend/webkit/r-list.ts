@@ -8,18 +8,18 @@ import { RorschachBase } from './base.js'
 // Used by the workflow list view. Accepts clean, decoupled data — no
 // workflow-specific types.
 
-export interface ListItemChip {
+export type ListItemChip = {
   id: string
   label: string
   status?: string
-}
+};
 
-export interface ListItem {
+export type ListItem = {
   id: string
   label: string
   meta?: string
   chips?: ListItemChip[]
-}
+};
 
 @customElement('r-list')
 export class RList extends RorschachBase {

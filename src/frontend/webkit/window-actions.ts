@@ -11,24 +11,24 @@ import { store } from './store.js'
 import { modeLabel } from './utils.js'
 import type { WindowRuntimeState } from './host-types.js'
 
-interface ShellWindowSlice {
+type ShellWindowSlice = {
   currentMode: string
   currentModeDisplayName: string
   isWaiting: boolean
   windows: Record<string, WindowRuntimeState>
   activeWindowIds: string[]
   activeWorkspaceTab: string
-}
+};
 
 const shell = () => store.namespace<ShellWindowSlice>('shell')
 
-function persistWindowState(id: string, state: WindowRuntimeState) {
+const persistWindowState = (id: string, state: WindowRuntimeState) => {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(`rorschach.window_state.${id}`, JSON.stringify(state))
   }
 }
 
-export function setMode(mode: string, displayName?: string) {
+export const setMode = (mode: string, displayName?: string) => {
   shell().set('currentMode', mode)
   shell().set('currentModeDisplayName', displayName || modeLabel(mode))
   shell().set('isWaiting', false)
@@ -37,14 +37,14 @@ export function setMode(mode: string, displayName?: string) {
   }
 }
 
-export function setActiveWorkspaceTab(id: string) {
+export const setActiveWorkspaceTab = (id: string) => {
   shell().set('activeWorkspaceTab', id)
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem('rorschach.activeWorkspaceTab', id)
   }
 }
 
-export function updateWindowState(id: string, updates: Partial<WindowRuntimeState>) {
+export const updateWindowState = (id: string, updates: Partial<WindowRuntimeState>) => {
   const windows = { ...shell().get('windows') }
   const target = windows[id]
   if (!target) return false
@@ -56,11 +56,11 @@ export function updateWindowState(id: string, updates: Partial<WindowRuntimeStat
   return true
 }
 
-export function undockWindow(id: string) {
+export const undockWindow = (id: string) => {
   return updateWindowState(id, { isDocked: false })
 }
 
-export function focusWindow(id: string) {
+export const focusWindow = (id: string) => {
   const activeIds = [...shell().get('activeWindowIds')]
   const idx = activeIds.indexOf(id)
   if (idx !== -1) activeIds.splice(idx, 1)
@@ -76,7 +76,7 @@ export function focusWindow(id: string) {
   shell().set('windows', windows)
 }
 
-export function openWindow(id: string) {
+export const openWindow = (id: string) => {
   const windows = { ...shell().get('windows') }
   const winState = windows[id]
   if (!winState) return
@@ -96,7 +96,7 @@ export function openWindow(id: string) {
   }
 }
 
-export function closeWindow(id: string) {
+export const closeWindow = (id: string) => {
   const windows = { ...shell().get('windows') }
   const winState = windows[id]
   if (!winState) return

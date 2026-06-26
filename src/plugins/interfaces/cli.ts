@@ -72,7 +72,7 @@ const R    = () => process.stdout.rows    ?? 24
 const sEnd = () => R() - FIXED             // last row of the scroll region (1-indexed)
 
 // ─── Inline markdown → ANSI ───
-function inlineMd(text: string): string {
+const inlineMd = (text: string): string => {
   return text
     .replace(/\*\*\*(.+?)\*\*\*/gs, `${C.cyan}${C.bold}${C.italic}$1${C.reset}`)
     .replace(/\*\*(.+?)\*\*/gs,     `${C.cyan}${C.bold}$1${C.reset}`)
@@ -82,12 +82,12 @@ function inlineMd(text: string): string {
 }
 
 // Strip ANSI escape codes to get the visible display width of a string.
-function visibleLen(s: string): number {
+const visibleLen = (s: string): number => {
   return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\t/g, '    ').length
 }
 
 // ─── Pipe-table renderer ───
-function renderTable(rows: string[][]): string[] {
+const renderTable = (rows: string[][]): string[] => {
   const isSep = (cells: string[]) => cells.every(c => /^[-: ]+$/.test(c))
   const dataRows = rows.filter(r => !isSep(r))
   if (dataRows.length === 0) return []
@@ -118,7 +118,7 @@ function renderTable(rows: string[][]): string[] {
 }
 
 // ─── Block markdown → ANSI ───
-function renderMarkdown(text: string): string {
+const renderMarkdown = (text: string): string => {
   const lines = text.split('\n')
   const out: string[] = []
   let inCode = false
@@ -184,7 +184,7 @@ function renderMarkdown(text: string): string {
 
 // ─── Fixed area ───
 // Uses save/restore cursor so callers need not track cursor position.
-function drawFixed(state: CliState, inputBuf: string): void {
+const drawFixed = (state: CliState, inputBuf: string): void => {
   const r = R()
   const dot   = state.status === 'idle' ? `${C.green}●${C.reset}` : `${C.yellow}⟳${C.reset}`
   const label = state.status === 'idle' ? 'connected' : 'thinking…'
@@ -210,19 +210,19 @@ function drawFixed(state: CliState, inputBuf: string): void {
 }
 
 // Position cursor after the current input on the prompt line.
-function cursorToPrompt(inputBuf: string): void {
+const cursorToPrompt = (inputBuf: string): void => {
   process.stdout.write(`\x1b[${R() - 3};${3 + inputBuf.length}H`)
 }
 
 // ─── Scroll-area helpers (all use save/restore, leave cursor at prompt) ───
 
 // Overwrite the last line of the scroll region.
-function setScrollEnd(text: string): void {
+const setScrollEnd = (text: string): void => {
   process.stdout.write(`\x1b[s\x1b[${sEnd()};1H\x1b[2K${text}\x1b[u`)
 }
 
 // Append one or more lines: each triggers a scroll-up within the scroll region.
-function appendScroll(lines: string[]): void {
+const appendScroll = (lines: string[]): void => {
   if (lines.length === 0) return
   let out = `\x1b[s\x1b[${sEnd()};1H`
   for (const line of lines) out += `\n\x1b[2K${line}`
@@ -235,7 +235,7 @@ export const CLI = (): ActorDef<CliMsg, CliState> => {
   let inputBuf     = ''
   let currentState: CliState = { ...CLI_INITIAL_STATE }
 
-  function redrawPromptLine(): void {
+  const redrawPromptLine = (): void => {
     const r = R()
     process.stdout.write(
       `\x1b[${r - 3};1H\x1b[2K${C.bold}›${C.reset} ${inputBuf}` +

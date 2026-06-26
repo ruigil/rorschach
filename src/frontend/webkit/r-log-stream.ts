@@ -5,9 +5,9 @@ import { store } from './store.js';
 import { StoreController } from './store-controller.js';
 import type { LogEvent } from './types.js';
 
-interface ShellLogsState {
+type ShellLogsState = {
   logs: LogEvent[]
-}
+};
 
 @customElement('r-log-stream')
 export class RLogStream extends RorschachBase {

@@ -9,7 +9,7 @@
 
 import type { WindowConfig, WindowRuntimeState } from './host-types.js'
 
-export interface Namespace<T extends object> {
+export type Namespace<T extends object> = {
   get<K extends keyof T>(key: K): T[K]
   set<K extends keyof T>(key: K, value: T[K]): void
   subscribe<K extends keyof T>(key: K, cb: (val: T[K], prev: T[K]) => void): () => void
@@ -19,9 +19,9 @@ export interface Namespace<T extends object> {
   /** Delete namespaces[id] entirely — frees memory, drops the source that
    *  listeners read from. Called on plugin unregister. */
   reset(): void
-}
+};
 
-export interface Store {
+export type Store = {
   /** Returns the typed view for `id`, lazily creating namespaces[id] = {} on
    *  first access. Shell and plugins use the same API. */
   namespace<T extends object>(id: string): Namespace<T>
@@ -32,13 +32,13 @@ export interface Store {
   /** Set namespaces['shell']['windows'][id].isOpen = false. Convenience over
    *  namespace('shell').get('windows')[id].isOpen = false. */
   closeWindow(id: string): void
-}
+};
 
 // ─── Internal implementation ───
 
-interface StoreRoot {
+type StoreRoot = {
   namespaces: Record<string, Record<string, unknown>>
-}
+};
 
 const root: StoreRoot = { namespaces: {} }
 
@@ -48,7 +48,7 @@ const listeners = new Map<string, Set<Listener>>()
 
 const listenerKey = (nsId: string, key: string) => `${nsId}:${key}`
 
-function notify(nsId: string, key: string, value: any, prev: any): void {
+const notify = (nsId: string, key: string, value: any, prev: any): void => {
   const set = listeners.get(listenerKey(nsId, key))
   if (set) {
     for (const cb of set) {
@@ -59,7 +59,7 @@ function notify(nsId: string, key: string, value: any, prev: any): void {
   }
 }
 
-function makeNamespace<T extends object>(nsId: string): Namespace<T> {
+const makeNamespace = <T extends object>(nsId: string): Namespace<T> => {
   const ensure = () => {
     let ns = root.namespaces[nsId]
     if (!ns) {
@@ -129,7 +129,7 @@ function makeNamespace<T extends object>(nsId: string): Namespace<T> {
 
 // ─── Window runtime state helpers ───
 
-function readSavedWindowState(id: string, cfg: WindowConfig): WindowRuntimeState {
+const readSavedWindowState = (id: string, cfg: WindowConfig): WindowRuntimeState => {
   const defaultX = typeof window !== 'undefined' ? window.innerWidth - 420 : 800
   const defaultY = 100
 
@@ -159,7 +159,7 @@ function readSavedWindowState(id: string, cfg: WindowConfig): WindowRuntimeState
   return defaultState
 }
 
-function ensureWindowRuntime(id: string, cfg: WindowConfig): WindowRuntimeState {
+const ensureWindowRuntime = (id: string, cfg: WindowConfig): WindowRuntimeState => {
   const shell = root.namespaces['shell'] ?? {}
   const windows = (shell['windows'] ?? {}) as Record<string, WindowRuntimeState>
   if (windows[id]) return windows[id]!
@@ -197,7 +197,7 @@ export const store: Store = {
 //
 // The shell's test harness (`src/tests/helpers/frontend.ts`) calls this to
 // restore a clean state. Production code never calls it.
-export function __resetStoreForTests(): void {
+export const __resetStoreForTests = (): void => {
   root.namespaces = {}
   listeners.clear()
 }

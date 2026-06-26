@@ -3,12 +3,12 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 import type { Actor } from './types.js';
 
-interface ActorNode {
+type ActorNode = {
   label: string;
   path: string;
   children: ActorNode[];
   data: Actor | null;
-}
+};
 
 @customElement('r-actor-tree')
 export class RActorTree extends RorschachBase {

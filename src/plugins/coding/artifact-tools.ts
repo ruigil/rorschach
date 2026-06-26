@@ -99,7 +99,7 @@ export const pageShell = (
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
   <script>
-    function copyCode(btn) {
+    const copyCode = (btn) => {
       const codeBlock = btn.closest('.code-block');
       if (!codeBlock) return;
       const codeEl = codeBlock.querySelector('code');

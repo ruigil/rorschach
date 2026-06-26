@@ -6,7 +6,7 @@ import type { Identity } from '../../../types/identity.ts'
 
 export type WsData = { clientId: string; userId: string; roles: string[] }
 
-export interface ServerOptions {
+export type ServerOptions = {
   port: number
   PUBLIC_DIR: string
   MEDIA_DIR: string
@@ -25,7 +25,7 @@ export interface ServerOptions {
   onSwitchMode: (clientId: string, mode: string) => void
   onListAgents: (clientId: string) => void
   onConfigUpdate: (pluginId: string, patch: Record<string, unknown>) => void
-}
+};
 
 export const startServer = (options: ServerOptions): Server<WsData> => {
   const {

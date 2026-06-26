@@ -7,11 +7,11 @@ import type { TraceSpan } from './types.js';
 
 const MAX_TRACES = 20;
 
-interface ShellTracesState {
+type ShellTracesState = {
   traces: TraceSpan[]
-}
+};
 
-interface TraceSpanRecord {
+type TraceSpanRecord = {
   spanId: string;
   parentSpanId: string | null;
   actor: string;
@@ -21,15 +21,15 @@ interface TraceSpanRecord {
   durationMs?: number;
   status: string;
   data?: any;
-}
+};
 
-interface TraceRecord {
+type TraceRecord = {
   traceId: string;
   requestStart: number;
   requestEnd?: number;
   requestDuration?: number;
   spans: Map<string, TraceSpanRecord>;
-}
+};
 
 @customElement('r-trace-waterfall')
 export class RTraceWaterfall extends RorschachBase {

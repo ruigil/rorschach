@@ -2,10 +2,10 @@ import { html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 
-interface PdfPreview {
+type PdfPreview = {
   dataUrl: string;
   name: string;
-}
+};
 
 @customElement('r-media-previews')
 export class RMediaPreviews extends RorschachBase {

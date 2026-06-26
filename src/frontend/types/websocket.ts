@@ -21,22 +21,22 @@ export type WSFrameType =
   | 'tool_registered'
   | 'tool_unregistered'
 
-export interface WSFrame {
+export type WSFrame = {
   type: WSFrameType
   [key: string]: any
-}
+};
 
-export interface ChunkFrame extends WSFrame {
+export type ChunkFrame = WSFrame & {
   type: 'chunk'
   text: string
-}
+};
 
-export interface AgentsFrame extends WSFrame {
+export type AgentsFrame = WSFrame & {
   type: 'agents'
   agents: any[]
-}
+};
 
-export interface UiSurfaceFrame extends WSFrame {
+export type UiSurfaceFrame = WSFrame & {
   type: 'ui.surface'
   reg: UiSurfaceRegistration
-}
+};

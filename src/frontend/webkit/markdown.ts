@@ -55,7 +55,7 @@ marked.use({
   }
 });
 
-function copyCode(btn: HTMLElement) {
+const copyCode = (btn: HTMLElement) => {
   const codeBlock = btn.closest('.code-block');
   if (!codeBlock) return;
   const codeEl = codeBlock.querySelector('code');
@@ -70,7 +70,7 @@ function copyCode(btn: HTMLElement) {
 // Exposed globally because it's called from onclick="copyCode(this)" in generated HTML
 (window as any).copyCode = copyCode;
 
-export function renderMarkdown(text: string) {
+export const renderMarkdown = (text: string) => {
   const el = document.createElement('div');
   el.className = 'md';
   el.innerHTML = marked.parse(text);

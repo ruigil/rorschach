@@ -54,7 +54,7 @@ const frameHandlers: Record<string, (msg: Record<string, any>) => void> = {
   },
 }
 
-function dispatchFrame(msg: WSFrame) {
+const dispatchFrame = (msg: WSFrame) => {
   if (msg.type === 'ui.surface') {
     pluginHost.dispatch(msg.reg)
     return
@@ -64,7 +64,7 @@ function dispatchFrame(msg: WSFrame) {
   if (handler) handler(msg)
 }
 
-export async function connect() {
+export const connect = async () => {
   const wsUrl = new URL('ws', location.href)
   wsUrl.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
 

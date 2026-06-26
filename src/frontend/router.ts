@@ -13,8 +13,8 @@ const HASH_TO_TAB: Record<string, Tab> = Object.fromEntries(
   TABS.map(tab => [`#/${tab}`, tab])
 )
 
-export function initRouter() {
-  function syncHashToStore() {
+export const initRouter = () => {
+  const syncHashToStore = () => {
     const tab = HASH_TO_TAB[window.location.hash] || DEFAULT_TAB
     if (shell().get('activeTab') !== tab) {
       shell().set('activeTab', tab)

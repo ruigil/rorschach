@@ -7,18 +7,18 @@
 // `host: PluginHostActions` on their `reduceFrame` and call `host.openWindow`
 // to open their window when a frame arrives.
 
-export interface PluginHostActions {
+export type PluginHostActions = {
   openWindow(id: string): void
   closeWindow(id: string): void
   setMode(mode: string): void
-}
+};
 
 // Window configuration the shell reads when rendering an `r-window`. Same
 // shape as today's WindowConfig plus `id` (added by pluginHost when it seeds
 // the runtime registry). Plugins publish the `UiSurfaceWindowConfig` shape
 // (no `id`) via UiSurfaceRegistrationTopic; the host adds `id` from the
 // registration's `id` field.
-export interface WindowConfig {
+export type WindowConfig = {
   id: string
   title: string
   icon: string
@@ -29,12 +29,12 @@ export interface WindowConfig {
   minWidth: number
   minHeight: number
   modes?: string[]
-}
+};
 
 // Runtime state for a window — owned by the shell namespace
 // (`store.namespace('shell')['windows'][id]`). Plugins do not read it; the
 // `PluginHostActions` facade deliberately exposes no window-state accessor.
-export interface WindowRuntimeState {
+export type WindowRuntimeState = {
   id: string
   isOpen: boolean
   isDocked: boolean
@@ -45,4 +45,4 @@ export interface WindowRuntimeState {
   h: number
   zIndex: number
   params: Record<string, any>
-}
+};

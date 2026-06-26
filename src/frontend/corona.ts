@@ -138,12 +138,12 @@ const FRAG_SRC = `
   }
 `;
 
-function initVoidGL() {
+const initVoidGL = () => {
   if (!voidCanvas) return null;
   const gl = voidCanvas.getContext('webgl');
   if (!gl) return null;
 
-  function compile(type: number, src: string) {
+  const compile = (type: number, src: string) => {
     const sh = gl!.createShader(type)!;
     gl!.shaderSource(sh, src);
     gl!.compileShader(sh);
@@ -170,7 +170,7 @@ function initVoidGL() {
   return { gl, uRes, uTime };
 }
 
-function resizeVoidCanvas() {
+const resizeVoidCanvas = () => {
   if (!voidCanvas) return;
   voidCanvas.width  = Math.ceil(window.innerWidth  * 0.5);
   voidCanvas.height = Math.ceil(window.innerHeight * 0.5);

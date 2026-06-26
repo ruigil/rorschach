@@ -40,13 +40,13 @@ const initialAuthenticatorState = (): AuthenticatorState => ({
 
 // ─── Base64url ───
 
-function bytesToBase64url(bytes: Uint8Array): string {
+const bytesToBase64url = (bytes: Uint8Array): string => {
   let binary = ''
   for (const b of bytes) binary += String.fromCharCode(b)
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
 
-function base64urlToBytes(s: string): Uint8Array {
+const base64urlToBytes = (s: string): Uint8Array => {
   const base64  = s.replace(/-/g, '+').replace(/_/g, '/')
   const padding = '='.repeat((4 - (base64.length % 4)) % 4)
   const binary  = atob(base64 + padding)
@@ -59,7 +59,7 @@ function base64urlToBytes(s: string): Uint8Array {
 // Supports major types 0–5 with definite lengths.
 // Sufficient for attestationObject and COSE key maps.
 
-function decodeCbor(data: Uint8Array, offset = 0): [unknown, number] {
+const decodeCbor = (data: Uint8Array, offset = 0): [unknown, number] => {
   const byte      = data[offset++]!
   const majorType = (byte >> 5) & 0x07
   const info      = byte & 0x1f
@@ -112,15 +112,15 @@ type ParsedAuthData = {
   coseKey?:      Uint8Array
 }
 
-function readUint16BE(data: Uint8Array, offset: number): number {
+const readUint16BE = (data: Uint8Array, offset: number): number => {
   return (data[offset]! << 8) | data[offset + 1]!
 }
 
-function readUint32BE(data: Uint8Array, offset: number): number {
+const readUint32BE = (data: Uint8Array, offset: number): number => {
   return ((data[offset]! << 24) | (data[offset+1]! << 16) | (data[offset+2]! << 8) | data[offset+3]!) >>> 0
 }
 
-function parseAuthData(authData: Uint8Array): ParsedAuthData {
+const parseAuthData = (authData: Uint8Array): ParsedAuthData => {
   const rpIdHash  = authData.slice(0, 32)
   const flags     = authData[32] ?? 0
   const signCount = readUint32BE(authData, 33)
@@ -141,7 +141,7 @@ function parseAuthData(authData: Uint8Array): ParsedAuthData {
 
 // ─── DER → IEEE P1363 conversion (for ECDSA signature) ───
 
-function derToP1363(sig: Uint8Array): Uint8Array {
+const derToP1363 = (sig: Uint8Array): Uint8Array => {
   let off = 0
   if (sig[off++] !== 0x30) throw new Error('DER: expected SEQUENCE')
   // skip sequence length
@@ -163,7 +163,7 @@ function derToP1363(sig: Uint8Array): Uint8Array {
 
 // ─── COSE key → CryptoKey ───
 
-async function importCoseKey(coseKeyBytes: Uint8Array): Promise<{ key: CryptoKey; kty: number }> {
+const importCoseKey = async (coseKeyBytes: Uint8Array): Promise<{ key: CryptoKey; kty: number }> => {
   const [rawMap] = decodeCbor(coseKeyBytes)
   const coseMap  = rawMap as Record<number, unknown>
   const kty      = coseMap[1] as number
@@ -186,11 +186,11 @@ async function importCoseKey(coseKeyBytes: Uint8Array): Promise<{ key: CryptoKey
 
 // ─── WebAuthn verification ───
 
-async function verifyRegistration(
+const verifyRegistration = async (
   challengeValue: string,
   credential: Extract<import('./types.ts').WebAuthnCredential, { type: 'registration' }>,
   config: AuthConfig,
-): Promise<{ credentialId: string; publicKey: string; counter: number }> {
+): Promise<{ credentialId: string; publicKey: string; counter: number }> => {
   const { response } = credential
 
   // 1. Verify clientDataJSON
@@ -228,12 +228,12 @@ async function verifyRegistration(
   }
 }
 
-async function verifyAuthentication(
+const verifyAuthentication = async (
   challengeValue: string,
   credential: Extract<import('./types.ts').WebAuthnCredential, { type: 'authentication' }>,
   deviceKey: DeviceKey,
   config: AuthConfig,
-): Promise<{ newCounter: number }> {
+): Promise<{ newCounter: number }> => {
   const { response } = credential
 
   // 1. Verify clientDataJSON
@@ -283,7 +283,7 @@ async function verifyAuthentication(
 
 // ─── Token helpers ───
 
-function generateToken(): string {
+const generateToken = (): string => {
   return bytesToBase64url(crypto.getRandomValues(new Uint8Array(32)))
 }
 

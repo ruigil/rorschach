@@ -3,9 +3,9 @@ import { customElement, property } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 import { StoreController } from './store-controller.js';
 
-interface ShellConnectionState {
+type ShellConnectionState = {
   isConnected: boolean
-}
+};
 
 @customElement('r-status-dot')
 export class RStatusDot extends RorschachBase {

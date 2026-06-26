@@ -13,15 +13,15 @@ import { mergeWorkflowRunIntoGraph } from './r-workflow-workspace.js'
 
 export { RWorkflowWorkspace, RWorkflowList, RWorkflowInspector }
 
-export interface WorkflowsState {
+export type WorkflowsState = {
   currentGraph: any | null
-}
+};
 
 store.namespace<WorkflowsState>('workflows').init({ currentGraph: null })
 
 export const WORKFLOW_RUN_UPDATED_EVENT = 'workflow-run-updated'
 
-export function reduceFrame(frame: any, host: PluginHostActions) {
+export const reduceFrame = (frame: any, host: PluginHostActions) => {
   if (frame.type === 'workflowGraph') {
     store.namespace<WorkflowsState>('workflows').set('currentGraph', frame)
     host.openWindow('workflows')

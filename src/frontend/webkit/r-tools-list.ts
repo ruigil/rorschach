@@ -5,9 +5,9 @@ import { StoreController } from './store-controller.js';
 
 type ToolSchema = { type: 'function'; function: { name: string; description: string; parameters: object } }
 
-interface ShellToolsState {
+type ShellToolsState = {
   tools: Record<string, ToolSchema>
-}
+};
 
 @customElement('r-tools-list')
 export class RToolsList extends RorschachBase {

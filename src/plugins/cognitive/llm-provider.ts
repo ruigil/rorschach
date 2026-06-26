@@ -22,11 +22,11 @@ export const OpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmProvide
   const { apiKey, reasoning } = options
   const modelInfoCache = new Map<string, ModelInfo>()
 
-  async function openRouterStream<T>(
+  const openRouterStream = async <T>(
     extraBody: Record<string, unknown>,
     onEvent: (parsed: Record<string, unknown>) => void,
     onDone: (usage: TokenUsage | null) => T,
-  ): Promise<T> {
+  ): Promise<T> => {
     const res = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {

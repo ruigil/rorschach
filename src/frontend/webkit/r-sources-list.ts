@@ -2,11 +2,11 @@ import { html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 
-export interface Source {
+export type Source = {
   url: string;
   title: string;
   snippet?: string;
-}
+};
 
 @customElement('r-sources-list')
 export class RSourcesList extends RorschachBase {

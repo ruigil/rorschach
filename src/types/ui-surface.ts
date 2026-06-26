@@ -14,7 +14,7 @@ import { createTopic } from '../system/index.ts'
 // window config, the module URL, and the frame-type claim atomic — they share
 // a lifecycle with the plugin.
 
-export interface UiSurfaceWindowConfig {
+export type UiSurfaceWindowConfig = {
   title: string
   icon: string
   contentTag: string
@@ -25,7 +25,7 @@ export interface UiSurfaceWindowConfig {
   dockResizable?: boolean
   /** Auto-open this window when one of these modes activates. */
   modes?: string[]
-}
+};
 
 export type UiSurfaceRegistration =
   | {

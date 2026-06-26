@@ -6,10 +6,10 @@ import { RorschachBase } from './base.js'
 // Used by the workflow inspector for specs, pending jobs, and output values.
 // Accepts clean, decoupled data — no workflow-specific types.
 
-export interface KVItem {
+export type KVItem = {
   key: string
   value: string
-}
+};
 
 @customElement('r-kv-list')
 export class RKvList extends RorschachBase {

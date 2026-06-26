@@ -6,20 +6,20 @@
 // own. The kit must not import shell or plugin types, so the shapes live
 // here and both the shell and plugins import them from the kit.
 
-export interface Attachment {
+export type Attachment = {
   kind: 'image' | 'audio' | 'video' | 'file' | 'pdf'
   url?: string
   data?: string
   name?: string
-}
+};
 
-export interface Source {
+export type Source = {
   url: string
   title: string
   snippet?: string
-}
+};
 
-export interface Message {
+export type Message = {
   id: string
   role: 'user' | 'assistant' | 'error'
   text: string
@@ -27,37 +27,37 @@ export interface Message {
   sources?: Source[]
   attachments?: Attachment[]
   timestamp: number
-}
+};
 
-export interface ActiveStream {
+export type ActiveStream = {
   isActive: boolean
   toolingLabel?: string
   reasoning: string
   text: string
   sources: Source[]
   attachments: Attachment[]
-}
+};
 
-export interface Topic {
+export type Topic = {
   topic: string
   subscribers: string[]
-}
+};
 
-export interface Actor {
+export type Actor = {
   name: string
   status: 'running' | 'stopped' | 'error' | null
   messagesProcessed: number
-}
+};
 
-export interface LogEvent {
+export type LogEvent = {
   timestamp: number
   level: 'debug' | 'info' | 'warn' | 'error'
   source: string
   message: string
   data?: Record<string, unknown>
-}
+};
 
-export interface TraceSpan {
+export type TraceSpan = {
   traceId: string
   spanId: string
   parentSpanId: string | null
@@ -67,13 +67,13 @@ export interface TraceSpan {
   durationMs?: number
   status: string
   data?: Record<string, unknown>
-}
+};
 
-export interface UsageEntry {
+export type UsageEntry = {
   role: string
   model: string
   inputTokens: number
   outputTokens: number
   contextWindow: number | null
   cost: number
-}
+};

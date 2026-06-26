@@ -19,17 +19,17 @@ import type { WindowRuntimeState } from '@rorschach/frontend/webkit/host-types.j
 export type { Attachment, Source, Message, ActiveStream, Topic, Actor, LogEvent, TraceSpan, UsageEntry, WindowRuntimeState }
 
 // Agent is shell/agent-registry specific — stays here, not in the kit.
-export interface Agent {
+export type Agent = {
   mode: string
   displayName: string
   shortDesc: string
-}
+};
 
 // Shape of `store.namespace('shell')`. The shell is just another namespace
 // owner, symmetric with `store.namespace('<pluginId>')` for plugins.
 // All plugin-leak keys have been removed — the docs and workflows plugins
 // now own their state in their own namespaces.
-export interface ShellState {
+export type ShellState = {
   isConnected: boolean
   isWaiting: boolean
   currentUserId: string | null
@@ -51,4 +51,4 @@ export interface ShellState {
   windows: Record<string, WindowRuntimeState>
   activeWindowIds: string[]
   activeWorkspaceTab: string
-}
+};

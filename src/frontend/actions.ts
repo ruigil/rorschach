@@ -3,7 +3,7 @@ import type { ShellState, Message, LogEvent, Attachment } from './types/state.js
 
 const shell = () => store.namespace<ShellState>('shell')
 
-export function addLog(log: Partial<LogEvent> & { message: string }) {
+export const addLog = (log: Partial<LogEvent> & { message: string }) => {
   const currentLogs = shell().get('logs')
   const entry: LogEvent = {
     timestamp: log.timestamp ?? Date.now(),
@@ -15,14 +15,14 @@ export function addLog(log: Partial<LogEvent> & { message: string }) {
   shell().set('logs', [entry, ...currentLogs].slice(0, 500))
 }
 
-function toPersistedMessage(msg: Message): Message {
+const toPersistedMessage = (msg: Message): Message => {
   return {
     ...msg,
     attachments: msg.attachments?.map(({ kind, name }) => ({ kind, name })),
   }
 }
 
-export function appendMessage(msg: Message) {
+export const appendMessage = (msg: Message) => {
   const currentMessages = shell().get('messages')
   const nextMessages = [...currentMessages, msg]
   shell().set('messages', nextMessages)
@@ -31,12 +31,12 @@ export function appendMessage(msg: Message) {
   }
 }
 
-export function updateActiveStream(patch: Partial<ShellState['activeStream']>) {
+export const updateActiveStream = (patch: Partial<ShellState['activeStream']>) => {
   const active = shell().get('activeStream')
   shell().set('activeStream', { ...active, ...patch })
 }
 
-export function commitActiveStream(role: 'assistant' | 'error' = 'assistant', text?: string) {
+export const commitActiveStream = (role: 'assistant' | 'error' = 'assistant', text?: string) => {
   const active = shell().get('activeStream')
   const message: Message = {
     id: crypto.randomUUID(),
@@ -58,7 +58,7 @@ export function commitActiveStream(role: 'assistant' | 'error' = 'assistant', te
   shell().set('isWaiting', false)
 }
 
-export function switchMode(mode: string) {
+export const switchMode = (mode: string) => {
   const ws = shell().get('ws')
   if (!mode || mode === shell().get('currentMode') || ws?.readyState !== WebSocket.OPEN) {
     return false
@@ -67,7 +67,7 @@ export function switchMode(mode: string) {
   return true
 }
 
-export function submitChatMessage(text: string, attachments: Attachment[]) {
+export const submitChatMessage = (text: string, attachments: Attachment[]) => {
   const ws = shell().get('ws')
   const isWaiting = shell().get('isWaiting')
   if ((!text && attachments.length === 0) || ws?.readyState !== WebSocket.OPEN || isWaiting) {
@@ -87,7 +87,7 @@ export function submitChatMessage(text: string, attachments: Attachment[]) {
   updateActiveStream({ isActive: true })
 }
 
-export async function logout() {
+export const logout = async () => {
   await fetch(new URL('auth/logout', location.href), { method: 'POST' })
   window.location.href = new URL('auth/login.html', location.href).href
 }

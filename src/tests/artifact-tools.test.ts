@@ -10,7 +10,7 @@ describe('Artifact Tools Templates', () => {
     expect(shell).toContain('Test Architecture Page')
     expect(shell).toContain('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/base16/ocean.min.css')
     expect(shell).toContain('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js')
-    expect(shell).toContain('function copyCode(btn)')
+    expect(shell).toContain('const copyCode = (btn) => {')
     expect(shell).toContain('const lang = langClass ? langClass.replace(\'language-\', \'\') : \'code\';')
     expect(shell).toContain('hljs.highlightElement(block);')
     expect(shell).toContain(bodyHtml)
