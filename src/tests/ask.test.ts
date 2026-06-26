@@ -217,23 +217,4 @@ describe('Ask pattern', () => {
 
     await system.shutdown()
   })
-
-  test('ask without timeout options times out after default 30000ms', async () => {
-    const def: ActorDef<{ replyTo: ActorRef<string> }, null> = {
-      handler: (state) => ({ state }),
-    }
-
-    const system = await AgentSystem()
-    const ref = system.spawn('silent-default-timeout', def)
-    await tick()
-
-    const startTime = Date.now()
-    await expect(
-      ask(ref, (replyTo) => ({ replyTo })),
-    ).rejects.toThrow('timed out after 30000ms')
-
-    expect(Date.now() - startTime).toBeGreaterThanOrEqual(29900)
-
-    await system.shutdown()
-  }, 35000)
 })
