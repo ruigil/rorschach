@@ -38,7 +38,9 @@ const buildSwitchModeSchema = (descriptors: Record<string, AgentDescriptor>): Ll
       name: SWITCH_MODE_TOOL_NAME,
       description:
         'Hand the conversation to a specialized agent. Use when the user asks for ' +
-        'work that another mode is better at. The next user message goes to that mode.',
+        'work that another mode is better at. The next user message goes to that mode. ' +
+        'If an agent does not find a tool in its set of specialized tools to perform the ' +
+        'requested work, it should switch to chatbot mode.',
       parameters: {
         type: 'object',
         required: ['mode', 'reason'],

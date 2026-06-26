@@ -23,7 +23,7 @@ export const ChatbotAgentFactory = defineAgent<ChatbotAgentOptions, ChatbotMsg, 
   role:          'reasoning',
   mode:          'chatbot',
   displayName:  'Chatbot',
-  shortDesc:    'General-purpose conversational assistant',
+  shortDesc:    'General-purpose conversational assistant. Use this mode if you cannot find a tool in your set of specialized tools to handle the user\'s request.',
   buildSystemPrompt,
 })
 
