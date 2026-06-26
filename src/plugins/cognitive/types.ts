@@ -81,6 +81,11 @@ export type OpenRouterAdapterOptions = {
   reasoning?: { enabled?: boolean; effort?: 'high' | 'medium' | 'low' | 'minimal' }
 }
 
+export type VeniceAdapterOptions = {
+  apiKey: string
+  baseUrl?: string
+}
+
 // ─── LLM provider internal mailbox ───
 
 export type LlmProviderInternalMsg =

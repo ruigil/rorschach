@@ -623,7 +623,6 @@ export const Kgraph = (
       }
       const entry = resolveDb(state, userId, workPath)
       const llmRef = state.llmRef
-      ctx.log.info('kgraph linkCandidates', { userId, limit, anchorsPerTarget })
       ctx.pipeToSelf(
         fetchLinkCandidates(
           entry,
@@ -705,7 +704,9 @@ export const Kgraph = (
     },
 
     _linkCandidatesDone: (state, message, ctx) => {
-      ctx.log.info('kgraph linkCandidates done', { candidates: message.candidates.length })
+      if (message.candidates.length > 0) {
+        ctx.log.info('kgraph linkCandidates done', { candidates: message.candidates.length })
+      }
       message.replyTo.send({ type: 'linkCandidatesResult', candidates: message.candidates })
       return { state }
     },

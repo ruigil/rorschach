@@ -1,7 +1,9 @@
 import { createPluginFactory, defineConfig } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
 import { SessionManager } from './session-manager.ts'
-import { LlmProvider, OpenRouterAdapter } from './llm-provider.ts'
+import { LlmProvider } from './llm-provider.ts'
+import { OpenRouterAdapter } from './adapters/openrouter.ts'
+import { VeniceAdapter } from './adapters/venice.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { SessionConfig, UserContextMsg } from './types.ts'
 import { UserContext } from './user-context.ts'
@@ -12,7 +14,9 @@ import { cognitiveSchemas } from './routes.ts'
 // ─── Config types ───
 
 type LlmProviderConfig = {
+  provider?: 'openrouter' | 'venice'
   apiKey: string
+  baseUrl?: string
   reasoning?: { enabled?: boolean; effort?: 'high' | 'medium' | 'low' | 'minimal' }
 }
 
@@ -57,6 +61,14 @@ export default createPluginFactory<CognitiveConfig>({
     llmProvider: {
       factory: (cfg: LlmProviderConfig) => {
         if (!cfg || !cfg.apiKey) return null
+        if (cfg.provider === 'venice') {
+          return LlmProvider({
+            adapter: VeniceAdapter({
+              apiKey: cfg.apiKey,
+              baseUrl: cfg.baseUrl,
+            }),
+          })
+        }
         return LlmProvider({ adapter: OpenRouterAdapter({ apiKey: cfg.apiKey, reasoning: cfg.reasoning }) })
       },
       configPath: 'llmProvider',

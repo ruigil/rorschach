@@ -37,7 +37,7 @@ export const visionSchema: ConfigSchemaSection = {
   title: 'Vision',
   subtitle: 'tools · image analysis and generation',
   tab: 'tools',
-  configKey: 'visionActor',
+  configKey: 'vision',
   routeId: 'config.tools',
   schema: {
     type: 'object',
@@ -52,7 +52,7 @@ export const audioSchema: ConfigSchemaSection = {
   title: 'Audio',
   subtitle: 'tools · speech-to-text and text-to-speech',
   tab: 'tools',
-  configKey: 'audioActor',
+  configKey: 'audio',
   routeId: 'config.tools',
   schema: {
     type: 'object',
@@ -69,7 +69,7 @@ export const videoSchema: ConfigSchemaSection = {
   title: 'Video',
   subtitle: 'tools · video generation',
   tab: 'tools',
-  configKey: 'videoActor',
+  configKey: 'video',
   routeId: 'config.tools',
   schema: {
     type: 'object',

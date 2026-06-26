@@ -11,7 +11,7 @@ import { join, relative, resolve } from 'node:path'
 export const workflowsStorageSchema: ConfigSchemaSection = {
   id: 'workflows.storage',
   title: 'Workflows',
-  subtitle: 'workflow storage',
+  subtitle: 'workflow storage and agent',
   tab: 'workflows',
   configKey: '',
   routeId: 'config.workflows',
@@ -20,45 +20,36 @@ export const workflowsStorageSchema: ConfigSchemaSection = {
     required: ['workflowsDir'],
     properties: {
       workflowsDir: { type: 'string', default: 'workspace/workflows', 'x-ui': { label: 'Workflows directory' } },
-    },
-  },
-}
-
-export const workflowsAgentSchema: ConfigSchemaSection = {
-  id: 'workflows.agent',
-  title: 'Workflows',
-  subtitle: 'workflow model',
-  tab: 'workflows',
-  configKey: 'agent',
-  routeId: 'config.workflows',
-  schema: {
-    type: 'object',
-    required: ['model', 'maxToolLoops'],
-    properties: {
-      model: { type: 'string', default: 'z-ai/glm-5.1', 'x-ui': { widget: 'model-select', label: 'Workflows model' } },
-      maxToolLoops: { type: 'number', default: 10, minimum: 1, maximum: 50 },
-      toolFilter: {
+      agent: {
         type: 'object',
-        oneOf: [
-          {
+        required: ['model', 'maxToolLoops'],
+        properties: {
+          model: { type: 'string', default: 'z-ai/glm-5.1', 'x-ui': { widget: 'model-select', label: 'Workflows model' } },
+          maxToolLoops: { type: 'number', default: 10, minimum: 1, maximum: 50 },
+          toolFilter: {
             type: 'object',
-            required: ['allow'],
-            properties: { allow: { type: 'array', items: { type: 'string' } } },
-            additionalProperties: false,
+            oneOf: [
+              {
+                type: 'object',
+                required: ['allow'],
+                properties: { allow: { type: 'array', items: { type: 'string' } } },
+                additionalProperties: false,
+              },
+              {
+                type: 'object',
+                required: ['deny'],
+                properties: { deny: { type: 'array', items: { type: 'string' } } },
+                additionalProperties: false,
+              },
+            ],
           },
-          {
-            type: 'object',
-            required: ['deny'],
-            properties: { deny: { type: 'array', items: { type: 'string' } } },
-            additionalProperties: false,
-          },
-        ],
+        },
       },
     },
   },
 }
 
-export const workflowsSchemas = [workflowsStorageSchema, workflowsAgentSchema]
+export const workflowsSchemas = [workflowsStorageSchema]
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })

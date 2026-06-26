@@ -36,19 +36,28 @@ export const sessionSchema: ConfigSchemaSection = {
 
 export const llmSchema: ConfigSchemaSection = {
   id: 'cognitive.llm',
-  title: 'Reasoning',
+  title: 'LLM Provider',
   subtitle: 'cognitive · LLM provider settings',
   tab: 'cognitive',
-  configKey: 'llmProvider.reasoning',
+  configKey: 'llmProvider',
   routeId: 'config.cognitive',
   schema: {
     type: 'object',
     properties: {
-      enabled: { type: 'boolean', default: false, 'x-ui': { widget: 'toggle', label: 'Enable reasoning' } },
-      effort: { type: 'string', default: 'medium', enum: ['minimal', 'low', 'medium', 'high'] },
+      provider: { type: 'string', default: 'openrouter', enum: ['openrouter', 'venice'], 'x-ui': { label: 'Provider' } },
+      apiKey: { type: 'string', 'x-ui': { secret: true, label: 'API Key' } },
+      baseUrl: { type: 'string', description: 'Custom API base URL (e.g. Venice)', 'x-ui': { label: 'Base URL' } },
+      reasoning: {
+        type: 'object',
+        properties: {
+          enabled: { type: 'boolean', default: false, 'x-ui': { widget: 'toggle', label: 'Enable reasoning' } },
+          effort: { type: 'string', default: 'medium', enum: ['minimal', 'low', 'medium', 'high'] },
+        },
+      },
     },
   },
 }
+
 export const userContextSchema: ConfigSchemaSection = {
   id: 'cognitive.userContext',
   title: 'User Context',
@@ -66,3 +75,4 @@ export const userContextSchema: ConfigSchemaSection = {
 }
 
 export const cognitiveSchemas = [chatbotSchema, sessionSchema, llmSchema, userContextSchema]
+

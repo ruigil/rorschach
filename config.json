@@ -34,16 +34,16 @@
       "bash": {
         "cwd": "/workspace"
       },
-      "visionActor": {
-        "model": "google/gemini-3-pro-image-preview"
+      "vision": {
+        "model": "nano-banana-2"
       },
-      "audioActor": {
-        "ttsModel": "google/gemini-3.1-flash-tts-preview",
-        "sttModel": "google/chirp-3",
+      "audio": {
+        "ttsModel": "tts-gemini-3-1-flash",
+        "sttModel": "stt-xai-v1",
         "voice": "alloy"
       },
-      "videoActor": {
-        "model": "google/veo-3.1-lite",
+      "video": {
+        "model": "veo3.1-fast-text-to-video",
         "aspectRatio": "16:9",
         "duration": 4,
         "resolution": "720p",
@@ -53,15 +53,17 @@
     },
     "cognitive": {
       "llmProvider": {
-        "apiKey": "${OPENROUTER_API_KEY}",
+        "provider": "venice",
+        "apiKey": "VENICE_INFERENCE_KEY_TiRvmQoNWEFjIhhJIBQYBKVABBb34-clXSw97LUiJC",
         "reasoning": {
           "enabled": true,
           "effort": "medium"
-        }
+        },
+        "baseUrl": ""
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "model": "google/gemini-3.5-flash",
+        "model": "gemini-3-5-flash",
         "toolFilter": {
           "deny": [
             "bash",
@@ -75,26 +77,27 @@
         "contextPath": "workspace/context"
       },
       "userContext": {
-        "model": "deepseek/deepseek-v4-flash",
+        "model": "deepseek-v4-flash",
         "intervalMs": 60000
       }
     },
     "memory": {
       "workPath": "workspace/memory",
       "kgraph": {
-        "embeddingModel": "google/gemini-embedding-2",
+        "embeddingModel": "gemini-embedding-2-preview",
         "embeddingDimensions": 768,
-        "cosineSimilarityThreshold": 0.6
+        "cosineSimilarityThreshold": 0.6,
+        "rerankerModel": ""
       },
       "system": {
-        "model": "inception/mercury-2",
+        "model": "deepseek-v4-flash",
         "consolidationIntervalMs": 60000
       }
     },
     "workflows": {
       "workflowsDir": "workspace/workflows",
       "agent": {
-        "model": "deepseek/deepseek-v4-flash",
+        "model": "deepseek-v4-flash",
         "maxToolLoops": 10,
         "toolFilter": {
           "allow": [
@@ -114,7 +117,7 @@
       "clientId": "${GOOGLE_CLIENT_ID}",
       "clientSecret": "${GOOGLE_CLIENT_SECRET}",
       "baseUrl": "https://rorschach.bot",
-      "agentModel": "google/gemini-3.1-flash-lite",
+      "agentModel": "gemini-3-5-flash",
       "maxToolLoops": 10
     },
     "observability": {
@@ -140,11 +143,11 @@
       "workspaceDir": "workspace",
       "artifactsDir": "workspace/artifacts",
       "coding": {
-        "model": "deepseek/deepseek-v4-pro",
+        "model": "deepseek-v4-pro",
         "maxToolLoops": 25
       },
       "docs": {
-        "model": "deepseek/deepseek-v4-pro",
+        "model": "deepseek-v4-pro",
         "maxToolLoops": 30
       }
     }

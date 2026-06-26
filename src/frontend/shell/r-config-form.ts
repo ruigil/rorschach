@@ -21,10 +21,27 @@ export class RConfigForm extends RorschachBase {
   @state() private models: string[] = [];
   @state() private activeTab: string | null = null;
   @state() private activeSectionId: string | null = null;
+  @state() private openDropdowns: Record<string, boolean> = {};
+  @state() private searchQueries: Record<string, string | null> = {};
+  @state() private activeFilterTypes: Record<string, 'allow' | 'deny'> = {};
 
   private _currentUserRoles = new StoreController<ShellState, 'currentUserRoles'>(this, ['shell', 'currentUserRoles']);
   private _currentUserId = new StoreController<ShellState, 'currentUserId'>(this, ['shell', 'currentUserId']);
   private _hasLoaded = false;
+
+  private _onOutsideClick = (e: MouseEvent) => {
+    let clickedInside = false;
+    for (const key of Object.keys(this.openDropdowns)) {
+      const container = this.querySelector(`[id="container-${key}"]`);
+      if (container && container.contains(e.target as Node)) {
+        clickedInside = true;
+      }
+    }
+    if (!clickedInside) {
+      this.openDropdowns = {};
+      this.searchQueries = {};
+    }
+  }
 
   override createRenderRoot() {
     return this;
@@ -35,6 +52,41 @@ export class RConfigForm extends RorschachBase {
     this.addEventListener('tab-change', (e: any) => {
       this.activeTab = e.detail?.tab;
     });
+    window.addEventListener('click', this._onOutsideClick);
+  }
+
+  override disconnectedCallback() {
+    window.removeEventListener('click', this._onOutsideClick);
+    super.disconnectedCallback();
+  }
+
+  private _openDropdown(fieldId: string) {
+    this.openDropdowns = { [fieldId]: true };
+  }
+
+  private _onSearchInput(e: any, fieldId: string) {
+    this.searchQueries = { ...this.searchQueries, [fieldId]: e.target.value };
+  }
+
+  private _selectModel(id: string, name: string, fieldId: string, sectionId: string, configKey: string, key: string) {
+    const pluginId = sectionId.split('.')[0]!;
+    
+    // Copy currentValues recursively to ensure reactivity triggers properly
+    const newValues = JSON.parse(JSON.stringify(this.currentValues));
+    
+    let target = newValues[pluginId] ??= {};
+    if (configKey) {
+      for (const part of configKey.split('.')) {
+        target = target[part] ??= {};
+      }
+    }
+    target[key] = id;
+    
+    this.currentValues = newValues;
+
+    // Clear dropdown and search states
+    this.openDropdowns = { ...this.openDropdowns, [fieldId]: false };
+    this.searchQueries = { ...this.searchQueries, [fieldId]: null };
   }
 
   override willUpdate(changedProperties: Map<string, any>) {
@@ -268,14 +320,109 @@ export class RConfigForm extends RorschachBase {
         </select>
         ${schema.description ? html`<span class="field-hint">${schema.description}</span>` : ''}`;
     } else if (widget === 'model-select') {
+      const resolvedValue = value ?? schema.default ?? '';
+
+      let selectedModelName = '';
+      if (resolvedValue) {
+        for (const m of this.models) {
+          const parts = m.split('|');
+          if (parts[0] === resolvedValue) {
+            selectedModelName = parts[1] || parts[0] || '';
+            break;
+          }
+        }
+      }
+
+      const isOpen = this.openDropdowns[`${sectionId}-${key}`] ?? false;
+      const searchQuery = this.searchQueries[`${sectionId}-${key}`] ?? null;
+      const displayVal = searchQuery !== null ? searchQuery : (selectedModelName || resolvedValue);
+
+      const query = (searchQuery ?? '').toLowerCase();
+      const filteredModels = this.models.filter(m => {
+        const parts = m.split('|');
+        const id = parts[0]!;
+        const name = parts[1] || id;
+        return name.toLowerCase().includes(query);
+      });
+
       fieldContent = html`
         <label class="field-label" for="${sectionId}-${key}">${label}</label>
-        <select id="${sectionId}-${key}" name="${key}" data-section="${sectionId}" data-config-key="${configKey}" data-widget="model-select">
-          <option value="">— none —</option>
-          ${this.models.map(m => html`
-            <option value="${m}" ?selected=${m === resolvedValue}>${m}</option>
-          `)}
-        </select>
+        <div class="custom-select-container" id="container-${sectionId}-${key}">
+          <input type="text" 
+                 class="custom-select-input" 
+                 placeholder="Select model..." 
+                 .value="${displayVal}"
+                 @focus=${(e: any) => {
+                   this._openDropdown(`${sectionId}-${key}`);
+                   e.target.select();
+                 }}
+                 @input=${(e: any) => this._onSearchInput(e, `${sectionId}-${key}`)}>
+          
+          <input type="hidden" 
+                 id="${sectionId}-${key}" 
+                 name="${key}" 
+                 data-section="${sectionId}" 
+                 data-config-key="${configKey}" 
+                 data-widget="model-select"
+                 .value="${resolvedValue}">
+
+          ${isOpen ? html`
+            <div class="custom-select-dropdown">
+              <div class="custom-select-item" @click=${() => this._selectModel('', '', `${sectionId}-${key}`, sectionId, configKey, key)}>
+                — none —
+              </div>
+              ${filteredModels.map(m => {
+                const parts = m.split('|');
+                const id = parts[0]!;
+                const name = parts[1] || id;
+                return html`
+                  <div class="custom-select-item ${id === resolvedValue ? 'selected' : ''}" 
+                       @click=${() => this._selectModel(id, name, `${sectionId}-${key}`, sectionId, configKey, key)}>
+                    <span class="model-item-name">${name}</span>
+                    <span class="model-item-id">${id}</span>
+                  </div>
+                `;
+              })}
+            </div>
+          ` : ''}
+        </div>
+        ${schema.description ? html`<span class="field-hint">${schema.description}</span>` : ''}`;
+    } else if (widget === 'tool-filter') {
+      const fieldId = `${sectionId}-${key}`;
+      let activeType = this.activeFilterTypes[fieldId];
+      if (!activeType) {
+        if (resolvedValue && typeof resolvedValue === 'object') {
+          activeType = ('deny' in resolvedValue) ? 'deny' : 'allow';
+        } else {
+          activeType = 'allow';
+        }
+        this.activeFilterTypes = { ...this.activeFilterTypes, [fieldId]: activeType };
+      }
+
+      const nextConfigKey = configKey ? `${configKey}.${key}` : key;
+      const arrayVal = (resolvedValue && typeof resolvedValue === 'object')
+        ? (resolvedValue[activeType] ?? [])
+        : [];
+      const displayVal = Array.isArray(arrayVal) ? arrayVal.join(', ') : '';
+
+      fieldContent = html`
+        <label class="field-label" for="${sectionId}-${key}">${label}</label>
+        <div class="tool-filter-container" style="display: flex; gap: 8px; align-items: center;">
+          <select style="width: auto; flex-shrink: 0;" @change=${(e: any) => {
+            this.activeFilterTypes = { ...this.activeFilterTypes, [fieldId]: e.target.value as 'allow' | 'deny' };
+          }}>
+            <option value="allow" ?selected=${activeType === 'allow'}>Allow only</option>
+            <option value="deny" ?selected=${activeType === 'deny'}>Deny only</option>
+          </select>
+          <input type="text" 
+                 id="${sectionId}-${key}" 
+                 name="${activeType}" 
+                 .value="${displayVal}" 
+                 placeholder="e.g. tool_name_1, tool_name_2"
+                 data-type="array"
+                 data-section="${sectionId}" 
+                 data-config-key="${nextConfigKey}">
+        </div>
         ${schema.description ? html`<span class="field-hint">${schema.description}</span>` : ''}`;
     } else if (widget === 'textarea') {
       const rows = schema['x-ui']?.rows ?? 3;
@@ -284,6 +431,17 @@ export class RConfigForm extends RorschachBase {
         <textarea id="${sectionId}-${key}" name="${key}" rows="${rows}" 
                   data-section="${sectionId}" data-config-key="${configKey}">${resolvedValue}</textarea>
         ${schema.description ? html`<span class="field-hint">${schema.description}</span>` : ''}`;
+    } else if (widget === 'object') {
+      const subProps = schema.properties ?? {};
+      const nextConfigKey = configKey ? `${configKey}.${key}` : key;
+      fieldContent = html`
+        <div class="nested-object-label">${label}</div>
+        <div class="nested-object-fields">
+          ${Object.entries(subProps).map(([subKey, subSchema]: [string, any]) =>
+            this._renderField(sectionId, nextConfigKey, subKey, subSchema, (typeof resolvedValue === 'object' && resolvedValue !== null) ? (resolvedValue as any)[subKey] : undefined)
+          )}
+        </div>
+      `;
     } else if (widget === 'google-account') {
       fieldContent = this._renderGoogleAccountWidget();
     } else {
@@ -369,6 +527,10 @@ export class RConfigForm extends RorschachBase {
   }
 
   private _inferWidget(schema: any) {
+    if (schema.oneOf && schema.oneOf.some((s: any) => s.properties && ('allow' in s.properties || 'deny' in s.properties))) {
+      return 'tool-filter';
+    }
+    if (schema.type === 'object') return 'object';
     if (schema.type === 'boolean') return 'toggle';
     if (schema.type === 'number') return 'number';
     if (schema.enum) return 'select';
@@ -385,9 +547,15 @@ export class RConfigForm extends RorschachBase {
       const key = el.name;
       if (!key) return;
 
-      const value = el.type === 'checkbox' ? el.checked
+      let value = el.type === 'checkbox' ? el.checked
         : el.type === 'number' ? Number(el.value)
         : el.value;
+
+      if (el.dataset.type === 'array') {
+        value = typeof el.value === 'string'
+          ? el.value.split(',').map((s: string) => s.trim()).filter(Boolean)
+          : [];
+      }
 
       (byPlugin[pluginId] ??= {});
 

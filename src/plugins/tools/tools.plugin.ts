@@ -12,17 +12,17 @@ import type { BashOptions as BashConfig } from 'just-bash'
 import { defineConfig } from '../../system/index.ts'
 import { toolsSchemas } from './routes.ts'
 
-type VisionActorConfig = {
+type VisionConfig = {
   model: string
 }
 
-type AudioActorConfig = {
+type AudioConfig = {
   ttsModel: string
   sttModel: string
   voice?: string
 }
 
-type VideoActorConfig = {
+type VideoConfig = {
   model: string
   aspectRatio?: string
   duration?: number
@@ -34,9 +34,9 @@ type VideoActorConfig = {
 export type ToolsConfig = {
   webSearch?: WebSearchActorConfig
   bash?: BashConfig
-  visionActor?: VisionActorConfig
-  audioActor?: AudioActorConfig
-  videoActor?: VideoActorConfig
+  vision?: VisionConfig
+  audio?: AudioConfig
+  video?: VideoConfig
 }
 
 const config = defineConfig<ToolsConfig>('tools', {
@@ -68,15 +68,15 @@ export default createPluginFactory<ToolsConfig>({
     },
     vision: {
       factory: (cfg) => cfg ? Vision({ model: cfg.model }) : null,
-      configPath: 'visionActor',
+      configPath: 'vision',
     },
     audio: {
       factory: (cfg) => cfg ? Audio({ ttsModel: cfg.ttsModel, sttModel: cfg.sttModel, voice: cfg.voice ?? 'alloy' }) : null,
-      configPath: 'audioActor',
+      configPath: 'audio',
     },
     video: {
       factory: (cfg) => cfg ? Video({ model: cfg.model, aspectRatio: cfg.aspectRatio, duration: cfg.duration, resolution: cfg.resolution, pollIntervalMs: cfg.pollIntervalMs, pollTimeoutMs: cfg.pollTimeoutMs }) : null,
-      configPath: 'videoActor',
+      configPath: 'video',
     },
     cron: {
       factory: () => Cron(),
