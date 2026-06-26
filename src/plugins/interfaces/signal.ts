@@ -364,9 +364,11 @@ export const Signal = (
         const self    = ctx.self
         const socket  = createConnection(port, host)
         let   lineBuf = ''
+        let   connecting = true
 
         socket.on('connect', () => {
           activeSocket = socket
+          connecting = false
           ctx.log.info(`signal: connected to ${host}:${port}`)
         })
 
@@ -378,8 +380,10 @@ export const Signal = (
         })
 
         socket.on('close', () => {
-          if (activeSocket === socket) {
-            activeSocket = null
+          if (activeSocket === socket || connecting) {
+            if (activeSocket === socket) {
+              activeSocket = null
+            }
             self.send({ type: '_socketClosed' })
           }
         })
@@ -403,6 +407,11 @@ export const Signal = (
         try { parsed = JSON.parse(msg.line) } catch {
           ctx.log.warn(`signal: malformed line: ${msg.line.slice(0, 80)}`)
           return { state }
+        }
+
+        const exception = parsed?.params?.exception
+        if (exception) {
+          ctx.log.error(`signal: daemon exception: ${exception.message} (${exception.type})`)
         }
 
         const envelope: Envelope | undefined = parsed?.params?.envelope
@@ -449,7 +458,6 @@ export const Signal = (
         }
 
         if (!text) return { state }
-
         return processIncomingMessage(state, phone, text, [], ctx)
       },
 
