@@ -10,42 +10,42 @@ import { ToolRegistrationTopic, type ToolSchema } from '../types/tools.ts';
 /**
  * Declaration for a sub-actor slot managed by the factory.
  */
-export interface SlotDeclaration<C = unknown, SubConfig = any> {
+export type SlotDeclaration<C = unknown, SubConfig = any> = {
   factory: (config: SubConfig, dependencies: Record<string, ActorRef<unknown>>) => ActorDef<any, any> | null;
   configPath?: string;
   args?: SubConfig;
   surviveConfigChange?: boolean;
   dependsOn?: string[];
-}
+};
 
 /**
  * Declaration for a session-level agent registered by the factory.
  */
-export interface AgentDeclaration<C = unknown, S = Record<string, any>, Options = unknown> {
+export type AgentDeclaration<C = unknown, S = Record<string, any>, Options = unknown> = {
   factory: (options: Options) => AgentDescriptor;
   options: (config: C, dependencies: Record<keyof S, ActorRef<unknown>>) => Options;
   dependsOn?: (keyof S)[];
-}
+};
 
 /**
  * Declaration for a tool registered by the factory.
  */
-export interface ToolDeclaration<S = Record<string, any>> {
+export type ToolDeclaration<S = Record<string, any>> = {
   schema: ToolSchema;
   slot: keyof S;
   mayBeLongRunning?: boolean;
-}
+};
 
 /**
  * Input blueprint passed to createPluginFactory.
  */
-export interface PluginBlueprint<
+export type PluginBlueprint<
   C = unknown,
   S extends Record<string, SlotDeclaration<C, any>> = Record<string, SlotDeclaration<C, any>>,
   A extends Record<string, AgentDeclaration<C, S, any>> = Record<string, AgentDeclaration<C, S, any>>,
   T extends Record<string, ToolDeclaration<S>> = Record<string, ToolDeclaration<S>>,
   M = unknown
-> {
+> = {
   id: string;
   version: string;
   description?: string;
@@ -56,15 +56,15 @@ export interface PluginBlueprint<
   tools?: T;
   routes?: (config: C, dependencies: Record<keyof S, ActorRef<unknown>>) => RouteRegistration[];
   uiSurface?: UiSurfaceRegistration | ((config: C) => UiSurfaceRegistration);
-}
+};
 
-interface ActorSlotState {
+type ActorSlotState = {
   config: any;
   ref: ActorRef<any> | null;
   gen: number;
-}
+};
 
-interface PluginFactoryState {
+type PluginFactoryState = {
   config: any;
   generation: number;
   activeSlots: Record<string, ActorSlotState>;
@@ -72,12 +72,12 @@ interface PluginFactoryState {
   activeUiSurface: UiSurfaceRegistration | null;
   activeAgents: string[];
   activeTools: string[];
-}
+};
 
 /**
  * Helper to resolve nested configuration path lookups.
  */
-function getByPath(obj: any, path: string): any {
+const getByPath = (obj: any, path: string): any => {
   if (!obj) return undefined;
   const parts = path.split('.');
   let current = obj;
@@ -89,12 +89,12 @@ function getByPath(obj: any, path: string): any {
     }
   }
   return current;
-}
+};
 
 /**
  * Recursive security masking helper.
  */
-function redactKeys(obj: any, maskKeys: string[]): any {
+const redactKeys = (obj: any, maskKeys: string[]): any => {
   if (!obj || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) {
     return obj.map(item => redactKeys(item, maskKeys));
@@ -108,19 +108,19 @@ function redactKeys(obj: any, maskKeys: string[]): any {
     }
   }
   return result;
-}
+};
 
 /**
  * Topological dependency graph sorter.
  */
-export function computeSpawnOrder(slots: Record<string, { dependsOn?: string[] }>): string[] {
+export const computeSpawnOrder = (slots: Record<string, { dependsOn?: string[] }>): string[] => {
   const result: string[] = [];
   const visited = new Set<string>();
   const visiting = new Set<string>();
 
   const keys = Object.keys(slots);
 
-  function visit(node: string) {
+  const visit = (node: string) => {
     if (visiting.has(node)) {
       const path = Array.from(visiting);
       const startIdx = path.indexOf(node);
@@ -141,16 +141,16 @@ export function computeSpawnOrder(slots: Record<string, { dependsOn?: string[] }
       visited.add(node);
       result.push(node);
     }
-  }
+  };
 
   for (const key of keys) {
     visit(key);
   }
 
   return result;
-}
+};
 
-export function createPluginFactory<
+export const createPluginFactory = <
   C = unknown,
   S extends Record<string, SlotDeclaration<C, any>> = Record<string, SlotDeclaration<C, any>>,
   A extends Record<string, AgentDeclaration<C, S, any>> = Record<string, AgentDeclaration<C, S, any>>,
@@ -158,7 +158,7 @@ export function createPluginFactory<
   M = unknown
 >(
   blueprint: PluginBlueprint<C, S, A, T, M>
-): PluginDef<any, PluginFactoryState, C> {
+): PluginDef<any, PluginFactoryState, C> => {
   return {
     id: blueprint.id,
     version: blueprint.version,
@@ -582,4 +582,4 @@ export function createPluginFactory<
       },
     }),
   };
-}
+};
