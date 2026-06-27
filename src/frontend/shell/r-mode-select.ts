@@ -64,7 +64,7 @@ export class RModeSelect extends RorschachBase {
     return html`
       <label class="mode-select-wrap" for="mode-select">
         <span>mode</span>
-        <select id="mode-select" ?disabled=${isDisabled} @change=${this._handleChange}>
+        <select id="mode-select" .value=${currentMode} ?disabled=${isDisabled} @change=${this._handleChange}>
           ${agentList.map(agent => html`
             <option
               value=${agent.mode}

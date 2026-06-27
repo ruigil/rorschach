@@ -48,6 +48,24 @@ describe('r-mode-select', () => {
     expect(select.options[1]!.textContent.trim()).toBe('Planner')
   })
 
+  test('updates select value when currentMode changes', async () => {
+    mockStore('agents', [
+      { mode: 'chatbot', displayName: 'Chatbot', shortDesc: '' },
+      { mode: 'workflows', displayName: 'Workflows', shortDesc: '' },
+    ])
+    mockStore('currentMode', 'chatbot')
+    mockStore('isConnected', true)
+    const el = await mountClass(RModeSelect) as any
+    await el.updateComplete
+
+    const select = el.querySelector('#mode-select') as HTMLSelectElement
+    expect(select.value).toBe('chatbot')
+
+    mockStore('currentMode', 'workflows')
+    await el.updateComplete
+    expect(select.value).toBe('workflows')
+  })
+
   test('select is disabled when disconnected', async () => {
     mockStore('agents', [
       { mode: 'chatbot', displayName: 'Chatbot', shortDesc: '' },
