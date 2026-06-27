@@ -143,8 +143,27 @@ export const OpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmProvide
         const errBody = await res.text()
         throw new Error(`OpenRouter speech ${res.status}: ${errBody}`)
       }
+
+      const contentType = res.headers.get('content-type') || ''
+      let outFormat = format ?? 'pcm'
+      if (contentType.includes('mpeg') || contentType.includes('mp3')) {
+        outFormat = 'mp3'
+      } else if (contentType.includes('pcm')) {
+        outFormat = 'pcm'
+      } else if (contentType.includes('wav')) {
+        outFormat = 'wav'
+      } else if (contentType.includes('ogg')) {
+        outFormat = 'ogg'
+      } else if (contentType.includes('aac')) {
+        outFormat = 'aac'
+      } else if (contentType.includes('flac')) {
+        outFormat = 'flac'
+      } else if (contentType.includes('opus')) {
+        outFormat = 'opus'
+      }
+
       const buf = Buffer.from(await res.arrayBuffer())
-      return { data: buf.toString('base64'), format: format ?? 'pcm', usage: null }
+      return { data: buf.toString('base64'), format: outFormat, usage: null }
     },
 
     transcribe: async (model, audio) => {

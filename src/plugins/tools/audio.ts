@@ -26,7 +26,6 @@ export const textToSpeechTool = defineTool('text_to_speech', 'Convert text to sp
   type: 'object',
   properties: {
     text:         { type: 'string', description: 'The text to convert to speech.' },
-    voice:        { type: 'string', enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'], description: 'Voice to use. Defaults to alloy.' },
     instructions: { type: 'string', description: 'Speaking style or tone instructions (e.g. "speak slowly and dramatically"). Derived from the user\'s request.' },
   },
   required: ['text'],
@@ -152,12 +151,11 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
 
         if (toolName === textToSpeechTool.name) {
           let text = ''
-          let ttsVoice = voice
+          const ttsVoice = voice
           let instructions = ''
           try {
-            const parsed = JSON.parse(args) as { text: string; voice?: string; instructions?: string }
+            const parsed = JSON.parse(args) as { text: string; instructions?: string }
             text = parsed.text
-            if (parsed.voice) ttsVoice = parsed.voice
             if (parsed.instructions) instructions = parsed.instructions
           } catch {
             replyTo.send({ type: 'toolError', error: 'Invalid arguments: expected JSON with text' })

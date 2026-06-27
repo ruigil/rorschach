@@ -319,6 +319,38 @@ export class RConfigForm extends RorschachBase {
           `)}
         </select>
         ${schema.description ? html`<span class="field-hint">${schema.description}</span>` : ''}`;
+    } else if (widget === 'voice-select') {
+      const pluginId = sectionId.split('.')[0] ?? '';
+      const pluginValues = this.currentValues[pluginId] ?? {};
+      let values = pluginValues;
+      if (configKey) {
+        for (const part of configKey.split('.')) {
+          values = values?.[part] ?? {};
+        }
+      }
+      const selectedTtsModel = values.ttsModel || values.model || '';
+      let modelVoices: string[] = [];
+      if (selectedTtsModel) {
+        const modelEntry = this.models.find(m => m.startsWith(selectedTtsModel + '|'));
+        if (modelEntry) {
+          const parts = modelEntry.split('|');
+          if (parts[2]) {
+            modelVoices = parts[2].split(',').filter(Boolean);
+          }
+        }
+      }
+      if (modelVoices.length === 0) {
+        modelVoices = schema.enum ?? ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+      }
+
+      fieldContent = html`
+        <label class="field-label" for="${sectionId}-${key}">${label}</label>
+        <select id="${sectionId}-${key}" name="${key}" data-section="${sectionId}" data-config-key="${configKey}">
+          ${modelVoices.map((v: string) => html`
+            <option value="${v}" ?selected=${v === resolvedValue}>${v}</option>
+          `)}
+        </select>
+        ${schema.description ? html`<span class="field-hint">${schema.description}</span>` : ''}`;
     } else if (widget === 'model-select') {
       const resolvedValue = value ?? schema.default ?? '';
 

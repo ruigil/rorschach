@@ -177,8 +177,26 @@ export const VeniceAdapter = (options: VeniceAdapterOptions): LlmProviderAdapter
         throw new Error(`Venice speech ${res.status}: ${errBody}`)
       }
 
+      const contentType = res.headers.get('content-type') || ''
+      let outFormat = format ?? 'mp3'
+      if (contentType.includes('mpeg') || contentType.includes('mp3')) {
+        outFormat = 'mp3'
+      } else if (contentType.includes('pcm')) {
+        outFormat = 'pcm'
+      } else if (contentType.includes('wav')) {
+        outFormat = 'wav'
+      } else if (contentType.includes('ogg')) {
+        outFormat = 'ogg'
+      } else if (contentType.includes('aac')) {
+        outFormat = 'aac'
+      } else if (contentType.includes('flac')) {
+        outFormat = 'flac'
+      } else if (contentType.includes('opus')) {
+        outFormat = 'opus'
+      }
+
       const buf = Buffer.from(await res.arrayBuffer())
-      return { data: buf.toString('base64'), format: format ?? 'mp3', usage: null }
+      return { data: buf.toString('base64'), format: outFormat, usage: null }
     },
 
     transcribe: async (model, audio) => {
@@ -268,9 +286,12 @@ export const VeniceAdapter = (options: VeniceAdapterOptions): LlmProviderAdapter
           headers: { 'Authorization': `Bearer ${apiKey}` },
         })
         if (!res.ok) return []
-        type VeniceModel = { id: string; model_spec?: { name?: string } }
+        type VeniceModel = { id: string; model_spec?: { name?: string; voices?: string[] } }
         const data = await res.json() as { data: VeniceModel[] }
-        return data.data.map(m => `${m.id}|${m.model_spec?.name || m.id}`).sort()
+        return data.data.map(m => {
+          const suffix = m.model_spec?.voices ? `|${m.model_spec.voices.join(',')}` : ''
+          return `${m.id}|${m.model_spec?.name || m.id}${suffix}`
+        }).sort()
       } catch {
         return []
       }

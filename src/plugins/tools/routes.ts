@@ -59,7 +59,7 @@ export const audioSchema: ConfigSchemaSection = {
     properties: {
       ttsModel: { type: 'string', 'x-ui': { widget: 'model-select', label: 'TTS model' } },
       sttModel: { type: 'string', 'x-ui': { widget: 'model-select', label: 'STT model' } },
-      voice: { type: 'string', default: 'alloy', enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'] },
+      voice: { type: 'string', default: 'alloy', 'x-ui': { widget: 'voice-select', label: 'Voice' }, enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'] },
     },
   },
 }
