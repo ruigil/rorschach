@@ -2,19 +2,13 @@ import { html, type TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 import type { Actor } from './types.js';
-
-type ActorNode = {
-  label: string;
-  path: string;
-  children: ActorNode[];
-  data: Actor | null;
-};
+import './r-tree.js';
+import type { TreeNode } from './r-tree.js';
 
 @customElement('r-actor-tree')
 export class RActorTree extends RorschachBase {
   @property({ type: Array }) actors: Actor[] = [];
   @state() private _selectedActor: string | null = null;
-  @state() private _collapsedSet = new Set<string>();
 
   private _actorsMap: Record<string, Actor> = {};
 
@@ -35,108 +29,70 @@ export class RActorTree extends RorschachBase {
     }
   }
 
-  private _buildTree(actors: Actor[]): ActorNode[] {
-    const nodes: Record<string, ActorNode> = {};
+  private _buildTree(actors: Actor[]): TreeNode<Actor>[] {
+    const nodes: Record<string, TreeNode<Actor>> = {};
+    
     actors.forEach(a => {
       const parts = a.name.split('/');
       parts.forEach((_, i) => {
         const path = parts.slice(0, i + 1).join('/');
         const label = parts[i]!;
         if (!nodes[path]) {
-          nodes[path] = { label, path, children: [], data: null };
+          nodes[path] = { id: path, label, children: [], data: undefined };
         }
       });
-      nodes[a.name]!.data = a;
+      
+      const node = nodes[a.name]!;
+      node.data = a;
+      node.status = a.status || 'running';
+      node.badge = a.messagesProcessed ?? 0;
     });
 
-    const roots: ActorNode[] = [];
+    const roots: TreeNode<Actor>[] = [];
     Object.values(nodes).forEach(node => {
-      const parts = node.path.split('/');
+      const parts = node.id.split('/');
       if (parts.length === 1) {
         roots.push(node);
       } else {
         const parentPath = parts.slice(0, -1).join('/');
         if (nodes[parentPath]) {
-          nodes[parentPath]!.children.push(node);
+          nodes[parentPath]!.children!.push(node);
         } else {
           roots.push(node);
         }
       }
     });
 
-    const sort = (arr: ActorNode[]) => {
+    // Make sure folder nodes without data get styled/treated correctly
+    Object.values(nodes).forEach(node => {
+      const hasChildren = node.children && node.children.length > 0;
+      if (hasChildren && !node.data) {
+        node.status = undefined; // Folder status is handled by children or neutral
+        node.badge = undefined;
+      }
+    });
+
+    const sort = (arr: TreeNode<Actor>[]) => {
       arr.sort((a, b) => a.label.localeCompare(b.label));
-      arr.forEach(n => sort(n.children));
+      arr.forEach(n => {
+        if (n.children) sort(n.children);
+      });
       return arr;
     };
+    
     return sort(roots);
   }
 
-  private _renderNodes(nodes: ActorNode[], depth: number): TemplateResult[] {
-    return nodes.map(node => {
-      const hasChildren = node.children.length > 0;
-      const isCollapsed = this._collapsedSet.has(node.path);
-      const isSelected = this._selectedActor === node.path;
-      const status = node.data?.status || (hasChildren && !node.data ? null : 'running');
-      const padLeft = `${0.6 + depth * 1.1}rem`;
-
-      const handleChevronClick = (e: Event) => {
-        e.stopPropagation();
-        if (this._collapsedSet.has(node.path)) {
-          this._collapsedSet.delete(node.path);
-        } else {
-          this._collapsedSet.add(node.path);
-        }
-        this.requestUpdate();
-      };
-
-      const handleRowClick = () => {
-        if (node.data) {
-          this._selectedActor = node.path;
-          this.dispatchEvent(new CustomEvent('actor-select', {
-            bubbles: true,
-            composed: true,
-            detail: { actor: node.data },
-          }));
-        } else {
-          if (this._collapsedSet.has(node.path)) {
-            this._collapsedSet.delete(node.path);
-          } else {
-            this._collapsedSet.add(node.path);
-          }
-          this.requestUpdate();
-        }
-      };
-
-      return html`
-        <div class="tree-node">
-          <div 
-            class="tree-row ${isSelected ? 'selected' : ''}" 
-            style="padding-left:${padLeft}"
-            @click=${handleRowClick}
-          >
-            ${hasChildren 
-              ? html`<span class="tree-chevron" @click=${handleChevronClick}>
-                  ${this.renderIcon(isCollapsed ? 'chevron-right' : 'chevron-down')}
-                </span>`
-              : html`<span class="tree-spacer"></span>`}
-            
-            ${status 
-              ? html`<span class="tree-dot ${status}"></span>`
-              : html`<span class="tree-dot-empty"></span>`}
-            
-            <span class="tree-label">${node.label}</span>
-            
-            ${node.data ? html`<span class="tree-msg-count">${node.data.messagesProcessed ?? 0}</span>` : ''}
-          </div>
-          ${hasChildren && !isCollapsed ? html`
-            <div class="tree-children">
-              ${this._renderNodes(node.children, depth + 1)}
-            </div>
-          ` : ''}
-        </div>
-      `;
-    });
+  private _onNodeSelect(e: CustomEvent<{ node: TreeNode<Actor> }>) {
+    const node = e.detail.node;
+    if (node.data) {
+      this._selectedActor = node.id;
+      this.dispatchEvent(new CustomEvent('actor-select', {
+        bubbles: true,
+        composed: true,
+        detail: { actor: node.data },
+      }));
+    }
   }
 
   updateActors(actors: Actor[]) {
@@ -149,6 +105,12 @@ export class RActorTree extends RorschachBase {
     if (roots.length === 0) {
       return html`<r-empty-state variant="panel" name="monitor" text="awaiting metrics snapshot"></r-empty-state>`;
     }
-    return html`${this._renderNodes(roots, 0)}`;
+    return html`
+      <r-tree 
+        .data=${roots} 
+        .selectedId=${this._selectedActor}
+        @node-select=${this._onNodeSelect}
+      ></r-tree>
+    `;
   }
 }

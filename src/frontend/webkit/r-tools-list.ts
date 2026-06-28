@@ -1,7 +1,9 @@
 import { html } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 import { StoreController } from './store-controller.js';
+import './r-list.js';
+import type { ListItem } from './r-list.js';
 
 type ToolSchema = { type: 'function'; function: { name: string; description: string; parameters: object } }
 
@@ -13,35 +15,20 @@ type ShellToolsState = {
 export class RToolsList extends RorschachBase {
   private _tools = new StoreController<ShellToolsState, 'tools'>(this, ['shell', 'tools']);
 
-  // Render to light DOM to reuse shell/observe styles
-  override createRenderRoot() {
-    return this;
-  }
-
   override render() {
-    const toolsMap = this._tools.value;
-    const names = Object.keys(toolsMap).sort();
-
-    if (names.length === 0) {
-      return html`
-        <r-empty-state 
-          variant="panel" 
-          name="wrench" 
-          text="no tools registered"
-        ></r-empty-state>
-      `;
-    }
+    const toolsMap = this._tools.value || {};
+    const listItems: ListItem[] = Object.keys(toolsMap).sort().map(name => ({
+      id: name,
+      label: name,
+      description: toolsMap[name]?.function?.description ?? '',
+      icon: 'wrench'
+    }));
 
     return html`
-      ${names.map(name => {
-        const desc = toolsMap[name]?.function?.description ?? '';
-        return html`
-          <div class="tool-row">
-            <span class="tool-name">${name}</span>
-            <span class="tool-desc">${desc}</span>
-          </div>
-        `;
-      })}
+      <r-list 
+        .items=${listItems}
+        emptyText="no tools registered"
+      ></r-list>
     `;
   }
 }

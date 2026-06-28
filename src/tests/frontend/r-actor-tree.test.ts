@@ -22,8 +22,10 @@ describe('r-actor-tree', () => {
     ]
     await el.updateComplete
 
-    expect(el.textContent).toContain('chat')
-    expect(el.textContent).toContain('planner')
+    const tree = el.querySelector('r-tree')
+    expect(tree).toBeTruthy()
+    expect(tree.shadowRoot.textContent).toContain('chat')
+    expect(tree.shadowRoot.textContent).toContain('planner')
   })
 
   test('renders nested actor hierarchy', async () => {
@@ -33,8 +35,10 @@ describe('r-actor-tree', () => {
     ]
     await el.updateComplete
 
-    expect(el.textContent).toContain('parent')
-    expect(el.textContent).toContain('child')
+    const tree = el.querySelector('r-tree')
+    expect(tree).toBeTruthy()
+    expect(tree.shadowRoot.textContent).toContain('parent')
+    expect(tree.shadowRoot.textContent).toContain('child')
   })
 
   test('selected actor state is trackable', async () => {
@@ -60,12 +64,13 @@ describe('r-actor-tree', () => {
     ]
     await el.updateComplete
 
-    expect(el.querySelector('.tree-children')).toBeTruthy()
+    const tree = el.querySelector('r-tree')
+    expect(tree.shadowRoot.querySelector('.tree-children')).toBeTruthy()
 
-    el.querySelector('.tree-chevron')!.click()
+    tree.shadowRoot.querySelector('.tree-chevron')!.click()
     await el.updateComplete
 
-    expect(el.querySelector('.tree-children')).toBeNull()
+    expect(tree.shadowRoot.querySelector('.tree-children')).toBeNull()
   })
 
   test('shows message count', async () => {
@@ -75,6 +80,7 @@ describe('r-actor-tree', () => {
     ]
     await el.updateComplete
 
-    expect(el.textContent).toContain('42')
+    const tree = el.querySelector('r-tree')
+    expect(tree.shadowRoot.textContent).toContain('42')
   })
 })

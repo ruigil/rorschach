@@ -237,13 +237,41 @@ export const VeniceAdapter = (options: VeniceAdapterOptions): LlmProviderAdapter
         })
         if (!res.ok) return null
         const data = await res.json() as {
-          data: Array<{ id: string; model_spec?: { availableContextTokens?: number } }>
+          data: Array<{
+            id: string
+            context_length?: number
+            model_spec?: {
+              availableContextTokens?: number
+              pricing?: {
+                input?: number | { usd?: number }
+                output?: number | { usd?: number }
+              }
+            }
+          }>
         }
         for (const entry of data.data) {
+          const contextWindow = entry.model_spec?.availableContextTokens ?? entry.context_length ?? 4096
+          
+          let promptPer1M = 0
+          const inputPricing = entry.model_spec?.pricing?.input
+          if (typeof inputPricing === 'number') {
+            promptPer1M = inputPricing
+          } else if (inputPricing && typeof inputPricing.usd === 'number') {
+            promptPer1M = inputPricing.usd
+          }
+
+          let completionPer1M = 0
+          const outputPricing = entry.model_spec?.pricing?.output
+          if (typeof outputPricing === 'number') {
+            completionPer1M = outputPricing
+          } else if (outputPricing && typeof outputPricing.usd === 'number') {
+            completionPer1M = outputPricing.usd
+          }
+
           modelInfoCache.set(entry.id, {
-            contextWindow:   entry.model_spec?.availableContextTokens ?? 4096,
-            promptPer1M:     0,
-            completionPer1M: 0,
+            contextWindow,
+            promptPer1M,
+            completionPer1M,
           })
         }
         return modelInfoCache.get(model) ?? null
