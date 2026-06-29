@@ -14,14 +14,6 @@ export class RWelcomeDashboard extends RorschachBase {
     return this; // Light DOM for global styles
   }
 
-  private _openConfig() {
-    openWindow('config');
-  }
-
-  private _openObserve() {
-    openWindow('observe');
-  }
-
   override render() {
     const modeName = this._currentModeDisplayName.value || this._currentMode.value || 'None';
 
