@@ -2,6 +2,24 @@ import { createPluginFactory, defineConfig } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import type { NotebookConfig } from './types.ts'
+import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
+
+const notebookSurfaceRegistration: UiSurfaceRegistration = {
+  id: 'notebook',
+  version: '1.0.0',
+  window: {
+    title: 'Notebook',
+    icon: 'file-text',
+    contentTag: 'r-notebook-workspace',
+    dockResizable: true,
+    defaultWidth: 480,
+    defaultHeight: 650,
+    minWidth: 320,
+    minHeight: 300,
+    modes: ['coach'],
+  },
+  moduleUrl: '/plugins/notebook/ui/index.js',
+}
 
 import { Journal, journalWriteTool, journalReadTool, journalSearchTool } from './tools/journal.ts'
 import { Tracker, trackerLogTool, trackerStatsTool, trackerDefineHabitTool, trackerListHabitsTool } from './tools/tracker.ts'
@@ -48,6 +66,7 @@ export default createPluginFactory<NotebookConfig>({
   version:     '1.0.0',
   description: 'Personal notebook: journal, tracker (habits, expenses, or any numeric metric), todos — exposed as a single "note" tool.',
   configDescriptor: config,
+  uiSurface: notebookSurfaceRegistration,
   slots: {
     journal: {
       factory: (cfg) => {

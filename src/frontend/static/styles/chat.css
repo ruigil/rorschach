@@ -149,7 +149,7 @@
 
 #chat-form {
   display: flex;
-  gap: 0.65rem;
+  gap: 0;
   align-items: center;
   border: 1px solid rgba(0, 196, 212, 0.28);
   border-radius: 28px;

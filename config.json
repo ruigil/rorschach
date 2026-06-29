@@ -109,7 +109,7 @@
     "notebook": {
       "notebookDir": "workspace/notebook",
       "agent": {
-        "model": "grok-4-3",
+        "model": "nvidia-nemotron-3-ultra-550b-a55b",
         "maxToolLoops": 10
       }
     },

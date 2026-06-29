@@ -42,7 +42,7 @@ type JournalMsg =
 
 const todayISO = (): string => new Date().toISOString().slice(0, 10)
 
-const journalPath = (notebookDir: string, date: string): string => {
+export const journalPath = (notebookDir: string, date: string): string => {
   const [year, month, day] = date.split('-')
   return `${notebookDir}/journal/${year}/${month}/${day}.md`
 }
@@ -58,7 +58,7 @@ const writeEntry = async (notebookDir: string, entry: string, date: string): Pro
   return `Journal entry written to ${path}`
 }
 
-const readEntry = async (notebookDir: string, date: string): Promise<string> => {
+export const readEntry = async (notebookDir: string, date: string): Promise<string> => {
   const path = journalPath(notebookDir, date)
   const file = Bun.file(path)
   if (!(await file.exists())) return `No journal entry found for ${date}.`

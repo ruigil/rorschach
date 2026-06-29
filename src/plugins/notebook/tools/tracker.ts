@@ -72,7 +72,7 @@ const logHabit = async (notebookDir: string, habit: string, value: number, date:
   return `Logged ${value} for habit "${habit}" on ${date}${note}.`
 }
 
-type CsvRow = { date: string; habit: string; value: number; description?: string }
+export type CsvRow = { date: string; habit: string; value: number; description?: string }
 
 const parseCsvLine = (line: string): string[] => {
   const fields: string[] = []
@@ -94,7 +94,7 @@ const parseCsvLine = (line: string): string[] => {
   return fields
 }
 
-const parseCsv = async (notebookDir: string): Promise<CsvRow[]> => {
+export const parseCsv = async (notebookDir: string): Promise<CsvRow[]> => {
   const file = Bun.file(csvPath(notebookDir))
   if (!(await file.exists())) return []
   const text = await file.text()

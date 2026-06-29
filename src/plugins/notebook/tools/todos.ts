@@ -70,7 +70,7 @@ type TodosFile = { todos: Todo[] }
 const todosPath = (notebookDir: string) => `${notebookDir}/todos.json`
 const todayISO  = (): string => new Date().toISOString().slice(0, 10)
 
-const readTodos = async (notebookDir: string): Promise<TodosFile> => {
+export const readTodos = async (notebookDir: string): Promise<TodosFile> => {
   const file = Bun.file(todosPath(notebookDir))
   if (!(await file.exists())) return { todos: [] }
   return JSON.parse(await file.text()) as TodosFile
