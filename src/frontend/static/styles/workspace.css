@@ -9,51 +9,6 @@ r-window {
   box-sizing: border-box;
 }
 
-/* Resizers for Docked Windows */
-.r-window-resizer {
-  position: relative;
-  width: 9px;
-  cursor: col-resize;
-  touch-action: none;
-  background: rgb(4, 13, 20);
-  flex: 0 0 9px;
-  z-index: 10;
-  transition: background 0.15s, box-shadow 0.15s;
-}
-
-.r-window-resizer.resizer-left {
-  border-left: 1px solid var(--border);
-  border-right: 1px solid rgba(0, 196, 212, 0.08);
-}
-
-.r-window-resizer.resizer-right {
-  border-right: 1px solid var(--border);
-  border-left: 1px solid rgba(0, 196, 212, 0.08);
-}
-
-.r-window-resizer::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 1px;
-  height: 3.2rem;
-  transform: translate(-50%, -50%);
-  background: rgba(0, 196, 212, 0.18);
-  transition: background 0.15s, box-shadow 0.15s;
-}
-
-.r-window-resizer:hover::before,
-body.r-window-resizing .r-window-resizer::before {
-  background: var(--accent);
-  box-shadow: 0 0 8px rgba(0, 196, 212, 0.45);
-}
-
-body.r-window-resizing {
-  cursor: col-resize;
-  user-select: none;
-}
-
 /* Glassmorphic Chrome Frame */
 .r-window-chrome {
   flex: 1;
@@ -70,83 +25,6 @@ body.r-window-resizing {
   min-height: 0;
   transition: border-color 0.2s, box-shadow 0.2s;
   height: 100%;
-}
-
-.r-window-chrome.active-focus {
-  border-color: rgba(0, 196, 212, 0.42);
-  box-shadow: 0 0 18px rgba(0, 196, 212, 0.14), 0 12px 36px rgba(0, 0, 0, 0.45);
-}
-
-/* Title bar / Header */
-.r-window-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.6rem 0.9rem;
-  background: rgba(7, 21, 32, 0.85);
-  border-bottom: 1px solid var(--border);
-  user-select: none;
-  flex-shrink: 0;
-}
-
-r-window.floating .r-window-header {
-  cursor: grab;
-}
-
-r-window.floating.dragging .r-window-header {
-  cursor: grabbing;
-}
-
-.r-window-title {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  font-size: 0.86rem;
-  font-weight: 600;
-  color: var(--text);
-  letter-spacing: 0.02em;
-}
-
-.r-window-title svg {
-  width: 14px;
-  height: 14px;
-  color: var(--accent);
-}
-
-.r-window-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.win-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.95rem;
-  transition: all 0.2s ease;
-}
-
-.win-btn svg {
-  width: 12px;
-  height: 12px;
-}
-
-.win-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text);
-}
-
-.win-btn.close-btn:hover {
-  background: rgba(224, 80, 64, 0.15);
-  color: #ff5c4c;
 }
 
 /* Window Content Body */
@@ -169,78 +47,9 @@ r-window.floating.dragging .r-window-header {
   width: 100%;
 }
 
-/* Floating overrides */
-r-window.floating {
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), 0 0 1px rgba(255, 255, 255, 0.15);
-  resize: both;
-  overflow: hidden;
-}
-
 /* ==========================================================================
    LAYOUT GRID & SLOTS (r-shell Integration)
    ========================================================================== */
-
-/* Main Chat view panel adjustments */
-#panel-chat.panel {
-  display: none;
-  flex-direction: row;
-  height: 100%;
-  width: 100% !important;
-  max-width: none !important;
-  margin: 0 !important;
-  min-height: 0;
-  overflow: hidden;
-  background: transparent !important;
-}
-
-#panel-chat.panel.active {
-  display: flex;
-}
-
-/* Chat dock slot (Left Slot) */
-.chat-dock-slot {
-  height: 100%;
-  flex-shrink: 0;
-  display: flex;
-}
-
-#panel-chat:not(.workspaces-open) .chat-dock-slot {
-  width: 100% !important;
-}
-
-@media (min-width: 861px) {
-  #panel-chat.workspaces-open .chat-dock-slot {
-    width: var(--chat-resized-width, 50%) !important;
-  }
-}
-
-.chat-dock-slot .r-window-chrome {
-  border-radius: 0;
-  border: none;
-  box-shadow: none;
-}
-
-.chat-dock-slot .r-window-header {
-  height: 38px;
-  padding: 0 10px;
-  box-sizing: border-box;
-  background: rgba(7, 21, 32, 0.95);
-}
-
-#panel-chat:not(.workspaces-open) .chat-dock-slot .r-window-resizer {
-  display: none !important;
-}
-
-/* Workspace tabbed slot (Right Slot) */
-.workspace-dock-slot {
-  flex: 1;
-  min-width: 320px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: rgba(3, 8, 12, 0.5);
-  border-left: 1px solid var(--border);
-}
 
 .workspace-container {
   position: relative;
@@ -314,31 +123,6 @@ r-window.floating {
   height: 100%;
 }
 
-.workspace-tabs-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 4px;
-}
-
-.tab-action-btn {
-  width: 26px !important;
-  height: 26px !important;
-  border-radius: 4px;
-  color: var(--text-dim) !important;
-  background: transparent !important;
-}
-
-.tab-action-btn:hover {
-  color: var(--accent) !important;
-  background: rgba(0, 196, 212, 0.08) !important;
-}
-
-.tab-action-btn.close-btn:hover {
-  background: rgba(224, 80, 64, 0.15) !important;
-  color: #ff5c4c !important;
-}
-
 .workspace-tab {
   display: flex;
   align-items: center;
@@ -390,21 +174,6 @@ r-window.floating {
   opacity: 1;
   color: #ff5c4c;
   background: rgba(224, 80, 64, 0.15);
-}
-
-/* Floating Layer */
-.floating-window-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  z-index: 9999;
-  pointer-events: none;
-}
-
-.floating-window-layer r-window {
-  pointer-events: auto;
 }
 
 /* ==========================================================================
@@ -566,13 +335,6 @@ r-window.floating {
   color: var(--text-dim);
 }
 
-.workflow-run-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  padding: 0 0.8rem 0.75rem;
-}
-
 .workflow-run-chip {
   display: inline-flex;
   align-items: center;
@@ -637,10 +399,6 @@ r-window.floating {
   font-family: var(--font-mono);
   font-size: 0.56rem;
   white-space: nowrap;
-}
-
-.plan-run-refresh-error {
-  color: #e05040;
 }
 
 .workflow-status-badge {
@@ -1009,25 +767,4 @@ body.workflow-inspector-resizing {
 }
 
 @media (max-width: 860px) {
-  #panel-chat.panel {
-    flex-direction: column;
-  }
-
-  .chat-dock-slot {
-    flex: 1;
-    width: 100% !important;
-  }
-
-  .workspace-dock-slot {
-    width: 100% !important;
-    height: min(76vh, 600px);
-    border-left: none;
-    border-top: 1px solid var(--border);
-  }
-
-  r-window.floating {
-    width: 90% !important;
-    left: 5% !important;
-    top: 50px !important;
-  }
 }

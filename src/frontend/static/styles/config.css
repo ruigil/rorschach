@@ -1,6 +1,4 @@
 /* ─── Config panel ─── */
-#panel-config.active { flex-direction: column; }
-
 r-config-form { display: contents; }
 r-chat-panel { display: contents; }
 r-mode-select { display: contents; }
@@ -316,30 +314,6 @@ r-observe-panel { display: contents; }
 }
 
 .btn-reset:hover { border-color: var(--text-dim); color: var(--text-mid); }
-
-.save-status {
-  font-size: 0.68rem;
-  font-family: var(--font-mono);
-  font-weight: 300;
-  color: var(--green);
-  opacity: 0;
-  transition: opacity 0.3s;
-  margin-left: auto;
-}
-
-.save-status.visible { opacity: 1; }
-
-.save-error {
-  font-size: 0.68rem;
-  font-family: var(--font-mono);
-  font-weight: 300;
-  color: var(--error);
-  opacity: 0;
-  transition: opacity 0.3s;
-  margin-left: auto;
-}
-
-.save-error.visible { opacity: 1; }
 
 .custom-select-container {
   position: relative;

@@ -59,6 +59,8 @@ export const pluginHost = {
       contentTag: 'r-config-form',
       defaultWidth: 600,
       defaultHeight: 500,
+      minWidth: 400,
+      minHeight: 300,
     }
     windowRegistry.set('config', configCfg)
     store.ensureWindow('config', configCfg)
@@ -70,6 +72,8 @@ export const pluginHost = {
       contentTag: 'r-observe-panel',
       defaultWidth: 800,
       defaultHeight: 600,
+      minWidth: 400,
+      minHeight: 300,
     }
     windowRegistry.set('observe', observeCfg)
     store.ensureWindow('observe', observeCfg)
