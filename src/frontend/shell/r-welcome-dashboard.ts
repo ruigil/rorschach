@@ -2,7 +2,6 @@ import { html } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
-import { openWindow } from '@rorschach/frontend/webkit/window-actions.js';
 import type { ShellState } from '../types/state.js';
 
 @customElement('r-welcome-dashboard')
