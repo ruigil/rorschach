@@ -6,11 +6,6 @@ import { loadConfig, saveConfig } from './config.ts'
 import type { LifecycleEvent, ConfigUpdateRequest } from './system/index.ts'
 import { AgentSystem } from './system/index.ts'
 
-if (!process.env.OPENROUTER_API_KEY) {
-  console.error('Error: OPENROUTER_API_KEY environment variable is not set.')
-  process.exit(1)
-}
-
 // ─── Load config and plugins from config.json ───
 
 const { plugins, config, configPath } = await loadConfig()
