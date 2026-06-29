@@ -22,9 +22,8 @@ import './shell/r-mode-select.js'
 import './shell/r-surface-error.js'
 import './shell/r-welcome-dashboard.js'
 
-// Shell boot: corona animation, router, store init, plugin-host
+// Shell boot: corona animation, store init, plugin-host
 import './corona.js'
-import { initRouter } from './router.js'
 import { store } from '@rorschach/frontend/webkit/store.js'
 import type { ShellState } from './types/state.js'
 import { pluginHost } from './shell/plugin-host.js'
@@ -79,7 +78,6 @@ store.namespace<ShellState>('shell').init({
 // watcher, dynamic-imports legacy plugin UI modules).
 await pluginHost.init()
 console.log('Plugin host initialized, shell is ready.')
-initRouter()
 
 // The application is now bootstrapped by the <r-shell> component.
 // It handles authentication fetching, session initialization,
