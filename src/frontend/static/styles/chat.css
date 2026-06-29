@@ -95,7 +95,7 @@
   color: var(--user-text);
   background: var(--user-bg);
   border: 1px solid var(--user-border);
-  border-radius: 16px 16px 4px 16px;
+  border-radius: var(--radius);
   padding: 0.6rem 0.9rem;
   font-weight: 400;
   font-size: 0.84rem;
@@ -106,7 +106,7 @@
   padding: 0.7rem 1rem;
   background: var(--bot-bg);
   border: 1px solid rgba(0, 196, 212, 0.05);
-  border-radius: 4px 14px 14px 14px;
+  border-radius: var(--radius);
   font-weight: 300;
   font-size: 0.875rem;
   line-height: 1.8;
@@ -333,7 +333,7 @@ textarea::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px
     align-items: center;
   }
   .message.user .bubble {
-    border-radius: 4px 14px 14px 14px;
+    border-radius: var(--radius);
   }
   .bubble {
     max-width: 100%;

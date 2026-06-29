@@ -400,7 +400,7 @@ r-topic-list::-webkit-scrollbar-thumb { background: var(--border-mid); border-ra
 r-tools-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0.75rem 0;
+  padding: 0.75rem;
 }
 
 r-tools-list::-webkit-scrollbar { width: 3px; }
