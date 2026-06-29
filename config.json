@@ -54,7 +54,7 @@
     "cognitive": {
       "llmProvider": {
         "provider": "venice",
-        "apiKey": "VENICE_INFERENCE_KEY_TiRvmQoNWEFjIhhJIBQYBKVABBb34-clXSw97LUiJC",
+        "apiKey": "${VENICE_API_KEY}",
         "reasoning": {
           "enabled": true,
           "effort": "medium"
