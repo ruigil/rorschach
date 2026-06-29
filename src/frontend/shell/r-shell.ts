@@ -5,9 +5,7 @@ import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
 import { store } from '@rorschach/frontend/webkit/store.js';
 import { connect } from '../connection.js';
 import { logout } from '../actions.js';
-import { openWindow, closeWindow, setActiveWorkspaceTab, undockWindow } from '@rorschach/frontend/webkit/window-actions.js';
-import { TABS } from '../constants.js';
-import type { Tab } from '../constants.js';
+import { openWindow, closeWindow, setActiveWorkspaceTab } from '@rorschach/frontend/webkit/window-actions.js';
 import type { ShellState } from '../types/state.js';
 import { pluginHost } from './plugin-host.js';
 
@@ -21,9 +19,14 @@ export class RShell extends RorschachBase {
 
   private _windows = new StoreController<ShellState, 'windows'>(this, ['shell', 'windows']);
   private _activeWorkspaceTab = new StoreController<ShellState, 'activeWorkspaceTab'>(this, ['shell', 'activeWorkspaceTab']);
+  private _currentMode = new StoreController<ShellState, 'currentMode'>(this, ['shell', 'currentMode']);
+  private _currentModeDisplayName = new StoreController<ShellState, 'currentModeDisplayName'>(this, ['shell', 'currentModeDisplayName']);
 
   @state() private _noticing = false;
   private _prevWaiting = false;
+
+  @state() private _sidebarWidth = 360;
+  @state() private _isSidebarCollapsed = false;
 
   override createRenderRoot() {
     return this; // Light DOM to integrate globally
@@ -32,6 +35,17 @@ export class RShell extends RorschachBase {
   override connectedCallback() {
     super.connectedCallback();
     this._bootstrap();
+
+    // Listen to activeTab store updates to handle legacy URL hash routing
+    store.namespace<ShellState>('shell').subscribe('activeTab', (tab) => {
+      if (tab === 'config') {
+        openWindow('config');
+        setTimeout(() => store.namespace<ShellState>('shell').set('activeTab', 'chat'), 50);
+      } else if (tab === 'observe') {
+        openWindow('observe');
+        setTimeout(() => store.namespace<ShellState>('shell').set('activeTab', 'chat'), 50);
+      }
+    });
   }
 
   private async _bootstrap() {
@@ -48,9 +62,9 @@ export class RShell extends RorschachBase {
 
     connect();
 
-    if (store.namespace<ShellState>('shell').get('activeTab') === 'chat') {
-      openWindow('chat');
-    }
+    // In the new layout, chat is always a persistent sidebar and never a dock window.
+    // However, we call openWindow('chat') for backwards compatibility in window maps.
+    openWindow('chat');
   }
 
   private _canUseAdminSurface() {
@@ -59,29 +73,42 @@ export class RShell extends RorschachBase {
     return userId === 'anonymous' || (roles?.includes('admin') ?? false);
   }
 
-  private _handleTabClick(tab: Tab) {
-    store.namespace<ShellState>('shell').set('activeTab', tab);
-    if (tab === 'chat') {
-      openWindow('chat');
-    }
-  }
-
   private async _handleLogout() {
     await logout();
   }
 
-  private _undockWorkspace(id: string) {
-    undockWindow(id);
+  private _isAnyWorkspaceOpen() {
+    const windows = this._windows.value as any;
+    return Object.keys(windows).some(id => id !== 'chat' && windows[id].isOpen);
   }
 
-  private _isAnyWorkspaceDockedAndOpen() {
+  private _getActiveWorkspaces() {
     const windows = this._windows.value as any;
-    return Object.keys(windows).some(id => id !== 'chat' && windows[id].isOpen && windows[id].isDocked);
+    return Object.keys(windows).filter(id => id !== 'chat' && windows[id].isOpen);
   }
 
-  private _getActiveDockedWorkspaces() {
-    const windows = this._windows.value as any;
-    return Object.keys(windows).filter(id => id !== 'chat' && windows[id].isOpen && windows[id].isDocked);
+  private _handleSidebarResize(e: PointerEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = this._sidebarWidth;
+
+    const onPointerMove = (moveEv: PointerEvent) => {
+      const dx = moveEv.clientX - startX;
+      const newWidth = Math.max(260, Math.min(600, startWidth + dx));
+      this._sidebarWidth = newWidth;
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  }
+
+  private _toggleSidebar() {
+    this._isSidebarCollapsed = !this._isSidebarCollapsed;
   }
 
   override updated(changedProperties: Map<string | symbol, unknown>) {
@@ -96,20 +123,18 @@ export class RShell extends RorschachBase {
 
     // Enforce selection of an active tab
     const activeTab = this._activeWorkspaceTab.value as string;
-    const dockedOpenWorkspaces = this._getActiveDockedWorkspaces();
-    if (dockedOpenWorkspaces.length > 0 && !dockedOpenWorkspaces.includes(activeTab)) {
-      const fallback = dockedOpenWorkspaces[0]!;
+    const openWorkspaces = this._getActiveWorkspaces();
+    if (openWorkspaces.length > 0 && !openWorkspaces.includes(activeTab)) {
+      const fallback = openWorkspaces[0]!;
       setActiveWorkspaceTab(fallback);
     }
   }
 
   override render() {
-    const activeTab = this._activeTab.value;
     const canAdmin = this._canUseAdminSurface();
     const isConnected = this._isConnected.value;
     const isWaiting = this._isWaiting.value;
     const userId = this._currentUserId.value;
-    const windows = this._windows.value as any;
 
     return html`
       <header class="${isWaiting ? 'streaming' : ''}">
@@ -120,19 +145,7 @@ export class RShell extends RorschachBase {
             <circle cx="12" cy="12" r="1.6" fill="currentColor" opacity="0.9"/>
           </svg>
           <span class="logo-name">RORSCHACH</span>
-          <div class="logo-divider"></div>
-          <span class="logo-sub">${activeTab}</span>
         </div>
-        <nav class="header-nav">
-          <button class="nav-link ${activeTab === 'chat' ? 'active' : ''}"
-                  @click=${() => this._handleTabClick('chat')}>chat</button>
-          <button class="nav-link ${activeTab === 'config' ? 'active' : ''}"
-                  ?hidden=${!canAdmin}
-                  @click=${() => this._handleTabClick('config')}>config</button>
-          <button class="nav-link ${activeTab === 'observe' ? 'active' : ''}"
-                  ?hidden=${!canAdmin}
-                  @click=${() => this._handleTabClick('observe')}>observe</button>
-        </nav>
         <div class="header-end">
           <r-mode-select></r-mode-select>
           <div class="status-pill">
@@ -147,20 +160,44 @@ export class RShell extends RorschachBase {
         </div>
       </header>
 
-      <main>
-        <div id="panel-chat" class="panel ${activeTab === 'chat' ? 'active' : ''} ${this._isAnyWorkspaceDockedAndOpen() ? 'workspaces-open' : ''}">
-          <!-- Left-Dock Slot: Chat Window -->
-          ${windows.chat?.isOpen && windows.chat?.isDocked ? html`
-            <r-window .windowId=${'chat'} class="chat-dock-slot"></r-window>
-          ` : ''}
+      <main class="split-pane-layout">
+        <!-- Left Sidebar: Chat panel -->
+        <aside class="sidebar-panel ${this._isSidebarCollapsed ? 'collapsed' : ''}" style="width: ${this._isSidebarCollapsed ? '60px' : `${this._sidebarWidth}px`};">
+          <div class="sidebar-content-wrapper">
+            <div class="sidebar-title-bar">
+              <div class="sidebar-actions-group">
+                <button class="sidebar-header-btn" @click=${this._toggleSidebar} title="Toggle sidebar">
+                  ${this.renderIcon(this._isSidebarCollapsed ? 'panel-left-open' : 'panel-left-close')}
+                </button>
+                <button class="sidebar-header-btn" @click=${() => alert(`User Session: ${userId || 'anonymous'}`)} title="User Session Profile">
+                  ${this.renderIcon('user')}
+                </button>
+                <button class="sidebar-header-btn" ?hidden=${!canAdmin} @click=${() => openWindow('config')} title="Configuration Settings">
+                  ${this.renderIcon('settings')}
+                </button>
+                <button class="sidebar-header-btn" ?hidden=${!canAdmin} @click=${() => openWindow('observe')} title="Observation Panel">
+                  ${this.renderIcon('activity')}
+                </button>
+              </div>
+              <span class="sidebar-title">${this._currentModeDisplayName.value || this._currentMode.value || 'Chat'}</span>
+            </div>
+            
+            <r-chat-panel class="flex-grow-1 min-height-0"></r-chat-panel>
+          </div>
+        </aside>
 
-          <!-- Right-Dock Slot: Shared Tabbed Workspaces -->
-          ${this._isAnyWorkspaceDockedAndOpen() ? html`
-            <div class="workspace-dock-slot flex-column">
+        <!-- Sidebar Resizer -->
+        <div class="sidebar-resizer" ?hidden=${this._isSidebarCollapsed} @pointerdown=${this._handleSidebarResize}></div>
+
+        <!-- Right Column: Workspaces -->
+        <div class="workspace-panel flex-grow-1 flex-column min-width-0">
+          <canvas id="void-canvas" aria-hidden="true"></canvas>
+          ${this._isAnyWorkspaceOpen() ? html`
+            <div class="workspace-container flex-grow-1 flex-column min-height-0">
               <div class="workspace-tabs-bar">
                 <div class="tabs-list">
-                  ${this._getActiveDockedWorkspaces().map(id => {
-                    const cfg = pluginHost.windowRegistry.get(id)
+                  ${this._getActiveWorkspaces().map(id => {
+                    const cfg = pluginHost.windowRegistry.get(id);
                     return html`
                       <button
                         class="workspace-tab ${this._activeWorkspaceTab.value === id ? 'active' : ''}"
@@ -173,44 +210,21 @@ export class RShell extends RorschachBase {
                           closeWindow(id);
                         }}>×</span>
                       </button>
-                    `
+                    `;
                   })}
-                </div>
-
-                <div class="workspace-tabs-actions">
-                  <button class="win-btn tab-action-btn" @click=${() => this._undockWorkspace(this._activeWorkspaceTab.value as string)} title="Undock to floating window">
-                    ${this.renderIcon('popup')}
-                  </button>
-                  <button class="win-btn tab-action-btn close-btn" @click=${() => closeWindow(this._activeWorkspaceTab.value as string)} title="Close workspace">
-                    ×
-                  </button>
                 </div>
               </div>
               <div class="workspace-active-body flex-grow-1 min-height-0">
                 <r-window .windowId=${this._activeWorkspaceTab.value as string}></r-window>
               </div>
             </div>
-          ` : ''}
-        </div>
-
-        <div id="panel-config" class="panel ${activeTab === 'config' ? 'active' : ''}">
-          <r-config-form></r-config-form>
-        </div>
-
-        <div id="panel-observe" class="panel ${activeTab === 'observe' ? 'active' : ''}">
-          <r-observe-panel></r-observe-panel>
+          ` : html`
+            <div class="workspace-empty-container flex-grow-1">
+              <r-welcome-dashboard class="flex-grow-1"></r-welcome-dashboard>
+            </div>
+          `}
         </div>
       </main>
-
-      <!-- Floating Windows Layer -->
-      <div class="floating-window-layer">
-        ${Object.keys(windows).map(id => {
-          const win = windows[id];
-          return win?.isOpen && !win?.isDocked ? html`
-            <r-window .windowId=${id}></r-window>
-          ` : '';
-        })}
-      </div>
     `;
   }
 }

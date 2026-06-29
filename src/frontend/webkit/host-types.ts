@@ -37,7 +37,6 @@ export type WindowConfig = {
 export type WindowRuntimeState = {
   id: string
   isOpen: boolean
-  isDocked: boolean
   isMinimized: boolean
   x: number
   y: number

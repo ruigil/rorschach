@@ -3,7 +3,7 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 
 import { store } from '../../frontend/webkit/store.js'
 import { resetStore } from '../helpers/frontend.js'
-import { setMode, setActiveWorkspaceTab, updateWindowState, undockWindow } from '../../frontend/webkit/window-actions.js'
+import { setMode, setActiveWorkspaceTab, updateWindowState } from '../../frontend/webkit/window-actions.js'
 import {
   addLog,
   appendMessage,
@@ -179,7 +179,6 @@ describe('window state actions', () => {
       docs: {
         id: 'docs',
         isOpen: true,
-        isDocked: true,
         isMinimized: false,
         x: 10,
         y: 20,
@@ -190,37 +189,13 @@ describe('window state actions', () => {
       },
     })
 
-    expect(updateWindowState('docs', { isDocked: false, x: 64 })).toBe(true)
+    expect(updateWindowState('docs', { x: 64 })).toBe(true)
 
     const win = store.namespace<ShellState>('shell').get('windows').docs!
-    expect(win.isDocked).toBe(false)
     expect(win.x).toBe(64)
 
     const stored = JSON.parse(localStorage.getItem('rorschach.window_state.docs')!)
-    expect(stored.isDocked).toBe(false)
     expect(stored.x).toBe(64)
   })
 
-  test('undockWindow updates and persists dock state', () => {
-    store.namespace<ShellState>('shell').set('windows', {
-      docs: {
-        id: 'docs',
-        isOpen: true,
-        isDocked: true,
-        isMinimized: false,
-        x: 10,
-        y: 20,
-        w: 400,
-        h: 500,
-        zIndex: 1000,
-        params: {},
-      },
-    })
-
-    expect(undockWindow('docs')).toBe(true)
-    expect(store.namespace<ShellState>('shell').get('windows').docs!.isDocked).toBe(false)
-
-    const stored = JSON.parse(localStorage.getItem('rorschach.window_state.docs')!)
-    expect(stored.isDocked).toBe(false)
-  })
 })

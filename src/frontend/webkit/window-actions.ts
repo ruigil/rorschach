@@ -56,9 +56,6 @@ export const updateWindowState = (id: string, updates: Partial<WindowRuntimeStat
   return true
 }
 
-export const undockWindow = (id: string) => {
-  return updateWindowState(id, { isDocked: false })
-}
 
 export const focusWindow = (id: string) => {
   const activeIds = [...shell().get('activeWindowIds')]
@@ -84,7 +81,7 @@ export const openWindow = (id: string) => {
   winState.isOpen = true
   winState.isMinimized = false
 
-  if (winState.isDocked && id !== 'chat') {
+  if (id !== 'chat') {
     setActiveWorkspaceTab(id)
   }
 

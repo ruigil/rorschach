@@ -1,4 +1,4 @@
-const voidCanvas = document.getElementById('void-canvas') as HTMLCanvasElement;
+let voidCanvas: HTMLCanvasElement | null = null;
 let voidRaf: number | null = null;
 
 const VERT_SRC = `
@@ -138,9 +138,8 @@ const FRAG_SRC = `
   }
 `;
 
-const initVoidGL = () => {
-  if (!voidCanvas) return null;
-  const gl = voidCanvas.getContext('webgl');
+const initVoidGL = (canvas: HTMLCanvasElement) => {
+  const gl = canvas.getContext('webgl');
   if (!gl) return null;
 
   const compile = (type: number, src: string) => {
@@ -170,15 +169,23 @@ const initVoidGL = () => {
   return { gl, uRes, uTime };
 }
 
-const resizeVoidCanvas = () => {
-  if (!voidCanvas) return;
-  voidCanvas.width  = Math.ceil(window.innerWidth  * 0.5);
-  voidCanvas.height = Math.ceil(window.innerHeight * 0.5);
+const resizeVoidCanvas = (canvas: HTMLCanvasElement) => {
+  const w = canvas.clientWidth || 600;
+  const h = canvas.clientHeight || 600;
+  canvas.width  = Math.ceil(w * 0.5);
+  canvas.height = Math.ceil(h * 0.5);
 }
 
-if (voidCanvas) {
-  resizeVoidCanvas();
-  const voidGL = initVoidGL();
+const checkAndInit = () => {
+  const el = document.getElementById('void-canvas') as HTMLCanvasElement;
+  if (!el) {
+    requestAnimationFrame(checkAndInit);
+    return;
+  }
+
+  voidCanvas = el;
+  resizeVoidCanvas(voidCanvas);
+  const voidGL = initVoidGL(voidCanvas);
 
   if (voidGL) {
     const { gl, uRes, uTime } = voidGL;
@@ -187,6 +194,7 @@ if (voidCanvas) {
 
     const drawVoidFrame = (ts: number) => {
       voidRaf = requestAnimationFrame(drawVoidFrame);
+      if (!voidCanvas) return;
       if (ts - lastFrameTs < 33) return;  // ~30 fps cap
       lastFrameTs = ts;
       gl.viewport(0, 0, voidCanvas.width, voidCanvas.height);
@@ -204,11 +212,26 @@ if (voidCanvas) {
         voidRaf = requestAnimationFrame(drawVoidFrame); 
       }
     });
-    window.addEventListener('resize', () => {
-      resizeVoidCanvas();
-      gl.viewport(0, 0, voidCanvas.width, voidCanvas.height);
-    }, { passive: true });
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const obs = new ResizeObserver(() => {
+        if (voidCanvas) {
+          resizeVoidCanvas(voidCanvas);
+          gl.viewport(0, 0, voidCanvas.width, voidCanvas.height);
+        }
+      });
+      obs.observe(voidCanvas);
+    } else {
+      window.addEventListener('resize', () => {
+        if (voidCanvas) {
+          resizeVoidCanvas(voidCanvas);
+          gl.viewport(0, 0, voidCanvas.width, voidCanvas.height);
+        }
+      }, { passive: true });
+    }
 
     voidRaf = requestAnimationFrame(drawVoidFrame);
   }
-}
+};
+
+requestAnimationFrame(checkAndInit);

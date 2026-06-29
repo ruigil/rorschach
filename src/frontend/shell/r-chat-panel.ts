@@ -53,13 +53,6 @@ export class RChatPanel extends RorschachBase {
       this._lastMessagesLength = messages.length;
       this._lastStreamActive = activeStream.isActive;
       this._lastStreamText = activeStream.text;
-
-      // Trigger a pulse animation on message receive/send when floating
-      const win = store.namespace<ShellState>('shell').get('windows')?.chat;
-      if (win && !win.isDocked && (messagesChanged || streamActiveChanged)) {
-        this.classList.add('message-pulse');
-        setTimeout(() => this.classList.remove('message-pulse'), 800);
-      }
     }
   }
 
@@ -85,9 +78,7 @@ export class RChatPanel extends RorschachBase {
     const messages = this._messages.value as any[];
     const activeStream = this._activeStream.value as any;
 
-    const win = store.namespace<ShellState>('shell').get('windows')?.chat;
-    const isUndocked = win ? !win.isDocked : false;
-    const viewClass = isUndocked ? 'window-view' : 'panel-view';
+    const viewClass = 'panel-view';
 
     return html`
       <div class="chat-main ${viewClass}">

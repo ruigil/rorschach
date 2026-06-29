@@ -21,7 +21,7 @@
 .message {
   display: flex;
   flex-direction: column;
-  padding: 0.75rem 1.75rem;
+  padding: 0.75rem 0.75rem;
   gap: 0.35rem;
   animation: msgIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -74,9 +74,9 @@
   100% { background: transparent; }
 }
 
-.message.user    { align-items: flex-end; }
+.message.user,
 .message.assistant,
-.message.error   { align-items: flex-start; }
+.message.error   { align-items: center; }
 
 .bubble-header {
   display: flex;
@@ -120,7 +120,7 @@
   font-weight: 300;
   line-height: 1.75;
   word-break: break-word;
-  max-width: min(660px, 82%);
+  width: 100%;
 }
 
 .message.user {
@@ -137,24 +137,16 @@
   font-size: 0.84rem;
 }
 
-.message.assistant {
-  animation: entityMaterialize 0.45s cubic-bezier(0.16,1,0.3,1) both;
-}
-
 .message.assistant .bubble {
   color: var(--bot-text);
   padding: 0.7rem 1rem;
   background: var(--bot-bg);
-  border-left: 2px solid var(--bot-rail);
-  border-top: 1px solid rgba(0,196,212,0.07);
-  border-right: 1px solid rgba(0,196,212,0.04);
-  border-bottom: 1px solid rgba(0,196,212,0.04);
+  border: 1px solid rgba(0, 196, 212, 0.05);
   border-radius: 4px 14px 14px 14px;
   font-weight: 300;
   font-size: 0.875rem;
   line-height: 1.8;
   min-height: 32px;
-  animation: entityPower 6s ease-in-out infinite;
 }
 
 .message.error .bubble {
@@ -190,7 +182,7 @@
 
 /* ─── Chat: input area ─── */
 .input-area {
-  padding: 1rem 1.25rem 1rem;
+  padding: 1rem 0.75rem 1rem;
   background: transparent;
   flex-shrink: 0;
 }
@@ -505,7 +497,7 @@ r-chat-panel.undocked.collapsed {
   .undocked #messages .bubble {
     font-size: 0.72rem !important;
     padding: 0.35rem 0.6rem !important;
-    max-width: 96% !important;
+    width: 100% !important;
   }
 }
 
@@ -666,7 +658,7 @@ r-chat-panel.undocked.collapsed {
 }
 
 .undocked #messages .bubble {
-  max-width: 92%;
+  width: 100%;
   font-size: 0.8rem;
   line-height: 1.6;
 }
@@ -732,7 +724,7 @@ r-chat-panel.undocked.collapsed {
 /* ─── Responsive stacking for narrow screens & containers (<= 400px) ─── */
 @media (max-width: 400px) {
   .message.user {
-    align-items: flex-start;
+    align-items: center;
   }
   .message.user .bubble-header {
     flex-direction: row;
@@ -750,7 +742,7 @@ r-chat-panel.undocked.collapsed {
 
 @container chatWindow (max-width: 400px) {
   .message.user {
-    align-items: flex-start;
+    align-items: center;
   }
   .message.user .bubble-header {
     flex-direction: row;

@@ -20,6 +20,7 @@ import './shell/r-config-form.js'
 import './shell/r-observe-panel.js'
 import './shell/r-mode-select.js'
 import './shell/r-surface-error.js'
+import './shell/r-welcome-dashboard.js'
 
 // Shell boot: corona animation, router, store init, plugin-host
 import './corona.js'

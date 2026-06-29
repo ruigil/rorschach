@@ -51,15 +51,6 @@ html, body { height: 100%; overscroll-behavior: none; }
 html { background: var(--bg); }
 
 
-#void-canvas {
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  pointer-events: none;
-  width: 100% !important;
-  height: 100% !important;
-  image-rendering: pixelated;
-}
 
 body {
   font-family: var(--font-ui);
@@ -69,36 +60,4 @@ body {
   flex-direction: column;
   height: 100dvh;
   overflow: hidden;
-}
-
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background:
-    /* Primary heat bloom — orange-red energy rising from below */
-    radial-gradient(ellipse 85% 50% at 50% 108%, rgba(220,80,20,0.18)  0%, rgba(180,40,10,0.06) 45%, transparent 70%),
-    /* Secondary — yellow-white hot centre bleeding up */
-    radial-gradient(ellipse 40% 30% at 50% 112%, rgba(255,200,80,0.12) 0%, transparent 55%),
-    /* Left flank — deep red structural mass */
-    radial-gradient(ellipse 38% 55% at -6% 65%,  rgba(180,30,10,0.08)  0%, transparent 55%),
-    /* Right edge — violet/purple deep energy */
-    radial-gradient(ellipse 30% 40% at 108% 40%, rgba(140,0,200,0.06)  0%, transparent 50%),
-    /* Upper — cold cyan, entity structure above frame */
-    radial-gradient(ellipse 50% 28% at 50% -8%,  rgba(0,80,100,0.10)   0%, transparent 60%),
-    /* Deep void floor */
-    radial-gradient(ellipse 100% 55% at 50% 130%, rgba(60,10,5,0.35)   0%, transparent 65%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-body::after {
-  content: '';
-  position: fixed;
-  top: 51px;
-  left: 0; right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent 0%, rgba(0,196,212,0.2) 30%, rgba(0,196,212,0.4) 50%, rgba(0,196,212,0.2) 70%, transparent 100%);
-  pointer-events: none;
-  z-index: 9;
 }

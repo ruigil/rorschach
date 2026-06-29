@@ -52,6 +52,28 @@ export const pluginHost = {
     windowRegistry.set('chat', chatCfg)
     store.ensureWindow('chat', chatCfg)
 
+    const configCfg: WindowConfig = {
+      id: 'config',
+      title: 'Configuration',
+      icon: 'settings',
+      contentTag: 'r-config-form',
+      defaultWidth: 600,
+      defaultHeight: 500,
+    }
+    windowRegistry.set('config', configCfg)
+    store.ensureWindow('config', configCfg)
+
+    const observeCfg: WindowConfig = {
+      id: 'observe',
+      title: 'Observation',
+      icon: 'activity',
+      contentTag: 'r-observe-panel',
+      defaultWidth: 800,
+      defaultHeight: 600,
+    }
+    windowRegistry.set('observe', observeCfg)
+    store.ensureWindow('observe', observeCfg)
+
     // All plugin surfaces (docs, workflows, ...) are now driven by
     // UiSurfaceRegistration WS frames. No legacy seeds remain.
     this._startModeWatcher()

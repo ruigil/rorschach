@@ -13,7 +13,6 @@ describe('r-message-bubble', () => {
     el.message = { id: '1', role: 'user', text: 'hello', timestamp: Date.now() }
     await el.updateComplete
 
-    expect(el.textContent).toContain('You')
     expect(el.textContent).toContain('hello')
   })
 
@@ -23,7 +22,6 @@ describe('r-message-bubble', () => {
     el.message = { id: '2', role: 'assistant', text: 'hi there', timestamp: Date.now() }
     await el.updateComplete
 
-    expect(el.textContent).toContain('Rorschach')
     expect(el.textContent).toContain('hi there')
   })
 
@@ -34,17 +32,7 @@ describe('r-message-bubble', () => {
     el.message = { id: '3', role: 'error', text: 'something went wrong', timestamp: Date.now() }
     await el.updateComplete
 
-    expect(el.textContent).toContain('Error')
     expect(el.textContent).toContain('something went wrong')
-  })
-
-  test('shows mode suffix for non-chatbot modes', async () => {
-    mockStore('currentMode', 'planner')
-    const el = await mountClass(RMessageBubble) as any
-    el.message = { id: '4', role: 'assistant', text: 'plan', timestamp: Date.now() }
-    await el.updateComplete
-
-    expect(el.textContent).toContain('[Planner]')
   })
 
   test('renders reasoning in details element', async () => {

@@ -23,7 +23,7 @@ describe('r-chat-panel', () => {
       { id: '2', role: 'assistant', text: 'hi', timestamp: Date.now() }
     ])
     mockStore('activeStream', { isActive: false, text: '' })
-    mockStore('windows', { chat: { isDocked: true } })
+    mockStore('windows', { chat: {} })
     
     const el = await mountClass(RChatPanel) as any
     await el.updateComplete

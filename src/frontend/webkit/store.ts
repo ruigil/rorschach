@@ -136,7 +136,6 @@ const readSavedWindowState = (id: string, cfg: WindowConfig): WindowRuntimeState
   const defaultState: WindowRuntimeState = {
     id,
     isOpen: id === 'chat',
-    isDocked: true,
     isMinimized: false,
     x: defaultX,
     y: defaultY,

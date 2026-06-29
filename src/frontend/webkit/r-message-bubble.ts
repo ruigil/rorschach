@@ -5,31 +5,15 @@ import { type Message, type ActiveStream } from './types.js';
 import { renderMarkdown } from './markdown.js';
 import { StoreController } from './store-controller.js';
 
-type ShellModeState = {
-  currentMode: string
-};
-
 @customElement('r-message-bubble')
 export class RMessageBubble extends RorschachBase {
   @property({ type: Object }) message?: Message;
   @property({ type: Object }) stream?: ActiveStream;
   @property({ type: String, reflect: true }) type: 'assistant' | 'user' | 'error' = 'assistant';
 
-  private _currentMode = new StoreController<ShellModeState, 'currentMode'>(this, ['shell', 'currentMode']);
-
   // Render to light DOM to reuse chat.css styles
   override createRenderRoot() {
     return this;
-  }
-
-  private _getLabelText() {
-    const role = this.message?.role ?? this.type;
-    if (role === 'user') return 'You';
-    if (role === 'error') return 'Error';
-    
-    const mode = this._currentMode.value;
-    const suffix = mode && mode !== 'chatbot' ? ` [${mode.charAt(0).toUpperCase() + mode.slice(1)}]` : '';
-    return `Rorschach${suffix}`;
   }
 
   override render() {
@@ -45,10 +29,6 @@ export class RMessageBubble extends RorschachBase {
     return html`
       <div class="message ${role}">
         <div class="bubble">
-          <div class="bubble-header">
-            <span class="bubble-avatar">${role === 'user' ? '👤' : role === 'error' ? '⚠️' : '🤖'}</span>
-            <span class="bubble-name">${this._getLabelText()}</span>
-          </div>
           ${reasoning ? html`
             <details class="reasoning ${!this.message && this.stream?.reasoning ? 'reasoning-streaming' : ''}">
               <summary>Thinking...</summary>
