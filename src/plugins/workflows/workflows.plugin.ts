@@ -37,15 +37,10 @@ const buildWorkflowsTools = (toolsRef: ActorRef<ToolMsg>): ToolCollection => {
 const workflowsSurfaceRegistration: UiSurfaceRegistration = {
   id: 'workflows',
   version: '1.0.0',
-  window: {
+  view: {
     title: 'Workflows',
     icon: 'git-branch',
     contentTag: 'r-workflow-workspace',
-    dockResizable: false,
-    defaultWidth: 460,
-    defaultHeight: 600,
-    minWidth: 320,
-    minHeight: 200,
     modes: ['workflows'],
   },
   moduleUrl: '/plugins/workflows/ui/index.js',

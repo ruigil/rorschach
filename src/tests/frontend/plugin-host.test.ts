@@ -7,7 +7,7 @@ import type { UiSurfaceRegistration } from '../../types/ui-surface.js'
 beforeEach(() => {
   __resetStoreForTests()
   localStorage.clear()
-  pluginHost.windowRegistry.clear()
+  pluginHost.viewRegistry.clear()
   pluginHost.surfaces.clear()
   store.namespace<ShellState>('shell').init({
     isConnected: false,
@@ -28,8 +28,7 @@ beforeEach(() => {
     activeTab: 'chat',
     observeActiveTab: 'metrics',
     activeStream: { isActive: false, reasoning: '', text: '', sources: [], attachments: [] },
-    windows: {},
-    activeWindowIds: [],
+    views: {},
     activeWorkspaceTab: 'docs',
   })
 })
@@ -37,23 +36,19 @@ beforeEach(() => {
 afterEach(() => {
   __resetStoreForTests()
   localStorage.clear()
-  pluginHost.windowRegistry.clear()
+  pluginHost.viewRegistry.clear()
   pluginHost.surfaces.clear()
 })
 
 describe('pluginHost.dispatch (register)', () => {
-  test('registers a window in the registry', async () => {
+  test('registers a view in the registry', async () => {
     const reg: UiSurfaceRegistration = {
       id: 'test-surface',
       version: '1.0.0',
-      window: {
+      view: {
         title: 'Test',
         icon: 'file',
         contentTag: 'r-empty-state',
-        defaultWidth: 300,
-        defaultHeight: 400,
-        minWidth: 200,
-        minHeight: 200,
       },
       moduleUrl: '/plugins/test/ui/index.js',
     }
@@ -65,24 +60,20 @@ describe('pluginHost.dispatch (register)', () => {
     await new Promise(r => setTimeout(r, 50))
 
     expect(pluginHost.surfaces.get('test-surface')).toBeDefined()
-    expect(pluginHost.windowRegistry.get('test-surface')).toBeDefined()
-    expect(pluginHost.windowRegistry.get('test-surface')!.title).toBe('Test')
+    expect(pluginHost.viewRegistry.get('test-surface')).toBeDefined()
+    expect(pluginHost.viewRegistry.get('test-surface')!.title).toBe('Test')
   })
 
-  test('opens window when modes includes currentMode (late-registration guard)', async () => {
+  test('opens view when modes includes currentMode (late-registration guard)', async () => {
     store.namespace<ShellState>('shell').set('currentMode', 'testmode')
 
     const reg: UiSurfaceRegistration = {
       id: 'mode-surface',
       version: '1.0.0',
-      window: {
+      view: {
         title: 'Mode Test',
         icon: 'file',
         contentTag: 'r-empty-state',
-        defaultWidth: 300,
-        defaultHeight: 400,
-        minWidth: 200,
-        minHeight: 200,
         modes: ['testmode'],
       },
       moduleUrl: '/plugins/test/ui/index.js',
@@ -91,25 +82,21 @@ describe('pluginHost.dispatch (register)', () => {
     pluginHost.dispatch(reg)
     await new Promise(r => setTimeout(r, 50))
 
-    const win = store.namespace<ShellState>('shell').get('windows')['mode-surface']
-    expect(win).toBeDefined()
-    expect(win!.isOpen).toBe(true)
+    const view = store.namespace<ShellState>('shell').get('views')['mode-surface']
+    expect(view).toBeDefined()
+    expect(view!.isOpen).toBe(true)
   })
 
-  test('does not open window when modes does not include currentMode', async () => {
+  test('does not open view when modes does not include currentMode', async () => {
     store.namespace<ShellState>('shell').set('currentMode', 'othermode')
 
     const reg: UiSurfaceRegistration = {
       id: 'no-open-surface',
       version: '1.0.0',
-      window: {
+      view: {
         title: 'No Open',
         icon: 'file',
         contentTag: 'r-empty-state',
-        defaultWidth: 300,
-        defaultHeight: 400,
-        minWidth: 200,
-        minHeight: 200,
         modes: ['testmode'],
       },
       moduleUrl: '/plugins/test/ui/index.js',
@@ -118,28 +105,23 @@ describe('pluginHost.dispatch (register)', () => {
     pluginHost.dispatch(reg)
     await new Promise(r => setTimeout(r, 50))
 
-    const win = store.namespace<ShellState>('shell').get('windows')['no-open-surface']
-    expect(win).toBeDefined()
-    // The window is seeded by ensureWindow but should NOT be open (isOpen
-    // defaults to false for non-chat windows)
-    expect(win!.isOpen).toBe(false)
+    const view = store.namespace<ShellState>('shell').get('views')['no-open-surface']
+    expect(view).toBeDefined()
+    // The view is seeded by ensureView but should NOT be open (isOpen defaults to false)
+    expect(view!.isOpen).toBe(false)
   })
 })
 
 describe('pluginHost.dispatch (unregister/tombstone)', () => {
-  test('removes the surface and window from registries', async () => {
+  test('removes the surface and view from registries', async () => {
     // First register
     const reg: UiSurfaceRegistration = {
       id: 'unreg-test',
       version: '1.0.0',
-      window: {
+      view: {
         title: 'Unreg',
         icon: 'file',
         contentTag: 'r-empty-state',
-        defaultWidth: 300,
-        defaultHeight: 400,
-        minWidth: 200,
-        minHeight: 200,
       },
       moduleUrl: '/plugins/test/ui/index.js',
       frameTypes: ['testFrame'],
@@ -149,9 +131,9 @@ describe('pluginHost.dispatch (unregister/tombstone)', () => {
     expect(pluginHost.surfaces.has('unreg-test')).toBe(true)
 
     // Now tombstone
-    pluginHost.dispatch({ id: 'unreg-test', window: null, moduleUrl: null, frameTypes: null })
+    pluginHost.dispatch({ id: 'unreg-test', view: null, moduleUrl: null, frameTypes: null })
     expect(pluginHost.surfaces.has('unreg-test')).toBe(false)
-    expect(pluginHost.windowRegistry.has('unreg-test')).toBe(false)
+    expect(pluginHost.viewRegistry.has('unreg-test')).toBe(false)
   })
 })
 
@@ -164,14 +146,10 @@ describe('pluginHost.routeFrame', () => {
     const reg: UiSurfaceRegistration = {
       id: 'route-test',
       version: '1.0.0',
-      window: {
+      view: {
         title: 'Route',
         icon: 'file',
         contentTag: 'r-empty-state',
-        defaultWidth: 300,
-        defaultHeight: 400,
-        minWidth: 200,
-        minHeight: 200,
       },
       moduleUrl: '/plugins/test/ui/index.js',
       frameTypes: ['myFrame'],
@@ -188,7 +166,7 @@ describe('pluginHost.routeFrame', () => {
 })
 
 describe('pluginHost._startModeWatcher', () => {
-  test('opens windows whose modes contain the new mode', async () => {
+  test('opens views whose modes contain the new mode', async () => {
     // Start the mode watcher (normally called by init())
     ;(pluginHost as any)._startModeWatcher()
 
@@ -196,14 +174,10 @@ describe('pluginHost._startModeWatcher', () => {
     const reg: UiSurfaceRegistration = {
       id: 'watch-test',
       version: '1.0.0',
-      window: {
+      view: {
         title: 'Watch',
         icon: 'file',
         contentTag: 'r-empty-state',
-        defaultWidth: 300,
-        defaultHeight: 400,
-        minWidth: 200,
-        minHeight: 200,
         modes: ['watchmode'],
       },
       moduleUrl: '/plugins/test/ui/index.js',
@@ -211,12 +185,12 @@ describe('pluginHost._startModeWatcher', () => {
     pluginHost.dispatch(reg)
     await new Promise(r => setTimeout(r, 50))
 
-    // Change mode to 'watchmode' — the mode-watcher should open the window
+    // Change mode to 'watchmode' — the mode-watcher should open the view
     store.namespace<ShellState>('shell').set('currentMode', 'watchmode')
     await new Promise(r => setTimeout(r, 10))
 
-    const win = store.namespace<ShellState>('shell').get('windows')['watch-test']
-    expect(win).toBeDefined()
-    expect(win!.isOpen).toBe(true)
+    const view = store.namespace<ShellState>('shell').get('views')['watch-test']
+    expect(view).toBeDefined()
+    expect(view!.isOpen).toBe(true)
   })
 })

@@ -3,7 +3,7 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 
 import { store } from '../../frontend/webkit/store.js'
 import { resetStore } from '../helpers/frontend.js'
-import { setMode, setActiveWorkspaceTab, updateWindowState } from '../../frontend/webkit/window-actions.js'
+import { setMode, setActiveWorkspaceTab, updateViewState } from '../../frontend/webkit/view-actions.js'
 import {
   addLog,
   appendMessage,
@@ -166,7 +166,7 @@ describe('commitActiveStream', () => {
   })
 })
 
-describe('window state actions', () => {
+describe('view state actions', () => {
   test('setActiveWorkspaceTab updates store and localStorage', () => {
     setActiveWorkspaceTab('plans')
 
@@ -174,28 +174,22 @@ describe('window state actions', () => {
     expect(localStorage.getItem('rorschach.store.shell.activeWorkspaceTab')).toBe(JSON.stringify('plans'))
   })
 
-  test('updateWindowState updates and persists the target window', () => {
-    store.namespace<ShellState>('shell').set('windows', {
+  test('updateViewState updates and persists the target view', () => {
+    store.namespace<ShellState>('shell').set('views', {
       docs: {
         id: 'docs',
         isOpen: true,
-        isMinimized: false,
-        x: 10,
-        y: 20,
-        w: 400,
-        h: 500,
-        zIndex: 1000,
         params: {},
       },
     })
 
-    expect(updateWindowState('docs', { x: 64 })).toBe(true)
+    expect(updateViewState('docs', { params: { docId: 42 } })).toBe(true)
 
-    const win = store.namespace<ShellState>('shell').get('windows').docs!
-    expect(win.x).toBe(64)
+    const view = store.namespace<ShellState>('shell').get('views').docs!
+    expect(view.params.docId).toBe(42)
 
-    const stored = JSON.parse(localStorage.getItem('rorschach.window_state.docs')!)
-    expect(stored.x).toBe(64)
+    const stored = JSON.parse(localStorage.getItem('rorschach.view_state.docs')!)
+    expect(stored.params.docId).toBe(42)
   })
 
 })

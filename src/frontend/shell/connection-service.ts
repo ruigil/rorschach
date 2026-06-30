@@ -14,7 +14,7 @@ import type { WSFrame } from '../types/websocket.js'
 import type { TraceSpan, UsageEntry, LogEvent, ShellState } from '../types/state.js'
 import { toolActionLabel } from '@rorschach/frontend/webkit/utils.js'
 import { updateActiveStream, commitActiveStream, addLog } from '../actions.js'
-import { setMode } from '@rorschach/frontend/webkit/window-actions.js'
+import { setMode } from '@rorschach/frontend/webkit/view-actions.js'
 import { pluginHost } from './plugin-host.js'
 
 const shell = () => store.namespace<ShellState>('shell')

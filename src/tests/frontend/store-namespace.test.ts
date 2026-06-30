@@ -156,41 +156,36 @@ describe('store.namespace() persistence', () => {
   })
 })
 
-// ─── store.ensureWindow / closeWindow ───
+// ─── store.ensureView / closeView ───
 
-describe('store.ensureWindow / closeWindow', () => {
-  test('ensureWindow seeds window runtime state with defaults', () => {
-    store.ensureWindow('testwin', {
-      id: 'testwin', title: 'Test', icon: 'file', contentTag: 'r-test',
-      defaultWidth: 400, defaultHeight: 500, minWidth: 200, minHeight: 200,
+describe('store.ensureView / closeView', () => {
+  test('ensureView seeds view runtime state with defaults', () => {
+    store.ensureView('testview', {
+      id: 'testview', title: 'Test', icon: 'file', contentTag: 'r-test',
     })
-    const win = store.namespace<ShellState>('shell').get('windows')['testwin']
-    expect(win).toBeDefined()
-    expect(win!.id).toBe('testwin')
-    expect(win!.w).toBe(400)
-    expect(win!.h).toBe(500)
+    const view = store.namespace<ShellState>('shell').get('views')['testview']
+    expect(view).toBeDefined()
+    expect(view!.id).toBe('testview')
   })
 
-  test('ensureWindow is idempotent', () => {
+  test('ensureView is idempotent', () => {
     const cfg = {
       id: 'idem', title: 'T', icon: 'file', contentTag: 'r-t',
-      defaultWidth: 300, defaultHeight: 400, minWidth: 200, minHeight: 200,
     }
-    store.ensureWindow('idem', cfg)
-    const first = store.namespace<ShellState>('shell').get('windows')['idem']
-    store.ensureWindow('idem', cfg)
-    const second = store.namespace<ShellState>('shell').get('windows')['idem']
+    store.ensureView('idem', cfg)
+    const first = store.namespace<ShellState>('shell').get('views')['idem']
+    store.ensureView('idem', cfg)
+    const second = store.namespace<ShellState>('shell').get('views')['idem']
     expect(first).toBe(second) // same object reference
   })
 
-  test('closeWindow sets isOpen to false', () => {
-    store.ensureWindow('closeme', {
+  test('closeView sets isOpen to false', () => {
+    store.ensureView('closeme', {
       id: 'closeme', title: 'C', icon: 'file', contentTag: 'r-c',
-      defaultWidth: 300, defaultHeight: 400, minWidth: 200, minHeight: 200,
     })
-    store.namespace<ShellState>('shell').get('windows')['closeme']!.isOpen = true
-    store.closeWindow('closeme')
-    expect(store.namespace<ShellState>('shell').get('windows')['closeme']!.isOpen).toBe(false)
+    store.namespace<ShellState>('shell').get('views')['closeme']!.isOpen = true
+    store.closeView('closeme')
+    expect(store.namespace<ShellState>('shell').get('views')['closeme']!.isOpen).toBe(false)
   })
 })
 

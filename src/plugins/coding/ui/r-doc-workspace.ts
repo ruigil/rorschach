@@ -3,7 +3,7 @@ import { customElement } from 'lit/decorators.js';
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
 import { store } from '@rorschach/frontend/webkit/store.js';
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
-import { openWindow } from '@rorschach/frontend/webkit/window-actions.js';
+import { openView } from '@rorschach/frontend/webkit/view-actions.js';
 import type { DocsState } from './index.js';
 import '@rorschach/frontend/webkit/r-panel.js';
 import '@rorschach/frontend/webkit/r-button.js';
@@ -20,7 +20,7 @@ export class RDocWorkspace extends RorschachBase {
 
   goHome() {
     store.namespace<DocsState>('docs').set('currentDocArtifact', 'index.html');
-    openWindow('docs');
+    openView('docs');
   }
 
   override render() {

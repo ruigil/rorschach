@@ -136,15 +136,11 @@ describe('Plugin Factory (createPluginFactory)', () => {
       uiSurface: (cfg: any) => ({
         id: 'mock-ui',
         version: '1.0.0',
-        window: {
+        view: {
           title: 'Mock UI',
           icon: 'settings',
           contentTag: 'r-mock-workspace',
           modes: [],
-          defaultWidth: 400,
-          defaultHeight: 400,
-          minWidth: 200,
-          minHeight: 200,
         },
         moduleUrl: '/mock/index.js',
         frameTypes: [],
@@ -187,7 +183,7 @@ describe('Plugin Factory (createPluginFactory)', () => {
     const toolTombstone = registeredTools.find((t) => t.name === 'mock_search' && t.ref === null);
     const agentTombstone = registeredAgents.find((a) => a.type === 'unregister' && a.mode === 'mock-agent');
     const routeTombstone = registeredRoutes.find((r) => r.id === 'mock-route' && r.handler === null);
-    const uiTombstone = registeredUi.find((u) => u.id === 'mock-ui' && u.window === null);
+    const uiTombstone = registeredUi.find((u) => u.id === 'mock-ui' && u.view === null);
 
     expect(toolTombstone).toBeDefined();
     expect(agentTombstone).toBeDefined();

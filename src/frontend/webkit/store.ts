@@ -7,8 +7,8 @@
 // key), so `subscribe('messages', cb)` on namespace `'shell'` does not fire
 // for a key named `'messages'` on namespace `'workflows'`.
 
-import type { WindowConfig, WindowRuntimeState } from './host-types.js'
-import { readSavedWindowState } from './window-state.js'
+import type { ViewConfig, ViewRuntimeState } from './host-types.js'
+import { readSavedViewState } from './view-state.js'
 
 export type PersistOptions<T> = {
   /** Keys whose values should be automatically read from / written to
@@ -35,13 +35,12 @@ export type Store = {
   /** Returns the typed view for `id`, lazily creating namespaces[id] = {} on
    *  first access. Shell and plugins use the same API. */
   namespace<T extends object>(id: string): Namespace<T>
-  /** Seed namespaces['shell']['windows'][id] from cfg defaults merged with
-   *  saved localStorage state (rorschach.window_state.<id>). Generalizes
-   *  today's getSavedWindowState. Idempotent. */
-  ensureWindow(id: string, cfg: WindowConfig): void
-  /** Set namespaces['shell']['windows'][id].isOpen = false. Convenience over
-   *  namespace('shell').get('windows')[id].isOpen = false. */
-  closeWindow(id: string): void
+  /** Seed namespaces['shell']['views'][id] from cfg defaults merged with
+   *  saved localStorage state (rorschach.view_state.<id>). Idempotent. */
+  ensureView(id: string, cfg: ViewConfig): void
+  /** Set namespaces['shell']['views'][id].isOpen = false. Convenience over
+   *  namespace('shell').get('views')[id].isOpen = false. */
+  closeView(id: string): void
 };
 
 // ─── Internal implementation ───
@@ -165,22 +164,22 @@ const makeNamespace = <T extends object>(nsId: string): Namespace<T> => {
   }
 }
 
-// ─── Window runtime state helpers ───
+// ─── View runtime state helpers ───
 //
-// `readSavedWindowState` is imported from `./window-state.js` so both halves
-// of the window-state persistence contract share one source file. The writer
-// lives in `window-actions.ts` (calls `localStorage.setItem` directly because
-// the store's generic `persist` option is per-(namespace,key), not per-window).
+// `readSavedViewState` is imported from `./view-state.js` so both halves
+// of the view-state persistence contract share one source file. The writer
+// lives in `view-actions.ts` (calls `localStorage.setItem` directly because
+// the store's generic `persist` option is per-(namespace,key), not per-view).
 
-const ensureWindowRuntime = (id: string, cfg: WindowConfig): WindowRuntimeState => {
+const ensureViewRuntime = (id: string, cfg: ViewConfig): ViewRuntimeState => {
   const shell = root.namespaces['shell'] ?? {}
-  const windows = (shell['windows'] ?? {}) as Record<string, WindowRuntimeState>
-  if (windows[id]) return windows[id]!
+  const views = (shell['views'] ?? {}) as Record<string, ViewRuntimeState>
+  if (views[id]) return views[id]!
 
-  const state = readSavedWindowState(id, cfg)
-  shell['windows'] = { ...windows, [id]: state }
+  const state = readSavedViewState(id, cfg)
+  shell['views'] = { ...views, [id]: state }
   root.namespaces['shell'] = shell
-  notify('shell', 'windows', shell['windows'], shell['windows'])
+  notify('shell', 'views', shell['views'], shell['views'])
   return state
 }
 
@@ -191,18 +190,18 @@ export const store: Store = {
     return makeNamespace<T>(id)
   },
 
-  ensureWindow(id: string, cfg: WindowConfig): void {
-    ensureWindowRuntime(id, cfg)
+  ensureView(id: string, cfg: ViewConfig): void {
+    ensureViewRuntime(id, cfg)
   },
 
-  closeWindow(id: string): void {
+  closeView(id: string): void {
     const shell = root.namespaces['shell']
     if (!shell) return
-    const windows = (shell['windows'] ?? {}) as Record<string, WindowRuntimeState>
-    const win = windows[id]
-    if (!win) return
-    windows[id] = { ...win, isOpen: false }
-    notify('shell', 'windows', shell['windows'], shell['windows'])
+    const views = (shell['views'] ?? {}) as Record<string, ViewRuntimeState>
+    const view = views[id]
+    if (!view) return
+    views[id] = { ...view, isOpen: false }
+    notify('shell', 'views', shell['views'], shell['views'])
   },
 }
 

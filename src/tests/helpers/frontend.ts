@@ -27,8 +27,7 @@ const defaultState: Partial<ShellState> = {
     sources: [],
     attachments: [],
   },
-  windows: {},
-  activeWindowIds: [],
+  views: {},
   activeWorkspaceTab: 'docs',
 }
 

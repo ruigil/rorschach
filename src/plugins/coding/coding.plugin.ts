@@ -65,15 +65,10 @@ const buildDocsTools = (
 const docsSurfaceRegistration: UiSurfaceRegistration = {
   id: 'docs',
   version: '1.0.0',
-  window: {
+  view: {
     title: 'Documentation',
     icon: 'file-text',
     contentTag: 'r-doc-workspace',
-    dockResizable: false,
-    defaultWidth: 500,
-    defaultHeight: 600,
-    minWidth: 350,
-    minHeight: 200,
     modes: ['coding'],
   },
   moduleUrl: '/plugins/coding/ui/index.js',

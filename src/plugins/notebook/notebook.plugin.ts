@@ -7,15 +7,10 @@ import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 const notebookSurfaceRegistration: UiSurfaceRegistration = {
   id: 'notebook',
   version: '1.0.0',
-  window: {
+  view: {
     title: 'Notebook',
     icon: 'file-text',
     contentTag: 'r-notebook-workspace',
-    dockResizable: true,
-    defaultWidth: 480,
-    defaultHeight: 650,
-    minWidth: 320,
-    minHeight: 300,
     modes: ['coach'],
   },
   moduleUrl: '/plugins/notebook/ui/index.js',

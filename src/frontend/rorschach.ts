@@ -11,9 +11,9 @@ import '@rorschach/frontend/webkit/index.js'
 // Markdown renderer config (kit utility wrapping global marked/katex/hljs)
 import '@rorschach/frontend/webkit/markdown.js'
 
-// Shell components — triggers @customElement for r-shell, r-window, ...
+// Shell components — triggers @customElement for r-shell, r-view, ...
 import './shell/r-shell.js'
-import './shell/r-window.js'
+import './shell/r-view.js'
 import './shell/r-chat-panel.js'
 import './shell/r-chat-input.js'
 import './shell/r-config-form.js'
@@ -64,8 +64,7 @@ store.namespace<ShellState>('shell').init({
     sources: [],
     attachments: [],
   },
-  windows: {},
-  activeWindowIds: [],
+  views: {},
   activeWorkspaceTab: 'docs',
   sidebarWidth: 360,
 }, {

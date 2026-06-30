@@ -321,7 +321,7 @@ export const createPluginFactory = <
         if (state.activeUiSurface) {
           ctx.deleteRetained(UiSurfaceRegistrationTopic, state.activeUiSurface.id, {
             id: state.activeUiSurface.id,
-            window: null,
+            view: null,
             moduleUrl: null,
             frameTypes: null,
           });
@@ -461,7 +461,7 @@ export const createPluginFactory = <
             if (state.activeUiSurface) {
               ctx.deleteRetained(UiSurfaceRegistrationTopic, state.activeUiSurface.id, {
                 id: state.activeUiSurface.id,
-                window: null,
+                view: null,
                 moduleUrl: null,
                 frameTypes: null,
               });

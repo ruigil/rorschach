@@ -10,14 +10,14 @@ import type {
   TraceSpan,
   UsageEntry,
 } from '@rorschach/frontend/webkit/types.js'
-import type { WindowRuntimeState } from '@rorschach/frontend/webkit/host-types.js'
+import type { ViewRuntimeState } from '@rorschach/frontend/webkit/host-types.js'
 import type { ThemeName } from '@rorschach/frontend/webkit/theme.js'
 
 // Re-export the kit types so existing shell code that imports from
 // `./types/state.js` keeps working. These are the neutral data shapes the
 // kit primitives render; the kit owns them, the shell re-exports for
 // convenience.
-export type { Attachment, Source, Message, ActiveStream, Topic, Actor, LogEvent, TraceSpan, UsageEntry, WindowRuntimeState }
+export type { Attachment, Source, Message, ActiveStream, Topic, Actor, LogEvent, TraceSpan, UsageEntry, ViewRuntimeState }
 
 // Agent is shell/agent-registry specific — stays here, not in the kit.
 export type Agent = {
@@ -52,8 +52,8 @@ export type ShellState = {
   activeTab: Tab
   observeActiveTab: ObserveTab
   activeStream: ActiveStream
-  windows: Record<string, WindowRuntimeState>
-  activeWindowIds: string[]
+  views: Record<string, ViewRuntimeState>
   activeWorkspaceTab: string
   sidebarWidth: number
 };
+

@@ -5,7 +5,7 @@ import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
 import { store } from '@rorschach/frontend/webkit/store.js';
 import { connect } from '../connection.js';
 import { logout, switchMode } from '../actions.js';
-import { openWindow, closeWindow, setActiveWorkspaceTab } from '@rorschach/frontend/webkit/window-actions.js';
+import { openView, closeView, setActiveWorkspaceTab } from '@rorschach/frontend/webkit/view-actions.js';
 import type { ShellState } from '../types/state.js';
 import { pluginHost } from './plugin-host.js';
 
@@ -16,7 +16,7 @@ export class RShell extends RorschachBase {
   private _currentUserRoles = new StoreController<ShellState, 'currentUserRoles'>(this, ['shell', 'currentUserRoles']);
   private _isWaiting = new StoreController<ShellState, 'isWaiting'>(this, ['shell', 'isWaiting']);
 
-  private _windows = new StoreController<ShellState, 'windows'>(this, ['shell', 'windows']);
+  private _views = new StoreController<ShellState, 'views'>(this, ['shell', 'views']);
   private _activeWorkspaceTab = new StoreController<ShellState, 'activeWorkspaceTab'>(this, ['shell', 'activeWorkspaceTab']);
   private _currentMode = new StoreController<ShellState, 'currentMode'>(this, ['shell', 'currentMode']);
   private _currentModeDisplayName = new StoreController<ShellState, 'currentModeDisplayName'>(this, ['shell', 'currentModeDisplayName']);
@@ -45,7 +45,7 @@ export class RShell extends RorschachBase {
       switchMode('chatbot');
       return;
     }
-    const cfg = pluginHost.windowRegistry.get(tabId);
+    const cfg = pluginHost.viewRegistry.get(tabId);
     if (cfg && cfg.modes && cfg.modes.length > 0) {
       switchMode(cfg.modes[0]!);
     }
@@ -66,8 +66,6 @@ export class RShell extends RorschachBase {
     connect();
 
     // In the new layout, chat is always a persistent sidebar and never a dock window.
-    // However, we call openWindow('chat') for backwards compatibility in window maps.
-    openWindow('chat');
   }
 
   private _canUseAdminSurface() {
@@ -81,13 +79,13 @@ export class RShell extends RorschachBase {
   }
 
   private _isAnyWorkspaceOpen() {
-    const windows = this._windows.value;
-    return Object.keys(windows).some(id => id !== 'chat' && windows[id]?.isOpen);
+    const views = this._views.value;
+    return Object.keys(views).some(id => views[id]?.isOpen);
   }
 
   private _getActiveWorkspaces() {
-    const windows = this._windows.value;
-    return Object.keys(windows).filter(id => id !== 'chat' && windows[id]?.isOpen);
+    const views = this._views.value;
+    return Object.keys(views).filter(id => views[id]?.isOpen);
   }
 
   private _handleSidebarResize(e: PointerEvent) {
@@ -178,10 +176,10 @@ export class RShell extends RorschachBase {
                 <button class="sidebar-header-btn" @click=${() => alert(`User Session: ${userId || 'anonymous'}`)} title="User Session Profile">
                   ${this.renderIcon('user')}
                 </button>
-                <button class="sidebar-header-btn" ?hidden=${!canAdmin} @click=${() => openWindow('config')} title="Configuration Settings">
+                <button class="sidebar-header-btn" ?hidden=${!canAdmin} @click=${() => openView('config')} title="Configuration Settings">
                   ${this.renderIcon('settings')}
                 </button>
-                <button class="sidebar-header-btn" ?hidden=${!canAdmin} @click=${() => openWindow('observe')} title="Observation Panel">
+                <button class="sidebar-header-btn" ?hidden=${!canAdmin} @click=${() => openView('observe')} title="Observation Panel">
                   ${this.renderIcon('activity')}
                 </button>
               </div>
@@ -203,7 +201,7 @@ export class RShell extends RorschachBase {
               <div class="workspace-tabs-bar">
                 <div class="tabs-list">
                   ${this._getActiveWorkspaces().map(id => {
-                    const cfg = pluginHost.windowRegistry.get(id);
+                    const cfg = pluginHost.viewRegistry.get(id);
                     return html`
                       <button
                         class="workspace-tab ${this._activeWorkspaceTab.value === id ? 'active' : ''}"
@@ -213,7 +211,7 @@ export class RShell extends RorschachBase {
                         <span>${cfg?.title ?? id}</span>
                         <span class="tab-close" @click=${(e: Event) => {
                           e.stopPropagation();
-                          closeWindow(id);
+                          closeView(id);
                         }}>×</span>
                       </button>
                     `;
@@ -221,7 +219,7 @@ export class RShell extends RorschachBase {
                 </div>
               </div>
               <div class="workspace-active-body flex-grow-1 min-height-0">
-                <r-window .windowId=${this._activeWorkspaceTab.value as string}></r-window>
+                <r-view .viewId=${this._activeWorkspaceTab.value as string}></r-view>
               </div>
             </div>
           ` : html`

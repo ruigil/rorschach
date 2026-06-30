@@ -4,7 +4,7 @@
    This is the single, consistent rule for all light-DOM surfaces — shell
    and plugin alike. Shadow-DOM kit primitives style themselves via :host. */
 r-shell,
-r-window,
+r-view,
 r-chat-panel,
 r-chat-input,
 r-mode-select,

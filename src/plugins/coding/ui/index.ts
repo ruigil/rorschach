@@ -24,6 +24,6 @@ store.namespace<DocsState>('docs').init(
 export const reduceFrame = (frame: any, host: PluginHostActions) => {
   if (frame.type === 'docWorkspace') {
     store.namespace<DocsState>('docs').set('currentDocArtifact', frame.artifactName)
-    host.openWindow('docs')
+    host.openView('docs')
   }
 }

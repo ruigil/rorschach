@@ -48,7 +48,7 @@ export const WORKFLOW_RUN_UPDATED_EVENT = 'workflow-run-updated'
 export const reduceFrame = (frame: any, host: PluginHostActions) => {
   if (frame.type === 'workflowGraph') {
     store.namespace<WorkflowsState>('workflows').set('currentGraph', frame)
-    host.openWindow('workflows')
+    host.openView('workflows')
   } else if (frame.type === 'workflowRunUpdated') {
     const current = store.namespace<WorkflowsState>('workflows').get('currentGraph')
     if (current) {

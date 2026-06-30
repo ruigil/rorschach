@@ -14,16 +14,11 @@ import { createTopic } from '../system/index.ts'
 // window config, the module URL, and the frame-type claim atomic — they share
 // a lifecycle with the plugin.
 
-export type UiSurfaceWindowConfig = {
+export type UiSurfaceViewConfig = {
   title: string
   icon: string
   contentTag: string
-  defaultWidth: number
-  defaultHeight: number
-  minWidth: number
-  minHeight: number
-  dockResizable?: boolean
-  /** Auto-open this window when one of these modes activates. */
+  /** Auto-open this view when one of these modes activates. */
   modes?: string[]
 };
 
@@ -31,13 +26,14 @@ export type UiSurfaceRegistration =
   | {
       id: string
       version: string
-      window?: UiSurfaceWindowConfig
+      view?: UiSurfaceViewConfig
       /** URL the shell dynamic-imports to load this surface's module. */
       moduleUrl: string
       /** WS frame types this surface claims. The dispatcher routes them to the
        *  surface's reducer instead of the shell's handlers. */
       frameTypes?: string[]
     }
-  | { id: string; window?: null; moduleUrl: null; frameTypes?: null }
+  | { id: string; view?: null; moduleUrl: null; frameTypes?: null }
 
 export const UiSurfaceRegistrationTopic = createTopic<UiSurfaceRegistration>('ui.surface')
+
