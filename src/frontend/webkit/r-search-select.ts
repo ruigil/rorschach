@@ -32,6 +32,8 @@ export class RSearchSelect extends RorschachBase {
       flex-direction: column;
       gap: 0.45rem;
       font-family: var(--font-ui, sans-serif);
+      width: 100%;
+      max-width: 600px;
     }
     .label {
       font-size: 0.72rem;
