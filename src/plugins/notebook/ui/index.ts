@@ -16,7 +16,7 @@ const savedSplit = typeof localStorage !== 'undefined'
   : 0
 
 store.namespace<NotebookState>('notebook').init({
-  activeTab: 'todos',
+  activeTab: 'journal',
   splitPercent: savedSplit || 70
 })
 

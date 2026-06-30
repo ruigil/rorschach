@@ -34,10 +34,6 @@ export class RNotebookWorkspace extends RorschachBase {
           <r-tabs 
             @tab-change=${(e: CustomEvent) => this._selectTab(e.detail.tab as any)}
           >
-            <button ?active=${active === 'todos'} data-tab="todos">
-              <r-icon name="file-text" size="sm" style="margin-right: 6px;"></r-icon>
-              <span>Todos</span>
-            </button>
             <button ?active=${active === 'journal'} data-tab="journal">
               <r-icon name="file" size="sm" style="margin-right: 6px;"></r-icon>
               <span>Journal</span>
@@ -46,14 +42,18 @@ export class RNotebookWorkspace extends RorschachBase {
               <r-icon name="activity" size="sm" style="margin-right: 6px;"></r-icon>
               <span>Tracker</span>
             </button>
+            <button ?active=${active === 'todos'} data-tab="todos">
+              <r-icon name="file-text" size="sm" style="margin-right: 6px;"></r-icon>
+              <span>Todos</span>
+            </button>
           </r-tabs>
         </r-toolbar>
 
         <!-- Panel Active Content Body -->
         <div class="nb-workspace-body" style="height: 100%; display: flex; flex-direction: column;">
-          ${active === 'todos' ? html`<r-notebook-todos style="height: 100%; display: flex; flex-direction: column; min-height: 0;"></r-notebook-todos>` : ''}
           ${active === 'journal' ? html`<r-notebook-journal style="height: 100%; display: flex; flex-direction: column; min-height: 0;"></r-notebook-journal>` : ''}
           ${active === 'tracker' ? html`<r-notebook-tracker style="height: 100%; display: flex; flex-direction: column; min-height: 0;"></r-notebook-tracker>` : ''}
+          ${active === 'todos' ? html`<r-notebook-todos style="height: 100%; display: flex; flex-direction: column; min-height: 0;"></r-notebook-todos>` : ''}
         </div>
       </r-panel>
     `
