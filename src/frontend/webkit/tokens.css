@@ -1,6 +1,13 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ─── Theme tokens ───
+   The default `:root` block defines the "eclipse" palette. Setting
+   `data-theme` on the root <html> element overrides these tokens. The
+   `setTheme(name)` helper in `webkit/theme.ts` is the runtime entry point.
+   To add a theme: define a `:root[data-theme="<name>"]` block below. */
+
 :root {
+  /* eclipse — the default dark theme */
   --bg:            #03070a;
   --surface:       #060e14;
   --surface-2:     #0a1820;
@@ -44,13 +51,133 @@
   --radius:    8px;
 }
 
+/* eclipse — explicit selector (no-op; values match :root above) so the
+   DOM always reflects the active theme even when it is the default. */
+:root[data-theme="eclipse"] {
+  --bg:            #03070a;
+  --surface:       #060e14;
+  --surface-2:     #0a1820;
+  --border:        #0d1f2d;
+  --border-mid:    #1a3548;
+  --muted:         #215060;
+  --text:          #e8f6fa;
+  --text-dim:      #3d6878;
+  --text-mid:      #8abccc;
+
+  --user-bg:       rgba(0, 40, 35, 0.82);
+  --user-text:     #5de0c0;
+  --user-border:   rgba(93, 224, 192, 0.18);
+
+  --bot-text:      #b8e8f4;
+  --bot-bg:        rgba(0, 18, 24, 0.82);
+  --bot-border:    rgba(0, 196, 212, 0.08);
+  --bot-rail:      rgba(0, 196, 212, 0.45);
+  --bot-rail-glow: rgba(0, 196, 212, 0.05);
+
+  --accent:        #00c4d4;
+  --accent-bright: #22e8f8;
+  --accent-glow:   rgba(0, 196, 212, 0.25);
+  --accent-dim:    rgba(0, 196, 212, 0.06);
+
+  --error:         #e06030;
+  --error-bg:      rgba(224, 96, 48, 0.07);
+  --error-border:  rgba(224, 96, 48, 0.16);
+
+  --warn:          #c4843a;
+  --green:         #39e8a0;
+  --green-glow:    rgba(57, 232, 160, 0.2);
+
+  --log-debug:     #3d6878;
+  --log-info:      #5ba0b8;
+  --log-warn:      #c4843a;
+  --log-error:     #e06030;
+}
+
+:root[data-theme="light"] {
+  --bg:            #f5f7fa;
+  --surface:       #ffffff;
+  --surface-2:     #eef2f6;
+  --border:        #d6dde3;
+  --border-mid:    #b0bcc7;
+  --muted:         #8a9aa8;
+  --text:          #0a1820;
+  --text-dim:      #5a6878;
+  --text-mid:      #3d5060;
+
+  --user-bg:       rgba(0, 180, 160, 0.15);
+  --user-text:     #006658;
+  --user-border:   rgba(0, 130, 120, 0.25);
+
+  --bot-text:      #0a1820;
+  --bot-bg:        rgba(240, 244, 248, 0.9);
+  --bot-border:    rgba(0, 130, 140, 0.15);
+  --bot-rail:      rgba(0, 130, 140, 0.5);
+  --bot-rail-glow: rgba(0, 130, 140, 0.05);
+
+  --accent:        #008a98;
+  --accent-bright: #00b0c0;
+  --accent-glow:   rgba(0, 138, 152, 0.2);
+  --accent-dim:    rgba(0, 138, 152, 0.05);
+
+  --error:         #c0381a;
+  --error-bg:      rgba(192, 56, 26, 0.08);
+  --error-border:  rgba(192, 56, 26, 0.2);
+
+  --warn:          #9a6818;
+  --green:         #1a8852;
+  --green-glow:    rgba(26, 136, 82, 0.18);
+
+  --log-debug:     #6a7888;
+  --log-info:      #3070a8;
+  --log-warn:      #9a6818;
+  --log-error:     #c0381a;
+}
+
+:root[data-theme="high-contrast"] {
+  --bg:            #000000;
+  --surface:       #0a0a0a;
+  --surface-2:     #141414;
+  --border:        #2a2a2a;
+  --border-mid:    #4a4a4a;
+  --muted:         #6a6a6a;
+  --text:          #ffffff;
+  --text-dim:      #a0a0a0;
+  --text-mid:      #d0d0d0;
+
+  --user-bg:       rgba(0, 180, 100, 0.25);
+  --user-text:     #5de0c0;
+  --user-border:   rgba(93, 224, 192, 0.4);
+
+  --bot-text:      #ffffff;
+  --bot-bg:        rgba(20, 20, 20, 0.95);
+  --bot-border:    rgba(255, 255, 255, 0.2);
+  --bot-rail:      rgba(255, 255, 255, 0.6);
+  --bot-rail-glow: rgba(255, 255, 255, 0.1);
+
+  --accent:        #22e8f8;
+  --accent-bright: #80ffff;
+  --accent-glow:   rgba(34, 232, 248, 0.35);
+  --accent-dim:    rgba(34, 232, 248, 0.1);
+
+  --error:         #ff6030;
+  --error-bg:      rgba(255, 96, 48, 0.15);
+  --error-border:  rgba(255, 96, 48, 0.3);
+
+  --warn:          #ffa830;
+  --green:         #39e8a0;
+  --green-glow:    rgba(57, 232, 160, 0.3);
+
+  --log-debug:     #a0a0a0;
+  --log-info:      #80c0e0;
+  --log-warn:      #ffa830;
+  --log-error:     #ff6030;
+}
+
 html, body { height: 100%; overscroll-behavior: none; }
 [hidden] { display: none !important; }
 
 /* Background lives on html so canvas at z-index:-2 (root stacking context) is visible */
 html { background: var(--bg); }
-
-
 
 body {
   font-family: var(--font-ui);

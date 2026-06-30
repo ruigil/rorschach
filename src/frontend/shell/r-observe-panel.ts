@@ -1,16 +1,8 @@
 import { html } from 'lit';
-import { customElement, state, query } from 'lit/decorators.js';
+import { customElement, state } from 'lit/decorators.js';
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
 import { store } from '@rorschach/frontend/webkit/store.js';
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
-import { RActorTree } from '@rorschach/frontend/webkit/r-actor-tree.js';
-import { RActorDetail } from '@rorschach/frontend/webkit/r-actor-detail.js';
-import { RTopicList } from '@rorschach/frontend/webkit/r-topic-list.js';
-import { RLogStream } from '@rorschach/frontend/webkit/r-log-stream.js';
-import { RTraceWaterfall } from '@rorschach/frontend/webkit/r-trace-waterfall.js';
-import { RToolsList } from '@rorschach/frontend/webkit/r-tools-list.js';
-import { RCostsTable } from '@rorschach/frontend/webkit/r-costs-table.js';
-import { RForceGraph } from '@rorschach/frontend/webkit/r-force-graph.js';
 import '@rorschach/frontend/webkit/r-panel.js';
 import '@rorschach/frontend/webkit/r-toolbar.js';
 import { OBSERVE_TABS, DEFAULT_OBSERVE_TAB } from '../constants.js';
@@ -34,21 +26,13 @@ const shell = () => store.namespace<ShellState>('shell')
 export class RObservePanel extends RorschachBase {
   @state() private _memoryStatsText = '';
   @state() private _kgData: any = null;
+  @state() private _selectedActor: Actor | null = null;
 
   private _observeActiveTab = new StoreController<ShellState, 'observeActiveTab'>(this, ['shell', 'observeActiveTab']);
   private _actors = new StoreController<ShellState, 'actors'>(this, ['shell', 'actors']);
   private _topics = new StoreController<ShellState, 'topics'>(this, ['shell', 'topics']);
   private _logs = new StoreController<ShellState, 'logs'>(this, ['shell', 'logs']);
   private _traces = new StoreController<ShellState, 'traces'>(this, ['shell', 'traces']);
-
-  @query('r-actor-tree') private _actorTree?: RActorTree;
-  @query('r-actor-detail') private _actorDetail?: RActorDetail;
-  @query('r-topic-list') private _topicList?: RTopicList;
-  @query('r-log-stream') private _logStream?: RLogStream;
-  @query('r-trace-waterfall') private _tracesList?: RTraceWaterfall;
-  @query('r-tools-list') private _toolsList?: RToolsList;
-  @query('r-costs-table') private _costsTable?: RCostsTable;
-  @query('r-force-graph') private _memoryGraph?: RForceGraph;
 
   // Render to light DOM to reuse shell styles
   override createRenderRoot() {
@@ -69,7 +53,7 @@ export class RObservePanel extends RorschachBase {
   }
 
   private _onActorSelect(event: CustomEvent) {
-    this._actorDetail?.show(event.detail.actor);
+    this._selectedActor = event.detail.actor;
   }
 
   private async _fetchKgraph() {
@@ -164,7 +148,7 @@ export class RObservePanel extends RorschachBase {
                 <r-actor-tree .actors=${actors} @actor-select=${this._onActorSelect}></r-actor-tree>
               </div>
               <div class="detail-col">
-                <r-actor-detail></r-actor-detail>
+                <r-actor-detail .actor=${this._selectedActor}></r-actor-detail>
               </div>
             </div>
           </div>

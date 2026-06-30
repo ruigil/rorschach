@@ -25,40 +25,40 @@ export class RStatusDot extends RorschachBase {
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: var(--muted, #215060);
+      background: var(--muted);
       transition: background 0.4s, box-shadow 0.4s;
       flex-shrink: 0;
     }
 
     :host([status="connected"]) .dot {
-      background: var(--accent, #00c4d4);
+      background: var(--accent);
       box-shadow: 0 0 8px rgba(0,196,212,0.5);
       animation: signalPulse 2.5s ease-out infinite;
     }
 
     :host([status="disconnected"]) .dot {
-      background: var(--error, #e06030);
+      background: var(--error);
       box-shadow: 0 0 6px rgba(224,96,48,0.4);
     }
 
     :host([status="running"]) .dot {
-      background: var(--green, #39e8a0);
-      box-shadow: 0 0 4px var(--green-glow, rgba(57, 232, 160, 0.2));
+      background: var(--green);
+      box-shadow: 0 0 4px var(--green-glow);
     }
 
     :host([status="stopped"]) .dot {
-      background: var(--muted, #215060);
+      background: var(--muted);
     }
 
     :host([status="error"]) .dot {
-      background: var(--error, #e06030);
+      background: var(--error);
     }
 
     .label {
       display: none;
       font-size: 0.68rem;
       font-weight: 500;
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       letter-spacing: 0.06em;
       white-space: nowrap;
     }

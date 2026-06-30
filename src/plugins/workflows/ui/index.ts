@@ -16,11 +16,31 @@ export { RWorkflowWorkspace, RWorkflowList, RWorkflowInspector }
 export type WorkflowsState = {
   currentGraph: any | null
   inspectorWidthPercent: number
+  /** Persisted view-state for the workspace container. */
+  workspaceView: 'list' | 'graph'
+  workspaceWorkflowId: string | null
+  workspaceRunId: string | null
+  workspaceSelectedTaskId: string | null
 };
 
 store.namespace<WorkflowsState>('workflows').init(
-  { currentGraph: null, inspectorWidthPercent: 34 },
-  { persist: ['inspectorWidthPercent'] },
+  {
+    currentGraph: null,
+    inspectorWidthPercent: 34,
+    workspaceView: 'list',
+    workspaceWorkflowId: null,
+    workspaceRunId: null,
+    workspaceSelectedTaskId: null,
+  },
+  {
+    persist: [
+      'inspectorWidthPercent',
+      'workspaceView',
+      'workspaceWorkflowId',
+      'workspaceRunId',
+      'workspaceSelectedTaskId',
+    ],
+  },
 )
 
 export const WORKFLOW_RUN_UPDATED_EVENT = 'workflow-run-updated'

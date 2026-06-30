@@ -8,6 +8,7 @@
 // for a key named `'messages'` on namespace `'workflows'`.
 
 import type { WindowConfig, WindowRuntimeState } from './host-types.js'
+import { readSavedWindowState } from './window-state.js'
 
 export type PersistOptions<T> = {
   /** Keys whose values should be automatically read from / written to
@@ -145,7 +146,7 @@ const makeNamespace = <T extends object>(nsId: string): Namespace<T> => {
       if (values) {
         for (const [k, v] of Object.entries(values)) {
           if (ns[k] === undefined) {
-            const persisted = persistedKeys[nsId]?.has(k) ? readPersisted(nsId, k) : { found: false }
+            const persisted = persistedKeys[nsId]?.has(k) ? readPersisted(nsId, k) : { found: false as const }
             ns[k] = persisted.found ? persisted.value : v
             notify(nsId, k, ns[k], undefined)
           }
@@ -165,35 +166,11 @@ const makeNamespace = <T extends object>(nsId: string): Namespace<T> => {
 }
 
 // ─── Window runtime state helpers ───
-
-const readSavedWindowState = (id: string, cfg: WindowConfig): WindowRuntimeState => {
-  const defaultX = typeof window !== 'undefined' ? window.innerWidth - 420 : 800
-  const defaultY = 100
-
-  const defaultState: WindowRuntimeState = {
-    id,
-    isOpen: id === 'chat',
-    isMinimized: false,
-    x: defaultX,
-    y: defaultY,
-    w: cfg.defaultWidth,
-    h: cfg.defaultHeight,
-    zIndex: 1000,
-    params: {},
-  }
-
-  if (typeof localStorage === 'undefined') return defaultState
-
-  const saved = localStorage.getItem(`rorschach.window_state.${id}`)
-  if (saved) {
-    try {
-      const parsed = JSON.parse(saved)
-      return { ...defaultState, ...parsed }
-    } catch { /* fall through */ }
-  }
-
-  return defaultState
-}
+//
+// `readSavedWindowState` is imported from `./window-state.js` so both halves
+// of the window-state persistence contract share one source file. The writer
+// lives in `window-actions.ts` (calls `localStorage.setItem` directly because
+// the store's generic `persist` option is per-(namespace,key), not per-window).
 
 const ensureWindowRuntime = (id: string, cfg: WindowConfig): WindowRuntimeState => {
   const shell = root.namespaces['shell'] ?? {}

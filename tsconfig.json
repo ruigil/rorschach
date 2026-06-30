@@ -32,5 +32,6 @@
     "paths": {
       "@rorschach/frontend/webkit/*": ["./src/frontend/webkit/*"]
     }
-  }
+  },
+  "exclude": ["dist", "node_modules"]
 }

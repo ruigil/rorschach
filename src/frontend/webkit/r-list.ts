@@ -51,7 +51,7 @@ export class RList extends RorschachBase {
       gap: 4px;
       padding: 6px 10px;
       background: var(--surface-2, #0a1820);
-      border: 1px solid var(--border, #0d1f2d);
+      border: 1px solid var(--border);
       border-radius: 4px;
       transition: border-color 0.15s, background 0.15s;
     }
@@ -65,11 +65,11 @@ export class RList extends RorschachBase {
       cursor: pointer;
     }
     .list-item.selectable:hover {
-      border-color: var(--border-mid, #1a3548);
-      background: var(--surface, #060e14);
+      border-color: var(--border-mid);
+      background: var(--surface);
     }
     .list-item.selected {
-      border-color: var(--accent, #00c4d4);
+      border-color: var(--accent);
       background: rgba(0, 196, 212, 0.04);
     }
     .list-item-row {
@@ -93,30 +93,30 @@ export class RList extends RorschachBase {
     .list-label {
       font-size: 0.82rem;
       font-weight: 500;
-      color: var(--text, #e8f6fa);
+      color: var(--text);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .list-meta {
       font-family: var(--font-mono, monospace);
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       font-size: 0.68rem;
       white-space: nowrap;
     }
     .list-description {
-      color: var(--text-mid, #8abccc);
+      color: var(--text-mid);
       font-size: 0.72rem;
       line-height: 1.3;
     }
     .list-item-icon {
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       display: inline-flex;
       align-items: center;
       justify-content: center;
     }
     .list-item.selected .list-item-icon {
-      color: var(--accent, #00c4d4);
+      color: var(--accent);
     }
     .list-actions {
       display: flex;
@@ -126,7 +126,7 @@ export class RList extends RorschachBase {
     .action-btn {
       background: transparent;
       border: none;
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       cursor: pointer;
       padding: 4px;
       border-radius: 4px;
@@ -137,7 +137,7 @@ export class RList extends RorschachBase {
     }
     .action-btn:hover {
       background: rgba(255, 255, 255, 0.05);
-      color: var(--text, #e8f6fa);
+      color: var(--text);
     }
     .chip-list {
       display: flex;
@@ -153,25 +153,25 @@ export class RList extends RorschachBase {
       border-radius: 12px;
       font-size: 0.68rem;
       cursor: pointer;
-      border: 1px solid var(--border, #0d1f2d);
-      background: var(--surface, #060e14);
-      color: var(--text-mid, #8abccc);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-mid);
       font-family: var(--font-mono, monospace);
       transition: border-color 0.15s;
     }
     .chip:hover {
-      border-color: var(--border-mid, #1a3548);
+      border-color: var(--border-mid);
     }
-    .chip.status-running { border-color: var(--accent, #00c4d4); color: var(--accent, #00c4d4); }
-    .chip.status-completed { border-color: var(--green, #39e8a0); color: var(--green, #39e8a0); }
-    .chip.status-failed { border-color: var(--error, #e06030); color: var(--error, #e06030); }
-    .chip.status-blocked { border-color: var(--warn, #c4843a); color: var(--warn, #c4843a); }
+    .chip.status-running { border-color: var(--accent); color: var(--accent); }
+    .chip.status-completed { border-color: var(--green); color: var(--green); }
+    .chip.status-failed { border-color: var(--error); color: var(--error); }
+    .chip.status-blocked { border-color: var(--warn); color: var(--warn); }
     .list-empty {
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       font-size: 0.8rem;
       padding: 1.5rem;
       text-align: center;
-      border: 1px dashed var(--border, #0d1f2d);
+      border: 1px dashed var(--border);
       border-radius: 6px;
     }
   `;

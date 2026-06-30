@@ -11,7 +11,7 @@ export class RSectionHeader extends RorschachBase {
     :host {
       display: block;
       margin-bottom: 12px;
-      border-bottom: 1px solid var(--border, #0d1f2d);
+      border-bottom: 1px solid var(--border);
       padding-bottom: 8px;
     }
     .header-row {
@@ -32,14 +32,14 @@ export class RSectionHeader extends RorschachBase {
       font-weight: 600;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: var(--text-mid, #8abccc);
+      color: var(--text-mid);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .desc {
       font-size: 0.68rem;
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       line-height: 1.3;
     }
     .actions {

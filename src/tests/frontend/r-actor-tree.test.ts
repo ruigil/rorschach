@@ -11,7 +11,7 @@ describe('r-actor-tree', () => {
     el.actors = []
     await el.updateComplete
 
-    expect(el.querySelector('r-empty-state')).toBeTruthy()
+    expect(el.shadowRoot.querySelector('r-empty-state')).toBeTruthy()
   })
 
   test('renders actor nodes', async () => {
@@ -22,7 +22,7 @@ describe('r-actor-tree', () => {
     ]
     await el.updateComplete
 
-    const tree = el.querySelector('r-tree')
+    const tree = el.shadowRoot.querySelector('r-tree')
     expect(tree).toBeTruthy()
     expect(tree.shadowRoot.textContent).toContain('chat')
     expect(tree.shadowRoot.textContent).toContain('planner')
@@ -35,7 +35,7 @@ describe('r-actor-tree', () => {
     ]
     await el.updateComplete
 
-    const tree = el.querySelector('r-tree')
+    const tree = el.shadowRoot.querySelector('r-tree')
     expect(tree).toBeTruthy()
     expect(tree.shadowRoot.textContent).toContain('parent')
     expect(tree.shadowRoot.textContent).toContain('child')
@@ -64,7 +64,7 @@ describe('r-actor-tree', () => {
     ]
     await el.updateComplete
 
-    const tree = el.querySelector('r-tree')
+    const tree = el.shadowRoot.querySelector('r-tree')
     expect(tree.shadowRoot.querySelector('.tree-children')).toBeTruthy()
 
     tree.shadowRoot.querySelector('.tree-chevron')!.click()
@@ -80,7 +80,7 @@ describe('r-actor-tree', () => {
     ]
     await el.updateComplete
 
-    const tree = el.querySelector('r-tree')
+    const tree = el.shadowRoot.querySelector('r-tree')
     expect(tree.shadowRoot.textContent).toContain('42')
   })
 })

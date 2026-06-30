@@ -5,6 +5,7 @@ import { store } from '../../frontend/webkit/store.js'
 import { resetStore } from '../helpers/frontend.js'
 
 beforeEach(() => {
+  localStorage.clear()
   resetStore()
 })
 

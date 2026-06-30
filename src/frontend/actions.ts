@@ -1,5 +1,6 @@
 import { store } from '@rorschach/frontend/webkit/store.js'
 import type { ShellState, Message, LogEvent, Attachment } from './types/state.js'
+import { send } from './shell/connection-service.js'
 
 const shell = () => store.namespace<ShellState>('shell')
 
@@ -26,9 +27,8 @@ export const appendMessage = (msg: Message) => {
   const currentMessages = shell().get('messages')
   const nextMessages = [...currentMessages, msg]
   shell().set('messages', nextMessages)
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('rorschach.lastMessages', JSON.stringify(nextMessages.slice(-10).map(toPersistedMessage)))
-  }
+  const nextPersisted = nextMessages.slice(-10).map(toPersistedMessage)
+  shell().set('lastMessages', nextPersisted)
 }
 
 export const updateActiveStream = (patch: Partial<ShellState['activeStream']>) => {
@@ -59,18 +59,16 @@ export const commitActiveStream = (role: 'assistant' | 'error' = 'assistant', te
 }
 
 export const switchMode = (mode: string) => {
-  const ws = shell().get('ws')
-  if (!mode || mode === shell().get('currentMode') || ws?.readyState !== WebSocket.OPEN) {
+  if (!mode || mode === shell().get('currentMode')) {
     return false
   }
-  ws.send(JSON.stringify({ type: 'switchMode', mode }))
+  send({ type: 'switchMode', mode })
   return true
 }
 
 export const submitChatMessage = (text: string, attachments: Attachment[]) => {
-  const ws = shell().get('ws')
   const isWaiting = shell().get('isWaiting')
-  if ((!text && attachments.length === 0) || ws?.readyState !== WebSocket.OPEN || isWaiting) {
+  if ((!text && attachments.length === 0) || isWaiting) {
     return
   }
 
@@ -82,7 +80,7 @@ export const submitChatMessage = (text: string, attachments: Attachment[]) => {
     timestamp: Date.now(),
   })
 
-  ws.send(JSON.stringify({ text, attachments }))
+  send({ text, attachments })
   shell().set('isWaiting', true)
   updateActiveStream({ isActive: true })
 }

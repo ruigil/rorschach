@@ -1,5 +1,5 @@
 import { html } from 'lit';
-import { customElement, query } from 'lit/decorators.js';
+import { customElement, query, state } from 'lit/decorators.js';
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
 import { store } from '@rorschach/frontend/webkit/store.js';
@@ -18,6 +18,10 @@ export class RChatPanel extends RorschachBase {
   private _lastStreamActive = false;
 
   @query('#messages') private messagesEl!: HTMLElement;
+  @query('r-chat-input') private chatInputEl!: any;
+
+  /** Incremented to request focus on the chat input via reactive property. */
+  @state() private _focusSignal = 0;
 
   override createRenderRoot() {
     return this; // Light DOM for standard styles
@@ -36,8 +40,8 @@ export class RChatPanel extends RorschachBase {
   override updated(changedProperties: Map<string | symbol, unknown>) {
     super.updated(changedProperties);
 
-    const messages = this._messages.value as any[];
-    const activeStream = this._activeStream.value as any;
+    const messages = this._messages.value;
+    const activeStream = this._activeStream.value;
 
     const messagesChanged = messages.length !== this._lastMessagesLength;
     const streamActiveChanged = activeStream.isActive !== this._lastStreamActive;
@@ -47,7 +51,7 @@ export class RChatPanel extends RorschachBase {
       this._scrollToBottom();
 
       if (this._lastStreamActive && !activeStream.isActive) {
-        setTimeout(() => this.focus(), 100);
+        setTimeout(() => { this._focusSignal++ }, 100);
       }
 
       this._lastMessagesLength = messages.length;
@@ -64,19 +68,14 @@ export class RChatPanel extends RorschachBase {
     });
   }
 
-  override focus() {
-    const input = this.querySelector('r-chat-input') as any;
-    input?.focus();
-  }
-
   private _handleSubmit(event: any) {
     const { text, attachments } = event.detail;
     submitChatMessage(text, attachments);
   }
 
   override render() {
-    const messages = this._messages.value as any[];
-    const activeStream = this._activeStream.value as any;
+    const messages = this._messages.value;
+    const activeStream = this._activeStream.value;
 
     const viewClass = 'panel-view';
 
@@ -99,7 +98,7 @@ export class RChatPanel extends RorschachBase {
 
         <div class="chat-window-footer">
           <div class="chat-dock">
-            <r-chat-input></r-chat-input>
+            <r-chat-input .focusSignal=${this._focusSignal}></r-chat-input>
           </div>
         </div>
       </div>

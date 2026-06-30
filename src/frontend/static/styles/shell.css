@@ -1,3 +1,23 @@
+/* ─── Light-DOM surfaces ───
+   All light-DOM surface elements use `display: contents` so the host element
+   "disappears" and global CSS targets the surface's inner DOM directly.
+   This is the single, consistent rule for all light-DOM surfaces — shell
+   and plugin alike. Shadow-DOM kit primitives style themselves via :host. */
+r-shell,
+r-window,
+r-chat-panel,
+r-chat-input,
+r-mode-select,
+r-welcome-dashboard,
+r-observe-panel,
+r-config-form,
+r-surface-error,
+r-doc-workspace,
+r-workflow-workspace,
+r-notebook-workspace {
+  display: contents;
+}
+
 /* ─── Header ─── */
 header {
   position: relative;
@@ -54,7 +74,9 @@ header.streaming::after {
   gap: 0.5rem;
 }
 
-.mode-select-wrap {
+/* ─── Header select wrappers (mode + theme) ───
+   Shared visual language for the two dropdowns in the header. */
+.header-select-wrap {
   display: flex;
   align-items: center;
   gap: 0.45rem;
@@ -63,10 +85,31 @@ header.streaming::after {
   color: var(--text-dim);
 }
 
-.mode-select-wrap span {
+.header-select-wrap span {
   display: none;
 }
 
+.header-select {
+  min-width: 9rem;
+  max-width: 14rem;
+  height: 1.75rem;
+  padding: 0 1.7rem 0 0.6rem;
+  border: 1px solid var(--border-mid);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-mid);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.header-select:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+/* Legacy alias — keep #mode-select styling identical to .header-select so
+   r-mode-select keeps working until it migrates to the class. */
 #mode-select {
   min-width: 9rem;
   max-width: 14rem;

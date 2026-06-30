@@ -15,8 +15,8 @@ export class RCard extends RorschachBase {
   static override styles = css`
     :host {
       display: block;
-      background: var(--surface, #060e14);
-      border: 1px solid var(--border, #0d1f2d);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: var(--radius, 8px);
       overflow: hidden;
       transition: all 0.15s ease-in-out;
@@ -27,14 +27,14 @@ export class RCard extends RorschachBase {
     }
 
     :host([hoverable]:hover) {
-      border-color: var(--border-mid, #1a3548);
+      border-color: var(--border-mid);
       background: var(--surface-2, #0a1820);
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
     .card-header {
       padding: 0.75rem 1rem;
-      border-bottom: 1px solid var(--border, #0d1f2d);
+      border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -46,7 +46,7 @@ export class RCard extends RorschachBase {
 
     .card-footer {
       padding: 0.75rem 1rem;
-      border-top: 1px solid var(--border, #0d1f2d);
+      border-top: 1px solid var(--border);
       background: rgba(0, 0, 0, 0.15);
       display: flex;
       align-items: center;

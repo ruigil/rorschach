@@ -25,7 +25,7 @@ export class REmptyState extends RorschachBase {
     }
 
     .icon {
-      color: var(--accent, #00c4d4);
+      color: var(--accent);
       opacity: 0.35;
       line-height: 0;
     }
@@ -36,7 +36,7 @@ export class REmptyState extends RorschachBase {
       font-size: 0.65rem;
       font-family: var(--font-mono, monospace);
       font-weight: 300;
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
     }
 
     .text::after {
@@ -63,7 +63,7 @@ export class REmptyState extends RorschachBase {
 
     .subtext {
       font-size: 0.68rem;
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       opacity: 0.5;
       font-family: var(--font-mono, monospace);
       font-weight: 300;

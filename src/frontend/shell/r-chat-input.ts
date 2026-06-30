@@ -3,12 +3,11 @@ import { customElement, state, query } from 'lit/decorators.js';
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
 import type { ShellState } from '../types/state.js';
+import type { MediaItem } from '@rorschach/frontend/webkit/r-media-previews.js';
 
 @customElement('r-chat-input')
 export class RChatInput extends RorschachBase {
-  @state() private pendingImages: string[] = [];
-  @state() private pendingAudio: string | null = null;
-  @state() private pendingPdfs: { dataUrl: string, name: string }[] = [];
+  @state() private pendingMedia: MediaItem[] = [];
   @state() private isRecording = false;
 
   private _isConnected = new StoreController<ShellState, 'isConnected'>(this, ['shell', 'isConnected']);
@@ -27,22 +26,23 @@ export class RChatInput extends RorschachBase {
 
   getPending() {
     return {
-      images: [...this.pendingImages],
-      audio: this.pendingAudio,
-      pdfs: [...this.pendingPdfs],
+      images: this.pendingMedia.filter(m => m.kind === 'image').map(m => m.data),
+      audio: this.pendingMedia.find(m => m.kind === 'audio')?.data ?? null,
+      pdfs: this.pendingMedia.filter(m => m.kind === 'pdf'),
     };
   }
 
   clearPending() {
-    this.pendingImages = [];
-    this.pendingAudio = null;
-    this.pendingPdfs = [];
-    const previews = this.querySelector('r-media-previews') as any;
-    previews?.clear();
+    this.pendingMedia = [];
   }
 
-  override focus() {
-    this.inputEl?.focus();
+  /** Focus signal — increment to request focus. */
+  @state() focusSignal = 0;
+
+  override updated(changedProperties: Map<string | symbol, unknown>) {
+    if (changedProperties.has('focusSignal') && this.focusSignal > 0) {
+      this.inputEl?.focus();
+    }
   }
 
   private _handleInput() {
@@ -60,11 +60,9 @@ export class RChatInput extends RorschachBase {
 
   private _submit() {
     const text = this.inputEl.value.trim();
-    const attachments = [
-      ...this.pendingImages.map(data => ({ kind: 'image', data })),
-      ...(this.pendingAudio ? [{ kind: 'audio', data: this.pendingAudio }] : []),
-      ...this.pendingPdfs.map(p => ({ kind: 'pdf', data: p.dataUrl, name: p.name })),
-    ];
+    const attachments = this.pendingMedia.map(m =>
+      m.kind === 'pdf' ? { kind: 'pdf', data: m.data, name: m.name } : { kind: m.kind, data: m.data }
+    );
 
     if (!text && attachments.length === 0) return;
 
@@ -83,19 +81,19 @@ export class RChatInput extends RorschachBase {
     const files = Array.from(this.fileInputEl.files ?? []);
     for (const file of files) {
       const dataUrl = await this._readFileAsDataUrl(file);
-      const previews = this.querySelector('r-media-previews') as any;
       if (file.type.startsWith('image/')) {
-        this.pendingImages = [...this.pendingImages, dataUrl];
-        previews?.addImage(dataUrl);
+        this.pendingMedia = [...this.pendingMedia, { kind: 'image', data: dataUrl }];
       } else if (file.type.startsWith('audio/') || /\.(mp3|wav)$/i.test(file.name)) {
-        this.pendingAudio = dataUrl;
-        previews?.setAudio(dataUrl);
+        this.pendingMedia = [...this.pendingMedia.filter(m => m.kind !== 'audio'), { kind: 'audio', data: dataUrl }];
       } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        this.pendingPdfs = [...this.pendingPdfs, { dataUrl, name: file.name }];
-        previews?.addPdf(dataUrl, file.name);
+        this.pendingMedia = [...this.pendingMedia, { kind: 'pdf', data: dataUrl, name: file.name }];
       }
     }
     this.fileInputEl.value = '';
+  }
+
+  private _removeMedia(index: number) {
+    this.pendingMedia = this.pendingMedia.filter((_, i) => i !== index);
   }
 
   private async _toggleRecording() {
@@ -142,9 +140,10 @@ export class RChatInput extends RorschachBase {
         const blob = new Blob([wav], { type: 'audio/wav' });
         const reader = new FileReader();
         reader.onload = () => {
-          this.pendingAudio = reader.result as string;
-          const previews = this.querySelector('r-media-previews') as any;
-          previews?.setAudio(reader.result);
+          this.pendingMedia = [
+            ...this.pendingMedia.filter(m => m.kind !== 'audio'),
+            { kind: 'audio', data: reader.result as string },
+          ];
         };
         reader.readAsDataURL(blob);
       },
@@ -194,7 +193,10 @@ export class RChatInput extends RorschachBase {
 
     return html`
       <div class="input-area">
-        <r-media-previews id="image-previews" class="image-previews hidden"></r-media-previews>
+        <r-media-previews
+          .items=${this.pendingMedia}
+          @media-remove=${(e: CustomEvent<{ index: number }>) => this._removeMedia(e.detail.index)}
+        ></r-media-previews>
         <form id="chat-form" @submit=${(e: Event) => { e.preventDefault(); this._submit(); }}>
           <input type="file" id="file-input" accept="image/*,audio/*,.mp3,.wav,application/pdf,.pdf" multiple style="display:none" @change=${this._handleFileChange}>
           <button type="button" id="attach-btn" aria-label="Attach file" @click=${() => this.fileInputEl.click()}>
@@ -221,3 +223,4 @@ export class RChatInput extends RorschachBase {
     `;
   }
 }
+

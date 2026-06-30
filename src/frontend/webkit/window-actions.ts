@@ -6,9 +6,16 @@
 // store.ensureWindow / store.closeWindow already use for window runtime
 // state. The shell seeds richer state (messages, logs, …) into the same
 // namespace; these actions only touch the window/mode slice.
+//
+// `currentMode` and `activeWorkspaceTab` are persisted via the store's
+// `persist` option (seeded in `rorschach.ts`), so these actions only call
+// `set` and the store handles localStorage automatically. Window runtime
+// state (position/size) uses a dedicated helper below because it is keyed
+// per-window and merges with the `WindowConfig` defaults on read.
 
 import { store } from './store.js'
 import { modeLabel } from './utils.js'
+import { readSavedWindowState } from './window-state.js'
 import type { WindowRuntimeState } from './host-types.js'
 
 type ShellWindowSlice = {
@@ -22,6 +29,9 @@ type ShellWindowSlice = {
 
 const shell = () => store.namespace<ShellWindowSlice>('shell')
 
+/** Persist a single window's runtime state. The companion reader
+ *  `readSavedWindowState` lives in `window-state.ts` so both halves of the
+ *  window-state persistence contract share one file. */
 const persistWindowState = (id: string, state: WindowRuntimeState) => {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(`rorschach.window_state.${id}`, JSON.stringify(state))
@@ -32,16 +42,10 @@ export const setMode = (mode: string, displayName?: string) => {
   shell().set('currentMode', mode)
   shell().set('currentModeDisplayName', displayName || modeLabel(mode))
   shell().set('isWaiting', false)
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('rorschach.currentMode', mode)
-  }
 }
 
 export const setActiveWorkspaceTab = (id: string) => {
   shell().set('activeWorkspaceTab', id)
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('rorschach.activeWorkspaceTab', id)
-  }
 }
 
 export const updateWindowState = (id: string, updates: Partial<WindowRuntimeState>) => {
@@ -88,9 +92,7 @@ export const openWindow = (id: string) => {
   shell().set('windows', windows)
   focusWindow(id)
 
-  if (typeof localStorage !== 'undefined') {
-    persistWindowState(id, winState)
-  }
+  persistWindowState(id, winState)
 }
 
 export const closeWindow = (id: string) => {
@@ -108,7 +110,7 @@ export const closeWindow = (id: string) => {
     shell().set('activeWindowIds', activeIds)
   }
 
-  if (typeof localStorage !== 'undefined') {
-    persistWindowState(id, winState)
-  }
+  persistWindowState(id, winState)
 }
+
+export { readSavedWindowState }

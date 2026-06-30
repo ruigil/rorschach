@@ -20,7 +20,6 @@ export class RDocWorkspace extends RorschachBase {
 
   goHome() {
     store.namespace<DocsState>('docs').set('currentDocArtifact', 'index.html');
-    localStorage.setItem('rorschach.docWorkspaceArtifact', 'index.html');
     openWindow('docs');
   }
 

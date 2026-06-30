@@ -22,12 +22,12 @@ import './shell/r-mode-select.js'
 import './shell/r-surface-error.js'
 import './shell/r-welcome-dashboard.js'
 
-// Shell boot: corona animation, store init, plugin-host
-import './corona.js'
+// Shell boot: store init, plugin-host
 import { store } from '@rorschach/frontend/webkit/store.js'
 import type { ShellState } from './types/state.js'
 import { pluginHost } from './shell/plugin-host.js'
 import { DEFAULT_TAB, DEFAULT_OBSERVE_TAB } from './constants.js'
+import { initTheme } from '@rorschach/frontend/webkit/theme.js'
 
 // ─── Shell namespace init ───
 //
@@ -35,14 +35,9 @@ import { DEFAULT_TAB, DEFAULT_OBSERVE_TAB } from './constants.js'
 // owner, symmetric with `store.namespace('<pluginId>')` for plugins. The
 // plugin-host seeds the `windows` map via `store.ensureWindow()` in `init()`.
 
-const savedMessagesStr = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.lastMessages') : null
-let savedMessages: ShellState['messages'] = []
-if (savedMessagesStr) {
-  try { savedMessages = JSON.parse(savedMessagesStr) } catch { /* ignore */ }
-}
-
-const savedMode = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.currentMode') || '' : ''
-const savedActiveWorkspaceTab = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.activeWorkspaceTab') || 'docs' : 'docs'
+// Apply the persisted theme before any component that reads it mounts. This
+// also registers `theme` as a persisted key on the shell namespace.
+initTheme()
 
 store.namespace<ShellState>('shell').init({
   isConnected: false,
@@ -50,7 +45,7 @@ store.namespace<ShellState>('shell').init({
   currentUserId: null,
   currentUserRoles: [],
   agents: [],
-  currentMode: savedMode,
+  currentMode: '',
   currentModeDisplayName: '',
   topics: [],
   actors: [],
@@ -58,8 +53,8 @@ store.namespace<ShellState>('shell').init({
   traces: [],
   usage: [],
   tools: {},
-  ws: null,
-  messages: savedMessages,
+  messages: [],
+  lastMessages: [],
   activeTab: DEFAULT_TAB,
   observeActiveTab: DEFAULT_OBSERVE_TAB,
   activeStream: {
@@ -71,8 +66,17 @@ store.namespace<ShellState>('shell').init({
   },
   windows: {},
   activeWindowIds: [],
-  activeWorkspaceTab: savedActiveWorkspaceTab,
+  activeWorkspaceTab: 'docs',
+}, {
+  persist: ['currentMode', 'activeWorkspaceTab', 'lastMessages'],
 })
+
+// Hydrate the in-memory message list from the persisted recent messages
+// (stripped of attachment payloads) so the chat panel restores on refresh.
+const shellNs = store.namespace<ShellState>('shell')
+if (shellNs.get('messages').length === 0 && shellNs.get('lastMessages').length > 0) {
+  shellNs.set('messages', shellNs.get('lastMessages'))
+}
 
 // Start the plugin-host (seeds chat/docs/workflows windows, starts mode
 // watcher, dynamic-imports legacy plugin UI modules).

@@ -78,9 +78,10 @@ export class RWorkflowWorkspace extends RorschachBase {
       this._lastMode = mode
       if (mode === 'workflows') {
         if (isInitialLoad) {
-          const savedView = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.workflowWorkspaceView') || 'list' : 'list'
-          const savedWorkflowId = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.workflowWorkspaceWorkflowId') : null
-          const savedRunId = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.workflowWorkspaceRunId') : null
+          const ns = store.namespace<WorkflowsState>('workflows')
+          const savedView = ns.get('workspaceView')
+          const savedWorkflowId = ns.get('workspaceWorkflowId')
+          const savedRunId = ns.get('workspaceRunId')
           if (savedView === 'graph' && savedWorkflowId) this.openGraph(savedWorkflowId, savedRunId || undefined)
           else this.openList()
         } else {
@@ -114,11 +115,10 @@ export class RWorkflowWorkspace extends RorschachBase {
     this._workflowId = null
     this._runId = null
     this._currentGraph = null
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('rorschach.workflowWorkspaceView', 'list')
-      localStorage.removeItem('rorschach.workflowWorkspaceWorkflowId')
-      localStorage.removeItem('rorschach.workflowWorkspaceRunId')
-    }
+    const ns = store.namespace<WorkflowsState>('workflows')
+    ns.set('workspaceView', 'list')
+    ns.set('workspaceWorkflowId', null)
+    ns.set('workspaceRunId', null)
     try {
       const [workflows, runs] = await Promise.all([
         this._fetchJson('workflows'),
@@ -137,12 +137,10 @@ export class RWorkflowWorkspace extends RorschachBase {
     this._view = 'loading'
     this._workflowId = workflowId
     this._runId = runId ?? null
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('rorschach.workflowWorkspaceView', 'graph')
-      localStorage.setItem('rorschach.workflowWorkspaceWorkflowId', workflowId)
-      if (runId) localStorage.setItem('rorschach.workflowWorkspaceRunId', runId)
-      else localStorage.removeItem('rorschach.workflowWorkspaceRunId')
-    }
+    const ns = store.namespace<WorkflowsState>('workflows')
+    ns.set('workspaceView', 'graph')
+    ns.set('workspaceWorkflowId', workflowId)
+    ns.set('workspaceRunId', runId ?? null)
     const runsPromise = this._refreshRuns().catch(() => {})
     try {
       await this._loadGraph(workflowId, runId, false)
@@ -281,9 +279,7 @@ export class RWorkflowWorkspace extends RorschachBase {
   private _selectTask(taskId: string) {
     this._selectedTaskId = taskId
     this._inspectorTab = 'task'
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('rorschach.workflowWorkspaceSelectedTaskId', taskId)
-    }
+    store.namespace<WorkflowsState>('workflows').set('workspaceSelectedTaskId', taskId)
   }
 
   private _renderToolbarMeta() {
@@ -300,7 +296,7 @@ export class RWorkflowWorkspace extends RorschachBase {
     this._currentGraph = graph
     this._workflowId = workflowId
     this._runId = graph.run?.runId ?? runId ?? null
-    const savedTaskId = typeof localStorage !== 'undefined' ? localStorage.getItem('rorschach.workflowWorkspaceSelectedTaskId') : null
+    const savedTaskId = store.namespace<WorkflowsState>('workflows').get('workspaceSelectedTaskId')
     const candidate = preserveSelection ? this._selectedTaskId : savedTaskId
     this._selectedTaskId = candidate && graph.nodes.some((n: any) => n.id === candidate)
       ? candidate

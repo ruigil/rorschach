@@ -21,10 +21,10 @@ export class RBadge extends RorschachBase {
       font-family: var(--font-mono, monospace);
       white-space: nowrap;
     }
-    :host([level="debug"]) { color: var(--log-debug, #3d6878); }
-    :host([level="info"])  { color: var(--log-info, #5ba0b8); }
-    :host([level="warn"])  { color: var(--log-warn, #c4843a); }
-    :host([level="error"]) { color: var(--log-error, #e06030); }
+    :host([level="debug"]) { color: var(--log-debug); }
+    :host([level="info"])  { color: var(--log-info); }
+    :host([level="warn"])  { color: var(--log-warn); }
+    :host([level="error"]) { color: var(--log-error); }
 
     :host([variant="actor"]) {
       font-size: 0.6rem;
@@ -33,9 +33,9 @@ export class RBadge extends RorschachBase {
       text-transform: uppercase;
       padding: 3px 8px !important;
     }
-    :host([variant="actor"][status="running"]) { color: var(--green, #39e8a0); background: rgba(69, 196, 154, 0.1); }
-    :host([variant="actor"][status="stopped"]) { color: var(--text-dim, #3d6878); background: rgba(255,255,255,0.04); }
-    :host([variant="actor"][status="error"])   { color: var(--error, #e06030); background: rgba(201, 95, 82, 0.1); }
+    :host([variant="actor"][status="running"]) { color: var(--green); background: rgba(69, 196, 154, 0.1); }
+    :host([variant="actor"][status="stopped"]) { color: var(--text-dim); background: rgba(255,255,255,0.04); }
+    :host([variant="actor"][status="error"])   { color: var(--error); background: rgba(201, 95, 82, 0.1); }
 
     /* Universal status mappings */
     :host([status]) {

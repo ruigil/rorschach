@@ -35,14 +35,14 @@ export class RKVList extends RorschachBase {
       gap: 4px;
     }
     .kv-key {
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       font-family: var(--font-mono, monospace);
       font-size: 0.62rem;
       text-transform: uppercase;
       letter-spacing: 0.08em;
     }
     .kv-value {
-      color: var(--text-mid, #8abccc);
+      color: var(--text-mid);
       font-size: 0.78rem;
       line-height: 1.45;
       min-width: 0;
@@ -50,20 +50,20 @@ export class RKVList extends RorschachBase {
       margin-left: 20px;
     }
     .kv-muted {
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       font-family: var(--font-mono, monospace);
       font-size: 0.68rem;
     }
     pre {
-      scrollbar-color: var(--border-mid, #1a3548) transparent;
+      scrollbar-color: var(--border-mid) transparent;
       scrollbar-width: thin;
       max-height: 12rem;
       margin: 0;
       padding: 8px;
       overflow: auto;
-      color: var(--text-mid, #8abccc);
+      color: var(--text-mid);
       background: rgba(4, 13, 20, 0.58);
-      border: 1px solid var(--border, #0d1f2d);
+      border: 1px solid var(--border);
       border-radius: 4px;
       font-family: var(--font-mono, monospace);
       font-size: 0.66rem;
@@ -78,7 +78,7 @@ export class RKVList extends RorschachBase {
       background: transparent;
     }
     pre::-webkit-scrollbar-thumb {
-      background: var(--border-mid, #1a3548);
+      background: var(--border-mid);
       border-radius: 2px;
     }
     .artifact-link {
@@ -86,14 +86,14 @@ export class RKVList extends RorschachBase {
       align-items: center;
       gap: 6px;
       max-width: 100%;
-      color: var(--accent, #00c4d4);
+      color: var(--accent);
       font-family: var(--font-mono, monospace);
       font-size: 0.68rem;
       text-decoration: none;
       transition: color 0.15s;
     }
     .artifact-link:hover {
-      color: var(--accent-bright, #22e8f8);
+      color: var(--accent-bright);
     }
     .artifact-link span {
       overflow: hidden;

@@ -1,4 +1,4 @@
-import { html, type TemplateResult } from 'lit';
+import { html, css, type TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 import type { Actor } from './types.js';
@@ -12,10 +12,17 @@ export class RActorTree extends RorschachBase {
 
   private _actorsMap: Record<string, Actor> = {};
 
-  // Render to light DOM to reuse shell/observe styles
-  override createRenderRoot() {
-    return this;
-  }
+  static override styles = css`
+    :host {
+      display: block;
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.4rem 0;
+    }
+    :host::-webkit-scrollbar { width: 3px; }
+    :host::-webkit-scrollbar-track { background: transparent; }
+    :host::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
+  `;
 
   override willUpdate(changedProperties: Map<string, any>) {
     if (changedProperties.has('actors')) {
@@ -93,11 +100,6 @@ export class RActorTree extends RorschachBase {
         detail: { actor: node.data },
       }));
     }
-  }
-
-  updateActors(actors: Actor[]) {
-    this.actors = actors;
-    return this._selectedActor ? this._actorsMap[this._selectedActor] : null;
   }
 
   override render() {

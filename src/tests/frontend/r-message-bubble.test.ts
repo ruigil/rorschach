@@ -13,7 +13,8 @@ describe('r-message-bubble', () => {
     el.message = { id: '1', role: 'user', text: 'hello', timestamp: Date.now() }
     await el.updateComplete
 
-    expect(el.textContent).toContain('hello')
+    expect(el.shadowRoot.textContent).toContain('hello')
+    expect(el.getAttribute('type')).toBe('user')
   })
 
   test('renders assistant message', async () => {
@@ -22,7 +23,8 @@ describe('r-message-bubble', () => {
     el.message = { id: '2', role: 'assistant', text: 'hi there', timestamp: Date.now() }
     await el.updateComplete
 
-    expect(el.textContent).toContain('hi there')
+    expect(el.shadowRoot.textContent).toContain('hi there')
+    expect(el.getAttribute('type')).toBe('assistant')
   })
 
   test('renders error message', async () => {
@@ -32,7 +34,8 @@ describe('r-message-bubble', () => {
     el.message = { id: '3', role: 'error', text: 'something went wrong', timestamp: Date.now() }
     await el.updateComplete
 
-    expect(el.textContent).toContain('something went wrong')
+    expect(el.shadowRoot.textContent).toContain('something went wrong')
+    expect(el.getAttribute('type')).toBe('error')
   })
 
   test('renders reasoning in details element', async () => {
@@ -44,7 +47,7 @@ describe('r-message-bubble', () => {
     }
     await el.updateComplete
 
-    const details = el.querySelector('details')
+    const details = el.shadowRoot.querySelector('details')
     expect(details).toBeTruthy()
     expect(details!.textContent).toContain('let me think...')
   })
@@ -58,7 +61,7 @@ describe('r-message-bubble', () => {
     }
     await el.updateComplete
 
-    const sourcesList = el.querySelector('r-sources-list')
+    const sourcesList = el.shadowRoot.querySelector('r-sources-list')
     expect(sourcesList).toBeTruthy()
     expect(sourcesList.sources).toHaveLength(1)
   })
@@ -72,7 +75,7 @@ describe('r-message-bubble', () => {
     }
     await el.updateComplete
 
-    const att = el.querySelector('r-attachments')
+    const att = el.shadowRoot.querySelector('r-attachments')
     expect(att).toBeTruthy()
     expect(att.items).toHaveLength(1)
   })

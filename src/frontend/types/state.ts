@@ -11,6 +11,7 @@ import type {
   UsageEntry,
 } from '@rorschach/frontend/webkit/types.js'
 import type { WindowRuntimeState } from '@rorschach/frontend/webkit/host-types.js'
+import type { ThemeName } from '@rorschach/frontend/webkit/theme.js'
 
 // Re-export the kit types so existing shell code that imports from
 // `./types/state.js` keeps working. These are the neutral data shapes the
@@ -30,6 +31,7 @@ export type Agent = {
 // All plugin-leak keys have been removed — the docs and workflows plugins
 // now own their state in their own namespaces.
 export type ShellState = {
+  theme: ThemeName
   isConnected: boolean
   isWaiting: boolean
   currentUserId: string | null
@@ -43,8 +45,10 @@ export type ShellState = {
   traces: TraceSpan[]
   usage: UsageEntry[]
   tools: Record<string, { type: 'function'; function: { name: string; description: string; parameters: object } }>
-  ws: WebSocket | null
   messages: Message[]
+  /** Persisted subset of recent messages (stripped of attachment payloads)
+   *  used to restore the chat history across refreshes. */
+  lastMessages: Message[]
   activeTab: Tab
   observeActiveTab: ObserveTab
   activeStream: ActiveStream

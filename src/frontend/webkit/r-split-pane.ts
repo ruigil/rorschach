@@ -30,7 +30,7 @@ export class RSplitPane extends RorschachBase {
     }
 
     .resizer {
-      background: var(--border, #0d1f2d);
+      background: var(--border);
       position: relative;
       z-index: 10;
       transition: background 0.15s;
@@ -38,7 +38,7 @@ export class RSplitPane extends RorschachBase {
 
     .resizer:hover,
     .resizer.dragging {
-      background: var(--accent, #00c4d4);
+      background: var(--accent);
     }
 
     :host([orientation="horizontal"]) .resizer {

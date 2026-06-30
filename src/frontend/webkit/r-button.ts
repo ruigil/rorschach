@@ -56,47 +56,47 @@ export class RButton extends RorschachBase {
 
     /* Primary Variant */
     :host([variant="primary"]) button {
-      background: var(--accent, #00c4d4);
-      color: var(--bg, #03070a);
-      border-color: var(--accent, #00c4d4);
+      background: var(--accent);
+      color: var(--bg);
+      border-color: var(--accent);
     }
     :host([variant="primary"]) button:hover:not(:disabled) {
-      background: var(--accent-bright, #22e8f8);
-      border-color: var(--accent-bright, #22e8f8);
+      background: var(--accent-bright);
+      border-color: var(--accent-bright);
       box-shadow: 0 0 8px var(--accent-glow);
     }
 
     /* Secondary Variant */
     :host([variant="secondary"]) button {
       background: var(--surface-2, #0a1820);
-      color: var(--text, #e8f6fa);
-      border-color: var(--border, #0d1f2d);
+      color: var(--text);
+      border-color: var(--border);
     }
     :host([variant="secondary"]) button:hover:not(:disabled) {
-      background: var(--surface, #060e14);
-      border-color: var(--border-mid, #1a3548);
+      background: var(--surface);
+      border-color: var(--border-mid);
     }
 
     /* Ghost Variant */
     :host([variant="ghost"]) button {
       background: transparent;
-      color: var(--text-mid, #8abccc);
+      color: var(--text-mid);
       border-color: transparent;
     }
     :host([variant="ghost"]) button:hover:not(:disabled) {
       background: rgba(0, 196, 212, 0.05);
-      color: var(--text, #e8f6fa);
+      color: var(--text);
     }
 
     /* Danger Variant */
     :host([variant="danger"]) button {
-      background: var(--error-bg, rgba(224, 96, 48, 0.07));
-      color: var(--error, #e06030);
-      border-color: var(--error-border, rgba(224, 96, 48, 0.16));
+      background: var(--error-bg);
+      color: var(--error);
+      border-color: var(--error-border);
     }
     :host([variant="danger"]) button:hover:not(:disabled) {
       background: rgba(224, 96, 48, 0.15);
-      border-color: var(--error, #e06030);
+      border-color: var(--error);
     }
 
     .spinner {

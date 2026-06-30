@@ -16,12 +16,13 @@ export type DocsState = {
   currentDocArtifact: string | null
 };
 
-store.namespace<DocsState>('docs').init({ currentDocArtifact: null })
+store.namespace<DocsState>('docs').init(
+  { currentDocArtifact: null },
+  { persist: ['currentDocArtifact'] },
+)
 
 export const reduceFrame = (frame: any, host: PluginHostActions) => {
-  console.log('docs plugin received frame', frame)
   if (frame.type === 'docWorkspace') {
-    console.log('docs plugin opening workspace for artifact:', frame.artifactName)
     store.namespace<DocsState>('docs').set('currentDocArtifact', frame.artifactName)
     host.openWindow('docs')
   }

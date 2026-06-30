@@ -20,8 +20,8 @@ export class RSelect extends RorschachBase {
     select {
       width: 100%;
       background: var(--surface-2, #0a1820);
-      border: 1px solid var(--border, #0d1f2d);
-      color: var(--text-mid, #8abccc);
+      border: 1px solid var(--border);
+      color: var(--text-mid);
       border-radius: var(--radius, 8px);
       padding: 6px 32px 6px 12px;
       font-family: var(--font-ui, sans-serif);
@@ -34,12 +34,12 @@ export class RSelect extends RorschachBase {
       transition: all 0.15s ease-in-out;
     }
     select:hover:not(:disabled) {
-      border-color: var(--border-mid, #1a3548);
-      color: var(--text, #e8f6fa);
+      border-color: var(--border-mid);
+      color: var(--text);
     }
     select:focus:not(:disabled) {
-      border-color: var(--accent, #00c4d4);
-      color: var(--text, #e8f6fa);
+      border-color: var(--accent);
+      color: var(--text);
       box-shadow: 0 0 8px rgba(0, 196, 212, 0.15);
     }
     select:disabled {
@@ -53,14 +53,14 @@ export class RSelect extends RorschachBase {
       top: 50%;
       transform: translateY(-50%);
       pointer-events: none;
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       display: flex;
       align-items: center;
       justify-content: center;
       transition: color 0.15s;
     }
     select:hover:not(:disabled) + .chevron {
-      color: var(--text-mid, #8abccc);
+      color: var(--text-mid);
     }
   `;
 

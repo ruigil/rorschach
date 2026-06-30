@@ -50,7 +50,7 @@ export class RTree extends RorschachBase {
 
     .tree-row.selected {
       background: rgba(0, 196, 212, 0.08);
-      color: var(--accent, #00c4d4);
+      color: var(--accent);
       font-weight: 500;
     }
 
@@ -60,7 +60,7 @@ export class RTree extends RorschachBase {
       justify-content: center;
       width: 16px;
       height: 16px;
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       cursor: pointer;
       margin-right: 4px;
       border-radius: 2px;
@@ -68,7 +68,7 @@ export class RTree extends RorschachBase {
 
     .tree-chevron:hover {
       background: rgba(255, 255, 255, 0.05);
-      color: var(--text-mid, #8abccc);
+      color: var(--text-mid);
     }
 
     .tree-spacer {
@@ -80,7 +80,7 @@ export class RTree extends RorschachBase {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       margin-right: 6px;
     }
 
@@ -93,21 +93,21 @@ export class RTree extends RorschachBase {
     }
 
     .tree-dot.running, .tree-dot.completed, .tree-dot.success {
-      background: var(--green, #39e8a0);
-      box-shadow: 0 0 4px var(--green-glow, rgba(57, 232, 160, 0.4));
+      background: var(--green);
+      box-shadow: 0 0 4px var(--green-glow);
     }
 
     .tree-dot.stopped, .tree-dot.idle {
-      background: var(--text-dim, #3d6878);
+      background: var(--text-dim);
     }
 
     .tree-dot.error, .tree-dot.failed {
-      background: var(--error, #e06030);
-      box-shadow: 0 0 4px var(--error, #e06030);
+      background: var(--error);
+      box-shadow: 0 0 4px var(--error);
     }
 
     .tree-dot.warn, .tree-dot.blocked {
-      background: var(--warn, #c4843a);
+      background: var(--warn);
     }
 
     .tree-dot-empty {
@@ -127,7 +127,7 @@ export class RTree extends RorschachBase {
     .tree-badge {
       font-family: var(--font-mono, monospace);
       font-size: 0.65rem;
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       background: rgba(255, 255, 255, 0.04);
       padding: 1px 5px;
       border-radius: 8px;

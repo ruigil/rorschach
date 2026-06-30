@@ -23,7 +23,7 @@ export class RAttachments extends RorschachBase {
     .attachment {
       border-radius: 6px;
       overflow: hidden;
-      background: var(--bg-secondary, rgba(255,255,255,0.03));
+      background: var(--surface-2);
     }
 
     .attachment-image {
@@ -55,7 +55,7 @@ export class RAttachments extends RorschachBase {
       align-items: center;
       gap: 0.4rem;
       padding: 0.4rem 0.6rem;
-      color: var(--accent, #7aa2f7);
+      color: var(--accent);
       text-decoration: none;
       font-size: 0.78rem;
     }
@@ -66,7 +66,7 @@ export class RAttachments extends RorschachBase {
 
     .attachment-caption {
       font-size: 0.7rem;
-      color: var(--muted, #8a8a8a);
+      color: var(--muted);
       padding: 0.2rem 0.4rem;
     }
     

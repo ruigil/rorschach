@@ -11,7 +11,6 @@ import { pluginHost } from './plugin-host.js';
 
 @customElement('r-shell')
 export class RShell extends RorschachBase {
-  private _activeTab = new StoreController<ShellState, 'activeTab'>(this, ['shell', 'activeTab']);
   private _isConnected = new StoreController<ShellState, 'isConnected'>(this, ['shell', 'isConnected']);
   private _currentUserId = new StoreController<ShellState, 'currentUserId'>(this, ['shell', 'currentUserId']);
   private _currentUserRoles = new StoreController<ShellState, 'currentUserRoles'>(this, ['shell', 'currentUserRoles']);
@@ -35,17 +34,6 @@ export class RShell extends RorschachBase {
   override connectedCallback() {
     super.connectedCallback();
     this._bootstrap();
-
-    // Listen to activeTab store updates to handle legacy URL hash routing
-    store.namespace<ShellState>('shell').subscribe('activeTab', (tab) => {
-      if (tab === 'config') {
-        openWindow('config');
-        setTimeout(() => store.namespace<ShellState>('shell').set('activeTab', 'chat'), 50);
-      } else if (tab === 'observe') {
-        openWindow('observe');
-        setTimeout(() => store.namespace<ShellState>('shell').set('activeTab', 'chat'), 50);
-      }
-    });
 
     store.namespace<ShellState>('shell').subscribe('activeWorkspaceTab', (tab) => {
       this._switchModeForTab(tab);
@@ -93,13 +81,13 @@ export class RShell extends RorschachBase {
   }
 
   private _isAnyWorkspaceOpen() {
-    const windows = this._windows.value as any;
-    return Object.keys(windows).some(id => id !== 'chat' && windows[id].isOpen);
+    const windows = this._windows.value;
+    return Object.keys(windows).some(id => id !== 'chat' && windows[id]?.isOpen);
   }
 
   private _getActiveWorkspaces() {
-    const windows = this._windows.value as any;
-    return Object.keys(windows).filter(id => id !== 'chat' && windows[id].isOpen);
+    const windows = this._windows.value;
+    return Object.keys(windows).filter(id => id !== 'chat' && windows[id]?.isOpen);
   }
 
   private _handleSidebarResize(e: PointerEvent) {
@@ -169,6 +157,7 @@ export class RShell extends RorschachBase {
             <r-status-dot status="${isConnected ? 'connected' : 'disconnected'}"
                           label="${isConnected ? 'online' : 'connecting…'}"></r-status-dot>
           </div>
+          <r-theme-select></r-theme-select>
           ${userId && userId !== 'anonymous' ? html`
             <button class="logout-btn" title="Sign out" @click=${this._handleLogout}>
               <r-icon name="logout"></r-icon>
@@ -208,7 +197,7 @@ export class RShell extends RorschachBase {
 
         <!-- Right Column: Workspaces -->
         <div class="workspace-panel flex-grow-1 flex-column min-width-0">
-          <canvas id="void-canvas" aria-hidden="true"></canvas>
+          <r-corona aria-hidden="true"></r-corona>
           ${this._isAnyWorkspaceOpen() ? html`
             <div class="workspace-container flex-grow-1 flex-column min-height-0">
               <div class="workspace-tabs-bar">

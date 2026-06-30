@@ -1,12 +1,7 @@
 import { html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
-
-export type Source = {
-  url: string;
-  title: string;
-  snippet?: string;
-};
+import type { Source } from './types.js';
 
 @customElement('r-sources-list')
 export class RSourcesList extends RorschachBase {

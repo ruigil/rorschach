@@ -40,7 +40,7 @@ describe('setMode', () => {
 
   test('persists mode to localStorage', () => {
     setMode('planner')
-    expect(localStorage.getItem('rorschach.currentMode')).toBe('planner')
+    expect(localStorage.getItem('rorschach.store.shell.currentMode')).toBe(JSON.stringify('planner'))
   })
 })
 
@@ -76,7 +76,7 @@ describe('appendMessage', () => {
     for (let i = 0; i < 15; i++) {
       appendMessage({ id: String(i), role: 'user', text: `msg-${i}`, timestamp: Date.now() })
     }
-    const stored = JSON.parse(localStorage.getItem('rorschach.lastMessages')!)
+    const stored = JSON.parse(localStorage.getItem('rorschach.store.shell.lastMessages')!)
     expect(stored.length).toBe(10)
     expect(stored[0].text).toBe('msg-5')
     expect(stored[9].text).toBe('msg-14')
@@ -93,7 +93,7 @@ describe('appendMessage', () => {
       timestamp: Date.now(),
     })
 
-    const stored = JSON.parse(localStorage.getItem('rorschach.lastMessages')!)
+    const stored = JSON.parse(localStorage.getItem('rorschach.store.shell.lastMessages')!)
     expect(stored[0].attachments).toEqual([{ kind: 'image', name: 'screen.png' }])
     expect(store.namespace<ShellState>('shell').get('messages')[0]!.attachments![0]!.data).toBe('data:image/png;base64,large')
   })
@@ -171,7 +171,7 @@ describe('window state actions', () => {
     setActiveWorkspaceTab('plans')
 
     expect(store.namespace<ShellState>('shell').get('activeWorkspaceTab')).toBe('plans')
-    expect(localStorage.getItem('rorschach.activeWorkspaceTab')).toBe('plans')
+    expect(localStorage.getItem('rorschach.store.shell.activeWorkspaceTab')).toBe(JSON.stringify('plans'))
   })
 
   test('updateWindowState updates and persists the target window', () => {

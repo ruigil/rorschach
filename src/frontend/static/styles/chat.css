@@ -1,8 +1,11 @@
 /* ─── Chat: messages ─── */
+/* Message/bubble styles now live in r-message-bubble's shadow DOM.
+   The @keyframes below are kept because shell.css reuses them. */
+
 #messages {
   flex: 1;
   overflow-y: auto;
-  padding: 1.5rem 0 0.5rem;
+  padding: 1.5rem 1.0rem 0rem 1.0rem !important;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -16,14 +19,6 @@
 .chat-spacer {
   flex: 1 1 auto;
   min-height: 0;
-}
-
-.message {
-  display: flex;
-  flex-direction: column;
-  padding: 0.75rem 0.75rem;
-  gap: 0.35rem;
-  animation: msgIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes msgIn {
@@ -72,54 +67,6 @@
   0%   { background: transparent; }
   20%  { background: rgba(0,196,212,0.03); }
   100% { background: transparent; }
-}
-
-.message.user,
-.message.assistant,
-.message.error   { align-items: center; }
-
-.bubble {
-  font-family: var(--font-mono);
-  font-size: 0.875rem;
-  font-weight: 300;
-  line-height: 1.75;
-  word-break: break-word;
-  width: 100%;
-}
-
-.message.user {
-  animation: terminalScanIn 0.3s cubic-bezier(0.16,1,0.3,1) both;
-}
-
-.message.user .bubble {
-  color: var(--user-text);
-  background: var(--user-bg);
-  border: 1px solid var(--user-border);
-  border-radius: var(--radius);
-  padding: 0.6rem 0.9rem;
-  font-weight: 400;
-  font-size: 0.84rem;
-}
-
-.message.assistant .bubble {
-  color: var(--bot-text);
-  padding: 0.7rem 1rem;
-  background: var(--bot-bg);
-  border: 1px solid rgba(0, 196, 212, 0.05);
-  border-radius: var(--radius);
-  font-weight: 300;
-  font-size: 0.875rem;
-  line-height: 1.8;
-  min-height: 32px;
-}
-
-.message.error .bubble {
-  color: var(--error);
-  background: var(--error-bg);
-  border: 1px solid var(--error-border);
-  border-radius: var(--radius);
-  padding: 0.7rem 1rem;
-  font-size: 0.82rem;
 }
 
 /* ─── Chat: usage bar ─── */

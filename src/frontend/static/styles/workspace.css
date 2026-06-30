@@ -380,53 +380,7 @@ r-window {
   height: 100%;
 }
 
-.plan-node rect {
-  fill: #06101a;
-  stroke: #1e5264;
-  stroke-width: 1.2px;
-}
-
-.plan-node.source rect {
-  stroke: #39e8a0;
-  stroke-width: 1.8px;
-}
-
-.plan-node.sink rect {
-  stroke: #e05040;
-  stroke-width: 1.8px;
-}
-
-.plan-node.selected rect {
-  stroke: var(--accent);
-  stroke-width: 2px;
-  filter: drop-shadow(0 0 8px rgba(0, 196, 212, 0.25));
-}
-
-.plan-node.status-pending rect {
-  stroke: #577080;
-}
-
-.plan-node.status-running rect {
-  fill: rgba(8, 48, 54, 0.82);
-  stroke: #00c4d4;
-  stroke-width: 2px;
-  filter: drop-shadow(0 0 8px rgba(0, 196, 212, 0.18));
-}
-
-.plan-node.status-completed rect {
-  stroke: #39e8a0;
-  stroke-width: 1.8px;
-}
-
-.plan-node.status-blocked rect {
-  stroke: #dcb428;
-  stroke-width: 1.8px;
-}
-
-.plan-node.status-failed rect {
-  stroke: #e05040;
-  stroke-width: 1.8px;
-}
+/* Plan-node rect/text styles now live in r-force-graph's shadow DOM. */
 
 .workflow-run-chip.status-running {
   color: #b9fbff;
@@ -454,10 +408,7 @@ r-window {
   box-shadow: 0 0 8px rgba(0, 196, 212, 0.18);
 }
 
-.plan-node text {
-  fill: var(--text);
-  pointer-events: none;
-}
+/* .plan-node text styles now live in r-force-graph's shadow DOM. */
 
 .plan-task-detail-wrap {
   min-height: 0;

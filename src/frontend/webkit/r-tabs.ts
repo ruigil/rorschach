@@ -12,7 +12,7 @@ export class RTabs extends RorschachBase {
       gap: 10px;
       align-items: stretch;
       padding: 0 1rem;
-      border-bottom: 1px solid var(--border, #0d1f2d);
+      border-bottom: 1px solid var(--border);
       background: transparent;
       min-height: 38px;
     }
@@ -23,7 +23,7 @@ export class RTabs extends RorschachBase {
       font-weight: 600;
       letter-spacing: 0.12em;
       text-transform: uppercase;
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       background: transparent;
       border: none;
       border-bottom: 2px solid transparent;
@@ -42,12 +42,12 @@ export class RTabs extends RorschachBase {
     }
 
     ::slotted(button:hover) {
-      color: var(--text-mid, #8abccc);
+      color: var(--text-mid);
     }
 
     ::slotted(button.active), ::slotted(button[active]) {
-      color: var(--accent, #00c4d4);
-      border-bottom-color: var(--accent, #00c4d4);
+      color: var(--accent);
+      border-bottom-color: var(--accent);
     }
   `;
 

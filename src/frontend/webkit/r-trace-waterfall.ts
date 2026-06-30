@@ -1,4 +1,4 @@
-import { html, type TemplateResult } from 'lit';
+import { html, css, type TemplateResult } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 import { store } from './store.js';
@@ -35,10 +35,99 @@ type TraceRecord = {
 export class RTraceWaterfall extends RorschachBase {
   private _traces = new StoreController<ShellTracesState, 'traces'>(this, ['shell', 'traces']);
 
-  // Render to light DOM to reuse shell/observe styles
-  override createRenderRoot() {
-    return this;
-  }
+  static override styles = css`
+    :host {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      padding: 0.75rem;
+    }
+    .trace-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .trace-item.wf-live {
+      border-color: var(--accent);
+    }
+    .trace-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.75rem;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+    }
+    .trace-id   { color: var(--text-dim); }
+    .trace-dur  { color: var(--accent); margin-left: auto; }
+    .trace-live-badge {
+      color: var(--accent);
+      font-size: 0.62rem;
+      padding: 1px 5px;
+      border: 1px solid var(--accent-glow);
+      border-radius: 3px;
+      animation: wf-pulse-text 1.2s ease-in-out infinite;
+    }
+    @keyframes wf-pulse-text {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.35; }
+    }
+    .trace-waterfall {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      padding: 0.3rem 0;
+    }
+    .waterfall-row {
+      display: grid;
+      grid-template-columns: 150px 1fr 44px;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 2px 0.6rem 2px 0;
+      font-family: var(--font-mono);
+      font-size: 0.67rem;
+    }
+    .waterfall-label {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      overflow: hidden;
+    }
+    .wf-actor { color: var(--text-mid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wf-op    { color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .waterfall-track {
+      position: relative;
+      height: 12px;
+      background: var(--surface-2);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .waterfall-bar {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      border-radius: 3px;
+      min-width: 2px;
+    }
+    .waterfall-bar.op-request        { background: var(--accent-dim);              border: 1px solid var(--accent);                    }
+    .waterfall-bar.op-llm-call        { background: rgba(139,92,246,0.2);           border: 1px solid rgba(139,92,246,0.55);            }
+    .waterfall-bar.op-tool-invoke     { background: rgba(245,158,11,0.18);          border: 1px solid rgba(245,158,11,0.5);             }
+    .waterfall-bar.op-brave-search    { background: rgba(245,158,11,0.18);          border: 1px solid rgba(245,158,11,0.5);             }
+    .waterfall-bar.wf-active { animation: wf-pulse-bar 1s ease-in-out infinite; }
+    .waterfall-bar.wf-error  { background: var(--error-bg) !important; border-color: var(--error) !important; }
+    @keyframes wf-pulse-bar {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.5; }
+    }
+    .waterfall-dur {
+      color: var(--text-dim);
+      text-align: right;
+      white-space: nowrap;
+    }
+  `;
 
   get size() {
     const tracesMap = this._getTracesMap();

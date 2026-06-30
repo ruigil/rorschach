@@ -10,7 +10,7 @@ export class RToolbar extends RorschachBase {
       align-items: stretch;
       justify-content: space-between;
       height: 42px;
-      border-bottom: 1px solid var(--border, #0d1f2d);
+      border-bottom: 1px solid var(--border);
       background: rgba(7, 21, 32, 0.55);
       flex-shrink: 0;
       box-sizing: border-box;

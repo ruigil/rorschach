@@ -16,8 +16,8 @@ const defaultState: Partial<ShellState> = {
   traces: [],
   usage: [],
   tools: {},
-  ws: null,
   messages: [],
+  lastMessages: [],
   activeTab: DEFAULT_TAB,
   observeActiveTab: DEFAULT_OBSERVE_TAB,
   activeStream: {
@@ -34,7 +34,9 @@ const defaultState: Partial<ShellState> = {
 
 export function resetStore() {
   __resetStoreForTests()
-  store.namespace<ShellState>('shell').init(defaultState)
+  store.namespace<ShellState>('shell').init(defaultState, {
+    persist: ['currentMode', 'activeWorkspaceTab', 'lastMessages'],
+  })
 }
 
 export function mockStore(key: keyof ShellState, value: any) {

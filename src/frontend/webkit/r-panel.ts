@@ -18,8 +18,8 @@ export class RPanel extends RorschachBase {
       flex-direction: column;
       height: 100%;
       width: 100%;
-      border: 1px solid var(--border, #0d1f2d);
-      background: var(--surface, #060e14);
+      border: 1px solid var(--border);
+      background: var(--surface);
       overflow: hidden;
     }
 
@@ -33,7 +33,7 @@ export class RPanel extends RorschachBase {
       justify-content: space-between;
       padding: 0.5rem 0.75rem;
       background: rgba(0, 0, 0, 0.2);
-      border-bottom: 1px solid var(--border, #0d1f2d);
+      border-bottom: 1px solid var(--border);
       min-height: 38px;
     }
 
@@ -42,7 +42,7 @@ export class RPanel extends RorschachBase {
       overflow: auto;
       position: relative;
       scrollbar-width: thin;
-      scrollbar-color: var(--border-mid, rgba(255, 255, 255, 0.15)) transparent;
+      scrollbar-color: var(--border-mid) transparent;
     }
 
     .panel-content::-webkit-scrollbar {
@@ -55,12 +55,12 @@ export class RPanel extends RorschachBase {
     }
 
     .panel-content::-webkit-scrollbar-thumb {
-      background: var(--border-mid, rgba(255, 255, 255, 0.15));
+      background: var(--border-mid);
       border-radius: 3px;
     }
 
     .panel-content::-webkit-scrollbar-thumb:hover {
-      background: var(--accent, #00c4d4);
+      background: var(--accent);
     }
 
     .panel-footer {
@@ -68,7 +68,7 @@ export class RPanel extends RorschachBase {
       align-items: center;
       padding: 0.5rem 0.75rem;
       background: rgba(0, 0, 0, 0.1);
-      border-top: 1px solid var(--border, #0d1f2d);
+      border-top: 1px solid var(--border);
     }
   `;
 

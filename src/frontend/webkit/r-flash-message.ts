@@ -25,8 +25,8 @@ export class RFlashMessage extends RorschachBase {
     }
 
     .msg.visible { opacity: 1; }
-    .msg.save    { color: var(--green, #39e8a0); }
-    .msg.error   { color: var(--error, #e06030); }
+    .msg.save    { color: var(--green); }
+    .msg.error   { color: var(--error); }
   `;
 
   override render() {

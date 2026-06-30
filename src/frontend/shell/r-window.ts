@@ -17,7 +17,7 @@ export class RWindow extends RorschachBase {
   }
 
   get config() {
-    return (this._windows.value as any)[this.windowId];
+    return this._windows.value[this.windowId];
   }
 
   private _getContentElement() {

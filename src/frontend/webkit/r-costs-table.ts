@@ -1,5 +1,5 @@
 import { html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 import { StoreController } from './store-controller.js';
 import type { UsageEntry } from './types.js';
@@ -17,10 +17,45 @@ const formatTokens = (n: number) => {
 export class RCostsTable extends RorschachBase {
   private _usage = new StoreController<ShellUsageState, 'usage'>(this, ['shell', 'usage']);
 
-  // Render to light DOM to reuse shell/observe styles
-  override createRenderRoot() {
-    return this;
-  }
+  static override styles = css`
+    :host {
+      display: block;
+    }
+    .costs-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-mid);
+    }
+    .costs-table th {
+      text-align: left;
+      padding: 0.4rem 0.75rem;
+      color: var(--text-dim);
+      font-weight: normal;
+      border-bottom: 1px solid var(--accent-dim);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      font-size: 0.65rem;
+    }
+    .costs-table td {
+      padding: 0.35rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .costs-table td:first-child { color: var(--accent); opacity: 0.85; }
+    .costs-table td:nth-child(2) { color: var(--text-mid); max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .costs-table td:nth-child(3),
+    .costs-table td:nth-child(4),
+    .costs-table td:nth-child(5) { text-align: right; }
+    .costs-table td:last-child { text-align: right; color: var(--text); }
+    .costs-table tfoot td {
+      border-top: 1px solid var(--accent-dim);
+      border-bottom: none;
+      color: var(--text);
+      font-weight: bold;
+      padding-top: 0.5rem;
+    }
+  `;
 
   private _getCostsMap() {
     const costsMap = new Map<string, UsageEntry>();

@@ -1,6 +1,6 @@
-declare const marked: any;
-declare const katex: any;
-declare const hljs: any;
+import { marked } from 'marked';
+import katex from 'katex';
+import hljs from 'highlight.js';
 
 marked.use({
   extensions: [
@@ -35,15 +35,15 @@ marked.use({
   gfm: true,
   breaks: true,
   renderer: {
-    link(href: string, title: string, text: string) {
+    link({ href, title, text }: { href: string; title: string | null; text: string }) {
       const ytMatch = href.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?|shorts)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
       if (ytMatch) {
-        const videoId = ytMatch[1];
+        const videoId = ytMatch[1]!;
         const embed = `<div class="video-container"><iframe src="https://www.youtube-nocookie.com/embed/${videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div>`;
-        const isBareLink = text === href || 
-                           text === href.replace(/^https?:\/\//, '') || 
+        const isBareLink = text === href ||
+                           text === href.replace(/^https?:\/\//, '') ||
                            text === href.replace(/^https?:\/\/www\./, '');
-        
+
         if (isBareLink) {
           return embed;
         } else {
@@ -52,7 +52,7 @@ marked.use({
       }
       return false;
     }
-  }
+  } as any,
 });
 
 const copyCode = (btn: HTMLElement) => {
@@ -73,11 +73,11 @@ const copyCode = (btn: HTMLElement) => {
 export const renderMarkdown = (text: string) => {
   const el = document.createElement('div');
   el.className = 'md';
-  el.innerHTML = marked.parse(text);
+  el.innerHTML = marked.parse(text) as string;
   el.querySelectorAll('pre > code').forEach(block => {
     const langClass = Array.from(block.classList).find(c => c.startsWith('language-'));
     const lang = langClass ? langClass.replace('language-', '') : 'code';
-    hljs.highlightElement(block);
+    hljs.highlightElement(block as HTMLElement);
     const pre = block.parentElement;
     if (!pre) return;
     const wrapper = document.createElement('div');

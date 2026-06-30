@@ -47,6 +47,15 @@ export type Actor = {
   name: string
   status: 'running' | 'stopped' | 'error' | null
   messagesProcessed: number
+  messagesReceived?: number
+  messagesFailed?: number
+  mailboxSize?: number
+  processingTime?: {
+    avg?: number
+    min?: number
+    max?: number
+  }
+  state?: unknown
 };
 
 export type LogEvent = {

@@ -15,10 +15,54 @@ export class RLogStream extends RorschachBase {
 
   private _logs = new StoreController<ShellLogsState, 'logs'>(this, ['shell', 'logs']);
 
-  // Render to light DOM to reuse shell/observe styles
-  override createRenderRoot() {
-    return this;
-  }
+  static override styles = css`
+    :host {
+      display: block;
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.75rem 0;
+      font-family: var(--font-mono);
+      font-size: 0.775rem;
+      font-weight: 300;
+    }
+    :host::-webkit-scrollbar { width: 3px; }
+    :host::-webkit-scrollbar-track { background: transparent; }
+    :host::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
+    .log-entry {
+      display: grid;
+      grid-template-columns: 80px 42px 1fr;
+      align-items: baseline;
+      gap: 0.6rem;
+      padding: 0.4rem 0.7rem;
+      transition: background 0.1s;
+      animation: logIn 0.15s ease both;
+    }
+    .log-entry:hover { background: var(--accent-dim); }
+    @keyframes logIn {
+      from { opacity: 0; transform: translateX(-4px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    .log-ts { color: var(--text-dim); font-size: 0.72rem; letter-spacing: -0.02em; white-space: nowrap; }
+    .log-level {
+      font-size: 0.62rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-align: center;
+      padding: 0.1rem 0;
+      border-radius: 3px;
+    }
+    .log-level.debug { color: var(--log-debug); }
+    .log-level.info  { color: var(--log-info); }
+    .log-level.warn  { color: var(--log-warn); }
+    .log-level.error { color: var(--log-error); }
+    .log-body { line-height: 1.5; }
+    .log-source { color: var(--accent); margin-right: 0.4rem; font-size: 0.72rem; }
+    .log-msg.debug { color: var(--log-debug); }
+    .log-msg.info  { color: var(--text); }
+    .log-msg.warn  { color: var(--log-warn); }
+    .log-msg.error { color: var(--log-error); }
+    .log-data { display: block; margin-top: 0.1rem; color: var(--text-dim); font-size: 0.7rem; }
+  `;
 
   get count() {
     return this.logs !== undefined ? this.logs.length : this._logs.value.length;

@@ -25,20 +25,20 @@ export class RCalendar extends RorschachBase {
       justify-content: space-between;
       align-items: center;
       padding: 4px 8px 12px;
-      border-bottom: 1px solid var(--border, #0d1f2d);
+      border-bottom: 1px solid var(--border);
       margin-bottom: 8px;
     }
 
     .calendar-title {
       font-size: 0.9rem;
       font-weight: 600;
-      color: var(--text-mid, #8abccc);
+      color: var(--text-mid);
     }
 
     .cal-btn {
       background: transparent;
       border: none;
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       cursor: pointer;
       padding: 4px;
       border-radius: 4px;
@@ -49,7 +49,7 @@ export class RCalendar extends RorschachBase {
     }
 
     .cal-btn:hover {
-      color: var(--text, #e8f6fa);
+      color: var(--text);
       background: rgba(255, 255, 255, 0.05);
     }
 
@@ -63,7 +63,7 @@ export class RCalendar extends RorschachBase {
       grid-template-columns: repeat(7, 1fr);
       text-align: center;
       font-size: 0.65rem;
-      color: var(--text-dim, #3d6878);
+      color: var(--text-dim);
       text-transform: uppercase;
       margin-bottom: 6px;
       font-weight: 500;
@@ -90,14 +90,14 @@ export class RCalendar extends RorschachBase {
     }
 
     .calendar-day:hover {
-      border-color: var(--accent, #00c4d4);
+      border-color: var(--accent);
       background: rgba(10, 24, 32, 0.5);
-      box-shadow: 0 0 6px var(--accent-glow, rgba(0, 196, 212, 0.2));
+      box-shadow: 0 0 6px var(--accent-glow);
     }
 
     .day-number {
       font-size: 0.75rem;
-      color: var(--text, #e8f6fa);
+      color: var(--text);
     }
 
     .day-padded {
@@ -105,9 +105,9 @@ export class RCalendar extends RorschachBase {
     }
 
     .calendar-day.active {
-      border-color: var(--accent-bright, #22e8f8);
+      border-color: var(--accent-bright);
       background: rgba(0, 196, 212, 0.12);
-      box-shadow: 0 0 8px var(--accent-glow, rgba(0, 196, 212, 0.2));
+      box-shadow: 0 0 8px var(--accent-glow);
       z-index: 2;
     }
 
@@ -118,8 +118,8 @@ export class RCalendar extends RorschachBase {
       width: 4px;
       height: 4px;
       border-radius: 50%;
-      background: var(--green, #39e8a0);
-      box-shadow: 0 0 6px var(--green-glow, rgba(57, 232, 160, 0.2));
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green-glow);
     }
 
     .day-tracked {
@@ -130,7 +130,7 @@ export class RCalendar extends RorschachBase {
     .day-value {
       font-family: var(--font-mono, monospace);
       font-size: 0.55rem;
-      color: var(--accent-bright, #22e8f8);
+      color: var(--accent-bright);
       margin-top: 1px;
     }
   `
