@@ -28,8 +28,8 @@ describe('r-chat-panel', () => {
     await el.updateComplete
 
     expect(el.querySelector('.chat-main')).toBeTruthy()
-    expect(el.querySelector('.chat-window-content')).toBeTruthy()
-    expect(el.querySelector('.chat-window-footer')).toBeTruthy()
+    expect(el.querySelector('.chat-sidebar-content')).toBeTruthy()
+    expect(el.querySelector('.chat-sidebar-footer')).toBeTruthy()
     expect(el.querySelector('r-chat-input')).toBeTruthy()
 
     // Shows all messages
