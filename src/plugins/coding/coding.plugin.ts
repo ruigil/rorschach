@@ -74,6 +74,7 @@ const docsSurfaceRegistration: UiSurfaceRegistration = {
     defaultHeight: 600,
     minWidth: 350,
     minHeight: 200,
+    modes: ['coding'],
   },
   moduleUrl: '/plugins/coding/ui/index.js',
   frameTypes: ['docWorkspace'],

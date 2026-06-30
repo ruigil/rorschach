@@ -4,7 +4,7 @@ import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
 import { store } from '@rorschach/frontend/webkit/store.js';
 import { connect } from '../connection.js';
-import { logout } from '../actions.js';
+import { logout, switchMode } from '../actions.js';
 import { openWindow, closeWindow, setActiveWorkspaceTab } from '@rorschach/frontend/webkit/window-actions.js';
 import type { ShellState } from '../types/state.js';
 import { pluginHost } from './plugin-host.js';
@@ -46,6 +46,21 @@ export class RShell extends RorschachBase {
         setTimeout(() => store.namespace<ShellState>('shell').set('activeTab', 'chat'), 50);
       }
     });
+
+    store.namespace<ShellState>('shell').subscribe('activeWorkspaceTab', (tab) => {
+      this._switchModeForTab(tab);
+    });
+  }
+
+  private _switchModeForTab(tabId: string) {
+    if (tabId === 'config' || tabId === 'observe') {
+      switchMode('chatbot');
+      return;
+    }
+    const cfg = pluginHost.windowRegistry.get(tabId);
+    if (cfg && cfg.modes && cfg.modes.length > 0) {
+      switchMode(cfg.modes[0]!);
+    }
   }
 
   private async _bootstrap() {
@@ -127,6 +142,8 @@ export class RShell extends RorschachBase {
     if (openWorkspaces.length > 0 && !openWorkspaces.includes(activeTab)) {
       const fallback = openWorkspaces[0]!;
       setActiveWorkspaceTab(fallback);
+    } else if (openWorkspaces.length === 0 && this._currentMode.value !== 'chatbot') {
+      switchMode('chatbot');
     }
   }
 
