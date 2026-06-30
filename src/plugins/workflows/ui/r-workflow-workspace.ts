@@ -9,6 +9,8 @@ import {
   isLiveWorkflowRunStatus,
   mergeWorkflowRunIntoGraph,
 } from './r-workflow-inspector.js'
+import '@rorschach/frontend/webkit/r-split-pane.js'
+import '@rorschach/frontend/webkit/r-toolbar.js'
 
 type InspectorTab = 'task' | 'workflow' | 'run' | 'events'
 
@@ -158,16 +160,17 @@ export class RWorkflowWorkspace extends RorschachBase {
     return html`
       <div class="plan-workspace-content-root">
         ${showBack ? html`
-          <div class="plan-workspace-toolbar">
-            <button class="plan-workspace-back-btn" @click=${() => this.openList()}>
-              ${this.renderIcon('chevron-left')}
-              <span>Back to Workflows</span>
-            </button>
-            ${this._renderToolbarRuns()}
-            <span class="plan-workspace-meta-text">
+          <r-toolbar>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <r-button variant="ghost" size="sm" icon="chevron-left" @click=${() => this.openList()}>
+                Back to Workflows
+              </r-button>
+              ${this._renderToolbarRuns()}
+            </div>
+            <span slot="actions" class="plan-workspace-meta-text">
               ${this._renderToolbarMeta()}
             </span>
-          </div>
+          </r-toolbar>
         ` : ''}
         <div class="plan-workspace-body-container">
           ${this._renderContent()}
@@ -205,10 +208,14 @@ export class RWorkflowWorkspace extends RorschachBase {
       case 'error':
         return html`<div class="plan-empty"><span>${this._errorMsg}</span></div>`
       case 'list':
-        return html`<r-workflow-list
-          .workflows=${this._workflows}
-          @open-workflow=${(e: CustomEvent) => this.openGraph(e.detail.workflowId, e.detail.runId)}
-        ></r-workflow-list>`
+        return html`
+          <div style="padding: 1rem; overflow-y: auto; height: 100%; box-sizing: border-box;">
+            <r-workflow-list
+              .workflows=${this._workflows}
+              @open-workflow=${(e: CustomEvent) => this.openGraph(e.detail.workflowId, e.detail.runId)}
+            ></r-workflow-list>
+          </div>
+        `
       case 'graph':
         return this._renderGraphView()
       default:
@@ -220,7 +227,6 @@ export class RWorkflowWorkspace extends RorschachBase {
     if (!this._currentGraph || !this._currentGraph.nodes.length) {
       return html`<div class="plan-empty"><span>workflow has no tasks</span></div>`
     }
-    const graphShellStyle = `grid-template-rows: minmax(180px, 1fr) 9px minmax(120px, ${this._inspectorHeightPercent}%);`
     return html`
       <div class="plan-run-header">
         <div class="plan-run-title">
@@ -232,24 +238,25 @@ export class RWorkflowWorkspace extends RorschachBase {
           ${this._lastUpdatedAt ? html`<span>${this._formatTime(this._lastUpdatedAt)}</span>` : nothing}
         </div>
       </div>
-      <div class="plan-graph-shell" style=${graphShellStyle}>
+      <r-split-pane
+        orientation="horizontal"
+        style="flex: 1; min-height: 0;"
+        .splitPercent=${this._inspectorHeightPercent}
+        .minPercent=${MIN_INSPECTOR_HEIGHT_PERCENT}
+        .maxPercent=${MAX_INSPECTOR_HEIGHT_PERCENT}
+        @resize-end=${(e: CustomEvent) => {
+          this._inspectorHeightPercent = e.detail.splitPercent
+          this._persistInspectorHeightPercent()
+        }}
+      >
         <r-force-graph
+          slot="primary"
           class="plan-graph"
           .planData=${this._currentGraph}
           .selectedTaskId=${this._selectedTaskId}
           @node-select=${(e: CustomEvent) => this._selectTask(e.detail.id)}
         ></r-force-graph>
-        <div
-          class="workflow-inspector-resizer"
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="Resize workflow inspector"
-          aria-valuemin=${MIN_INSPECTOR_HEIGHT_PERCENT}
-          aria-valuemax=${MAX_INSPECTOR_HEIGHT_PERCENT}
-          aria-valuenow=${Math.round(this._inspectorHeightPercent)}
-          @pointerdown=${this._handleInspectorResizeStart}
-        ></div>
-        <div class="plan-task-detail-wrap">
+        <div slot="secondary" class="plan-task-detail-wrap" style="height: 100%; overflow: auto;">
           <r-workflow-inspector
             .graph=${this._currentGraph}
             .selectedTaskId=${this._selectedTaskId}
@@ -258,7 +265,7 @@ export class RWorkflowWorkspace extends RorschachBase {
             @tab-change=${(e: CustomEvent) => { this._inspectorTab = e.detail.tab }}
           ></r-workflow-inspector>
         </div>
-      </div>
+      </r-split-pane>
     `
   }
 
@@ -268,44 +275,6 @@ export class RWorkflowWorkspace extends RorschachBase {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('rorschach.workflowWorkspaceSelectedTaskId', taskId)
     }
-  }
-
-  private _handleInspectorResizeStart(e: PointerEvent) {
-    if (e.button !== 0) return
-    const shell = this.querySelector('.plan-graph-shell') as HTMLElement | null
-    if (!shell) return
-
-    e.preventDefault()
-    const resizer = e.currentTarget as HTMLElement
-    resizer.setPointerCapture(e.pointerId)
-    document.body.classList.add('workflow-inspector-resizing')
-
-    const startY = e.clientY
-
-    const updateFromPointer = (clientY: number) => {
-      const rect = shell.getBoundingClientRect()
-      if (rect.height <= 0) return
-      const next = ((rect.bottom - clientY) / rect.height) * 100
-      this._inspectorHeightPercent = clampWorkflowInspectorHeightPercent(next)
-    }
-
-    const onPointerMove = (moveEv: PointerEvent) => {
-      updateFromPointer(moveEv.clientY)
-    }
-
-    const onPointerUp = () => {
-      if (resizer.hasPointerCapture(e.pointerId)) {
-        resizer.releasePointerCapture(e.pointerId)
-      }
-      window.removeEventListener('pointermove', onPointerMove)
-      window.removeEventListener('pointerup', onPointerUp)
-      document.body.classList.remove('workflow-inspector-resizing')
-      this._persistInspectorHeightPercent()
-    }
-
-    updateFromPointer(e.clientY)
-    window.addEventListener('pointermove', onPointerMove)
-    window.addEventListener('pointerup', onPointerUp)
   }
 
   private _renderToolbarMeta() {

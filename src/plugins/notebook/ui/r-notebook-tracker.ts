@@ -1,6 +1,10 @@
 import { html } from 'lit'
 import { customElement, state } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
+import '@rorschach/frontend/webkit/r-calendar.js'
+import '@rorschach/frontend/webkit/r-card.js'
+import '@rorschach/frontend/webkit/r-list.js'
+import '@rorschach/frontend/webkit/r-empty-state.js'
 
 type HabitDef = {
   name: string
@@ -149,25 +153,37 @@ export class RNotebookTracker extends RorschachBase {
       return html`<div class="nb-error-container">${this._error}</div>`
     }
     if (this._habits.length === 0) {
-      return html`
-        <div class="nb-empty-container">
-          <r-icon name="activity" style="opacity: 0.2; width: 40px; height: 40px; margin-bottom: 12px;"></r-icon>
-          <div>No habits defined. Track habits using the coach agent first.</div>
-        </div>
-      `
+      return html`<r-empty-state name="activity" text="No habits defined. Track habits using the coach agent first."></r-empty-state>`
     }
 
     const currentHabitDef = this._habits.find(h => h.name === this._selectedHabit)
     const unit = currentHabitDef?.unit ?? ''
     const target = currentHabitDef?.dailyTarget
 
+    const logItems = this._selectedDayEntries.map((e, idx) => {
+      const chips: any[] = []
+      if (target !== undefined) {
+        if (e.value >= target) {
+          chips.push({ id: `achieved-${idx}`, label: `Target achieved (target: ${target})`, status: 'completed' })
+        } else {
+          chips.push({ id: `progress-${idx}`, label: `Progress: ${e.value}/${target}`, status: 'running' })
+        }
+      }
+      return {
+        id: String(idx),
+        label: `${e.value} ${unit}`,
+        description: e.description || 'No details provided',
+        chips: chips
+      }
+    })
+
     return html`
-      <div class="nb-tracker-container">
+      <div class="nb-tracker-container" style="height: 100%; display: flex; flex-direction: column; overflow: hidden;">
         <!-- Selector Header -->
-        <div class="nb-tracker-selector-bar">
-          <label class="nb-select-label" for="habit-select">Tracked Metric:</label>
-          <div class="nb-select-wrapper">
-            <select id="habit-select" class="nb-habit-select" .value=${this._selectedHabit || ''} @change=${this._onHabitChanged}>
+        <div class="nb-tracker-selector-bar" style="display: flex; align-items: center; padding: 12px 16px; background: rgba(2, 6, 10, 0.4); border-bottom: 1px solid var(--border);">
+          <label class="nb-select-label" for="habit-select" style="font-family: var(--font-ui); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--text-dim); margin-right: 12px; letter-spacing: 0.05em; white-space: nowrap;">Tracked Metric:</label>
+          <div class="nb-select-wrapper" style="flex: 1;">
+            <select id="habit-select" class="nb-habit-select" .value=${this._selectedHabit || ''} @change=${this._onHabitChanged} style="width: 100%; background: var(--surface-2, #0a1820); border: 1px solid var(--border, #0d1f2d); color: var(--text-mid, #8abccc); border-radius: 4px; padding: 6px 10px; font-family: var(--font-ui, sans-serif); font-size: 0.8rem; outline: none; cursor: pointer; transition: all 0.2s;">
               ${this._habits.map(h => html`<option value="${h.name}">${h.name} (${h.unit})</option>`)}
             </select>
           </div>
@@ -175,28 +191,28 @@ export class RNotebookTracker extends RorschachBase {
 
         <!-- Telemetry Stats Cards -->
         ${this._stats ? html`
-          <div class="nb-tracker-stats-grid">
-            <div class="nb-stat-card">
-              <span class="nb-stat-label">Current Streak</span>
-              <span class="nb-stat-value text-accent">🔥 ${this._stats.streak} day${this._stats.streak === 1 ? '' : 's'}</span>
-            </div>
-            <div class="nb-stat-card">
-              <span class="nb-stat-label">Personal Best</span>
-              <span class="nb-stat-value text-green">${this._stats.personalBest} ${unit}</span>
-            </div>
-            <div class="nb-stat-card">
-              <span class="nb-stat-label">This Month</span>
-              <span class="nb-stat-value">${this._stats.monthlyTotal} ${unit}</span>
-              <span class="nb-stat-sub">avg: ${this._stats.monthlyAvg}/${unit}</span>
-            </div>
+          <div class="nb-tracker-stats-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 16px 4px;">
+            <r-card style="background: rgba(7, 21, 32, 0.55);">
+              <span slot="header" style="font-size: 0.62rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Current Streak</span>
+              <div style="font-size: 0.85rem; font-weight: 600; color: var(--accent-bright); text-align: center;">🔥 ${this._stats.streak} day${this._stats.streak === 1 ? '' : 's'}</div>
+            </r-card>
+            <r-card style="background: rgba(7, 21, 32, 0.55);">
+              <span slot="header" style="font-size: 0.62rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Personal Best</span>
+              <div style="font-size: 0.85rem; font-weight: 600; color: var(--green); text-align: center;">${this._stats.personalBest} ${unit}</div>
+            </r-card>
+            <r-card style="background: rgba(7, 21, 32, 0.55);">
+              <span slot="header" style="font-size: 0.62rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">This Month</span>
+              <div style="font-size: 0.85rem; font-weight: 600; color: var(--text); text-align: center;">${this._stats.monthlyTotal} ${unit}</div>
+              <div style="font-size: 0.58rem; color: var(--text-dim); text-align: center; margin-top: 4px;">avg: ${this._stats.monthlyAvg}/${unit}</div>
+            </r-card>
           </div>
         ` : ''}
 
         <!-- Calendar and Logs Split View -->
-        <div class="nb-tracker-layout">
+        <div class="nb-tracker-layout" style="display: flex; flex: 1; overflow: hidden;">
           <!-- Calendar side -->
-          <div class="nb-tracker-calendar-pane">
-            <r-notebook-calendar
+          <div class="nb-tracker-calendar-pane" style="padding: 1rem; border-right: 1px solid var(--border); width: 312px; flex-shrink: 0; box-sizing: border-box;">
+            <r-calendar
               .year=${this._year}
               .month=${this._month}
               .highlightedDays=${this._highlightedDays}
@@ -204,48 +220,26 @@ export class RNotebookTracker extends RorschachBase {
               .selectedDate=${this._selectedDate}
               @month-change=${this._handleMonthChange}
               @day-selected=${this._handleDaySelected}
-            ></r-notebook-calendar>
+            ></r-calendar>
             ${this._loadingData ? html`<div class="nb-inline-loader">Refreshing statistics…</div>` : ''}
           </div>
 
           <!-- Entries detail side -->
-          <div class="nb-tracker-logs-pane">
+          <div class="nb-tracker-logs-pane" style="flex: 1; overflow-y: auto; padding: 1rem; background: rgba(2, 6, 10, 0.2); display: flex; flex-direction: column;">
             ${this._selectedDate ? html`
               <div class="nb-entry-header">
                 <span class="nb-entry-title">Logs for ${this._selectedDate}</span>
               </div>
               <div class="nb-entry-body">
-                ${this._selectedDayEntries.length > 0 ? html`
-                  <div class="nb-logs-list">
-                    ${this._selectedDayEntries.map(e => html`
-                      <div class="nb-log-row">
-                        <div class="nb-log-value-chip">
-                          <span class="nb-log-num">${e.value}</span>
-                          <span class="nb-log-unit">${unit}</span>
-                        </div>
-                        <div class="nb-log-info">
-                          ${e.description ? html`<div class="nb-log-desc">${e.description}</div>` : html`<div class="nb-log-empty-desc">No details provided</div>`}
-                          ${target !== undefined ? html`
-                            <div class="nb-log-target-diff">
-                              ${e.value >= target 
-                                ? html`<span class="text-green">Target achieved (target: ${target})</span>` 
-                                : html`<span class="text-dim">Progress: ${e.value}/${target}</span>`}
-                            </div>
-                          ` : ''}
-                        </div>
-                      </div>
-                    `)}
+                ${logItems.length > 0 ? html`
+                  <div style="padding: 4px 0;">
+                    <r-list .items=${logItems}></r-list>
                   </div>
                 ` : html`
-                  <div class="nb-no-logs">No logged data for this habit on this date.</div>
+                  <r-empty-state name="activity" text="No logged data for this habit on this date."></r-empty-state>
                 `}
               </div>
-            ` : html`
-              <div class="nb-entry-empty">
-                <r-icon name="activity" style="opacity: 0.2; width: 40px; height: 40px; margin-bottom: 12px;"></r-icon>
-                <div>Select a day on the calendar to view its logged entries.</div>
-              </div>
-            `}
+            ` : html`<r-empty-state name="activity" text="Select a day on the calendar to view its logged entries."></r-empty-state>`}
           </div>
         </div>
       </div>

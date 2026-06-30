@@ -1,44 +1,53 @@
 import { html, css } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { customElement, property } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 
 @customElement('r-tabs')
 export class RTabs extends RorschachBase {
+  @property({ type: String, reflect: true }) variant: 'default' | 'flat' = 'default';
+
   static override styles = css`
     :host {
       display: flex;
-      gap: 2px;
+      gap: 10px;
+      align-items: stretch;
+      padding: 0 1rem;
       border-bottom: 1px solid var(--border, #0d1f2d);
       background: transparent;
+      min-height: 38px;
     }
 
     ::slotted(button) {
-      background: transparent;
-      border: 1px solid transparent;
-      border-bottom: none;
-      color: var(--text-dim, #3d6878);
-      padding: 6px 12px;
       font-family: var(--font-ui, sans-serif);
-      font-size: 0.72rem;
-      font-weight: 500;
+      font-size: 0.64rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-dim, #3d6878);
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      padding: 0 1rem;
       cursor: pointer;
-      transition: all 0.15s ease-in-out;
-      border-top-left-radius: 4px;
-      border-top-right-radius: 4px;
-      margin-bottom: -1px;
+      display: inline-flex;
+      align-items: center;
+      transition: color 0.15s, border-color 0.15s;
+      position: relative;
+      top: 1px;
       outline: none;
+    }
+
+    ::slotted(button:first-of-type) {
+      padding-left: 0;
     }
 
     ::slotted(button:hover) {
       color: var(--text-mid, #8abccc);
-      background: rgba(0, 196, 212, 0.02);
     }
 
     ::slotted(button.active), ::slotted(button[active]) {
       color: var(--accent, #00c4d4);
-      border-color: var(--border, #0d1f2d);
-      background: var(--surface, #060e14);
-      font-weight: 600;
+      border-bottom-color: var(--accent, #00c4d4);
     }
   `;
 

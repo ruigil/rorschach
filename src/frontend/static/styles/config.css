@@ -6,40 +6,11 @@ r-workflow-workspace { display: contents; }
 r-doc-workspace { display: contents; }
 r-observe-panel { display: contents; }
 
-.config-bar {
-  display: flex;
-  align-items: stretch;
-  height: 42px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(7, 21, 32, 0.55);
-  flex-shrink: 0;
-  padding: 0 1.25rem 0 0;
-}
 
-.config-subtabs {
-  display: flex;
-  align-items: stretch;
-}
 
-.config-subtab {
-  font-size: 0.64rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: 0 1rem;
-  cursor: pointer;
-  font-family: var(--font-ui);
-  transition: color 0.15s, border-color 0.15s;
-  position: relative;
-  top: 1px;
-}
 
-.config-subtab:hover { color: var(--text-mid); }
-.config-subtab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+
 
 .config-content {
   flex: 1;

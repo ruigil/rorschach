@@ -33,3 +33,7 @@ export * from './r-costs-table.js'
 export * from './r-trace-waterfall.js'
 export * from './r-force-graph.js'
 export * from './r-list.js'
+export * from './r-calendar.js'
+export * from './r-split-pane.js'
+export * from './r-toolbar.js'
+

@@ -1,11 +1,8 @@
 import { html } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
-
-// Workflow list view — renders saved workflows. Run chips live in the
-// graph view toolbar next to the "Back to Workflows" button. Extracted
-// from the r-workflow-workspace monolith. Renders to light DOM to reuse
-// the global workspace.css styles.
+import '@rorschach/frontend/webkit/r-list.js'
+import '@rorschach/frontend/webkit/r-empty-state.js'
 
 @customElement('r-workflow-list')
 export class RWorkflowList extends RorschachBase {
@@ -20,19 +17,23 @@ export class RWorkflowList extends RorschachBase {
 
   override render() {
     if (!this.workflows.length) {
-      return html`<div class="plan-empty"><span>no saved workflows</span></div>`
+      return html`<r-empty-state name="git-branch" text="No saved workflows"></r-empty-state>`
     }
+
+    const items = this.workflows.map(workflow => ({
+      id: workflow.id,
+      label: workflow.goal,
+      meta: `${workflow.taskCount} task${workflow.taskCount === 1 ? '' : 's'}`,
+      description: this._formatDateTime(workflow.createdAt),
+      icon: 'git-branch' as const
+    }))
+
     return html`
-      <div class="plan-list">
-        ${this.workflows.map(workflow => html`
-          <div class="plan-list-item">
-            <button class="plan-list-main-btn" type="button" @click=${() => this._open(workflow.id)}>
-              <span class="plan-list-goal">${workflow.goal}</span>
-              <span class="plan-list-meta">${this._formatDateTime(workflow.createdAt)} · ${workflow.taskCount} task${workflow.taskCount === 1 ? '' : 's'}</span>
-            </button>
-          </div>
-        `)}
-      </div>
+      <r-list
+        .items=${items}
+        selectable
+        @item-select=${(e: CustomEvent) => this._open(e.detail.id)}
+      ></r-list>
     `
   }
 

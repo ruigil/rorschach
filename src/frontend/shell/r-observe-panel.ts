@@ -11,6 +11,8 @@ import { RTraceWaterfall } from '@rorschach/frontend/webkit/r-trace-waterfall.js
 import { RToolsList } from '@rorschach/frontend/webkit/r-tools-list.js';
 import { RCostsTable } from '@rorschach/frontend/webkit/r-costs-table.js';
 import { RForceGraph } from '@rorschach/frontend/webkit/r-force-graph.js';
+import '@rorschach/frontend/webkit/r-panel.js';
+import '@rorschach/frontend/webkit/r-toolbar.js';
 import { OBSERVE_TABS, DEFAULT_OBSERVE_TAB } from '../constants.js';
 import type { ObserveTab } from '../constants.js';
 import type { ShellState } from '../types/state.js';
@@ -110,83 +112,87 @@ export class RObservePanel extends RorschachBase {
     const tracesCountText = `${traces.length} trace${traces.length !== 1 ? 's' : ''}`;
 
     return html`
-      <div class="obs-bar">
-        <r-tabs class="obs-subtabs" @tab-change=${this._onTabChange}>
-          <button class="obs-subtab ${activeTab === 'metrics' ? 'active' : ''}" data-subtab="metrics">metrics</button>
-          <button class="obs-subtab ${activeTab === 'topics' ? 'active' : ''}" data-subtab="topics">topics</button>
-          <button class="obs-subtab ${activeTab === 'logs' ? 'active' : ''}" data-subtab="logs">logs</button>
-          <button class="obs-subtab ${activeTab === 'traces' ? 'active' : ''}" data-subtab="traces">traces</button>
-          <button class="obs-subtab ${activeTab === 'tools' ? 'active' : ''}" data-subtab="tools">tools</button>
-          <button class="obs-subtab ${activeTab === 'memory' ? 'active' : ''}" data-subtab="memory">memory</button>
-          <button class="obs-subtab ${activeTab === 'costs' ? 'active' : ''}" data-subtab="costs">costs</button>
-        </r-tabs>
-        <div class="obs-bar-end">
-          <div class="metrics-summary" ?hidden=${!showMetrics}>
-            <div class="summary-stat">
-              <span class="summary-val">${actors.length}</span>
-              <span class="summary-key">actors</span>
+      <r-panel elevation="1">
+        <r-toolbar slot="header-container">
+          <r-tabs @tab-change=${this._onTabChange}>
+            <button ?active=${activeTab === 'metrics'} data-subtab="metrics">metrics</button>
+            <button ?active=${activeTab === 'topics'} data-subtab="topics">topics</button>
+            <button ?active=${activeTab === 'logs'} data-subtab="logs">logs</button>
+            <button ?active=${activeTab === 'traces'} data-subtab="traces">traces</button>
+            <button ?active=${activeTab === 'tools'} data-subtab="tools">tools</button>
+            <button ?active=${activeTab === 'memory'} data-subtab="memory">memory</button>
+            <button ?active=${activeTab === 'costs'} data-subtab="costs">costs</button>
+          </r-tabs>
+          <div slot="actions" class="obs-bar-end">
+            <div class="metrics-summary" ?hidden=${!showMetrics}>
+              <div class="summary-stat">
+                <span class="summary-val">${actors.length}</span>
+                <span class="summary-key">actors</span>
+              </div>
+              <div class="summary-stat">
+                <span class="summary-val">${totRecv}</span>
+                <span class="summary-key">recv</span>
+              </div>
+              <div class="summary-stat">
+                <span class="summary-val">${totDone}</span>
+                <span class="summary-key">done</span>
+              </div>
+              <div class="summary-stat">
+                <span class="summary-val">${totFail}</span>
+                <span class="summary-key">fail</span>
+              </div>
             </div>
-            <div class="summary-stat">
-              <span class="summary-val">${totRecv}</span>
-              <span class="summary-key">recv</span>
+            <div class="obs-log-controls" ?hidden=${activeControl !== 'obs-log-controls'}>
+              <span class="log-count">${logCountText}</span>
+              <button class="btn-clear" @click=${this._clearLogs}>clear</button>
             </div>
-            <div class="summary-stat">
-              <span class="summary-val">${totDone}</span>
-              <span class="summary-key">done</span>
+            <div class="obs-traces-controls" ?hidden=${activeControl !== 'obs-traces-controls'}>
+              <span class="log-count">${tracesCountText}</span>
+              <button class="btn-clear" @click=${this._clearTraces}>clear</button>
             </div>
-            <div class="summary-stat">
-              <span class="summary-val">${totFail}</span>
-              <span class="summary-key">fail</span>
+            <div class="obs-memory-controls" ?hidden=${activeControl !== 'obs-memory-controls'}>
+              <span class="log-count">${this._memoryStatsText}</span>
+              <button class="btn-clear" @click=${this._fetchKgraph}>refresh</button>
             </div>
           </div>
-          <div class="obs-log-controls" ?hidden=${activeControl !== 'obs-log-controls'}>
-            <span class="log-count">${logCountText}</span>
-            <button class="btn-clear" @click=${this._clearLogs}>clear</button>
+        </r-toolbar>
+
+        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; height: 100%;">
+          <div class="obs-subpanel ${activeTab === 'metrics' ? 'active' : ''}" data-observe-tab="metrics">
+            <div class="metrics-layout">
+              <div class="tree-col">
+                <r-actor-tree .actors=${actors} @actor-select=${this._onActorSelect}></r-actor-tree>
+              </div>
+              <div class="detail-col">
+                <r-actor-detail></r-actor-detail>
+              </div>
+            </div>
           </div>
-          <div class="obs-traces-controls" ?hidden=${activeControl !== 'obs-traces-controls'}>
-            <span class="log-count">${tracesCountText}</span>
-            <button class="btn-clear" @click=${this._clearTraces}>clear</button>
+
+          <div class="obs-subpanel ${activeTab === 'topics' ? 'active' : ''}" data-observe-tab="topics">
+            <r-topic-list .topics=${topics}></r-topic-list>
           </div>
-          <div class="obs-memory-controls" ?hidden=${activeControl !== 'obs-memory-controls'}>
-            <span class="log-count">${this._memoryStatsText}</span>
-            <button class="btn-clear" @click=${this._fetchKgraph}>refresh</button>
+
+          <div class="obs-subpanel ${activeTab === 'traces' ? 'active' : ''}" data-observe-tab="traces">
+            <r-trace-waterfall></r-trace-waterfall>
+          </div>
+
+          <div class="obs-subpanel ${activeTab === 'logs' ? 'active' : ''}" data-observe-tab="logs">
+            <r-log-stream></r-log-stream>
+          </div>
+
+          <div class="obs-subpanel ${activeTab === 'tools' ? 'active' : ''}" data-observe-tab="tools">
+            <r-tools-list></r-tools-list>
+          </div>
+
+          <r-costs-table class="obs-subpanel ${activeTab === 'costs' ? 'active' : ''}" data-observe-tab="costs">
+          </r-costs-table>
+
+          <div class="obs-subpanel ${activeTab === 'memory' ? 'active' : ''}" data-observe-tab="memory">
+            <r-force-graph .kgData=${this._kgData}></r-force-graph>
           </div>
         </div>
-      </div>
-
-      <div class="obs-subpanel ${activeTab === 'metrics' ? 'active' : ''}" data-observe-tab="metrics">
-        <div class="metrics-layout">
-          <div class="tree-col">
-            <r-actor-tree .actors=${actors} @actor-select=${this._onActorSelect}></r-actor-tree>
-          </div>
-          <div class="detail-col">
-            <r-actor-detail></r-actor-detail>
-          </div>
-        </div>
-      </div>
-
-      <div class="obs-subpanel ${activeTab === 'topics' ? 'active' : ''}" data-observe-tab="topics">
-        <r-topic-list .topics=${topics}></r-topic-list>
-      </div>
-
-      <div class="obs-subpanel ${activeTab === 'traces' ? 'active' : ''}" data-observe-tab="traces">
-        <r-trace-waterfall></r-trace-waterfall>
-      </div>
-
-      <div class="obs-subpanel ${activeTab === 'logs' ? 'active' : ''}" data-observe-tab="logs">
-        <r-log-stream></r-log-stream>
-      </div>
-
-      <div class="obs-subpanel ${activeTab === 'tools' ? 'active' : ''}" data-observe-tab="tools">
-        <r-tools-list></r-tools-list>
-      </div>
-
-      <r-costs-table class="obs-subpanel ${activeTab === 'costs' ? 'active' : ''}" data-observe-tab="costs">
-      </r-costs-table>
-
-      <div class="obs-subpanel ${activeTab === 'memory' ? 'active' : ''}" data-observe-tab="memory">
-        <r-force-graph .kgData=${this._kgData}></r-force-graph>
-      </div>
+      </r-panel>
     `;
   }
 }

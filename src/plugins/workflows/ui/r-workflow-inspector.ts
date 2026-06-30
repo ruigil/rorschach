@@ -1,6 +1,9 @@
 import { html, nothing } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
+import '@rorschach/frontend/webkit/r-tabs.js'
+import '@rorschach/frontend/webkit/r-log-stream.js'
+import '@rorschach/frontend/webkit/r-empty-state.js'
 
 type InspectorTab = 'task' | 'workflow' | 'run' | 'events'
 
@@ -53,15 +56,17 @@ export class RWorkflowInspector extends RorschachBase {
 
   override render() {
     return html`
-      <div class="workflow-inspector-tabs">
+      <r-tabs 
+        @tab-change=${(e: CustomEvent) => this._selectTab(e.detail.tab as any)}
+      >
         ${(['task', 'workflow', 'run', 'events'] as InspectorTab[]).map(t => html`
           <button
-            class=${this.tab === t ? 'active' : ''}
+            ?active=${this.tab === t}
+            data-tab=${t}
             type="button"
-            @click=${() => this._selectTab(t)}
           >${t}</button>
         `)}
-      </div>
+      </r-tabs>
       ${this.tab === 'task' ? this._renderTaskDetail(this._taskById(this.selectedTaskId!)) : nothing}
       ${this.tab === 'workflow' ? this._renderWorkflowDetail() : nothing}
       ${this.tab === 'run' ? this._renderRunDetail() : nothing}
@@ -157,19 +162,32 @@ export class RWorkflowInspector extends RorschachBase {
 
   private _renderEvents() {
     const events = this.graph?.run?.events ?? []
-    if (!events.length) return html`<div class="plan-task-placeholder">No run events available.</div>`
+    if (!events.length) {
+      return html`<r-empty-state name="terminal" text="No run events available."></r-empty-state>`
+    }
+    
+    const logs = events.map((event: any) => {
+      let level: 'debug' | 'info' | 'warn' | 'error' = 'info'
+      if (event.type.includes('fail') || event.type.includes('error')) {
+        level = 'error'
+      } else if (event.type.includes('warn') || event.type.includes('block')) {
+        level = 'warn'
+      }
+      
+      const taskLabel = event.taskId ? (this._taskById(event.taskId)?.label || event.taskId) : ''
+      const message = taskLabel ? `[${taskLabel}] ${event.message}` : event.message
+      
+      return {
+        timestamp: typeof event.timestamp === 'number' ? event.timestamp : new Date(event.timestamp).getTime(),
+        level,
+        source: event.type,
+        message,
+      }
+    })
+
     return html`
-      <div class="workflow-event-list">
-        ${events.map((event: any) => html`
-          <div class="workflow-event-row">
-            <span class="workflow-event-time">${this._formatTime(event.timestamp)}</span>
-            <span class="workflow-event-type">${event.type}</span>
-            <span class="workflow-event-message">
-              ${event.taskId ? html`<strong>${this._taskById(event.taskId)?.label || event.taskId}</strong> ` : nothing}
-              ${event.message}
-            </span>
-          </div>
-        `)}
+      <div class="workflow-event-list" style="padding: 1rem; overflow: auto; height: 100%;">
+        <r-log-stream .logs=${logs}></r-log-stream>
       </div>
     `
   }

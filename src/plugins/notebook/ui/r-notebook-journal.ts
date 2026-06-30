@@ -2,6 +2,8 @@ import { html } from 'lit'
 import { customElement, state } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
 import { renderMarkdown } from '@rorschach/frontend/webkit/markdown.js'
+import '@rorschach/frontend/webkit/r-calendar.js'
+import '@rorschach/frontend/webkit/r-empty-state.js'
 
 @customElement('r-notebook-journal')
 export class RNotebookJournal extends RorschachBase {
@@ -28,15 +30,13 @@ export class RNotebookJournal extends RorschachBase {
       this._loadingMonths = true
       const yearStr = String(this._year)
       const monthStr = String(this._month + 1).padStart(2, '0')
-      
       const res = await fetch(`/notebook/journal/months?year=${yearStr}&month=${monthStr}`)
       if (!res.ok) throw new Error(await res.text())
-      
       const days: string[] = await res.json()
       this._highlightedDays = days.map(d => `${yearStr}-${monthStr}-${String(d).padStart(2, '0')}`)
       this._error = null
     } catch (e: any) {
-      this._error = e.message || 'Failed to load calendar data'
+      this._error = e.message || 'Failed to sync calendar entries'
     } finally {
       this._loadingMonths = false
     }
@@ -45,7 +45,7 @@ export class RNotebookJournal extends RorschachBase {
   private async _fetchEntry(date: string) {
     try {
       this._loadingEntry = true
-      const res = await fetch(`/notebook/journal/entry?date=${date}`)
+      const res = await fetch(`/notebook/journal/entry?date=${encodeURIComponent(date)}`)
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
       this._selectedEntry = data.content
@@ -72,24 +72,24 @@ export class RNotebookJournal extends RorschachBase {
 
   override render() {
     return html`
-      <div class="nb-journal-container">
-        <div class="nb-journal-layout">
+      <div class="nb-journal-container" style="height: 100%; display: flex; flex-direction: column;">
+        <div class="nb-journal-layout" style="display: flex; flex: 1; overflow: hidden;">
           <!-- Calendar side -->
-          <div class="nb-journal-calendar-pane">
-            <r-notebook-calendar
+          <div class="nb-journal-calendar-pane" style="padding: 1rem; border-right: 1px solid var(--border); width: 312px; flex-shrink: 0; box-sizing: border-box;">
+            <r-calendar
               .year=${this._year}
               .month=${this._month}
               .highlightedDays=${this._highlightedDays}
               .selectedDate=${this._selectedDate}
               @month-change=${this._handleMonthChange}
               @day-selected=${this._handleDaySelected}
-            ></r-notebook-calendar>
+            ></r-calendar>
             ${this._loadingMonths ? html`<div class="nb-inline-loader">Scanning entries…</div>` : ''}
             ${this._error ? html`<div class="nb-inline-error">${this._error}</div>` : ''}
           </div>
 
           <!-- Entry detail side -->
-          <div class="nb-journal-entry-pane">
+          <div class="nb-journal-entry-pane" style="flex: 1; overflow-y: auto; padding: 1rem; background: rgba(2, 6, 10, 0.2); display: flex; flex-direction: column;">
             ${this._selectedDate ? html`
               <div class="nb-entry-header">
                 <span class="nb-entry-title">Entry for ${this._selectedDate}</span>
@@ -103,12 +103,7 @@ export class RNotebookJournal extends RorschachBase {
                   </div>
                 `}
               </div>
-            ` : html`
-              <div class="nb-entry-empty">
-                <r-icon name="file-text" style="opacity: 0.2; width: 40px; height: 40px; margin-bottom: 12px;"></r-icon>
-                <div>Select a day on the calendar to read its journal entry.</div>
-              </div>
-            `}
+            ` : html`<r-empty-state name="file-text" text="Select a day on the calendar to read its journal entry."></r-empty-state>`}
           </div>
         </div>
       </div>

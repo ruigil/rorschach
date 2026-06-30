@@ -1,5 +1,5 @@
 import { html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement, state, property } from 'lit/decorators.js';
 import { RorschachBase, tsStr } from './base.js';
 import { store } from './store.js';
 import { StoreController } from './store-controller.js';
@@ -11,6 +11,8 @@ type ShellLogsState = {
 
 @customElement('r-log-stream')
 export class RLogStream extends RorschachBase {
+  @property({ type: Array }) logs?: LogEvent[];
+
   private _logs = new StoreController<ShellLogsState, 'logs'>(this, ['shell', 'logs']);
 
   // Render to light DOM to reuse shell/observe styles
@@ -19,16 +21,18 @@ export class RLogStream extends RorschachBase {
   }
 
   get count() {
-    return this._logs.value.length;
+    return this.logs !== undefined ? this.logs.length : this._logs.value.length;
   }
 
   clear() {
-    store.namespace<ShellLogsState>('shell').set('logs', []);
+    if (this.logs === undefined) {
+      store.namespace<ShellLogsState>('shell').set('logs', []);
+    }
     return 0;
   }
 
   override render() {
-    const logs = this._logs.value;
+    const logs = this.logs !== undefined ? this.logs : this._logs.value;
     if (logs.length === 0) {
       return html`
         <r-empty-state 

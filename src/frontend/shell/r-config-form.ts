@@ -1,6 +1,8 @@
 import { html, type TemplateResult } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
+import '@rorschach/frontend/webkit/r-panel.js';
+import '@rorschach/frontend/webkit/r-toolbar.js';
 
 type ConfigSchema = {
   id: string;
@@ -219,46 +221,47 @@ export class RConfigForm extends RorschachBase {
     const activeSections = byTab[this.activeTab ?? ''] ?? [];
 
     return html`
-      <div class="config-bar">
-        <r-tabs class="config-subtabs" id="config-tabs">
-          ${tabNames.map((tab, i) => html`
-            <button class="config-subtab ${this.activeTab === tab ? 'active' : ''}" 
-                    data-config-tab="${tab}"
-                    @click=${() => this.activeTab = tab}>
-              ${tab}
-            </button>
-          `)}
-        </r-tabs>
-      </div>
-      <div class="config-content">
-        ${activeSections.length > 0 ? html`
-          <div class="config-sidebar">
-            <div class="config-sidebar-menu">
-              ${activeSections.map(section => html`
-                <button type="button"
-                        class="config-sidebar-item ${this.activeSectionId === section.id ? 'active' : ''}"
-                        @click=${() => this.activeSectionId = section.id}>
-                  <span class="config-sidebar-item-title">${section.title}</span>
-                </button>
+      <r-panel elevation="1">
+        <r-toolbar slot="header-container">
+          <r-tabs @tab-change=${(e: CustomEvent) => this.activeTab = e.detail.tab}>
+            ${tabNames.map((tab, i) => html`
+              <button ?active=${this.activeTab === tab} 
+                      data-tab="${tab}">
+                ${tab}
+              </button>
+            `)}
+          </r-tabs>
+        </r-toolbar>
+        <div class="config-content">
+          ${activeSections.length > 0 ? html`
+            <div class="config-sidebar">
+              <div class="config-sidebar-menu">
+                ${activeSections.map(section => html`
+                  <button type="button"
+                          class="config-sidebar-item ${this.activeSectionId === section.id ? 'active' : ''}"
+                          @click=${() => this.activeSectionId = section.id}>
+                    <span class="config-sidebar-item-title">${section.title}</span>
+                  </button>
+                `)}
+              </div>
+            </div>
+          ` : ''}
+          <form id="config-form" novalidate @submit=${(e: Event) => { e.preventDefault(); this.save(); }}>
+            <div id="config-form-container">
+              ${tabNames.map(tab => html`
+                <div class="config-pane ${this.activeTab === tab ? 'active' : ''}" data-config-pane="${tab}">
+                  ${byTab[tab]?.map(section => this._renderSection(section))}
+                </div>
               `)}
             </div>
-          </div>
-        ` : ''}
-        <form id="config-form" novalidate @submit=${(e: Event) => { e.preventDefault(); this.save(); }}>
-          <div id="config-form-container">
-            ${tabNames.map(tab => html`
-              <div class="config-pane ${this.activeTab === tab ? 'active' : ''}" data-config-pane="${tab}">
-                ${byTab[tab]?.map(section => this._renderSection(section))}
-              </div>
-            `)}
-          </div>
-          <div class="form-actions">
-            <button type="submit" class="btn-save">Save</button>
-            <button type="button" class="btn-reset" id="reset-btn" @click=${this.reset}>Reset</button>
-            <r-flash-message id="flash-msg"></r-flash-message>
-          </div>
-        </form>
-      </div>
+            <div class="form-actions">
+              <button type="submit" class="btn-save">Save</button>
+              <button type="button" class="btn-reset" id="reset-btn" @click=${this.reset}>Reset</button>
+              <r-flash-message id="flash-msg"></r-flash-message>
+            </div>
+          </form>
+        </div>
+      </r-panel>
     `;
   }
 

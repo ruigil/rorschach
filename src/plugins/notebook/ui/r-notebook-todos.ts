@@ -1,6 +1,9 @@
 import { html } from 'lit'
 import { customElement, state } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
+import '@rorschach/frontend/webkit/r-list.js'
+import '@rorschach/frontend/webkit/r-button.js'
+import '@rorschach/frontend/webkit/r-empty-state.js'
 
 @customElement('r-notebook-todos')
 export class RNotebookTodos extends RorschachBase {
@@ -39,41 +42,37 @@ export class RNotebookTodos extends RorschachBase {
       return html`<div class="nb-error-container">${this._error}</div>`
     }
     if (this._todos.length === 0) {
-      return html`
-        <div class="nb-empty-container">
-          <r-icon name="file-text" style="opacity: 0.3; width: 32px; height: 32px; margin-bottom: 8px;"></r-icon>
-          <div>No todos found.</div>
-        </div>
-      `
+      return html`<r-empty-state name="file-text" text="No todos found."></r-empty-state>`
     }
 
+    const items = this._todos.map((t, idx) => {
+      const chips: any[] = []
+      if (t.dueDate) {
+        chips.push({ id: `due-${idx}`, label: `due: ${t.dueDate}`, status: 'blocked' })
+      }
+      if (t.recurrence) {
+        chips.push({ id: `recur-${idx}`, label: `recurring: ${t.recurrence}`, status: 'running' })
+      }
+      return {
+        id: String(idx),
+        label: t.text,
+        icon: t.done ? 'check' as const : 'circle' as const,
+        chips: chips
+      }
+    })
+
     return html`
-      <div class="nb-todos-container">
-        <div class="nb-section-header">
-          <span class="nb-title">Latest 10 Todos</span>
-          <button class="nb-refresh-btn" @click=${this._fetchTodos} title="Refresh">
-            <r-icon name="activity" style="width: 14px; height: 14px;"></r-icon>
-          </button>
+      <div class="nb-todos-container" style="padding: 1rem; flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+        <div class="nb-section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+          <span class="nb-title" style="font-family: var(--font-ui); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-mid);">Latest 10 Todos</span>
+          <r-button 
+            variant="ghost" 
+            size="sm" 
+            icon="activity" 
+            @click=${this._fetchTodos} 
+          >Refresh</r-button>
         </div>
-        <div class="nb-todos-list">
-          ${this._todos.map(t => html`
-            <div class="nb-todo-item ${t.done ? 'done' : ''}">
-              <div class="nb-todo-indicator">
-                ${t.done 
-                  ? html`<span class="nb-indicator-dot done">✓</span>`
-                  : html`<span class="nb-indicator-dot pending">●</span>`
-                }
-              </div>
-              <div class="nb-todo-details">
-                <div class="nb-todo-text">${t.text}</div>
-                <div class="nb-todo-metadata">
-                  ${t.dueDate ? html`<span class="nb-meta-tag due">due: ${t.dueDate}</span>` : ''}
-                  ${t.recurrence ? html`<span class="nb-meta-tag recur">recurring: ${t.recurrence}</span>` : ''}
-                </div>
-              </div>
-            </div>
-          `)}
-        </div>
+        <r-list .items=${items} style="overflow-y: auto; flex: 1;"></r-list>
       </div>
     `
   }
