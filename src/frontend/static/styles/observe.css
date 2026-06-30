@@ -300,7 +300,7 @@ r-log-stream::-webkit-scrollbar-thumb { background: var(--border-mid); border-ra
   grid-template-columns: 80px 42px 1fr;
   align-items: baseline;
   gap: 0.6rem;
-  padding: 0.2rem 1.5rem;
+  padding: 0.4rem 0.7rem;
   transition: background 0.1s;
   animation: logIn 0.15s ease both;
 }

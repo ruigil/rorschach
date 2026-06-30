@@ -66,7 +66,7 @@ export class RWorkflowInspector extends RorschachBase {
           <r-tabs 
             @tab-change=${(e: CustomEvent) => this._selectTab(e.detail.tab as any)}
           >
-            ${(['task', 'workflow', 'run', 'events'] as InspectorTab[]).map(t => html`
+            ${(['workflow', 'task', 'run', 'events'] as InspectorTab[]).map(t => html`
               <button
                 ?active=${this.tab === t}
                 data-tab=${t}
@@ -220,7 +220,7 @@ export class RWorkflowInspector extends RorschachBase {
     })
 
     return html`
-      <div class="workflow-event-list" style="padding: 1rem; overflow: auto; height: 100%;">
+      <div class="workflow-event-list">
         <r-log-stream .logs=${logs}></r-log-stream>
       </div>
     `

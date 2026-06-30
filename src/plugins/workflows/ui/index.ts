@@ -15,9 +15,13 @@ export { RWorkflowWorkspace, RWorkflowList, RWorkflowInspector }
 
 export type WorkflowsState = {
   currentGraph: any | null
+  inspectorWidthPercent: number
 };
 
-store.namespace<WorkflowsState>('workflows').init({ currentGraph: null })
+store.namespace<WorkflowsState>('workflows').init(
+  { currentGraph: null, inspectorWidthPercent: 34 },
+  { persist: ['inspectorWidthPercent'] },
+)
 
 export const WORKFLOW_RUN_UPDATED_EVENT = 'workflow-run-updated'
 

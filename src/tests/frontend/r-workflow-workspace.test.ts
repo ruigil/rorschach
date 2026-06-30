@@ -3,7 +3,7 @@ import { cleanup, mountClass } from '../helpers/frontend.js'
 import { WORKFLOW_RUN_UPDATED_EVENT } from '../../plugins/workflows/ui/index.js'
 import {
   RWorkflowWorkspace,
-  clampWorkflowInspectorHeightPercent,
+  clampWorkflowInspectorWidthPercent,
   isLiveWorkflowRunStatus,
   mergeWorkflowRunIntoGraph,
 } from '../../plugins/workflows/ui/r-workflow-workspace.js'
@@ -75,15 +75,15 @@ describe('r-workflow-workspace', () => {
     expect(isLiveWorkflowRunStatus('failed')).toBe(false)
   })
 
-  test('clamps workflow inspector height percentages', () => {
-    expect(clampWorkflowInspectorHeightPercent(10)).toBe(18)
-    expect(clampWorkflowInspectorHeightPercent(44)).toBe(44)
-    expect(clampWorkflowInspectorHeightPercent(90)).toBe(72)
-    expect(clampWorkflowInspectorHeightPercent('bad')).toBe(34)
+  test('clamps workflow inspector width percentages', () => {
+    expect(clampWorkflowInspectorWidthPercent(10)).toBe(18)
+    expect(clampWorkflowInspectorWidthPercent(44)).toBe(44)
+    expect(clampWorkflowInspectorWidthPercent(90)).toBe(72)
+    expect(clampWorkflowInspectorWidthPercent('bad')).toBe(34)
   })
 
-  test('renders a horizontal inspector splitter with saved height', async () => {
-    localStorage.setItem('rorschach.workflowWorkspaceInspectorHeightPercent', '62')
+  test('renders a vertical inspector splitter with saved width', async () => {
+    localStorage.setItem('rorschach.store.workflows.inspectorWidthPercent', '62')
     globalThis.fetch = (async () => new Response(JSON.stringify(graph()), {
       headers: { 'Content-Type': 'application/json' },
     })) as unknown as typeof fetch
@@ -92,15 +92,17 @@ describe('r-workflow-workspace', () => {
     await el.openGraph('workflow-1', 'run-1')
     await el.updateComplete
 
-    // The component uses r-split-pane (orientation=horizontal) instead of a hand-rolled grid.
+    // The component uses r-split-pane (orientation=vertical).
     const splitPane = el.querySelector('r-split-pane') as any
     expect(splitPane).not.toBeNull()
-    expect(splitPane?.orientation).toBe('horizontal')
+    expect(splitPane?.orientation).toBe('vertical')
     // splitPercent is reflected as a property; it is clamped to [18, 72].
     expect(splitPane?.splitPercent).toBe(62)
-    // The CSS custom property is set on the element style after firstUpdated.
-    // Verify the persisted value was read correctly via the private field.
-    expect(el._inspectorHeightPercent).toBe(62)
+    // Inspector is in the primary (left) slot; graph in the secondary (right) slot.
+    const inspector = el.querySelector('[slot="primary"] r-workflow-inspector') as any
+    expect(inspector).not.toBeNull()
+    const graph = el.querySelector('[slot="secondary"] r-force-graph') as any
+    expect(graph).not.toBeNull()
   })
 
   test('renders workflow context and declared IO in the inspector', async () => {

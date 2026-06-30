@@ -76,24 +76,6 @@ export class RNotebookJournal extends RorschachBase {
     this._fetchEntry(date)
   }
 
-  override firstUpdated() {
-    const currentVal = store.namespace<NotebookState>('notebook').get('splitPercent')
-    if (!currentVal) {
-      const rect = this.getBoundingClientRect()
-      const w = rect.width || 1000
-      const rightPercent = Math.round(((w - 312) / w) * 100)
-      const clamped = Math.max(20, Math.min(80, rightPercent))
-      store.namespace<NotebookState>('notebook').set('splitPercent', clamped)
-    }
-  }
-
-  private _onResizeEnd(percent: number) {
-    store.namespace<NotebookState>('notebook').set('splitPercent', percent)
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('rorschach.notebook.splitPercent', String(percent))
-    }
-  }
-
   override render() {
     return html`
       <div class="nb-journal-container" style="height: 100%; display: flex; flex-direction: column;">
@@ -102,7 +84,7 @@ export class RNotebookJournal extends RorschachBase {
           .splitPercent=${this._splitPercent.value ?? 70}
           .minPercent=${20}
           .maxPercent=${80}
-          @resize-end=${(e: CustomEvent) => this._onResizeEnd(e.detail.splitPercent)}
+          @resize-end=${(e: CustomEvent) => store.namespace<NotebookState>('notebook').set('splitPercent', e.detail.splitPercent)}
           style="flex: 1; min-height: 0;"
         >
           <!-- Calendar side -->

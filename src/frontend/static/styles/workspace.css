@@ -546,9 +546,8 @@ body.workflow-inspector-resizing {
 
 
 .workflow-event-list {
-  display: grid;
-  gap: 0.45rem;
-  padding: 0.8rem;
+  overflow: auto; 
+  height: 100%;
 }
 
 

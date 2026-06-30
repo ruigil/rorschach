@@ -95,6 +95,67 @@ describe('store.namespace() isolation', () => {
   })
 })
 
+// ─── store.namespace() persistence ───
+
+describe('store.namespace() persistence', () => {
+  test('set writes to localStorage for a persisted key', () => {
+    interface S { width: number }
+    const ns = store.namespace<S>('persist-write')
+    ns.init({ width: 34 }, { persist: ['width'] })
+    ns.set('width', 55)
+    expect(localStorage.getItem('rorschach.store.persist-write.width')).toBe('55')
+  })
+
+  test('init reads saved localStorage value for a persisted key', () => {
+    localStorage.setItem('rorschach.store.persist-read.width', '62')
+    interface S { width: number }
+    const ns = store.namespace<S>('persist-read')
+    ns.init({ width: 34 }, { persist: ['width'] })
+    expect(ns.get('width')).toBe(62)
+  })
+
+  test('init falls back to default when no localStorage entry exists', () => {
+    interface S { width: number }
+    const ns = store.namespace<S>('persist-default')
+    ns.init({ width: 34 }, { persist: ['width'] })
+    expect(ns.get('width')).toBe(34)
+  })
+
+  test('non-persisted keys are not written to localStorage', () => {
+    interface S { a: number; b: number }
+    const ns = store.namespace<S>('persist-selective')
+    ns.init({ a: 1, b: 2 }, { persist: ['a'] })
+    ns.set('a', 10)
+    ns.set('b', 20)
+    expect(localStorage.getItem('rorschach.store.persist-selective.a')).toBe('10')
+    expect(localStorage.getItem('rorschach.store.persist-selective.b')).toBeNull()
+  })
+
+  test('reset clears persisted key registration so set no longer writes', () => {
+    interface S { width: number }
+    const ns = store.namespace<S>('persist-reset')
+    ns.init({ width: 34 }, { persist: ['width'] })
+    ns.set('width', 55)
+    expect(localStorage.getItem('rorschach.store.persist-reset.width')).toBe('55')
+
+    ns.reset()
+    localStorage.removeItem('rorschach.store.persist-reset.width')
+
+    // Re-create the namespace without persist and set — should not write
+    store.namespace<S>('persist-reset').set('width', 99)
+    expect(localStorage.getItem('rorschach.store.persist-reset.width')).toBeNull()
+  })
+
+  test('__resetStoreForTests clears persisted key registrations', () => {
+    interface S { width: number }
+    store.namespace<S>('persist-testreset').init({ width: 34 }, { persist: ['width'] })
+    __resetStoreForTests()
+    // After full reset, set on the same namespace should not write to localStorage
+    store.namespace<S>('persist-testreset').set('width', 77)
+    expect(localStorage.getItem('rorschach.store.persist-testreset.width')).toBeNull()
+  })
+})
+
 // ─── store.ensureWindow / closeWindow ───
 
 describe('store.ensureWindow / closeWindow', () => {

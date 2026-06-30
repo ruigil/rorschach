@@ -2,6 +2,7 @@ import { html, nothing } from 'lit'
 import { customElement, state } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
+import { store } from '@rorschach/frontend/webkit/store.js'
 import type { ShellState } from '../../../frontend/types/state.js'
 import type { WorkflowsState, WORKFLOW_RUN_UPDATED_EVENT as _WRE } from './index.js'
 import { WORKFLOW_RUN_UPDATED_EVENT } from './index.js'
@@ -18,15 +19,14 @@ import '@rorschach/frontend/webkit/r-badge.js'
 type InspectorTab = 'task' | 'workflow' | 'run' | 'events'
 
 
-const DEFAULT_INSPECTOR_HEIGHT_PERCENT = 34
-const MIN_INSPECTOR_HEIGHT_PERCENT = 18
-const MAX_INSPECTOR_HEIGHT_PERCENT = 72
-const INSPECTOR_HEIGHT_STORAGE_KEY = 'rorschach.workflowWorkspaceInspectorHeightPercent'
+const DEFAULT_INSPECTOR_WIDTH_PERCENT = 34
+const MIN_INSPECTOR_WIDTH_PERCENT = 18
+const MAX_INSPECTOR_WIDTH_PERCENT = 72
 
-export const clampWorkflowInspectorHeightPercent = (value: unknown): number => {
+export const clampWorkflowInspectorWidthPercent = (value: unknown): number => {
   const numeric = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(numeric)) return DEFAULT_INSPECTOR_HEIGHT_PERCENT
-  return Math.max(MIN_INSPECTOR_HEIGHT_PERCENT, Math.min(MAX_INSPECTOR_HEIGHT_PERCENT, numeric))
+  if (!Number.isFinite(numeric)) return DEFAULT_INSPECTOR_WIDTH_PERCENT
+  return Math.max(MIN_INSPECTOR_WIDTH_PERCENT, Math.min(MAX_INSPECTOR_WIDTH_PERCENT, numeric))
 }
 
 export { isLiveWorkflowRunStatus, mergeWorkflowRunIntoGraph }
@@ -47,7 +47,6 @@ export class RWorkflowWorkspace extends RorschachBase {
   @state() private _workflowId: string | null = null
   @state() private _runId: string | null = null
   @state() private _lastUpdatedAt: string | null = null
-  @state() private _inspectorHeightPercent = this._readInspectorHeightPercent()
   @state() private _inspectorTab: InspectorTab = 'task'
 
   private _lastMode = ''
@@ -58,6 +57,7 @@ export class RWorkflowWorkspace extends RorschachBase {
 
   private _currentMode = new StoreController<ShellState, 'currentMode'>(this, ['shell', 'currentMode'])
   private _storeGraph = new StoreController<WorkflowsState, 'currentGraph'>(this, ['workflows', 'currentGraph'])
+  private _storeWidth = new StoreController<WorkflowsState, 'inspectorWidthPercent'>(this, ['workflows', 'inspectorWidthPercent'])
 
   override createRenderRoot() { return this }
 
@@ -248,24 +248,16 @@ export class RWorkflowWorkspace extends RorschachBase {
         </div>
       </div>
       <r-split-pane
-        orientation="horizontal"
+        orientation="vertical"
         style="flex: 1; min-height: 0;"
-        .splitPercent=${this._inspectorHeightPercent}
-        .minPercent=${MIN_INSPECTOR_HEIGHT_PERCENT}
-        .maxPercent=${MAX_INSPECTOR_HEIGHT_PERCENT}
+        .splitPercent=${clampWorkflowInspectorWidthPercent(this._storeWidth.value)}
+        .minPercent=${MIN_INSPECTOR_WIDTH_PERCENT}
+        .maxPercent=${MAX_INSPECTOR_WIDTH_PERCENT}
         @resize-end=${(e: CustomEvent) => {
-          this._inspectorHeightPercent = e.detail.splitPercent
-          this._persistInspectorHeightPercent()
+          store.namespace<WorkflowsState>('workflows').set('inspectorWidthPercent', e.detail.splitPercent)
         }}
       >
-        <r-force-graph
-          slot="primary"
-          class="plan-graph"
-          .planData=${this._currentGraph}
-          .selectedTaskId=${this._selectedTaskId}
-          @node-select=${(e: CustomEvent) => this._selectTask(e.detail.id)}
-        ></r-force-graph>
-        <div slot="secondary" class="plan-task-detail-wrap" style="height: 100%; overflow: hidden;">
+        <div slot="primary" class="plan-task-detail-wrap" style="height: 100%; overflow: hidden;">
           <r-workflow-inspector
             style="height: 100%; display: flex; flex-direction: column;"
             .graph=${this._currentGraph}
@@ -275,6 +267,13 @@ export class RWorkflowWorkspace extends RorschachBase {
             @tab-change=${(e: CustomEvent) => { this._inspectorTab = e.detail.tab }}
           ></r-workflow-inspector>
         </div>
+        <r-force-graph
+          slot="secondary"
+          class="plan-graph"
+          .planData=${this._currentGraph}
+          .selectedTaskId=${this._selectedTaskId}
+          @node-select=${(e: CustomEvent) => this._selectTask(e.detail.id)}
+        ></r-force-graph>
       </r-split-pane>
     `
   }
@@ -354,13 +353,4 @@ export class RWorkflowWorkspace extends RorschachBase {
     return value.length > 8 ? value.slice(0, 8) : value
   }
 
-  private _readInspectorHeightPercent(): number {
-    if (typeof localStorage === 'undefined') return DEFAULT_INSPECTOR_HEIGHT_PERCENT
-    return clampWorkflowInspectorHeightPercent(localStorage.getItem(INSPECTOR_HEIGHT_STORAGE_KEY))
-  }
-
-  private _persistInspectorHeightPercent(): void {
-    if (typeof localStorage === 'undefined') return
-    localStorage.setItem(INSPECTOR_HEIGHT_STORAGE_KEY, String(Math.round(this._inspectorHeightPercent)))
-  }
 }

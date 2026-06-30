@@ -11,14 +11,10 @@ export type NotebookState = {
   splitPercent: number
 }
 
-const savedSplit = typeof localStorage !== 'undefined'
-  ? Number(localStorage.getItem('rorschach.notebook.splitPercent') ?? 0)
-  : 0
-
-store.namespace<NotebookState>('notebook').init({
-  activeTab: 'journal',
-  splitPercent: savedSplit || 70
-})
+store.namespace<NotebookState>('notebook').init(
+  { activeTab: 'journal', splitPercent: 70 },
+  { persist: ['splitPercent'] },
+)
 
 export const reduceFrame = () => {
   // Read-only plugin, no WS frames to route

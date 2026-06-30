@@ -9,13 +9,22 @@
 
 import type { WindowConfig, WindowRuntimeState } from './host-types.js'
 
+export type PersistOptions<T> = {
+  /** Keys whose values should be automatically read from / written to
+   *  localStorage under `rorschach.store.<namespace>.<key>`. The stored
+   *  value is JSON-serialised and takes precedence over the default passed
+   *  to `init` when a saved entry exists. */
+  persist: (keyof T)[]
+}
+
 export type Namespace<T extends object> = {
   get<K extends keyof T>(key: K): T[K]
   set<K extends keyof T>(key: K, value: T[K]): void
   subscribe<K extends keyof T>(key: K, cb: (val: T[K], prev: T[K]) => void): () => void
   /** Seed defaults into namespaces[id] if absent. No-op if already seeded.
-   *  A plugin calls this at module load to declare its initial state shape. */
-  init(values?: Partial<T>): void
+   *  Pass `{ persist: ['key'] }` to make those keys survive page refreshes
+   *  via localStorage automatically. */
+  init(values?: Partial<T>, opts?: PersistOptions<T>): void
   /** Delete namespaces[id] entirely — frees memory, drops the source that
    *  listeners read from. Called on plugin unregister. */
   reset(): void
@@ -41,6 +50,23 @@ type StoreRoot = {
 };
 
 const root: StoreRoot = { namespaces: {} }
+
+// Keys that have opted into localStorage persistence, keyed by namespace id.
+const persistedKeys: Record<string, Set<string>> = {}
+
+const storageKey = (nsId: string, key: string) => `rorschach.store.${nsId}.${key}`
+
+const readPersisted = (nsId: string, key: string): { found: true; value: unknown } | { found: false } => {
+  if (typeof localStorage === 'undefined') return { found: false }
+  const raw = localStorage.getItem(storageKey(nsId, key))
+  if (raw === null) return { found: false }
+  try { return { found: true, value: JSON.parse(raw) } } catch { return { found: false } }
+}
+
+const writePersisted = (nsId: string, key: string, value: unknown): void => {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem(storageKey(nsId, key), JSON.stringify(value))
+}
 
 // Listeners keyed by `${namespaceId}:${String(key)}`.
 type Listener = (val: any, prev: any) => void
@@ -76,6 +102,7 @@ const makeNamespace = <T extends object>(nsId: string): Namespace<T> => {
       const ns = ensure()
       const prev = (ns as T)[key]
       ;(ns as T)[key] = value
+      if (persistedKeys[nsId]?.has(String(key))) writePersisted(nsId, String(key), value)
       if (prev !== value) notify(nsId, String(key), value, prev)
     },
     subscribe<K extends keyof T>(key: K, cb: (val: T[K], prev: T[K]) => void): () => void {
@@ -98,8 +125,14 @@ const makeNamespace = <T extends object>(nsId: string): Namespace<T> => {
         }
       }
     },
-    init(values?: Partial<T>): void {
+    init(values?: Partial<T>, opts?: PersistOptions<T>): void {
       const ns = ensure()
+      // Register persistent keys first so that the set() path below can
+      // write to localStorage even on the initial seed.
+      if (opts?.persist) {
+        if (!persistedKeys[nsId]) persistedKeys[nsId] = new Set()
+        for (const k of opts.persist) persistedKeys[nsId].add(String(k))
+      }
       // Only seed keys that are absent — don't overwrite a value that's
       // already been set (e.g. by a previous init or by a frame that arrived
       // before the module finished loading). Notify subscribers for each key
@@ -107,17 +140,21 @@ const makeNamespace = <T extends object>(nsId: string): Namespace<T> => {
       // wired up during a custom-element upgrade that runs as a side-effect of
       // import) was initially fired with `undefined` and otherwise would never
       // learn that the value changed from `undefined` to the seeded default.
+      // For persistent keys, a saved localStorage value takes precedence over
+      // the supplied default.
       if (values) {
         for (const [k, v] of Object.entries(values)) {
           if (ns[k] === undefined) {
-            ns[k] = v
-            notify(nsId, k, v, undefined)
+            const persisted = persistedKeys[nsId]?.has(k) ? readPersisted(nsId, k) : { found: false }
+            ns[k] = persisted.found ? persisted.value : v
+            notify(nsId, k, ns[k], undefined)
           }
         }
       }
     },
     reset(): void {
       delete root.namespaces[nsId]
+      delete persistedKeys[nsId]
       // Drop all listeners for this namespace.
       const prefix = `${nsId}:`
       for (const lk of listeners.keys()) {
@@ -199,4 +236,5 @@ export const store: Store = {
 export const __resetStoreForTests = (): void => {
   root.namespaces = {}
   listeners.clear()
+  for (const k of Object.keys(persistedKeys)) delete persistedKeys[k]
 }
