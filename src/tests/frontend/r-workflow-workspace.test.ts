@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { cleanup, mountClass } from '../helpers/frontend.js'
+import { cleanup, mountClass, resetStore } from '../helpers/frontend.js'
 import { WORKFLOW_RUN_UPDATED_EVENT } from '../../plugins/workflows/ui/index.js'
+import type { WorkflowsState } from '../../plugins/workflows/ui/index.js'
+import { store } from '@rorschach/frontend/webkit/store.js'
 import {
   RWorkflowWorkspace,
   clampWorkflowInspectorWidthPercent,
@@ -60,11 +62,13 @@ const graph = (status = 'running') => ({
 beforeEach(() => {
   cleanup()
   localStorage.clear()
+  resetStore()
 })
 
 afterEach(() => {
   cleanup()
   localStorage.clear()
+  resetStore()
 })
 
 describe('r-workflow-workspace', () => {
@@ -84,6 +88,15 @@ describe('r-workflow-workspace', () => {
 
   test('renders a vertical inspector splitter with saved width', async () => {
     localStorage.setItem('rorschach.store.workflows.inspectorWidthPercent', '62')
+    store.namespace<WorkflowsState>('workflows').init(
+      {
+        inspectorWidthPercent: 34,
+      },
+      {
+        persist: ['inspectorWidthPercent'],
+      }
+    )
+
     globalThis.fetch = (async () => new Response(JSON.stringify(graph()), {
       headers: { 'Content-Type': 'application/json' },
     })) as unknown as typeof fetch
@@ -101,8 +114,8 @@ describe('r-workflow-workspace', () => {
     // Inspector is in the primary (left) slot; graph in the secondary (right) slot.
     const inspector = el.querySelector('[slot="primary"] r-workflow-inspector') as any
     expect(inspector).not.toBeNull()
-    const graph = el.querySelector('[slot="secondary"] r-force-graph') as any
-    expect(graph).not.toBeNull()
+    const graphEl = el.querySelector('r-force-graph[slot="secondary"]') as any
+    expect(graphEl).not.toBeNull()
   })
 
   test('renders workflow context and declared IO in the inspector', async () => {
