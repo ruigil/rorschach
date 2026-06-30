@@ -23,4 +23,30 @@ describe('r-panel', () => {
     await el.updateComplete;
     expect(el.getAttribute('elevation')).toBe('2');
   });
+
+  test('hides footer when no footer content is provided', async () => {
+    const el = await mountClass(RPanel);
+    el.innerHTML = '<div slot="header">Title</div>Main content';
+    await el.updateComplete;
+
+    const footer = el.shadowRoot!.querySelector('.panel-footer') as HTMLElement;
+    if (footer) {
+      const style = window.getComputedStyle(footer);
+      expect(style.display).toBe('none');
+    }
+  });
+
+  test('shows footer when footer content is provided', async () => {
+    const el = await mountClass(RPanel);
+    el.innerHTML = '<div slot="header">Title</div>Main content<div slot="footer">Footer actions</div>';
+    await el.updateComplete;
+    // Wait for the slotchange event handler to update state and trigger another render
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    const footer = el.shadowRoot!.querySelector('.panel-footer') as HTMLElement;
+    expect(footer).toBeTruthy();
+    const style = window.getComputedStyle(footer);
+    expect(style.display).not.toBe('none');
+  });
 });

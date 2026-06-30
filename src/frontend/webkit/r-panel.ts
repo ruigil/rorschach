@@ -1,10 +1,16 @@
 import { html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 import { RorschachBase } from './base.js';
 
 @customElement('r-panel')
 export class RPanel extends RorschachBase {
   @property({ type: String, reflect: true }) elevation: '1' | '2' = '1';
+  @state() private _hasFooter = false;
+
+  private _onFooterSlotChange(e: Event) {
+    const slot = e.target as HTMLSlotElement;
+    this._hasFooter = slot.assignedNodes().length > 0;
+  }
 
   static override styles = css`
     :host {
@@ -78,9 +84,13 @@ export class RPanel extends RorschachBase {
         <slot></slot>
       </div>
       <slot name="footer-container">
-        <div class="panel-footer">
-          <slot name="footer"></slot>
-        </div>
+        ${this._hasFooter ? html`
+          <div class="panel-footer">
+            <slot name="footer" @slotchange=${this._onFooterSlotChange}></slot>
+          </div>
+        ` : html`
+          <slot name="footer" @slotchange=${this._onFooterSlotChange} style="display: none;"></slot>
+        `}
       </slot>
     `;
   }
