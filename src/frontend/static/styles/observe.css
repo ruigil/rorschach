@@ -122,6 +122,8 @@ r-tools-list::-webkit-scrollbar-thumb { background: var(--border-mid); border-ra
 
 [data-observe-tab="traces"] {
   overflow-y: auto;
+  padding: 12px 12px 0 12px;
+  box-sizing: border-box;
 }
 
 /* ─── Memory controls ─── */

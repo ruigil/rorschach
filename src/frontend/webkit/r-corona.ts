@@ -153,9 +153,11 @@ export class RCorona extends RorschachBase {
     :host {
       display: block;
       position: absolute;
-      inset: 0;
+      inset: 0 8px 8px 0;
       z-index: -1;
       pointer-events: none;
+      border-radius: 12px;
+      overflow: hidden;
     }
     canvas {
       width: 100%;

@@ -40,7 +40,6 @@ export class RTraceWaterfall extends RorschachBase {
       display: flex;
       flex-direction: column;
       gap: 0.6rem;
-      padding: 0.75rem;
     }
     .trace-item {
       background: var(--surface);

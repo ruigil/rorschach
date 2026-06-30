@@ -308,6 +308,7 @@ r-shell {
   overflow: hidden;
   position: relative;
   background: transparent;
+  border-radius: 12px;
 }
 
 .workspace-empty-container {
