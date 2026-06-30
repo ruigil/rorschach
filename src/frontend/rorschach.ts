@@ -26,14 +26,12 @@ import './shell/r-welcome-dashboard.js'
 import { store } from '@rorschach/frontend/webkit/store.js'
 import type { ShellState } from './types/state.js'
 import { pluginHost } from './shell/plugin-host.js'
-import { DEFAULT_TAB, DEFAULT_OBSERVE_TAB } from './constants.js'
+import { DEFAULT_OBSERVE_TAB } from './constants.js'
 import { initTheme } from '@rorschach/frontend/webkit/theme.js'
 
 // ─── Shell namespace init ───
 //
-// Seed the shell namespace with defaults. The shell is just another namespace
-// owner, symmetric with `store.namespace('<pluginId>')` for plugins. The
-// plugin-host seeds the `windows` map via `store.ensureWindow()` in `init()`.
+// plugin-host seeds the `views` map via `store.ensureView()` in `init()`.
 
 // Apply the persisted theme before any component that reads it mounts. This
 // also registers `theme` as a persisted key on the shell namespace.
@@ -55,7 +53,6 @@ store.namespace<ShellState>('shell').init({
   tools: {},
   messages: [],
   lastMessages: [],
-  activeTab: DEFAULT_TAB,
   observeActiveTab: DEFAULT_OBSERVE_TAB,
   activeStream: {
     isActive: false,
@@ -78,8 +75,8 @@ if (shellNs.get('messages').length === 0 && shellNs.get('lastMessages').length >
   shellNs.set('messages', shellNs.get('lastMessages'))
 }
 
-// Start the plugin-host (seeds chat/docs/workflows windows, starts mode
-// watcher, dynamic-imports legacy plugin UI modules).
+// Start the plugin-host (seeds config/observe views, starts mode
+// watcher, dynamic-imports plugin UI modules).
 await pluginHost.init()
 console.log('Plugin host initialized, shell is ready.')
 

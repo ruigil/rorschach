@@ -68,16 +68,16 @@ describe('store.namespace() isolation', () => {
     // during a custom-element upgrade (an import side-effect) before the
     // top-level store.namespace('shell').init({...}) call runs. Without
     // notify, the controller stays stuck on `undefined` and the shell never
-    // re-renders with the seeded value (e.g. activeTab === 'chat').
-    interface S { activeTab: string }
+    // re-renders with the seeded value.
+    interface S { testField: string }
     const ns = store.namespace<S>('lateinit')
     const calls: (string | undefined)[] = []
-    ns.subscribe('activeTab', (v) => calls.push(v))
+    ns.subscribe('testField', (v) => calls.push(v))
     expect(calls).toEqual([undefined])
 
-    ns.init({ activeTab: 'chat' })
-    expect(ns.get('activeTab')).toBe('chat')
-    expect(calls).toEqual([undefined, 'chat'])
+    ns.init({ testField: 'value' })
+    expect(ns.get('testField')).toBe('value')
+    expect(calls).toEqual([undefined, 'value'])
   })
 
   test('reset deletes the namespace and drops listeners', () => {

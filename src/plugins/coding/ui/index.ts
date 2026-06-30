@@ -1,9 +1,9 @@
 // Coding plugin UI module.
 //
 // Defines the r-doc-workspace custom element and exports a reduceFrame
-// that handles docWorkspace frames. The docs window is artifact-driven,
+// that handles docWorkspace frames. The docs view is artifact-driven,
 // not mode-driven — it opens when a docWorkspace frame arrives, not when
-// coding mode activates. The reducer calls host.openWindow('docs') on
+// coding mode activates. The reducer calls host.openView('docs') on
 // each frame.
 
 import { RDocWorkspace } from './r-doc-workspace.js'

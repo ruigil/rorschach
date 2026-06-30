@@ -3,8 +3,8 @@ import { customElement, property } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
 
 // Fallback component for failed surface imports. The shell's plugin-host
-// swaps a window's `contentTag` to `'r-surface-error'` when `import()` fails,
-// so the window shows a visible error instead of rendering nothing.
+// swaps a view's `contentTag` to `'r-surface-error'` when `import()` fails,
+// so the view shows a visible error instead of rendering nothing.
 @customElement('r-surface-error')
 export class RSurfaceError extends RorschachBase {
   @property({ type: String }) surfaceId = ''

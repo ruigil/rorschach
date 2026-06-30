@@ -1,4 +1,4 @@
-import type { Tab, ObserveTab } from '../constants.js'
+import type { ObserveTab } from '../constants.js'
 import type {
   Attachment,
   Source,
@@ -49,7 +49,6 @@ export type ShellState = {
   /** Persisted subset of recent messages (stripped of attachment payloads)
    *  used to restore the chat history across refreshes. */
   lastMessages: Message[]
-  activeTab: Tab
   observeActiveTab: ObserveTab
   activeStream: ActiveStream
   views: Record<string, ViewRuntimeState>

@@ -81,7 +81,7 @@ export class RChatPanel extends RorschachBase {
 
     return html`
       <div class="chat-main ${viewClass}">
-        <div class="chat-window-content">
+        <div class="chat-sidebar-content">
           <div id="messages">
             ${messages.length > 0 || activeStream.isActive ? html`<div class="chat-spacer"></div>` : ''}
             ${messages.length === 0 && !activeStream.isActive ? html`
@@ -96,8 +96,8 @@ export class RChatPanel extends RorschachBase {
           </div>
         </div>
 
-        <div class="chat-window-footer">
-          <div class="chat-dock">
+        <div class="chat-sidebar-footer">
+          <div class="chat-input-container">
             <r-chat-input .focusSignal=${this._focusSignal}></r-chat-input>
           </div>
         </div>

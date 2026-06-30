@@ -1,5 +1,5 @@
 import { store, __resetStoreForTests } from '../../frontend/webkit/store.js'
-import { DEFAULT_TAB, DEFAULT_OBSERVE_TAB } from '../../frontend/constants.js'
+import { DEFAULT_OBSERVE_TAB } from '../../frontend/constants.js'
 import type { ShellState } from '../../frontend/types/state.js'
 
 const defaultState: Partial<ShellState> = {
@@ -18,7 +18,6 @@ const defaultState: Partial<ShellState> = {
   tools: {},
   messages: [],
   lastMessages: [],
-  activeTab: DEFAULT_TAB,
   observeActiveTab: DEFAULT_OBSERVE_TAB,
   activeStream: {
     isActive: false,

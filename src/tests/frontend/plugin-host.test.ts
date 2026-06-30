@@ -25,7 +25,6 @@ beforeEach(() => {
     tools: {},
     messages: [],
     lastMessages: [],
-    activeTab: 'chat',
     observeActiveTab: 'metrics',
     activeStream: { isActive: false, reasoning: '', text: '', sources: [], attachments: [] },
     views: {},
