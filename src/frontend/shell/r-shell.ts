@@ -179,7 +179,7 @@ export class RShell extends RorschachBase {
                 <button class="sidebar-header-btn" ?hidden=${!canAdmin} @click=${() => openView('config')} title="Configuration Settings">
                   ${this.renderIcon('settings')}
                 </button>
-                <button class="sidebar-header-btn" ?hidden=${!canAdmin} @click=${() => openView('observe')} title="Observation Panel">
+                <button class="sidebar-header-btn" ?hidden=${!canAdmin || !this._views.value['observe']} @click=${() => openView('observe')} title="Observation Panel">
                   ${this.renderIcon('activity')}
                 </button>
               </div>

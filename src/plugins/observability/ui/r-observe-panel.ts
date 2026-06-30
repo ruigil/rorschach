@@ -5,10 +5,10 @@ import { store } from '@rorschach/frontend/webkit/store.js';
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
 import '@rorschach/frontend/webkit/r-panel.js';
 import '@rorschach/frontend/webkit/r-toolbar.js';
-import { OBSERVE_TABS, DEFAULT_OBSERVE_TAB } from '../constants.js';
-import type { ObserveTab } from '../constants.js';
-import type { ShellState } from '../types/state.js';
-import type { Topic, Actor } from '../types/state.js';
+import { OBSERVE_TABS, DEFAULT_OBSERVE_TAB } from '../../../frontend/constants.js';
+import type { ObserveTab } from '../../../frontend/constants.js';
+import type { ShellState } from '../../../frontend/types/state.js';
+import type { Topic, Actor } from '../../../frontend/types/state.js';
 
 const CONTROL_BY_TAB: Record<ObserveTab, string> = {
   metrics: 'metrics-summary',

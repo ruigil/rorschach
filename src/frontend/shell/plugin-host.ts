@@ -41,15 +41,6 @@ export const pluginHost = {
     viewRegistry.set('config', configCfg)
     store.ensureView('config', configCfg)
 
-    const observeCfg: ViewConfig = {
-      id: 'observe',
-      title: 'Observation',
-      icon: 'activity',
-      contentTag: 'r-observe-panel',
-    }
-    viewRegistry.set('observe', observeCfg)
-    store.ensureView('observe', observeCfg)
-
     // All plugin surfaces (docs, workflows, ...) are now driven by
     // UiSurfaceRegistration WS frames. No legacy seeds remain.
     this._startModeWatcher()

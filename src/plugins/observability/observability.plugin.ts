@@ -5,6 +5,7 @@ import { TraceRecorder, type TraceRecorderOptions } from './trace-recorder.ts'
 import { CostTracker, type CostTrackerOptions } from './cost-tracker.ts'
 import { defineConfig } from '../../system/index.ts'
 import { observabilitySchemas } from './routes.ts'
+import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 
 export type ObservabilityConfig = {
   jsonlLogger?: JsonlLoggerOptions
@@ -17,11 +18,23 @@ const config = defineConfig<ObservabilityConfig>('observability', {}, {
   schemas: observabilitySchemas,
 })
 
+const observabilitySurfaceRegistration: UiSurfaceRegistration = {
+  id: 'observe',
+  version: '1.0.0',
+  view: {
+    title: 'Observation',
+    icon: 'activity',
+    contentTag: 'r-observe-panel',
+  },
+  moduleUrl: '/plugins/observability/ui/index.js',
+}
+
 export default createPluginFactory<ObservabilityConfig>({
   id: 'observability',
   version: '1.0.0',
   description: 'Observability actors: JSONL log persistence and metrics publishing',
   configDescriptor: config,
+  uiSurface: observabilitySurfaceRegistration,
   slots: {
     logger: {
       factory: (cfg) => cfg ? JsonlLogger(cfg) : null,
