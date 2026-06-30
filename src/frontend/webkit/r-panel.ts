@@ -35,6 +35,26 @@ export class RPanel extends RorschachBase {
       flex: 1;
       overflow: auto;
       position: relative;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-mid, rgba(255, 255, 255, 0.15)) transparent;
+    }
+
+    .panel-content::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+
+    .panel-content::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .panel-content::-webkit-scrollbar-thumb {
+      background: var(--border-mid, rgba(255, 255, 255, 0.15));
+      border-radius: 3px;
+    }
+
+    .panel-content::-webkit-scrollbar-thumb:hover {
+      background: var(--accent, #00c4d4);
     }
 
     .panel-footer {

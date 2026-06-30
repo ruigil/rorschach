@@ -36,6 +36,39 @@ export class RBadge extends RorschachBase {
     :host([variant="actor"][status="running"]) { color: var(--green, #39e8a0); background: rgba(69, 196, 154, 0.1); }
     :host([variant="actor"][status="stopped"]) { color: var(--text-dim, #3d6878); background: rgba(255,255,255,0.04); }
     :host([variant="actor"][status="error"])   { color: var(--error, #e06030); background: rgba(201, 95, 82, 0.1); }
+
+    /* Universal status mappings */
+    :host([status]) {
+      border: 1px solid var(--border);
+      text-transform: uppercase;
+      padding: 0.12rem 0.4rem;
+      border-radius: 4px;
+    }
+    :host([status="running"]) {
+      color: #b9fbff;
+      border-color: rgba(0, 196, 212, 0.6);
+      background: rgba(0, 196, 212, 0.05);
+    }
+    :host([status="completed"]) {
+      color: #c9ffe4;
+      border-color: rgba(57, 232, 160, 0.55);
+      background: rgba(57, 232, 160, 0.05);
+    }
+    :host([status="blocked"]) {
+      color: #fff1b3;
+      border-color: rgba(220, 180, 40, 0.6);
+      background: rgba(220, 180, 40, 0.05);
+    }
+    :host([status="failed"]), :host([status="error"]) {
+      color: #ffc7bf;
+      border-color: rgba(224, 80, 64, 0.6);
+      background: rgba(224, 80, 64, 0.05);
+    }
+    :host([status="pending"]), :host([status="idle"]), :host([status="not-tracked"]), :host([status="not_tracked"]) {
+      color: var(--text-dim);
+      border-color: var(--border);
+      background: rgba(255, 255, 255, 0.02);
+    }
   `;
 
   override render() {

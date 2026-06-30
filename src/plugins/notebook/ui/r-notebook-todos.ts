@@ -4,6 +4,7 @@ import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
 import '@rorschach/frontend/webkit/r-list.js'
 import '@rorschach/frontend/webkit/r-button.js'
 import '@rorschach/frontend/webkit/r-empty-state.js'
+import '@rorschach/frontend/webkit/r-section-header.js'
 
 @customElement('r-notebook-todos')
 export class RNotebookTodos extends RorschachBase {
@@ -63,15 +64,15 @@ export class RNotebookTodos extends RorschachBase {
 
     return html`
       <div class="nb-todos-container" style="padding: 1rem; flex: 1; display: flex; flex-direction: column; overflow: hidden;">
-        <div class="nb-section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
-          <span class="nb-title" style="font-family: var(--font-ui); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-mid);">Latest 10 Todos</span>
+        <r-section-header title="Latest 10 Todos">
           <r-button 
+            slot="actions"
             variant="ghost" 
             size="sm" 
             icon="activity" 
             @click=${this._fetchTodos} 
           >Refresh</r-button>
-        </div>
+        </r-section-header>
         <r-list .items=${items} style="overflow-y: auto; flex: 1;"></r-list>
       </div>
     `

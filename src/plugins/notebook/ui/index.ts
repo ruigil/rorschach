@@ -8,9 +8,17 @@ export { RNotebookWorkspace }
 
 export type NotebookState = {
   activeTab: string
+  splitPercent: number
 }
 
-store.namespace<NotebookState>('notebook').init({ activeTab: 'todos' })
+const savedSplit = typeof localStorage !== 'undefined'
+  ? Number(localStorage.getItem('rorschach.notebook.splitPercent') ?? 0)
+  : 0
+
+store.namespace<NotebookState>('notebook').init({
+  activeTab: 'todos',
+  splitPercent: savedSplit || 70
+})
 
 export const reduceFrame = () => {
   // Read-only plugin, no WS frames to route

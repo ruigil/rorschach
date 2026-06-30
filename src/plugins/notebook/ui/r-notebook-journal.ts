@@ -2,11 +2,17 @@ import { html } from 'lit'
 import { customElement, state } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
 import { renderMarkdown } from '@rorschach/frontend/webkit/markdown.js'
+import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
+import { store } from '@rorschach/frontend/webkit/store.js'
+import type { NotebookState } from './index.js'
 import '@rorschach/frontend/webkit/r-calendar.js'
 import '@rorschach/frontend/webkit/r-empty-state.js'
+import '@rorschach/frontend/webkit/r-split-pane.js'
 
 @customElement('r-notebook-journal')
 export class RNotebookJournal extends RorschachBase {
+  private _splitPercent = new StoreController<NotebookState, 'splitPercent'>(this, ['notebook', 'splitPercent'])
+
   @state() private _year = new Date().getFullYear()
   @state() private _month = new Date().getMonth()
   @state() private _highlightedDays: string[] = []
@@ -70,12 +76,37 @@ export class RNotebookJournal extends RorschachBase {
     this._fetchEntry(date)
   }
 
+  override firstUpdated() {
+    const currentVal = store.namespace<NotebookState>('notebook').get('splitPercent')
+    if (!currentVal) {
+      const rect = this.getBoundingClientRect()
+      const w = rect.width || 1000
+      const rightPercent = Math.round(((w - 312) / w) * 100)
+      const clamped = Math.max(20, Math.min(80, rightPercent))
+      store.namespace<NotebookState>('notebook').set('splitPercent', clamped)
+    }
+  }
+
+  private _onResizeEnd(percent: number) {
+    store.namespace<NotebookState>('notebook').set('splitPercent', percent)
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('rorschach.notebook.splitPercent', String(percent))
+    }
+  }
+
   override render() {
     return html`
       <div class="nb-journal-container" style="height: 100%; display: flex; flex-direction: column;">
-        <div class="nb-journal-layout" style="display: flex; flex: 1; overflow: hidden;">
+        <r-split-pane
+          orientation="vertical"
+          .splitPercent=${this._splitPercent.value ?? 70}
+          .minPercent=${20}
+          .maxPercent=${80}
+          @resize-end=${(e: CustomEvent) => this._onResizeEnd(e.detail.splitPercent)}
+          style="flex: 1; min-height: 0;"
+        >
           <!-- Calendar side -->
-          <div class="nb-journal-calendar-pane" style="padding: 1rem; border-right: 1px solid var(--border); width: 312px; flex-shrink: 0; box-sizing: border-box;">
+          <div slot="primary" class="nb-journal-calendar-pane" style="padding: 1rem; box-sizing: border-box; height: 100%; overflow-y: auto; border-right: 1px solid var(--border);">
             <r-calendar
               .year=${this._year}
               .month=${this._month}
@@ -89,7 +120,7 @@ export class RNotebookJournal extends RorschachBase {
           </div>
 
           <!-- Entry detail side -->
-          <div class="nb-journal-entry-pane" style="flex: 1; overflow-y: auto; padding: 1rem; background: rgba(2, 6, 10, 0.2); display: flex; flex-direction: column;">
+          <div slot="secondary" class="nb-journal-entry-pane" style="flex: 1; overflow-y: auto; padding: 1rem; background: rgba(2, 6, 10, 0.2); display: flex; flex-direction: column; height: 100%;">
             ${this._selectedDate ? html`
               <div class="nb-entry-header">
                 <span class="nb-entry-title">Entry for ${this._selectedDate}</span>
@@ -105,7 +136,7 @@ export class RNotebookJournal extends RorschachBase {
               </div>
             ` : html`<r-empty-state name="file-text" text="Select a day on the calendar to read its journal entry."></r-empty-state>`}
           </div>
-        </div>
+        </r-split-pane>
       </div>
     `
   }

@@ -4,6 +4,11 @@ import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
 import '@rorschach/frontend/webkit/r-tabs.js'
 import '@rorschach/frontend/webkit/r-log-stream.js'
 import '@rorschach/frontend/webkit/r-empty-state.js'
+import '@rorschach/frontend/webkit/r-badge.js'
+import '@rorschach/frontend/webkit/r-kv-list.js'
+import '@rorschach/frontend/webkit/r-icon.js'
+import '@rorschach/frontend/webkit/r-panel.js'
+import '@rorschach/frontend/webkit/r-toolbar.js'
 
 type InspectorTab = 'task' | 'workflow' | 'run' | 'events'
 
@@ -56,21 +61,27 @@ export class RWorkflowInspector extends RorschachBase {
 
   override render() {
     return html`
-      <r-tabs 
-        @tab-change=${(e: CustomEvent) => this._selectTab(e.detail.tab as any)}
-      >
-        ${(['task', 'workflow', 'run', 'events'] as InspectorTab[]).map(t => html`
-          <button
-            ?active=${this.tab === t}
-            data-tab=${t}
-            type="button"
-          >${t}</button>
-        `)}
-      </r-tabs>
-      ${this.tab === 'task' ? this._renderTaskDetail(this._taskById(this.selectedTaskId!)) : nothing}
-      ${this.tab === 'workflow' ? this._renderWorkflowDetail() : nothing}
-      ${this.tab === 'run' ? this._renderRunDetail() : nothing}
-      ${this.tab === 'events' ? this._renderEvents() : nothing}
+      <r-panel elevation="2" style="height: 100%;">
+        <r-toolbar slot="header-container">
+          <r-tabs 
+            @tab-change=${(e: CustomEvent) => this._selectTab(e.detail.tab as any)}
+          >
+            ${(['task', 'workflow', 'run', 'events'] as InspectorTab[]).map(t => html`
+              <button
+                ?active=${this.tab === t}
+                data-tab=${t}
+                type="button"
+              >${t}</button>
+            `)}
+          </r-tabs>
+        </r-toolbar>
+        <div class="inspector-content-body" style="height: 100%; overflow-y: auto;">
+          ${this.tab === 'task' ? this._renderTaskDetail(this._taskById(this.selectedTaskId!)) : nothing}
+          ${this.tab === 'workflow' ? this._renderWorkflowDetail() : nothing}
+          ${this.tab === 'run' ? this._renderRunDetail() : nothing}
+          ${this.tab === 'events' ? this._renderEvents() : nothing}
+        </div>
+      </r-panel>
     `
   }
 
@@ -82,6 +93,35 @@ export class RWorkflowInspector extends RorschachBase {
     return this.graph?.nodes.find((node: any) => node.id === id) ?? null
   }
 
+  private _kvItemsForOutputs(outputs: Record<string, unknown> | undefined) {
+    if (!outputs) return [];
+    return Object.entries(outputs).map(([k, v]) => {
+      const isRef = this._isArtifactRef(v);
+      return {
+        key: k,
+        value: v,
+        type: isRef ? ('artifact' as const) : undefined,
+        artifactHref: isRef ? this._artifactHref(v as any) : undefined,
+        artifactPath: isRef ? (v as any).path : undefined,
+      };
+    });
+  }
+
+  private _specItems(specs: Record<string, any> | undefined) {
+    if (!specs) return [];
+    return Object.entries(specs).map(([key, spec]) => {
+      const typeStr = `${spec?.type ?? 'unknown'}${spec?.required === false ? ' optional' : ' required'}${spec?.description ? ` · ${spec.description}` : ''}`;
+      return { key, value: typeStr };
+    });
+  }
+
+  private _pendingJobItems(jobs: Record<string, any>) {
+    return Object.entries(jobs).map(([jobId, job]) => {
+      const desc = `${job.toolName ?? 'tool'} for ${this._taskById(job.taskId)?.label || job.taskId || 'task'}${job.startedAt ? ` · ${this._formatDateTime(job.startedAt)}` : ''}`;
+      return { key: this._shortRunId(jobId), value: desc };
+    });
+  }
+
   private _renderTaskDetail(task: any) {
     if (!task) return html`<div class="plan-task-placeholder">Select a task to inspect details.</div>`
     const deps = task.dependencies.length
@@ -90,28 +130,27 @@ export class RWorkflowInspector extends RorschachBase {
     const dependents = task.dependents.length
       ? task.dependents.map((id: string) => this._taskById(id)?.label || id).join(', ')
       : 'none'
+
     return html`
       <div class="plan-task-detail">
-        <div class="plan-task-status">status · ${task.status ?? 'not_tracked'}</div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+          <r-badge status=${task.status ?? 'pending'}>${task.status ?? 'pending'}</r-badge>
+        </div>
         <h3>${task.label}</h3>
-        <dl>
-          <dt>Description</dt>
-          <dd>${task.description || 'No description'}</dd>
-          <dt>Validation</dt>
-          <dd>${task.validationCriteria || 'No validation criteria'}</dd>
-          <dt>Depends on</dt>
-          <dd>${deps}</dd>
-          <dt>Unlocks</dt>
-          <dd>${dependents}</dd>
-          ${task.attempts !== undefined ? html`<dt>Attempts</dt><dd>${task.attempts}</dd>` : nothing}
-          ${task.startedAt ? html`<dt>Started</dt><dd>${this._formatDateTime(task.startedAt)}</dd>` : nothing}
-          ${task.completedAt ? html`<dt>Completed</dt><dd>${this._formatDateTime(task.completedAt)}</dd>` : nothing}
-          ${task.startedAt && task.completedAt ? html`<dt>Duration</dt><dd>${this._formatDuration(task.startedAt, task.completedAt)}</dd>` : nothing}
-          ${task.summary ? html`<dt>Summary</dt><dd>${task.summary}</dd>` : nothing}
-          ${task.outputs ? html`<dt>Outputs</dt><dd>${this._renderValueMap(task.outputs)}</dd>` : nothing}
-          ${task.error ? html`<dt>Error</dt><dd>${task.error}</dd>` : nothing}
-          ${task.blockedReason ? html`<dt>Blocked reason</dt><dd>${this._renderJson(task.blockedReason)}</dd>` : nothing}
-        </dl>
+        <r-kv-list .items=${[
+          { key: 'description', label: 'Description', value: task.description || 'No description' },
+          { key: 'validation', label: 'Validation', value: task.validationCriteria || 'No validation criteria' },
+          { key: 'dependsOn', label: 'Depends on', value: deps },
+          { key: 'unlocks', label: 'Unlocks', value: dependents },
+          ...(task.attempts !== undefined ? [{ key: 'attempts', label: 'Attempts', value: task.attempts }] : []),
+          ...(task.startedAt ? [{ key: 'started', label: 'Started', value: this._formatDateTime(task.startedAt) }] : []),
+          ...(task.completedAt ? [{ key: 'completed', label: 'Completed', value: this._formatDateTime(task.completedAt) }] : []),
+          ...(task.startedAt && task.completedAt ? [{ key: 'duration', label: 'Duration', value: this._formatDuration(task.startedAt, task.completedAt) }] : []),
+          ...(task.summary ? [{ key: 'summary', label: 'Summary', value: task.summary }] : []),
+          ...(task.outputs && Object.keys(task.outputs).length > 0 ? [{ key: 'outputs', label: 'Outputs', type: 'html' as const, value: html`<r-kv-list .items=${this._kvItemsForOutputs(task.outputs)}></r-kv-list>` }] : []),
+          ...(task.error ? [{ key: 'error', label: 'Error', value: task.error }] : []),
+          ...(task.blockedReason ? [{ key: 'blockedReason', label: 'Blocked reason', value: JSON.stringify(task.blockedReason, null, 2) }] : []),
+        ]}></r-kv-list>
       </div>
     `
   }
@@ -121,20 +160,17 @@ export class RWorkflowInspector extends RorschachBase {
     if (!workflow) return html`<div class="plan-task-placeholder">No workflow details available.</div>`
     return html`
       <div class="plan-task-detail">
-        <div class="plan-task-status">workflow</div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+          <r-badge status="pending">Workflow</r-badge>
+        </div>
         <h3>${workflow.goal}</h3>
-        <dl>
-          <dt>Context</dt>
-          <dd>${workflow.context || 'No context'}</dd>
-          <dt>Created</dt>
-          <dd>${this._formatDateTime(workflow.createdAt)}</dd>
-          <dt>Execution tools</dt>
-          <dd>${workflow.executionTools?.length ? workflow.executionTools.join(', ') : 'none'}</dd>
-          <dt>Declared inputs</dt>
-          <dd>${this._renderSpecs(workflow.inputs)}</dd>
-          <dt>Declared outputs</dt>
-          <dd>${this._renderSpecs(workflow.outputs)}</dd>
-        </dl>
+        <r-kv-list .items=${[
+          { key: 'context', label: 'Context', value: workflow.context || 'No context' },
+          { key: 'created', label: 'Created', value: this._formatDateTime(workflow.createdAt) },
+          { key: 'tools', label: 'Execution tools', value: workflow.executionTools?.length ? workflow.executionTools.join(', ') : 'none' },
+          { key: 'inputs', label: 'Declared inputs', type: 'html' as const, value: html`<r-kv-list .items=${this._specItems(workflow.inputs)} emptyText="none"></r-kv-list>` },
+          { key: 'outputs', label: 'Declared outputs', type: 'html' as const, value: html`<r-kv-list .items=${this._specItems(workflow.outputs)} emptyText="none"></r-kv-list>` },
+        ]}></r-kv-list>
       </div>
     `
   }
@@ -144,18 +180,16 @@ export class RWorkflowInspector extends RorschachBase {
     if (!run) return html`<div class="plan-task-placeholder">No run selected.</div>`
     return html`
       <div class="plan-task-detail">
-        <div class="plan-task-status">run · ${run.status}</div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+          <r-badge status=${run.status}>Run · ${run.status}</r-badge>
+        </div>
         <h3>${run.runId}</h3>
-        <dl>
-          <dt>Inputs</dt>
-          <dd>${this._renderValueMap(run.inputs ?? {})}</dd>
-          <dt>Outputs</dt>
-          <dd>${this._renderValueMap(run.outputs ?? {})}</dd>
-          <dt>Active tasks</dt>
-          <dd>${run.activeTaskIds?.length ? run.activeTaskIds.map((id: string) => this._taskById(id)?.label || id).join(', ') : 'none'}</dd>
-          <dt>Pending jobs</dt>
-          <dd>${this._renderPendingJobs(run.pendingJobs ?? {})}</dd>
-        </dl>
+        <r-kv-list .items=${[
+          { key: 'inputs', label: 'Inputs', type: 'html' as const, value: html`<r-kv-list .items=${this._kvItemsForOutputs(run.inputs)}></r-kv-list>` },
+          { key: 'outputs', label: 'Outputs', type: 'html' as const, value: html`<r-kv-list .items=${this._kvItemsForOutputs(run.outputs)}></r-kv-list>` },
+          { key: 'activeTasks', label: 'Active tasks', value: run.activeTaskIds?.length ? run.activeTaskIds.map((id: string) => this._taskById(id)?.label || id).join(', ') : 'none' },
+          { key: 'pendingJobs', label: 'Pending jobs', type: 'html' as const, value: html`<r-kv-list .items=${this._pendingJobItems(run.pendingJobs ?? {})} emptyText="none"></r-kv-list>` },
+        ]}></r-kv-list>
       </div>
     `
   }
@@ -190,74 +224,6 @@ export class RWorkflowInspector extends RorschachBase {
         <r-log-stream .logs=${logs}></r-log-stream>
       </div>
     `
-  }
-
-  private _renderSpecs(specs: Record<string, any> | undefined) {
-    const entries = Object.entries(specs ?? {})
-    if (!entries.length) return html`<span class="workflow-muted">none</span>`
-    return html`
-      <div class="workflow-kv-list">
-        ${entries.map(([key, spec]) => html`
-          <div class="workflow-kv-row">
-            <span class="workflow-kv-key">${key}</span>
-            <span class="workflow-kv-value">
-              ${spec?.type ?? 'unknown'}${spec?.required === false ? ' optional' : ' required'}${spec?.description ? html` · ${spec.description}` : nothing}
-            </span>
-          </div>
-        `)}
-      </div>
-    `
-  }
-
-  private _renderPendingJobs(jobs: Record<string, any>) {
-    const entries = Object.entries(jobs)
-    if (!entries.length) return html`<span class="workflow-muted">none</span>`
-    return html`
-      <div class="workflow-kv-list">
-        ${entries.map(([jobId, job]) => html`
-          <div class="workflow-kv-row">
-            <span class="workflow-kv-key">${this._shortRunId(jobId)}</span>
-            <span class="workflow-kv-value">
-              ${job.toolName ?? 'tool'} for ${this._taskById(job.taskId)?.label || job.taskId || 'task'}${job.startedAt ? html` · ${this._formatDateTime(job.startedAt)}` : nothing}
-            </span>
-          </div>
-        `)}
-      </div>
-    `
-  }
-
-  private _renderValueMap(values: Record<string, unknown>) {
-    const entries = Object.entries(values)
-    if (!entries.length) return html`<span class="workflow-muted">none</span>`
-    return html`
-      <div class="workflow-output-list">
-        ${entries.map(([key, value]) => html`
-          <div class="workflow-output-row">
-            <div class="workflow-output-key">${key}</div>
-            <div class="workflow-output-value">${this._renderValue(value)}</div>
-          </div>
-        `)}
-      </div>
-    `
-  }
-
-  private _renderValue(value: unknown) {
-    if (this._isArtifactRef(value)) {
-      const href = this._artifactHref(value)
-      if (!href) return this._renderJson(value)
-      return html`
-        <a class="workflow-artifact-link" href=${href} target="_blank" rel="noopener noreferrer">
-          ${this.renderIcon('file-text')}
-          <span>${(value as any).path ?? (value as any).url}</span>
-        </a>
-      `
-    }
-    if (typeof value === 'string') return html`<pre>${value}</pre>`
-    return this._renderJson(value)
-  }
-
-  private _renderJson(value: unknown) {
-    return html`<pre>${JSON.stringify(value, null, 2)}</pre>`
   }
 
   private _isArtifactRef(value: unknown): value is { type: 'artifact'; path?: string; url?: string; mimeType?: string } {

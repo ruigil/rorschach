@@ -50,10 +50,10 @@ export class RNotebookWorkspace extends RorschachBase {
         </r-toolbar>
 
         <!-- Panel Active Content Body -->
-        <div class="nb-workspace-body">
-          ${active === 'todos' ? html`<r-notebook-todos class="nb-full-height"></r-notebook-todos>` : ''}
-          ${active === 'journal' ? html`<r-notebook-journal class="nb-full-height"></r-notebook-journal>` : ''}
-          ${active === 'tracker' ? html`<r-notebook-tracker class="nb-full-height"></r-notebook-tracker>` : ''}
+        <div class="nb-workspace-body" style="height: 100%; display: flex; flex-direction: column;">
+          ${active === 'todos' ? html`<r-notebook-todos style="height: 100%; display: flex; flex-direction: column; min-height: 0;"></r-notebook-todos>` : ''}
+          ${active === 'journal' ? html`<r-notebook-journal style="height: 100%; display: flex; flex-direction: column; min-height: 0;"></r-notebook-journal>` : ''}
+          ${active === 'tracker' ? html`<r-notebook-tracker style="height: 100%; display: flex; flex-direction: column; min-height: 0;"></r-notebook-tracker>` : ''}
         </div>
       </r-panel>
     `

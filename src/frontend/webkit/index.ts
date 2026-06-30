@@ -36,4 +36,7 @@ export * from './r-list.js'
 export * from './r-calendar.js'
 export * from './r-split-pane.js'
 export * from './r-toolbar.js'
+export * from './r-select.js'
+export * from './r-section-header.js'
+export * from './r-kv-list.js'
 

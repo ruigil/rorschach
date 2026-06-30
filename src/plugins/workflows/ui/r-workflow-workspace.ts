@@ -9,10 +9,14 @@ import {
   isLiveWorkflowRunStatus,
   mergeWorkflowRunIntoGraph,
 } from './r-workflow-inspector.js'
+import '@rorschach/frontend/webkit/r-panel.js'
+import '@rorschach/frontend/webkit/r-button.js'
 import '@rorschach/frontend/webkit/r-split-pane.js'
 import '@rorschach/frontend/webkit/r-toolbar.js'
+import '@rorschach/frontend/webkit/r-badge.js'
 
 type InspectorTab = 'task' | 'workflow' | 'run' | 'events'
+
 
 const DEFAULT_INSPECTOR_HEIGHT_PERCENT = 34
 const MIN_INSPECTOR_HEIGHT_PERCENT = 18
@@ -158,24 +162,29 @@ export class RWorkflowWorkspace extends RorschachBase {
   override render() {
     const showBack = this._view === 'graph'
     return html`
-      <div class="plan-workspace-content-root">
-        ${showBack ? html`
-          <r-toolbar>
-            <div style="display: flex; align-items: center; gap: 8px;">
+      <r-panel elevation="1">
+        <r-toolbar slot="header-container">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            ${showBack ? html`
               <r-button variant="ghost" size="sm" icon="chevron-left" @click=${() => this.openList()}>
                 Back to Workflows
               </r-button>
               ${this._renderToolbarRuns()}
-            </div>
-            <span slot="actions" class="plan-workspace-meta-text">
-              ${this._renderToolbarMeta()}
-            </span>
-          </r-toolbar>
-        ` : ''}
-        <div class="plan-workspace-body-container">
+            ` : html`
+              <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-mid);">
+                <r-icon name="git-branch" size="sm" style="margin-right: 6px;"></r-icon>
+                <span>Workflows</span>
+              </div>
+            `}
+          </div>
+          <span slot="actions" class="plan-workspace-meta-text">
+            ${showBack ? this._renderToolbarMeta() : ''}
+          </span>
+        </r-toolbar>
+        <div class="plan-workspace-body-container" style="height: 100%; display: flex; flex-direction: column;">
           ${this._renderContent()}
         </div>
-      </div>
+      </r-panel>
     `
   }
 
@@ -230,7 +239,7 @@ export class RWorkflowWorkspace extends RorschachBase {
     return html`
       <div class="plan-run-header">
         <div class="plan-run-title">
-          <span class="workflow-status-badge status-${this._currentGraph.run?.status ?? 'not-tracked'}">${this._currentGraph.run?.status ?? 'not tracked'}</span>
+          <r-badge status=${this._currentGraph.run?.status ?? 'not-tracked'}>${this._currentGraph.run?.status ?? 'not tracked'}</r-badge>
           <strong>${this._currentGraph.workflow?.goal ?? 'Workflow'}</strong>
         </div>
         <div class="plan-run-refresh">
@@ -256,8 +265,9 @@ export class RWorkflowWorkspace extends RorschachBase {
           .selectedTaskId=${this._selectedTaskId}
           @node-select=${(e: CustomEvent) => this._selectTask(e.detail.id)}
         ></r-force-graph>
-        <div slot="secondary" class="plan-task-detail-wrap" style="height: 100%; overflow: auto;">
+        <div slot="secondary" class="plan-task-detail-wrap" style="height: 100%; overflow: hidden;">
           <r-workflow-inspector
+            style="height: 100%; display: flex; flex-direction: column;"
             .graph=${this._currentGraph}
             .selectedTaskId=${this._selectedTaskId}
             .tab=${this._inspectorTab}
