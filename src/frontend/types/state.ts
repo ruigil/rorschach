@@ -55,4 +55,5 @@ export type ShellState = {
   windows: Record<string, WindowRuntimeState>
   activeWindowIds: string[]
   activeWorkspaceTab: string
+  sidebarWidth: number
 };

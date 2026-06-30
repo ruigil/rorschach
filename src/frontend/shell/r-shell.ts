@@ -24,7 +24,7 @@ export class RShell extends RorschachBase {
   @state() private _noticing = false;
   private _prevWaiting = false;
 
-  @state() private _sidebarWidth = 360;
+  private _sidebarWidth = new StoreController<ShellState, 'sidebarWidth'>(this, ['shell', 'sidebarWidth']);
   @state() private _isSidebarCollapsed = false;
 
   override createRenderRoot() {
@@ -93,12 +93,12 @@ export class RShell extends RorschachBase {
   private _handleSidebarResize(e: PointerEvent) {
     e.preventDefault();
     const startX = e.clientX;
-    const startWidth = this._sidebarWidth;
+    const startWidth = this._sidebarWidth.value;
 
     const onPointerMove = (moveEv: PointerEvent) => {
       const dx = moveEv.clientX - startX;
-      const newWidth = Math.max(260, Math.min(600, startWidth + dx));
-      this._sidebarWidth = newWidth;
+      const newWidth = Math.max(260, Math.min(window.innerWidth / 2, startWidth + dx));
+      store.namespace<ShellState>('shell').set('sidebarWidth', newWidth);
     };
 
     const onPointerUp = () => {
@@ -168,7 +168,7 @@ export class RShell extends RorschachBase {
 
       <main class="split-pane-layout">
         <!-- Left Sidebar: Chat panel -->
-        <aside class="sidebar-panel ${this._isSidebarCollapsed ? 'collapsed' : ''}" style="width: ${this._isSidebarCollapsed ? '60px' : `${this._sidebarWidth}px`};">
+        <aside class="sidebar-panel ${this._isSidebarCollapsed ? 'collapsed' : ''}" style="width: ${this._isSidebarCollapsed ? '60px' : `${this._sidebarWidth.value}px`};">
           <div class="sidebar-content-wrapper">
             <div class="sidebar-title-bar">
               <div class="sidebar-actions-group">

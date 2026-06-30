@@ -67,8 +67,9 @@ store.namespace<ShellState>('shell').init({
   windows: {},
   activeWindowIds: [],
   activeWorkspaceTab: 'docs',
+  sidebarWidth: 360,
 }, {
-  persist: ['currentMode', 'activeWorkspaceTab', 'lastMessages'],
+  persist: ['currentMode', 'activeWorkspaceTab', 'lastMessages', 'sidebarWidth'],
 })
 
 // Hydrate the in-memory message list from the persisted recent messages
