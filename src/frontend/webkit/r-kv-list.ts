@@ -47,6 +47,7 @@ export class RKVList extends RorschachBase {
       line-height: 1.45;
       min-width: 0;
       overflow-wrap: anywhere;
+      margin-left: 20px;
     }
     .kv-muted {
       color: var(--text-dim, #3d6878);
