@@ -14,14 +14,14 @@ import './r-notebook-tracker.js'
 
 @customElement('r-notebook-workspace')
 export class RNotebookWorkspace extends RorschachBase {
-  private _activeTab = new StoreController<NotebookState, 'activeTab'>(this, ['notebook', 'activeTab'])
+  private _activeTab = new StoreController(this, ['notebook', 'activeTab'])
 
   override createRenderRoot() {
     return this // Light DOM
   }
 
   private _selectTab(tab: 'todos' | 'journal' | 'tracker') {
-    store.namespace<NotebookState>('notebook').set('activeTab', tab)
+    store.namespace('notebook').set('activeTab', tab)
   }
 
   override render() {

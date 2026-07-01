@@ -1,15 +1,13 @@
 import { html } from 'lit';
 import { customElement } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
-import { StoreController } from './store-controller.js';
+import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
+import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
 import { setTheme, getTheme, availableThemes } from './theme.js';
 import type { ThemeName } from './theme.js';
 
-type ShellThemeState = { theme: ThemeName };
-
 @customElement('r-theme-select')
 export class RThemeSelect extends RorschachBase {
-  private _theme = new StoreController<ShellThemeState, 'theme'>(this, ['shell', 'theme']);
+  private _theme = new StoreController(this, ['shell', 'theme']);
 
   // Light DOM — styled by the same global shell.css rules as r-mode-select
   // so the two header dropdowns share a single visual language.

@@ -9,7 +9,7 @@ import { pluginHost } from './plugin-host.js';
 export class RView extends RorschachBase {
   @property({ type: String }) viewId!: string;
 
-  private _views = new StoreController<ShellState, 'views'>(this, ['shell', 'views']);
+  private _views = new StoreController(this, ['shell', 'views']);
   private _cachedContentElements = new Map<string, HTMLElement>();
 
   override createRenderRoot() {

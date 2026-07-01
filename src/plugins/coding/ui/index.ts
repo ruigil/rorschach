@@ -27,3 +27,9 @@ export const reduceFrame = (frame: any, host: PluginHostActions) => {
     host.openView('docs')
   }
 }
+
+declare module '@rorschach/frontend/webkit/store.js' {
+  interface NamespaceRegistry {
+    docs: DocsState
+  }
+}

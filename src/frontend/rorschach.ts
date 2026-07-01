@@ -20,13 +20,14 @@ import './shell/r-config-form.js'
 import './shell/r-mode-select.js'
 import './shell/r-surface-error.js'
 import './shell/r-welcome-dashboard.js'
+import './shell/r-theme-select.js'
 
 // Shell boot: store init, plugin-host
 import { store } from '@rorschach/frontend/webkit/store.js'
 import type { ShellState } from './types/state.js'
 import { pluginHost } from './shell/plugin-host.js'
 import { DEFAULT_OBSERVE_TAB } from './constants.js'
-import { initTheme } from '@rorschach/frontend/webkit/theme.js'
+import { initTheme } from './shell/theme.js'
 
 // ─── Shell namespace init ───
 //

@@ -5,26 +5,26 @@ import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
 import { store } from '@rorschach/frontend/webkit/store.js';
 import { connect } from '../connection.js';
 import { logout, switchMode } from '../actions.js';
-import { openView, closeView, setActiveWorkspaceTab } from '@rorschach/frontend/webkit/view-actions.js';
+import { openView, closeView, setActiveWorkspaceTab } from './view-actions.js';
 import type { ShellState } from '../types/state.js';
 import { pluginHost } from './plugin-host.js';
 
 @customElement('r-shell')
 export class RShell extends RorschachBase {
-  private _isConnected = new StoreController<ShellState, 'isConnected'>(this, ['shell', 'isConnected']);
-  private _currentUserId = new StoreController<ShellState, 'currentUserId'>(this, ['shell', 'currentUserId']);
-  private _currentUserRoles = new StoreController<ShellState, 'currentUserRoles'>(this, ['shell', 'currentUserRoles']);
-  private _isWaiting = new StoreController<ShellState, 'isWaiting'>(this, ['shell', 'isWaiting']);
+  private _isConnected = new StoreController(this, ['shell', 'isConnected']);
+  private _currentUserId = new StoreController(this, ['shell', 'currentUserId']);
+  private _currentUserRoles = new StoreController(this, ['shell', 'currentUserRoles']);
+  private _isWaiting = new StoreController(this, ['shell', 'isWaiting']);
 
-  private _views = new StoreController<ShellState, 'views'>(this, ['shell', 'views']);
-  private _activeWorkspaceTab = new StoreController<ShellState, 'activeWorkspaceTab'>(this, ['shell', 'activeWorkspaceTab']);
-  private _currentMode = new StoreController<ShellState, 'currentMode'>(this, ['shell', 'currentMode']);
-  private _currentModeDisplayName = new StoreController<ShellState, 'currentModeDisplayName'>(this, ['shell', 'currentModeDisplayName']);
+  private _views = new StoreController(this, ['shell', 'views']);
+  private _activeWorkspaceTab = new StoreController(this, ['shell', 'activeWorkspaceTab']);
+  private _currentMode = new StoreController(this, ['shell', 'currentMode']);
+  private _currentModeDisplayName = new StoreController(this, ['shell', 'currentModeDisplayName']);
 
   @state() private _noticing = false;
   private _prevWaiting = false;
 
-  private _sidebarWidth = new StoreController<ShellState, 'sidebarWidth'>(this, ['shell', 'sidebarWidth']);
+  private _sidebarWidth = new StoreController(this, ['shell', 'sidebarWidth']);
   @state() private _isSidebarCollapsed = false;
 
   override createRenderRoot() {
@@ -35,8 +35,37 @@ export class RShell extends RorschachBase {
     super.connectedCallback();
     this._bootstrap();
 
+    // 1. Initial hydration: Sync URL hash to store state on load
+    const initialHash = window.location.hash.replace(/^#\/?/, '');
+    if (initialHash) {
+      const availableViews = this._views.value;
+      if (initialHash === 'config' || initialHash === 'observe' || availableViews[initialHash]) {
+        setActiveWorkspaceTab(initialHash);
+      }
+    }
+
+    // 2. React to Browser Back/Forward buttons (History navigation)
+    window.addEventListener('hashchange', () => {
+      const currentHash = window.location.hash.replace(/^#\/?/, '');
+      if (currentHash && currentHash !== this._activeWorkspaceTab.value) {
+        setActiveWorkspaceTab(currentHash);
+      }
+    });
+
+    // 3. React to state updates: Sync store back to URL bar
     store.namespace<ShellState>('shell').subscribe('activeWorkspaceTab', (tab) => {
+      const normalizedHash = window.location.hash.replace(/^#\/?/, '');
+      if (tab && tab !== normalizedHash) {
+        window.location.hash = `/${tab}`;
+      }
       this._switchModeForTab(tab);
+    });
+
+    // 4. Listen for dynamic plugin shell actions (custom event bubbles)
+    this.addEventListener('shell-action', (e: Event) => {
+      const { action, id } = (e as CustomEvent).detail;
+      if (action === 'openView') openView(id);
+      else if (action === 'closeView') closeView(id);
     });
   }
 

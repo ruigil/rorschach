@@ -3,7 +3,6 @@ import { customElement } from 'lit/decorators.js';
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
 import { store } from '@rorschach/frontend/webkit/store.js';
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
-import { openView } from '@rorschach/frontend/webkit/view-actions.js';
 import type { DocsState } from './index.js';
 import '@rorschach/frontend/webkit/r-panel.js';
 import '@rorschach/frontend/webkit/r-button.js';
@@ -12,15 +11,19 @@ import '@rorschach/frontend/webkit/r-toolbar.js';
 
 @customElement('r-doc-workspace')
 export class RDocWorkspace extends RorschachBase {
-  private _currentDocArtifact = new StoreController<DocsState, 'currentDocArtifact'>(this, ['docs', 'currentDocArtifact']);
+  private _currentDocArtifact = new StoreController(this, ['docs', 'currentDocArtifact']);
 
   override createRenderRoot() {
     return this // Light DOM for layout styling
   }
 
   goHome() {
-    store.namespace<DocsState>('docs').set('currentDocArtifact', 'index.html');
-    openView('docs');
+    store.namespace('docs').set('currentDocArtifact', 'index.html');
+    this.dispatchEvent(new CustomEvent('shell-action', {
+      bubbles: true,
+      composed: true,
+      detail: { action: 'openView', id: 'docs' }
+    }));
   }
 
   override render() {

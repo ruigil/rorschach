@@ -63,3 +63,9 @@ export const reduceFrame = (frame: any, host: PluginHostActions) => {
     }
   }
 }
+
+declare module '@rorschach/frontend/webkit/store.js' {
+  interface NamespaceRegistry {
+    workflows: WorkflowsState
+  }
+}

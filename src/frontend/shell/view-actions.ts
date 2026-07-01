@@ -1,22 +1,12 @@
 // ─── View & mode actions ───
 //
-// Pure store helpers that live in the kit so both the shell and plugin UI
-// modules can import them without crossing the plugin/shell boundary. They
-// operate on the generic 'shell' namespace — the same namespace the kit's
-// store.ensureView / store.closeView already use for view runtime
-// state. The shell seeds richer state (messages, logs, …) into the same
-// namespace; these actions only touch the view/mode slice.
-//
-// `currentMode` and `activeWorkspaceTab` are persisted via the store's
-// `persist` option (seeded in `rorschach.ts`), so these actions only call
-// `set` and the store handles localStorage automatically. View runtime
-// state uses a dedicated helper below because it is keyed
-// per-view and merges with the `ViewConfig` defaults on read.
+// Pure store helpers that operate on the generic 'shell' namespace.
+// Placed in shell to maintain dependency inversion boundaries.
 
-import { store } from './store.js'
-import { modeLabel } from './utils.js'
-import { readSavedViewState } from './view-state.js'
-import type { ViewRuntimeState } from './host-types.js'
+import { store } from '@rorschach/frontend/webkit/store.js'
+import { modeLabel } from '@rorschach/frontend/webkit/utils.js'
+import { readSavedViewState } from '@rorschach/frontend/webkit/view-state.js'
+import type { ViewRuntimeState } from '@rorschach/frontend/webkit/host-types.js'
 
 type ShellViewSlice = {
   currentMode: string

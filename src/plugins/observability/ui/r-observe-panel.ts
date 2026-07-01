@@ -28,11 +28,11 @@ export class RObservePanel extends RorschachBase {
   @state() private _kgData: any = null;
   @state() private _selectedActor: Actor | null = null;
 
-  private _observeActiveTab = new StoreController<ShellState, 'observeActiveTab'>(this, ['shell', 'observeActiveTab']);
-  private _actors = new StoreController<ShellState, 'actors'>(this, ['shell', 'actors']);
-  private _topics = new StoreController<ShellState, 'topics'>(this, ['shell', 'topics']);
-  private _logs = new StoreController<ShellState, 'logs'>(this, ['shell', 'logs']);
-  private _traces = new StoreController<ShellState, 'traces'>(this, ['shell', 'traces']);
+  private _observeActiveTab = new StoreController(this, ['shell', 'observeActiveTab']);
+  private _actors = new StoreController(this, ['shell', 'actors']);
+  private _topics = new StoreController(this, ['shell', 'topics']);
+  private _logs = new StoreController(this, ['shell', 'logs']);
+  private _traces = new StoreController(this, ['shell', 'traces']);
 
   // Render to light DOM to reuse shell styles
   override createRenderRoot() {

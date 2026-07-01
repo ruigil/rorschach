@@ -13,7 +13,7 @@ type ShellLogsState = {
 export class RLogStream extends RorschachBase {
   @property({ type: Array }) logs?: LogEvent[];
 
-  private _logs = new StoreController<ShellLogsState, 'logs'>(this, ['shell', 'logs']);
+  private _logs = new StoreController(this, ['shell', 'logs']);
 
   static override styles = css`
     :host {

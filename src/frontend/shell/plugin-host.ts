@@ -1,7 +1,7 @@
 import type { UiSurfaceRegistration } from '../../types/ui-surface.js'
 import type { PluginHostActions, ViewConfig } from '@rorschach/frontend/webkit/host-types.js'
 import { store } from '@rorschach/frontend/webkit/store.js'
-import { openView, closeView, setMode } from '@rorschach/frontend/webkit/view-actions.js'
+import { openView, closeView, setMode } from './view-actions.js'
 import type { ShellState } from '../types/state.js'
 
 // ─── Plugin-host — runtime surface registry ───

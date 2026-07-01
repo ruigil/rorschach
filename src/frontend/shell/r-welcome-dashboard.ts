@@ -6,8 +6,8 @@ import type { ShellState } from '../types/state.js';
 
 @customElement('r-welcome-dashboard')
 export class RWelcomeDashboard extends RorschachBase {
-  private _currentModeDisplayName = new StoreController<ShellState, 'currentModeDisplayName'>(this, ['shell', 'currentModeDisplayName']);
-  private _currentMode = new StoreController<ShellState, 'currentMode'>(this, ['shell', 'currentMode']);
+  private _currentModeDisplayName = new StoreController(this, ['shell', 'currentModeDisplayName']);
+  private _currentMode = new StoreController(this, ['shell', 'currentMode']);
 
   override createRenderRoot() {
     return this; // Light DOM for global styles

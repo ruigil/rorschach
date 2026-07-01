@@ -11,7 +11,7 @@ import '@rorschach/frontend/webkit/r-split-pane.js'
 
 @customElement('r-notebook-journal')
 export class RNotebookJournal extends RorschachBase {
-  private _splitPercent = new StoreController<NotebookState, 'splitPercent'>(this, ['notebook', 'splitPercent'])
+  private _splitPercent = new StoreController(this, ['notebook', 'splitPercent'])
 
   @state() private _year = new Date().getFullYear()
   @state() private _month = new Date().getMonth()

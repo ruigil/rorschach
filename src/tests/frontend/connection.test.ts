@@ -3,7 +3,7 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 
 import { store } from '../../frontend/webkit/store.js'
 import { resetStore } from '../helpers/frontend.js'
-import { setMode } from '../../frontend/webkit/view-actions.js'
+import { setMode } from '../../frontend/shell/view-actions.js'
 import { updateActiveStream, commitActiveStream, addLog } from '../../frontend/actions.js'
 
 beforeEach(() => {

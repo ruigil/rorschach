@@ -12,7 +12,7 @@ export class RStatusDot extends RorschachBase {
   @property({ type: String, reflect: true }) status = 'disconnected';
   @property({ type: String }) label = 'connecting…';
 
-  private _isConnected = new StoreController<ShellConnectionState, 'isConnected'>(this, ['shell', 'isConnected']);
+  private _isConnected = new StoreController(this, ['shell', 'isConnected']);
 
   static override styles = css`
     :host {

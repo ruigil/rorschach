@@ -55,9 +55,9 @@ export class RWorkflowWorkspace extends RorschachBase {
     this._applyWorkflowRunUpdate((event as CustomEvent).detail)
   }
 
-  private _currentMode = new StoreController<ShellState, 'currentMode'>(this, ['shell', 'currentMode'])
-  private _storeGraph = new StoreController<WorkflowsState, 'currentGraph'>(this, ['workflows', 'currentGraph'])
-  private _storeWidth = new StoreController<WorkflowsState, 'inspectorWidthPercent'>(this, ['workflows', 'inspectorWidthPercent'])
+  private _currentMode = new StoreController(this, ['shell', 'currentMode'])
+  private _storeGraph = new StoreController(this, ['workflows', 'currentGraph'])
+  private _storeWidth = new StoreController(this, ['workflows', 'inspectorWidthPercent'])
 
   override createRenderRoot() { return this }
 

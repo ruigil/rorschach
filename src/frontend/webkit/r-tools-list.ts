@@ -13,7 +13,7 @@ type ShellToolsState = {
 
 @customElement('r-tools-list')
 export class RToolsList extends RorschachBase {
-  private _tools = new StoreController<ShellToolsState, 'tools'>(this, ['shell', 'tools']);
+  private _tools = new StoreController(this, ['shell', 'tools']);
 
   override render() {
     const toolsMap = this._tools.value || {};

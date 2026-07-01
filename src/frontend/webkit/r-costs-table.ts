@@ -15,7 +15,7 @@ const formatTokens = (n: number) => {
 
 @customElement('r-costs-table')
 export class RCostsTable extends RorschachBase {
-  private _usage = new StoreController<ShellUsageState, 'usage'>(this, ['shell', 'usage']);
+  private _usage = new StoreController(this, ['shell', 'usage']);
 
   static override styles = css`
     :host {

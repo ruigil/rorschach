@@ -33,7 +33,7 @@ type TraceRecord = {
 
 @customElement('r-trace-waterfall')
 export class RTraceWaterfall extends RorschachBase {
-  private _traces = new StoreController<ShellTracesState, 'traces'>(this, ['shell', 'traces']);
+  private _traces = new StoreController(this, ['shell', 'traces']);
 
   static override styles = css`
     :host {

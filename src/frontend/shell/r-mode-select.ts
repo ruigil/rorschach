@@ -9,11 +9,11 @@ import type { ShellState, Agent } from '../types/state.js';
 
 @customElement('r-mode-select')
 export class RModeSelect extends RorschachBase {
-  private _agents = new StoreController<ShellState, 'agents'>(this, ['shell', 'agents']);
-  private _currentMode = new StoreController<ShellState, 'currentMode'>(this, ['shell', 'currentMode']);
-  private _currentModeDisplayName = new StoreController<ShellState, 'currentModeDisplayName'>(this, ['shell', 'currentModeDisplayName']);
-  private _isConnected = new StoreController<ShellState, 'isConnected'>(this, ['shell', 'isConnected']);
-  private _isWaiting = new StoreController<ShellState, 'isWaiting'>(this, ['shell', 'isWaiting']);
+  private _agents = new StoreController(this, ['shell', 'agents']);
+  private _currentMode = new StoreController(this, ['shell', 'currentMode']);
+  private _currentModeDisplayName = new StoreController(this, ['shell', 'currentModeDisplayName']);
+  private _isConnected = new StoreController(this, ['shell', 'isConnected']);
+  private _isWaiting = new StoreController(this, ['shell', 'isWaiting']);
 
   // We render to the light DOM to use the global shell.css styles
   override createRenderRoot() {

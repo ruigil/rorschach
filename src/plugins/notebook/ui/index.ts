@@ -19,3 +19,9 @@ store.namespace<NotebookState>('notebook').init(
 export const reduceFrame = () => {
   // Read-only plugin, no WS frames to route
 }
+
+declare module '@rorschach/frontend/webkit/store.js' {
+  interface NamespaceRegistry {
+    notebook: NotebookState
+  }
+}

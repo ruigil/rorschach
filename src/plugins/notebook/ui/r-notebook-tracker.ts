@@ -38,7 +38,7 @@ type HabitStats = {
 
 @customElement('r-notebook-tracker')
 export class RNotebookTracker extends RorschachBase {
-  private _splitPercent = new StoreController<NotebookState, 'splitPercent'>(this, ['notebook', 'splitPercent'])
+  private _splitPercent = new StoreController(this, ['notebook', 'splitPercent'])
 
   @state() private _habits: HabitDef[] = []
   @state() private _selectedHabit: string | null = null

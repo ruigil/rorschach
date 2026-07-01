@@ -3,6 +3,12 @@ import { store, __resetStoreForTests } from '../../frontend/webkit/store.js'
 import { StoreController } from '../../frontend/webkit/store-controller.js'
 import type { ShellState } from '../../frontend/types/state.js'
 
+declare module '../../frontend/webkit/store.js' {
+  interface NamespaceRegistry {
+    ctrltest: { mode: string }
+  }
+}
+
 beforeEach(() => {
   __resetStoreForTests()
   localStorage.clear()
@@ -206,7 +212,7 @@ describe('StoreController two-element path', () => {
     }
 
     store.namespace<TestState>('ctrltest').init({ mode: 'initial' })
-    const ctrl = new StoreController<TestState, 'mode'>(fakeHost as any, ['ctrltest', 'mode'])
+    const ctrl = new StoreController(fakeHost as any, ['ctrltest', 'mode'])
     expect(ctrl.value).toBe('initial')
 
     // Simulate hostConnected

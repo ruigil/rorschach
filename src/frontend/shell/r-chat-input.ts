@@ -10,8 +10,8 @@ export class RChatInput extends RorschachBase {
   @state() private pendingMedia: MediaItem[] = [];
   @state() private isRecording = false;
 
-  private _isConnected = new StoreController<ShellState, 'isConnected'>(this, ['shell', 'isConnected']);
-  private _isWaiting = new StoreController<ShellState, 'isWaiting'>(this, ['shell', 'isWaiting']);
+  private _isConnected = new StoreController(this, ['shell', 'isConnected']);
+  private _isWaiting = new StoreController(this, ['shell', 'isWaiting']);
 
   @query('#input') private inputEl!: HTMLTextAreaElement;
   @query('#file-input') private fileInputEl!: HTMLInputElement;

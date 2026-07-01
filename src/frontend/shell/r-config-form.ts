@@ -26,8 +26,8 @@ export class RConfigForm extends RorschachBase {
 
   @query('#flash-msg') private _flashMsg!: any;
 
-  private _currentUserRoles = new StoreController<ShellState, 'currentUserRoles'>(this, ['shell', 'currentUserRoles']);
-  private _currentUserId = new StoreController<ShellState, 'currentUserId'>(this, ['shell', 'currentUserId']);
+  private _currentUserRoles = new StoreController(this, ['shell', 'currentUserRoles']);
+  private _currentUserId = new StoreController(this, ['shell', 'currentUserId']);
   private _hasLoaded = false;
 
   override createRenderRoot() { return this; }

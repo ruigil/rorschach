@@ -8,10 +8,10 @@ import type { ShellState } from '../types/state.js';
 
 @customElement('r-chat-panel')
 export class RChatPanel extends RorschachBase {
-  private _isConnected = new StoreController<ShellState, 'isConnected'>(this, ['shell', 'isConnected']);
-  private _isWaiting = new StoreController<ShellState, 'isWaiting'>(this, ['shell', 'isWaiting']);
-  private _messages = new StoreController<ShellState, 'messages'>(this, ['shell', 'messages']);
-  private _activeStream = new StoreController<ShellState, 'activeStream'>(this, ['shell', 'activeStream']);
+  private _isConnected = new StoreController(this, ['shell', 'isConnected']);
+  private _isWaiting = new StoreController(this, ['shell', 'isWaiting']);
+  private _messages = new StoreController(this, ['shell', 'messages']);
+  private _activeStream = new StoreController(this, ['shell', 'activeStream']);
 
   private _lastMessagesLength = 0;
   private _lastStreamText = '';
