@@ -177,7 +177,7 @@ export class RWorkflowInspector extends RorschachBase {
     return html`
       <div class="plan-task-detail">
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-          <r-badge status="pending">Workflow</r-badge>
+          <r-badge status=${this.graph?.run?.status ?? 'not-tracked'}>Workflow · ${this.graph?.run?.status ?? 'not tracked'}</r-badge>
         </div>
         <h3>${workflow.goal}</h3>
         <r-kv-list .items=${[

@@ -5,12 +5,14 @@ import { type IconName } from './icons.js';
 
 @customElement('r-button')
 export class RButton extends RorschachBase {
-  @property({ type: String, reflect: true }) variant: 'primary' | 'secondary' | 'ghost' | 'danger' = 'secondary';
+  @property({ type: String, reflect: true }) variant: 'primary' | 'secondary' | 'ghost' | 'danger' | 'badge' = 'secondary';
   @property({ type: String, reflect: true }) size: 'sm' | 'md' | 'lg' = 'md';
   @property({ type: Boolean, reflect: true }) disabled = false;
   @property({ type: Boolean, reflect: true }) loading = false;
   @property({ type: String }) icon?: IconName;
   @property({ type: String }) iconAfter?: IconName;
+  @property({ type: String, reflect: true }) status = '';
+  @property({ type: Boolean, reflect: true }) active = false;
 
   static override styles = css`
     :host {
@@ -97,6 +99,69 @@ export class RButton extends RorschachBase {
     :host([variant="danger"]) button:hover:not(:disabled) {
       background: rgba(224, 96, 48, 0.15);
       border-color: var(--error);
+    }
+
+    /* Badge Variant */
+    :host([variant="badge"]) button {
+      padding: 3px 8px;
+      font-size: 0.62rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      border-radius: 4px;
+      font-family: var(--font-mono, monospace);
+      text-transform: uppercase;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+    }
+    :host([variant="badge"]) button:hover:not(:disabled) {
+      border-color: var(--border-mid);
+      color: var(--text);
+    }
+    :host([variant="badge"][status="running"]) button {
+      color: var(--accent);
+      border-color: var(--accent-glow);
+      background: var(--accent-dim);
+    }
+    :host([variant="badge"][status="running"]) button:hover:not(:disabled) {
+      border-color: var(--accent);
+      background: rgba(0, 196, 212, 0.15);
+    }
+    :host([variant="badge"][status="completed"]) button {
+      color: var(--green);
+      border-color: var(--green-glow);
+      background: var(--green-glow);
+    }
+    :host([variant="badge"][status="completed"]) button:hover:not(:disabled) {
+      border-color: var(--green);
+      background: rgba(57, 232, 160, 0.15);
+    }
+    :host([variant="badge"][status="blocked"]) button {
+      color: var(--warn);
+      border-color: var(--border);
+      background: var(--surface-2);
+    }
+    :host([variant="badge"][status="blocked"]) button:hover:not(:disabled) {
+      border-color: var(--warn);
+      background: rgba(220, 180, 40, 0.15);
+    }
+    :host([variant="badge"][status="failed"]) button,
+    :host([variant="badge"][status="error"]) button {
+      color: var(--error);
+      border-color: var(--error-border);
+      background: var(--error-bg);
+    }
+    :host([variant="badge"][status="failed"]) button:hover:not(:disabled),
+    :host([variant="badge"][status="error"]) button:hover:not(:disabled) {
+      border-color: var(--error);
+      background: rgba(224, 96, 48, 0.15);
+    }
+
+    /* Active State */
+    :host([variant="badge"][active]) button {
+      color: var(--accent) !important;
+      border-color: var(--accent) !important;
+      box-shadow: 0 0 8px rgba(0, 196, 212, 0.18) !important;
     }
 
     .spinner {

@@ -82,45 +82,6 @@ export class RWorkflowWorkspace extends RorschachBase {
         min-width: 0;
         overflow: hidden;
       }
-      .workflow-run-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        min-width: 0;
-        padding: 0.22rem 0.45rem;
-        color: var(--text-mid);
-        background: rgba(6, 16, 26, 0.74);
-        border: 1px solid var(--border);
-        border-radius: 4px;
-        font-family: var(--font-mono);
-        font-size: 0.58rem;
-        cursor: pointer;
-      }
-      .workflow-run-chip:hover {
-        color: var(--text);
-        border-color: var(--accent);
-      }
-      .workflow-run-chip.status-running {
-        color: #b9fbff;
-        border-color: rgba(0, 196, 212, 0.6);
-      }
-      .workflow-run-chip.status-completed {
-        color: #c9ffe4;
-        border-color: rgba(57, 232, 160, 0.55);
-      }
-      .workflow-run-chip.status-blocked {
-        color: #fff1b3;
-        border-color: rgba(220, 180, 40, 0.6);
-      }
-      .workflow-run-chip.status-failed {
-        color: #ffc7bf;
-        border-color: rgba(224, 80, 64, 0.6);
-      }
-      .workflow-run-chip.active {
-        color: var(--accent);
-        border-color: var(--accent);
-        box-shadow: 0 0 8px rgba(0, 196, 212, 0.18);
-      }
       .plan-empty {
         display: flex;
         align-items: center;
@@ -145,13 +106,7 @@ export class RWorkflowWorkspace extends RorschachBase {
         align-items: center;
         gap: 0.5rem;
         min-width: 0;
-      }
-      .plan-run-title strong {
-        overflow: hidden;
-        color: var(--text);
-        font-size: 0.78rem;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        flex: 1;
       }
       .plan-run-refresh {
         display: flex;
@@ -287,7 +242,9 @@ export class RWorkflowWorkspace extends RorschachBase {
               <r-button variant="ghost" size="sm" icon="chevron-left" @click=${() => this.openList()}>
                 Back to Workflows
               </r-button>
-              ${this._renderToolbarRuns()}
+              <div style="font-weight: 600; font-size: 0.72rem; color: var(--text); border-left: 1px solid var(--border); padding-left: 8px; margin-left: 4px;">
+                ${this._currentGraph?.workflow?.goal ?? 'Workflow'}
+              </div>
             ` : html`
               <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-mid);">
                 <r-icon name="git-branch" size="sm" style="margin-right: 6px;"></r-icon>
@@ -306,7 +263,7 @@ export class RWorkflowWorkspace extends RorschachBase {
     `
   }
 
-  private _renderToolbarRuns() {
+  private _renderHeaderRuns() {
     if (!this._workflowId) return nothing
     const runs = this._runs
       .filter(run => run.workflowId === this._workflowId)
@@ -315,14 +272,16 @@ export class RWorkflowWorkspace extends RorschachBase {
     return html`
       <div class="plan-workspace-runs">
         ${runs.map(run => html`
-          <button
-            class=${`workflow-run-chip status-${run.status}${run.runId === this._runId ? ' active' : ''}`}
-            type="button"
+          <r-button
+            class=${`workflow-run-chip${run.runId === this._runId ? ' active' : ''}`}
+            variant="badge"
+            status=${run.status}
+            ?active=${run.runId === this._runId}
             @click=${() => this.openGraph(this._workflowId!, run.runId)}
           >
             <span>${run.status}</span>
             <span>${this._shortRunId(run.runId)}</span>
-          </button>
+          </r-button>
         `)}
       </div>
     `
@@ -357,8 +316,7 @@ export class RWorkflowWorkspace extends RorschachBase {
     return html`
       <div class="plan-run-header">
         <div class="plan-run-title">
-          <r-badge status=${this._currentGraph.run?.status ?? 'not-tracked'}>${this._currentGraph.run?.status ?? 'not tracked'}</r-badge>
-          <strong>${this._currentGraph.workflow?.goal ?? 'Workflow'}</strong>
+          ${this._renderHeaderRuns()}
         </div>
         <div class="plan-run-refresh">
           ${this._runId ? html`<span>${isLiveWorkflowRunStatus(this._currentGraph.run?.status) ? 'live' : 'snapshot'}</span>` : html`<span>definition</span>`}

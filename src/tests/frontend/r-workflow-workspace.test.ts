@@ -141,7 +141,7 @@ describe('r-workflow-workspace', () => {
     expect(workflow?.executionTools).toContain('read')
     expect(workflow?.executionTools).toContain('write')
     // The inspector tab label itself is visible in the shadow DOM
-    expect(el.shadowRoot.textContent).toContain('workflow')
+    expect(inspector.shadowRoot.textContent).toContain('workflow')
   })
 
   test('renders run values, pending jobs, and artifact links', async () => {
