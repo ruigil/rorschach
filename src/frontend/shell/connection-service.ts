@@ -134,7 +134,7 @@ export async function connect(): Promise<void> {
     // Restore saved mode on reconnect/refresh (persisted via the store)
     const savedMode = shell().get('currentMode')
     if (savedMode) {
-      send({ type: 'switchMode', mode: savedMode })
+      send({ type: 'cognitive.switchMode', mode: savedMode })
     }
 
     const chatTab = document.querySelector('[data-tab="chat"].active')

@@ -1,7 +1,7 @@
 import type { ActorContext, ActorDef, ActorRef, ActorResult } from '../../system/index.ts'
 import { ask, onLifecycle, onMessage } from '../../system/index.ts'
 import { ToolRegistrationTopic, type ToolCollection } from '../../types/tools.ts'
-import { OutboundUserMessageTopic } from '../../types/events.ts'
+import { OutboundUserMessageTopic, HttpWsFrameTopic } from '../../types/events.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import { WorkflowEventTopic } from './types.ts'
 import type {
@@ -13,7 +13,7 @@ import type {
   WorkflowRunnerConfig,
 } from './types.ts'
 import { WorkflowRunExecutor } from './workflow-run-executor.ts'
-import { getWorkflowRun, listWorkflowRuns } from './workflow-store.ts'
+import { getWorkflowRun, listWorkflowRuns, listWorkflows, getWorkflow, getWorkflowGraph, createWorkflowRun } from './workflow-store.ts'
 
 type RunnerState = {
   live: Record<string, ActorRef<WorkflowRunExecutorMsg>>
@@ -167,6 +167,7 @@ export const WorkflowRunner = (
           return { type: '_toolUnregistered' as const, name: toolEvent.name }
         })
         ctx.subscribe(WorkflowEventTopic, event => ({ type: '_runUpdated' as const, event }))
+        ctx.subscribe(HttpWsFrameTopic, frameEvent => ({ type: '_wsFrame' as const, event: frameEvent }))
         return { state }
       },
       terminated: (state, event, ctx) => {
@@ -228,6 +229,85 @@ export const WorkflowRunner = (
 
       listExecutionTools: (state, msg) => {
         msg.replyTo.send({ ok: true, executionTools: summarizeExecutionTools(state.executionTools) })
+        return { state }
+      },
+
+      _wsFrame: (state, msg, ctx) => {
+        const { userId, frame } = msg.event
+        if (!frame.type.startsWith('workflow.')) return { state }
+
+        const sendFrame = (replyFrame: object) => {
+          ctx.publish(OutboundUserMessageTopic, {
+            userId,
+            text: JSON.stringify(replyFrame),
+          })
+        }
+
+        const handle = async () => {
+          switch (frame.type) {
+            case 'workflow.list.request': {
+              const workflows = await listWorkflows(workflowsDir, userId)
+              sendFrame({ type: 'workflowsList', workflows })
+              break
+            }
+            case 'workflow.runs.request': {
+              const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+                ctx.self,
+                replyTo => ({ type: 'list', userId, replyTo })
+              )
+              if (reply.ok && 'runs' in reply) {
+                sendFrame({ type: 'workflowRunsList', runs: reply.runs })
+              } else {
+                sendFrame({ type: 'workflowError', message: reply.ok ? 'Unexpected response' : reply.error })
+              }
+              break
+            }
+            case 'workflow.graph.request': {
+              let run = undefined
+              if (frame.runId) {
+                const runReply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+                  ctx.self,
+                  replyTo => ({ type: 'get', userId, runId: frame.runId, replyTo })
+                )
+                if (runReply.ok && 'run' in runReply) run = runReply.run
+              }
+              const res = await getWorkflowGraph(workflowsDir, userId, frame.workflowId, run)
+              if (res.ok) {
+                sendFrame({ type: 'workflowGraph', ...res.data.graph })
+              } else {
+                sendFrame({ type: 'workflowError', message: res.error })
+              }
+              break
+            }
+            case 'workflow.start.request': {
+              const result = await createWorkflowRun(workflowsDir, workflowRunsDir, userId, frame.workflowId, frame.inputs)
+              if (!result.ok) {
+                sendFrame({ type: 'workflowError', message: result.error })
+                break
+              }
+              const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+                ctx.self,
+                replyTo => ({ type: 'start', run: result.data.run, workflow: result.data.workflow, replyTo })
+              )
+              if (!reply.ok) {
+                sendFrame({ type: 'workflowError', message: reply.error })
+              }
+              break
+            }
+            case 'workflow.resume.request': {
+              const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+                ctx.self,
+                replyTo => ({ type: 'resume', userId, runId: frame.runId, replyTo })
+              )
+              if (!reply.ok) {
+                sendFrame({ type: 'workflowError', message: reply.error })
+              }
+              break
+            }
+          }
+        }
+
+        handle().catch(err => sendFrame({ type: 'workflowError', message: String(err) }))
         return { state }
       },
 

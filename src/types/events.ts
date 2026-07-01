@@ -54,3 +54,25 @@ export type CronTriggerEvent = { userId: string; text: string; traceId: string; 
 /** Topic emitted when a cron job fires for a specific user. Session manager routes to that user's chatbot actor. */
 export const CronTriggerTopic = createTopic<CronTriggerEvent>('cron.trigger.user')
 
+export type HttpWsFrameEvent = {
+  clientId: string
+  userId: string
+  roles: string[]
+  frame: {
+    type: string
+    [key: string]: any
+  }
+}
+
+/** Topic published when the HTTP/WS interface receives a custom client WebSocket frame. */
+export const HttpWsFrameTopic = createTopic<HttpWsFrameEvent>('http.ws.frame')
+
+export type NotebookChangeEvent =
+  | { type: 'todosUpdated'; userId: string }
+  | { type: 'journalUpdated'; userId: string; date: string }
+  | { type: 'trackerUpdated'; userId: string; habit: string }
+
+/** Topic published when notebook data is updated by coach tools (journal, tracker, or todos). */
+export const NotebookChangeTopic = createTopic<NotebookChangeEvent>('notebook.change')
+
+

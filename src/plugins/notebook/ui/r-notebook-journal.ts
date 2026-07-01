@@ -4,6 +4,7 @@ import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
 import { renderMarkdown } from '@rorschach/frontend/webkit/markdown.js'
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
 import { store } from '@rorschach/frontend/webkit/store.js'
+import { send } from '../../../frontend/shell/connection-service.js'
 import type { NotebookState } from './index.js'
 import '@rorschach/frontend/webkit/r-calendar.js'
 import '@rorschach/frontend/webkit/r-empty-state.js'
@@ -12,15 +13,19 @@ import '@rorschach/frontend/webkit/r-split-pane.js'
 @customElement('r-notebook-journal')
 export class RNotebookJournal extends RorschachBase {
   private _splitPercent = new StoreController(this, ['notebook', 'splitPercent'])
+  private _storeHighlightedDays = new StoreController(this, ['notebook', 'highlightedDays'])
+  private _storeSelectedEntry = new StoreController(this, ['notebook', 'selectedEntry'])
+  private _storeError = new StoreController(this, ['notebook', 'errorMessage'])
 
   @state() private _year = new Date().getFullYear()
   @state() private _month = new Date().getMonth()
-  @state() private _highlightedDays: string[] = []
   @state() private _selectedDate: string | null = null
-  @state() private _selectedEntry: string | null = null
   @state() private _loadingMonths = false
   @state() private _loadingEntry = false
-  @state() private _error: string | null = null
+
+  private get _highlightedDays() { return this._storeHighlightedDays.value ?? [] }
+  private get _selectedEntry() { return this._storeSelectedEntry.value }
+  private get _error() { return this._storeError.value }
 
   static override styles = css`
     :host {
@@ -35,42 +40,32 @@ export class RNotebookJournal extends RorschachBase {
     this._fetchMonthData()
   }
 
-  private async _fetchMonthData() {
-    try {
-      this._loadingMonths = true
-      const yearStr = String(this._year)
-      const monthStr = String(this._month + 1).padStart(2, '0')
-      const res = await fetch(`/notebook/journal/months?year=${yearStr}&month=${monthStr}`)
-      if (!res.ok) throw new Error(await res.text())
-      const days: string[] = await res.json()
-      this._highlightedDays = days.map(d => `${yearStr}-${monthStr}-${String(d).padStart(2, '0')}`)
-      this._error = null
-    } catch (e: any) {
-      this._error = e.message || 'Failed to sync calendar entries'
-    } finally {
+  override updated() {
+    if (this._storeHighlightedDays.value !== undefined && this._loadingMonths) {
       this._loadingMonths = false
+    }
+    if (this._storeSelectedEntry.value !== undefined && this._loadingEntry) {
+      this._loadingEntry = false
     }
   }
 
-  private async _fetchEntry(date: string) {
-    try {
-      this._loadingEntry = true
-      const res = await fetch(`/notebook/journal/entry?date=${encodeURIComponent(date)}`)
-      if (!res.ok) throw new Error(await res.text())
-      const data = await res.json()
-      this._selectedEntry = data.content
-    } catch (e: any) {
-      this._selectedEntry = `Error loading entry: ${e.message}`
-    } finally {
-      this._loadingEntry = false
-    }
+  private _fetchMonthData() {
+    this._loadingMonths = true
+    const yearStr = String(this._year)
+    const monthStr = String(this._month + 1).padStart(2, '0')
+    send({ type: 'notebook.journal.months.request', year: yearStr, month: monthStr })
+  }
+
+  private _fetchEntry(date: string) {
+    this._loadingEntry = true
+    send({ type: 'notebook.journal.entry.request', date })
   }
 
   private _handleMonthChange(e: CustomEvent) {
     this._year = e.detail.year
     this._month = e.detail.month
     this._selectedDate = null
-    this._selectedEntry = null
+    store.namespace<NotebookState>('notebook').set('selectedEntry', null)
     this._fetchMonthData()
   }
 

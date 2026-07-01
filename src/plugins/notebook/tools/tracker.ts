@@ -4,6 +4,7 @@ import { onMessage } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { HabitDef } from '../types.ts'
+import { NotebookChangeTopic } from '../../../types/events.ts'
 
 // ─── Tool names & schemas ───
 
@@ -45,7 +46,7 @@ export const trackerListHabitsTool = defineTool('tracker_list_habits', 'List all
 
 type TrackerMsg =
   | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string; span: SpanHandle | null }
+  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string; span: SpanHandle | null; userId: string; habit?: string }
   | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string; span: SpanHandle | null }
 
 // ─── File paths ───
@@ -108,62 +109,6 @@ export const parseCsv = async (notebookDir: string): Promise<CsvRow[]> => {
     .filter(r => !isNaN(r.value))
 }
 
-const computeStats = async (notebookDir: string, habit: string): Promise<string> => {
-  const all  = await parseCsv(notebookDir)
-  const rows = all.filter(r => r.habit === habit)
-  if (rows.length === 0) return `No data found for habit "${habit}".`
-
-  // Per-day totals
-  const byDay = new Map<string, number>()
-  for (const r of rows) {
-    byDay.set(r.date, (byDay.get(r.date) ?? 0) + r.value)
-  }
-
-  const dates  = [...byDay.keys()].sort()
-  const values = dates.map(d => byDay.get(d)!)
-
-  // Personal best (max single-day total)
-  const personalBest    = Math.max(...values)
-  const personalBestDay = dates[values.indexOf(personalBest)]
-
-  // Current streak (consecutive days ending today or most recent)
-  const today = todayISO()
-  let streak  = 0
-  let cursor  = new Date(today)
-  while (true) {
-    const key = cursor.toISOString().slice(0, 10)
-    if (!byDay.has(key)) break
-    streak++
-    cursor.setDate(cursor.getDate() - 1)
-  }
-
-  // Weekly total + average (current calendar week, Mon–today)
-  const weekStart = currentWeekStart()
-  const weekDates = dates.filter(d => d >= weekStart)
-  const weeklyTotal = weekDates.reduce((s, d) => s + byDay.get(d)!, 0)
-  const weeklyAvg = weekDates.length > 0
-    ? (weeklyTotal / weekDates.length).toFixed(1)
-    : 'n/a'
-
-  // Monthly total + average (current calendar month)
-  const monthStart = currentMonthStart()
-  const monthDates = dates.filter(d => d >= monthStart)
-  const monthlyTotal = monthDates.reduce((s, d) => s + byDay.get(d)!, 0)
-  const monthlyAvg = monthDates.length > 0
-    ? (monthlyTotal / monthDates.length).toFixed(1)
-    : 'n/a'
-
-  return [
-    `Habit: ${habit}`,
-    `Total log entries: ${rows.length} across ${dates.length} days`,
-    `Personal best: ${personalBest} (${personalBestDay})`,
-    `Current streak: ${streak} day(s)`,
-    `This week total (since ${weekStart}): ${weeklyTotal} | avg/day: ${weeklyAvg}`,
-    `This month total (since ${monthStart}): ${monthlyTotal} | avg/day: ${monthlyAvg}`,
-    `Recent days: ${dates.slice(-7).map(d => `${d}=${byDay.get(d)}`).join(', ')}`,
-  ].join('\n')
-}
-
 const shiftDays = (isoDate: string, delta: number): string => {
   const d = new Date(isoDate)
   d.setDate(d.getDate() + delta)
@@ -180,6 +125,53 @@ const currentWeekStart = (): string => {
 const currentMonthStart = (): string => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+const computeStats = async (notebookDir: string, habit: string): Promise<string> => {
+  const all = await parseCsv(notebookDir)
+  const rows = all.filter(r => r.habit === habit)
+  if (rows.length === 0) {
+    return `No logged entries for habit "${habit}".`
+  }
+
+  const byDay = new Map<string, number>()
+  for (const r of rows) {
+    byDay.set(r.date, (byDay.get(r.date) ?? 0) + r.value)
+  }
+
+  const dates = [...byDay.keys()].sort()
+  const values = dates.map(d => byDay.get(d)!)
+  const personalBest = Math.max(...values)
+
+  const today = todayISO()
+  const yesterday = shiftDays(today, -1)
+  let start = today
+  if (!byDay.has(today) && byDay.has(yesterday)) {
+    start = yesterday
+  }
+
+  let streak = 0
+  if (byDay.has(start)) {
+    let cursor = new Date(start)
+    while (true) {
+      const key = cursor.toISOString().slice(0, 10)
+      if (!byDay.has(key)) break
+      streak++
+      cursor.setDate(cursor.getDate() - 1)
+    }
+  }
+
+  const weekStart = currentWeekStart()
+  const weeklyTotal = dates.filter(d => d >= weekStart).reduce((s, d) => s + byDay.get(d)!, 0)
+
+  const monthStart = currentMonthStart()
+  const monthlyTotal = dates.filter(d => d >= monthStart).reduce((s, d) => s + byDay.get(d)!, 0)
+
+  return `Statistics for habit "${habit}":\n` +
+    `- Current streak: ${streak} days\n` +
+    `- Personal best: ${personalBest} in a single day\n` +
+    `- Weekly total (starting Monday): ${weeklyTotal}\n` +
+    `- Monthly total: ${monthlyTotal}`
 }
 
 const defineHabit = async (notebookDir: string, name: string, unit: string, dailyTarget?: number): Promise<string> => {
@@ -218,17 +210,18 @@ export const Tracker = (notebookDir: string): ActorDef<TrackerMsg, null> => ({
   handler: onMessage<TrackerMsg, null>({
     invoke: (state, msg, ctx) => {
       let promise: Promise<string>
+      let habit: string | undefined
       try {
-        const args = JSON.parse(msg.arguments) as Record<string, unknown>
-
         if (msg.toolName === trackerLogTool.name) {
           const args = JSON.parse(msg.arguments) as { habit: string; value: number; date?: string; description?: string }
+          habit = args.habit
           promise = logHabit(notebookDir, args.habit, args.value, args.date ?? todayISO(), args.description)
         } else if (msg.toolName === trackerStatsTool.name) {
           const args = JSON.parse(msg.arguments) as { habit: string }
           promise = computeStats(notebookDir, args.habit)
         } else if (msg.toolName === trackerDefineHabitTool.name) {
           const args = JSON.parse(msg.arguments) as { name: string; unit: string; dailyTarget?: number }
+          habit = args.name
           promise = defineHabit(notebookDir, args.name, args.unit, args.dailyTarget)
         } else if (msg.toolName === trackerListHabitsTool.name) {
           promise = listHabits(notebookDir)
@@ -244,15 +237,21 @@ export const Tracker = (notebookDir: string): ActorDef<TrackerMsg, null> => ({
         : null
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span, userId: msg.userId, habit }),
         (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error), span }),
       )
       return { state }
     },
 
-    _done: (state, msg) => {
+    _done: (state, msg, ctx) => {
       msg.span?.done()
       msg.replyTo.send({ type: 'toolResult', result: { text: msg.result } })
+      if (
+        (msg.toolName === trackerLogTool.name || msg.toolName === trackerDefineHabitTool.name) &&
+        msg.habit
+      ) {
+        ctx.publish(NotebookChangeTopic, { type: 'trackerUpdated', userId: msg.userId, habit: msg.habit })
+      }
       return { state }
     },
 

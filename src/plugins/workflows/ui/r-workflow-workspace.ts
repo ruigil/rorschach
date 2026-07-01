@@ -4,6 +4,7 @@ import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
 import { sharedStyles } from '@rorschach/frontend/webkit/shared-styles.js'
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
 import { store } from '@rorschach/frontend/webkit/store.js'
+import { send } from '../../../frontend/shell/connection-service.js'
 import type { ShellState } from '../../../frontend/types/state.js'
 import type { WorkflowsState, WORKFLOW_RUN_UPDATED_EVENT as _WRE } from './index.js'
 import { WORKFLOW_RUN_UPDATED_EVENT } from './index.js'
@@ -40,10 +41,6 @@ export { isLiveWorkflowRunStatus, mergeWorkflowRunIntoGraph }
 @customElement('r-workflow-workspace')
 export class RWorkflowWorkspace extends RorschachBase {
   @state() private _view: 'list' | 'graph' | 'loading' | 'error' = 'list'
-  @state() private _errorMsg = ''
-  @state() private _workflows: any[] = []
-  @state() private _runs: any[] = []
-  @state() private _currentGraph: any = null
   @state() private _selectedTaskId: string | null = null
   @state() private _workflowId: string | null = null
   @state() private _runId: string | null = null
@@ -52,13 +49,18 @@ export class RWorkflowWorkspace extends RorschachBase {
 
   private _lastMode = ''
   private _lastGraphValue: any = null
-  private _onWorkflowRunUpdated = (event: Event) => {
-    this._applyWorkflowRunUpdate((event as CustomEvent).detail)
-  }
 
   private _currentMode = new StoreController(this, ['shell', 'currentMode'])
   private _storeGraph = new StoreController(this, ['workflows', 'currentGraph'])
   private _storeWidth = new StoreController(this, ['workflows', 'inspectorWidthPercent'])
+  private _storeWorkflows = new StoreController(this, ['workflows', 'workflows'])
+  private _storeRuns = new StoreController(this, ['workflows', 'runs'])
+  private _storeError = new StoreController(this, ['workflows', 'errorMessage'])
+
+  private get _workflows() { return this._storeWorkflows.value ?? [] }
+  private get _runs() { return this._storeRuns.value ?? [] }
+  private get _currentGraph() { return this._storeGraph.value }
+  private get _errorMsg() { return this._storeError.value ?? '' }
 
   static override styles = [
     sharedStyles,
@@ -136,15 +138,7 @@ export class RWorkflowWorkspace extends RorschachBase {
     `
   ];
 
-  override connectedCallback() {
-    super.connectedCallback()
-    window.addEventListener(WORKFLOW_RUN_UPDATED_EVENT, this._onWorkflowRunUpdated)
-  }
-
-  override disconnectedCallback() {
-    window.removeEventListener(WORKFLOW_RUN_UPDATED_EVENT, this._onWorkflowRunUpdated)
-    super.disconnectedCallback()
-  }
+  // Connected/disconnected lifecycles do not need local updates anymore
 
   override updated() {
     const mode = this._currentMode.value as string
@@ -173,10 +167,15 @@ export class RWorkflowWorkspace extends RorschachBase {
           this.openGraph(graphValue.workflowId, graphValue.runId)
         } else if (graphValue.nodes && graphValue.nodes.length) {
           this._view = 'graph'
-          this._currentGraph = graphValue
           this._workflowId = graphValue.workflow?.id ?? graphValue.workflowId ?? null
           this._runId = graphValue.run?.runId ?? graphValue.runId ?? null
-          this._selectedTaskId = this._currentGraph.nodes[0]?.id ?? null
+          
+          const savedTaskId = store.namespace<WorkflowsState>('workflows').get('workspaceSelectedTaskId')
+          const candidate = this._selectedTaskId || savedTaskId
+          this._selectedTaskId = candidate && graphValue.nodes.some((n: any) => n.id === candidate)
+            ? candidate
+            : (graphValue.nodes[0]?.id ?? null)
+            
           this._lastUpdatedAt = new Date().toISOString()
         } else {
           this.openList()
@@ -185,30 +184,24 @@ export class RWorkflowWorkspace extends RorschachBase {
     }
   }
 
-  async openList() {
+  openList() {
     this._view = 'loading'
     this._workflowId = null
     this._runId = null
-    this._currentGraph = null
     const ns = store.namespace<WorkflowsState>('workflows')
     ns.set('workspaceView', 'list')
     ns.set('workspaceWorkflowId', null)
     ns.set('workspaceRunId', null)
-    try {
-      const [workflows, runs] = await Promise.all([
-        this._fetchJson('workflows'),
-        this._fetchJson('workflow-runs'),
-      ])
-      this._workflows = Array.isArray(workflows) ? workflows : []
-      this._runs = Array.isArray(runs) ? runs : []
-      this._view = 'list'
-    } catch {
-      this._errorMsg = 'could not load workflows'
-      this._view = 'error'
-    }
+    ns.set('currentGraph', null)
+    ns.set('errorMessage', null)
+
+    send({ type: 'workflow.list.request' })
+    send({ type: 'workflow.runs.request' })
+
+    this._view = 'list'
   }
 
-  async openGraph(workflowId: string, runId?: string) {
+  openGraph(workflowId: string, runId?: string) {
     this._view = 'loading'
     this._workflowId = workflowId
     this._runId = runId ?? null
@@ -216,20 +209,11 @@ export class RWorkflowWorkspace extends RorschachBase {
     ns.set('workspaceView', 'graph')
     ns.set('workspaceWorkflowId', workflowId)
     ns.set('workspaceRunId', runId ?? null)
-    const runsPromise = this._refreshRuns().catch(() => {})
-    try {
-      await this._loadGraph(workflowId, runId, false)
-      this._view = 'graph'
-    } catch {
-      this._errorMsg = 'could not load workflow graph'
-      this._view = 'error'
-    }
-    await runsPromise
-  }
 
-  private async _refreshRuns() {
-    const runs = await this._fetchJson('workflow-runs')
-    this._runs = Array.isArray(runs) ? runs : []
+    send({ type: 'workflow.graph.request', workflowId, runId })
+    send({ type: 'workflow.runs.request' })
+
+    this._view = 'graph'
   }
 
   override render() {
@@ -366,52 +350,7 @@ export class RWorkflowWorkspace extends RorschachBase {
     return html`${this._formatDateTime(workflow.createdAt)} · ${workflow.taskCount} tasks`
   }
 
-  private async _loadGraph(workflowId: string, runId?: string, preserveSelection = true) {
-    const path = runId
-      ? `workflows/${encodeURIComponent(workflowId)}/graph?runId=${encodeURIComponent(runId)}`
-      : `workflows/${encodeURIComponent(workflowId)}/graph`
-    const graph = await this._fetchJson(path)
-    this._currentGraph = graph
-    this._workflowId = workflowId
-    this._runId = graph.run?.runId ?? runId ?? null
-    const savedTaskId = store.namespace<WorkflowsState>('workflows').get('workspaceSelectedTaskId')
-    const candidate = preserveSelection ? this._selectedTaskId : savedTaskId
-    this._selectedTaskId = candidate && graph.nodes.some((n: any) => n.id === candidate)
-      ? candidate
-      : (graph.nodes[0]?.id ?? null)
-    this._lastUpdatedAt = new Date().toISOString()
-  }
-
-  private _applyWorkflowRunUpdate(frame: any) {
-    const workflowId = frame?.workflowId
-    const runId = frame?.runId
-    const run = frame?.run
-    if (!workflowId || !runId || !run) return
-
-    if (this._view === 'graph' && this._workflowId === workflowId && this._runId === runId && this._currentGraph) {
-      const selectedTaskId = this._selectedTaskId
-      this._currentGraph = mergeWorkflowRunIntoGraph(this._currentGraph, run)
-      this._selectedTaskId = selectedTaskId && this._currentGraph.nodes.some((node: any) => node.id === selectedTaskId)
-        ? selectedTaskId
-        : (this._currentGraph.nodes[0]?.id ?? null)
-      this._lastUpdatedAt = new Date().toISOString()
-    }
-
-    const isGraphForWorkflow = this._view === 'graph' && this._workflowId === workflowId
-    const isListForWorkflow = this._view === 'list' && this._workflows.some(workflow => workflow.id === workflowId)
-    if (isGraphForWorkflow || isListForWorkflow) {
-      const existingIndex = this._runs.findIndex(existing => existing.runId === runId)
-      this._runs = existingIndex >= 0
-        ? this._runs.map((existing, index) => index === existingIndex ? run : existing)
-        : [run, ...this._runs]
-    }
-  }
-
-  private async _fetchJson(path: string) {
-    const res = await fetch(new URL(path, location.href))
-    if (!res.ok) throw new Error(await res.text())
-    return await res.json()
-  }
+  // Old fetch/REST helpers have been replaced by reactive WebSocket state management
 
   private _formatDateTime(value: any) {
     const date = new Date(value)

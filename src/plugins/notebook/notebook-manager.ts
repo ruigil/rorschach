@@ -1,0 +1,217 @@
+import { onLifecycle, onMessage } from '../../system/index.ts'
+import type { ActorDef } from '../../system/index.ts'
+import { OutboundUserMessageTopic, HttpWsFrameTopic, NotebookChangeTopic, type HttpWsFrameEvent, type NotebookChangeEvent } from '../../types/events.ts'
+import { readTodos, completeTodo } from './tools/todos.ts'
+import { readEntry } from './tools/journal.ts'
+import { parseCsv, type CsvRow } from './tools/tracker.ts'
+import { readdir } from 'node:fs/promises'
+
+export type NotebookManagerMsg =
+  | { type: '_wsFrame'; event: HttpWsFrameEvent }
+  | { type: '_dataChanged'; event: NotebookChangeEvent }
+
+const todayISO = (): string => new Date().toISOString().slice(0, 10)
+
+const shiftDays = (isoDate: string, delta: number): string => {
+  const d = new Date(isoDate)
+  d.setDate(d.getDate() + delta)
+  return d.toISOString().slice(0, 10)
+}
+
+const currentWeekStart = (): string => {
+  const d = new Date()
+  const day = d.getDay() === 0 ? 6 : d.getDay() - 1 // Monday = 0
+  d.setDate(d.getDate() - day)
+  return d.toISOString().slice(0, 10)
+}
+
+const currentMonthStart = (): string => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+function calculateStats(rows: CsvRow[]) {
+  if (rows.length === 0) {
+    return { streak: 0, personalBest: 0, personalBestDay: undefined, weeklyTotal: 0, weeklyAvg: 0, monthlyTotal: 0, monthlyAvg: 0, count: 0, daysCount: 0 }
+  }
+
+  const byDay = new Map<string, number>()
+  for (const r of rows) {
+    byDay.set(r.date, (byDay.get(r.date) ?? 0) + r.value)
+  }
+
+  const dates = [...byDay.keys()].sort()
+  const values = dates.map(d => byDay.get(d)!)
+  const personalBest = Math.max(...values)
+  const personalBestDay = dates[values.indexOf(personalBest)]
+
+  const today = todayISO()
+  const yesterday = shiftDays(today, -1)
+  let start = today
+  if (!byDay.has(today) && byDay.has(yesterday)) {
+    start = yesterday
+  }
+
+  let streak = 0
+  if (byDay.has(start)) {
+    let cursor = new Date(start)
+    while (true) {
+      const key = cursor.toISOString().slice(0, 10)
+      if (!byDay.has(key)) break
+      streak++
+      cursor.setDate(cursor.getDate() - 1)
+    }
+  }
+
+  const weekStart = currentWeekStart()
+  const weekDates = dates.filter(d => d >= weekStart)
+  const weeklyTotal = weekDates.reduce((s, d) => s + byDay.get(d)!, 0)
+  const weeklyAvg = weekDates.length > 0 ? (weeklyTotal / weekDates.length) : 0
+
+  const monthStart = currentMonthStart()
+  const monthDates = dates.filter(d => d >= monthStart)
+  const monthlyTotal = monthDates.reduce((s, d) => s + byDay.get(d)!, 0)
+  const monthlyAvg = monthDates.length > 0 ? (monthlyTotal / monthDates.length) : 0
+
+  return {
+    streak,
+    personalBest,
+    personalBestDay,
+    weeklyTotal,
+    weeklyAvg: parseFloat(weeklyAvg.toFixed(1)),
+    monthlyTotal,
+    monthlyAvg: parseFloat(monthlyAvg.toFixed(1)),
+    count: rows.length,
+    daysCount: dates.length
+  }
+}
+
+export const NotebookManager = (notebookDir: string): ActorDef<NotebookManagerMsg, null> => ({
+  initialState: null,
+  lifecycle: onLifecycle({
+    start: (state, ctx) => {
+      ctx.subscribe(HttpWsFrameTopic, e => ({ type: '_wsFrame' as const, event: e }))
+      ctx.subscribe(NotebookChangeTopic, e => ({ type: '_dataChanged' as const, event: e }))
+      return { state }
+    }
+  }),
+  handler: onMessage({
+    _wsFrame: (state, msg, ctx) => {
+      const { userId, frame } = msg.event
+      if (!frame.type.startsWith('notebook.')) return { state }
+
+      const sendFrame = (reply: object) => {
+        ctx.publish(OutboundUserMessageTopic, { userId, text: JSON.stringify(reply) })
+      }
+
+      const handle = async () => {
+        switch (frame.type) {
+          case 'notebook.todos.request': {
+            const data = await readTodos(notebookDir)
+            const sorted = [...data.todos].sort((a, b) => {
+              if (a.done !== b.done) return a.done ? 1 : -1
+              return b.createdAt - a.createdAt
+            })
+            sendFrame({ type: 'notebookTodosList', todos: sorted.slice(0, 10) })
+            break
+          }
+          case 'notebook.todos.complete': {
+            const { id } = frame
+            await completeTodo(notebookDir, id)
+            ctx.publish(NotebookChangeTopic, { type: 'todosUpdated', userId })
+            break
+          }
+          case 'notebook.journal.months.request': {
+            const { year, month } = frame
+            const journalMonthDir = `${notebookDir}/journal/${year}/${month}`
+            const days: string[] = []
+            try {
+              const files = await readdir(journalMonthDir)
+              for (const f of files) {
+                if (f.endsWith('.md')) days.push(f.slice(0, -3))
+              }
+            } catch {}
+            sendFrame({ type: 'notebookJournalMonths', year, month, days })
+            break
+          }
+          case 'notebook.journal.entry.request': {
+            const content = await readEntry(notebookDir, frame.date)
+            sendFrame({ type: 'notebookJournalEntry', date: frame.date, content })
+            break
+          }
+          case 'notebook.tracker.habits.request': {
+            const path = `${notebookDir}/tracker/habits.json`
+            const file = Bun.file(path)
+            const habitsData = (await file.exists()) ? JSON.parse(await file.text()) : { habits: [] }
+            sendFrame({ type: 'notebookTrackerHabits', habits: habitsData.habits })
+            break
+          }
+          case 'notebook.tracker.entries.request': {
+            const all = await parseCsv(notebookDir)
+            const rows = all.filter(r => r.habit === frame.habit)
+            sendFrame({ type: 'notebookTrackerEntries', habit: frame.habit, entries: rows })
+            break
+          }
+          case 'notebook.tracker.stats.request': {
+            const all = await parseCsv(notebookDir)
+            const rows = all.filter(r => r.habit === frame.habit)
+            const stats = calculateStats(rows)
+            sendFrame({ type: 'notebookTrackerStats', habit: frame.habit, stats })
+            break
+          }
+        }
+      }
+
+      handle().catch(err => sendFrame({ type: 'notebookError', message: String(err) }))
+      return { state }
+    },
+
+    _dataChanged: (state, msg, ctx) => {
+      const { event } = msg
+      const { userId } = event
+      const sendFrame = (reply: object) => {
+        ctx.publish(OutboundUserMessageTopic, { userId, text: JSON.stringify(reply) })
+      }
+
+      const reload = async () => {
+        if (event.type === 'todosUpdated') {
+          const data = await readTodos(notebookDir)
+          const sorted = [...data.todos].sort((a, b) => {
+            if (a.done !== b.done) return a.done ? 1 : -1
+            return b.createdAt - a.createdAt
+          })
+          sendFrame({ type: 'notebookTodosList', todos: sorted.slice(0, 10) })
+        } else if (event.type === 'journalUpdated') {
+          const content = await readEntry(notebookDir, event.date)
+          sendFrame({ type: 'notebookJournalEntry', date: event.date, content })
+
+          const [year, month] = event.date.split('-')
+          const journalMonthDir = `${notebookDir}/journal/${year}/${month}`
+          const days: string[] = []
+          try {
+            const files = await readdir(journalMonthDir)
+            for (const f of files) {
+              if (f.endsWith('.md')) days.push(f.slice(0, -3))
+            }
+          } catch {}
+          sendFrame({ type: 'notebookJournalMonths', year, month, days })
+        } else if (event.type === 'trackerUpdated') {
+          const path = `${notebookDir}/tracker/habits.json`
+          const file = Bun.file(path)
+          const habitsData = (await file.exists()) ? JSON.parse(await file.text()) : { habits: [] }
+          sendFrame({ type: 'notebookTrackerHabits', habits: habitsData.habits })
+
+          const all = await parseCsv(notebookDir)
+          const rows = all.filter(r => r.habit === event.habit)
+          sendFrame({ type: 'notebookTrackerEntries', habit: event.habit, entries: rows })
+
+          const stats = calculateStats(rows)
+          sendFrame({ type: 'notebookTrackerStats', habit: event.habit, stats })
+        }
+      }
+
+      reload().catch(err => sendFrame({ type: 'notebookError', message: String(err) }))
+      return { state }
+    }
+  })
+})

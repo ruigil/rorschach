@@ -22,8 +22,7 @@ export type ServerOptions = {
   onConnect: (client: WsData) => void
   onDisconnect: (clientId: string) => void
   onMessage: (clientId: string, userId: string, text: string, attachments?: MessageAttachment[]) => void
-  onSwitchMode: (clientId: string, mode: string) => void
-  onListAgents: (clientId: string) => void
+  onWsFrame?: (clientId: string, userId: string, roles: string[], frame: any) => void
   onConfigUpdate: (pluginId: string, patch: Record<string, unknown>) => void
 };
 
@@ -41,8 +40,7 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
     onConnect,
     onDisconnect,
     onMessage,
-    onSwitchMode,
-    onListAgents,
+    onWsFrame,
     onConfigUpdate,
   } = options
 
@@ -156,12 +154,8 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         let attachments: MessageAttachment[] | undefined
         try {
           const parsed = JSON.parse(raw)
-          if (parsed.type === 'switchMode' && typeof parsed.mode === 'string') {
-            onSwitchMode(ws.data.clientId, parsed.mode)
-            return
-          }
-          if (parsed.type === 'listAgents') {
-            onListAgents(ws.data.clientId)
+          if (typeof parsed.type === 'string') {
+            onWsFrame?.(ws.data.clientId, ws.data.userId, ws.data.roles, parsed)
             return
           }
           if (typeof parsed.text === 'string') {

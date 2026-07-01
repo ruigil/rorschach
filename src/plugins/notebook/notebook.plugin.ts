@@ -14,6 +14,15 @@ const notebookSurfaceRegistration: UiSurfaceRegistration = {
     modes: ['coach'],
   },
   moduleUrl: '/plugins/notebook/ui/index.js',
+  frameTypes: [
+    'notebookTodosList',
+    'notebookJournalMonths',
+    'notebookJournalEntry',
+    'notebookTrackerHabits',
+    'notebookTrackerEntries',
+    'notebookTrackerStats',
+    'notebookError'
+  ],
 }
 
 import { Journal, journalWriteTool, journalReadTool, journalSearchTool } from './tools/journal.ts'
@@ -21,7 +30,32 @@ import { Tracker, trackerLogTool, trackerStatsTool, trackerDefineHabitTool, trac
 import { Todos, todosCreateTool, todosCompleteTool, todosListTool, todosDeleteTool, todosUpdateTool } from './tools/todos.ts'
 import { Search, notebookSearchTool } from './tools/search.ts'
 import { CoachAgentFactory } from './coach-agent.ts'
-import { buildNotebookRoutes, notebookSchemas } from './routes.ts'
+import { NotebookManager } from './notebook-manager.ts'
+import type { ConfigSchemaSection } from '../../types/config.ts'
+
+export const notebookSchema: ConfigSchemaSection = {
+  id: 'notebook.config',
+  title: 'Notebook',
+  subtitle: 'notebook · journal, todos, and tracker',
+  tab: 'notebook',
+  configKey: '',
+  routeId: 'config.notebook',
+  schema: {
+    type: 'object',
+    properties: {
+      notebookDir: { type: 'string', default: 'workspace/notebook', 'x-ui': { label: 'Notebook directory' } },
+      agent: {
+        type: 'object',
+        properties: {
+          model: { type: 'string', 'x-ui': { widget: 'model-select', label: 'Agent model' } },
+          maxToolLoops: { type: 'number', default: 10, minimum: 1, maximum: 50 },
+        },
+      },
+    },
+  },
+}
+
+const notebookSchemas = [notebookSchema]
 
 const config = defineConfig<NotebookConfig>('notebook', {
   notebookDir:  'workspace/notebook',
@@ -63,6 +97,12 @@ export default createPluginFactory<NotebookConfig>({
   configDescriptor: config,
   uiSurface: notebookSurfaceRegistration,
   slots: {
+    manager: {
+      factory: (cfg) => {
+        const notebookDir = cfg.notebookDir ?? 'workspace/notebook'
+        return NotebookManager(notebookDir)
+      },
+    },
     journal: {
       factory: (cfg) => {
         const notebookDir = cfg.notebookDir ?? 'workspace/notebook'
@@ -103,11 +143,7 @@ export default createPluginFactory<NotebookConfig>({
         ),
         toolFilter: cfg.agent?.toolFilter,
       }),
-      dependsOn: ['journal', 'tracker', 'todos', 'search'],
+      dependsOn: ['journal', 'tracker', 'todos', 'search', 'manager'],
     },
-  },
-  routes: (cfg) => {
-    const notebookDir = cfg.notebookDir ?? 'workspace/notebook'
-    return buildNotebookRoutes(notebookDir)
   },
 })

@@ -2,7 +2,7 @@ import { createTopic, type ActorRef } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolCollection, ToolReply, ToolMsg, ToolFilter, ToolSchema, Tool, JobLifecycleEvent } from '../../types/tools.ts'
 import type { LlmProviderMsg, ApiMessage } from '../../types/llm.ts'
 import type { LoopMsg, LoopState } from '../../system/index.ts'
-import type { MessageAttachment } from '../../types/events.ts'
+import type { MessageAttachment, HttpWsFrameEvent } from '../../types/events.ts'
 import type { ContextView } from '../../system/index.ts'
 import type { ContextSnapshotEvent, AgentModelOptions } from '../../types/agents.ts'
 
@@ -211,6 +211,7 @@ export type WorkflowRunnerMsg =
   | { type: '_toolUnregistered'; name: string }
   | { type: '_runUpdated'; event: WorkflowEvent }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_wsFrame'; event: HttpWsFrameEvent }
   | { type: '_done' }
 
 export type WorkflowRunExecutorReply =

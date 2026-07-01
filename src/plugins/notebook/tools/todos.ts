@@ -5,6 +5,7 @@ import { onMessage } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { Todo } from '../types.ts'
+import { NotebookChangeTopic } from '../../../types/events.ts'
 
 // ─── Tool names & schemas ───
 
@@ -60,7 +61,7 @@ export const todosUpdateTool = defineTool('todos_update', "Update a todo item's 
 
 type TodosMsg =
   | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string; span: SpanHandle | null }
+  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string; span: SpanHandle | null; userId: string }
   | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string; span: SpanHandle | null }
 
 // ─── File helpers ───
@@ -99,72 +100,73 @@ const createTodo = async (
     id: crypto.randomUUID(),
     text,
     done: false,
+    dueDate,
+    recurrence,
     createdAt: Date.now(),
-    ...(dueDate    ? { dueDate }    : {}),
-    ...(recurrence ? { recurrence } : {}),
   }
   data.todos.push(todo)
   await writeTodos(notebookDir, data)
   return `Todo created: ${formatTodo(todo)}`
 }
 
-const completeTodo = async (notebookDir: string, id: string): Promise<string> => {
+export const completeTodo = async (notebookDir: string, id: string): Promise<string> => {
   const data = await readTodos(notebookDir)
-  const idx  = data.todos.findIndex(t => t.id === id || t.id.startsWith(id))
-  if (idx === -1) return `Todo not found: ${id}`
+  const todo = data.todos.find(t => t.id === id || t.id.startsWith(id))
+  if (!todo) throw new Error(`Todo not found: ${id}`)
+  if (todo.done) return `Todo already complete: ${formatTodo(todo)}`
 
-  const todo = data.todos[idx]!
-  data.todos[idx] = { ...todo, done: true, doneAt: Date.now() }
+  todo.done = true
+  todo.doneAt = Date.now()
 
-  // If recurring, create next instance
-  let nextInfo = ''
+  let recurMsg = ''
   if (todo.recurrence) {
     try {
-      const next    = CronExpressionParser.parse(todo.recurrence).next().toDate()
-      const nextDue = next.toISOString().slice(0, 10)
-      const newTodo: Todo = {
+      const interval = CronExpressionParser.parse(todo.recurrence)
+      const nextDate = interval.next().toDate()
+      const nextIso  = nextDate.toISOString().slice(0, 10)
+      const recur: Todo = {
         id: crypto.randomUUID(),
         text: todo.text,
         done: false,
-        createdAt: Date.now(),
-        dueDate: nextDue,
+        dueDate: nextIso,
         recurrence: todo.recurrence,
+        createdAt: Date.now(),
       }
-      data.todos.push(newTodo)
-      nextInfo = ` Next occurrence: ${nextDue} (id: ${newTodo.id.slice(0, 8)}).`
-    } catch {
-      nextInfo = ' (Could not compute next recurrence.)'
+      data.todos.push(recur)
+      recurMsg = `\nRecurring task rescheduled for ${nextIso}: ${formatTodo(recur)}`
+    } catch (e: any) {
+      recurMsg = `\nFailed to reschedule recurring task: ${e.message}`
     }
   }
 
   await writeTodos(notebookDir, data)
-  return `Todo marked done: "${todo.text}".${nextInfo}`
+  return `Todo completed: ${formatTodo(todo)}${recurMsg}`
 }
 
 const listTodos = async (notebookDir: string, filter: string): Promise<string> => {
-  const data  = await readTodos(notebookDir)
+  const data = await readTodos(notebookDir)
+  let list = data.todos
   const today = todayISO()
-  let todos   = data.todos
 
   if (filter === 'pending') {
-    todos = todos.filter(t => !t.done)
+    list = list.filter(t => !t.done)
   } else if (filter === 'done') {
-    todos = todos.filter(t => t.done)
+    list = list.filter(t => t.done)
   } else if (filter === 'due_today') {
-    todos = todos.filter(t => !t.done && t.dueDate === today)
+    list = list.filter(t => !t.done && t.dueDate === today)
   }
 
-  if (todos.length === 0) return `No todos found (filter: ${filter}).`
-  return todos.map(formatTodo).join('\n')
+  if (list.length === 0) return 'No todos found.'
+  return list.map(formatTodo).join('\n')
 }
 
 const deleteTodo = async (notebookDir: string, id: string): Promise<string> => {
-  const data  = await readTodos(notebookDir)
-  const before = data.todos.length
-  data.todos   = data.todos.filter(t => t.id !== id && !t.id.startsWith(id))
-  if (data.todos.length === before) return `Todo not found: ${id}`
+  const data = await readTodos(notebookDir)
+  const idx  = data.todos.findIndex(t => t.id === id || t.id.startsWith(id))
+  if (idx === -1) throw new Error(`Todo not found: ${id}`)
+  const [removed] = data.todos.splice(idx, 1)
   await writeTodos(notebookDir, data)
-  return `Todo deleted: ${id}`
+  return `Todo deleted: ${formatTodo(removed!)}`
 }
 
 const updateTodo = async (
@@ -175,18 +177,21 @@ const updateTodo = async (
   recurrence?: string,
 ): Promise<string> => {
   const data = await readTodos(notebookDir)
-  const idx  = data.todos.findIndex(t => t.id === id || t.id.startsWith(id))
-  if (idx === -1) return `Todo not found: ${id}`
+  const todo = data.todos.find(t => t.id === id || t.id.startsWith(id))
+  if (!todo) throw new Error(`Todo not found: ${id}`)
 
-  const todo = data.todos[idx]!
-  data.todos[idx] = {
-    ...todo,
-    ...(text       !== undefined ? { text }       : {}),
-    ...(dueDate    !== undefined ? { dueDate }    : {}),
-    ...(recurrence !== undefined ? { recurrence: recurrence || undefined } : {}),
+  if (text !== undefined) todo.text = text
+  if (dueDate !== undefined) todo.dueDate = dueDate || undefined
+  if (recurrence !== undefined) {
+    if (recurrence === '') {
+      todo.recurrence = undefined
+    } else {
+      todo.recurrence = recurrence
+    }
   }
+
   await writeTodos(notebookDir, data)
-  return `Todo updated: ${formatTodo(data.todos[idx]!)}`
+  return `Todo updated: ${formatTodo(todo)}`
 }
 
 // ─── Actor ───
@@ -197,8 +202,6 @@ export const Todos = (notebookDir: string): ActorDef<TodosMsg, null> => ({
     invoke: (state, msg, ctx) => {
       let promise: Promise<string>
       try {
-        const args = JSON.parse(msg.arguments) as Record<string, unknown>
-
         if (msg.toolName === todosCreateTool.name) {
           const args = JSON.parse(msg.arguments) as { text: string; dueDate?: string; recurrence?: string }
           promise = createTodo(notebookDir, args.text, args.dueDate, args.recurrence)
@@ -226,15 +229,23 @@ export const Todos = (notebookDir: string): ActorDef<TodosMsg, null> => ({
         : null
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span, userId: msg.userId }),
         (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error), span }),
       )
       return { state }
     },
 
-    _done: (state, msg) => {
+    _done: (state, msg, ctx) => {
       msg.span?.done()
       msg.replyTo.send({ type: 'toolResult', result: { text: msg.result } })
+      const isWrite =
+        msg.toolName === todosCreateTool.name ||
+        msg.toolName === todosCompleteTool.name ||
+        msg.toolName === todosDeleteTool.name ||
+        msg.toolName === todosUpdateTool.name
+      if (isWrite) {
+        ctx.publish(NotebookChangeTopic, { type: 'todosUpdated', userId: msg.userId })
+      }
       return { state }
     },
 

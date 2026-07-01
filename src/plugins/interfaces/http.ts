@@ -5,6 +5,7 @@ import {
   InboundMessageTopic,
   UserPresenceTopic,
   OutboundUserMessageTopic, OutboundAdminBroadcastTopic,
+  HttpWsFrameTopic,
   type MessageAttachment,
 } from '../../types/events.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
@@ -42,8 +43,7 @@ const MEDIA_DIR = join(import.meta.dir, '../../..', 'workspace/media')
 export type HttpMessage =
   | { type: 'connected'; clientId: string; userId: string; roles: string[] }
   | { type: 'message'; clientId: string; userId: string; text: string; attachments?: MessageAttachment[] }
-  | { type: 'switchMode'; clientId: string; mode: string }
-  | { type: 'listAgents'; clientId: string }
+  | { type: '_wsFrame'; clientId: string; userId: string; roles: string[]; frame: any }
   | { type: '_mediaSaved'; clientId: string; userId: string; text: string; attachments: MessageAttachment[] }
   | { type: 'closed'; clientId: string }
   | { type: 'adminBroadcast'; text: string }
@@ -171,22 +171,18 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         return { state: { ...state, toolsSnapshot } }
       },
 
-      switchMode: (state, message, context) => {
-        context.log.info(`switchMode: clientId=${message.clientId} mode=${message.mode}`)
-        const userId = findUserIdByClientId(state.userIdsToClientIds, message.clientId)
-        if (!userId) {
-          context.log.warn(`switchMode: could not resolve userId for clientId=${message.clientId}`)
-          return { state }
-        }
+      _wsFrame: (state, message, context) => {
         return {
           state,
-          events: [emit(SwitchAgentTopic, { userId, mode: message.mode, source: 'user' })],
+          events: [
+            emit(HttpWsFrameTopic, {
+              clientId: message.clientId,
+              userId: message.userId,
+              roles: message.roles,
+              frame: message.frame,
+            })
+          ],
         }
-      },
-
-      listAgents: (state, message) => {
-        state.server?.publish(`client:${message.clientId}`, JSON.stringify({ type: 'agents', agents: state.agentCatalog }))
-        return { state }
       },
 
       _agentCatalog: (state, message) => {
@@ -441,11 +437,8 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           onMessage: (clientId, userId, text, attachments) => {
             selfRef?.send({ type: 'message', clientId, userId, text, attachments })
           },
-          onSwitchMode: (clientId, mode) => {
-            selfRef?.send({ type: 'switchMode', clientId, mode })
-          },
-          onListAgents: (clientId) => {
-            selfRef?.send({ type: 'listAgents', clientId })
+          onWsFrame: (clientId, userId, roles, frame) => {
+            selfRef?.send({ type: '_wsFrame', clientId, userId, roles, frame })
           },
           onConfigUpdate: (pluginId, patch) => {
             selfRef?.send({ type: '_configUpdate', pluginId, patch })

@@ -2,16 +2,16 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentSystem, ask, type ActorDef } from '../system/index.ts'
+import { AgentSystem, type ActorDef, type ActorRef } from '../system/index.ts'
 import { listWorkflows, getWorkflow, getWorkflowGraph, saveWorkflow } from '../plugins/workflows/workflow-store.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
 import { handleWorkflowTool, listExecutionToolsTool, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool, startWorkflowRunTool } from '../plugins/workflows/workflow-tools.ts'
 import { WorkflowEventTopic } from '../plugins/workflows/types.ts'
 import type { Workflow, WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowRunState } from '../plugins/workflows/types.ts'
-import type { ActorRef } from '../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
-import { OutboundUserMessageTopic } from '../types/events.ts'
 import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
+import { OutboundUserMessageTopic, HttpWsFrameTopic } from '../types/events.ts'
+import { WorkflowRunner } from '../plugins/workflows/workflow-runner.ts'
+import type { ToolReply } from '../types/tools.ts'
 
 const tempDirs: string[] = []
 
@@ -20,7 +20,7 @@ afterEach(async () => {
 })
 
 const makeDir = async (): Promise<string> => {
-  const dir = join(tmpdir(), `rorschach-workflows-${crypto.randomUUID()}`)
+  const dir = join(tmpdir(), `rorschach-workflows-store-${crypto.randomUUID()}`)
   tempDirs.push(dir)
   await mkdir(dir, { recursive: true })
   return dir
@@ -33,25 +33,21 @@ const sampleWorkflow = (userId = 'u1'): Workflow => ({
   context: 'User accepted a workflow for execution UI.',
   createdAt: '2026-05-16T10:00:00.000Z',
   executionTools: ['read'],
-  inputs: {
-    topic: { type: 'string', required: true, description: 'Workflow topic' },
-  },
-  outputs: {
-    summary: { type: 'string', required: true, description: 'Final summary' },
-  },
+  inputs: { topic: { type: 'string', required: true, description: 'Workflow topic' } },
+  outputs: { summary: { type: 'string', required: true, description: 'Final summary' } },
   tasks: [
     {
       id: 'design',
-      name: 'Design UI',
-      description: 'Define the split chat workspace.',
-      validationCriteria: 'Workflow describes chat and graph together.',
+      name: 'Design task',
+      description: 'Design it.',
+      validationCriteria: 'Done.',
       dependencies: [],
     },
     {
       id: 'build',
-      name: 'Build UI',
-      description: 'Implement the workspace rail.',
-      validationCriteria: 'The graph opens beside chat.',
+      name: 'Build task',
+      description: 'Build it.',
+      validationCriteria: 'Done.',
       dependencies: ['design'],
     },
   ],
@@ -66,36 +62,20 @@ const sampleRun = (): WorkflowRunState => ({
   inputs: { topic: 'workspace' },
   outputs: {},
   activeTaskIds: ['build'],
-  activeTasks: {
-    build: { actorName: 'workflow-task-run-1-build-1', startedAt: '2026-05-16T10:01:00.000Z' },
-  },
-  pendingJobs: {
-    'job-1': { taskId: 'build', toolName: 'read', startedAt: '2026-05-16T10:01:05.000Z' },
-  },
   taskStates: {
-    design: {
-      status: 'completed',
-      attempts: 1,
-      startedAt: '2026-05-16T10:00:00.000Z',
-      completedAt: '2026-05-16T10:00:30.000Z',
-      summary: 'Designed the UI.',
-      outputs: { summary: 'Design done.' },
-    },
-    build: {
-      status: 'running',
-      attempts: 1,
-      startedAt: '2026-05-16T10:01:00.000Z',
-    },
+    design: { status: 'completed', attempts: 1, startedAt: '2026-05-16T10:00:01.000Z', completedAt: '2026-05-16T10:00:02.000Z', summary: 'Designed.' },
+    build: { status: 'running', attempts: 1, startedAt: '2026-05-16T10:00:03.000Z' },
   },
-  events: [
-    { timestamp: '2026-05-16T10:00:00.000Z', type: 'runStarted', message: 'Run started.' },
-    { timestamp: '2026-05-16T10:01:00.000Z', type: 'taskStarted', taskId: 'build', message: 'Task build started.' },
-  ],
-  workflow: sampleWorkflow('u1'),
+  activeTasks: {},
+  pendingJobs: {
+    'job-1': { taskId: 'build', toolName: 'read', startedAt: '2026-05-16T10:00:04.000Z' },
+  },
+  events: [{ timestamp: '2026-05-16T10:00:00.000Z', type: 'runStarted', message: 'Run started.' }],
+  workflow: sampleWorkflow(),
 })
 
-const FakeRunner = (): ActorDef<WorkflowRunnerMsg, null> => ({
-  initialState: null,
+const FakeRunner = (): ActorDef<WorkflowRunnerMsg, { executionTools: Record<string, any> }> => ({
+  initialState: () => ({ executionTools: { read: { name: 'read', schema: { function: { description: 'Read a file.' } } } } }),
   handler: (state, msg) => {
     if ('replyTo' in msg) {
       const reply: WorkflowRunnerReply = msg.type === 'listExecutionTools'
@@ -142,33 +122,68 @@ describe('workflow store', () => {
       expect(result.data.graph.run?.events[0]).toEqual({ timestamp: '2026-05-16T10:00:00.000Z', type: 'runStarted', message: 'Run started.' })
       expect(result.data.graph.nodes[0]).toMatchObject({
         status: 'completed',
-        startedAt: '2026-05-16T10:00:00.000Z',
-        completedAt: '2026-05-16T10:00:30.000Z',
-        outputs: { summary: 'Design done.' },
+        attempts: 1,
+        startedAt: '2026-05-16T10:00:01.000Z',
+        completedAt: '2026-05-16T10:00:02.000Z',
+        summary: 'Designed.',
       })
     }
   })
 
   test('routes return summaries and graph JSON', async () => {
     const dir = await makeDir()
-    await writeFile(join(dir, 'workflow.json'), JSON.stringify(sampleWorkflow('anonymous')))
+    await writeFile(join(dir, 'workflow.json'), JSON.stringify(sampleWorkflow('u1')))
 
     const system = await AgentSystem()
-    const runner = system.spawn('workflow-runner', FakeRunner())
-    const routes = buildWorkflowsRoutes(dir, runner)
+    const events: Array<{ userId: string; text: string }> = []
+    system.subscribe(OutboundUserMessageTopic, event => {
+      const e = event as { userId: string; text: string }
+      events.push(e)
+    })
 
-    const listRoute = routes.find(route => route.id === 'workflows.list')
-    expect(listRoute?.handler).not.toBeNull()
-    if (!listRoute || listRoute.handler === null) throw new Error('missing list route')
-    const listRes = await listRoute.handler(new Request('http://localhost/workflows'), new URL('http://localhost/workflows'), ANONYMOUS_IDENTITY)
-    expect(await listRes.json()).toMatchObject([{ id: 'workflow-1', taskCount: 2 }])
+    const runner = system.spawn('workflow-runner', WorkflowRunner({
+      workflowsDir: dir,
+      workflowRunsDir: join(dir, 'runs'),
+      llmRef: null,
+      model: 'deepseek/deepseek-v4-flash',
+      maxToolLoops: 10,
+    }))
 
-    const itemRoute = routes.find(route => route.id === 'workflows.item')
-    expect(itemRoute?.handler).not.toBeNull()
-    if (!itemRoute || itemRoute.handler === null) throw new Error('missing item route')
-    const graphRes = await itemRoute.handler(new Request('http://localhost/workflows/workflow-1/graph'), new URL('http://localhost/workflows/workflow-1/graph'), ANONYMOUS_IDENTITY)
-    const graph = await graphRes.json()
-    expect(graph.edges).toEqual([{ source: 'design', target: 'build', type: 'depends_on' }])
+    const waitEvents = async (count: number, timeout = 1000) => {
+      const start = Date.now()
+      while (events.length < count && Date.now() - start < timeout) {
+        await new Promise(r => setTimeout(r, 10))
+      }
+    }
+
+    // 1. Request workflow list
+    system.publish(HttpWsFrameTopic, {
+      clientId: 'c1',
+      userId: 'u1',
+      roles: [],
+      frame: { type: 'workflow.list.request' }
+    })
+    await waitEvents(1)
+    expect(events).toHaveLength(1)
+    const listRes = JSON.parse(events[0]!.text)
+    expect(listRes).toMatchObject({
+      type: 'workflowsList',
+      workflows: [{ id: 'workflow-1', taskCount: 2 }]
+    })
+
+    // 2. Request workflow graph
+    events.length = 0 // clear
+    system.publish(HttpWsFrameTopic, {
+      clientId: 'c1',
+      userId: 'u1',
+      roles: [],
+      frame: { type: 'workflow.graph.request', workflowId: 'workflow-1' }
+    })
+    await waitEvents(1)
+    expect(events).toHaveLength(1)
+    const graphRes = JSON.parse(events[0]!.text)
+    expect(graphRes.type).toBe('workflowGraph')
+    expect(graphRes.edges).toEqual([{ source: 'design', target: 'build', type: 'depends_on' }])
 
     await system.shutdown()
   })

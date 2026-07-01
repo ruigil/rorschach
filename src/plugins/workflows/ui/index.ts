@@ -21,6 +21,9 @@ export type WorkflowsState = {
   workspaceWorkflowId: string | null
   workspaceRunId: string | null
   workspaceSelectedTaskId: string | null
+  workflows: any[]
+  runs: any[]
+  errorMessage: string | null
 };
 
 store.namespace<WorkflowsState>('workflows').init(
@@ -31,6 +34,9 @@ store.namespace<WorkflowsState>('workflows').init(
     workspaceWorkflowId: null,
     workspaceRunId: null,
     workspaceSelectedTaskId: null,
+    workflows: [],
+    runs: [],
+    errorMessage: null,
   },
   {
     persist: [
@@ -46,18 +52,30 @@ store.namespace<WorkflowsState>('workflows').init(
 export const WORKFLOW_RUN_UPDATED_EVENT = 'workflow-run-updated'
 
 export const reduceFrame = (frame: any, host: PluginHostActions) => {
+  const ns = store.namespace<WorkflowsState>('workflows')
   if (frame.type === 'workflowGraph') {
-    store.namespace<WorkflowsState>('workflows').set('currentGraph', frame)
+    ns.set('currentGraph', frame)
+    ns.set('errorMessage', null)
     host.openView('workflows')
+  } else if (frame.type === 'workflowsList') {
+    ns.set('workflows', frame.workflows)
+  } else if (frame.type === 'workflowRunsList') {
+    ns.set('runs', frame.runs)
+  } else if (frame.type === 'workflowError') {
+    ns.set('errorMessage', frame.message)
   } else if (frame.type === 'workflowRunUpdated') {
-    const current = store.namespace<WorkflowsState>('workflows').get('currentGraph')
-    if (current) {
+    const current = ns.get('currentGraph')
+    if (current && (current.run?.runId === frame.runId || current.runId === frame.runId)) {
       const merged = mergeWorkflowRunIntoGraph(current, frame.run)
-      store.namespace<WorkflowsState>('workflows').set('currentGraph', merged)
+      ns.set('currentGraph', merged)
     }
-    // Also dispatch the window event for the list view's run chip updates.
-    // The container's _applyWorkflowRunUpdate handler updates the list view's
-    // _runs array when a run update arrives while in list view.
+    const runs = ns.get('runs') ?? []
+    const existingIndex = runs.findIndex((r: any) => r.runId === (frame.runId || frame.run?.runId))
+    const nextRuns = existingIndex >= 0
+      ? runs.map((r: any, idx: number) => idx === existingIndex ? frame.run : r)
+      : [frame.run, ...runs]
+    ns.set('runs', nextRuns)
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(WORKFLOW_RUN_UPDATED_EVENT, { detail: frame }))
     }

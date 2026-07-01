@@ -1,16 +1,20 @@
 import { html, css } from 'lit'
 import { customElement, state } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
+import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
+import { send } from '../../../frontend/shell/connection-service.js'
 import '@rorschach/frontend/webkit/r-list.js'
-import '@rorschach/frontend/webkit/r-button.js'
 import '@rorschach/frontend/webkit/r-empty-state.js'
 import '@rorschach/frontend/webkit/r-section-header.js'
 
 @customElement('r-notebook-todos')
 export class RNotebookTodos extends RorschachBase {
-  @state() private _todos: any[] = []
+  private _storeTodos = new StoreController(this, ['notebook', 'todos'])
+  private _storeError = new StoreController(this, ['notebook', 'errorMessage'])
   @state() private _loading = true
-  @state() private _error: string | null = null
+
+  private get _todos() { return this._storeTodos.value ?? [] }
+  private get _error() { return this._storeError.value }
 
   static override styles = css`
     :host {
@@ -25,18 +29,15 @@ export class RNotebookTodos extends RorschachBase {
     this._fetchTodos()
   }
 
-  private async _fetchTodos() {
-    try {
-      this._loading = true
-      const res = await fetch('/notebook/todos')
-      if (!res.ok) throw new Error(await res.text())
-      this._todos = await res.json()
-      this._error = null
-    } catch (e: any) {
-      this._error = e.message || 'Failed to load todos'
-    } finally {
+  override updated() {
+    if (this._storeTodos.value !== undefined && this._loading) {
       this._loading = false
     }
+  }
+
+  private _fetchTodos() {
+    this._loading = true
+    send({ type: 'notebook.todos.request' })
   }
 
   override render() {
@@ -59,7 +60,7 @@ export class RNotebookTodos extends RorschachBase {
         chips.push({ id: `recur-${idx}`, label: `recurring: ${t.recurrence}`, status: 'running' })
       }
       return {
-        id: String(idx),
+        id: t.id,
         label: t.text,
         icon: t.done ? 'check' as const : 'circle' as const,
         chips: chips
@@ -68,17 +69,21 @@ export class RNotebookTodos extends RorschachBase {
 
     return html`
       <div class="nb-todos-container" style="padding: 1rem; flex: 1; display: flex; flex-direction: column; overflow: hidden;">
-        <r-section-header title="Latest 10 Todos">
-          <r-button 
-            slot="actions"
-            variant="ghost" 
-            size="sm" 
-            icon="activity" 
-            @click=${this._fetchTodos} 
-          >Refresh</r-button>
-        </r-section-header>
-        <r-list .items=${items} style="overflow-y: auto; flex: 1;"></r-list>
+        <r-section-header title="Latest 10 Todos"></r-section-header>
+        <r-list 
+          .items=${items} 
+          selectable 
+          @item-select=${this._onItemSelect} 
+          style="overflow-y: auto; flex: 1;"
+        ></r-list>
       </div>
     `
+  }
+
+  private _onItemSelect(e: CustomEvent) {
+    const todo = this._todos.find(t => t.id === e.detail.id)
+    if (todo && !todo.done) {
+      send({ type: 'notebook.todos.complete', id: todo.id })
+    }
   }
 }

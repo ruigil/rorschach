@@ -3,6 +3,7 @@ import { customElement, state } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
 import { store } from '@rorschach/frontend/webkit/store.js'
+import { send } from '../../../frontend/shell/connection-service.js'
 import type { NotebookState } from './index.js'
 import '@rorschach/frontend/webkit/r-calendar.js'
 import '@rorschach/frontend/webkit/r-card.js'
@@ -39,20 +40,41 @@ type HabitStats = {
 @customElement('r-notebook-tracker')
 export class RNotebookTracker extends RorschachBase {
   private _splitPercent = new StoreController(this, ['notebook', 'splitPercent'])
+  private _storeHabits = new StoreController(this, ['notebook', 'habits'])
+  private _storeEntries = new StoreController(this, ['notebook', 'trackerEntries'])
+  private _storeStats = new StoreController(this, ['notebook', 'trackerStats'])
+  private _storeError = new StoreController(this, ['notebook', 'errorMessage'])
 
-  @state() private _habits: HabitDef[] = []
   @state() private _selectedHabit: string | null = null
   @state() private _year = new Date().getFullYear()
   @state() private _month = new Date().getMonth()
-  @state() private _stats: HabitStats | null = null
-  @state() private _entries: TrackerEntry[] = []
-  @state() private _highlightedDays: string[] = []
-  @state() private _valueMap: Record<string, string | number> = {}
   @state() private _selectedDate: string | null = null
   @state() private _selectedDayEntries: TrackerEntry[] = []
   @state() private _loadingHabits = true
   @state() private _loadingData = false
-  @state() private _error: string | null = null
+
+  private get _habits() { return this._storeHabits.value ?? [] }
+  private get _entries() { return this._storeEntries.value ?? [] }
+  private get _stats() { return this._storeStats.value }
+  private get _error() { return this._storeError.value }
+
+  private get _highlightedDays() {
+    const highlights: string[] = []
+    for (const entry of this._entries) {
+      if (!highlights.includes(entry.date)) {
+        highlights.push(entry.date)
+      }
+    }
+    return highlights
+  }
+
+  private get _valueMap() {
+    const valMap: Record<string, string | number> = {}
+    for (const entry of this._entries) {
+      valMap[entry.date] = entry.value
+    }
+    return valMap
+  }
 
   static override styles = css`
     :host {
@@ -67,68 +89,32 @@ export class RNotebookTracker extends RorschachBase {
     this._fetchHabits()
   }
 
-  private async _fetchHabits() {
-    try {
-      this._loadingHabits = true
-      const res = await fetch('/notebook/tracker/habits')
-      if (!res.ok) throw new Error(await res.text())
-      this._habits = await res.json()
-      if (this._habits.length > 0) {
-        // Default select the first habit
-        this._selectedHabit = this._habits[0]!.name
-        this._fetchHabitData()
-      } else {
-        this._loadingHabits = false
-      }
-      this._error = null
-    } catch (e: any) {
-      this._error = e.message || 'Failed to load habits list'
+  override updated() {
+    if (this._storeHabits.value && this._storeHabits.value.length > 0 && !this._selectedHabit) {
+      this._selectedHabit = this._storeHabits.value[0].name
+      this._fetchHabitData()
+    }
+    if (this._storeHabits.value !== undefined && this._loadingHabits) {
       this._loadingHabits = false
     }
-  }
-
-  private async _fetchHabitData() {
-    if (!this._selectedHabit) return
-    try {
-      this._loadingData = true
-      const habitName = encodeURIComponent(this._selectedHabit)
-      
-      // Fetch stats & entries in parallel
-      const [statsRes, entriesRes] = await Promise.all([
-        fetch(`/notebook/tracker/stats?habit=${habitName}`),
-        fetch(`/notebook/tracker/entries?habit=${habitName}`)
-      ])
-
-      if (!statsRes.ok) throw new Error(await statsRes.text())
-      if (!entriesRes.ok) throw new Error(await entriesRes.text())
-
-      this._stats = await statsRes.json()
-      this._entries = await entriesRes.json()
-      
-      // Compute calendar highlights and values
-      const valMap: Record<string, string | number> = {}
-      const highlights: string[] = []
-      for (const entry of this._entries) {
-        valMap[entry.date] = entry.value
-        if (!highlights.includes(entry.date)) {
-          highlights.push(entry.date)
-        }
-      }
-      this._valueMap = valMap
-      this._highlightedDays = highlights
-
-      // Update active day selected entries if applicable
+    if (this._storeEntries.value !== undefined && this._storeStats.value !== undefined && this._loadingData) {
+      this._loadingData = false
       if (this._selectedDate) {
         this._updateSelectedDayEntries(this._selectedDate)
       }
-      
-      this._error = null
-    } catch (e: any) {
-      this._error = e.message || 'Failed to load habit telemetry'
-    } finally {
-      this._loadingData = false
-      this._loadingHabits = false
     }
+  }
+
+  private _fetchHabits() {
+    this._loadingHabits = true
+    send({ type: 'notebook.tracker.habits.request' })
+  }
+
+  private _fetchHabitData() {
+    if (!this._selectedHabit) return
+    this._loadingData = true
+    send({ type: 'notebook.tracker.stats.request', habit: this._selectedHabit })
+    send({ type: 'notebook.tracker.entries.request', habit: this._selectedHabit })
   }
 
   private _onHabitChanged(e: Event) {

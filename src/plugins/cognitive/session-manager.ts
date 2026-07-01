@@ -5,8 +5,10 @@ import {
   InboundMessageTopic,
   CronTriggerTopic,
   OutboundUserMessageTopic,
+  HttpWsFrameTopic,
   type MessageAttachment,
   type UserPresenceEvent,
+  type HttpWsFrameEvent,
 } from '../../types/events.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import { ContextStore, type ContextStoreMsg} from './context-store.ts'
@@ -30,6 +32,7 @@ type SessionManagerMsg =
   | { type: '_switchAgent';      userId: string; mode: string; source: 'user' | 'llm' | 'programmatic'; reason?: string }
   | { type: '_jobRegistry';      event: JobLifecycleEvent }
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_wsFrame';          event: HttpWsFrameEvent }
 
 // ─── State ─────────────────────────────────────────────────────────────────
 //
@@ -193,6 +196,7 @@ export const SessionManager = (
         ctx.subscribe(SwitchAgentTopic,      e => ({ type: '_switchAgent'  as const, userId: e.userId, mode: e.mode, source: e.source, reason: e.reason }))
         ctx.subscribe(JobRegistryTopic,      e => ({ type: '_jobRegistry'  as const, event: e }))
         ctx.subscribe(LlmProviderTopic,      event => ({ type: '_llmProvider' as const, ref: event.ref }))
+        ctx.subscribe(HttpWsFrameTopic,      e => ({ type: '_wsFrame'      as const, event: e }))
         return { state: { ...state, llmRef: state.llmRef ?? llmRef } }
       },
 
@@ -490,6 +494,28 @@ export const SessionManager = (
         ctx.log.info('session-manager: agent switched', { userId, mode, reason })
 
         return { state: next }
+      },
+      
+      _wsFrame: (state, msg, ctx) => {
+        const { userId, frame } = msg.event
+        if (!frame.type.startsWith('cognitive.')) return { state }
+
+        if (frame.type === 'cognitive.switchMode') {
+          ctx.publish(SwitchAgentTopic, { userId, mode: frame.mode, source: 'user' })
+        }
+
+        if (frame.type === 'cognitive.listAgents') {
+          const agents = Object.values(state.descriptors).map(d => ({
+            mode: d.mode,
+            displayName: d.displayName,
+            shortDesc: d.shortDesc,
+          }))
+          ctx.publish(OutboundUserMessageTopic, {
+            userId,
+            text: JSON.stringify({ type: 'agents', agents }),
+          })
+        }
+        return { state }
       },
     }),
 

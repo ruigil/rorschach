@@ -61,6 +61,14 @@ export class RShell extends RorschachBase {
       this._switchModeForTab(tab);
     });
 
+    // Sync mode when a view registration is dynamically loaded (handles boot hydration)
+    store.namespace<ShellState>('shell').subscribe('views', (views) => {
+      const tab = store.namespace<ShellState>('shell').get('activeWorkspaceTab');
+      if (tab && views[tab]) {
+        this._switchModeForTab(tab);
+      }
+    });
+
     // 4. Listen for dynamic plugin shell actions (custom event bubbles)
     this.addEventListener('shell-action', (e: Event) => {
       const { action, id } = (e as CustomEvent).detail;
@@ -234,7 +242,13 @@ export class RShell extends RorschachBase {
                     return html`
                       <button
                         class="workspace-tab ${this._activeWorkspaceTab.value === id ? 'active' : ''}"
-                        @click=${() => setActiveWorkspaceTab(id)}
+                        @click=${() => {
+                          if (this._activeWorkspaceTab.value === id) {
+                            this._switchModeForTab(id);
+                          } else {
+                            setActiveWorkspaceTab(id);
+                          }
+                        }}
                       >
                         ${this.renderIcon((cfg?.icon ?? 'file') as any)}
                         <span>${cfg?.title ?? id}</span>

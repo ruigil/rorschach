@@ -1,6 +1,7 @@
 import { store } from '@rorschach/frontend/webkit/store.js'
 import type { ShellState, Message, LogEvent, Attachment } from './types/state.js'
-import { send } from './shell/connection-service.js'
+import { isConnected, send } from './shell/connection-service.js'
+import { setMode } from './shell/view-actions.js'
 
 const shell = () => store.namespace<ShellState>('shell')
 
@@ -62,7 +63,12 @@ export const switchMode = (mode: string) => {
   if (!mode || mode === shell().get('currentMode')) {
     return false
   }
-  send({ type: 'switchMode', mode })
+  if (!isConnected()) {
+    return false
+  }
+  const agent = shell().get('agents').find(agent => agent.mode === mode)
+  setMode(mode, agent?.displayName)
+  send({ type: 'cognitive.switchMode', mode })
   return true
 }
 

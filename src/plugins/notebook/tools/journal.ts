@@ -3,14 +3,15 @@ import type { ActorDef, ActorRef, SpanHandle } from '../../../system/index.ts'
 import { onMessage } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
+import { NotebookChangeTopic } from '../../../types/events.ts'
 
 // ─── Tool names & schemas ───
 
-export const journalWriteTool = defineTool('journal_write', 'Append a new entry to the daily journal. Creates the file if it does not exist.', {
+export const journalWriteTool = defineTool('journal_write', 'Add an entry to the daily journal.', {
   type: 'object',
   properties: {
     entry: { type: 'string', description: 'The journal entry text (markdown supported).' },
-    date:  { type: 'string', description: 'Date to write to in YYYY-MM-DD format. Defaults to today.' },
+    date:  { type: 'string', description: 'Date in YYYY-MM-DD format (optional).' },
   },
   required: ['entry'],
 })
@@ -35,7 +36,7 @@ export const journalSearchTool = defineTool('journal_search', 'Search across all
 
 type JournalMsg =
   | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string; span: SpanHandle | null }
+  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string; span: SpanHandle | null; userId: string; date?: string }
   | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string; span: SpanHandle | null }
 
 // ─── Helpers ───
@@ -93,11 +94,12 @@ export const Journal = (notebookDir: string): ActorDef<JournalMsg, null> => ({
   handler: onMessage<JournalMsg, null>({
     invoke: (state, msg, ctx) => {
       let promise: Promise<string>
+      let date: string | undefined
       try {
-        const args = JSON.parse(msg.arguments) as Record<string, string>
         if (msg.toolName === journalWriteTool.name) {
           const args = JSON.parse(msg.arguments) as { entry: string; date?: string }
-          promise = writeEntry(notebookDir, args.entry, args.date ?? todayISO())
+          date = args.date ?? todayISO()
+          promise = writeEntry(notebookDir, args.entry, date)
         } else if (msg.toolName === journalReadTool.name) {
           const args = JSON.parse(msg.arguments) as { date: string }
           promise = readEntry(notebookDir, args.date)
@@ -116,15 +118,18 @@ export const Journal = (notebookDir: string): ActorDef<JournalMsg, null> => ({
         : null
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span, userId: msg.userId, date }),
         (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error), span }),
       )
       return { state }
     },
 
-    _done: (state, msg) => {
+    _done: (state, msg, ctx) => {
       msg.span?.done()
       msg.replyTo.send({ type: 'toolResult', result: { text: msg.result } })
+      if (msg.toolName === journalWriteTool.name && msg.date) {
+        ctx.publish(NotebookChangeTopic, { type: 'journalUpdated', userId: msg.userId, date: msg.date })
+      }
       return { state }
     },
 

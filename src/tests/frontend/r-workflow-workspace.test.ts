@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { cleanup, mountClass, resetStore } from '../helpers/frontend.js'
-import { WORKFLOW_RUN_UPDATED_EVENT } from '../../plugins/workflows/ui/index.js'
+import { cleanup, mountClass, resetStore, mockStore } from '../helpers/frontend.js'
+import { WORKFLOW_RUN_UPDATED_EVENT, reduceFrame } from '../../plugins/workflows/ui/index.js'
 import type { WorkflowsState } from '../../plugins/workflows/ui/index.js'
 import { store } from '@rorschach/frontend/webkit/store.js'
 import {
@@ -63,6 +63,7 @@ beforeEach(() => {
   cleanup()
   localStorage.clear()
   resetStore()
+  mockStore('currentMode', 'workflows')
 })
 
 afterEach(() => {
@@ -97,12 +98,10 @@ describe('r-workflow-workspace', () => {
       }
     )
 
-    globalThis.fetch = (async () => new Response(JSON.stringify(graph()), {
-      headers: { 'Content-Type': 'application/json' },
-    })) as unknown as typeof fetch
-
     const el = await mountClass(RWorkflowWorkspace) as any
+    const ns = store.namespace<WorkflowsState>('workflows')
     await el.openGraph('workflow-1', 'run-1')
+    ns.set('currentGraph', graph())
     await el.updateComplete
 
     // The component uses r-split-pane (orientation=vertical).
@@ -119,12 +118,10 @@ describe('r-workflow-workspace', () => {
   })
 
   test('renders workflow context and declared IO in the inspector', async () => {
-    globalThis.fetch = (async () => new Response(JSON.stringify(graph()), {
-      headers: { 'Content-Type': 'application/json' },
-    })) as unknown as typeof fetch
-
     const el = await mountClass(RWorkflowWorkspace) as any
+    const ns = store.namespace<WorkflowsState>('workflows')
     await el.openGraph('workflow-1', 'run-1')
+    ns.set('currentGraph', graph())
     el._inspectorTab = 'workflow'
     el.requestUpdate()
     await el.updateComplete
@@ -145,12 +142,10 @@ describe('r-workflow-workspace', () => {
   })
 
   test('renders run values, pending jobs, and artifact links', async () => {
-    globalThis.fetch = (async () => new Response(JSON.stringify(graph()), {
-      headers: { 'Content-Type': 'application/json' },
-    })) as unknown as typeof fetch
-
     const el = await mountClass(RWorkflowWorkspace) as any
+    const ns = store.namespace<WorkflowsState>('workflows')
     await el.openGraph('workflow-1', 'run-1')
+    ns.set('currentGraph', graph())
     el._inspectorTab = 'run'
     el.requestUpdate()
     await el.updateComplete
@@ -179,12 +174,11 @@ describe('r-workflow-workspace', () => {
       report: { type: 'artifact', url: 'generated/image.png', mimeType: 'image/png' },
     }
     data.nodes[0]!.outputs = data.run.outputs
-    globalThis.fetch = (async () => new Response(JSON.stringify(data), {
-      headers: { 'Content-Type': 'application/json' },
-    })) as unknown as typeof fetch
 
     const el = await mountClass(RWorkflowWorkspace) as any
+    const ns = store.namespace<WorkflowsState>('workflows')
     await el.openGraph('workflow-1', 'run-1')
+    ns.set('currentGraph', data)
     el._inspectorTab = 'run'
     el.requestUpdate()
     await el.updateComplete
@@ -199,48 +193,47 @@ describe('r-workflow-workspace', () => {
   })
 
   test('merges workflowRunUpdated frames into the current graph and preserves selection', async () => {
-    globalThis.fetch = (async () => new Response(JSON.stringify(graph('running')), {
-      headers: { 'Content-Type': 'application/json' },
-    })) as unknown as typeof fetch
-
     const el = await mountClass(RWorkflowWorkspace) as any
+    const ns = store.namespace<WorkflowsState>('workflows')
     await el.openGraph('workflow-1', 'run-1')
+    ns.set('currentGraph', graph('running'))
+    ns.set('runs', [graph('running').run])
+    await el.updateComplete
+
     el._selectedTaskId = 'write-report'
     el._inspectorTab = 'run'
 
-    window.dispatchEvent(new CustomEvent(WORKFLOW_RUN_UPDATED_EVENT, {
-      detail: {
-        type: 'workflowRunUpdated',
-        workflowId: 'workflow-1',
+    reduceFrame({
+      type: 'workflowRunUpdated',
+      workflowId: 'workflow-1',
+      runId: 'run-1',
+      run: {
+        schemaVersion: 1,
         runId: 'run-1',
-        run: {
-          schemaVersion: 1,
-          runId: 'run-1',
-          workflowId: 'workflow-1',
-          userId: 'anonymous',
-          status: 'completed',
-          inputs: { city: 'Rio' },
-          outputs: { report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' } },
-          activeTaskIds: [],
-          activeTasks: {},
-          pendingJobs: {},
-          taskStates: {
-            'write-report': {
-              status: 'completed',
-              attempts: 2,
-              startedAt: '2026-06-12T10:00:00.000Z',
-              completedAt: '2026-06-12T10:02:00.000Z',
-              summary: 'Report finished.',
-              outputs: { report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' } },
-            },
+        workflowId: 'workflow-1',
+        userId: 'anonymous',
+        status: 'completed',
+        inputs: { city: 'Rio' },
+        outputs: { report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' } },
+        activeTaskIds: [],
+        activeTasks: {},
+        pendingJobs: {},
+        taskStates: {
+          'write-report': {
+            status: 'completed',
+            attempts: 2,
+            startedAt: '2026-06-12T10:00:00.000Z',
+            completedAt: '2026-06-12T10:02:00.000Z',
+            summary: 'Report finished.',
+            outputs: { report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' } },
           },
-          events: [
-            { timestamp: '2026-06-12T10:00:00.000Z', type: 'runStarted', message: 'Run started.' },
-            { timestamp: '2026-06-12T10:02:00.000Z', type: 'runCompleted', message: 'Workflow run completed.' },
-          ],
         },
+        events: [
+          { timestamp: '2026-06-12T10:00:00.000Z', type: 'runStarted', message: 'Run started.' },
+          { timestamp: '2026-06-12T10:02:00.000Z', type: 'runCompleted', message: 'Workflow run completed.' },
+        ],
       },
-    }))
+    }, { openView: () => {} } as any)
     await el.updateComplete
 
     expect(el._currentGraph.run.status).toBe('completed')
@@ -252,28 +245,29 @@ describe('r-workflow-workspace', () => {
   })
 
   test('ignores unrelated workflowRunUpdated frames', async () => {
-    globalThis.fetch = (async () => new Response(JSON.stringify(graph('running')), {
-      headers: { 'Content-Type': 'application/json' },
-    })) as unknown as typeof fetch
-
     const el = await mountClass(RWorkflowWorkspace) as any
+    const ns = store.namespace<WorkflowsState>('workflows')
     await el.openGraph('workflow-1', 'run-1')
+    ns.set('currentGraph', graph('running'))
+    await el.updateComplete
 
-    window.dispatchEvent(new CustomEvent(WORKFLOW_RUN_UPDATED_EVENT, {
-      detail: {
-        type: 'workflowRunUpdated',
-        workflowId: 'workflow-1',
-        runId: 'other-run',
-        run: { ...graph('completed').run, runId: 'other-run' },
-      },
-    }))
+    reduceFrame({
+      type: 'workflowRunUpdated',
+      workflowId: 'workflow-1',
+      runId: 'other-run',
+      run: { ...graph('completed').run, runId: 'other-run' },
+    }, { openView: () => {} } as any)
     await el.updateComplete
 
     expect(el._currentGraph.run.status).toBe('running')
   })
 
   test('renders and updates graph view run chips from workflowRunUpdated frames', async () => {
-    const initialRuns = [{
+    const el = await mountClass(RWorkflowWorkspace) as any
+    const ns = store.namespace<WorkflowsState>('workflows')
+    await el.openGraph('workflow-1', 'run-1')
+    ns.set('currentGraph', graph('running'))
+    ns.set('runs', [{
       schemaVersion: 1,
       runId: 'run-1',
       workflowId: 'workflow-1',
@@ -286,19 +280,7 @@ describe('r-workflow-workspace', () => {
       pendingJobs: {},
       taskStates: {},
       events: [],
-    }]
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const url = String(input)
-      const body = url.includes('/graph')
-        ? graph('running')
-        : url.endsWith('/workflow-runs')
-          ? initialRuns
-          : []
-      return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } })
-    }) as unknown as typeof fetch
-
-    const el = await mountClass(RWorkflowWorkspace) as any
-    await el.openGraph('workflow-1', 'run-1')
+    }])
     await el.updateComplete
 
     // Run chips are rendered in a .plan-workspace-runs div inside the r-toolbar slot,
@@ -308,27 +290,25 @@ describe('r-workflow-workspace', () => {
     expect(chips1[0]?.textContent).toContain('run-1')
     expect(chips1[0]?.classList.contains('active')).toBe(true)
 
-    window.dispatchEvent(new CustomEvent(WORKFLOW_RUN_UPDATED_EVENT, {
-      detail: {
-        type: 'workflowRunUpdated',
-        workflowId: 'workflow-1',
+    reduceFrame({
+      type: 'workflowRunUpdated',
+      workflowId: 'workflow-1',
+      runId: 'run-2',
+      run: {
+        schemaVersion: 1,
         runId: 'run-2',
-        run: {
-          schemaVersion: 1,
-          runId: 'run-2',
-          workflowId: 'workflow-1',
-          userId: 'anonymous',
-          status: 'running',
-          inputs: {},
-          outputs: {},
-          activeTaskIds: [],
-          activeTasks: {},
-          pendingJobs: {},
-          taskStates: {},
-          events: [],
-        },
+        workflowId: 'workflow-1',
+        userId: 'anonymous',
+        status: 'running',
+        inputs: {},
+        outputs: {},
+        activeTaskIds: [],
+        activeTasks: {},
+        pendingJobs: {},
+        taskStates: {},
+        events: [],
       },
-    }))
+    }, { openView: () => {} } as any)
     await el.updateComplete
 
     const chips2 = el.shadowRoot.querySelectorAll('.workflow-run-chip') as NodeListOf<HTMLElement>
