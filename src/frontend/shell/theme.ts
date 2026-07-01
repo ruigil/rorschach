@@ -22,9 +22,15 @@ function isThemeName(v: string | null): v is ThemeName {
 }
 
 function readSavedTheme(): ThemeName {
-  if (typeof localStorage === 'undefined') return DEFAULT_THEME
-  const raw = localStorage.getItem(STORAGE_KEY)
-  return isThemeName(raw) ? raw : DEFAULT_THEME
+  if (typeof localStorage === 'undefined') return DEFAULT_THEME;
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return DEFAULT_THEME;
+  try {
+    const parsed = JSON.parse(raw);
+    return isThemeName(parsed) ? parsed : DEFAULT_THEME;
+  } catch {
+    return isThemeName(raw) ? raw : DEFAULT_THEME;
+  }
 }
 
 function applyToDom(name: ThemeName): void {
@@ -33,13 +39,10 @@ function applyToDom(name: ThemeName): void {
   }
 }
 
-/** Seed the store with the persisted theme (or the default) and apply it to
- *  the document. Idempotent — safe to call multiple times. Call once during
- *  shell bootstrap, before any component that subscribes to `theme` mounts. */
+/** Apply the persisted theme (or the default) to the document before first paint. */
 export function initTheme(): void {
   const initial = readSavedTheme()
   applyToDom(initial)
-  store.namespace('shell').init({ theme: initial }, { persist: ['theme'] })
 }
 
 /** Switch the active theme. Updates `<html data-theme>`, persists the choice

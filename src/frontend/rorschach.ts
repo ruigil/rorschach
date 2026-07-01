@@ -38,6 +38,7 @@ import { initTheme } from './shell/theme.js'
 initTheme()
 
 store.namespace<ShellState>('shell').init({
+  theme: 'eclipse',
   isConnected: false,
   isWaiting: false,
   currentUserId: null,
@@ -65,7 +66,7 @@ store.namespace<ShellState>('shell').init({
   activeWorkspaceTab: 'docs',
   sidebarWidth: 360,
 }, {
-  persist: ['currentMode', 'activeWorkspaceTab', 'lastMessages', 'sidebarWidth'],
+  persist: ['theme', 'currentMode', 'activeWorkspaceTab', 'lastMessages', 'sidebarWidth'],
 })
 
 // Hydrate the in-memory message list from the persisted recent messages

@@ -4,18 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rorschach</title>
-  <script>
-    // Apply the persisted theme before first paint to avoid a flash of the
-    // default theme. Mirrors the key format used by webkit/theme.ts.
-    (function () {
-      try {
-        var t = localStorage.getItem('rorschach.store.shell.theme');
-        if (t === 'light' || t === 'high-contrast' || t === 'eclipse') {
-          document.documentElement.dataset.theme = t;
-        }
-      } catch (e) { /* localStorage unavailable */ }
-    })();
-  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
