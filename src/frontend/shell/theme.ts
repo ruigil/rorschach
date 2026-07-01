@@ -10,15 +10,15 @@
 
 import { store } from '@rorschach/frontend/webkit/store.js'
 
-export type ThemeName = 'eclipse' | 'light' | 'high-contrast'
+export type ThemeName = 'eclipse' | 'light'
 
-export const THEME_NAMES: readonly ThemeName[] = ['eclipse', 'light', 'high-contrast'] as const
+export const THEME_NAMES: readonly ThemeName[] = ['eclipse', 'light'] as const
 
 const STORAGE_KEY = 'rorschach.store.shell.theme'
 const DEFAULT_THEME: ThemeName = 'eclipse'
 
 function isThemeName(v: string | null): v is ThemeName {
-  return v === 'eclipse' || v === 'light' || v === 'high-contrast'
+  return v === 'eclipse' || v === 'light'
 }
 
 function readSavedTheme(): ThemeName {

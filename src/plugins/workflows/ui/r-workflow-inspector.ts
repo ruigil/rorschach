@@ -65,9 +65,11 @@ export class RWorkflowInspector extends RorschachBase {
         display: block;
         height: 100%;
       }
-      .workflow-event-list {
-        padding: 8px;
+      .inspector-content-body {
+        padding: 1rem;
         box-sizing: border-box;
+      }
+      .workflow-event-list {
         height: 100%;
       }
     `

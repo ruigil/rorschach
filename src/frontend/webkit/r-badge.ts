@@ -33,9 +33,9 @@ export class RBadge extends RorschachBase {
       text-transform: uppercase;
       padding: 3px 8px !important;
     }
-    :host([variant="actor"][status="running"]) { color: var(--green); background: rgba(69, 196, 154, 0.1); }
-    :host([variant="actor"][status="stopped"]) { color: var(--text-dim); background: rgba(255,255,255,0.04); }
-    :host([variant="actor"][status="error"])   { color: var(--error); background: rgba(201, 95, 82, 0.1); }
+    :host([variant="actor"][status="running"]) { color: var(--green); background: var(--green-glow); }
+    :host([variant="actor"][status="stopped"]) { color: var(--text-dim); background: var(--surface-2); }
+    :host([variant="actor"][status="error"])   { color: var(--error); background: var(--error-bg); }
 
     /* Universal status mappings */
     :host([status]) {
@@ -45,29 +45,29 @@ export class RBadge extends RorschachBase {
       border-radius: 4px;
     }
     :host([status="running"]) {
-      color: #b9fbff;
-      border-color: rgba(0, 196, 212, 0.6);
-      background: rgba(0, 196, 212, 0.05);
+      color: var(--accent);
+      border-color: var(--accent-glow);
+      background: var(--accent-dim);
     }
     :host([status="completed"]) {
-      color: #c9ffe4;
-      border-color: rgba(57, 232, 160, 0.55);
-      background: rgba(57, 232, 160, 0.05);
+      color: var(--green);
+      border-color: var(--green-glow);
+      background: var(--green-glow);
     }
     :host([status="blocked"]) {
-      color: #fff1b3;
-      border-color: rgba(220, 180, 40, 0.6);
-      background: rgba(220, 180, 40, 0.05);
+      color: var(--warn);
+      border-color: var(--border);
+      background: var(--surface-2);
     }
     :host([status="failed"]), :host([status="error"]) {
-      color: #ffc7bf;
-      border-color: rgba(224, 80, 64, 0.6);
-      background: rgba(224, 80, 64, 0.05);
+      color: var(--error);
+      border-color: var(--error-border);
+      background: var(--error-bg);
     }
     :host([status="pending"]), :host([status="idle"]), :host([status="not-tracked"]), :host([status="not_tracked"]) {
       color: var(--text-dim);
       border-color: var(--border);
-      background: rgba(255, 255, 255, 0.02);
+      background: var(--surface-2);
     }
   `;
 

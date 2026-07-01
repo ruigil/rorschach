@@ -13,8 +13,8 @@ const LABEL_COLORS: Record<string, { stroke: string }> = {
   Event:      { stroke: '#5ba0b8' },
   Habit:      { stroke: '#dcb428' },
 };
-const NODE_BG = '#060e14';
-const DEFAULT_STROKE = '#1a3548';
+const NODE_BG = 'var(--surface)';
+const DEFAULT_STROKE = 'var(--border-mid)';
 
 export const formatKgEdgeLabel = (edge: { type?: unknown, properties?: Record<string, unknown> }) => {
   const type = typeof edge.type === 'string' && edge.type.length > 0 ? edge.type : 'link';
@@ -57,7 +57,7 @@ type GraphConfig = {
 const KG_CONFIG: GraphConfig = {
   arrowId: 'kg-arrow',
   zoomExtent: [0.15, 5],
-  edgeStroke: '#00c4d4',
+  edgeStroke: 'var(--accent)',
   edgeWidth: 1.5,
   hasEdgeLabels: true,
   nodeRadius: 22,
@@ -79,12 +79,12 @@ const KG_CONFIG: GraphConfig = {
     ng.append('text')
       .text((d: any) => String(d.properties.name || d.properties.topic || `#${d.id}`).slice(0, 12))
       .attr('text-anchor', 'middle').attr('dy', '0.35em')
-      .attr('font-size', '10px').attr('fill', '#d8eef5')
+      .attr('font-size', '10px').attr('fill', 'var(--text)')
       .attr('font-family', 'var(--font-mono)').attr('pointer-events', 'none');
     ng.append('text')
       .text((d: any) => d.labels[0] || '')
       .attr('text-anchor', 'middle').attr('dy', '36px')
-      .attr('font-size', '8px').attr('fill', '#3d6878')
+      .attr('font-size', '8px').attr('fill', 'var(--text-dim)')
       .attr('font-family', 'var(--font-mono)').attr('pointer-events', 'none');
   },
   nodeClass: () => '',
@@ -108,7 +108,7 @@ const KG_CONFIG: GraphConfig = {
 const PLAN_CONFIG: GraphConfig = {
   arrowId: 'plan-arrow',
   zoomExtent: [0.25, 4],
-  edgeStroke: '#1e5264',
+  edgeStroke: 'var(--border-mid)',
   edgeWidth: 1.4,
   hasEdgeLabels: false,
   nodeRadius: 22,
@@ -211,42 +211,43 @@ export class RForceGraph extends RorschachBase {
        These lived in workspace.css when r-force-graph was light DOM.
        They must be in shadow DOM now that the SVG is encapsulated. */
     .plan-node rect {
-      fill: #06101a;
-      stroke: #1e5264;
+      fill: var(--surface);
+      stroke: var(--border-mid);
       stroke-width: 1.2px;
     }
     .plan-node.source rect {
-      stroke: #39e8a0;
+      stroke: var(--green);
       stroke-width: 1.8px;
     }
     .plan-node.sink rect {
-      stroke: #e05040;
+      stroke: var(--error);
       stroke-width: 1.8px;
     }
     .plan-node.selected rect {
       stroke: var(--accent);
       stroke-width: 2px;
-      filter: drop-shadow(0 0 8px rgba(0, 196, 212, 0.25));
+      filter: drop-shadow(0 0 8px var(--accent-glow));
     }
     .plan-node.status-pending rect {
-      stroke: #577080;
+      stroke: var(--border-mid);
+      fill: var(--surface-2);
     }
     .plan-node.status-running rect {
-      fill: rgba(8, 48, 54, 0.82);
-      stroke: #00c4d4;
+      fill: var(--accent-dim);
+      stroke: var(--accent);
       stroke-width: 2px;
-      filter: drop-shadow(0 0 8px rgba(0, 196, 212, 0.18));
+      filter: drop-shadow(0 0 8px var(--accent-glow));
     }
     .plan-node.status-completed rect {
-      stroke: #39e8a0;
+      stroke: var(--green);
       stroke-width: 1.8px;
     }
     .plan-node.status-blocked rect {
-      stroke: #dcb428;
+      stroke: var(--warn);
       stroke-width: 1.8px;
     }
     .plan-node.status-failed rect {
-      stroke: #e05040;
+      stroke: var(--error);
       stroke-width: 1.8px;
     }
     .plan-node text {
@@ -335,7 +336,7 @@ export class RForceGraph extends RorschachBase {
       .attr('refX', 8).attr('refY', 0)
       .attr('markerWidth', 6).attr('markerHeight', 6)
       .attr('orient', 'auto')
-      .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', '#00c4d4');
+      .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', cfg.edgeStroke);
 
     const g = svg.append('g');
     svg.call(d3.zoom().scaleExtent(cfg.zoomExtent).on('zoom', (ev: any) => g.attr('transform', ev.transform)) as any);
@@ -350,7 +351,7 @@ export class RForceGraph extends RorschachBase {
     if (cfg.hasEdgeLabels) {
       edgeLabel = g.append('g').selectAll('text').data(simEdges).enter().append('text')
         .text((d: any) => formatKgEdgeLabel(d))
-        .attr('font-size', '9px').attr('fill', '#2a5468')
+        .attr('font-size', '9px').attr('fill', 'var(--text-dim)')
         .attr('text-anchor', 'middle').attr('font-family', 'var(--font-mono)')
         .attr('pointer-events', 'none');
     }

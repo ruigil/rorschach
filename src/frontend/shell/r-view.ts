@@ -39,12 +39,6 @@ export class RView extends RorschachBase {
 
     const contentEl = this._getContentElement();
 
-    return html`
-      <div class="r-view-chrome" style="width: 100%; height: 100%; display: flex; flex-direction: column;">
-        <div class="r-view-body" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0;">
-          ${contentEl}
-        </div>
-      </div>
-    `;
+    return html`${contentEl}`;
   }
 }
