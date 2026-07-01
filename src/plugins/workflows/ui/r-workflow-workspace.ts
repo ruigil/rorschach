@@ -1,6 +1,7 @@
-import { html, nothing } from 'lit'
+import { html, nothing, css } from 'lit'
 import { customElement, state } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
+import { sharedStyles } from '@rorschach/frontend/webkit/shared-styles.js'
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
 import { store } from '@rorschach/frontend/webkit/store.js'
 import type { ShellState } from '../../../frontend/types/state.js'
@@ -59,7 +60,126 @@ export class RWorkflowWorkspace extends RorschachBase {
   private _storeGraph = new StoreController(this, ['workflows', 'currentGraph'])
   private _storeWidth = new StoreController(this, ['workflows', 'inspectorWidthPercent'])
 
-  override createRenderRoot() { return this }
+  static override styles = [
+    sharedStyles,
+    css`
+      :host {
+        display: block;
+        height: 100%;
+        width: 100%;
+      }
+      .plan-workspace-meta-text {
+        font-family: var(--font-mono);
+        font-size: 0.62rem;
+        color: var(--text-dim);
+      }
+      .plan-workspace-runs {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+      }
+      .workflow-run-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        min-width: 0;
+        padding: 0.22rem 0.45rem;
+        color: var(--text-mid);
+        background: rgba(6, 16, 26, 0.74);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-family: var(--font-mono);
+        font-size: 0.58rem;
+        cursor: pointer;
+      }
+      .workflow-run-chip:hover {
+        color: var(--text);
+        border-color: var(--accent);
+      }
+      .workflow-run-chip.status-running {
+        color: #b9fbff;
+        border-color: rgba(0, 196, 212, 0.6);
+      }
+      .workflow-run-chip.status-completed {
+        color: #c9ffe4;
+        border-color: rgba(57, 232, 160, 0.55);
+      }
+      .workflow-run-chip.status-blocked {
+        color: #fff1b3;
+        border-color: rgba(220, 180, 40, 0.6);
+      }
+      .workflow-run-chip.status-failed {
+        color: #ffc7bf;
+        border-color: rgba(224, 80, 64, 0.6);
+      }
+      .workflow-run-chip.active {
+        color: var(--accent);
+        border-color: var(--accent);
+        box-shadow: 0 0 8px rgba(0, 196, 212, 0.18);
+      }
+      .plan-empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: var(--text-dim);
+        font-size: 0.72rem;
+        font-family: var(--font-mono);
+      }
+      .plan-run-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.55rem 0.75rem;
+        border-bottom: 1px solid var(--border);
+        background: rgba(4, 13, 20, 0.42);
+        flex-shrink: 0;
+      }
+      .plan-run-title {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        min-width: 0;
+      }
+      .plan-run-title strong {
+        overflow: hidden;
+        color: var(--text);
+        font-size: 0.78rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .plan-run-refresh {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        color: var(--text-dim);
+        font-family: var(--font-mono);
+        font-size: 0.56rem;
+        white-space: nowrap;
+      }
+      .plan-task-detail-wrap {
+        min-height: 0;
+        overflow-y: auto;
+      }
+      .plan-graph {
+        position: relative;
+        min-height: 180px;
+        overflow: hidden;
+      }
+      .plan-workspace-body-container {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+    `
+  ];
 
   override connectedCallback() {
     super.connectedCallback()

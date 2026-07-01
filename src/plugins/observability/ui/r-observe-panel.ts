@@ -1,14 +1,21 @@
-import { html } from 'lit';
+import { html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
 import { store } from '@rorschach/frontend/webkit/store.js';
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
+import type { Actor, Topic, LogEvent, TraceSpan, ShellState } from '../../../frontend/types/state.js';
 import '@rorschach/frontend/webkit/r-panel.js';
+import '@rorschach/frontend/webkit/r-tabs.js';
+import '@rorschach/frontend/webkit/r-empty-state.js';
+import '@rorschach/frontend/webkit/r-actor-tree.js';
+import '@rorschach/frontend/webkit/r-actor-detail.js';
+import '@rorschach/frontend/webkit/r-topic-list.js';
+import '@rorschach/frontend/webkit/r-log-stream.js';
+import '@rorschach/frontend/webkit/r-trace-waterfall.js';
+import '@rorschach/frontend/webkit/r-costs-table.js';
 import '@rorschach/frontend/webkit/r-toolbar.js';
 import { OBSERVE_TABS, DEFAULT_OBSERVE_TAB } from '../../../frontend/constants.js';
 import type { ObserveTab } from '../../../frontend/constants.js';
-import type { ShellState } from '../../../frontend/types/state.js';
-import type { Topic, Actor } from '../../../frontend/types/state.js';
 
 const CONTROL_BY_TAB: Record<ObserveTab, string> = {
   metrics: 'metrics-summary',
@@ -34,10 +41,13 @@ export class RObservePanel extends RorschachBase {
   private _logs = new StoreController(this, ['shell', 'logs']);
   private _traces = new StoreController(this, ['shell', 'traces']);
 
-  // Render to light DOM to reuse shell styles
-  override createRenderRoot() {
-    return this;
-  }
+  static override styles = css`
+    :host {
+      display: block;
+      height: 100%;
+      width: 100%;
+    }
+  `;
 
   override updated(changedProperties: Map<string, any>) {
     const tab = this._observeActiveTab.value;

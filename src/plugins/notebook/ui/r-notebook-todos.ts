@@ -1,4 +1,4 @@
-import { html } from 'lit'
+import { html, css } from 'lit'
 import { customElement, state } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
 import '@rorschach/frontend/webkit/r-list.js'
@@ -12,9 +12,13 @@ export class RNotebookTodos extends RorschachBase {
   @state() private _loading = true
   @state() private _error: string | null = null
 
-  override createRenderRoot() {
-    return this // Light DOM
-  }
+  static override styles = css`
+    :host {
+      display: block;
+      height: 100%;
+      width: 100%;
+    }
+  `;
 
   override connectedCallback() {
     super.connectedCallback()

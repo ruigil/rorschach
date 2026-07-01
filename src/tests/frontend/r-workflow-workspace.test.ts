@@ -106,15 +106,15 @@ describe('r-workflow-workspace', () => {
     await el.updateComplete
 
     // The component uses r-split-pane (orientation=vertical).
-    const splitPane = el.querySelector('r-split-pane') as any
+    const splitPane = el.shadowRoot.querySelector('r-split-pane') as any
     expect(splitPane).not.toBeNull()
     expect(splitPane?.orientation).toBe('vertical')
     // splitPercent is reflected as a property; it is clamped to [18, 72].
     expect(splitPane?.splitPercent).toBe(62)
     // Inspector is in the primary (left) slot; graph in the secondary (right) slot.
-    const inspector = el.querySelector('[slot="primary"] r-workflow-inspector') as any
+    const inspector = el.shadowRoot.querySelector('[slot="primary"] r-workflow-inspector') as any
     expect(inspector).not.toBeNull()
-    const graphEl = el.querySelector('r-force-graph[slot="secondary"]') as any
+    const graphEl = el.shadowRoot.querySelector('r-force-graph[slot="secondary"]') as any
     expect(graphEl).not.toBeNull()
   })
 
@@ -132,7 +132,7 @@ describe('r-workflow-workspace', () => {
     // r-workflow-inspector renders to light DOM, but r-kv-list uses shadow DOM so
     // values are not reachable via el.textContent. Verify the inspector received
     // the correct graph data and that the inspector element is present.
-    const inspector = el.querySelector('r-workflow-inspector') as any
+    const inspector = el.shadowRoot.querySelector('r-workflow-inspector') as any
     expect(inspector).not.toBeNull()
     const workflow = inspector?.graph?.workflow
     expect(workflow?.context).toBe('Use workflow context in the UI.')
@@ -140,8 +140,8 @@ describe('r-workflow-workspace', () => {
     expect(workflow?.outputs?.report?.description).toBe('HTML report')
     expect(workflow?.executionTools).toContain('read')
     expect(workflow?.executionTools).toContain('write')
-    // The inspector tab label itself is visible in the light DOM
-    expect(el.textContent).toContain('workflow')
+    // The inspector tab label itself is visible in the shadow DOM
+    expect(el.shadowRoot.textContent).toContain('workflow')
   })
 
   test('renders run values, pending jobs, and artifact links', async () => {
@@ -157,7 +157,7 @@ describe('r-workflow-workspace', () => {
 
     // r-kv-list renders into shadow DOM, so values are not in el.textContent.
     // Verify the graph data bound to the inspector is correct instead.
-    const inspector = el.querySelector('r-workflow-inspector') as any
+    const inspector = el.shadowRoot.querySelector('r-workflow-inspector') as any
     expect(inspector).not.toBeNull()
     const run = inspector?.graph?.run
     expect(run?.inputs?.city).toBe('Rio')
@@ -191,7 +191,7 @@ describe('r-workflow-workspace', () => {
 
     // r-kv-list renders artifact links in its shadow DOM, not accessible via
     // querySelector on the parent. Verify the graph data has the public URL.
-    const inspector = el.querySelector('r-workflow-inspector') as any
+    const inspector = el.shadowRoot.querySelector('r-workflow-inspector') as any
     expect(inspector).not.toBeNull()
     const output = inspector?.graph?.run?.outputs?.report as any
     expect(output?.type).toBe('artifact')
@@ -302,8 +302,8 @@ describe('r-workflow-workspace', () => {
     await el.updateComplete
 
     // Run chips are rendered in a .plan-workspace-runs div inside the r-toolbar slot,
-    // all in light DOM — query directly on the workspace element.
-    const chips1 = el.querySelectorAll('.workflow-run-chip') as NodeListOf<HTMLElement>
+    // all in shadow DOM — query directly on the shadow root.
+    const chips1 = el.shadowRoot.querySelectorAll('.workflow-run-chip') as NodeListOf<HTMLElement>
     expect(chips1.length).toBe(1)
     expect(chips1[0]?.textContent).toContain('run-1')
     expect(chips1[0]?.classList.contains('active')).toBe(true)
@@ -331,10 +331,10 @@ describe('r-workflow-workspace', () => {
     }))
     await el.updateComplete
 
-    const chips2 = el.querySelectorAll('.workflow-run-chip') as NodeListOf<HTMLElement>
+    const chips2 = el.shadowRoot.querySelectorAll('.workflow-run-chip') as NodeListOf<HTMLElement>
     expect(chips2.length).toBe(2)
     // run-1 should remain the active chip (it is the currently open run)
-    const activeChip = el.querySelector('.workflow-run-chip.active') as HTMLElement | null
+    const activeChip = el.shadowRoot.querySelector('.workflow-run-chip.active') as HTMLElement | null
     expect(activeChip?.textContent).toContain('run-1')
     // run-2 chip is also present
     const allText = Array.from(chips2).map(c => c.textContent).join('')

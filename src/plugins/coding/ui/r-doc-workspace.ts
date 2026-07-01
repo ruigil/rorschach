@@ -1,4 +1,4 @@
-import { html } from 'lit';
+import { html, css } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
 import { store } from '@rorschach/frontend/webkit/store.js';
@@ -13,9 +13,35 @@ import '@rorschach/frontend/webkit/r-toolbar.js';
 export class RDocWorkspace extends RorschachBase {
   private _currentDocArtifact = new StoreController(this, ['docs', 'currentDocArtifact']);
 
-  override createRenderRoot() {
-    return this // Light DOM for layout styling
-  }
+  static override styles = css`
+    :host {
+      display: block;
+      height: 100%;
+      width: 100%;
+    }
+    .doc-workspace-current-path {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .doc-workspace-body-container {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .doc-workspace-iframe {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: transparent;
+    }
+  `;
 
   goHome() {
     store.namespace('docs').set('currentDocArtifact', 'index.html');

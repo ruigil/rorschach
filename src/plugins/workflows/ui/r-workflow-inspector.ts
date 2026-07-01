@@ -1,6 +1,7 @@
-import { html, nothing } from 'lit'
+import { html, nothing, css } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
+import { sharedStyles } from '@rorschach/frontend/webkit/shared-styles.js'
 import '@rorschach/frontend/webkit/r-tabs.js'
 import '@rorschach/frontend/webkit/r-log-stream.js'
 import '@rorschach/frontend/webkit/r-empty-state.js'
@@ -57,7 +58,20 @@ export class RWorkflowInspector extends RorschachBase {
   @property({ type: String }) selectedTaskId: string | null = null
   @property({ type: String }) tab: InspectorTab = 'task'
 
-  override createRenderRoot() { return this }
+  static override styles = [
+    sharedStyles,
+    css`
+      :host {
+        display: block;
+        height: 100%;
+      }
+      .workflow-event-list {
+        padding: 8px;
+        box-sizing: border-box;
+        height: 100%;
+      }
+    `
+  ];
 
   override render() {
     return html`

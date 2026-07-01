@@ -43,4 +43,5 @@ export * from './r-toggle.js'
 export * from './r-input.js'
 export * from './r-search-select.js'
 export * from './r-corona.js'
+export * from './shared-styles.js'
 

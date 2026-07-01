@@ -1,4 +1,4 @@
-import { html } from 'lit'
+import { html, css } from 'lit'
 import { customElement } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
@@ -16,9 +16,13 @@ import './r-notebook-tracker.js'
 export class RNotebookWorkspace extends RorschachBase {
   private _activeTab = new StoreController(this, ['notebook', 'activeTab'])
 
-  override createRenderRoot() {
-    return this // Light DOM
-  }
+  static override styles = css`
+    :host {
+      display: block;
+      height: 100%;
+      width: 100%;
+    }
+  `;
 
   private _selectTab(tab: 'todos' | 'journal' | 'tracker') {
     store.namespace('notebook').set('activeTab', tab)

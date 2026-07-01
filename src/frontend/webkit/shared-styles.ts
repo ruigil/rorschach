@@ -1,0 +1,45 @@
+import { css } from 'lit';
+
+export const sharedStyles = css`
+  :host {
+    box-sizing: border-box;
+  }
+
+  /* Custom Webkit scrollbar styles */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  /* Typography utilities */
+  .text-mono {
+    font-family: var(--font-mono, monospace);
+  }
+  .text-dim {
+    color: var(--text-dim);
+  }
+
+  /* Layout helpers */
+  .flex-column {
+    display: flex;
+    flex-direction: column;
+  }
+  .flex-row {
+    display: flex;
+    flex-direction: row;
+  }
+  .flex-grow-1 {
+    flex: 1;
+    min-height: 0;
+  }
+`;

@@ -1,4 +1,4 @@
-import { html } from 'lit'
+import { html, css } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
 import '@rorschach/frontend/webkit/r-list.js'
@@ -8,7 +8,11 @@ import '@rorschach/frontend/webkit/r-empty-state.js'
 export class RWorkflowList extends RorschachBase {
   @property({ type: Array }) workflows: any[] = []
 
-  override createRenderRoot() { return this }
+  static override styles = css`
+    :host {
+      display: block;
+    }
+  `;
 
   private _formatDateTime(value: any): string {
     const date = new Date(value)
