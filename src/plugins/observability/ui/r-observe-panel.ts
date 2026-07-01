@@ -47,6 +47,139 @@ export class RObservePanel extends RorschachBase {
       height: 100%;
       width: 100%;
     }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    /* ─── Observe panel ─── */
+    .obs-bar-end {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+    }
+
+    .metrics-summary {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+    }
+
+    .summary-stat {
+      display: flex;
+      flex-direction: row;
+      align-items: baseline;
+      gap: 0.35rem;
+    }
+
+    .summary-val {
+      font-size: 0.82rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--text);
+    }
+
+    .summary-key {
+      font-size: 0.55rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .obs-log-controls,
+    .obs-traces-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    /* ─── Subpanels ─── */
+    .obs-subpanel {
+      display: none;
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .obs-subpanel.active { display: flex; flex-direction: column; }
+
+    /* ─── Metrics layout ─── */
+    .metrics-layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .tree-col {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid var(--border);
+    }
+
+    .detail-col {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ─── Log controls ─── */
+    .log-count { font-size: 0.62rem; font-family: var(--font-mono); color: var(--text-dim); }
+
+    .btn-clear {
+      font-size: 0.62rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      background: none;
+      border: 1px solid var(--border-mid);
+      border-radius: 4px;
+      padding: 0.2rem 0.55rem;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      font-family: var(--font-ui);
+    }
+
+    .btn-clear:hover { color: var(--text-mid); border-color: var(--text-dim); }
+
+    /* ─── Topics subpanel ─── */
+    r-topic-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.4rem 0;
+    }
+
+    r-topic-list::-webkit-scrollbar { width: 3px; }
+    r-topic-list::-webkit-scrollbar-track { background: transparent; }
+    r-topic-list::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
+
+    /* ─── Tools panel ─── */
+    r-tools-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.75rem;
+    }
+
+    r-tools-list::-webkit-scrollbar { width: 3px; }
+    r-tools-list::-webkit-scrollbar-track { background: transparent; }
+    r-tools-list::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
+
+    /* ─── Traces container ─── */
+    [data-observe-tab="traces"] {
+      overflow-y: auto;
+      padding: 12px 12px 0 12px;
+      box-sizing: border-box;
+    }
+
+    /* ─── Memory controls ─── */
+    .obs-memory-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
   `;
 
   override updated(changedProperties: Map<string, any>) {
