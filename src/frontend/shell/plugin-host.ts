@@ -11,8 +11,8 @@ import type { ShellState } from '../types/state.js'
 // and the `surfaceReducers` Map (surfaceId → reducer). Imports nothing
 // plugin-specific, only from `@rorschach/frontend/webkit/`.
 //
-// `pluginHost.init()` is called once at boot. It seeds the two built-in workspace
-// views (`config`, `observe`) that can be opened as tabs.
+// `pluginHost.init()` is called once at boot. It seeds the built-in config
+// view that can be opened as a tab.
 
 const surfaces = new Map<string, UiSurfaceRegistration>()
 const viewRegistry = new Map<string, ViewConfig>()

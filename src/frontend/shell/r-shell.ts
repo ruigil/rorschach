@@ -39,7 +39,7 @@ export class RShell extends RorschachBase {
     const initialHash = window.location.hash.replace(/^#\/?/, '');
     if (initialHash) {
       const availableViews = this._views.value;
-      if (initialHash === 'config' || initialHash === 'observe' || availableViews[initialHash]) {
+      if (initialHash === 'config' || (availableViews && availableViews[initialHash])) {
         setActiveWorkspaceTab(initialHash);
       }
     }
@@ -78,7 +78,7 @@ export class RShell extends RorschachBase {
   }
 
   private _switchModeForTab(tabId: string) {
-    if (tabId === 'config' || tabId === 'observe') {
+    if (tabId === 'config') {
       switchMode('chatbot');
       return;
     }
@@ -117,12 +117,12 @@ export class RShell extends RorschachBase {
 
   private _isAnyWorkspaceOpen() {
     const views = this._views.value;
-    return Object.keys(views).some(id => views[id]?.isOpen);
+    return views ? Object.keys(views).some(id => views[id]?.isOpen) : false;
   }
 
   private _getActiveWorkspaces() {
     const views = this._views.value;
-    return Object.keys(views).filter(id => views[id]?.isOpen);
+    return views ? Object.keys(views).filter(id => views[id]?.isOpen) : [];
   }
 
   private _handleSidebarResize(e: PointerEvent) {
@@ -216,7 +216,7 @@ export class RShell extends RorschachBase {
                 <button class="sidebar-header-btn" ?hidden=${!canAdmin} @click=${() => openView('config')} title="Configuration Settings">
                   ${this.renderIcon('settings')}
                 </button>
-                <button class="sidebar-header-btn" ?hidden=${!canAdmin || !this._views.value['observe']} @click=${() => openView('observe')} title="Observation Panel">
+                <button class="sidebar-header-btn" ?hidden=${!canAdmin || !this._views.value || !this._views.value['observe']} @click=${() => openView('observe')} title="Observation Panel">
                   ${this.renderIcon('activity')}
                 </button>
               </div>

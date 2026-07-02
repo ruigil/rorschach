@@ -1,4 +1,4 @@
-import type { ObserveTab } from '../constants.js'
+import type { ThemeName } from '../shell/theme.js'
 import type {
   Attachment,
   Source,
@@ -11,7 +11,6 @@ import type {
   UsageEntry,
 } from '@rorschach/frontend/webkit/types.js'
 import type { ViewRuntimeState } from '@rorschach/frontend/webkit/host-types.js'
-import type { ThemeName } from '../shell/theme.js'
 
 // Re-export the kit types so existing shell code that imports from
 // `./types/state.js` keeps working. These are the neutral data shapes the
@@ -49,7 +48,6 @@ export type ShellState = {
   /** Persisted subset of recent messages (stripped of attachment payloads)
    *  used to restore the chat history across refreshes. */
   lastMessages: Message[]
-  observeActiveTab: ObserveTab
   activeStream: ActiveStream
   views: Record<string, ViewRuntimeState>
   activeWorkspaceTab: string

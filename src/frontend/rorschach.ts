@@ -26,16 +26,11 @@ import './shell/r-theme-select.js'
 import { store } from '@rorschach/frontend/webkit/store.js'
 import type { ShellState } from './types/state.js'
 import { pluginHost } from './shell/plugin-host.js'
-import { DEFAULT_OBSERVE_TAB } from './constants.js'
-import { initTheme } from './shell/theme.js'
+import './shell/theme.js'
 
 // ─── Shell namespace init ───
 //
 // plugin-host seeds the `views` map via `store.ensureView()` in `init()`.
-
-// Apply the persisted theme before any component that reads it mounts. This
-// also registers `theme` as a persisted key on the shell namespace.
-initTheme()
 
 store.namespace<ShellState>('shell').init({
   theme: 'eclipse',
@@ -54,7 +49,6 @@ store.namespace<ShellState>('shell').init({
   tools: {},
   messages: [],
   lastMessages: [],
-  observeActiveTab: DEFAULT_OBSERVE_TAB,
   activeStream: {
     isActive: false,
     reasoning: '',

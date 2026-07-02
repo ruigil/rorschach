@@ -14,8 +14,9 @@ import '@rorschach/frontend/webkit/r-log-stream.js';
 import '@rorschach/frontend/webkit/r-trace-waterfall.js';
 import '@rorschach/frontend/webkit/r-costs-table.js';
 import '@rorschach/frontend/webkit/r-toolbar.js';
-import { OBSERVE_TABS, DEFAULT_OBSERVE_TAB } from '../../../frontend/constants.js';
-import type { ObserveTab } from '../../../frontend/constants.js';
+export const OBSERVE_TABS = ['metrics', 'topics', 'logs', 'traces', 'tools', 'memory', 'costs'] as const;
+export type ObserveTab = typeof OBSERVE_TABS[number];
+export const DEFAULT_OBSERVE_TAB: ObserveTab = 'metrics';
 
 const CONTROL_BY_TAB: Record<ObserveTab, string> = {
   metrics: 'metrics-summary',
@@ -35,7 +36,7 @@ export class RObservePanel extends RorschachBase {
   @state() private _kgData: any = null;
   @state() private _selectedActor: Actor | null = null;
 
-  private _observeActiveTab = new StoreController(this, ['shell', 'observeActiveTab']);
+  @state() private _observeActiveTab: ObserveTab = 'metrics';
   private _actors = new StoreController(this, ['shell', 'actors']);
   private _topics = new StoreController(this, ['shell', 'topics']);
   private _logs = new StoreController(this, ['shell', 'logs']);
@@ -183,7 +184,7 @@ export class RObservePanel extends RorschachBase {
   `;
 
   override updated(changedProperties: Map<string, any>) {
-    const tab = this._observeActiveTab.value;
+    const tab = this._observeActiveTab;
     if (tab === 'memory' && !this._kgData) {
       this._fetchKgraph();
     }
@@ -192,7 +193,7 @@ export class RObservePanel extends RorschachBase {
   private _onTabChange(event: CustomEvent) {
     const tab = event.detail?.tab;
     if (!tab) return;
-    shell().set('observeActiveTab', tab);
+    this._observeActiveTab = tab;
   }
 
   private _onActorSelect(event: CustomEvent) {
@@ -220,7 +221,7 @@ export class RObservePanel extends RorschachBase {
   }
 
   override render() {
-    const activeTab = this._observeActiveTab.value || DEFAULT_OBSERVE_TAB;
+    const activeTab = this._observeActiveTab;
     const activeControl = CONTROL_BY_TAB[activeTab];
     const actors = this._actors.value;
     const topics = this._topics.value;
