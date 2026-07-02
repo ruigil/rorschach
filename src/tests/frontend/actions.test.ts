@@ -9,7 +9,7 @@ import {
   appendMessage,
   updateActiveStream,
   commitActiveStream,
-} from '../../frontend/actions.js'
+} from '../../frontend/shell/actions.js'
 
 beforeEach(() => {
   localStorage.clear()

@@ -1,7 +1,7 @@
 import { store } from '@rorschach/frontend/webkit/store.js'
-import type { ShellState, Message, LogEvent, Attachment } from './types/state.js'
-import { isConnected, send } from './shell/connection-service.js'
-import { setMode } from './shell/view-actions.js'
+import type { ShellState, Message, LogEvent, Attachment } from '../types/state.js'
+import { isConnected, send } from './connection-service.js'
+import { setMode } from './view-actions.js'
 
 const shell = () => store.namespace<ShellState>('shell')
 

@@ -3,7 +3,7 @@ import { customElement, query, state } from 'lit/decorators.js';
 import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
 import { store } from '@rorschach/frontend/webkit/store.js';
-import { submitChatMessage } from '../actions.js';
+import { submitChatMessage } from './actions.js';
 import type { ShellState } from '../types/state.js';
 
 @customElement('r-chat-panel')

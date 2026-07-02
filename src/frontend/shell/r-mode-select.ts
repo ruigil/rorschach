@@ -4,7 +4,7 @@ import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
 import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
 import { store } from '@rorschach/frontend/webkit/store.js';
 import { modeLabel } from '@rorschach/frontend/webkit/utils.js';
-import { switchMode } from '../actions.js';
+import { switchMode } from './actions.js';
 import type { ShellState, Agent } from '../types/state.js';
 
 @customElement('r-mode-select')

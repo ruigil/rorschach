@@ -2,18 +2,16 @@
 //
 // Owns the WebSocket transport so it stays out of reactive state. Exposes a
 // narrow surface: `connect()`, `send(frame)`, `disconnect()`. Inbound frames
-// are dispatched to the store / plugin host via `dispatchFrame`, which was
-// previously inlined in `connection.ts`.
+// are dispatched to the store / plugin host via `dispatchFrame`.
 //
-// `connection.ts` re-exports `connect` so existing callers (r-shell) keep
-// working unchanged. Actions use `connection.send(...)` instead of reaching
-// into the store for a `WebSocket` handle.
+// Actions use the exported `send(...)` function from this service instead of
+// reaching into the store for a `WebSocket` handle.
 
 import { store } from '@rorschach/frontend/webkit/store.js'
 import type { WSFrame } from '../types/websocket.js'
 import type { TraceSpan, UsageEntry, LogEvent, ShellState } from '../types/state.js'
 import { toolActionLabel } from '@rorschach/frontend/webkit/utils.js'
-import { updateActiveStream, commitActiveStream, addLog } from '../actions.js'
+import { updateActiveStream, commitActiveStream, addLog } from './actions.js'
 import { setMode } from './view-actions.js'
 import { pluginHost } from './plugin-host.js'
 
