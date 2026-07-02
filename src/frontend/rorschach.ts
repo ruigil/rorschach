@@ -57,7 +57,7 @@ store.namespace<ShellState>('shell').init({
     attachments: [],
   },
   views: {},
-  activeWorkspaceTab: 'docs',
+  activeWorkspaceTab: 'code',
   sidebarWidth: 360,
 }, {
   persist: ['theme', 'currentMode', 'activeWorkspaceTab', 'lastMessages', 'sidebarWidth'],

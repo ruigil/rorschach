@@ -1,8 +1,9 @@
 import { Bash, InMemoryFs, MountableFs, OverlayFs, ReadWriteFs } from 'just-bash'
 import type { BashExecResult } from 'just-bash'
 import type { ActorDef, SpanHandle } from '../../system/index.ts'
-import { defineTool, onMessage } from '../../system/index.ts'
-import type { ProjectShellMsg } from './types.ts'
+import { defineTool, onMessage, onLifecycle } from '../../system/index.ts'
+import type { ProjectShellMsg, ProjectShellState } from './types.ts'
+import { HttpWsFrameTopic, OutboundUserMessageTopic } from '../../types/events.ts'
 
 export const codingBashTool = defineTool('bash', 'Execute a read-oriented bash command against the mounted project. The project is mounted read-only at /rorschach. Workspace files live under /workspace, and generated docs live under /workspace/artifacts.', {
   type: 'object',
@@ -36,7 +37,7 @@ export const ProjectShell = (options: {
   projectMount: string
   workspaceDir: string
   artifactsDir: string
-}): ActorDef<ProjectShellMsg, null> => {
+}): ActorDef<ProjectShellMsg, ProjectShellState> => {
   const fs = new MountableFs({
     base: new InMemoryFs(),
     mounts: [
@@ -48,8 +49,88 @@ export const ProjectShell = (options: {
   const bash = new Bash({ fs, cwd: options.projectMount })
 
   return {
-    initialState: null,
-    handler: onMessage<ProjectShellMsg, null>({
+    initialState: { cwd: options.projectMount },
+    lifecycle: onLifecycle({
+      start: (state, ctx) => {
+        ctx.subscribe(HttpWsFrameTopic, e => ({ type: '_wsFrame' as const, event: e }))
+        return { state }
+      }
+    }),
+    handler: onMessage<ProjectShellMsg, ProjectShellState>({
+      _wsFrame: (state, msg, ctx) => {
+        const { userId, frame } = msg.event
+        const execCwd = frame.cwd || state.cwd || options.projectMount
+
+        if (frame.type === 'coding.bash.command') {
+          ctx.pipeToSelf(
+            bash.exec(frame.command, { cwd: execCwd }),
+            result => ({ type: '_wsBashDone' as const, result, userId, cmdId: frame.cmdId }),
+            error => ({ type: '_wsBashErr' as const, error: String(error), userId, cmdId: frame.cmdId }),
+          )
+          return { state }
+        }
+
+        if (frame.type === 'coding.bash.autocomplete') {
+          ctx.pipeToSelf(
+            bash.exec(`ls -F ${shellQuote(frame.directory || '.')}`, { cwd: execCwd }),
+            result => ({ type: '_wsAutocompleteDone' as const, result, userId, cmdId: frame.cmdId }),
+            error => ({ type: '_wsAutocompleteErr' as const, error: String(error), userId, cmdId: frame.cmdId }),
+          )
+          return { state }
+        }
+
+        return { state }
+      },
+
+      _wsBashDone: (state, msg, ctx) => {
+        const nextCwd = msg.result.env?.PWD || state.cwd
+        const reply = {
+          type: 'coding.bash.response',
+          cmdId: msg.cmdId,
+          stdout: msg.result.stdout,
+          stderr: msg.result.stderr,
+          exitCode: msg.result.exitCode,
+          cwd: nextCwd,
+        }
+        ctx.publish(OutboundUserMessageTopic, { userId: msg.userId, text: JSON.stringify(reply) })
+        return { state: { ...state, cwd: nextCwd } }
+      },
+
+      _wsBashErr: (state, msg, ctx) => {
+        const reply = {
+          type: 'coding.bash.response',
+          cmdId: msg.cmdId,
+          error: msg.error,
+          exitCode: -1,
+          cwd: state.cwd,
+        }
+        ctx.publish(OutboundUserMessageTopic, { userId: msg.userId, text: JSON.stringify(reply) })
+        return { state }
+      },
+
+      _wsAutocompleteDone: (state, msg, ctx) => {
+        const files = msg.result.exitCode === 0
+          ? msg.result.stdout.split('\n').map(f => f.trim()).filter(Boolean)
+          : []
+        const reply = {
+          type: 'coding.bash.autocomplete.response',
+          cmdId: msg.cmdId,
+          files,
+        }
+        ctx.publish(OutboundUserMessageTopic, { userId: msg.userId, text: JSON.stringify(reply) })
+        return { state }
+      },
+
+      _wsAutocompleteErr: (state, msg, ctx) => {
+        const reply = {
+          type: 'coding.bash.autocomplete.response',
+          cmdId: msg.cmdId,
+          files: [],
+        }
+        ctx.publish(OutboundUserMessageTopic, { userId: msg.userId, text: JSON.stringify(reply) })
+        return { state }
+      },
+
       invoke: (state, msg, ctx) => {
         const parent = ctx.trace.fromHeaders()
         const span: SpanHandle | null = parent

@@ -1,7 +1,7 @@
 import type { ActorRef } from '../../system/index.ts'
 import type { BashExecResult } from 'just-bash'
 import type { ContextSnapshotEvent, AgentModelOptions } from '../../types/agents.ts'
-import type { MessageAttachment } from '../../types/events.ts'
+import type { MessageAttachment, HttpWsFrameEvent } from '../../types/events.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { ToolCollection, ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
 import type { ContextView, LoopMsg, LoopState, SpanHandle } from '../../system/index.ts'
@@ -79,8 +79,17 @@ export type ArtifactState = {
   writing: boolean
 }
 
+export type ProjectShellState = {
+  cwd: string
+}
+
 export type ProjectShellMsg =
   | ToolMsg
+  | { type: '_wsFrame'; event: HttpWsFrameEvent }
+  | { type: '_wsBashDone'; result: BashExecResult; userId: string; cmdId: string }
+  | { type: '_wsBashErr'; error: string; userId: string; cmdId: string }
+  | { type: '_wsAutocompleteDone'; result: BashExecResult; userId: string; cmdId: string }
+  | { type: '_wsAutocompleteErr'; error: string; userId: string; cmdId: string }
   | { type: '_bashDone'; result: BashExecResult; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_bashErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_readDone'; content: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }

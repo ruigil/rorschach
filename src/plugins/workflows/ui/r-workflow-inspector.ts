@@ -106,7 +106,7 @@ export class RWorkflowInspector extends RorschachBase {
   }
 
   private _taskById(id: string) {
-    return this.graph?.nodes.find((node: any) => node.id === id) ?? null
+    return this.graph?.nodes?.find((node: any) => node.id === id) ?? null
   }
 
   private _kvItemsForOutputs(outputs: Record<string, unknown> | undefined) {

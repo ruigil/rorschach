@@ -62,17 +62,17 @@ const buildDocsTools = (
   [writeDocPageTool.name]: { ...writeDocPageTool, ref: artifactToolsRef as unknown as ActorRef<ToolMsg> },
 })
 
-const docsSurfaceRegistration: UiSurfaceRegistration = {
-  id: 'docs',
+const codeSurfaceRegistration: UiSurfaceRegistration = {
+  id: 'code',
   version: '1.0.0',
   view: {
-    title: 'Documentation',
-    icon: 'file-text',
-    contentTag: 'r-doc-workspace',
+    title: 'Code',
+    icon: 'code',
+    contentTag: 'r-code-workspace',
     modes: ['coding'],
   },
   moduleUrl: '/plugins/coding/ui/index.js',
-  frameTypes: ['docWorkspace'],
+  frameTypes: ['codeWorkspace', 'coding.bash.response', 'coding.bash.autocomplete.response'],
 }
 
 export default createPluginFactory<CodingConfig>({
@@ -145,5 +145,5 @@ export default createPluginFactory<CodingConfig>({
     const merged = mergeConfig(cfg)
     return buildCodingRoutes(merged.artifactsDir)
   },
-  uiSurface: docsSurfaceRegistration,
+  uiSurface: codeSurfaceRegistration,
 })

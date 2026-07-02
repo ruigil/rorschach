@@ -25,7 +25,7 @@ const defaultState: Partial<ShellState> = {
     attachments: [],
   },
   views: {},
-  activeWorkspaceTab: 'docs',
+  activeWorkspaceTab: 'code',
 }
 
 export function resetStore() {

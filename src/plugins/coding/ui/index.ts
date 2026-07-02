@@ -6,30 +6,60 @@
 // coding mode activates. The reducer calls host.openView('docs') on
 // each frame.
 
-import { RDocWorkspace } from './r-doc-workspace.js'
+import { RCodeWorkspace } from './r-code-workspace.js'
 import { store } from '@rorschach/frontend/webkit/store.js'
 import type { PluginHostActions } from '@rorschach/frontend/webkit/host-types.js'
 
-export { RDocWorkspace }
+export { RCodeWorkspace }
 
-export type DocsState = {
+export type CodeState = {
   currentDocArtifact: string | null
+  cwd: string
+  lastBashResponse: {
+    cmdId: string
+    stdout?: string
+    stderr?: string
+    exitCode: number
+    error?: string
+    cwd?: string
+  } | null
+  lastAutocompleteResponse: {
+    cmdId: string
+    files: string[]
+  } | null
 };
 
-store.namespace<DocsState>('docs').init(
-  { currentDocArtifact: null },
-  { persist: ['currentDocArtifact'] },
+store.namespace<CodeState>('code').init(
+  { currentDocArtifact: null, cwd: '/rorschach', lastBashResponse: null, lastAutocompleteResponse: null },
+  { persist: ['currentDocArtifact', 'cwd'] },
 )
 
 export const reduceFrame = (frame: any, host: PluginHostActions) => {
-  if (frame.type === 'docWorkspace') {
-    store.namespace<DocsState>('docs').set('currentDocArtifact', frame.artifactName)
-    host.openView('docs')
+  if (frame.type === 'codeWorkspace') {
+    store.namespace<CodeState>('code').set('currentDocArtifact', frame.artifactName)
+    host.openView('code')
+  } else if (frame.type === 'coding.bash.response') {
+    if (frame.cwd) {
+      store.namespace<CodeState>('code').set('cwd', frame.cwd)
+    }
+    store.namespace<CodeState>('code').set('lastBashResponse', {
+      cmdId: frame.cmdId,
+      stdout: frame.stdout,
+      stderr: frame.stderr,
+      exitCode: frame.exitCode,
+      error: frame.error,
+      cwd: frame.cwd,
+    })
+  } else if (frame.type === 'coding.bash.autocomplete.response') {
+    store.namespace<CodeState>('code').set('lastAutocompleteResponse', {
+      cmdId: frame.cmdId,
+      files: frame.files,
+    })
   }
 }
 
 declare module '@rorschach/frontend/webkit/store.js' {
   interface NamespaceRegistry {
-    docs: DocsState
+    code: CodeState
   }
 }

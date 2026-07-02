@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { AgentSystem, type ActorDef, type ActorRef } from '../system/index.ts'
 import { listWorkflows, getWorkflow, getWorkflowGraph, saveWorkflow } from '../plugins/workflows/workflow-store.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
-import { handleWorkflowTool, listExecutionToolsTool, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool, startWorkflowRunTool } from '../plugins/workflows/workflow-tools.ts'
+import { handleWorkflowTool, listExecutionToolsTool, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool, startWorkflowRunTool, updateWorkflowTool } from '../plugins/workflows/workflow-tools.ts'
 import { WorkflowEventTopic } from '../plugins/workflows/types.ts'
 import type { Workflow, WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowRunState } from '../plugins/workflows/types.ts'
 import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
@@ -254,6 +254,40 @@ describe('workflow store', () => {
       expect(reply.result.text).toContain('Workflow saved')
       expect(reply.result.text).toContain('1 tasks')
     }
+
+    await system.shutdown()
+  })
+
+  test('control tools can update workflow and publish workflow event', async () => {
+    const dir = await makeDir()
+    const system = await AgentSystem()
+    const runner = system.spawn('workflow-runner', FakeRunner())
+    const events: any[] = []
+    const ctx = {
+      publish: (topic: any, event: any) => {
+        if (topic === WorkflowEventTopic) {
+          events.push(event)
+        }
+      }
+    }
+
+    const initialWorkflow = sampleWorkflow('u1')
+    initialWorkflow.outputs = {}
+    await writeFile(join(dir, 'workflow.json'), JSON.stringify(initialWorkflow))
+
+    const reply = await handleWorkflowTool(
+      { type: 'invoke', toolName: updateWorkflowTool.name, arguments: JSON.stringify({
+        workflowId: initialWorkflow.id,
+        goal: 'Updated Goal',
+      }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
+      { workflowsDir: dir, workflowRunnerRef: runner, ctx },
+    )
+
+    expect(reply.type).toBe('toolResult')
+    if (reply.type === 'toolResult') {
+      expect(reply.result.text).toContain('updated successfully')
+    }
+    expect(events).toContainEqual({ userId: 'u1', workflowId: initialWorkflow.id })
 
     await system.shutdown()
   })

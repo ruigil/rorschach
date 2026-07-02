@@ -76,14 +76,6 @@ const readManifest = async (artifactsDir: string): Promise<DocsManifest | null> 
   }
 }
 
-const tocSidebar = (): string => `
-      <aside class="artifact-sidebar" aria-label="Table of contents">
-        <h2>Table of Contents</h2>
-        <ol id="toc-list">
-          <li><span>Loading table of contents...</span></li>
-        </ol>
-      </aside>`
-
 export const pageShell = (
   title: string,
   bodyHtml: string,
@@ -95,7 +87,6 @@ export const pageShell = (
   <title>${escapeHtml(title)}</title>
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/base16/ocean.min.css">
-  <script src="./toc.js" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
   <script>
@@ -169,43 +160,27 @@ export const pageShell = (
     });
   </script>
   <style>
-    html { scrollbar-width: thin; scrollbar-color: var(--border-mid) transparent; }
     body { min-height: 100vh; height: auto; overflow: auto; padding: 0; }
-    body::-webkit-scrollbar, .artifact-sidebar::-webkit-scrollbar { width: 4px; height: 4px; }
-    body::-webkit-scrollbar-track, .artifact-sidebar::-webkit-scrollbar-track { background: transparent; }
-    body::-webkit-scrollbar-thumb, .artifact-sidebar::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
-    body::-webkit-scrollbar-thumb:hover, .artifact-sidebar::-webkit-scrollbar-thumb:hover { background: var(--muted); }
-    .artifact-layout { display: grid; grid-template-columns: minmax(190px, 240px) minmax(0, 1fr); min-height: 100vh; }
-    .artifact-sidebar { position: sticky; top: 0; align-self: start; min-height: 100vh; max-height: 100vh; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--border-mid) transparent; border-right: 1px solid var(--border); padding: 24px 18px; background: rgba(6, 14, 20, 0.86); }
-    .artifact-sidebar h2 { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.72rem; font-weight: 600; letter-spacing: 0; margin: 18px 0 10px; text-transform: uppercase; }
-    .artifact-sidebar ol { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
-    .artifact-sidebar a, .artifact-sidebar span { color: var(--text); display: block; font-size: 0.9rem; line-height: 1.35; text-decoration: none; }
-    .artifact-sidebar a:hover, .artifact-sidebar a[aria-current="page"] { color: var(--accent-bright); }
     .artifact-page { max-width: 980px; width: 100%; margin: 0 auto; color: var(--text); padding: 28px; }
     .artifact-header { border-bottom: 1px solid var(--border); margin-bottom: 22px; padding-bottom: 16px; }
     .artifact-title { color: var(--accent-bright); font-size: 1.45rem; letter-spacing: 0; }
     .artifact-meta { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.72rem; margin-top: 8px; }
     .mermaid { display: flex; justify-content: center; margin: 1.5rem 0; background: rgba(6, 14, 20, 0.4); border: 1px solid var(--border); border-radius: 6px; padding: 16px; overflow-x: auto; }
     @media (max-width: 760px) {
-      .artifact-layout { display: block; }
-      .artifact-sidebar { position: static; min-height: auto; max-height: none; border-right: 0; border-bottom: 1px solid var(--border); }
       .artifact-page { padding: 22px; }
     }
   </style>
 </head>
 <body>
-  <div class="artifact-layout">
-${tocSidebar()}
-    <main class="artifact-page">
-      <header class="artifact-header">
-        <h1 class="artifact-title">${escapeHtml(title)}</h1>
-        <div class="artifact-meta">Generated documentation</div>
-      </header>
-      <article class="md">
+  <main class="artifact-page">
+    <header class="artifact-header">
+      <h1 class="artifact-title">${escapeHtml(title)}</h1>
+      <div class="artifact-meta">Generated documentation</div>
+    </header>
+    <article class="md">
 ${bodyHtml}
-      </article>
-    </main>
-  </div>
+    </article>
+  </main>
 </body>
 </html>
 `
@@ -216,29 +191,6 @@ export const indexShell = (manifest: DocsManifest): string => {
       <p><em>Generated at ${escapeHtml(manifest.generatedAt)}</em></p>
 `)
 }
-
-const tocScript = `(async () => {
-  try {
-    const res = await fetch('./manifest.json');
-    if (!res.ok) throw new Error('Failed to load manifest');
-    const manifest = await res.json();
-    const list = document.getElementById('toc-list');
-    if (!list || !manifest.pages) return;
-    
-    const currentFile = window.location.pathname.split('/').pop() || 'index.html';
-    list.innerHTML = manifest.pages.map(page => {
-      const isActive = page.filename === currentFile || (currentFile === '' && page.filename === 'index.html');
-      const activeAttr = isActive ? ' aria-current="page"' : '';
-      const escapedTitle = page.title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-      const escapedFilename = page.filename.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-      return \`<li><a href="./\${escapedFilename}"\${activeAttr}>\${escapedTitle}</a></li>\`;
-    }).join('\\n') || '<li><span>No pages generated.</span></li>';
-  } catch (err) {
-    console.error('Error rendering TOC:', err);
-    const list = document.getElementById('toc-list');
-    if (list) list.innerHTML = '<li><span style="color:var(--accent-bright)">Failed to load TOC</span></li>';
-  }
-})();`
 
 export const ArtifactTools = (artifactsDir: string): ActorDef<ArtifactToolsMsg, ArtifactState> => {
   const handler: MessageHandler<ArtifactToolsMsg, ArtifactState> = onMessage<ArtifactToolsMsg, ArtifactState>({
@@ -296,7 +248,6 @@ export const ArtifactTools = (artifactsDir: string): ActorDef<ArtifactToolsMsg, 
             await Bun.write(join(artifactsDir, filename), pageShell(meta.title, args.bodyHtml))
             await Bun.write(join(artifactsDir, 'manifest.json'), JSON.stringify(nextManifest, null, 2))
             await Bun.write(join(artifactsDir, 'index.html'), indexShell(nextManifest))
-            await Bun.write(join(artifactsDir, 'toc.js'), tocScript)
           })(),
           () => ({ type: '_writeDone' as const, replyTo: msg.replyTo, text: `Wrote ${filename}`, span }),
           error => ({ type: '_writeErr' as const, replyTo: msg.replyTo, error: String(error), span }),
@@ -336,7 +287,6 @@ export const ArtifactTools = (artifactsDir: string): ActorDef<ArtifactToolsMsg, 
 
             await Bun.write(join(artifactsDir, 'manifest.json'), JSON.stringify(nextManifest, null, 2))
             await Bun.write(join(artifactsDir, 'index.html'), indexShell(nextManifest))
-            await Bun.write(join(artifactsDir, 'toc.js'), tocScript)
           })(),
           () => ({ type: '_writeDone' as const, replyTo: msg.replyTo, text: `Deleted ${filename}`, span }),
           error => ({ type: '_writeErr' as const, replyTo: msg.replyTo, error: String(error), span }),

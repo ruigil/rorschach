@@ -294,7 +294,7 @@ export class RWorkflowWorkspace extends RorschachBase {
   }
 
   private _renderGraphView() {
-    if (!this._currentGraph || !this._currentGraph.nodes.length) {
+    if (!this._currentGraph || !this._currentGraph.nodes?.length) {
       return html`<div class="plan-empty"><span>workflow has no tasks</span></div>`
     }
     return html`

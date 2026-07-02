@@ -185,6 +185,17 @@ export class RShell extends RorschachBase {
             <circle cx="12" cy="12" r="1.6" fill="currentColor" opacity="0.9"/>
           </svg>
           <span class="logo-name">RORSCHACH</span>
+          <div class="header-actions-group">
+            <button class="header-icon-btn" @click=${() => alert(`User Session: ${userId || 'anonymous'}`)} title="User Session Profile">
+              ${this.renderIcon('user')}
+            </button>
+            <button class="header-icon-btn" ?hidden=${!canAdmin} @click=${() => openView('config')} title="Configuration Settings">
+              ${this.renderIcon('settings')}
+            </button>
+            <button class="header-icon-btn" ?hidden=${!canAdmin || !this._views.value || !this._views.value['observe']} @click=${() => openView('observe')} title="Observation Panel">
+              ${this.renderIcon('activity')}
+            </button>
+          </div>
         </div>
         <div class="header-end">
           <r-mode-select></r-mode-select>
@@ -209,15 +220,6 @@ export class RShell extends RorschachBase {
               <div class="sidebar-actions-group">
                 <button class="sidebar-header-btn" @click=${this._toggleSidebar} title="Toggle sidebar">
                   ${this.renderIcon(this._isSidebarCollapsed ? 'panel-left-open' : 'panel-left-close')}
-                </button>
-                <button class="sidebar-header-btn" @click=${() => alert(`User Session: ${userId || 'anonymous'}`)} title="User Session Profile">
-                  ${this.renderIcon('user')}
-                </button>
-                <button class="sidebar-header-btn" ?hidden=${!canAdmin} @click=${() => openView('config')} title="Configuration Settings">
-                  ${this.renderIcon('settings')}
-                </button>
-                <button class="sidebar-header-btn" ?hidden=${!canAdmin || !this._views.value || !this._views.value['observe']} @click=${() => openView('observe')} title="Observation Panel">
-                  ${this.renderIcon('activity')}
                 </button>
               </div>
               <span class="sidebar-title">${this._currentModeDisplayName.value || this._currentMode.value || 'Chat'}</span>

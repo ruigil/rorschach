@@ -274,6 +274,7 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
     if (!parsed.ok) return toolError(parsed.error)
     const result = await updateWorkflow(workflowsDir, msg.userId, parsed.workflowId, parsed.patch)
     if (!result.ok) return toolError(result.error)
+    ctx.publish(WorkflowEventTopic, { userId: msg.userId, workflowId: parsed.workflowId })
     return { type: 'toolResult', result: { text: `Workflow ${parsed.workflowId} updated successfully.` } }
   }
 

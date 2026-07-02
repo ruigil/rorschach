@@ -67,6 +67,35 @@ header.streaming::after {
   color: var(--text);
 }
 
+.header-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: 0.4rem;
+}
+
+.header-icon-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.header-icon-btn:hover {
+  color: var(--accent);
+  background: rgba(0, 196, 212, 0.08);
+}
+
+.header-icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
 /* ─── Header end group ─── */
 .header-end {
   display: flex;

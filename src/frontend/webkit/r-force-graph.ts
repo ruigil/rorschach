@@ -51,7 +51,7 @@ type GraphConfig = {
   appendNodeShape: (ng: any, d: any) => void;
   nodeClass: (d: any, selectedTaskId: string | null, hasIncoming: Set<any>, hasOutgoing: Set<any>) => string;
   nodeCursor: string;
-  onNodeInteraction: (ng: any, tooltip: any, container: Element) => void;
+  onNodeInteraction: (ng: any, tooltip: any, container: Element, host: any) => void;
 };
 
 const KG_CONFIG: GraphConfig = {
@@ -143,11 +143,11 @@ const PLAN_CONFIG: GraphConfig = {
     return cls;
   },
   nodeCursor: 'pointer',
-  onNodeInteraction: (ng, _tooltip, _container) => {
+  onNodeInteraction: (ng, _tooltip, _container, host) => {
     ng.on('click', (_ev: any, d: any) => {
       d3.select(ng.node().ownerDocument).node();
       // Dispatch via the host element
-      ng.node()?.closest('r-force-graph')?.dispatchEvent(
+      host?.dispatchEvent(
         new CustomEvent('node-select', { detail: { id: d.id } })
       );
     });
@@ -370,7 +370,7 @@ export class RForceGraph extends RorschachBase {
       );
 
     cfg.appendNodeShape(nodeGroup, simNodes);
-    cfg.onNodeInteraction(nodeGroup, tooltip, container);
+    cfg.onNodeInteraction(nodeGroup, tooltip, container, this);
 
     // Force simulation
     const sim = d3.forceSimulation(simNodes)

@@ -5,7 +5,7 @@ import { RView } from '../../frontend/shell/r-view.js'
 import { store } from '../../frontend/webkit/store.js'
 import { cleanup, mountClass } from '../helpers/frontend.js'
 import { pluginHost } from '../../frontend/shell/plugin-host.js'
-import '../../plugins/coding/ui/r-doc-workspace.js'
+import '../../plugins/coding/ui/r-code-workspace.js'
 import '../../plugins/workflows/ui/r-workflow-workspace.js'
 
 const viewState = (id: string) => ({
@@ -17,8 +17,8 @@ const viewState = (id: string) => ({
 beforeEach(() => {
   cleanup()
   localStorage.clear()
-  pluginHost.viewRegistry.set('docs', {
-    id: 'docs', title: 'Documentation', icon: 'file-text', contentTag: 'r-doc-workspace',
+  pluginHost.viewRegistry.set('code', {
+    id: 'code', title: 'Code', icon: 'code', contentTag: 'r-code-workspace',
   })
   pluginHost.viewRegistry.set('workflows', {
     id: 'workflows', title: 'Workflows', icon: 'git-branch', contentTag: 'r-workflow-workspace',
@@ -43,14 +43,14 @@ describe('r-view', () => {
     expect(el.querySelector('r-workflow-workspace')).toBeTruthy()
   })
 
-  test('renders the docs workspace correctly', async () => {
+  test('renders the code workspace correctly', async () => {
     store.namespace<ShellState>('shell').set('views', {
-      docs: viewState('docs'),
+      code: viewState('code'),
     })
 
-    const el = await mountClass(RView, { viewId: 'docs' }) as RView
+    const el = await mountClass(RView, { viewId: 'code' }) as RView
     await el.updateComplete
 
-    expect(el.querySelector('r-doc-workspace')).toBeTruthy()
+    expect(el.querySelector('r-code-workspace')).toBeTruthy()
   })
 })
