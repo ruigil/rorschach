@@ -2,7 +2,7 @@ import { createTopic, type ActorRef } from '../system/index.ts'
 
 export type Identity = {
   userId:   string
-  username: string
+  fullName: string
   roles:    string[]
 }
 

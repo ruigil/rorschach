@@ -55,7 +55,6 @@ export class RStatusDot extends RorschachBase {
     }
 
     .label {
-      display: none;
       font-size: 0.68rem;
       font-weight: 500;
       color: var(--text-dim);

@@ -68,17 +68,18 @@ export type DeviceKey = {
 
 export type User = {
   id:         UserId
-  username:   string
+  fullName:   string
   phone?:     string    // E.164, unverified
   createdAt:  number
   roles:      string[]
   deviceKeys: DeviceKey[]
+  avatar?:    string
 }
 
 export type AuthSession = {
   token:     string    // 256-bit random, base64url
   userId:    UserId
-  username:  string
+  fullName:  string
   roles:     string[]
   expiresAt: number
 }
@@ -87,19 +88,20 @@ export type AuthChallenge = {
   id:              string
   value:           string   // base64url challenge bytes
   type:            'registration' | 'authentication'
-  username?:       string   // stored by beginRegistration (phone number)
+  fullName?:       string   // stored by beginRegistration (phone number)
   userId?:         UserId   // stored by beginAuthentication (unused currently)
   expiresAt:       number
   fulfilledToken?: string   // set by finishAuthentication; consumed by pollChallenge
 }
 
-export type AuthLoginEvent  = { userId: UserId; username: string; roles: string[] }
+export type AuthLoginEvent  = { userId: UserId; fullName: string; roles: string[] }
 export type AuthLogoutEvent = { userId: UserId }
 
 // ─── UserStore messages ───
 
 export type UserStoreMsg =
-  | { type: 'createUser';          username: string; phone?: string; roles?: string[]; replyTo: ActorRef<{ ok: User } | { error: string }> }
+  | { type: 'createUser';          fullName: string; phone?: string; roles?: string[]; replyTo: ActorRef<{ ok: User } | { error: string }> }
+  | { type: 'updateUser';          userId: UserId; fullName: string; avatar?: string; replyTo: ActorRef<{ ok: User } | { error: string }> }
   | { type: 'getUser';             userId: UserId;       replyTo: ActorRef<User | null> }
   | { type: 'getUserByCredential'; credentialId: string; replyTo: ActorRef<User | null> }
   | { type: 'getUserByPhone';      phone: string;        replyTo: ActorRef<User | null> }
@@ -124,11 +126,13 @@ export type AuthenticatorMsg =
   | { type: 'revokeToken';          token: string }
   | { type: 'issueTicket';          token: string;       replyTo: ActorRef<{ ticket: string } | { error: string }> }
   | { type: 'validateTicket';       ticket: string;      replyTo: ActorRef<AuthSession | null> }
+  | { type: 'getUserProfile';       userId: UserId;       replyTo: ActorRef<User | null> }
+  | { type: 'updateUserProfile';    userId: UserId;       fullName: string; avatar?: string; replyTo: ActorRef<{ ok: User } | { error: string }> }
   | { type: '_gc' }
   // ─── pipeToSelf completions ───
-  | { type: '_regDone';   userId: string; username: string; roles: string[]; challengeId: string; replyTo: ActorRef<{ token: string } | { error: string }> }
+  | { type: '_regDone';   userId: string; fullName: string; roles: string[]; challengeId: string; replyTo: ActorRef<{ token: string } | { error: string }> }
   | { type: '_regFailed'; error: string;  replyTo: ActorRef<{ token: string } | { error: string }> }
-  | { type: '_authDone';  userId: string; username: string; roles: string[]; challengeId: string; credentialId: string; newCounter: number; replyTo: ActorRef<{ token: string } | { error: string }> }
+  | { type: '_authDone';  userId: string; fullName: string; roles: string[]; challengeId: string; credentialId: string; newCounter: number; replyTo: ActorRef<{ token: string } | { error: string }> }
   | { type: '_authFailed'; error: string; replyTo: ActorRef<{ token: string } | { error: string }> }
 
 // ─── Topics ───

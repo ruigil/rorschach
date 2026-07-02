@@ -4,6 +4,7 @@ import { UserStore } from './user-store.ts'
 import { Authenticator, type AuthConfig } from './authenticator.ts'
 import { IdentityProvider } from './identity-provider.ts'
 import { buildAuthRoutes, authSchemas } from './routes.ts'
+import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import type { AuthenticatorMsg, UserStoreMsg } from './types.ts'
 
 const config = defineConfig<AuthConfig>('auth', {
@@ -18,6 +19,18 @@ const config = defineConfig<AuthConfig>('auth', {
 }, {
   schemas: authSchemas,
 })
+
+const authSurfaceRegistration: UiSurfaceRegistration = {
+  id: 'auth.profile',
+  version: '0.1.0',
+  view: {
+    title: 'Profile',
+    icon: 'user',
+    contentTag: 'r-auth-profile',
+  },
+  moduleUrl: '/plugins/auth/ui/index.js',
+  frameTypes: [],
+}
 
 export default createPluginFactory<AuthConfig>({
   id:      'auth',
@@ -47,4 +60,5 @@ export default createPluginFactory<AuthConfig>({
   routes: (cfg, deps) => {
     return buildAuthRoutes(deps.authenticator as ActorRef<AuthenticatorMsg>)
   },
+  uiSurface: authSurfaceRegistration,
 })

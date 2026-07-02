@@ -297,12 +297,12 @@ const adminList = (value: string[] | string | undefined): string[] => {
 
 export const rolesForIdentity = (
   config: AuthConfig,
-  identity: { userId?: string; username: string; phone?: string; roles?: readonly string[] },
+  identity: { userId?: string; fullName: string; phone?: string; roles?: readonly string[] },
 ): string[] => {
   const roles = [...(identity.roles ?? [])]
   const admins = config.admins
   const matched =
-    adminList(admins?.usernames).includes(identity.username) ||
+    adminList(admins?.usernames).includes(identity.fullName) ||
     (identity.phone ? adminList(admins?.phones).includes(identity.phone) : false) ||
     (identity.userId ? adminList(admins?.userIds).includes(identity.userId) : false)
 
@@ -327,7 +327,7 @@ export const Authenticator = (opts: {
     if (!user) return null
     return {
       ...session,
-      username: user.username,
+      fullName: user.fullName,
       roles: rolesForIdentity(config, user),
     }
   }
@@ -352,7 +352,7 @@ export const Authenticator = (opts: {
           id:        challengeId,
           value:     challengeValue,
           type:      'registration',
-          username:  phone,
+          fullName:  phone,
           expiresAt: Date.now() + config.challengeTtlMs,
         }
         const options = {
@@ -378,7 +378,7 @@ export const Authenticator = (opts: {
           replyTo.send({ error: 'expected registration credential' })
           return { state }
         }
-        const phone = challenge.username!  // phone is stored as username
+        const phone = challenge.fullName!  // phone is stored as fullName initially
 
         context.pipeToSelf(
           (async () => {
@@ -387,10 +387,10 @@ export const Authenticator = (opts: {
               credential as Extract<typeof credential, { type: 'registration' }>,
               config,
             )
-            const roles = rolesForIdentity(config, { username: phone, phone })
+            const roles = rolesForIdentity(config, { fullName: phone, phone })
             const createResult = await ask<UserStoreMsg, { ok: User } | { error: string }>(
               userStore,
-              (r) => ({ type: 'createUser' as const, username: phone, phone, roles, replyTo: r }),
+              (r) => ({ type: 'createUser' as const, fullName: phone, phone, roles, replyTo: r }),
               { timeoutMs: 5_000 },
             )
             if ('error' in createResult) throw new Error(createResult.error)
@@ -407,21 +407,21 @@ export const Authenticator = (opts: {
               { timeoutMs: 5_000 },
             )
             if ('error' in addResult) throw new Error(addResult.error)
-            return { userId: createResult.ok.id, username: phone, roles: rolesForIdentity(config, createResult.ok) }
+            return { userId: createResult.ok.id, fullName: phone, roles: rolesForIdentity(config, createResult.ok) }
           })(),
-          ({ userId, username: uname, roles }): AuthenticatorMsg => ({ type: '_regDone', userId, username: uname, roles, challengeId, replyTo }),
+          ({ userId, fullName: uname, roles }): AuthenticatorMsg => ({ type: '_regDone', userId, fullName: uname, roles, challengeId, replyTo }),
           (err): AuthenticatorMsg => ({ type: '_regFailed', error: String(err), replyTo }),
         )
 
         return { state }
       },
 
-      _regDone: (state, { userId, username, roles, challengeId, replyTo }) => {
+      _regDone: (state, { userId, fullName, roles, challengeId, replyTo }) => {
         const token: string = generateToken()
         const session: AuthSession = {
           token,
           userId,
-          username,
+          fullName,
           roles,
           expiresAt: Date.now() + config.sessionTtlMs,
         }
@@ -433,7 +433,7 @@ export const Authenticator = (opts: {
         replyTo.send({ token })
         return {
           state: { ...state, sessions: { ...state.sessions, [token]: session }, challenges },
-          events: [emit(AuthLoginTopic, { userId, username, roles })],
+          events: [emit(AuthLoginTopic, { userId, fullName, roles })],
         }
       },
 
@@ -495,22 +495,22 @@ export const Authenticator = (opts: {
               deviceKey,
               config,
             )
-            return { userId: user.id, username: user.username, roles: rolesForIdentity(config, user), newCounter }
+            return { userId: user.id, fullName: user.fullName, roles: rolesForIdentity(config, user), newCounter }
           })(),
-          ({ userId, username, roles, newCounter }): AuthenticatorMsg =>
-            ({ type: '_authDone', userId, username, roles, challengeId, credentialId, newCounter, replyTo }),
+          ({ userId, fullName, roles, newCounter }): AuthenticatorMsg =>
+            ({ type: '_authDone', userId, fullName, roles, challengeId, credentialId, newCounter, replyTo }),
           (err): AuthenticatorMsg => ({ type: '_authFailed', error: String(err), replyTo }),
         )
 
         return { state }
       },
 
-      _authDone: (state, { userId, username, roles, challengeId, credentialId, newCounter, replyTo }) => {
+      _authDone: (state, { userId, fullName, roles, challengeId, credentialId, newCounter, replyTo }) => {
         const token: string = generateToken()
         const session: AuthSession = {
           token,
           userId,
-          username,
+          fullName,
           roles,
           expiresAt: Date.now() + config.sessionTtlMs,
         }
@@ -524,7 +524,7 @@ export const Authenticator = (opts: {
         replyTo.send({ token })
         return {
           state: { ...state, sessions: { ...state.sessions, [token]: session }, challenges },
-          events: [emit(AuthLoginTopic, { userId, username, roles })],
+          events: [emit(AuthLoginTopic, { userId, fullName, roles })],
         }
       },
 
@@ -544,7 +544,7 @@ export const Authenticator = (opts: {
         const options: import('./types.ts').RegistrationOptions = {
           challenge:              challenge.value,
           rp:                     { id: config.rpId, name: config.rpName },
-          user:                   { id: challengeId, name: challenge.username!, displayName: challenge.username! },
+          user:                   { id: challengeId, name: challenge.fullName!, displayName: challenge.fullName! },
           pubKeyCredParams:       [{ type: 'public-key' as const, alg: -7 }],
           timeout:                60_000,
           attestation:            'none' as const,
@@ -666,6 +666,28 @@ export const Authenticator = (opts: {
           .then(nextSession => replyTo.send(nextSession))
           .catch(() => replyTo.send(session))
         return { state: { ...state, tickets } }
+      },
+
+      getUserProfile: (state, { userId, replyTo }) => {
+        ask<UserStoreMsg, User | null>(
+          userStore,
+          (r) => ({ type: 'getUser' as const, userId, replyTo: r }),
+          { timeoutMs: 3_000 },
+        )
+          .then(user => replyTo.send(user))
+          .catch(() => replyTo.send(null))
+        return { state }
+      },
+
+      updateUserProfile: (state, { userId, fullName, avatar, replyTo }) => {
+        ask<UserStoreMsg, { ok: User } | { error: string }>(
+          userStore,
+          (r) => ({ type: 'updateUser' as const, userId, fullName, avatar, replyTo: r }),
+          { timeoutMs: 3_000 },
+        )
+          .then(res => replyTo.send(res))
+          .catch(err => replyTo.send({ error: String(err) }))
+        return { state }
       },
 
       // ─── GC ───

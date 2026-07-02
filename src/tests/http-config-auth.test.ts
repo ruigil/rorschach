@@ -27,7 +27,7 @@ const fakeIdentityProvider = (sessions: Record<string, Identity>): ActorDef<Iden
   handler: (state, msg) => {
     if (msg.type === 'resolveCookie') msg.replyTo.send(sessions[msg.cookie] ?? null)
     if (msg.type === 'resolveTicket') msg.replyTo.send(msg.ticket ? (sessions[msg.ticket] ?? null) : null)
-    if (msg.type === 'resolvePhone') msg.replyTo.send(Object.values(sessions).find(identity => identity.username === msg.phone) ?? null)
+    if (msg.type === 'resolvePhone') msg.replyTo.send(Object.values(sessions).find(identity => identity.fullName === msg.phone) ?? null)
     return { state }
   },
 })
@@ -40,6 +40,16 @@ const fakeUserStore = (users: Record<string, User>): ActorDef<UserStoreMsg, null
     if (msg.type === 'getUserByPhone') msg.replyTo.send(Object.values(users).find(user => user.phone === msg.phone) ?? null)
     if (msg.type === 'listUsers') msg.replyTo.send(Object.values(users))
     if (msg.type === 'createUser') msg.replyTo.send({ error: 'not implemented' })
+    if (msg.type === 'updateUser') {
+      const user = users[msg.userId]
+      if (user) {
+        user.fullName = msg.fullName
+        user.avatar = msg.avatar
+        msg.replyTo.send({ ok: user })
+      } else {
+        msg.replyTo.send({ error: 'user not found' })
+      }
+    }
     return { state }
   },
 })
@@ -70,7 +80,7 @@ describe('HTTP config update authorization', () => {
   })
 
   test('rejects authenticated config writes without a privileged role', async () => {
-    const identity: Identity = { userId: 'u1', username: 'user', roles: [] }
+    const identity: Identity = { userId: 'u1', fullName: 'user', roles: [] }
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
       plain: identity,
     }))
@@ -85,7 +95,7 @@ describe('HTTP config update authorization', () => {
   })
 
   test('allows authenticated config writes with admin role', async () => {
-    const identity: Identity = { userId: 'u1', username: 'admin-user', roles: ['admin'] }
+    const identity: Identity = { userId: 'u1', fullName: 'admin-user', roles: ['admin'] }
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
       privileged: identity,
     }))
@@ -100,7 +110,7 @@ describe('HTTP config update authorization', () => {
   })
 
   test('rejects cross-origin config writes before publishing updates', async () => {
-    const identity: Identity = { userId: 'u1', username: 'admin-user', roles: ['admin'] }
+    const identity: Identity = { userId: 'u1', fullName: 'admin-user', roles: ['admin'] }
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
       privileged: identity,
     }))
@@ -115,7 +125,7 @@ describe('HTTP config update authorization', () => {
   })
 
   test('allows proxied same-origin config writes with forwarded headers', async () => {
-    const identity: Identity = { userId: 'u1', username: 'admin-user', roles: ['admin'] }
+    const identity: Identity = { userId: 'u1', fullName: 'admin-user', roles: ['admin'] }
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
       privileged: identity,
     }))
@@ -135,7 +145,7 @@ describe('HTTP config update authorization', () => {
   })
 
   test('allows same-host config writes when TLS terminates before Bun', async () => {
-    const identity: Identity = { userId: 'u1', username: 'admin-user', roles: ['admin'] }
+    const identity: Identity = { userId: 'u1', fullName: 'admin-user', roles: ['admin'] }
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
       privileged: identity,
     }))
@@ -154,7 +164,7 @@ describe('HTTP config update authorization', () => {
   })
 
   test('allows proxied same-origin config writes with Forwarded header', async () => {
-    const identity: Identity = { userId: 'u1', username: 'admin-user', roles: ['admin'] }
+    const identity: Identity = { userId: 'u1', fullName: 'admin-user', roles: ['admin'] }
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
       privileged: identity,
     }))
@@ -180,8 +190,8 @@ describe('admin surface access', () => {
 
   test('allows admin surfaces for authenticated admins only', async () => {
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
-      admin: { userId: 'u-admin', username: 'admin', roles: ['admin'] },
-      user:  { userId: 'u-user',  username: 'user',  roles: [] },
+      admin: { userId: 'u-admin', fullName: 'admin', roles: ['admin'] },
+      user:  { userId: 'u-user',  fullName: 'user',  roles: [] },
     }))
 
     expect(canAccessAdminSurface(ref, ['admin'])).toBe(true)
@@ -192,8 +202,8 @@ describe('admin surface access', () => {
 
   test('allows admin HTTP reads for admins and rejects non-admins', async () => {
     const observeUrl = 'http://127.0.0.1:3000/kgraph'
-    const adminIdentity: Identity = { userId: 'u-admin', username: 'admin', roles: ['admin'] }
-    const userIdentity: Identity = { userId: 'u-user', username: 'user', roles: [] }
+    const adminIdentity: Identity = { userId: 'u-admin', fullName: 'admin', roles: ['admin'] }
+    const userIdentity: Identity = { userId: 'u-user', fullName: 'user', roles: [] }
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
       admin: adminIdentity,
       user:  userIdentity,
@@ -230,7 +240,7 @@ describe('auth admin allowlist', () => {
       admins: { usernames: 'alice\nbob', phones: '+15550000000', userIds: ['u-admin'] },
     }, {
       userId: 'u1',
-      username: 'alice',
+      fullName: 'alice',
       phone: '+15551111111',
       roles: [],
     })).toContain('admin')
@@ -242,7 +252,7 @@ describe('auth admin allowlist', () => {
       admins: { usernames: 'alice', phones: '+15550000000', userIds: ['u-admin'] },
     }, {
       userId: 'u1',
-      username: 'mallory',
+      fullName: 'mallory',
       phone: '+15551111111',
       roles: [],
     })).toEqual([])
@@ -252,7 +262,7 @@ describe('auth admin allowlist', () => {
     const system = await AgentSystem()
     const user: User = {
       id: 'u-admin',
-      username: 'alice',
+      fullName: 'alice',
       createdAt: Date.now(),
       roles: ['admin'],
       deviceKeys: [],
@@ -266,7 +276,7 @@ describe('auth admin allowlist', () => {
           stale: {
             token: 'stale',
             userId: user.id,
-            username: user.username,
+            fullName: user.fullName,
             roles: [],
             expiresAt: Date.now() + 60_000,
           },
@@ -288,7 +298,7 @@ describe('auth admin allowlist', () => {
     const system = await AgentSystem()
     const user: User = {
       id: 'u-admin',
-      username: 'alice',
+      fullName: 'alice',
       createdAt: Date.now(),
       roles: ['admin'],
       deviceKeys: [],
@@ -302,7 +312,7 @@ describe('auth admin allowlist', () => {
           stale: {
             token: 'stale',
             userId: user.id,
-            username: user.username,
+            fullName: user.fullName,
             roles: [],
             expiresAt: Date.now() + 60_000,
           },
@@ -316,6 +326,75 @@ describe('auth admin allowlist', () => {
     )
 
     expect(session?.roles).toContain('admin')
+
+    await system.shutdown()
+  })
+
+  test('getUserProfile and updateUserProfile handlers', async () => {
+    const system = await AgentSystem()
+    const user: User = {
+      id: 'u-user',
+      fullName: 'John Doe',
+      createdAt: Date.now(),
+      roles: [],
+      deviceKeys: [],
+    }
+    const userStore = system.spawn('users', fakeUserStore({ [user.id]: user }))
+    const auth = system.spawn('auth', Authenticator({ userStore: userStore as ActorRef<UserStoreMsg>, config: baseConfig })) as ActorRef<AuthenticatorMsg>
+
+    const profile = await ask<AuthenticatorMsg, User | null>(
+      auth,
+      replyTo => ({ type: 'getUserProfile', userId: 'u-user', replyTo }),
+    )
+    expect(profile).toBeDefined()
+    expect(profile?.fullName).toBe('John Doe')
+
+    const updateRes = await ask<AuthenticatorMsg, { ok: User } | { error: string }>(
+      auth,
+      replyTo => ({ type: 'updateUserProfile', userId: 'u-user', fullName: 'Jane Doe', avatar: 'data:image/png;base64,...', replyTo }),
+    )
+    expect(updateRes).toBeDefined()
+    expect('ok' in updateRes ? updateRes.ok.fullName : '').toBe('Jane Doe')
+    expect('ok' in updateRes ? updateRes.ok.avatar : '').toBe('data:image/png;base64,...')
+
+    await system.shutdown()
+  })
+
+  test('serves GET and POST /auth/profile routes', async () => {
+    const system = await AgentSystem()
+    const user: User = {
+      id: 'u-user',
+      fullName: 'John Doe',
+      createdAt: Date.now(),
+      roles: ['user'],
+      deviceKeys: [],
+    }
+    const userStore = system.spawn('users', fakeUserStore({ [user.id]: user }))
+    const auth = system.spawn('auth', Authenticator({ userStore: userStore as ActorRef<UserStoreMsg>, config: baseConfig })) as ActorRef<AuthenticatorMsg>
+    
+    const routes = buildAuthRoutes(auth)
+    const getRoute = routes.find(r => r.id === 'auth.profile.get')
+    const postRoute = routes.find(r => r.id === 'auth.profile.update')
+
+    expect(getRoute).toBeDefined()
+    expect(postRoute).toBeDefined()
+
+    const identity: Identity = { userId: 'u-user', fullName: 'John Doe', roles: ['user'] }
+    
+    const getRes = await getRoute!.handler(new Request('http://localhost/auth/profile'), new URL('http://localhost/auth/profile'), identity)
+    expect(getRes.status).toBe(200)
+    const getData = await getRes.json()
+    expect(getData.fullName).toBe('John Doe')
+
+    const postRes = await postRoute!.handler(new Request('http://localhost/auth/profile', {
+      method: 'POST',
+      body: JSON.stringify({ fullName: 'Jane Doe', avatar: 'avatar-data' }),
+    }), new URL('http://localhost/auth/profile'), identity)
+    expect(postRes.status).toBe(200)
+    const postData = await postRes.json()
+    expect(postData.ok).toBe(true)
+    expect(postData.user.fullName).toBe('Jane Doe')
+    expect(postData.user.avatar).toBe('avatar-data')
 
     await system.shutdown()
   })

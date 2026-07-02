@@ -19,13 +19,13 @@ const initialIdentityProviderState = (): IdentityProviderState => ({})
 
 const sessionToIdentity = (s: AuthSession): Identity => ({
   userId:   s.userId,
-  username: s.username,
+  fullName: s.fullName,
   roles:    s.roles,
 })
 
 const userToIdentity = (u: User): Identity => ({
   userId:   u.id,
-  username: u.username,
+  fullName: u.fullName,
   roles:    u.roles,
 })
 

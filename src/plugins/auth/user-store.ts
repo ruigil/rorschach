@@ -6,14 +6,12 @@ import type { User, UserId, DeviceKey, UserStoreMsg } from './types.ts'
 
 export type UserStoreState = {
   users:           Record<UserId, User>
-  usernameIndex:   Record<string, UserId>
   credentialIndex: Record<string, UserId>
   phoneIndex:      Record<string, UserId>
 }
 
 const initialUserStoreState = (): UserStoreState => ({
   users:           {},
-  usernameIndex:   {},
   credentialIndex: {},
   phoneIndex:      {},
 })
@@ -43,18 +41,14 @@ export const UserStore = (filePath: string): ActorDef<UserStoreMsg, UserStoreSta
   persistence: jsonPersistence(filePath),
 
   handler: onMessage<UserStoreMsg, UserStoreState>({
-    createUser: (state, { username, phone, roles, replyTo }) => {
-      if (state.usernameIndex[username]) {
-        replyTo.send({ error: 'username already taken' })
-        return { state }
-      }
+    createUser: (state, { fullName, phone, roles, replyTo }) => {
       if (phone && state.phoneIndex[phone]) {
         replyTo.send({ error: 'phone already registered' })
         return { state }
       }
       const user: User = {
         id:         crypto.randomUUID(),
-        username,
+        fullName,
         phone,
         createdAt:  Date.now(),
         roles:      roles ?? [],
@@ -63,10 +57,29 @@ export const UserStore = (filePath: string): ActorDef<UserStoreMsg, UserStoreSta
       replyTo.send({ ok: user })
       return {
         state: {
+          ...state,
           users:           { ...state.users,         [user.id]: user },
-          usernameIndex:   { ...state.usernameIndex, [username]: user.id },
-          credentialIndex: state.credentialIndex,
           phoneIndex:      phone ? { ...state.phoneIndex, [phone]: user.id } : state.phoneIndex,
+        },
+      }
+    },
+
+    updateUser: (state, { userId, fullName, avatar, replyTo }) => {
+      const user = state.users[userId]
+      if (!user) {
+        replyTo.send({ error: 'user not found' })
+        return { state }
+      }
+      const updatedUser: User = {
+        ...user,
+        fullName,
+        avatar,
+      }
+      replyTo.send({ ok: updatedUser })
+      return {
+        state: {
+          ...state,
+          users: { ...state.users, [userId]: updatedUser },
         },
       }
     },

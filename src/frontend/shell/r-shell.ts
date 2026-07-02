@@ -11,7 +11,6 @@ import { pluginHost } from './plugin-host.js';
 
 @customElement('r-shell')
 export class RShell extends RorschachBase {
-  private _isConnected = new StoreController(this, ['shell', 'isConnected']);
   private _currentUserId = new StoreController(this, ['shell', 'currentUserId']);
   private _currentUserRoles = new StoreController(this, ['shell', 'currentUserRoles']);
   private _isWaiting = new StoreController(this, ['shell', 'isWaiting']);
@@ -172,7 +171,6 @@ export class RShell extends RorschachBase {
 
   override render() {
     const canAdmin = this._canUseAdminSurface();
-    const isConnected = this._isConnected.value;
     const isWaiting = this._isWaiting.value;
     const userId = this._currentUserId.value;
 
@@ -186,7 +184,7 @@ export class RShell extends RorschachBase {
           </svg>
           <span class="logo-name">RORSCHACH</span>
           <div class="header-actions-group">
-            <button class="header-icon-btn" @click=${() => alert(`User Session: ${userId || 'anonymous'}`)} title="User Session Profile">
+            <button class="header-icon-btn" ?hidden=${!userId || userId === 'anonymous'} @click=${() => openView('auth.profile')} title="User Session Profile">
               ${this.renderIcon('user')}
             </button>
             <button class="header-icon-btn" ?hidden=${!canAdmin} @click=${() => openView('config')} title="Configuration Settings">
@@ -196,13 +194,12 @@ export class RShell extends RorschachBase {
               ${this.renderIcon('activity')}
             </button>
           </div>
+          <div class="status-pill">
+            <r-status-dot></r-status-dot>
+          </div>
         </div>
         <div class="header-end">
           <r-mode-select></r-mode-select>
-          <div class="status-pill">
-            <r-status-dot status="${isConnected ? 'connected' : 'disconnected'}"
-                          label="${isConnected ? 'online' : 'connecting…'}"></r-status-dot>
-          </div>
           <r-theme-select></r-theme-select>
           ${userId && userId !== 'anonymous' ? html`
             <button class="logout-btn" title="Sign out" @click=${this._handleLogout}>

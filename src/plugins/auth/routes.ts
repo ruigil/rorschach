@@ -10,6 +10,7 @@ import type {
   RegistrationBeginResult,
   AuthenticationBeginResult,
   WebAuthnCredential,
+  User,
 } from './types.ts'
 
 // ─── Config Schema Sections ──────────────────────────────────────────────────
@@ -265,6 +266,61 @@ export const buildAuthRoutes = (authenticator: ActorRef<AuthenticatorMsg>): Rout
         status: 204,
         headers: { 'Set-Cookie': 'session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0' },
       })
+    },
+  },
+
+  {
+    id: 'auth.profile.get',
+    method: 'GET',
+    path: '/auth/profile',
+    handler: async (_req, _url, identity) => {
+      if (!identity || identity.userId === 'anonymous') {
+        return new Response('Unauthorized', { status: 401 })
+      }
+      const user = await ask<AuthenticatorMsg, User | null>(
+        authenticator,
+        r => ({ type: 'getUserProfile', userId: identity.userId, replyTo: r }),
+        { timeoutMs: 5_000 },
+      )
+      if (!user) return json({ error: 'user not found' }, { status: 404 })
+      return json({
+        fullName: user.fullName,
+        avatar: user.avatar || '',
+        phone: user.phone || '',
+        roles: identity.roles,
+      })
+    },
+  },
+
+  {
+    id: 'auth.profile.update',
+    method: 'POST',
+    path: '/auth/profile',
+    handler: async (req, _url, identity) => {
+      if (!identity || identity.userId === 'anonymous') {
+        return new Response('Unauthorized', { status: 401 })
+      }
+      try {
+        const body = await req.json() as { fullName?: string; avatar?: string }
+        if (!body.fullName) return new Response('fullName required', { status: 400 })
+        const result = await ask<AuthenticatorMsg, { ok: User } | { error: string }>(
+          authenticator,
+          r => ({ type: 'updateUserProfile', userId: identity.userId, fullName: body.fullName!, avatar: body.avatar, replyTo: r }),
+          { timeoutMs: 5_000 },
+        )
+        if ('error' in result) return json(result, { status: 400 })
+        return json({
+          ok: true,
+          user: {
+            fullName: result.ok.fullName,
+            avatar: result.ok.avatar || '',
+            phone: result.ok.phone || '',
+            roles: result.ok.roles,
+          }
+        })
+      } catch {
+        return new Response('Bad request', { status: 400 })
+      }
     },
   },
 
