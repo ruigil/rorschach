@@ -1,8 +1,6 @@
-import { customElement, html, property, RorschachBase } from './base.js';
-
-import type { Topic } from './types.js';
-import './r-tree.js';
-import type { TreeNode } from './r-tree.js';
+import { customElement, html, property, RorschachBase } from '@rorschach/webkit';
+import type { Topic } from '@rorschach/webkit/types.js';
+import type { TreeNode } from '@rorschach/webkit';
 
 @customElement('r-topic-list')
 export class RTopicList extends RorschachBase {

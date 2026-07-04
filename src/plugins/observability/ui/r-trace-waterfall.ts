@@ -4,18 +4,15 @@ import {
   html,
   RorschachBase,
   state,
-  type TemplateResult
-} from './base.js';
+  type TemplateResult,
+  store,
+  StoreController
+} from '@rorschach/webkit';
 
-import { store } from './runtime/store.js';
-import { StoreController } from './runtime/store-controller.js';
-import type { TraceSpan } from './types.js';
+import type { TraceSpan } from '@rorschach/webkit/types.js';
+import type { ObservabilityState } from './index.js';
 
 const MAX_TRACES = 20;
-
-type ShellTracesState = {
-  traces: TraceSpan[]
-};
 
 type TraceSpanRecord = {
   spanId: string;
@@ -185,7 +182,7 @@ export class RTraceWaterfall extends RorschachBase {
   }
 
   clear() {
-    store.namespace<ShellTracesState>('shell').set('traces', []);
+    store.namespace<ObservabilityState>('observe').set('traces', []);
   }
 
   private _computeDepths(spans: TraceSpanRecord[]): Map<string, number> {

@@ -6,11 +6,10 @@ import {
   RorschachBase,
   state,
   type TemplateResult
-} from './base.js';
+} from '@rorschach/webkit';
 
-import type { Actor } from './types.js';
-import './r-tree.js';
-import type { TreeNode } from './r-tree.js';
+import type { Actor } from '@rorschach/webkit/types.js';
+import type { TreeNode } from '@rorschach/webkit';
 
 @customElement('r-actor-tree')
 export class RActorTree extends RorschachBase {

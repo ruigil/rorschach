@@ -1,14 +1,7 @@
-import { customElement, html, RorschachBase } from './base.js';
-
-import { StoreController } from './runtime/store-controller.js';
-import './r-list.js';
-import type { ListItem } from './r-list.js';
+import { customElement, html, RorschachBase, StoreController } from '@rorschach/webkit';
+import type { ListItem } from '@rorschach/webkit';
 
 type ToolSchema = { type: 'function'; function: { name: string; description: string; parameters: object } }
-
-type ShellToolsState = {
-  tools: Record<string, ToolSchema>
-};
 
 @customElement('r-tools-list')
 export class RToolsList extends RorschachBase {
