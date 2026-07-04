@@ -7,8 +7,7 @@
 // key), so `subscribe('messages', cb)` on namespace `'shell'` does not fire
 // for a key named `'messages'` on namespace `'workflows'`.
 
-import type { ViewConfig, ViewRuntimeState } from '../host-types.js'
-import { readSavedViewState } from '../view-state.js'
+
 
 export type PersistOptions<T> = {
   /** Keys whose values should be automatically read from / written to
@@ -36,16 +35,8 @@ export interface NamespaceRegistry {
 }
 
 export interface Store {
-  /** Returns the typed view for `id`, lazily creating namespaces[id] = {} on
-   *  first access. Shell and plugins use the same API. */
   namespace<N extends keyof NamespaceRegistry>(id: N): Namespace<NamespaceRegistry[N]>
   namespace<T extends object>(id: string): Namespace<T>
-  /** Seed namespaces['shell']['views'][id] from cfg defaults merged with
-   *  saved localStorage state (rorschach.view_state.<id>). Idempotent. */
-  ensureView(id: string, cfg: ViewConfig): void
-  /** Set namespaces['shell']['views'][id].isOpen = false. Convenience over
-   *  namespace('shell').get('views')[id].isOpen = false. */
-  closeView(id: string): void
 }
 
 // ─── Internal implementation ───
@@ -168,45 +159,11 @@ const makeNamespace = <T extends object>(nsId: string): Namespace<T> => {
     },
   }
 }
-
-// ─── View runtime state helpers ───
-//
-// `readSavedViewState` is imported from `./view-state.js` so both halves
-// of the view-state persistence contract share one source file. The writer
-// lives in `view-actions.ts` (calls `localStorage.setItem` directly because
-// the store's generic `persist` option is per-(namespace,key), not per-view).
-
-const ensureViewRuntime = (id: string, cfg: ViewConfig): ViewRuntimeState => {
-  const shell = root.namespaces['shell'] ?? {}
-  const views = (shell['views'] ?? {}) as Record<string, ViewRuntimeState>
-  if (views[id]) return views[id]!
-
-  const state = readSavedViewState(id, cfg)
-  shell['views'] = { ...views, [id]: state }
-  root.namespaces['shell'] = shell
-  notify('shell', 'views', shell['views'], shell['views'])
-  return state
-}
-
 export const store: Store = {
   namespace<T extends object>(id: string): Namespace<T> {
     // Lazily create the namespace sub-object on first access.
     if (!root.namespaces[id]) root.namespaces[id] = {}
     return makeNamespace<T>(id)
-  },
-
-  ensureView(id: string, cfg: ViewConfig): void {
-    ensureViewRuntime(id, cfg)
-  },
-
-  closeView(id: string): void {
-    const shell = root.namespaces['shell']
-    if (!shell) return
-    const views = (shell['views'] ?? {}) as Record<string, ViewRuntimeState>
-    const view = views[id]
-    if (!view) return
-    views[id] = { ...view, isOpen: false }
-    notify('shell', 'views', shell['views'], shell['views'])
   },
 }
 

@@ -1,9 +1,5 @@
-// ─── View & mode actions ───
-//
-// Pure store helpers that operate on the generic 'shell' namespace.
-// Placed in shell to maintain dependency inversion boundaries.
-
-import { readSavedViewState, store, type ViewRuntimeState } from '@rorschach/webkit';
+import { store } from '@rorschach/webkit';
+import type { ViewConfig, ViewRuntimeState } from '../types/state.js';
 
 type ShellViewSlice = {
   currentMode: string
@@ -15,6 +11,26 @@ type ShellViewSlice = {
 
 const shell = () => store.namespace<ShellViewSlice>('shell')
 
+export const readSavedViewState = (id: string, _cfg: ViewConfig): ViewRuntimeState => {
+  const defaultState: ViewRuntimeState = {
+    id,
+    isOpen: false,
+    params: {},
+  }
+
+  if (typeof localStorage === 'undefined') return defaultState
+
+  const saved = localStorage.getItem(`rorschach.view_state.${id}`)
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved)
+      return { ...defaultState, ...parsed }
+    } catch { /* fall through */ }
+  }
+
+  return defaultState
+}
+
 /** Persist a single view's runtime state. The companion reader
  *  `readSavedViewState` lives in `view-state.ts` so both halves of the
  *  view-state persistence contract share one file. */
@@ -22,6 +38,15 @@ const persistViewState = (id: string, state: ViewRuntimeState) => {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(`rorschach.view_state.${id}`, JSON.stringify(state))
   }
+}
+
+export const ensureView = (id: string, cfg: ViewConfig): void => {
+  const views = { ...shell().get('views') }
+  if (views[id]) return
+
+  const state = readSavedViewState(id, cfg)
+  views[id] = state
+  shell().set('views', views)
 }
 
 export const setMode = (mode: string, displayName?: string) => {
@@ -58,14 +83,15 @@ export const openView = (id: string) => {
   persistViewState(id, viewState)
 }
 
-export const closeView = (id: string) => {
+export const closeView = (id: string, persist = true) => {
   const views = { ...shell().get('views') }
   const viewState = views[id]
   if (!viewState) return
 
   viewState.isOpen = false
   shell().set('views', views)
-  persistViewState(id, viewState)
+  if (persist) {
+    persistViewState(id, viewState)
+  }
 }
 
-export { readSavedViewState }

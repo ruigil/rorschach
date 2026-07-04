@@ -26,7 +26,6 @@ export function isConnected(): boolean {
 
 /** Send a JSON frame to the backend. No-op if the socket isn't open. */
 export function send(frame: object): void {
-  console.debug('Sending frame:', frame)
   if (socket?.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(frame))
   }

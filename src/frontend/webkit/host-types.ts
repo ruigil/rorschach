@@ -13,25 +13,5 @@ export type PluginHostActions = {
   setMode(mode: string): void
 };
 
-// View configuration the shell reads when rendering an `r-view`. Same
-// shape as ViewConfig plus `id` (added by pluginHost when it seeds
-// the runtime registry). Plugins publish the `UiSurfaceViewConfig` shape
-// (no `id`) via UiSurfaceRegistrationTopic; the host adds `id` from the
-// registration's `id` field.
-export type ViewConfig = {
-  id: string
-  title: string
-  icon: string
-  contentTag: string
-  modes?: string[]
-};
 
-// Runtime state for a view — owned by the shell namespace
-// (`store.namespace('shell')['views'][id]`). Plugins do not read it; the
-// `PluginHostActions` facade deliberately exposes no view-state accessor.
-export type ViewRuntimeState = {
-  id: string
-  isOpen: boolean
-  params: Record<string, any>
-};
 

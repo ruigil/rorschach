@@ -1,7 +1,8 @@
 import type { UiSurfaceRegistration } from '../../types/ui-surface.js'
-import { store, type PluginHostActions, type ViewConfig } from '@rorschach/webkit';
+import { store, type PluginHostActions } from '@rorschach/webkit';
+import type { ViewConfig } from '../types/state.js';
 
-import { openView, closeView, setMode } from './view-actions.js'
+import { openView, closeView, setMode, ensureView } from './view-actions.js'
 import type { ShellState } from '../types/state.js'
 
 // ─── Plugin-host — runtime surface registry ───
@@ -39,7 +40,7 @@ export const pluginHost = {
       contentTag: 'r-config-form',
     }
     viewRegistry.set('config', configCfg)
-    store.ensureView('config', configCfg)
+    ensureView('config', configCfg)
 
     // All plugin surfaces (docs, workflows, ...) are now driven by
     // UiSurfaceRegistration WS frames. No legacy seeds remain.
@@ -59,7 +60,7 @@ export const pluginHost = {
     if (reg.view) {
       const cfg: ViewConfig = { ...reg.view, id: reg.id }
       viewRegistry.set(reg.id, cfg)
-      store.ensureView(reg.id, cfg)
+      ensureView(reg.id, cfg)
     }
     if (reg.moduleUrl) {
       try {
@@ -88,7 +89,7 @@ export const pluginHost = {
     if (!reg) return
     surfaces.delete(id)
     viewRegistry.delete(id)
-    store.closeView(id)
+    closeView(id, false)
     for (const ft of reg.frameTypes ?? []) frameOwners.delete(ft)
     store.namespace(id).reset()
     surfaceReducers.delete(id)

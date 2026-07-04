@@ -10,13 +10,25 @@ import type {
   TraceSpan,
   UsageEntry,
 } from '@rorschach/webkit/types.js'
-import { type ViewRuntimeState } from '@rorschach/webkit';
+export type ViewConfig = {
+  id: string
+  title: string
+  icon: string
+  contentTag: string
+  modes?: string[]
+};
+
+export type ViewRuntimeState = {
+  id: string
+  isOpen: boolean
+  params: Record<string, any>
+};
 
 // Re-export the kit types so existing shell code that imports from
 // `./types/state.js` keeps working. These are the neutral data shapes the
 // kit primitives render; the kit owns them, the shell re-exports for
 // convenience.
-export type { Attachment, Source, Message, ActiveStream, Topic, Actor, LogEvent, TraceSpan, UsageEntry, ViewRuntimeState }
+export type { Attachment, Source, Message, ActiveStream, Topic, Actor, LogEvent, TraceSpan, UsageEntry }
 
 // Agent is shell/agent-registry specific — stays here, not in the kit.
 export type Agent = {

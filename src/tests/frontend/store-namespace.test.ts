@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { store, __resetStoreForTests } from '../../frontend/webkit/runtime/store.js'
 import { StoreController } from '../../frontend/webkit/runtime/store-controller.js'
 import type { ShellState } from '../../frontend/types/state.js'
+import { ensureView, closeView } from '../../frontend/shell/view-actions.js'
 
 declare module '../../frontend/webkit/runtime/store.js' {
   interface NamespaceRegistry {
@@ -162,11 +163,11 @@ describe('store.namespace() persistence', () => {
   })
 })
 
-// ─── store.ensureView / closeView ───
+// ─── shell view actions: ensureView / closeView ───
 
-describe('store.ensureView / closeView', () => {
+describe('shell view actions: ensureView / closeView', () => {
   test('ensureView seeds view runtime state with defaults', () => {
-    store.ensureView('testview', {
+    ensureView('testview', {
       id: 'testview', title: 'Test', icon: 'file', contentTag: 'r-test',
     })
     const view = store.namespace<ShellState>('shell').get('views')['testview']
@@ -178,19 +179,19 @@ describe('store.ensureView / closeView', () => {
     const cfg = {
       id: 'idem', title: 'T', icon: 'file', contentTag: 'r-t',
     }
-    store.ensureView('idem', cfg)
+    ensureView('idem', cfg)
     const first = store.namespace<ShellState>('shell').get('views')['idem']
-    store.ensureView('idem', cfg)
+    ensureView('idem', cfg)
     const second = store.namespace<ShellState>('shell').get('views')['idem']
     expect(first).toBe(second) // same object reference
   })
 
   test('closeView sets isOpen to false', () => {
-    store.ensureView('closeme', {
+    ensureView('closeme', {
       id: 'closeme', title: 'C', icon: 'file', contentTag: 'r-c',
     })
     store.namespace<ShellState>('shell').get('views')['closeme']!.isOpen = true
-    store.closeView('closeme')
+    closeView('closeme')
     expect(store.namespace<ShellState>('shell').get('views')['closeme']!.isOpen).toBe(false)
   })
 })
