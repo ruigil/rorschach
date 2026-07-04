@@ -381,12 +381,12 @@ describe('auth admin allowlist', () => {
 
     const identity: Identity = { userId: 'u-user', fullName: 'John Doe', roles: ['user'] }
     
-    const getRes = await getRoute!.handler(new Request('http://localhost/auth/profile'), new URL('http://localhost/auth/profile'), identity)
+    const getRes = await getRoute!.handler!(new Request('http://localhost/auth/profile'), new URL('http://localhost/auth/profile'), identity)
     expect(getRes.status).toBe(200)
     const getData = await getRes.json()
     expect(getData.fullName).toBe('John Doe')
 
-    const postRes = await postRoute!.handler(new Request('http://localhost/auth/profile', {
+    const postRes = await postRoute!.handler!(new Request('http://localhost/auth/profile', {
       method: 'POST',
       body: JSON.stringify({ fullName: 'Jane Doe', avatar: 'avatar-data' }),
     }), new URL('http://localhost/auth/profile'), identity)

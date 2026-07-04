@@ -4,9 +4,9 @@ import {
   html,
   RorschachBase,
   state,
-  StoreController
+  StoreController,
+  send
 } from '@rorschach/webkit';
-import { send } from '../../../frontend/shell/connection-service.js'
 
 @customElement('r-notebook-todos')
 export class RNotebookTodos extends RorschachBase {

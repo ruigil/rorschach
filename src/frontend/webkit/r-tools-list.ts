@@ -1,6 +1,6 @@
 import { customElement, html, RorschachBase } from './base.js';
 
-import { StoreController } from './store-controller.js';
+import { StoreController } from './runtime/store-controller.js';
 import './r-list.js';
 import type { ListItem } from './r-list.js';
 

@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
-import { store, __resetStoreForTests } from '../../frontend/webkit/store.js'
+import { store, __resetStoreForTests } from '../../frontend/webkit/runtime/store.js'
 import { pluginHost } from '../../frontend/shell/plugin-host.js'
 import type { ShellState } from '../../frontend/types/state.js'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.js'

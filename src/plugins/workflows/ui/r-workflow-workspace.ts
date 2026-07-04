@@ -7,9 +7,9 @@ import {
   sharedStyles,
   state,
   store,
-  StoreController
+  StoreController,
+  send
 } from '@rorschach/webkit';
-import { send } from '../../../frontend/shell/connection-service.js'
 import type { ShellState } from '../../../frontend/types/state.js'
 import type { WorkflowsState, WORKFLOW_RUN_UPDATED_EVENT as _WRE } from './index.js'
 import { WORKFLOW_RUN_UPDATED_EVENT } from './index.js'

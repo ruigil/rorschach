@@ -1,9 +1,9 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
-import { store, __resetStoreForTests } from '../../frontend/webkit/store.js'
-import { StoreController } from '../../frontend/webkit/store-controller.js'
+import { store, __resetStoreForTests } from '../../frontend/webkit/runtime/store.js'
+import { StoreController } from '../../frontend/webkit/runtime/store-controller.js'
 import type { ShellState } from '../../frontend/types/state.js'
 
-declare module '../../frontend/webkit/store.js' {
+declare module '../../frontend/webkit/runtime/store.js' {
   interface NamespaceRegistry {
     ctrltest: { mode: string }
   }

@@ -1,6 +1,5 @@
-import { store } from '@rorschach/webkit';
+import { store, isConnected, send } from '@rorschach/webkit';
 import type { ShellState, Message, LogEvent, Attachment } from '../types/state.js'
-import { isConnected, send } from './connection-service.js'
 import { setMode } from './view-actions.js'
 
 const shell = () => store.namespace<ShellState>('shell')

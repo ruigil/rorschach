@@ -4,10 +4,12 @@ import {
   RorschachBase,
   state,
   store,
-  StoreController
+  StoreController,
+  connect,
+  onMessage
 } from '@rorschach/webkit';
 
-import { connect } from './connection-service.js';
+import { dispatchFrame } from './dispatcher.js';
 import { logout, switchMode } from './actions.js';
 import { openView, closeView, setActiveWorkspaceTab } from './view-actions.js';
 import type { ShellState } from '../types/state.js';
@@ -103,6 +105,7 @@ export class RShell extends RorschachBase {
       console.error('Failed to fetch user session', e);
     }
 
+    onMessage(dispatchFrame);
     connect();
 
     // In the new layout, chat is always a persistent sidebar and never a dock window.

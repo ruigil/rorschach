@@ -24,9 +24,9 @@ const persistViewState = (id: string, state: ViewRuntimeState) => {
   }
 }
 
-export const setMode = (mode: string, displayName: string) => {
+export const setMode = (mode: string, displayName?: string) => {
   shell().set('currentMode', mode)
-  shell().set('currentModeDisplayName', displayName)
+  shell().set('currentModeDisplayName', displayName ?? mode)
   shell().set('isWaiting', false)
 }
 

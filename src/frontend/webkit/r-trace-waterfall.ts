@@ -7,8 +7,8 @@ import {
   type TemplateResult
 } from './base.js';
 
-import { store } from './store.js';
-import { StoreController } from './store-controller.js';
+import { store } from './runtime/store.js';
+import { StoreController } from './runtime/store-controller.js';
 import type { TraceSpan } from './types.js';
 
 const MAX_TRACES = 20;

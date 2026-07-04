@@ -55,7 +55,7 @@ export const reduceFrame = (frame: any) => {
   }
 }
 
-declare module '@rorschach/webkit/store.js' {
+declare module '@rorschach/webkit/runtime/store.js' {
   interface NamespaceRegistry {
     notebook: NotebookState
   }

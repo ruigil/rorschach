@@ -6,9 +6,9 @@ import {
   RorschachBase,
   state,
   store,
-  StoreController
+  StoreController,
+  send
 } from '@rorschach/webkit';
-import { send } from '../../../frontend/shell/connection-service.js'
 import type { NotebookState } from './index.js'
 
 @customElement('r-notebook-journal')

@@ -2,7 +2,7 @@ import type { ShellState } from '../../frontend/types/state.js'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
 import { RView } from '../../frontend/shell/r-view.js'
-import { store } from '../../frontend/webkit/store.js'
+import { store } from '../../frontend/webkit/runtime/store.js'
 import { cleanup, mountClass } from '../helpers/frontend.js'
 import { pluginHost } from '../../frontend/shell/plugin-host.js'
 import '../../plugins/coding/ui/r-code-workspace.js'

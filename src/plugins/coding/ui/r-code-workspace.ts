@@ -8,10 +8,9 @@ import {
   state,
   store,
   StoreController,
-  type ListItem
+  type ListItem,
+  send
 } from '@rorschach/webkit';
-
-import { send } from '../../../frontend/shell/connection-service.js';
 
 type TerminalHistoryEntry = {
   type: 'input' | 'output';

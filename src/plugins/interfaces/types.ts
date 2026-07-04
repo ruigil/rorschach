@@ -11,7 +11,7 @@ export const ANONYMOUS_USER_ID = 'anonymous'
 
 export const ANONYMOUS_IDENTITY: Identity = {
   userId:   ANONYMOUS_USER_ID,
-  username: ANONYMOUS_USER_ID,
+  fullName: ANONYMOUS_USER_ID,
   roles:    [],
 }
 

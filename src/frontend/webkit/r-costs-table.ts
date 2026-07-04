@@ -1,6 +1,6 @@
 import { css, customElement, html, RorschachBase } from './base.js';
 
-import { StoreController } from './store-controller.js';
+import { StoreController } from './runtime/store-controller.js';
 import type { UsageEntry } from './types.js';
 
 type ShellUsageState = {

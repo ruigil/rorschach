@@ -172,6 +172,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
       },
 
       _wsFrame: (state, message, context) => {
+        context.log.debug(`[${message.clientId}] WS frame: ${JSON.stringify(message.frame)}`)
         return {
           state,
           events: [
