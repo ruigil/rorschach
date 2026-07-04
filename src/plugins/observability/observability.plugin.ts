@@ -27,6 +27,7 @@ const observabilitySurfaceRegistration: UiSurfaceRegistration = {
     contentTag: 'r-observe-panel',
   },
   moduleUrl: '/js/plugins/observability.js',
+  frameTypes: ['log', 'metrics', 'trace', 'usage'],
 }
 
 export default createPluginFactory<ObservabilityConfig>({

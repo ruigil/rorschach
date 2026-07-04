@@ -9,11 +9,6 @@ const defaultState: Partial<ShellState> = {
   agents: [],
   currentMode: '',
   currentModeDisplayName: '',
-  topics: [],
-  actors: [],
-  logs: [],
-  traces: [],
-  usage: [],
   tools: {},
   messages: [],
   lastMessages: [],
@@ -32,6 +27,13 @@ export function resetStore() {
   __resetStoreForTests()
   store.namespace<ShellState>('shell').init(defaultState, {
     persist: ['currentMode', 'activeWorkspaceTab', 'lastMessages'],
+  })
+  store.namespace('observe').init({
+    actors: [],
+    topics: [],
+    logs: [],
+    traces: [],
+    usage: [],
   })
 }
 

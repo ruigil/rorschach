@@ -5,11 +5,11 @@ import { store } from '../../frontend/webkit/runtime/store.js'
 import { resetStore } from '../helpers/frontend.js'
 import { setMode, setActiveWorkspaceTab, updateViewState } from '../../frontend/shell/view-actions.js'
 import {
-  addLog,
   appendMessage,
   updateActiveStream,
   commitActiveStream,
 } from '../../frontend/shell/actions.js'
+import { reduceFrame, type ObservabilityState } from '../../plugins/observability/ui/index.js'
 
 beforeEach(() => {
   localStorage.clear()
@@ -39,21 +39,21 @@ describe('setMode', () => {
   })
 })
 
-describe('addLog', () => {
-  test('prepends log to logs array', () => {
-    addLog({ message: 'first' })
-    addLog({ message: 'second' })
-    const logs = store.namespace<ShellState>('shell').get('logs')
+describe('observability reduceFrame logs', () => {
+  test('prepends log to logs array in observe namespace', () => {
+    reduceFrame({ type: 'log', message: 'first' })
+    reduceFrame({ type: 'log', message: 'second' })
+    const logs = store.namespace<ObservabilityState>('observe').get('logs')
     expect(logs[0]!.message).toBe('second')
     expect(logs[1]!.message).toBe('first')
   })
 
   test('caps logs at 500 entries', () => {
     for (let i = 0; i < 510; i++) {
-      addLog({ message: `log-${i}` })
+      reduceFrame({ type: 'log', message: `log-${i}` })
     }
-    expect(store.namespace<ShellState>('shell').get('logs').length).toBe(500)
-    expect(store.namespace<ShellState>('shell').get('logs')[0]!.message).toBe('log-509')
+    expect(store.namespace<ObservabilityState>('observe').get('logs').length).toBe(500)
+    expect(store.namespace<ObservabilityState>('observe').get('logs')[0]!.message).toBe('log-509')
   })
 })
 

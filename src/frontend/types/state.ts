@@ -50,11 +50,6 @@ export type ShellState = {
   agents: Agent[]
   currentMode: string
   currentModeDisplayName: string
-  topics: Topic[]
-  actors: Actor[]
-  logs: LogEvent[]
-  traces: TraceSpan[]
-  usage: UsageEntry[]
   tools: Record<string, { type: 'function'; function: { name: string; description: string; parameters: object } }>
   messages: Message[]
   /** Persisted subset of recent messages (stripped of attachment payloads)

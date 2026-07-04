@@ -9,6 +9,8 @@ import {
 } from '@rorschach/webkit';
 
 import type { Actor, Topic, LogEvent, TraceSpan, ShellState } from '../../../frontend/types/state.js';
+import type { ObservabilityState } from './index.js';
+import './r-costs-table.js';
 export const OBSERVE_TABS = ['metrics', 'topics', 'logs', 'traces', 'tools', 'memory', 'costs'] as const;
 export type ObserveTab = typeof OBSERVE_TABS[number];
 export const DEFAULT_OBSERVE_TAB: ObserveTab = 'metrics';
@@ -23,7 +25,7 @@ const CONTROL_BY_TAB: Record<ObserveTab, string> = {
   costs:   '',
 };
 
-const shell = () => store.namespace<ShellState>('shell')
+const observe = () => store.namespace<ObservabilityState>('observe')
 
 @customElement('r-observe-panel')
 export class RObservePanel extends RorschachBase {
@@ -32,10 +34,10 @@ export class RObservePanel extends RorschachBase {
   @state() private _selectedActor: Actor | null = null;
 
   @state() private _observeActiveTab: ObserveTab = 'metrics';
-  private _actors = new StoreController(this, ['shell', 'actors']);
-  private _topics = new StoreController(this, ['shell', 'topics']);
-  private _logs = new StoreController(this, ['shell', 'logs']);
-  private _traces = new StoreController(this, ['shell', 'traces']);
+  private _actors = new StoreController(this, ['observe', 'actors']);
+  private _topics = new StoreController(this, ['observe', 'topics']);
+  private _logs = new StoreController(this, ['observe', 'logs']);
+  private _traces = new StoreController(this, ['observe', 'traces']);
 
   static override styles = css`
     :host {
@@ -208,11 +210,11 @@ export class RObservePanel extends RorschachBase {
   }
 
   private _clearLogs() {
-    shell().set('logs', []);
+    observe().set('logs', []);
   }
 
   private _clearTraces() {
-    shell().set('traces', []);
+    observe().set('traces', []);
   }
 
   override render() {

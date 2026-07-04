@@ -1,11 +1,5 @@
-import { css, customElement, html, RorschachBase } from './base.js';
-
-import { StoreController } from './runtime/store-controller.js';
-import type { UsageEntry } from './types.js';
-
-type ShellUsageState = {
-  usage: UsageEntry[]
-};
+import { css, customElement, html, RorschachBase, StoreController } from '@rorschach/webkit';
+import type { UsageEntry } from '@rorschach/webkit/types.js';
 
 const formatTokens = (n: number) => {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
@@ -14,7 +8,7 @@ const formatTokens = (n: number) => {
 
 @customElement('r-costs-table')
 export class RCostsTable extends RorschachBase {
-  private _usage = new StoreController(this, ['shell', 'usage']);
+  private _usage = new StoreController(this, ['observe', 'usage']);
 
   static override styles = css`
     :host {

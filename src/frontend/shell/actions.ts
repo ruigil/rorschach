@@ -1,20 +1,8 @@
 import { store, isConnected, send } from '@rorschach/webkit';
-import type { ShellState, Message, LogEvent, Attachment } from '../types/state.js'
+import type { ShellState, Message, Attachment } from '../types/state.js'
 import { setMode } from './view-actions.js'
 
 const shell = () => store.namespace<ShellState>('shell')
-
-export const addLog = (log: Partial<LogEvent> & { message: string }) => {
-  const currentLogs = shell().get('logs')
-  const entry: LogEvent = {
-    timestamp: log.timestamp ?? Date.now(),
-    level: log.level ?? 'info',
-    source: log.source ?? '',
-    message: log.message,
-    data: log.data,
-  }
-  shell().set('logs', [entry, ...currentLogs].slice(0, 500))
-}
 
 const toPersistedMessage = (msg: Message): Message => {
   return {

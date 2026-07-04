@@ -4,7 +4,8 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 import { store } from '../../frontend/webkit/runtime/store.js'
 import { resetStore } from '../helpers/frontend.js'
 import { setMode } from '../../frontend/shell/view-actions.js'
-import { updateActiveStream, commitActiveStream, addLog } from '../../frontend/shell/actions.js'
+import { updateActiveStream, commitActiveStream } from '../../frontend/shell/actions.js'
+import { reduceFrame, type ObservabilityState } from '../../plugins/observability/ui/index.js'
 
 beforeEach(() => {
   resetStore()
@@ -50,17 +51,17 @@ describe('connection frame handlers (via actions)', () => {
   })
 
   test('log prepends to logs array', () => {
-    addLog({ message: 'a' })
-    addLog({ message: 'b' })
-    expect(store.namespace<ShellState>('shell').get('logs')[0]!.message).toBe('b')
-    expect(store.namespace<ShellState>('shell').get('logs')[1]!.message).toBe('a')
+    reduceFrame({ type: 'log', message: 'a' })
+    reduceFrame({ type: 'log', message: 'b' })
+    expect(store.namespace<ObservabilityState>('observe').get('logs')[0]!.message).toBe('b')
+    expect(store.namespace<ObservabilityState>('observe').get('logs')[1]!.message).toBe('a')
   })
 
   test('metrics sets actors and topics', () => {
-    store.namespace<ShellState>('shell').set('actors', [{ name: 'a', status: 'running', messagesProcessed: 1 }])
-    store.namespace<ShellState>('shell').set('topics', [{ topic: 't1', subscribers: ['s1'] }])
-    expect(store.namespace<ShellState>('shell').get('actors')).toHaveLength(1)
-    expect(store.namespace<ShellState>('shell').get('topics')).toHaveLength(1)
+    reduceFrame({ type: 'metrics', actors: [{ name: 'a', status: 'running', messagesProcessed: 1 }] })
+    reduceFrame({ type: 'metrics', topics: [{ topic: 't1', subscribers: ['s1'] }] })
+    expect(store.namespace<ObservabilityState>('observe').get('actors')).toHaveLength(1)
+    expect(store.namespace<ObservabilityState>('observe').get('topics')).toHaveLength(1)
   })
 
   test('tool_registered adds to tools map', () => {
