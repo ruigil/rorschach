@@ -117,7 +117,7 @@ export class RAttachments extends RorschachBase {
       if (src) {
         return html`
           <a href="${src}" target="_blank" rel="noopener noreferrer" class="attachment attachment-pdf">
-            <r-icon name="file"></r-icon>
+            <r-icon name="file" size="sm"></r-icon>
             <span>${a.name || 'document.pdf'}</span>
           </a>
         `;
@@ -125,7 +125,7 @@ export class RAttachments extends RorschachBase {
 
       return html`
         <div class="attachment attachment-pdf">
-          <r-icon name="file"></r-icon>
+          <r-icon name="file" size="sm"></r-icon>
           <span>${a.name || 'document.pdf'}</span>
         </div>
       `;

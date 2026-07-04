@@ -87,8 +87,9 @@ export class REmptyState extends RorschachBase {
   `;
 
   override render() {
+    const iconSize = this.variant === 'chat' ? 'xl' : 'lg';
     return html`
-      ${this.name ? html`<span class="icon"><r-icon name=${this.name}></r-icon></span>` : 
+      ${this.name ? html`<span class="icon"><r-icon name=${this.name} size=${iconSize}></r-icon></span>` : 
         (this.icon ? html`<span class="icon">${unsafeHTML(this.icon)}</span>` : '')}
       ${this.text ? html`<span class="text">${this.text}</span>` : ''}
       ${this.subtext ? html`<span class="subtext">${this.subtext}</span>` : ''}

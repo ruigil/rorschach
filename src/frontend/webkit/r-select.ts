@@ -95,7 +95,7 @@ export class RSelect extends RorschachBase {
           `)}
         </select>
         <span class="chevron">
-          <r-icon name="chevron-down"></r-icon>
+          <r-icon name="chevron-down" size="sm"></r-icon>
         </span>
       </div>
     `;

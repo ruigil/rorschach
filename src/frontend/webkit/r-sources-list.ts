@@ -115,7 +115,7 @@ export class RSourcesList extends RorschachBase {
     return html`
       <div class="sources">
         <button class="sources-toggle ${this.open ? 'open' : ''}" @click=${this.toggle}>
-          <span class="icon"><r-icon name="chevron-right"></r-icon></span>
+          <span class="icon"><r-icon name="chevron-right" size="sm"></r-icon></span>
           ${label}
         </button>
         <div class="sources-list ${this.open ? 'open' : ''}">

@@ -198,7 +198,7 @@ export class RShell extends RorschachBase {
               <r-icon name="settings"></r-icon>
             </button>
             <button class="header-icon-btn" ?hidden=${!canAdmin || !this._views.value || !this._views.value['observe']} @click=${() => openView('observe')} title="Observation Panel">
-              <r-icon name="activity"></r-icon>
+              <r-icon name="activity" size="md"></r-icon>
             </button>
           </div>
           <div class="status-pill">
@@ -256,7 +256,7 @@ export class RShell extends RorschachBase {
                           }
                         }}
                       >
-                        <r-icon name=${(cfg?.icon ?? 'file') as any}></r-icon>
+                        <r-icon name=${(cfg?.icon ?? 'file') as any} size="sm"></r-icon>
                         <span>${cfg?.title ?? id}</span>
                         <span class="tab-close" @click=${(e: Event) => {
                           e.stopPropagation();

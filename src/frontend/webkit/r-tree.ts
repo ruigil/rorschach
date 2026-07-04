@@ -224,7 +224,7 @@ export class RTree extends RorschachBase {
           >
             ${hasChildren 
               ? html`<span class="tree-chevron" @click=${(e: Event) => this._toggleCollapse(node, e)}>
-                  <r-icon name=${isCollapsed ? 'chevron-right' : 'chevron-down'}></r-icon>
+                  <r-icon name=${isCollapsed ? 'chevron-right' : 'chevron-down'} size="sm"></r-icon>
                 </span>`
               : html`<span class="tree-spacer"></span>`}
             
