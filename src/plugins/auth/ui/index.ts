@@ -1,14 +1,13 @@
-import { html, css } from 'lit';
-import { customElement, state, query } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
-import { sharedStyles } from '@rorschach/frontend/webkit/shared-styles.js';
-import '@rorschach/frontend/webkit/r-panel.js';
-import '@rorschach/frontend/webkit/r-toolbar.js';
-import '@rorschach/frontend/webkit/r-tabs.js';
-import '@rorschach/frontend/webkit/r-input.js';
-import '@rorschach/frontend/webkit/r-button.js';
-import '@rorschach/frontend/webkit/r-flash-message.js';
-import type { PluginHostActions } from '@rorschach/frontend/webkit/host-types.js';
+import {
+  css,
+  customElement,
+  html,
+  query,
+  RorschachBase,
+  sharedStyles,
+  state,
+  type PluginHostActions
+} from '@rorschach/webkit';
 
 @customElement('r-auth-profile')
 export class RAuthProfile extends RorschachBase {
@@ -74,7 +73,7 @@ export class RAuthProfile extends RorschachBase {
         height: 100%;
         object-fit: cover;
       }
-      .avatar-container svg {
+      .avatar-container r-icon {
         width: 40px;
         height: 40px;
         color: var(--text-dim);
@@ -229,7 +228,7 @@ export class RAuthProfile extends RorschachBase {
               <div class="avatar-container" title="Change Avatar">
                 ${this.avatar
                   ? html`<img src="${this.avatar}" alt="Avatar" />`
-                  : this.renderIcon('user')}
+                  : html`<r-icon name="user" size="xl"></r-icon>`}
                 <div class="avatar-overlay">
                   <span class="upload-text">Upload</span>
                   <input type="file" accept="image/*" @change=${this._handleAvatarUpload} />

@@ -1,6 +1,4 @@
-import { html } from 'lit';
-import { customElement } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
+import { customElement, html, RorschachBase } from '@rorschach/webkit';
 
 @customElement('r-config-google-account')
 export class RConfigGoogleAccount extends RorschachBase {

@@ -18,7 +18,7 @@ beforeEach(() => {
 
 describe('setMode', () => {
   test('sets currentMode in store', () => {
-    setMode('planner')
+    setMode('planner', 'Planner')
     expect(store.namespace<ShellState>('shell').get('currentMode')).toBe('planner')
   })
 
@@ -27,19 +27,14 @@ describe('setMode', () => {
     expect(store.namespace<ShellState>('shell').get('currentModeDisplayName')).toBe('Planner Mode')
   })
 
-  test('derives displayName from mode when not provided', () => {
-    setMode('chatbot')
-    expect(store.namespace<ShellState>('shell').get('currentModeDisplayName')).toBe('Chatbot')
-  })
-
   test('clears isWaiting', () => {
     store.namespace<ShellState>('shell').set('isWaiting', true)
-    setMode('chatbot')
+    setMode('chatbot', 'Chatbot')
     expect(store.namespace<ShellState>('shell').get('isWaiting')).toBe(false)
   })
 
   test('persists mode to localStorage', () => {
-    setMode('planner')
+    setMode('planner', 'Planner')
     expect(localStorage.getItem('rorschach.store.shell.currentMode')).toBe(JSON.stringify('planner'))
   })
 })

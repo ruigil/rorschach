@@ -1,8 +1,11 @@
-import { html } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
-import '@rorschach/frontend/webkit/r-select.js';
-import '@rorschach/frontend/webkit/r-input.js';
+import {
+  customElement,
+  html,
+  property,
+  RorschachBase,
+  state
+} from '@rorschach/webkit';
+
 import type { ConfigFieldChangeEvent } from './r-config-field.js';
 import { childConfigKey } from './path-utils.js';
 

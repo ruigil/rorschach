@@ -1,6 +1,12 @@
-import { html, css, type TemplateResult } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  RorschachBase,
+  state,
+  type TemplateResult
+} from './base.js';
+
 import { store } from './store.js';
 import { StoreController } from './store-controller.js';
 import type { TraceSpan } from './types.js';

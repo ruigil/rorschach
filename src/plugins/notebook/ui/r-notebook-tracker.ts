@@ -1,17 +1,14 @@
-import { html, css } from 'lit'
-import { customElement, state } from 'lit/decorators.js'
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
-import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
-import { store } from '@rorschach/frontend/webkit/store.js'
+import {
+  css,
+  customElement,
+  html,
+  RorschachBase,
+  state,
+  store,
+  StoreController
+} from '@rorschach/webkit';
 import { send } from '../../../frontend/shell/connection-service.js'
 import type { NotebookState } from './index.js'
-import '@rorschach/frontend/webkit/r-calendar.js'
-import '@rorschach/frontend/webkit/r-card.js'
-import '@rorschach/frontend/webkit/r-list.js'
-import '@rorschach/frontend/webkit/r-empty-state.js'
-import '@rorschach/frontend/webkit/r-select.js'
-import '@rorschach/frontend/webkit/r-section-header.js'
-import '@rorschach/frontend/webkit/r-split-pane.js'
 
 type HabitDef = {
   name: string
@@ -142,7 +139,6 @@ export class RNotebookTracker extends RorschachBase {
   private _updateSelectedDayEntries(date: string) {
     this._selectedDayEntries = this._entries.filter(entry => entry.date === date)
   }
-
 
   override render() {
     if (this._loadingHabits) {

@@ -43,7 +43,7 @@ const workflowsSurfaceRegistration: UiSurfaceRegistration = {
     contentTag: 'r-workflow-workspace',
     modes: ['workflows'],
   },
-  moduleUrl: '/plugins/workflows/ui/index.js',
+  moduleUrl: '/js/plugins/workflows.js',
   frameTypes: ['workflowGraph', 'workflowRunUpdated', 'workflowsList', 'workflowRunsList', 'workflowError'],
 }
 

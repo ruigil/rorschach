@@ -1,6 +1,11 @@
-import { html, css, nothing } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  nothing,
+  property,
+  RorschachBase
+} from './base.js';
 
 export type RInputType = 'text' | 'number' | 'password' | 'textarea';
 

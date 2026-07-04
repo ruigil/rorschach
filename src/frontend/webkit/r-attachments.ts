@@ -1,7 +1,13 @@
-import { html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase
+} from './base.js';
+
 import { type Attachment } from './types.js';
+import './r-icon.js';
 
 @customElement('r-attachments')
 export class RAttachments extends RorschachBase {
@@ -111,7 +117,7 @@ export class RAttachments extends RorschachBase {
       if (src) {
         return html`
           <a href="${src}" target="_blank" rel="noopener noreferrer" class="attachment attachment-pdf">
-            ${this.renderIcon('file')}
+            <r-icon name="file"></r-icon>
             <span>${a.name || 'document.pdf'}</span>
           </a>
         `;
@@ -119,7 +125,7 @@ export class RAttachments extends RorschachBase {
 
       return html`
         <div class="attachment attachment-pdf">
-          ${this.renderIcon('file')}
+          <r-icon name="file"></r-icon>
           <span>${a.name || 'document.pdf'}</span>
         </div>
       `;

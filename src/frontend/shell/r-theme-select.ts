@@ -1,7 +1,5 @@
-import { html } from 'lit';
-import { customElement } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
-import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
+import { customElement, html, RorschachBase, StoreController } from '@rorschach/webkit';
+
 import { setTheme, getTheme } from './theme.js';
 
 @customElement('r-theme-select')

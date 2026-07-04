@@ -1,6 +1,5 @@
-import { html, css } from 'lit';
-import { customElement } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import { css, customElement, html, RorschachBase } from './base.js';
+
 import { StoreController } from './store-controller.js';
 import type { UsageEntry } from './types.js';
 

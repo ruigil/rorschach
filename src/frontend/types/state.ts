@@ -9,8 +9,8 @@ import type {
   LogEvent,
   TraceSpan,
   UsageEntry,
-} from '@rorschach/frontend/webkit/types.js'
-import type { ViewRuntimeState } from '@rorschach/frontend/webkit/host-types.js'
+} from '@rorschach/webkit/types.js'
+import { type ViewRuntimeState } from '@rorschach/webkit';
 
 // Re-export the kit types so existing shell code that imports from
 // `./types/state.js` keeps working. These are the neutral data shapes the
@@ -54,7 +54,7 @@ export type ShellState = {
   sidebarWidth: number
 };
 
-declare module '@rorschach/frontend/webkit/store.js' {
+declare module '@rorschach/webkit/store.js' {
   interface NamespaceRegistry {
     shell: ShellState
   }

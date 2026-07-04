@@ -1,5 +1,4 @@
-import { type ReactiveController, type ReactiveControllerHost } from 'lit'
-import { store, type NamespaceRegistry } from './store.js'
+import { type ReactiveController, type ReactiveControllerHost } from '../base.js';import { store, type NamespaceRegistry } from './store.js'
 
 export class StoreController<
   N extends keyof NamespaceRegistry,

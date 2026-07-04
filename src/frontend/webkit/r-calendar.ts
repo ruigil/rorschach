@@ -1,6 +1,10 @@
-import { html, css } from 'lit'
-import { customElement, property } from 'lit/decorators.js'
-import { RorschachBase } from './base.js'
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase
+} from './base.js';import './r-icon.js'
 
 @customElement('r-calendar')
 export class RCalendar extends RorschachBase {
@@ -218,11 +222,11 @@ export class RCalendar extends RorschachBase {
     return html`
       <div class="calendar-header">
         <button class="cal-btn" @click=${this._prevMonth}>
-          ${this.renderIcon('chevron-left')}
+          <r-icon name="chevron-left"></r-icon>
         </button>
         <span class="calendar-title">${monthNames[this.month]} ${this.year}</span>
         <button class="cal-btn" @click=${this._nextMonth}>
-          ${this.renderIcon('chevron-right')}
+          <r-icon name="chevron-right"></r-icon>
         </button>
       </div>
 

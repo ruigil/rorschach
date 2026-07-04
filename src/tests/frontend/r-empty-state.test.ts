@@ -34,7 +34,9 @@ describe('r-empty-state', () => {
 
     const icon = el.shadowRoot!.querySelector('.icon')
     expect(icon).toBeTruthy()
-    expect(icon!.querySelector('svg')).toBeTruthy()
+    const rIcon = icon!.querySelector('r-icon')
+    expect(rIcon).toBeTruthy()
+    expect(rIcon!.shadowRoot!.querySelector('svg')).toBeTruthy()
   })
 
   test('reflects variant attribute', async () => {

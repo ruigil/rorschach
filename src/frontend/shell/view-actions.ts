@@ -3,10 +3,7 @@
 // Pure store helpers that operate on the generic 'shell' namespace.
 // Placed in shell to maintain dependency inversion boundaries.
 
-import { store } from '@rorschach/frontend/webkit/store.js'
-import { modeLabel } from '@rorschach/frontend/webkit/utils.js'
-import { readSavedViewState } from '@rorschach/frontend/webkit/view-state.js'
-import type { ViewRuntimeState } from '@rorschach/frontend/webkit/host-types.js'
+import { readSavedViewState, store, type ViewRuntimeState } from '@rorschach/webkit';
 
 type ShellViewSlice = {
   currentMode: string
@@ -27,9 +24,9 @@ const persistViewState = (id: string, state: ViewRuntimeState) => {
   }
 }
 
-export const setMode = (mode: string, displayName?: string) => {
+export const setMode = (mode: string, displayName: string) => {
   shell().set('currentMode', mode)
-  shell().set('currentModeDisplayName', displayName || modeLabel(mode))
+  shell().set('currentModeDisplayName', displayName)
   shell().set('isWaiting', false)
 }
 

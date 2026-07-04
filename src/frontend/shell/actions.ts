@@ -1,4 +1,4 @@
-import { store } from '@rorschach/frontend/webkit/store.js'
+import { store } from '@rorschach/webkit';
 import type { ShellState, Message, LogEvent, Attachment } from '../types/state.js'
 import { isConnected, send } from './connection-service.js'
 import { setMode } from './view-actions.js'
@@ -67,7 +67,7 @@ export const switchMode = (mode: string) => {
     return false
   }
   const agent = shell().get('agents').find(agent => agent.mode === mode)
-  setMode(mode, agent?.displayName)
+  setMode(mode, agent?.displayName ?? mode)
   send({ type: 'cognitive.switchMode', mode })
   return true
 }

@@ -1,15 +1,7 @@
-import { LitElement, html } from 'lit';
-import { unsafeHTML } from 'lit/directives/unsafe-html.js';
-import { ICONS, type IconName } from './icons.js';
+export * from 'lit';
+export * from 'lit/decorators.js';
+export * from 'lit/directives/unsafe-html.js';
 
-export { escHtml, tsStr } from './utils.js';
-export { ICONS, type IconName };
+import { LitElement } from 'lit';
 
-export class RorschachBase extends LitElement {
-  protected renderIcon(name: IconName) {
-    const svg = ICONS[name];
-    if (!svg) return html``;
-    return html`${unsafeHTML(svg)}`;
-  }
-}
-
+export class RorschachBase extends LitElement {}

@@ -1,6 +1,5 @@
-import { html } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import { customElement, html, property, RorschachBase } from './base.js';
+
 import type { Topic } from './types.js';
 import './r-tree.js';
 import type { TreeNode } from './r-tree.js';

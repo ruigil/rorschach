@@ -1,7 +1,12 @@
-import { html } from 'lit';
-import { customElement, state, query } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
-import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
+import {
+  customElement,
+  html,
+  query,
+  RorschachBase,
+  state,
+  StoreController
+} from '@rorschach/webkit';
+
 import type { ShellState } from '../types/state.js';
 import type { ConfigFieldChangeEvent } from './config-widgets/r-config-field.js';
 import { pluginIdFromSection, resolvePath, writeAtPath } from './config-widgets/path-utils.js';

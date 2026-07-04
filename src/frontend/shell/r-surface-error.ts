@@ -1,6 +1,10 @@
-import { html, css } from 'lit'
-import { customElement, property } from 'lit/decorators.js'
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase
+} from '@rorschach/webkit';
 
 // Fallback component for failed surface imports. The shell's plugin-host
 // swaps a view's `contentTag` to `'r-surface-error'` when `import()` fails,

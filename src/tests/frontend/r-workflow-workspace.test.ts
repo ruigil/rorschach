@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { cleanup, mountClass, resetStore, mockStore } from '../helpers/frontend.js'
 import { WORKFLOW_RUN_UPDATED_EVENT, reduceFrame } from '../../plugins/workflows/ui/index.js'
 import type { WorkflowsState } from '../../plugins/workflows/ui/index.js'
-import { store } from '@rorschach/frontend/webkit/store.js'
+import { store } from '@rorschach/webkit/store.js'
 import {
   RWorkflowWorkspace,
   clampWorkflowInspectorWidthPercent,

@@ -1,7 +1,14 @@
-import { html, css } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase,
+  state
+} from './base.js';
+
 import type { Source } from './types.js';
+import './r-icon.js';
 
 @customElement('r-sources-list')
 export class RSourcesList extends RorschachBase {
@@ -108,7 +115,7 @@ export class RSourcesList extends RorschachBase {
     return html`
       <div class="sources">
         <button class="sources-toggle ${this.open ? 'open' : ''}" @click=${this.toggle}>
-          <span class="icon">${this.renderIcon('chevron-right')}</span>
+          <span class="icon"><r-icon name="chevron-right"></r-icon></span>
           ${label}
         </button>
         <div class="sources-list ${this.open ? 'open' : ''}">

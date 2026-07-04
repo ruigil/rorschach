@@ -1,19 +1,14 @@
-import { html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
-import { store } from '@rorschach/frontend/webkit/store.js';
-import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
+import {
+  css,
+  customElement,
+  html,
+  RorschachBase,
+  state,
+  store,
+  StoreController
+} from '@rorschach/webkit';
+
 import type { Actor, Topic, LogEvent, TraceSpan, ShellState } from '../../../frontend/types/state.js';
-import '@rorschach/frontend/webkit/r-panel.js';
-import '@rorschach/frontend/webkit/r-tabs.js';
-import '@rorschach/frontend/webkit/r-empty-state.js';
-import '@rorschach/frontend/webkit/r-actor-tree.js';
-import '@rorschach/frontend/webkit/r-actor-detail.js';
-import '@rorschach/frontend/webkit/r-topic-list.js';
-import '@rorschach/frontend/webkit/r-log-stream.js';
-import '@rorschach/frontend/webkit/r-trace-waterfall.js';
-import '@rorschach/frontend/webkit/r-costs-table.js';
-import '@rorschach/frontend/webkit/r-toolbar.js';
 export const OBSERVE_TABS = ['metrics', 'topics', 'logs', 'traces', 'tools', 'memory', 'costs'] as const;
 export type ObserveTab = typeof OBSERVE_TABS[number];
 export const DEFAULT_OBSERVE_TAB: ObserveTab = 'metrics';

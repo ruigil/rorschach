@@ -7,10 +7,9 @@
 // Actions use the exported `send(...)` function from this service instead of
 // reaching into the store for a `WebSocket` handle.
 
-import { store } from '@rorschach/frontend/webkit/store.js'
+import { store, toolActionLabel } from '@rorschach/webkit';
 import type { WSFrame } from '../types/websocket.js'
 import type { TraceSpan, UsageEntry, LogEvent, ShellState } from '../types/state.js'
-import { toolActionLabel } from '@rorschach/frontend/webkit/utils.js'
 import { updateActiveStream, commitActiveStream, addLog } from './actions.js'
 import { setMode } from './view-actions.js'
 import { pluginHost } from './plugin-host.js'

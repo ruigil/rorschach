@@ -1,7 +1,13 @@
-import { html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-import { unsafeHTML } from 'lit/directives/unsafe-html.js';
-import { RorschachBase, ICONS } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase,
+  unsafeHTML
+} from './base.js';
+
+import './r-icon.js';
 
 @customElement('r-empty-state')
 export class REmptyState extends RorschachBase {
@@ -82,7 +88,7 @@ export class REmptyState extends RorschachBase {
 
   override render() {
     return html`
-      ${this.name ? html`<span class="icon">${this.renderIcon(this.name as keyof typeof ICONS)}</span>` : 
+      ${this.name ? html`<span class="icon"><r-icon name=${this.name}></r-icon></span>` : 
         (this.icon ? html`<span class="icon">${unsafeHTML(this.icon)}</span>` : '')}
       ${this.text ? html`<span class="text">${this.text}</span>` : ''}
       ${this.subtext ? html`<span class="subtext">${this.subtext}</span>` : ''}

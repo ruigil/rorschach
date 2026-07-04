@@ -1,9 +1,11 @@
-import { html } from 'lit';
-import { customElement } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
-import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
-import { store } from '@rorschach/frontend/webkit/store.js';
-import { modeLabel } from '@rorschach/frontend/webkit/utils.js';
+import {
+  customElement,
+  html,
+  RorschachBase,
+  store,
+  StoreController
+} from '@rorschach/webkit';
+
 import { switchMode } from './actions.js';
 import type { ShellState, Agent } from '../types/state.js';
 
@@ -39,7 +41,7 @@ export class RModeSelect extends RorschachBase {
       ? agents
       : currentMode ? [{
           mode: currentMode,
-          displayName: currentModeDisplayName || modeLabel(currentMode),
+          displayName: currentModeDisplayName,
           shortDesc: ''
         }] : [];
 
@@ -62,11 +64,11 @@ export class RModeSelect extends RorschachBase {
         <select id="mode-select" class="header-select" .value=${currentMode} ?disabled=${isDisabled} @change=${this._handleChange}>
           ${agentList.map(agent => html`
             <option
-              value=${agent.mode}
-              ?selected=${agent.mode === currentMode}
-              .title=${agent.shortDesc || ''}
+               value=${agent.mode}
+               ?selected=${agent.mode === currentMode}
+               .title=${agent.shortDesc || ''}
             >
-              ${agent.displayName || modeLabel(agent.mode)}
+               ${agent.displayName}
             </option>
           `)}
         </select>

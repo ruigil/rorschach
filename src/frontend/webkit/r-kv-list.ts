@@ -1,7 +1,13 @@
-import { html, css } from 'lit';
-import type { TemplateResult } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase,
+  type TemplateResult
+} from './base.js';
+
+import './r-icon.js';
 
 export type KVListItem = {
   key: string;
@@ -109,7 +115,7 @@ export class RKVList extends RorschachBase {
       if (!href) return this._renderJson(item.value);
       return html`
         <a class="artifact-link" href=${href} target="_blank" rel="noopener noreferrer">
-          ${this.renderIcon('file-text')}
+          <r-icon name="file-text"></r-icon>
           <span>${path}</span>
         </a>
       `;

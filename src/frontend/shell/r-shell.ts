@@ -1,8 +1,12 @@
-import { html } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
-import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
-import { store } from '@rorschach/frontend/webkit/store.js';
+import {
+  customElement,
+  html,
+  RorschachBase,
+  state,
+  store,
+  StoreController
+} from '@rorschach/webkit';
+
 import { connect } from './connection-service.js';
 import { logout, switchMode } from './actions.js';
 import { openView, closeView, setActiveWorkspaceTab } from './view-actions.js';
@@ -185,13 +189,13 @@ export class RShell extends RorschachBase {
           <span class="logo-name">RORSCHACH</span>
           <div class="header-actions-group">
             <button class="header-icon-btn" ?hidden=${!userId || userId === 'anonymous'} @click=${() => openView('auth.profile')} title="User Session Profile">
-              ${this.renderIcon('user')}
+              <r-icon name="user"></r-icon>
             </button>
             <button class="header-icon-btn" ?hidden=${!canAdmin} @click=${() => openView('config')} title="Configuration Settings">
-              ${this.renderIcon('settings')}
+              <r-icon name="settings"></r-icon>
             </button>
             <button class="header-icon-btn" ?hidden=${!canAdmin || !this._views.value || !this._views.value['observe']} @click=${() => openView('observe')} title="Observation Panel">
-              ${this.renderIcon('activity')}
+              <r-icon name="activity"></r-icon>
             </button>
           </div>
           <div class="status-pill">
@@ -216,7 +220,7 @@ export class RShell extends RorschachBase {
             <div class="sidebar-title-bar">
               <div class="sidebar-actions-group">
                 <button class="sidebar-header-btn" @click=${this._toggleSidebar} title="Toggle sidebar">
-                  ${this.renderIcon(this._isSidebarCollapsed ? 'panel-left-open' : 'panel-left-close')}
+                  <r-icon name=${this._isSidebarCollapsed ? 'panel-left-open' : 'panel-left-close'}></r-icon>
                 </button>
               </div>
               <span class="sidebar-title">${this._currentModeDisplayName.value || this._currentMode.value || 'Chat'}</span>
@@ -249,7 +253,7 @@ export class RShell extends RorschachBase {
                           }
                         }}
                       >
-                        ${this.renderIcon((cfg?.icon ?? 'file') as any)}
+                        <r-icon name=${(cfg?.icon ?? 'file') as any}></r-icon>
                         <span>${cfg?.title ?? id}</span>
                         <span class="tab-close" @click=${(e: Event) => {
                           e.stopPropagation();

@@ -1,6 +1,12 @@
-import { html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase
+} from './base.js';
+
+import './r-icon.js';
 
 @customElement('r-select')
 export class RSelect extends RorschachBase {
@@ -89,7 +95,7 @@ export class RSelect extends RorschachBase {
           `)}
         </select>
         <span class="chevron">
-          ${this.renderIcon('chevron-down')}
+          <r-icon name="chevron-down"></r-icon>
         </span>
       </div>
     `;

@@ -1,6 +1,10 @@
-import { html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  RorschachBase,
+  state
+} from './base.js';
 
 @customElement('r-flash-message')
 export class RFlashMessage extends RorschachBase {

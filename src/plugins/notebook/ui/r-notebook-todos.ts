@@ -1,11 +1,12 @@
-import { html, css } from 'lit'
-import { customElement, state } from 'lit/decorators.js'
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
-import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
+import {
+  css,
+  customElement,
+  html,
+  RorschachBase,
+  state,
+  StoreController
+} from '@rorschach/webkit';
 import { send } from '../../../frontend/shell/connection-service.js'
-import '@rorschach/frontend/webkit/r-list.js'
-import '@rorschach/frontend/webkit/r-empty-state.js'
-import '@rorschach/frontend/webkit/r-section-header.js'
 
 @customElement('r-notebook-todos')
 export class RNotebookTodos extends RorschachBase {

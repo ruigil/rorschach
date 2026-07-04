@@ -34,7 +34,7 @@ import { startServer, type WsData } from './http/server.ts'
 export { canAccessAdminSurface, authorizeConfigAccess }
 
 // ─── Public directory (build output served by the HTTP handler) ───
-const PUBLIC_DIR = join(process.cwd(), 'dist', 'public')
+const PUBLIC_DIR = join(process.cwd(), 'src', 'frontend', 'static')
 const MEDIA_DIR = join(import.meta.dir, '../../..', 'workspace/media')
 
 

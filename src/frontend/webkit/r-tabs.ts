@@ -1,6 +1,10 @@
-import { html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase
+} from './base.js';
 
 @customElement('r-tabs')
 export class RTabs extends RorschachBase {

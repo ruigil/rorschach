@@ -1,6 +1,12 @@
-import { html, css, nothing } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  nothing,
+  property,
+  RorschachBase,
+  state
+} from './base.js';
 
 export type RSearchSelectOption = {
   value: string;

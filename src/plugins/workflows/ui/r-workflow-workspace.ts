@@ -1,9 +1,14 @@
-import { html, nothing, css } from 'lit'
-import { customElement, state } from 'lit/decorators.js'
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
-import { sharedStyles } from '@rorschach/frontend/webkit/shared-styles.js'
-import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
-import { store } from '@rorschach/frontend/webkit/store.js'
+import {
+  css,
+  customElement,
+  html,
+  nothing,
+  RorschachBase,
+  sharedStyles,
+  state,
+  store,
+  StoreController
+} from '@rorschach/webkit';
 import { send } from '../../../frontend/shell/connection-service.js'
 import type { ShellState } from '../../../frontend/types/state.js'
 import type { WorkflowsState, WORKFLOW_RUN_UPDATED_EVENT as _WRE } from './index.js'
@@ -12,14 +17,8 @@ import {
   isLiveWorkflowRunStatus,
   mergeWorkflowRunIntoGraph,
 } from './r-workflow-inspector.js'
-import '@rorschach/frontend/webkit/r-panel.js'
-import '@rorschach/frontend/webkit/r-button.js'
-import '@rorschach/frontend/webkit/r-split-pane.js'
-import '@rorschach/frontend/webkit/r-toolbar.js'
-import '@rorschach/frontend/webkit/r-badge.js'
 
 type InspectorTab = 'task' | 'workflow' | 'run' | 'events'
-
 
 const DEFAULT_INSPECTOR_WIDTH_PERCENT = 34
 const MIN_INSPECTOR_WIDTH_PERCENT = 18

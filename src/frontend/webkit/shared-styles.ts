@@ -1,4 +1,4 @@
-import { css } from 'lit';
+import { css } from './base.js';
 
 export const sharedStyles = css`
   :host {

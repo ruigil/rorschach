@@ -5,10 +5,11 @@ out
 dist
 *.tgz
 
-# antigravity
-.antigravitycli
+# what ?
+.*
 
-# frontend build — output now goes to dist/ (already ignored above)
+# frontend build — output 
+src/frontend/static/js
 
 # code coverage
 coverage

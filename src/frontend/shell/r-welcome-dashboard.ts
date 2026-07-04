@@ -1,7 +1,5 @@
-import { html } from 'lit';
-import { customElement } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
-import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
+import { customElement, html, RorschachBase, StoreController } from '@rorschach/webkit';
+
 import type { ShellState } from '../types/state.js';
 
 @customElement('r-welcome-dashboard')
@@ -30,7 +28,7 @@ export class RWelcomeDashboard extends RorschachBase {
 
         <div class="welcome-cards">
           <div class="welcome-card mode-card">
-            <div class="welcome-card-icon">${this.renderIcon('message-square')}</div>
+            <div class="welcome-card-icon"><r-icon name="message-square"></r-icon></div>
             <div class="welcome-card-body">
               <h3>Active Mode</h3>
               <p class="welcome-mode-name">${modeName}</p>

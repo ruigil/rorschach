@@ -71,7 +71,7 @@ const codeSurfaceRegistration: UiSurfaceRegistration = {
     contentTag: 'r-code-workspace',
     modes: ['coding'],
   },
-  moduleUrl: '/plugins/coding/ui/index.js',
+  moduleUrl: '/js/plugins/coding.js',
   frameTypes: ['codeWorkspace', 'coding.bash.response', 'coding.bash.autocomplete.response'],
 }
 

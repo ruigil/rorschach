@@ -1,6 +1,11 @@
-import { html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase
+} from './base.js';
+
 import { type Message, type ActiveStream } from './types.js';
 import { renderMarkdown } from './markdown.js';
 import { markdownStyles } from './markdown-styles.js';

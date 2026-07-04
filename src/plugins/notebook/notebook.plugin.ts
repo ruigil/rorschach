@@ -13,7 +13,7 @@ const notebookSurfaceRegistration: UiSurfaceRegistration = {
     contentTag: 'r-notebook-workspace',
     modes: ['coach'],
   },
-  moduleUrl: '/plugins/notebook/ui/index.js',
+  moduleUrl: '/js/plugins/notebook.js',
   frameTypes: [
     'notebookTodosList',
     'notebookJournalMonths',

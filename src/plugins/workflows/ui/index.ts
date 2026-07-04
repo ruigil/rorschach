@@ -7,8 +7,8 @@
 import { RWorkflowWorkspace } from './r-workflow-workspace.js'
 import { RWorkflowList } from './r-workflow-list.js'
 import { RWorkflowInspector } from './r-workflow-inspector.js'
-import { store } from '@rorschach/frontend/webkit/store.js'
-import type { PluginHostActions } from '@rorschach/frontend/webkit/host-types.js'
+import { store, type PluginHostActions } from '@rorschach/webkit';
+
 import { mergeWorkflowRunIntoGraph } from './r-workflow-workspace.js'
 
 export { RWorkflowWorkspace, RWorkflowList, RWorkflowInspector }
@@ -82,7 +82,7 @@ export const reduceFrame = (frame: any, host: PluginHostActions) => {
   }
 }
 
-declare module '@rorschach/frontend/webkit/store.js' {
+declare module '@rorschach/webkit/store.js' {
   interface NamespaceRegistry {
     workflows: WorkflowsState
   }

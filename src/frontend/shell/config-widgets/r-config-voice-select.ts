@@ -1,7 +1,5 @@
-import { html } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
-import '@rorschach/frontend/webkit/r-select.js';
+import { customElement, html, property, RorschachBase } from '@rorschach/webkit';
+
 import type { ConfigFieldChangeEvent, ConfigFieldSchema } from './r-config-field.js';
 
 @customElement('r-config-voice-select')

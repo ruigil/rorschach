@@ -1,8 +1,11 @@
-import { html, css } from 'lit'
-import { customElement, property, state } from 'lit/decorators.js'
-import { RorschachBase } from './base.js'
-
-@customElement('r-split-pane')
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase,
+  state
+} from './base.js';@customElement('r-split-pane')
 export class RSplitPane extends RorschachBase {
   @property({ type: String, reflect: true }) orientation: 'horizontal' | 'vertical' = 'horizontal'
   @property({ type: Number, reflect: true }) splitPercent = 50

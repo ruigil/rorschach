@@ -48,7 +48,7 @@ describe('pluginHost.dispatch (register)', () => {
         icon: 'file',
         contentTag: 'r-empty-state',
       },
-      moduleUrl: '/plugins/test/ui/index.js',
+      moduleUrl: '/js/plugins/test.js',
     }
 
     // Mock dynamic import — the module doesn't exist, so it will fail
@@ -74,7 +74,7 @@ describe('pluginHost.dispatch (register)', () => {
         contentTag: 'r-empty-state',
         modes: ['testmode'],
       },
-      moduleUrl: '/plugins/test/ui/index.js',
+      moduleUrl: '/js/plugins/test.js',
     }
 
     pluginHost.dispatch(reg)
@@ -97,7 +97,7 @@ describe('pluginHost.dispatch (register)', () => {
         contentTag: 'r-empty-state',
         modes: ['testmode'],
       },
-      moduleUrl: '/plugins/test/ui/index.js',
+      moduleUrl: '/js/plugins/test.js',
     }
 
     pluginHost.dispatch(reg)
@@ -121,7 +121,7 @@ describe('pluginHost.dispatch (unregister/tombstone)', () => {
         icon: 'file',
         contentTag: 'r-empty-state',
       },
-      moduleUrl: '/plugins/test/ui/index.js',
+      moduleUrl: '/js/plugins/test.js',
       frameTypes: ['testFrame'],
     }
     pluginHost.dispatch(reg)
@@ -149,7 +149,7 @@ describe('pluginHost.routeFrame', () => {
         icon: 'file',
         contentTag: 'r-empty-state',
       },
-      moduleUrl: '/plugins/test/ui/index.js',
+      moduleUrl: '/js/plugins/test.js',
       frameTypes: ['myFrame'],
     }
 
@@ -178,7 +178,7 @@ describe('pluginHost._startModeWatcher', () => {
         contentTag: 'r-empty-state',
         modes: ['watchmode'],
       },
-      moduleUrl: '/plugins/test/ui/index.js',
+      moduleUrl: '/js/plugins/test.js',
     }
     pluginHost.dispatch(reg)
     await new Promise(r => setTimeout(r, 50))

@@ -1,8 +1,13 @@
-import { html } from 'lit';
-import { customElement, query, state } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
-import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
-import { store } from '@rorschach/frontend/webkit/store.js';
+import {
+  customElement,
+  html,
+  query,
+  RorschachBase,
+  state,
+  store,
+  StoreController
+} from '@rorschach/webkit';
+
 import { submitChatMessage } from './actions.js';
 import type { ShellState } from '../types/state.js';
 

@@ -1,6 +1,6 @@
 import type { UiSurfaceRegistration } from '../../types/ui-surface.js'
-import type { PluginHostActions, ViewConfig } from '@rorschach/frontend/webkit/host-types.js'
-import { store } from '@rorschach/frontend/webkit/store.js'
+import { store, type PluginHostActions, type ViewConfig } from '@rorschach/webkit';
+
 import { openView, closeView, setMode } from './view-actions.js'
 import type { ShellState } from '../types/state.js'
 
@@ -9,7 +9,7 @@ import type { ShellState } from '../types/state.js'
 // Owns the runtime `viewRegistry` Map, the `surfaces` Map (source of truth
 // for surface registrations), the `frameOwners` Map (frameType → surfaceId),
 // and the `surfaceReducers` Map (surfaceId → reducer). Imports nothing
-// plugin-specific, only from `@rorschach/frontend/webkit/`.
+// plugin-specific, only from `@rorschach/webkit/`.
 //
 // `pluginHost.init()` is called once at boot. It seeds the built-in config
 // view that can be opened as a tab.

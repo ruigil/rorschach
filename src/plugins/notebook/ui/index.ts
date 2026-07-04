@@ -2,7 +2,7 @@
 // Defines the r-notebook-workspace custom element.
 
 import { RNotebookWorkspace } from './r-notebook-workspace.js'
-import { store } from '@rorschach/frontend/webkit/store.js'
+import { store } from '@rorschach/webkit';
 
 export { RNotebookWorkspace }
 
@@ -55,7 +55,7 @@ export const reduceFrame = (frame: any) => {
   }
 }
 
-declare module '@rorschach/frontend/webkit/store.js' {
+declare module '@rorschach/webkit/store.js' {
   interface NamespaceRegistry {
     notebook: NotebookState
   }

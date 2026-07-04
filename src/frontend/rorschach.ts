@@ -7,9 +7,9 @@
 // by `pluginHost.init()`'s dynamic imports.
 
 // WebUI-Kit primitives — triggers @customElement for r-icon, r-badge, ...
-import '@rorschach/frontend/webkit/index.js'
+import { store } from '@rorschach/webkit';
 // Markdown renderer config (kit utility wrapping global marked/katex/hljs)
-import '@rorschach/frontend/webkit/markdown.js'
+//import '@rorschach/webkit/markdown.js'
 
 // Shell components — triggers @customElement for r-shell, r-view, ...
 import './shell/r-shell.js'
@@ -23,7 +23,6 @@ import './shell/r-welcome-dashboard.js'
 import './shell/r-theme-select.js'
 
 // Shell boot: store init, plugin-host
-import { store } from '@rorschach/frontend/webkit/store.js'
 import type { ShellState } from './types/state.js'
 import { pluginHost } from './shell/plugin-host.js'
 import './shell/theme.js'

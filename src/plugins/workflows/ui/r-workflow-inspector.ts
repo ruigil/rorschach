@@ -1,15 +1,12 @@
-import { html, nothing, css } from 'lit'
-import { customElement, property } from 'lit/decorators.js'
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
-import { sharedStyles } from '@rorschach/frontend/webkit/shared-styles.js'
-import '@rorschach/frontend/webkit/r-tabs.js'
-import '@rorschach/frontend/webkit/r-log-stream.js'
-import '@rorschach/frontend/webkit/r-empty-state.js'
-import '@rorschach/frontend/webkit/r-badge.js'
-import '@rorschach/frontend/webkit/r-kv-list.js'
-import '@rorschach/frontend/webkit/r-icon.js'
-import '@rorschach/frontend/webkit/r-panel.js'
-import '@rorschach/frontend/webkit/r-toolbar.js'
+import {
+  css,
+  customElement,
+  html,
+  nothing,
+  property,
+  RorschachBase,
+  sharedStyles
+} from '@rorschach/webkit';
 
 type InspectorTab = 'task' | 'workflow' | 'run' | 'events'
 

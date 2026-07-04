@@ -1,13 +1,15 @@
-import { html, nothing, type TemplateResult } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
-import '@rorschach/frontend/webkit/r-toggle.js';
-import '@rorschach/frontend/webkit/r-input.js';
-import '@rorschach/frontend/webkit/r-search-select.js';
-import '@rorschach/frontend/webkit/r-select.js';
+import {
+  customElement,
+  html,
+  nothing,
+  property,
+  RorschachBase,
+  type RInputType,
+  type TemplateResult
+} from '@rorschach/webkit';
+
 import './r-config-voice-select.js';
 import './r-config-tool-filter.js';
-import type { RInputType } from '@rorschach/frontend/webkit/r-input.js';
 
 export type ConfigFieldSchema = {
   type?: string;

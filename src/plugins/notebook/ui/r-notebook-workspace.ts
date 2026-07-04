@@ -1,12 +1,12 @@
-import { html, css } from 'lit'
-import { customElement } from 'lit/decorators.js'
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
-import { StoreController } from '@rorschach/frontend/webkit/store-controller.js'
-import { store } from '@rorschach/frontend/webkit/store.js'
+import {
+  css,
+  customElement,
+  html,
+  RorschachBase,
+  store,
+  StoreController
+} from '@rorschach/webkit';
 import type { NotebookState } from './index.js'
-import '@rorschach/frontend/webkit/r-panel.js'
-import '@rorschach/frontend/webkit/r-tabs.js'
-import '@rorschach/frontend/webkit/r-toolbar.js'
 
 import './r-notebook-todos.js'
 import './r-notebook-journal.js'

@@ -6,7 +6,7 @@
 // An inline script in `index.html` sets `data-theme` before first
 // paint to avoid a flash of the default theme.
 
-import { store } from '@rorschach/frontend/webkit/store.js'
+import { store } from '@rorschach/webkit';
 
 export type ThemeName = 'eclipse' | 'light'
 

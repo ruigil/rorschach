@@ -1,6 +1,13 @@
-import { html, css } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
-import { RorschachBase, escHtml } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase,
+  state,
+  unsafeHTML
+} from './base.js';
+
 import * as d3 from 'd3';
 
 const LABEL_COLORS: Record<string, { stroke: string }> = {
@@ -94,7 +101,7 @@ const KG_CONFIG: GraphConfig = {
       .on('mouseover', (_ev: any, d: any) => {
         const lines = Object.entries(d.properties).map(([k, v]) => `${k}: ${v}`).join('\n');
         tooltip.style('display', 'block')
-          .html(`<strong>${escHtml(d.labels.join(' · '))}</strong><pre>${escHtml(lines)}</pre>`);
+          .html(`<strong>${unsafeHTML(d.labels.join(' · '))}</strong><pre>${unsafeHTML(lines)}</pre>`);
       })
       .on('mousemove', (ev: any) => {
         const rect = (container as HTMLElement).getBoundingClientRect();

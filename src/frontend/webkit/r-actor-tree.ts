@@ -1,6 +1,13 @@
-import { html, css, type TemplateResult } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase,
+  state,
+  type TemplateResult
+} from './base.js';
+
 import type { Actor } from './types.js';
 import './r-tree.js';
 import type { TreeNode } from './r-tree.js';

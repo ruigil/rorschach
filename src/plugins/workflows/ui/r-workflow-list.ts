@@ -1,8 +1,10 @@
-import { html, css } from 'lit'
-import { customElement, property } from 'lit/decorators.js'
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js'
-import '@rorschach/frontend/webkit/r-list.js'
-import '@rorschach/frontend/webkit/r-empty-state.js'
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase
+} from '@rorschach/webkit';
 
 @customElement('r-workflow-list')
 export class RWorkflowList extends RorschachBase {

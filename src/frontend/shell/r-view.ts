@@ -1,7 +1,11 @@
-import { html } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
-import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
+import {
+  customElement,
+  html,
+  property,
+  RorschachBase,
+  StoreController
+} from '@rorschach/webkit';
+
 import type { ShellState } from '../types/state.js';
 import { pluginHost } from './plugin-host.js';
 

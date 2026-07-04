@@ -6,7 +6,7 @@
 // avoids duplicating 256 lines of CSS and lets any future component that
 // renders markdown reuse them via `static styles = [markdownStyles, ...]`.
 
-import { css } from 'lit';
+import { css } from './base.js';
 
 export const markdownStyles = css`
   .md {

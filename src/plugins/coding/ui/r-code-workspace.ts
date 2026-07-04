@@ -1,21 +1,17 @@
-import { html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
-import { sharedStyles } from '@rorschach/frontend/webkit/shared-styles.js';
-import { markdownStyles } from '@rorschach/frontend/webkit/markdown-styles.js';
-import { store } from '@rorschach/frontend/webkit/store.js';
-import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
+import {
+  css,
+  customElement,
+  html,
+  markdownStyles,
+  RorschachBase,
+  sharedStyles,
+  state,
+  store,
+  StoreController,
+  type ListItem
+} from '@rorschach/webkit';
+
 import { send } from '../../../frontend/shell/connection-service.js';
-
-import '@rorschach/frontend/webkit/r-panel.js';
-import '@rorschach/frontend/webkit/r-button.js';
-import '@rorschach/frontend/webkit/r-empty-state.js';
-import '@rorschach/frontend/webkit/r-toolbar.js';
-import '@rorschach/frontend/webkit/r-tabs.js';
-import '@rorschach/frontend/webkit/r-list.js';
-import '@rorschach/frontend/webkit/r-icon.js';
-
-import type { ListItem } from '@rorschach/frontend/webkit/r-list.js';
 
 type TerminalHistoryEntry = {
   type: 'input' | 'output';

@@ -1,9 +1,13 @@
-import { html, css } from 'lit';
-import { customElement, state, query } from 'lit/decorators.js';
-import { RorschachBase } from '@rorschach/frontend/webkit/base.js';
-import { StoreController } from '@rorschach/frontend/webkit/store-controller.js';
-import type { ShellState } from '../types/state.js';
-import type { MediaItem } from '@rorschach/frontend/webkit/r-media-previews.js';
+import {
+  css,
+  customElement,
+  html,
+  query,
+  RorschachBase,
+  state,
+  StoreController,
+  type MediaItem
+} from '@rorschach/webkit';
 
 @customElement('r-chat-input')
 export class RChatInput extends RorschachBase {
@@ -200,10 +204,10 @@ export class RChatInput extends RorschachBase {
         <form id="chat-form" @submit=${(e: Event) => { e.preventDefault(); this._submit(); }}>
           <input type="file" id="file-input" accept="image/*,audio/*,.mp3,.wav,application/pdf,.pdf" multiple style="display:none" @change=${this._handleFileChange}>
           <button type="button" id="attach-btn" aria-label="Attach file" @click=${() => this.fileInputEl.click()}>
-            ${this.renderIcon('attach')}
+            <r-icon name="attach"></r-icon>
           </button>
           <button type="button" id="mic-btn" class="${this.isRecording ? 'recording' : ''}" aria-label="Record audio" @click=${this._toggleRecording}>
-            ${this.renderIcon('mic')}
+            <r-icon name="mic"></r-icon>
           </button>
           <textarea
             id="input"
@@ -215,7 +219,7 @@ export class RChatInput extends RorschachBase {
             @keydown=${this._handleKeydown}
           ></textarea>
           <button type="submit" id="send" ?disabled=${disabled} aria-label="Send">
-            ${this.renderIcon('send')}
+            <r-icon name="send"></r-icon>
           </button>
         </form>
         <p class="input-hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</p>

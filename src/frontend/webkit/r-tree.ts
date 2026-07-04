@@ -1,6 +1,13 @@
-import { html, css, type TemplateResult } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase,
+  state,
+  type TemplateResult
+} from './base.js';
+
 import './r-icon.js';
 import { type IconName } from './icons.js';
 
@@ -135,7 +142,6 @@ export class RTree extends RorschachBase {
     }
   `;
 
-
   private _toggleCollapse(node: TreeNode, e: Event) {
     e.stopPropagation();
     let collapsed = false;
@@ -218,7 +224,7 @@ export class RTree extends RorschachBase {
           >
             ${hasChildren 
               ? html`<span class="tree-chevron" @click=${(e: Event) => this._toggleCollapse(node, e)}>
-                  ${this.renderIcon(isCollapsed ? 'chevron-right' : 'chevron-down')}
+                  <r-icon name=${isCollapsed ? 'chevron-right' : 'chevron-down'}></r-icon>
                 </span>`
               : html`<span class="tree-spacer"></span>`}
             

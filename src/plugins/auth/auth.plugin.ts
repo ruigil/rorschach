@@ -28,7 +28,7 @@ const authSurfaceRegistration: UiSurfaceRegistration = {
     icon: 'user',
     contentTag: 'r-auth-profile',
   },
-  moduleUrl: '/plugins/auth/ui/index.js',
+  moduleUrl: '/js/plugins/auth.js',
   frameTypes: [],
 }
 

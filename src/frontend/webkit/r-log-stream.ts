@@ -1,6 +1,12 @@
-import { html, css } from 'lit';
-import { customElement, state, property } from 'lit/decorators.js';
-import { RorschachBase, tsStr } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase,
+  state
+} from './base.js';
+
 import { store } from './store.js';
 import { StoreController } from './store-controller.js';
 import type { LogEvent } from './types.js';
@@ -91,10 +97,12 @@ export class RLogStream extends RorschachBase {
       ${logs.map(event => {
         const level = event.level || 'info';
         const dataStr = event.data !== undefined ? JSON.stringify(event.data) : '';
+
+        const timeToDisplay = new Date(event.timestamp || Date.now()).toISOString().slice(11, 23)
         
         return html`
           <div class="log-entry">
-            <span class="log-ts">${tsStr(event.timestamp || Date.now())}</span>
+            <span class="log-ts">${timeToDisplay}</span>
             <span class="log-level ${level}">${level.toUpperCase()}</span>
             <span class="log-body">
               <span class="log-source">[${event.source || '?'}]</span>

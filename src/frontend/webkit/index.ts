@@ -1,9 +1,9 @@
 // ─── WebUI-Kit barrel export ───
 //
 // Re-exports all kit primitives so the shell's `rorschach.ts` can import them
-// with a single `import '@rorschach/frontend/webkit/index.js'` to trigger every
+// with a single `import '@rorschach/webkit/index.js'` to trigger every
 // `@customElement` decorator. Plugins import individual primitives from their
-// specific module paths (e.g. `@rorschach/frontend/webkit/r-badge.js`) so the
+// specific module paths (e.g. `@rorschach/webkit/r-badge.js`) so the
 // build's `splitting: true` can tree-shake unused primitives from plugin
 // bundles.
 
@@ -44,4 +44,9 @@ export * from './r-input.js'
 export * from './r-search-select.js'
 export * from './r-corona.js'
 export * from './shared-styles.js'
-
+export * from './store.js'
+export * from './store-controller.js'
+export * from './utils.js'
+export * from './markdown.js'
+export * from './markdown-styles.js'
+export * from './view-state.js'

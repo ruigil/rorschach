@@ -1,7 +1,13 @@
-import { html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-import { RorschachBase } from './base.js';
+import {
+  css,
+  customElement,
+  html,
+  property,
+  RorschachBase
+} from './base.js';
+
 import { type IconName } from './icons.js';
+import './r-icon.js';
 
 export type ListItemChip = {
   id: string;
@@ -191,7 +197,7 @@ export class RList extends RorschachBase {
             >
               <div class="list-item-row">
                 ${item.icon 
-                  ? html`<span class="list-item-icon">${this.renderIcon(item.icon)}</span>` 
+                  ? html`<span class="list-item-icon"><r-icon name=${item.icon}></r-icon></span>` 
                   : ''}
                 
                 <div class="list-item-content">
@@ -215,7 +221,7 @@ export class RList extends RorschachBase {
                           title=${action.label || ''}
                           @click=${(e: Event) => this._onActionClick(e, item.id, action.id)}
                         >
-                          ${this.renderIcon(action.icon)}
+                          <r-icon name=${action.icon}></r-icon>
                         </button>
                       `)}
                     </div>

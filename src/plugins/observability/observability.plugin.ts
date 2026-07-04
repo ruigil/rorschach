@@ -26,7 +26,7 @@ const observabilitySurfaceRegistration: UiSurfaceRegistration = {
     icon: 'activity',
     contentTag: 'r-observe-panel',
   },
-  moduleUrl: '/plugins/observability/ui/index.js',
+  moduleUrl: '/js/plugins/observability.js',
 }
 
 export default createPluginFactory<ObservabilityConfig>({
