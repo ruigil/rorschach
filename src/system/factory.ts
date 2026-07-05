@@ -291,7 +291,7 @@ export const createPluginFactory = <
           ctx.publishRetained(OutboundBroadcastTopic, uiReg.id, {
             type: 'ui.surface',
             key: uiReg.id,
-            payload: JSON.stringify({ reg: uiReg }),
+            payload: { reg: uiReg },
           });
           activeUiSurface = uiReg;
         }
@@ -327,14 +327,15 @@ export const createPluginFactory = <
           ctx.deleteRetained(OutboundBroadcastTopic, state.activeUiSurface.id, {
             type: 'ui.surface',
             key: state.activeUiSurface.id,
-            payload: JSON.stringify({
+            payload: {
               reg: {
                 id: state.activeUiSurface.id,
                 view: null,
                 moduleUrl: null,
                 frameTypes: null,
               },
-            }),
+            },
+            isTombstone: true,
           });
         }
 
@@ -473,14 +474,15 @@ export const createPluginFactory = <
               ctx.deleteRetained(OutboundBroadcastTopic, state.activeUiSurface.id, {
                 type: 'ui.surface',
                 key: state.activeUiSurface.id,
-                payload: JSON.stringify({
+                payload: {
                   reg: {
                     id: state.activeUiSurface.id,
                     view: null,
                     moduleUrl: null,
                     frameTypes: null,
                   },
-                }),
+                },
+                isTombstone: true,
               });
             }
           }
@@ -585,7 +587,7 @@ export const createPluginFactory = <
           ctx.publishRetained(OutboundBroadcastTopic, nextUiSurface!.id, {
             type: 'ui.surface',
             key: nextUiSurface!.id,
-            payload: JSON.stringify({ reg: nextUiSurface! }),
+            payload: { reg: nextUiSurface! },
           });
         }
 

@@ -69,7 +69,7 @@ describe('plugin config surface helpers', () => {
     const routes: RouteRegistration[] = []
     system.subscribe(OutboundAdminBroadcastTopic, (event) => {
       if (event.type === 'config.schema') {
-        const parsed = JSON.parse(event.payload)
+        const parsed = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload
         schemas.push(parsed.section)
       }
     })

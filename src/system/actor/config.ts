@@ -59,7 +59,7 @@ export const publishConfigSurface = <C>(
     ctx.publishRetained(OutboundAdminBroadcastTopic, section.id, {
       type: 'config.schema',
       key: section.id,
-      payload: JSON.stringify({ section }),
+      payload: { section },
     })
   }
   for (const reg of buildConfigRoute(descriptor, getConfig)) {
@@ -75,7 +75,8 @@ export const deleteConfigSurface = <C>(
     ctx.deleteRetained(OutboundAdminBroadcastTopic, section.id, {
       type: 'config.schema',
       key: section.id,
-      payload: JSON.stringify({ section: { ...section, schema: null } }),
+      payload: { section: { ...section, schema: null } },
+      isTombstone: true,
     })
   }
   for (const reg of buildConfigRoute(descriptor, () => undefined)) {

@@ -43,8 +43,7 @@ export type HttpMessage =
   | { type: '_wsFrame'; clientId: string; userId: string; roles: string[]; frame: any }
   | { type: '_mediaSaved'; clientId: string; userId: string; text: string; attachments: MessageAttachment[] }
   | { type: 'closed'; clientId: string }
-  | { type: '_broadcast'; broadType: string; key: string; payload: string }
-  | { type: '_adminBroadcastMsg'; broadType: string; key: string; payload: string }
+  | { type: '_broadcast'; broadType: string; key: string; payload: any; isTombstone?: boolean; isAdmin?: boolean }
   | { type: 'send'; userId: string; text: string }
   | { type: '_configUpdate'; pluginId: string; patch: Record<string, unknown> }
   | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
@@ -60,7 +59,7 @@ export type HttpState = {
   activeSpans:         Record<string, SpanHandle>
   identityProviderRef: ActorRef<IdentityProviderMsg> | null
   userIdsToClientIds:  Record<string, string[]>
-  retainedBroadcasts:  Record<string, { type: string; payload: string }>
+  retainedBroadcasts:  Record<string, { type: string; payload: any }>
 }
 
 // ─── Options ───
@@ -86,13 +85,30 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
 
   let selfRef:             ActorRef<HttpMessage>         | null = null
   let identityProviderRef: ActorRef<IdentityProviderMsg> | null = null
-  const retainedAdminBroadcastsMap = new Map<string, { type: string; payload: string }>()
+  const retainedAdminBroadcastsMap = new Map<string, { type: string; payload: any }>()
   type RouteHandler = Extract<RouteRegistration, { handler: Function }>['handler']
   type RouteMatch = NonNullable<RouteRegistration['match']>
   type RouteRecord = { method: string; path: string; match: RouteMatch; handler: RouteHandler }
 
   const routes = new Map<string, RouteRecord>()
   const routeKey = (method: string, path: string, match: RouteMatch = 'exact') => `${method.toUpperCase()} ${match} ${path}`
+
+  const publishFrame = (server: Server<WsData> | null, target: string, type: string, payload: any) => {
+    if (!server) return
+    let obj = payload
+    if (typeof payload === 'string') {
+      try {
+        obj = JSON.parse(payload)
+      } catch {
+        // Not a JSON string
+      }
+    }
+    if (obj && typeof obj === 'object') {
+      server.publish(target, JSON.stringify({ type, ...obj }))
+    } else {
+      server.publish(target, payload)
+    }
+  }
 
   const resolveRegisteredRoute = (method: string, pathname: string): RouteHandler | undefined => {
     const upperMethod = method.toUpperCase()
@@ -132,13 +148,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         }
 
         for (const event of Object.values(state.retainedBroadcasts)) {
-          try {
-            const parsed = JSON.parse(event.payload)
-            const frame = { type: event.type, ...parsed }
-            state.server?.publish(`client:${message.clientId}`, JSON.stringify(frame))
-          } catch {
-            state.server?.publish(`client:${message.clientId}`, event.payload)
-          }
+          publishFrame(state.server, `client:${message.clientId}`, event.type, event.payload)
         }
         return {
           state: { ...state, connections, userIdsToClientIds },
@@ -164,50 +174,30 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
       },
 
       _broadcast: (state, message) => {
-        try {
-          const parsed = JSON.parse(message.payload)
-          const frame = { type: message.broadType, ...parsed }
-          state.server?.publish(CHANNEL, JSON.stringify(frame))
-        } catch {
-          state.server?.publish(CHANNEL, message.payload)
+        const channel = message.isAdmin ? ADMIN_CHANNEL : CHANNEL
+        publishFrame(state.server, channel, message.broadType, message.payload)
+
+        const isCacheable = message.broadType === 'ui.surface' || message.broadType === 'config.schema' || message.broadType === 'agents'
+        if (!isCacheable) {
+          return { state }
         }
 
-        const nextRetained = { ...state.retainedBroadcasts }
-        try {
-          const parsed = JSON.parse(message.payload)
-          const isTombstone = (parsed.reg && parsed.reg.moduleUrl === null) || (parsed.agents && parsed.agents.length === 0)
-          if (isTombstone) {
-            delete nextRetained[message.key]
-          } else {
-            nextRetained[message.key] = { type: message.broadType, payload: message.payload }
-          }
-        } catch {
-          nextRetained[message.key] = { type: message.broadType, payload: message.payload }
-        }
-        return { state: { ...state, retainedBroadcasts: nextRetained } }
-      },
-
-      _adminBroadcastMsg: (state, message) => {
-        try {
-          const parsed = JSON.parse(message.payload)
-          const frame = { type: message.broadType, ...parsed }
-          state.server?.publish(ADMIN_CHANNEL, JSON.stringify(frame))
-        } catch {
-          state.server?.publish(ADMIN_CHANNEL, message.payload)
-        }
-
-        try {
-          const parsed = JSON.parse(message.payload)
-          const isTombstone = (parsed.section && parsed.section.schema === null)
-          if (isTombstone) {
+        if (message.isAdmin) {
+          if (message.isTombstone) {
             retainedAdminBroadcastsMap.delete(message.key)
           } else {
             retainedAdminBroadcastsMap.set(message.key, { type: message.broadType, payload: message.payload })
           }
-        } catch {
-          retainedAdminBroadcastsMap.set(message.key, { type: message.broadType, payload: message.payload })
+          return { state }
+        } else {
+          const nextRetained = { ...state.retainedBroadcasts }
+          if (message.isTombstone) {
+            delete nextRetained[message.key]
+          } else {
+            nextRetained[message.key] = { type: message.broadType, payload: message.payload }
+          }
+          return { state: { ...state, retainedBroadcasts: nextRetained } }
         }
-        return { state }
       },
 
       message: (state, message, context) => {
@@ -350,13 +340,16 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           broadType: e.type,
           key: e.key,
           payload: e.payload,
+          isTombstone: e.isTombstone,
         }))
 
         context.subscribe(OutboundAdminBroadcastTopic, (e) => ({
-          type: '_adminBroadcastMsg' as const,
+          type: '_broadcast' as const,
           broadType: e.type,
           key: e.key,
           payload: e.payload,
+          isTombstone: e.isTombstone,
+          isAdmin: true,
         }))
 
         context.subscribe(IdentityProviderTopic, (e) => ({
@@ -383,12 +376,11 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
             const schemas: ConfigSchemaSection[] = [];
             for (const event of retainedAdminBroadcastsMap.values()) {
               if (event.type === 'config.schema') {
-                try {
-                  const parsed = JSON.parse(event.payload);
-                  if (parsed.section) {
-                    schemas.push(parsed.section);
-                  }
-                } catch {}
+                const payload = event.payload;
+                const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+                if (parsed?.section) {
+                  schemas.push(parsed.section);
+                }
               }
             }
             return schemas;

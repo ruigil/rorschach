@@ -83,7 +83,7 @@ describe('Plugin Factory (createPluginFactory)', () => {
     system.subscribe(RouteRegistrationTopic, (e) => registeredRoutes.push(e));
     system.subscribe(OutboundBroadcastTopic, (e) => {
       if (e.type === 'ui.surface') {
-        const parsed = JSON.parse(e.payload);
+        const parsed = typeof e.payload === 'string' ? JSON.parse(e.payload) : e.payload;
         registeredUi.push(parsed.reg);
       }
     });

@@ -66,9 +66,9 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
     ctx.publishRetained(OutboundBroadcastTopic, CATALOG_KEY, {
       type: 'agents',
       key: CATALOG_KEY,
-      payload: JSON.stringify({
+      payload: {
         agents: userVisible.map(d => ({ mode: d.mode, displayName: d.displayName, shortDesc: d.shortDesc })),
-      }),
+      },
     })
 
     // Always publish the tool — single-element enum is harmless. The tool
@@ -102,7 +102,8 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
         ctx.deleteRetained(OutboundBroadcastTopic, CATALOG_KEY, {
           type: 'agents',
           key: CATALOG_KEY,
-          payload: JSON.stringify({ agents: [] }),
+          payload: { agents: [] },
+          isTombstone: true,
         })
         ctx.deleteRetained(ToolRegistrationTopic, SWITCH_MODE_TOOL_NAME, { name: SWITCH_MODE_TOOL_NAME, ref: null })
         return { state }

@@ -42,12 +42,12 @@ export const OutboundUserMessageTopic = createTopic<OutboundUserMessageEvent>('u
 
 // ─── Domain event: emit to broadcast a message to all connected clients ───
 
-export type OutboundBroadcastEvent = { type: string; payload: string; key: string }
+export type OutboundBroadcastEvent = { type: string; payload: any; key: string; isTombstone?: boolean }
 
 /** Topic for broadcasting messages to all connected clients. */
 export const OutboundBroadcastTopic = createTopic<OutboundBroadcastEvent>('outbound.broadcast')
 
-export type OutboundAdminBroadcastEvent = { type: string; payload: string; key: string }
+export type OutboundAdminBroadcastEvent = { type: string; payload: any; key: string; isTombstone?: boolean }
 
 /** Topic for broadcasting admin-only messages. */
 export const OutboundAdminBroadcastTopic = createTopic<OutboundAdminBroadcastEvent>('outbound.admin.broadcast')
