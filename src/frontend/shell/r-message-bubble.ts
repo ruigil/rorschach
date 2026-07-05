@@ -8,7 +8,7 @@ import {
 
 import type { Message, ActiveStream } from './types.js';
 
-import './r-thinking-indicator.js';
+import './r-tool-history.js';
 import './r-attachments.js';
 import './r-sources-list.js';
 
@@ -165,7 +165,8 @@ export class RMessageBubble extends RorschachBase {
     const reasoning = this.message?.reasoning ?? this.stream?.reasoning ?? '';
     const sources = this.message?.sources ?? this.stream?.sources ?? [];
     const attachments = this.message?.attachments ?? this.stream?.attachments ?? [];
-    const toolingLabel = this.stream?.toolingLabel;
+    const toolCalls = this.message?.toolCalls ?? this.stream?.toolCalls ?? [];
+    const active = !this.message && !!this.stream?.isActive;
 
     return html`
       <div class="bubble">
@@ -180,8 +181,8 @@ export class RMessageBubble extends RorschachBase {
           <r-attachments .items=${attachments}></r-attachments>
         ` : ''}
 
-        ${toolingLabel ? html`
-          <r-thinking-indicator .label=${toolingLabel}></r-thinking-indicator>
+        ${toolCalls.length > 0 ? html`
+          <r-tool-history .tools=${toolCalls} ?active=${active}></r-tool-history>
         ` : ''}
 
         <div class="bubble-body">

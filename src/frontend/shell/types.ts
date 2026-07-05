@@ -35,11 +35,12 @@ export type Message = {
   sources?: Source[]
   attachments?: Attachment[]
   timestamp: number
+  toolCalls?: string[]
 };
 
 export type ActiveStream = {
   isActive: boolean
-  toolingLabel?: string
+  toolCalls: string[]
   reasoning: string
   text: string
   sources: Source[]

@@ -19,7 +19,7 @@ beforeEach(() => {
     currentModeDisplayName: '',
     messages: [],
     lastMessages: [],
-    activeStream: { isActive: false, reasoning: '', text: '', sources: [], attachments: [] },
+    activeStream: { isActive: false, reasoning: '', text: '', sources: [], attachments: [], toolCalls: [] },
     views: {},
     activeWorkspaceTab: 'code',
   })

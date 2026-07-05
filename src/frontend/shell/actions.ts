@@ -34,6 +34,7 @@ export const commitActiveStream = (role: 'assistant' | 'error' = 'assistant', te
     sources: [...active.sources],
     attachments: [...active.attachments],
     timestamp: Date.now(),
+    toolCalls: [...active.toolCalls],
   }
   appendMessage(message)
   shell().set('activeStream', {
@@ -42,6 +43,7 @@ export const commitActiveStream = (role: 'assistant' | 'error' = 'assistant', te
     text: '',
     sources: [],
     attachments: [],
+    toolCalls: [],
   })
   shell().set('isWaiting', false)
 }

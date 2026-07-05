@@ -4,7 +4,7 @@
 // Placed in shell to maintain dependency inversion boundaries (so webkit
 // remains generic and does not import shell actions or plugin host).
 
-import { store, toolActionLabel } from '@rorschach/webkit';
+import { store } from '@rorschach/webkit';
 import type { ShellState } from './types.js'
 import { updateActiveStream, commitActiveStream } from './actions.js'
 import { setMode } from './view-actions.js'
@@ -17,20 +17,20 @@ const frameHandlers: Record<string, (msg: Record<string, any>) => void> = {
     updateActiveStream({
       isActive: true,
       text: shell().get('activeStream').text + msg.text,
-      toolingLabel: undefined,
     })
   },
   reasoningChunk: (msg) => {
     updateActiveStream({
       isActive: true,
       reasoning: shell().get('activeStream').reasoning + msg.text,
-      toolingLabel: undefined,
     })
   },
   tooling: (msg) => {
+    const newTools = msg.tools || [];
+    const current = shell().get('activeStream').toolCalls || [];
     updateActiveStream({
       isActive: true,
-      toolingLabel: toolActionLabel(msg.tools || []),
+      toolCalls: [...current, ...newTools],
     })
   },
   sources: (msg) => updateActiveStream({ sources: msg.sources }),

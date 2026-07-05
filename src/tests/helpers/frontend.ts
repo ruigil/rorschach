@@ -17,6 +17,7 @@ const defaultState: Partial<ShellState> = {
     text: '',
     sources: [],
     attachments: [],
+    toolCalls: [],
   },
   views: {},
   activeWorkspaceTab: 'code',
