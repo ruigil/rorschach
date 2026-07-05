@@ -11,8 +11,6 @@ import {
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { ask } from '../../system/index.ts'
-import { LlmProviderTopic } from '../../types/llm.ts'
-import type { LlmProviderMsg } from '../../types/llm.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
 import { UiSurfaceRegistrationTopic } from '../../types/ui-surface.ts'
@@ -49,7 +47,6 @@ export type HttpMessage =
   | { type: 'send'; userId: string; text: string }
   | { type: '_configSchemaChanged'; section: ConfigSchemaSection }
   | { type: '_configUpdate'; pluginId: string; patch: Record<string, unknown> }
-  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
   | { type: '_routeChanged'; reg: RouteRegistration }
   | { type: '_uiSurfaceChanged'; reg: UiSurfaceRegistration }
@@ -63,7 +60,6 @@ export type HttpState = {
   server:              Server<WsData> | null
   connections:         number
   activeSpans:         Record<string, SpanHandle>
-  llmProviderRef:      ActorRef<LlmProviderMsg>      | null
   identityProviderRef: ActorRef<IdentityProviderMsg> | null
   agentCatalog:        AgentCatalogEvent['agents']
   userIdsToClientIds:  Record<string, string[]>
@@ -92,7 +88,6 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
   const ADMIN_CHANNEL = 'admin:broadcast'
 
   let selfRef:             ActorRef<HttpMessage>         | null = null
-  let llmProviderRef:      ActorRef<LlmProviderMsg>      | null = null
   let identityProviderRef: ActorRef<IdentityProviderMsg> | null = null
   const configSchemas = new Map<string, ConfigSchemaSection>()
   type RouteHandler = Extract<RouteRegistration, { handler: Function }>['handler']
@@ -117,7 +112,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
   }
 
   return {
-    initialState: { server: null, connections: 0, activeSpans: {}, llmProviderRef: null, identityProviderRef: null, agentCatalog: [], userIdsToClientIds: {}, surfaces: {} },
+    initialState: { server: null, connections: 0, activeSpans: {}, identityProviderRef: null, agentCatalog: [], userIdsToClientIds: {}, surfaces: {} },
     handler: onMessage({
 
       connected: (state, message, context) => {
@@ -295,11 +290,6 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         return { state }
       },
 
-      _llmProvider: (state, message) => {
-        llmProviderRef = message.ref
-        return { state: { ...state, llmProviderRef: message.ref } }
-      },
-
       _identityProviderChanged: (state, message) => {
         identityProviderRef = message.ref
         return { state: { ...state, identityProviderRef: message.ref } }
@@ -339,11 +329,6 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         context.subscribe(OutboundAdminBroadcastTopic, (e) => ({
           type: 'adminBroadcast' as const,
           text: e.text,
-        }))
-
-        context.subscribe(LlmProviderTopic, (e) => ({
-          type: '_llmProvider' as const,
-          ref: e.ref,
         }))
 
         context.subscribe(ConfigSchemaTopic, (section) => ({
