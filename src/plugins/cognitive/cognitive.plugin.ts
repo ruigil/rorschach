@@ -9,7 +9,7 @@ import type { SessionConfig, UserContextMsg } from './types.ts'
 import { UserContext } from './user-context.ts'
 import { AgentRegistry } from './agent-registry.ts'
 import { ChatbotAgentFactory, type ChatbotAgentOptions } from './chatbot-agent.ts'
-import { cognitiveSchemas } from './routes.ts'
+import { buildCognitiveRoutes, cognitiveSchemas } from './routes.ts'
 
 // ─── Config types ───
 
@@ -110,5 +110,8 @@ export default createPluginFactory<CognitiveConfig>({
         toolFilter:   cfg.chatbot?.toolFilter,
       }),
     },
+  },
+  routes: (cfg, deps) => {
+    return buildCognitiveRoutes(deps.llmProvider as ActorRef<LlmProviderMsg>)
   },
 })

@@ -11,8 +11,8 @@ import {
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { ask } from '../../system/index.ts'
-import { LlmProviderTopic, CostTopic } from '../../types/llm.ts'
-import type { LlmProviderMsg, CostEvent } from '../../types/llm.ts'
+import { LlmProviderTopic } from '../../types/llm.ts'
+import type { LlmProviderMsg } from '../../types/llm.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
 import { UiSurfaceRegistrationTopic } from '../../types/ui-surface.ts'
@@ -56,7 +56,6 @@ export type HttpMessage =
   | { type: '_agentCatalog'; agents: AgentCatalogEvent['agents'] }
   | { type: '_imageGenerated'; publicUrl: string }
   | { type: '_audioGenerated'; publicUrl: string }
-  | { type: '_cost'; event: CostEvent }
 
 // ─── Actor state ───
 
@@ -258,20 +257,6 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         return { state }
       },
 
-      _cost: (state, message) => {
-        const { event } = message
-        const text = JSON.stringify({
-          type:         'usage',
-          role:         event.role,
-          model:        event.model,
-          inputTokens:  event.inputTokens,
-          outputTokens: event.outputTokens,
-          cost:         event.cost,
-        })
-        state.server?.publish(ADMIN_CHANNEL, text)
-        return { state }
-      },
-
       send: (state, message) => {
         const clientIds = state.userIdsToClientIds[message.userId] ?? []
         const activeSpans = { ...state.activeSpans }
@@ -356,11 +341,6 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           text: e.text,
         }))
 
-        context.subscribe(CostTopic, (event) => ({
-          type: '_cost' as const,
-          event,
-        }))
-
         context.subscribe(LlmProviderTopic, (e) => ({
           type: '_llmProvider' as const,
           ref: e.ref,
@@ -401,12 +381,6 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           resolveCookieIdentity: (req) => resolveCookieIdentity(identityProviderRef, req),
           authorizeConfigAccess: (req, url, identity, opts) => authorizeConfigAccess(identityProviderRef, req, url, identity, opts),
           resolveRegisteredRoute: (method, pathname) => resolveRegisteredRoute(method, pathname),
-          fetchModels: async () => {
-            if (llmProviderRef) {
-              return await ask(llmProviderRef, replyTo => ({ type: 'fetchModels' as const, replyTo }), { timeoutMs: 10_000 })
-            }
-            throw new Error('No LLM Provider')
-          },
           getConfigSchemas: () => [...configSchemas.values()],
           onConnect: (client) => {
             selfRef?.send({ type: 'connected', clientId: client.clientId, userId: client.userId, roles: client.roles })

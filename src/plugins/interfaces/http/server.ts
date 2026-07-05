@@ -15,7 +15,6 @@ export type ServerOptions = {
   resolveCookieIdentity: (req: Request) => Promise<Identity | null>
   authorizeConfigAccess: (req: Request, url: URL, identity: Identity | null, options?: { requireSameOrigin?: boolean }) => Promise<Response | null>
   resolveRegisteredRoute: (method: string, pathname: string) => Function | undefined
-  fetchModels: () => Promise<string[]>
   getConfigSchemas: () => any[]
   
   // Connection and message callbacks
@@ -35,7 +34,6 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
     resolveCookieIdentity,
     authorizeConfigAccess,
     resolveRegisteredRoute,
-    fetchModels,
     getConfigSchemas,
     onConnect,
     onDisconnect,
@@ -81,17 +79,7 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         return await registered(req, url, identity)
       }
 
-      // 4. Models API
-      if (req.method === 'GET' && url.pathname === '/models') {
-        try {
-          const models = await fetchModels()
-          return new Response(JSON.stringify(models), { headers: { 'Content-Type': 'application/json' } })
-        } catch {
-          return new Response('[]', { headers: { 'Content-Type': 'application/json' } })
-        }
-      }
-
-      // 5. Current user identity
+      // 4. Current user identity
       if (req.method === 'GET' && url.pathname === '/me') {
         const identity = await resolveCookieIdentity(req)
         return new Response(JSON.stringify({ userId: identity?.userId ?? null, roles: identity?.roles ?? [] }), { headers: { 'Content-Type': 'application/json' } })
