@@ -89,7 +89,9 @@ export const JsonlLogger = (
 
       // Broadcast to admin WS clients
       context.publish(OutboundAdminBroadcastTopic, {
-        text: JSON.stringify({ type: 'log', ...message.event }),
+        type: 'log',
+        key: 'log',
+        payload: JSON.stringify({ type: 'log', ...message.event }),
       })
 
       // Drop events below the minimum level for file storage

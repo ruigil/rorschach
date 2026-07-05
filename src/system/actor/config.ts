@@ -1,6 +1,7 @@
 import type { ActorContext, ActorDef, ActorRef } from './types.ts'
-import { ConfigSchemaTopic, type ConfigSchemaSection } from '../../types/config.ts'
+import { type ConfigSchemaSection } from '../../types/config.ts'
 import { RouteRegistrationTopic, type RouteRegistration } from '../../types/routes.ts'
+import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
 
 // ─── Config Descriptor ──────────────────────────────────────────────────────
 //
@@ -55,7 +56,11 @@ export const publishConfigSurface = <C>(
   getConfig: () => C | undefined,
 ): void => {
   for (const section of descriptor.schemas ?? []) {
-    ctx.publishRetained(ConfigSchemaTopic, section.id, section)
+    ctx.publishRetained(OutboundAdminBroadcastTopic, section.id, {
+      type: 'config.schema',
+      key: section.id,
+      payload: JSON.stringify({ section }),
+    })
   }
   for (const reg of buildConfigRoute(descriptor, getConfig)) {
     ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
@@ -67,7 +72,11 @@ export const deleteConfigSurface = <C>(
   descriptor: ConfigDescriptor<C>,
 ): void => {
   for (const section of descriptor.schemas ?? []) {
-    ctx.deleteRetained(ConfigSchemaTopic, section.id, { ...section, schema: null })
+    ctx.deleteRetained(OutboundAdminBroadcastTopic, section.id, {
+      type: 'config.schema',
+      key: section.id,
+      payload: JSON.stringify({ section: { ...section, schema: null } }),
+    })
   }
   for (const reg of buildConfigRoute(descriptor, () => undefined)) {
     ctx.deleteRetained(RouteRegistrationTopic, reg.id, {

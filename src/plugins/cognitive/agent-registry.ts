@@ -4,10 +4,10 @@ import type { LlmTool } from '../../types/llm.ts'
 import { ToolRegistrationTopic, type ToolInvokeMsg, type ToolMsg } from '../../types/tools.ts'
 import {
   AgentRegistrationTopic,
-  AgentCatalogTopic,
   SwitchAgentTopic,
   type AgentDescriptor,
 } from '../../types/agents.ts'
+import { OutboundBroadcastTopic } from '../../types/events.ts'
 
 // ─── Message protocol ─────────────────────────────────────────────────────
 //
@@ -63,8 +63,12 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
   const republish = (state: AgentRegistryState, ctx: any) => {
     const userVisible = Object.values(state.descriptors).filter(d => d.capabilities.userVisible !== false)
 
-    ctx.publishRetained(AgentCatalogTopic, CATALOG_KEY, {
-      agents: userVisible.map(d => ({ mode: d.mode, displayName: d.displayName, shortDesc: d.shortDesc })),
+    ctx.publishRetained(OutboundBroadcastTopic, CATALOG_KEY, {
+      type: 'agents',
+      key: CATALOG_KEY,
+      payload: JSON.stringify({
+        agents: userVisible.map(d => ({ mode: d.mode, displayName: d.displayName, shortDesc: d.shortDesc })),
+      }),
     })
 
     // Always publish the tool — single-element enum is harmless. The tool
@@ -95,7 +99,11 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
         return { state }
       },
       stopped: (state, ctx) => {
-        ctx.deleteRetained(AgentCatalogTopic, CATALOG_KEY, { agents: [] })
+        ctx.deleteRetained(OutboundBroadcastTopic, CATALOG_KEY, {
+          type: 'agents',
+          key: CATALOG_KEY,
+          payload: JSON.stringify({ agents: [] }),
+        })
         ctx.deleteRetained(ToolRegistrationTopic, SWITCH_MODE_TOOL_NAME, { name: SWITCH_MODE_TOOL_NAME, ref: null })
         return { state }
       },

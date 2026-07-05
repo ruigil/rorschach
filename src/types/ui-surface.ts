@@ -35,5 +35,4 @@ export type UiSurfaceRegistration =
     }
   | { id: string; view?: null; moduleUrl: null; frameTypes?: null }
 
-export const UiSurfaceRegistrationTopic = createTopic<UiSurfaceRegistration>('ui.surface')
 

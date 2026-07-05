@@ -3,9 +3,10 @@ import type { ConfigDescriptor } from './actor/config.ts';
 import { onLifecycle, onMessage } from './actor/match.ts';
 import { publishConfigSurface, deleteConfigSurface } from './actor/config.ts';
 import { RouteRegistrationTopic, type RouteRegistration } from '../types/routes.ts';
-import { UiSurfaceRegistrationTopic, type UiSurfaceRegistration } from '../types/ui-surface.ts';
+import { type UiSurfaceRegistration } from '../types/ui-surface.ts';
 import { AgentRegistrationTopic, type AgentDescriptor } from '../types/agents.ts';
 import { ToolRegistrationTopic, type ToolSchema } from '../types/tools.ts';
+import { OutboundBroadcastTopic } from '../types/events.ts';
 
 /**
  * Declaration for a sub-actor slot managed by the factory.
@@ -287,7 +288,11 @@ export const createPluginFactory = <
           const uiReg = typeof blueprint.uiSurface === 'function'
             ? blueprint.uiSurface(initialConfig)
             : blueprint.uiSurface;
-          ctx.publishRetained(UiSurfaceRegistrationTopic, uiReg.id, uiReg);
+          ctx.publishRetained(OutboundBroadcastTopic, uiReg.id, {
+            type: 'ui.surface',
+            key: uiReg.id,
+            payload: JSON.stringify({ reg: uiReg }),
+          });
           activeUiSurface = uiReg;
         }
 
@@ -319,11 +324,17 @@ export const createPluginFactory = <
 
         // 2. Tombstone UI Surface
         if (state.activeUiSurface) {
-          ctx.deleteRetained(UiSurfaceRegistrationTopic, state.activeUiSurface.id, {
-            id: state.activeUiSurface.id,
-            view: null,
-            moduleUrl: null,
-            frameTypes: null,
+          ctx.deleteRetained(OutboundBroadcastTopic, state.activeUiSurface.id, {
+            type: 'ui.surface',
+            key: state.activeUiSurface.id,
+            payload: JSON.stringify({
+              reg: {
+                id: state.activeUiSurface.id,
+                view: null,
+                moduleUrl: null,
+                frameTypes: null,
+              },
+            }),
           });
         }
 
@@ -459,11 +470,17 @@ export const createPluginFactory = <
             dynamicUiChanged = true;
             nextUiSurface = nextUiReg;
             if (state.activeUiSurface) {
-              ctx.deleteRetained(UiSurfaceRegistrationTopic, state.activeUiSurface.id, {
-                id: state.activeUiSurface.id,
-                view: null,
-                moduleUrl: null,
-                frameTypes: null,
+              ctx.deleteRetained(OutboundBroadcastTopic, state.activeUiSurface.id, {
+                type: 'ui.surface',
+                key: state.activeUiSurface.id,
+                payload: JSON.stringify({
+                  reg: {
+                    id: state.activeUiSurface.id,
+                    view: null,
+                    moduleUrl: null,
+                    frameTypes: null,
+                  },
+                }),
               });
             }
           }
@@ -565,7 +582,11 @@ export const createPluginFactory = <
 
         // UI Surface
         if (blueprint.uiSurface && (dynamicUiChanged || !state.activeUiSurface)) {
-          ctx.publishRetained(UiSurfaceRegistrationTopic, nextUiSurface!.id, nextUiSurface!);
+          ctx.publishRetained(OutboundBroadcastTopic, nextUiSurface!.id, {
+            type: 'ui.surface',
+            key: nextUiSurface!.id,
+            payload: JSON.stringify({ reg: nextUiSurface! }),
+          });
         }
 
         return {

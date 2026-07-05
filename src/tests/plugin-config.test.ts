@@ -8,8 +8,9 @@ import {
   deepMerge,
 } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
-import { ConfigSchemaTopic, type ConfigSchemaSection } from '../types/config.ts'
+import { type ConfigSchemaSection } from '../types/config.ts'
 import { RouteRegistrationTopic, type RouteRegistration } from '../types/routes.ts'
+import { OutboundAdminBroadcastTopic } from '../types/events.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -66,7 +67,12 @@ describe('plugin config surface helpers', () => {
 
     const schemas: ConfigSchemaSection[] = []
     const routes: RouteRegistration[] = []
-    system.subscribe(ConfigSchemaTopic, (event) => schemas.push(event))
+    system.subscribe(OutboundAdminBroadcastTopic, (event) => {
+      if (event.type === 'config.schema') {
+        const parsed = JSON.parse(event.payload)
+        schemas.push(parsed.section)
+      }
+    })
     system.subscribe(RouteRegistrationTopic, (event) => routes.push(event))
     await tick()
 

@@ -8,7 +8,7 @@ import {
 } from '../system/factory.ts';
 import { onMessage } from '../system/index.ts';
 import { RouteRegistrationTopic } from '../types/routes.ts';
-import { UiSurfaceRegistrationTopic } from '../types/ui-surface.ts';
+import { OutboundBroadcastTopic } from '../types/events.ts';
 import { AgentRegistrationTopic } from '../types/agents.ts';
 import { ToolRegistrationTopic } from '../types/tools.ts';
 
@@ -81,7 +81,12 @@ describe('Plugin Factory (createPluginFactory)', () => {
     system.subscribe(AgentRegistrationTopic, (e) => registeredAgents.push(e));
     system.subscribe(ToolRegistrationTopic, (e) => registeredTools.push(e));
     system.subscribe(RouteRegistrationTopic, (e) => registeredRoutes.push(e));
-    system.subscribe(UiSurfaceRegistrationTopic, (e) => registeredUi.push(e));
+    system.subscribe(OutboundBroadcastTopic, (e) => {
+      if (e.type === 'ui.surface') {
+        const parsed = JSON.parse(e.payload);
+        registeredUi.push(parsed.reg);
+      }
+    });
 
     // Setup mock schemas
     const toolSchema = {

@@ -68,7 +68,7 @@ export {
   redact,
 } from './actor/types.ts'
 
-export { ConfigSchemaTopic, ConfigUpdateRequestTopic } from '../types/config.ts'
+export { ConfigUpdateRequestTopic } from '../types/config.ts'
 export type { ConfigSchemaSection, ConfigUpdateRequest } from '../types/config.ts'
 
 export type {

@@ -27,12 +27,16 @@ export const GlobalTools = (): ActorDef<GlobalToolsMsg, GlobalToolsState> => ({
       if (event.ref === null) {
         delete tools[event.name]
         ctx.publish(OutboundAdminBroadcastTopic, {
-          text: JSON.stringify({ type: 'tool_unregistered', name: event.name })
+          type: 'tool_unregistered',
+          key: event.name,
+          payload: JSON.stringify({ type: 'tool_unregistered', name: event.name })
         })
       } else {
         tools[event.name] = event
         ctx.publish(OutboundAdminBroadcastTopic, {
-          text: JSON.stringify({ type: 'tool_registered', name: event.name, schema: event.schema })
+          type: 'tool_registered',
+          key: event.name,
+          payload: JSON.stringify({ type: 'tool_registered', name: event.name, schema: event.schema })
         })
       }
       return { state: { ...state, tools } }

@@ -42,10 +42,15 @@ export const OutboundUserMessageTopic = createTopic<OutboundUserMessageEvent>('u
 
 // ─── Domain event: emit to broadcast a message to all connected clients ───
 
-export type OutboundBroadcastEvent = { text: string }
+export type OutboundBroadcastEvent = { type: string; payload: string; key: string }
 
-/** Topic for broadcasting admin-only observability messages to privileged clients. */
-export const OutboundAdminBroadcastTopic = createTopic<OutboundBroadcastEvent>('admin.outbound.broadcast')
+/** Topic for broadcasting messages to all connected clients. */
+export const OutboundBroadcastTopic = createTopic<OutboundBroadcastEvent>('outbound.broadcast')
+
+export type OutboundAdminBroadcastEvent = { type: string; payload: string; key: string }
+
+/** Topic for broadcasting admin-only messages. */
+export const OutboundAdminBroadcastTopic = createTopic<OutboundAdminBroadcastEvent>('outbound.admin.broadcast')
 
 // ─── Domain event: emitted by cron actor to trigger a user-specific proactive message ───
 

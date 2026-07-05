@@ -96,7 +96,7 @@ system.subscribe(TraceTopic, (span: TraceSpan) => {
     names.push(span.data.toolName as string)
     toolCallsPerTrace.set(span.traceId, names)
   }
-  system.publish(OutboundAdminBroadcastTopic, { text: JSON.stringify({ type: 'trace', ...span }) })
+  system.publish(OutboundAdminBroadcastTopic, { type: 'trace', key: span.spanId, payload: JSON.stringify({ type: 'trace', ...span }) })
 })
 
 // ─── Log subscription ───
@@ -107,14 +107,14 @@ system.subscribe(LogTopic, (event) => {
     console.log(`[${log.level.toUpperCase()}] [${log.source}] ${log.message}`)
   }
   // Forward to UI
-  system.publish(OutboundAdminBroadcastTopic, { text: JSON.stringify({ type: 'log', ...log }) })
+  system.publish(OutboundAdminBroadcastTopic, { type: 'log', key: 'log', payload: JSON.stringify({ type: 'log', ...log }) })
 })
 
 // ─── Metrics subscription ───
 
 system.subscribe(MetricsTopic, (event) => {
   // Forward to UI
-  system.publish(OutboundAdminBroadcastTopic, { text: JSON.stringify({ type: 'metrics', ...event }) })
+  system.publish(OutboundAdminBroadcastTopic, { type: 'metrics', key: 'metrics', payload: JSON.stringify({ type: 'metrics', ...event }) })
 })
 
 // ─── sendTurn ───

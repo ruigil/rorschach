@@ -27,7 +27,6 @@ export type ConfigSchemaSection = {
   routeId: string
 }
 
-export const ConfigSchemaTopic = createTopic<ConfigSchemaSection>('config.schema')
 
 // ─── Config Update Request ───────────────────────────────────────────────────
 //

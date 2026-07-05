@@ -86,8 +86,6 @@ export type AgentCatalogEvent = {
   agents: Array<{ mode: string; displayName: string; shortDesc: string }>
 }
 
-export const AgentCatalogTopic = createTopic<AgentCatalogEvent>('agent.catalog')
-
 export type SessionLifecycleEvent =
   | { type: 'sessionStarted';  userId: string; defaultMode: string; timestamp: number }
   | { type: 'sessionEnded';    userId: string; reason: 'lastDisconnect' | 'contextStoreCrash'; timestamp: number }

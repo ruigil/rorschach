@@ -4,23 +4,23 @@ import { emit } from '../../system/index.ts'
 import {
   InboundMessageTopic,
   UserPresenceTopic,
-  OutboundUserMessageTopic, OutboundAdminBroadcastTopic,
+  OutboundUserMessageTopic,
+  OutboundBroadcastTopic,
+  OutboundAdminBroadcastTopic,
   HttpWsFrameTopic,
   type MessageAttachment,
 } from '../../types/events.ts'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
-import { ask } from '../../system/index.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
-import { UiSurfaceRegistrationTopic } from '../../types/ui-surface.ts'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
-import { ConfigSchemaTopic, ConfigUpdateRequestTopic } from '../../types/config.ts'
+import { ConfigUpdateRequestTopic } from '../../types/config.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import { IdentityProviderTopic, type Identity } from '../../types/identity.ts'
 import { resolveIdentity, resolveCookieIdentity } from './types.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
-import { AgentCatalogTopic, SwitchAgentTopic, type AgentCatalogEvent } from '../../types/agents.ts'
+import { type AgentCatalogEvent } from '../../types/agents.ts'
 
 
 import { canAccessAdminSurface, authorizeConfigAccess } from './http/security.ts'
@@ -43,14 +43,12 @@ export type HttpMessage =
   | { type: '_wsFrame'; clientId: string; userId: string; roles: string[]; frame: any }
   | { type: '_mediaSaved'; clientId: string; userId: string; text: string; attachments: MessageAttachment[] }
   | { type: 'closed'; clientId: string }
-  | { type: 'adminBroadcast'; text: string }
+  | { type: '_broadcast'; broadType: string; key: string; payload: string }
+  | { type: '_adminBroadcastMsg'; broadType: string; key: string; payload: string }
   | { type: 'send'; userId: string; text: string }
-  | { type: '_configSchemaChanged'; section: ConfigSchemaSection }
   | { type: '_configUpdate'; pluginId: string; patch: Record<string, unknown> }
   | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
   | { type: '_routeChanged'; reg: RouteRegistration }
-  | { type: '_uiSurfaceChanged'; reg: UiSurfaceRegistration }
-  | { type: '_agentCatalog'; agents: AgentCatalogEvent['agents'] }
   | { type: '_imageGenerated'; publicUrl: string }
   | { type: '_audioGenerated'; publicUrl: string }
 
@@ -61,9 +59,8 @@ export type HttpState = {
   connections:         number
   activeSpans:         Record<string, SpanHandle>
   identityProviderRef: ActorRef<IdentityProviderMsg> | null
-  agentCatalog:        AgentCatalogEvent['agents']
   userIdsToClientIds:  Record<string, string[]>
-  surfaces:             Record<string, UiSurfaceRegistration>
+  retainedBroadcasts:  Record<string, { type: string; payload: string }>
 }
 
 // ─── Options ───
@@ -89,7 +86,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
 
   let selfRef:             ActorRef<HttpMessage>         | null = null
   let identityProviderRef: ActorRef<IdentityProviderMsg> | null = null
-  const configSchemas = new Map<string, ConfigSchemaSection>()
+  const retainedAdminBroadcastsMap = new Map<string, { type: string; payload: string }>()
   type RouteHandler = Extract<RouteRegistration, { handler: Function }>['handler']
   type RouteMatch = NonNullable<RouteRegistration['match']>
   type RouteRecord = { method: string; path: string; match: RouteMatch; handler: RouteHandler }
@@ -112,7 +109,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
   }
 
   return {
-    initialState: { server: null, connections: 0, activeSpans: {}, identityProviderRef: null, agentCatalog: [], userIdsToClientIds: {}, surfaces: {} },
+    initialState: { server: null, connections: 0, activeSpans: {}, identityProviderRef: null, userIdsToClientIds: {}, retainedBroadcasts: {} },
     handler: onMessage({
 
       connected: (state, message, context) => {
@@ -134,11 +131,14 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           }))
         }
 
-        if (state.agentCatalog.length > 0) {
-          state.server?.publish(`client:${message.clientId}`, JSON.stringify({ type: 'agents', agents: state.agentCatalog }))
-        }
-        for (const reg of Object.values(state.surfaces)) {
-          state.server?.publish(`client:${message.clientId}`, JSON.stringify({ type: 'ui.surface', reg }))
+        for (const event of Object.values(state.retainedBroadcasts)) {
+          try {
+            const parsed = JSON.parse(event.payload)
+            const frame = { type: event.type, ...parsed }
+            state.server?.publish(`client:${message.clientId}`, JSON.stringify(frame))
+          } catch {
+            state.server?.publish(`client:${message.clientId}`, event.payload)
+          }
         }
         return {
           state: { ...state, connections, userIdsToClientIds },
@@ -163,9 +163,51 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         }
       },
 
-      _agentCatalog: (state, message) => {
-        state.server?.publish(CHANNEL, JSON.stringify({ type: 'agents', agents: message.agents }))
-        return { state: { ...state, agentCatalog: message.agents } }
+      _broadcast: (state, message) => {
+        try {
+          const parsed = JSON.parse(message.payload)
+          const frame = { type: message.broadType, ...parsed }
+          state.server?.publish(CHANNEL, JSON.stringify(frame))
+        } catch {
+          state.server?.publish(CHANNEL, message.payload)
+        }
+
+        const nextRetained = { ...state.retainedBroadcasts }
+        try {
+          const parsed = JSON.parse(message.payload)
+          const isTombstone = (parsed.reg && parsed.reg.moduleUrl === null) || (parsed.agents && parsed.agents.length === 0)
+          if (isTombstone) {
+            delete nextRetained[message.key]
+          } else {
+            nextRetained[message.key] = { type: message.broadType, payload: message.payload }
+          }
+        } catch {
+          nextRetained[message.key] = { type: message.broadType, payload: message.payload }
+        }
+        return { state: { ...state, retainedBroadcasts: nextRetained } }
+      },
+
+      _adminBroadcastMsg: (state, message) => {
+        try {
+          const parsed = JSON.parse(message.payload)
+          const frame = { type: message.broadType, ...parsed }
+          state.server?.publish(ADMIN_CHANNEL, JSON.stringify(frame))
+        } catch {
+          state.server?.publish(ADMIN_CHANNEL, message.payload)
+        }
+
+        try {
+          const parsed = JSON.parse(message.payload)
+          const isTombstone = (parsed.section && parsed.section.schema === null)
+          if (isTombstone) {
+            retainedAdminBroadcastsMap.delete(message.key)
+          } else {
+            retainedAdminBroadcastsMap.set(message.key, { type: message.broadType, payload: message.payload })
+          }
+        } catch {
+          retainedAdminBroadcastsMap.set(message.key, { type: message.broadType, payload: message.payload })
+        }
+        return { state }
       },
 
       message: (state, message, context) => {
@@ -247,11 +289,6 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         }
       },
 
-      adminBroadcast: (state, message) => {
-        state.server?.publish(ADMIN_CHANNEL, message.text)
-        return { state }
-      },
-
       send: (state, message) => {
         const clientIds = state.userIdsToClientIds[message.userId] ?? []
         const activeSpans = { ...state.activeSpans }
@@ -271,15 +308,6 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           } catch { /* non-JSON text */ }
         }
         return changed ? { state: { ...state, activeSpans } } : { state }
-      },
-
-      _configSchemaChanged: (state, message) => {
-        if (message.section.schema === null) {
-          configSchemas.delete(message.section.id)
-        } else {
-          configSchemas.set(message.section.id, message.section)
-        }
-        return { state }
       },
 
       _configUpdate: (state, message, context) => {
@@ -305,15 +333,6 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         return { state }
       },
 
-      _uiSurfaceChanged: (state, message) => {
-        const { reg } = message
-        const surfaces = { ...state.surfaces }
-        if (reg.moduleUrl === null) delete surfaces[reg.id]
-        else surfaces[reg.id] = reg
-        state.server?.publish(CHANNEL, JSON.stringify({ type: 'ui.surface', reg }))
-        return { state: { ...state, surfaces } }
-      },
-
     }),
 
     lifecycle: onLifecycle({
@@ -326,14 +345,18 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           text: e.text,
         }))
 
-        context.subscribe(OutboundAdminBroadcastTopic, (e) => ({
-          type: 'adminBroadcast' as const,
-          text: e.text,
+        context.subscribe(OutboundBroadcastTopic, (e) => ({
+          type: '_broadcast' as const,
+          broadType: e.type,
+          key: e.key,
+          payload: e.payload,
         }))
 
-        context.subscribe(ConfigSchemaTopic, (section) => ({
-          type: '_configSchemaChanged' as const,
-          section,
+        context.subscribe(OutboundAdminBroadcastTopic, (e) => ({
+          type: '_adminBroadcastMsg' as const,
+          broadType: e.type,
+          key: e.key,
+          payload: e.payload,
         }))
 
         context.subscribe(IdentityProviderTopic, (e) => ({
@@ -346,16 +369,6 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           reg,
         }))
 
-        context.subscribe(UiSurfaceRegistrationTopic, (reg) => ({
-          type: '_uiSurfaceChanged' as const,
-          reg,
-        }))
-
-        context.subscribe(AgentCatalogTopic, (e) => ({
-          type: '_agentCatalog' as const,
-          agents: e.agents,
-        }))
-
 
         const server = startServer({
           port,
@@ -366,7 +379,20 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           resolveCookieIdentity: (req) => resolveCookieIdentity(identityProviderRef, req),
           authorizeConfigAccess: (req, url, identity, opts) => authorizeConfigAccess(identityProviderRef, req, url, identity, opts),
           resolveRegisteredRoute: (method, pathname) => resolveRegisteredRoute(method, pathname),
-          getConfigSchemas: () => [...configSchemas.values()],
+          getConfigSchemas: () => {
+            const schemas: ConfigSchemaSection[] = [];
+            for (const event of retainedAdminBroadcastsMap.values()) {
+              if (event.type === 'config.schema') {
+                try {
+                  const parsed = JSON.parse(event.payload);
+                  if (parsed.section) {
+                    schemas.push(parsed.section);
+                  }
+                } catch {}
+              }
+            }
+            return schemas;
+          },
           onConnect: (client) => {
             selfRef?.send({ type: 'connected', clientId: client.clientId, userId: client.userId, roles: client.roles })
           },
