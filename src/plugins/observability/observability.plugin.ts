@@ -6,6 +6,7 @@ import { CostTracker, type CostTrackerOptions } from './cost-tracker.ts'
 import { defineConfig } from '../../system/index.ts'
 import { observabilitySchemas } from './routes.ts'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
+import { GlobalTools } from './global-tools.ts'
 
 export type ObservabilityConfig = {
   jsonlLogger?: JsonlLoggerOptions
@@ -52,6 +53,9 @@ export default createPluginFactory<ObservabilityConfig>({
     costTracker: {
       factory: (cfg) => cfg ? CostTracker(cfg) : null,
       configPath: 'costTracker',
+    },
+    globalTools: {
+      factory: () => GlobalTools(),
     },
   },
 })

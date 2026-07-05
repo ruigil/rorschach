@@ -1,4 +1,4 @@
-import { customElement, html, RorschachBase, StoreController } from '@rorschach/webkit';
+import { customElement, html, RorschachBase, StoreController, send } from '@rorschach/webkit';
 import type { ListItem } from '@rorschach/webkit';
 
 type ToolSchema = { type: 'function'; function: { name: string; description: string; parameters: object } }
@@ -6,6 +6,11 @@ type ToolSchema = { type: 'function'; function: { name: string; description: str
 @customElement('r-tools-list')
 export class RToolsList extends RorschachBase {
   private _tools = new StoreController(this, ['observe', 'tools']);
+
+  override connectedCallback() {
+    super.connectedCallback();
+    send({ type: 'observe.tools.request' });
+  }
 
   override render() {
     const toolsMap = this._tools.value || {};
