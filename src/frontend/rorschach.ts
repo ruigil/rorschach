@@ -21,6 +21,9 @@ import './shell/r-mode-select.js'
 import './shell/r-surface-error.js'
 import './shell/r-welcome-dashboard.js'
 import './shell/r-theme-select.js'
+import './shell/r-thinking-indicator.js'
+import './shell/r-message-bubble.js'
+import './shell/r-status-dot.js'
 
 // Shell boot: store init, plugin-host
 import type { ShellState } from './shell/types.js'

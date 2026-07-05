@@ -4,10 +4,9 @@ import {
   html,
   property,
   RorschachBase
-} from './base.js';
+} from '@rorschach/webkit';
 
 import { type Attachment } from './types.js';
-import './r-icon.js';
 
 @customElement('r-attachments')
 export class RAttachments extends RorschachBase {

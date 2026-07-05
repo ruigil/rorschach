@@ -16,7 +16,7 @@ import './r-actor-detail.js';
 import './r-tools-list.js';
 import './r-topic-list.js';
 import './r-trace-waterfall.js';
-import type { Actor } from '@rorschach/webkit/types.js';
+import type { Actor } from '../types.js';
 
 export const OBSERVE_TABS = ['metrics', 'topics', 'logs', 'traces', 'tools', 'memory', 'costs'] as const;
 export type ObserveTab = typeof OBSERVE_TABS[number];

@@ -6,7 +6,7 @@ import {
   RorschachBase
 } from '@rorschach/webkit';
 
-import type { Actor } from '@rorschach/webkit/types.js';
+import type { Actor } from '../types.js';
 
 @customElement('r-actor-detail')
 export class RActorDetail extends RorschachBase {

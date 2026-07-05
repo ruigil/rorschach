@@ -2,7 +2,6 @@ import {
   css,
   customElement,
   html,
-  markdownStyles,
   RorschachBase,
   sharedStyles,
   state,
@@ -48,7 +47,6 @@ export class RCodeWorkspace extends RorschachBase {
 
   static override styles = [
     sharedStyles,
-    markdownStyles,
     css`
       :host {
         display: block;

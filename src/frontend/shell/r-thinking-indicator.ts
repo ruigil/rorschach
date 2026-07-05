@@ -4,7 +4,7 @@ import {
   html,
   property,
   RorschachBase
-} from './base.js';
+} from '@rorschach/webkit';
 
 @customElement('r-thinking-indicator')
 export class RThinkingIndicator extends RorschachBase {

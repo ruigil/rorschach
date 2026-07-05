@@ -5,10 +5,9 @@ import {
   property,
   RorschachBase,
   state
-} from './base.js';
+} from '@rorschach/webkit';
 
 import type { Source } from './types.js';
-import './r-icon.js';
 
 @customElement('r-sources-list')
 export class RSourcesList extends RorschachBase {

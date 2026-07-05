@@ -1,15 +1,5 @@
 import type { ThemeName } from './theme.js'
-import type {
-  Attachment,
-  Source,
-  Message,
-  ActiveStream,
-  Topic,
-  Actor,
-  LogEvent,
-  TraceSpan,
-  UsageEntry,
-} from '@rorschach/webkit/types.js'
+
 export type ViewConfig = {
   id: string
   title: string
@@ -24,11 +14,39 @@ export type ViewRuntimeState = {
   params: Record<string, any>
 };
 
-// Re-export the kit types so existing shell code that imports from
-// `./types/state.js` keeps working. These are the neutral data shapes the
-// kit primitives render; the kit owns them, the shell re-exports for
-// convenience.
-export type { Attachment, Source, Message, ActiveStream }
+export type Attachment = {
+  kind: 'image' | 'audio' | 'video' | 'file' | 'pdf'
+  url?: string
+  data?: string
+  name?: string
+};
+
+export type Source = {
+  url: string
+  title: string
+  snippet?: string
+};
+
+export type Message = {
+  id: string
+  role: 'user' | 'assistant' | 'error'
+  text: string
+  reasoning?: string
+  sources?: Source[]
+  attachments?: Attachment[]
+  timestamp: number
+};
+
+export type ActiveStream = {
+  isActive: boolean
+  toolingLabel?: string
+  reasoning: string
+  text: string
+  sources: Source[]
+  attachments: Attachment[]
+};
+
+
 
 // Agent is shell/agent-registry specific — stays here, not in the kit.
 export type Agent = {

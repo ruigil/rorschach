@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 
 import { mountClass, cleanup } from '../helpers/frontend.js'
-import { RAttachments } from '../../frontend/webkit/r-attachments.js'
+import { RAttachments } from '../../frontend/shell/r-attachments.js'
 
 beforeEach(cleanup)
 afterEach(cleanup)

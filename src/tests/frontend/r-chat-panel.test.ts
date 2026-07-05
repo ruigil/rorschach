@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { mountClass, cleanup, mockStore } from '../helpers/frontend.js'
 import { RChatPanel } from '../../frontend/shell/r-chat-panel.js'
-import '../../frontend/webkit/r-message-bubble.js'
+import '../../frontend/shell/r-message-bubble.js'
 import '../../frontend/shell/r-chat-input.js'
 import '../../frontend/webkit/r-empty-state.js'
 

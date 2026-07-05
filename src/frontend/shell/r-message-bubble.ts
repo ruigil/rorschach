@@ -4,11 +4,13 @@ import {
   html,
   property,
   RorschachBase
-} from './base.js';
+} from '@rorschach/webkit';
 
-import { type Message, type ActiveStream } from './types.js';
-import { renderMarkdown } from './markdown.js';
-import { markdownStyles } from './markdown-styles.js';
+import type { Message, ActiveStream } from './types.js';
+
+import './r-thinking-indicator.js';
+import './r-attachments.js';
+import './r-sources-list.js';
 
 @customElement('r-message-bubble')
 export class RMessageBubble extends RorschachBase {
@@ -16,12 +18,77 @@ export class RMessageBubble extends RorschachBase {
   @property({ type: Object }) stream?: ActiveStream;
   @property({ type: String, reflect: true }) type: 'assistant' | 'user' | 'error' = 'assistant';
 
-  static override styles = [
-    markdownStyles,
-    css`
-      :host {
-        display: flex;
-        flex-direction: column;
+  static override styles = css`
+    .reasoning {
+      margin-bottom: 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      font-size: 0.78rem;
+    }
+
+    .reasoning summary {
+      padding: 5px 10px;
+      cursor: pointer;
+      color: var(--text-dim);
+      user-select: none;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .reasoning summary::-webkit-details-marker { display: none; }
+
+    .reasoning summary::before {
+      content: '▶';
+      font-size: 0.55em;
+      opacity: 0.6;
+      transition: transform 0.15s ease;
+    }
+
+    .reasoning[open] summary::before {
+      transform: rotate(90deg);
+    }
+
+    .reasoning[open] summary {
+      border-bottom: 1px solid var(--border);
+    }
+
+    .reasoning-content {
+      padding: 10px 12px;
+      color: var(--text-dim);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 280px;
+      overflow-y: auto;
+      margin: 0;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      line-height: 1.55;
+      opacity: 0.8;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-mid) transparent;
+    }
+
+    .reasoning-content::-webkit-scrollbar { width: 4px; }
+    .reasoning-content::-webkit-scrollbar-track { background: transparent; }
+    .reasoning-content::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
+    .reasoning-content::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+    @keyframes reasoning-glow {
+      0%, 100% { color: var(--text-dim); text-shadow: none; }
+      50% { color: var(--accent-bright); text-shadow: 0 0 8px var(--accent-glow); }
+    }
+
+    .reasoning-streaming summary {
+      color: var(--accent);
+      animation: reasoning-glow 1.8s ease-in-out infinite;
+    }
+
+    :host {
+      display: flex;
+      flex-direction: column;
         padding: 0.75rem 0.75rem !important;
         gap: 0.35rem;
         animation: msgIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -83,8 +150,7 @@ export class RMessageBubble extends RorschachBase {
       }
 
       .bubble-body { width: 100%; }
-    `,
-  ];
+  `;
 
   override willUpdate(changedProperties: Map<string | symbol, unknown>) {
     if (changedProperties.has('message') && this.message?.role) {
@@ -119,7 +185,7 @@ export class RMessageBubble extends RorschachBase {
         ` : ''}
 
         <div class="bubble-body">
-          ${this.message ? renderMarkdown(text) : text}
+          ${this.message ? html`<r-markdown .content=${text}></r-markdown>` : text}
         </div>
 
         ${sources.length > 0 ? html`

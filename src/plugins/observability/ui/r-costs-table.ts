@@ -1,5 +1,5 @@
 import { css, customElement, html, RorschachBase, StoreController } from '@rorschach/webkit';
-import type { UsageEntry } from '@rorschach/webkit/types.js';
+import type { UsageEntry } from '../types.js';
 
 const formatTokens = (n: number) => {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;

@@ -8,7 +8,7 @@ import {
   type TemplateResult
 } from '@rorschach/webkit';
 
-import type { Actor } from '@rorschach/webkit/types.js';
+import type { Actor } from '../types.js';
 import type { TreeNode } from '@rorschach/webkit';
 
 @customElement('r-actor-tree')

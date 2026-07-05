@@ -9,7 +9,7 @@ import {
   StoreController
 } from '@rorschach/webkit';
 
-import type { TraceSpan } from '@rorschach/webkit/types.js';
+import type { TraceSpan } from '../types.js';
 import type { ObservabilityState } from './index.js';
 
 const MAX_TRACES = 20;

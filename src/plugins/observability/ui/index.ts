@@ -1,5 +1,6 @@
 import { store } from '@rorschach/webkit';
-import type { Actor, Topic, LogEvent, TraceSpan, UsageEntry } from '@rorschach/webkit/types.js';
+import type { LogEvent } from '@rorschach/webkit/types.js';
+import type { Actor, Topic, TraceSpan, UsageEntry } from '../types.js';
 import { RObservePanel } from './r-observe-panel.js'
 
 export { RObservePanel }

@@ -1,5 +1,5 @@
 import { customElement, html, property, RorschachBase } from '@rorschach/webkit';
-import type { Topic } from '@rorschach/webkit/types.js';
+import type { Topic } from '../types.js';
 import type { TreeNode } from '@rorschach/webkit';
 
 @customElement('r-topic-list')

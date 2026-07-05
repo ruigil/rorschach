@@ -2,7 +2,6 @@ import {
   css,
   customElement,
   html,
-  renderMarkdown,
   RorschachBase,
   state,
   store,
@@ -111,7 +110,7 @@ export class RNotebookJournal extends RorschachBase {
                   <div class="nb-loading-container">Fetching entry...</div>
                 ` : html`
                   <div class="nb-entry-markdown">
-                    ${this._selectedEntry ? renderMarkdown(this._selectedEntry) : 'No journal notes written for this date.'}
+                    ${this._selectedEntry ? html`<r-markdown .content=${this._selectedEntry}></r-markdown>` : 'No journal notes written for this date.'}
                   </div>
                 `}
               </div>

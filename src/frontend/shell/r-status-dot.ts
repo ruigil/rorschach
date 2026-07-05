@@ -3,10 +3,9 @@ import {
   customElement,
   html,
   property,
-  RorschachBase
-} from './base.js';
-
-import { StoreController } from './runtime/store-controller.js';
+  RorschachBase,
+  StoreController
+} from '@rorschach/webkit';
 
 type ShellConnectionState = {
   isConnected: boolean

@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 
 import { mountClass, cleanup, mockStore } from '../helpers/frontend.js'
-import { RMessageBubble } from '../../frontend/webkit/r-message-bubble.js'
+import { RMessageBubble } from '../../frontend/shell/r-message-bubble.js'
 
 beforeEach(cleanup)
 afterEach(cleanup)
@@ -13,7 +13,8 @@ describe('r-message-bubble', () => {
     el.message = { id: '1', role: 'user', text: 'hello', timestamp: Date.now() }
     await el.updateComplete
 
-    expect(el.shadowRoot.textContent).toContain('hello')
+    const markdown = el.shadowRoot.querySelector('r-markdown')
+    expect(markdown.shadowRoot.textContent).toContain('hello')
     expect(el.getAttribute('type')).toBe('user')
   })
 
@@ -23,7 +24,8 @@ describe('r-message-bubble', () => {
     el.message = { id: '2', role: 'assistant', text: 'hi there', timestamp: Date.now() }
     await el.updateComplete
 
-    expect(el.shadowRoot.textContent).toContain('hi there')
+    const markdown = el.shadowRoot.querySelector('r-markdown')
+    expect(markdown.shadowRoot.textContent).toContain('hi there')
     expect(el.getAttribute('type')).toBe('assistant')
   })
 
@@ -34,7 +36,8 @@ describe('r-message-bubble', () => {
     el.message = { id: '3', role: 'error', text: 'something went wrong', timestamp: Date.now() }
     await el.updateComplete
 
-    expect(el.shadowRoot.textContent).toContain('something went wrong')
+    const markdown = el.shadowRoot.querySelector('r-markdown')
+    expect(markdown.shadowRoot.textContent).toContain('something went wrong')
     expect(el.getAttribute('type')).toBe('error')
   })
 
