@@ -14,13 +14,11 @@ import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
-import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import { ConfigUpdateRequestTopic } from '../../types/config.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
-import { IdentityProviderTopic, type Identity } from '../../types/identity.ts'
+import { IdentityProviderTopic } from '../../types/identity.ts'
 import { resolveIdentity, resolveCookieIdentity } from './types.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
-import { type AgentCatalogEvent } from '../../types/agents.ts'
 
 
 import { canAccessAdminSurface, authorizeConfigAccess } from './http/security.ts'
@@ -48,8 +46,6 @@ export type HttpMessage =
   | { type: '_configUpdate'; pluginId: string; patch: Record<string, unknown> }
   | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
   | { type: '_routeChanged'; reg: RouteRegistration }
-  | { type: '_imageGenerated'; publicUrl: string }
-  | { type: '_audioGenerated'; publicUrl: string }
 
 // ─── Actor state ───
 
