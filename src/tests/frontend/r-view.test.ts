@@ -1,4 +1,4 @@
-import type { ShellState } from '../../frontend/types/state.js'
+import type { ShellState } from '../../frontend/shell/types.js'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
 import { RView } from '../../frontend/shell/r-view.js'

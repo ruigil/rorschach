@@ -10,9 +10,8 @@ import {
   StoreController,
   send
 } from '@rorschach/webkit';
-import type { ShellState } from '../../../frontend/types/state.js'
-import type { WorkflowsState, WORKFLOW_RUN_UPDATED_EVENT as _WRE } from './index.js'
-import { WORKFLOW_RUN_UPDATED_EVENT } from './index.js'
+
+import type { WorkflowsState } from './index.js'
 import {
   isLiveWorkflowRunStatus,
   mergeWorkflowRunIntoGraph,

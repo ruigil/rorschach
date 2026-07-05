@@ -5,7 +5,7 @@ type ToolSchema = { type: 'function'; function: { name: string; description: str
 
 @customElement('r-tools-list')
 export class RToolsList extends RorschachBase {
-  private _tools = new StoreController(this, ['shell', 'tools']);
+  private _tools = new StoreController(this, ['observe', 'tools']);
 
   override render() {
     const toolsMap = this._tools.value || {};

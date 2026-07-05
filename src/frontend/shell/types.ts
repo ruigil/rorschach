@@ -1,4 +1,4 @@
-import type { ThemeName } from '../shell/theme.js'
+import type { ThemeName } from './theme.js'
 import type {
   Attachment,
   Source,
@@ -28,7 +28,7 @@ export type ViewRuntimeState = {
 // `./types/state.js` keeps working. These are the neutral data shapes the
 // kit primitives render; the kit owns them, the shell re-exports for
 // convenience.
-export type { Attachment, Source, Message, ActiveStream, Topic, Actor, LogEvent, TraceSpan, UsageEntry }
+export type { Attachment, Source, Message, ActiveStream }
 
 // Agent is shell/agent-registry specific — stays here, not in the kit.
 export type Agent = {
@@ -50,7 +50,6 @@ export type ShellState = {
   agents: Agent[]
   currentMode: string
   currentModeDisplayName: string
-  tools: Record<string, { type: 'function'; function: { name: string; description: string; parameters: object } }>
   messages: Message[]
   /** Persisted subset of recent messages (stripped of attachment payloads)
    *  used to restore the chat history across refreshes. */

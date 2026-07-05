@@ -1,9 +1,7 @@
 import type { UiSurfaceRegistration } from '../../types/ui-surface.js'
 import { store, type PluginHostActions } from '@rorschach/webkit';
-import type { ViewConfig } from '../types/state.js';
-
 import { openView, closeView, setMode, ensureView } from './view-actions.js'
-import type { ShellState } from '../types/state.js'
+import type { ViewConfig, ShellState } from './types.js'
 
 // ─── Plugin-host — runtime surface registry ───
 //
@@ -18,7 +16,7 @@ import type { ShellState } from '../types/state.js'
 const surfaces = new Map<string, UiSurfaceRegistration>()
 const viewRegistry = new Map<string, ViewConfig>()
 const frameOwners = new Map<string, string>()
-const surfaceReducers = new Map<string, (frame: any, host: PluginHostActions) => void>()
+const surfaceReducers = new Map<string, (frame: Record<string, any>, host: PluginHostActions) => void>()
 
 // Facade passed to reducers. Bound to the shell's actions; plugins import
 // only the PluginHostActions *type* from the kit, never the implementation.
@@ -62,6 +60,7 @@ export const pluginHost = {
       viewRegistry.set(reg.id, cfg)
       ensureView(reg.id, cfg)
     }
+    for (const ft of reg.frameTypes ?? []) frameOwners.set(ft, reg.id)
     if (reg.moduleUrl) {
       try {
         const mod = await import(/* @vite-ignore */ reg.moduleUrl)
@@ -73,7 +72,6 @@ export const pluginHost = {
         }
       }
     }
-    for (const ft of reg.frameTypes ?? []) frameOwners.set(ft, reg.id)
     // Late-registration guard: if the surface's modes include the currently
     // active mode, open the view now. Handles WS reconnect (retained
     // surfaces replayed) and runtime plugin load — both arrive after
@@ -95,7 +93,7 @@ export const pluginHost = {
     surfaceReducers.delete(id)
   },
 
-  routeFrame(frame: { type: string; [k: string]: any }): boolean {
+  routeFrame(frame: Record<string, any>): boolean {
     const owner = frameOwners.get(frame.type)
     if (!owner) return false
     surfaceReducers.get(owner)?.(frame, host)

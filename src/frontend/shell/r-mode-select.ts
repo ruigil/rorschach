@@ -7,7 +7,7 @@ import {
 } from '@rorschach/webkit';
 
 import { switchMode } from './actions.js';
-import type { ShellState, Agent } from '../types/state.js';
+import type { ShellState } from './types.js';
 
 @customElement('r-mode-select')
 export class RModeSelect extends RorschachBase {

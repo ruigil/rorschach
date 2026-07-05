@@ -1,5 +1,5 @@
 import { store, __resetStoreForTests } from '../../frontend/webkit/runtime/store.js'
-import type { ShellState } from '../../frontend/types/state.js'
+import type { ShellState } from '../../frontend/shell/types.js'
 
 const defaultState: Partial<ShellState> = {
   isConnected: false,
@@ -9,7 +9,6 @@ const defaultState: Partial<ShellState> = {
   agents: [],
   currentMode: '',
   currentModeDisplayName: '',
-  tools: {},
   messages: [],
   lastMessages: [],
   activeStream: {
@@ -34,6 +33,7 @@ export function resetStore() {
     logs: [],
     traces: [],
     usage: [],
+    tools: {},
   })
 }
 

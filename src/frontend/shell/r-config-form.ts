@@ -7,7 +7,7 @@ import {
   StoreController
 } from '@rorschach/webkit';
 
-import type { ShellState } from '../types/state.js';
+import type { ShellState } from './types.js';
 import type { ConfigFieldChangeEvent } from './config-widgets/r-config-field.js';
 import { pluginIdFromSection, resolvePath, writeAtPath } from './config-widgets/path-utils.js';
 import './config-widgets/r-config-field.js';

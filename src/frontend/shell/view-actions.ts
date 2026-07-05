@@ -1,5 +1,5 @@
 import { store } from '@rorschach/webkit';
-import type { ViewConfig, ViewRuntimeState } from '../types/state.js';
+import type { ViewConfig, ViewRuntimeState } from './types.js';
 
 type ShellViewSlice = {
   currentMode: string

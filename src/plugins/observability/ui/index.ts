@@ -10,6 +10,7 @@ export interface ObservabilityState {
   logs: LogEvent[]
   traces: TraceSpan[]
   usage: UsageEntry[]
+  tools: Record<string, { type: 'function'; function: { name: string; description: string; parameters: object } }>
 }
 
 declare module '@rorschach/webkit/runtime/store.js' {
@@ -25,6 +26,7 @@ storeNamespace.init({
   logs: [],
   traces: [],
   usage: [],
+  tools: {},
 })
 
 export const reduceFrame = (frame: any) => {
@@ -46,5 +48,11 @@ export const reduceFrame = (frame: any) => {
     ns.set('traces', [...(ns.get('traces') ?? []), frame as TraceSpan])
   } else if (frame.type === 'usage') {
     ns.set('usage', [...(ns.get('usage') ?? []), frame as UsageEntry])
+  } else if (frame.type === 'tool_registered') {
+    ns.set('tools', { ...ns.get('tools'), [frame.name]: frame.schema })
+  } else if (frame.type === 'tool_unregistered') {
+    const nextTools = { ...ns.get('tools') }
+    delete nextTools[frame.name]
+    ns.set('tools', nextTools)
   }
 }

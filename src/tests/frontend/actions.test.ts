@@ -1,4 +1,4 @@
-import type { ShellState } from '../../frontend/types/state.js'
+import type { ShellState } from '../../frontend/shell/types.js'
 import { describe, test, expect, beforeEach } from 'bun:test'
 
 import { store } from '../../frontend/webkit/runtime/store.js'

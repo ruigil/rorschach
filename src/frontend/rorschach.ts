@@ -23,7 +23,7 @@ import './shell/r-welcome-dashboard.js'
 import './shell/r-theme-select.js'
 
 // Shell boot: store init, plugin-host
-import type { ShellState } from './types/state.js'
+import type { ShellState } from './shell/types.js'
 import { pluginHost } from './shell/plugin-host.js'
 import './shell/theme.js'
 
@@ -40,7 +40,6 @@ store.namespace<ShellState>('shell').init({
   agents: [],
   currentMode: '',
   currentModeDisplayName: '',
-  tools: {},
   messages: [],
   lastMessages: [],
   activeStream: {

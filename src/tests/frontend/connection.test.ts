@@ -1,4 +1,4 @@
-import type { ShellState } from '../../frontend/types/state.js'
+import type { ShellState } from '../../frontend/shell/types.js'
 import { describe, test, expect, beforeEach } from 'bun:test'
 
 import { store } from '../../frontend/webkit/runtime/store.js'
@@ -65,21 +65,19 @@ describe('connection frame handlers (via actions)', () => {
   })
 
   test('tool_registered adds to tools map', () => {
-    store.namespace<ShellState>('shell').set('tools', {})
     const schema = { type: 'function' as const, function: { name: 'web_search', description: 'Search the web', parameters: {} } }
-    store.namespace<ShellState>('shell').set('tools', { ...store.namespace<ShellState>('shell').get('tools'), ['web_search']: schema })
-    expect(store.namespace<ShellState>('shell').get('tools')).toHaveProperty('web_search')
+    reduceFrame({ type: 'tool_registered', name: 'web_search', schema })
+    expect(store.namespace<ObservabilityState>('observe').get('tools')).toHaveProperty('web_search')
   })
 
   test('tool_unregistered removes from tools map', () => {
     const schema1 = { type: 'function' as const, function: { name: 'web_search', description: '', parameters: {} } }
     const schema2 = { type: 'function' as const, function: { name: 'fetch_page', description: '', parameters: {} } }
-    store.namespace<ShellState>('shell').set('tools', { web_search: schema1, fetch_page: schema2 })
-    const next = { ...store.namespace<ShellState>('shell').get('tools') }
-    delete next['web_search']
-    store.namespace<ShellState>('shell').set('tools', next)
-    expect(store.namespace<ShellState>('shell').get('tools')).not.toHaveProperty('web_search')
-    expect(store.namespace<ShellState>('shell').get('tools')).toHaveProperty('fetch_page')
+    reduceFrame({ type: 'tool_registered', name: 'web_search', schema: schema1 })
+    reduceFrame({ type: 'tool_registered', name: 'fetch_page', schema: schema2 })
+    reduceFrame({ type: 'tool_unregistered', name: 'web_search' })
+    expect(store.namespace<ObservabilityState>('observe').get('tools')).not.toHaveProperty('web_search')
+    expect(store.namespace<ObservabilityState>('observe').get('tools')).toHaveProperty('fetch_page')
   })
 
   test('sources are added to active stream', () => {

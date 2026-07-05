@@ -12,7 +12,7 @@ import {
 import { dispatchFrame } from './dispatcher.js';
 import { logout, switchMode } from './actions.js';
 import { openView, closeView, setActiveWorkspaceTab } from './view-actions.js';
-import type { ShellState } from '../types/state.js';
+import type { ShellState } from './types.js';
 import { pluginHost } from './plugin-host.js';
 
 @customElement('r-shell')

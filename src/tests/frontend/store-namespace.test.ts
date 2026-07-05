@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { store, __resetStoreForTests } from '../../frontend/webkit/runtime/store.js'
 import { StoreController } from '../../frontend/webkit/runtime/store-controller.js'
-import type { ShellState } from '../../frontend/types/state.js'
+import type { ShellState } from '../../frontend/shell/types.js'
 import { ensureView, closeView } from '../../frontend/shell/view-actions.js'
 
 declare module '../../frontend/webkit/runtime/store.js' {

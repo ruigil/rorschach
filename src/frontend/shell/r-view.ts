@@ -6,7 +6,6 @@ import {
   StoreController
 } from '@rorschach/webkit';
 
-import type { ShellState } from '../types/state.js';
 import { pluginHost } from './plugin-host.js';
 
 @customElement('r-view')

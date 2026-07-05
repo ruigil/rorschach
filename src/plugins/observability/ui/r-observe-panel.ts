@@ -8,7 +8,7 @@ import {
   StoreController
 } from '@rorschach/webkit';
 
-import type { Actor, Topic, LogEvent, TraceSpan, ShellState } from '../../../frontend/types/state.js';
+
 import type { ObservabilityState } from './index.js';
 import './r-costs-table.js';
 import './r-actor-tree.js';
@@ -16,6 +16,8 @@ import './r-actor-detail.js';
 import './r-tools-list.js';
 import './r-topic-list.js';
 import './r-trace-waterfall.js';
+import type { Actor } from '@rorschach/webkit/types.js';
+
 export const OBSERVE_TABS = ['metrics', 'topics', 'logs', 'traces', 'tools', 'memory', 'costs'] as const;
 export type ObserveTab = typeof OBSERVE_TABS[number];
 export const DEFAULT_OBSERVE_TAB: ObserveTab = 'metrics';

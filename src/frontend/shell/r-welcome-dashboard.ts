@@ -1,6 +1,5 @@
 import { customElement, html, RorschachBase, StoreController } from '@rorschach/webkit';
 
-import type { ShellState } from '../types/state.js';
 
 @customElement('r-welcome-dashboard')
 export class RWelcomeDashboard extends RorschachBase {

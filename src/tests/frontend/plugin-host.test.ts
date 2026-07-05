@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { store, __resetStoreForTests } from '../../frontend/webkit/runtime/store.js'
 import { pluginHost } from '../../frontend/shell/plugin-host.js'
-import type { ShellState } from '../../frontend/types/state.js'
+import type { ShellState } from '../../frontend/shell/types.js'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.js'
 
 beforeEach(() => {
@@ -17,7 +17,6 @@ beforeEach(() => {
     agents: [],
     currentMode: '',
     currentModeDisplayName: '',
-    tools: {},
     messages: [],
     lastMessages: [],
     activeStream: { isActive: false, reasoning: '', text: '', sources: [], attachments: [] },

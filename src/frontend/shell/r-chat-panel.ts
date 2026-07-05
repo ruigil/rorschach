@@ -9,7 +9,6 @@ import {
 } from '@rorschach/webkit';
 
 import { submitChatMessage } from './actions.js';
-import type { ShellState } from '../types/state.js';
 
 @customElement('r-chat-panel')
 export class RChatPanel extends RorschachBase {
