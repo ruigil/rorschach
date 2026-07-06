@@ -31,7 +31,7 @@ export class RTabs extends RorschachBase {
       background: transparent;
       border: none;
       border-bottom: 2px solid transparent;
-      padding: 0 1rem;
+      padding: 0 1rem !important;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
