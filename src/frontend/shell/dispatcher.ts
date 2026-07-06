@@ -1,8 +1,6 @@
 // ─── Frame dispatcher ───
 //
 // Receives WebSocket messages and routes them to the store or plugin-host.
-// Placed in shell to maintain dependency inversion boundaries (so webkit
-// remains generic and does not import shell actions or plugin host).
 
 import { store } from '@rorschach/webkit';
 import type { ShellState } from './types.js'
