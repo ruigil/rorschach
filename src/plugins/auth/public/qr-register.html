@@ -7,21 +7,18 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <script>
+    (function() {
+      try {
+        const theme = JSON.parse(localStorage.getItem('rorschach.store.shell.theme') || '"eclipse"');
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'eclipse');
+      }
+    })();
+  </script>
   <style>
-    :root {
-      --bg:         #03070a;
-      --surface:    #060e14;
-      --border:     #0d1f2d;
-      --text:       #e8f6fa;
-      --text-dim:   #3d6878;
-      --text-mid:   #8abccc;
-      --accent:     #00c4d4;
-      --accent-dim: rgba(0,196,212,0.06);
-      --error:      #e06030;
-      --green:      #39e8a0;
-      --font-ui:    'Space Grotesk', system-ui, sans-serif;
-      --radius:     8px;
-    }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: var(--font-ui);
