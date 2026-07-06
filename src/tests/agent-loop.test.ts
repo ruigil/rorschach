@@ -13,6 +13,7 @@ const tick = (ms = 50) => Bun.sleep(ms)
 
 type TestExtra =
   | { type: 'start'; params: LoopStartTurnParams }
+  | { type: 'cancel' }
   | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
 
@@ -257,7 +258,7 @@ describe('AgentLoop: startTurn + streaming', () => {
       }),
     })
 
-    const agentRef = system.spawn('agent', {
+    const agentRef = system.spawn<TestMsg, TestState>('agent', {
       initialState: { ...emptyState(), llmRef },
       handler: (state, msg, ctx) => {
         if ((msg as any).type === 'start') {
