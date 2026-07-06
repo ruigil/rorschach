@@ -91,6 +91,7 @@ export class RConfigField extends RorschachBase {
     } else if (widget === 'select') {
       fieldContent = html`
         <r-select
+          variant="field"
           .value=${String(resolvedValue)}
           .label=${label}
           .hint=${hint}

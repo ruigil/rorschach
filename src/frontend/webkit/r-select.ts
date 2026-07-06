@@ -2,6 +2,7 @@ import {
   css,
   customElement,
   html,
+  nothing,
   property,
   RorschachBase
 } from './base.js';
@@ -13,11 +14,20 @@ export class RSelect extends RorschachBase {
   @property({ type: String }) value = '';
   @property({ type: Array }) options: { value: string; label: string }[] = [];
   @property({ type: Boolean, reflect: true }) disabled = false;
+  @property({ type: String }) label = '';
+  @property({ type: String }) hint = '';
+  @property({ type: String, reflect: true }) variant: 'default' | 'field' = 'default';
 
   static override styles = css`
     :host {
       display: inline-block;
       width: 100%;
+    }
+    :host([variant="field"]) {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      font-family: var(--font-ui, sans-serif);
     }
     .select-wrapper {
       position: relative;
@@ -39,6 +49,15 @@ export class RSelect extends RorschachBase {
       -webkit-appearance: none;
       transition: all 0.15s ease-in-out;
     }
+    :host([variant="field"]) select {
+      padding: 0.65rem 32px 0.65rem 0.9rem;
+      font-family: var(--font-mono, monospace);
+      font-size: 0.82rem;
+      font-weight: 400;
+      color: var(--text);
+      border-color: var(--border-mid);
+      border-radius: var(--radius);
+    }
     select:hover:not(:disabled) {
       border-color: var(--border-mid);
       color: var(--text);
@@ -47,6 +66,9 @@ export class RSelect extends RorschachBase {
       border-color: var(--accent);
       color: var(--text);
       box-shadow: 0 0 8px rgba(0, 196, 212, 0.15);
+    }
+    :host([variant="field"]) select:focus:not(:disabled) {
+      box-shadow: 0 0 0 3px var(--accent-dim);
     }
     select:disabled {
       cursor: not-allowed;
@@ -68,6 +90,18 @@ export class RSelect extends RorschachBase {
     select:hover:not(:disabled) + .chevron {
       color: var(--text-mid);
     }
+    .label {
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: var(--text-mid);
+      letter-spacing: 0.04em;
+    }
+    .hint {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      font-family: var(--font-mono, monospace);
+      font-weight: 300;
+    }
   `;
 
   private _onChange(e: Event) {
@@ -82,6 +116,7 @@ export class RSelect extends RorschachBase {
 
   override render() {
     return html`
+      ${this.label ? html`<span class="label">${this.label}</span>` : nothing}
       <div class="select-wrapper">
         <select 
           .value=${this.value} 
@@ -98,6 +133,7 @@ export class RSelect extends RorschachBase {
           <r-icon name="chevron-down" size="sm"></r-icon>
         </span>
       </div>
+      ${this.hint ? html`<span class="hint">${this.hint}</span>` : nothing}
     `;
   }
 }

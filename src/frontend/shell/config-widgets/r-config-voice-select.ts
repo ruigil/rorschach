@@ -48,6 +48,7 @@ export class RConfigVoiceSelect extends RorschachBase {
 
     return html`
       <r-select
+        variant="field"
         .value=${this.value}
         .label=${this.label}
         .hint=${this.hint}

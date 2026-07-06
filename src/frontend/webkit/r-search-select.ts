@@ -60,7 +60,6 @@ export class RSearchSelect extends RorschachBase {
     .input {
       width: 100%;
       padding: 0.65rem 0.9rem;
-      padding-right: 2.2rem;
       background: var(--surface-2);
       border: 1px solid var(--border-mid);
       border-radius: var(--radius);
