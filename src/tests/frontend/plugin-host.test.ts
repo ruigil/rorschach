@@ -20,7 +20,7 @@ beforeEach(() => {
     lastMessages: [],
     activeStream: { isActive: false, reasoning: '', text: '', sources: [], attachments: [], toolCalls: [] },
     views: {},
-    activeWorkspaceTab: 'code',
+    activeWorkspaceTab: 'none',
   })
 })
 

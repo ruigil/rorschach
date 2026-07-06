@@ -21,7 +21,7 @@ const defaultState: Partial<ShellState> = {
     toolCalls: [],
   },
   views: {},
-  activeWorkspaceTab: 'code',
+  activeWorkspaceTab: 'none',
 }
 
 export function resetStore() {

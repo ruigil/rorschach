@@ -60,8 +60,10 @@ export class RShell extends RorschachBase {
     // 3. React to state updates: Sync store back to URL bar
     store.namespace<ShellState>('shell').subscribe('activeWorkspaceTab', (tab) => {
       const normalizedHash = window.location.hash.replace(/^#\/?/, '');
-      if (tab && tab !== normalizedHash) {
+      if (tab && tab !== 'none' && tab !== normalizedHash) {
         window.location.hash = `/${tab}`;
+      } else if (tab === 'none' && normalizedHash !== '') {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
       }
       this._switchModeForTab(tab);
     });
@@ -171,8 +173,13 @@ export class RShell extends RorschachBase {
     if (openWorkspaces.length > 0 && !openWorkspaces.includes(activeTab)) {
       const fallback = openWorkspaces[0]!;
       setActiveWorkspaceTab(fallback);
-    } else if (openWorkspaces.length === 0 && this._currentMode.value !== 'chatbot') {
-      switchMode('chatbot');
+    } else if (openWorkspaces.length === 0) {
+      if (activeTab !== 'none') {
+        setActiveWorkspaceTab('none');
+      }
+      if (this._currentMode.value !== 'chatbot') {
+        switchMode('chatbot');
+      }
     }
   }
 

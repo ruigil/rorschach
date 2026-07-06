@@ -3,7 +3,7 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 
 import { store } from '../../frontend/webkit/runtime/store.js'
 import { resetStore } from '../helpers/frontend.js'
-import { setMode, setActiveWorkspaceTab, updateViewState } from '../../frontend/shell/view-actions.js'
+import { setMode, setActiveWorkspaceTab, updateViewState, closeView } from '../../frontend/shell/view-actions.js'
 import {
   appendMessage,
   updateActiveStream,
@@ -188,4 +188,25 @@ describe('view state actions', () => {
     expect(stored.params.docId).toBe(42)
   })
 
+  test('closeView sets activeWorkspaceTab to none when no views are open', () => {
+    store.namespace<ShellState>('shell').set('views', {
+      docs: {
+        id: 'docs',
+        isOpen: true,
+        params: {},
+      },
+      code: {
+        id: 'code',
+        isOpen: false,
+        params: {},
+      }
+    })
+    setActiveWorkspaceTab('docs')
+
+    closeView('docs')
+
+    expect(store.namespace<ShellState>('shell').get('activeWorkspaceTab')).toBe('none')
+    const view = store.namespace<ShellState>('shell').get('views').docs!
+    expect(view.isOpen).toBe(false)
+  })
 })

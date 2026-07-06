@@ -54,7 +54,7 @@ store.namespace<ShellState>('shell').init({
     toolCalls: [],
   },
   views: {},
-  activeWorkspaceTab: 'code',
+  activeWorkspaceTab: 'none',
   sidebarWidth: 360,
 }, {
   persist: ['theme', 'currentMode', 'activeWorkspaceTab', 'lastMessages', 'sidebarWidth'],
