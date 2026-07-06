@@ -192,8 +192,16 @@ export class RChatInput extends RorschachBase {
     return out;
   }
 
+  private _cancel() {
+    this.dispatchEvent(new CustomEvent('chat-cancel', {
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
   override render() {
-    const disabled = !this._isConnected.value || this._isWaiting.value;
+    const isWaiting = this._isWaiting.value;
+    const disabled = !this._isConnected.value || isWaiting;
 
     return html`
       <div class="input-area">
@@ -218,9 +226,15 @@ export class RChatInput extends RorschachBase {
             @input=${this._handleInput}
             @keydown=${this._handleKeydown}
           ></textarea>
-          <button type="submit" id="send" ?disabled=${disabled} aria-label="Send">
-            <r-icon name="send"></r-icon>
-          </button>
+          ${isWaiting ? html`
+            <button type="button" id="cancel" aria-label="Cancel" @click=${this._cancel}>
+              <r-icon name="stop"></r-icon>
+            </button>
+          ` : html`
+            <button type="submit" id="send" ?disabled=${disabled} aria-label="Send">
+              <r-icon name="send"></r-icon>
+            </button>
+          `}
         </form>
         <p class="input-hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</p>
       </div>

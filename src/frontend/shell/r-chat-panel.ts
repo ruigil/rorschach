@@ -8,7 +8,7 @@ import {
   StoreController
 } from '@rorschach/webkit';
 
-import { submitChatMessage } from './actions.js';
+import { submitChatMessage, cancelChatMessage } from './actions.js';
 
 @customElement('r-chat-panel')
 export class RChatPanel extends RorschachBase {
@@ -34,11 +34,13 @@ export class RChatPanel extends RorschachBase {
   override connectedCallback() {
     super.connectedCallback();
     this.addEventListener('chat-submit', this._handleSubmit);
+    this.addEventListener('chat-cancel', this._handleCancel);
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
     this.removeEventListener('chat-submit', this._handleSubmit);
+    this.removeEventListener('chat-cancel', this._handleCancel);
   }
 
   override updated(changedProperties: Map<string | symbol, unknown>) {
@@ -75,6 +77,10 @@ export class RChatPanel extends RorschachBase {
   private _handleSubmit(event: any) {
     const { text, attachments } = event.detail;
     submitChatMessage(text, attachments);
+  }
+
+  private _handleCancel() {
+    cancelChatMessage();
   }
 
   override render() {

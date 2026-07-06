@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
-import { agentLoop, type AgentLoopHandle, type LoopMsg, type LoopStartTurnParams, idleLoopState, type WithLoopState } from '../system/index.ts'
+import { agentLoop, type AgentLoopHandle, type LoopMsg, type LoopStartTurnParams, idleLoopState, type WithLoopState, createTopic } from '../system/index.ts'
 import type { ActorDef, ActorContext, ActorRef, Interceptor } from '../system/index.ts'
 import type { LlmProviderMsg, LlmProviderReply, ApiMessage, TokenUsage } from '../types/llm.ts'
 import type { ToolMsg, ToolFinalReply, ToolReply, ToolSchema, ToolCollection } from '../types/tools.ts'
@@ -215,6 +215,95 @@ describe('AgentLoop: startTurn + streaming', () => {
       { kind: 'text', text: 'hello ' },
       { kind: 'text', text: 'world' },
     ])
+
+    await system.shutdown()
+  })
+
+  test('cancelTurn stops the loop and transitions back to idle', async () => {
+    const system = await AgentSystem()
+    const streams: Array<Extract<LlmProviderMsg, { type: "stream" }>> = []
+
+    const llmDef: ActorDef<LlmProviderMsg, null> = {
+      initialState: null,
+      handler: (state, msg) => {
+        if (msg.type === 'stream') streams.push(msg)
+        return { state }
+      },
+    }
+    const llmRef = system.spawn('llm', llmDef)
+
+    const completions: TestState[] = []
+    const uiEventsList: Array<{ userId: string; text: string }> = []
+    const uiTopic = createTopic<{ userId: string; text: string }>('test.ui')
+
+    system.subscribe(uiTopic, (event) => {
+      uiEventsList.push(event)
+    })
+
+    const loop = agentLoop<TestState, TestMsg>({
+      role: 'test',
+      spanName: 'test',
+      model: 'test-model',
+      maxToolLoops: 3,
+      llmRef: (s) => s.llmRef,
+      tools: (s) => s.tools,
+      uiEvents: uiTopic,
+      onComplete: (state, finalText) => {
+        completions.push({ ...state, finalText, log: [...state.log, 'complete'] })
+        return { state: { ...state, finalText, log: [...state.log, 'complete'] } }
+      },
+      onError: (state, err) => ({
+        state: { ...state, log: [...state.log, `error:${err.kind}`] },
+      }),
+    })
+
+    const agentRef = system.spawn('agent', {
+      initialState: { ...emptyState(), llmRef },
+      handler: (state, msg, ctx) => {
+        if ((msg as any).type === 'start') {
+          return loop.startTurn(state, (msg as any).params, ctx)
+        }
+        return loop.idle(state, msg, ctx)
+      },
+      interceptors: [
+        (state, msg, ctx, next) => {
+          const m = msg as any
+          if (m.type === 'cancel') {
+            if (state.loop.phase === 'idle') return { state }
+            return loop.cancelTurn(state, ctx)
+          }
+          return next(state, msg)
+        },
+        makeHostInterceptor<TestState, TestMsg>(),
+      ],
+    })
+    await tick()
+
+    // Start turn
+    agentRef.send({
+      type: 'start',
+      params: { messages: [{ role: 'user', content: 'hello' }], userId: 'u1' },
+    })
+    await tick()
+
+    expect(streams.length).toBe(1)
+    expect(uiEventsList).toContainEqual({ userId: 'u1', text: JSON.stringify({ type: 'start' }) })
+
+    // Cancel turn
+    agentRef.send({ type: 'cancel' })
+    await tick()
+
+    // Verify done event was emitted
+    expect(uiEventsList).toContainEqual({ userId: 'u1', text: JSON.stringify({ type: 'done' }) })
+
+    // If we send late LLM messages, they should be ignored
+    const msg = streams[0]!
+    msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'hello ' })
+    msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+    await tick(100)
+
+    // onComplete should NOT have been called because loop was cancelled
+    expect(completions.length).toBe(0)
 
     await system.shutdown()
   })

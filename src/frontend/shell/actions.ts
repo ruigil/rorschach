@@ -26,6 +26,9 @@ export const updateActiveStream = (patch: Partial<ShellState['activeStream']>) =
 
 export const commitActiveStream = (role: 'assistant' | 'error' = 'assistant', text?: string) => {
   const active = shell().get('activeStream')
+  if (!active.isActive) {
+    return
+  }
   const message: Message = {
     id: crypto.randomUUID(),
     role,
@@ -78,6 +81,14 @@ export const submitChatMessage = (text: string, attachments: Attachment[]) => {
   send({ text, attachments })
   shell().set('isWaiting', true)
   updateActiveStream({ isActive: true })
+}
+
+export const cancelChatMessage = () => {
+  const isWaiting = shell().get('isWaiting')
+  if (!isWaiting) return
+
+  send({ type: 'cognitive.cancel' })
+  commitActiveStream('error', 'Request cancelled.')
 }
 
 export const logout = async () => {

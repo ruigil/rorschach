@@ -107,4 +107,22 @@ describe('r-chat-input', () => {
 
     expect(textarea.value).toBe('')
   })
+
+  test('renders cancel button instead of send button when waiting, and clicking it dispatches chat-cancel', async () => {
+    mockStore('isConnected', true)
+    mockStore('isWaiting', true)
+    const el = await mountClass(RChatInput) as any
+    await el.updateComplete
+
+    expect(el.querySelector('#send')).toBeFalsy()
+    const cancelBtn = el.querySelector('#cancel') as HTMLButtonElement
+    expect(cancelBtn).toBeTruthy()
+
+    let cancelFired = false
+    el.addEventListener('chat-cancel', () => cancelFired = true)
+
+    cancelBtn.click()
+
+    expect(cancelFired).toBe(true)
+  })
 })

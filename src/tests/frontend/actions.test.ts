@@ -134,13 +134,13 @@ describe('commitActiveStream', () => {
 
   test('clears isWaiting after commit', () => {
     store.namespace<ShellState>('shell').set('isWaiting', true)
-    updateActiveStream({ text: 'x' })
+    updateActiveStream({ isActive: true, text: 'x' })
     commitActiveStream()
     expect(store.namespace<ShellState>('shell').get('isWaiting')).toBe(false)
   })
 
   test('commits as error role with override text', () => {
-    updateActiveStream({ text: 'partial' })
+    updateActiveStream({ isActive: true, text: 'partial' })
     commitActiveStream('error', 'something broke')
     const msgs = store.namespace<ShellState>('shell').get('messages')
     expect(msgs[0]!.role).toBe('error')
@@ -149,6 +149,7 @@ describe('commitActiveStream', () => {
 
   test('copies sources and attachments', () => {
     updateActiveStream({
+      isActive: true,
       sources: [{ url: 'http://x.com', title: 'X' }],
       attachments: [{ kind: 'image', data: 'data:img' }],
     })

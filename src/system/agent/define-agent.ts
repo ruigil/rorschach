@@ -16,6 +16,7 @@ export type AgentExtra =
   | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
+  | { type: 'cancel' }
 
 export type DefineAgentParams<OptionsType extends AgentModelOptions> = {
   role: string
@@ -181,6 +182,11 @@ export const defineAgent = <
       if (m.type === 'userMessage') {
         if (state.loop.phase !== 'idle') return { state, stash: true }
         return handleUserMessage(state, m, ctx)
+      }
+
+      if (m.type === 'cancel') {
+        if (state.loop.phase === 'idle') return { state }
+        return loop.cancelTurn(state, ctx)
       }
 
       if (m.type === '_toolRegistered') {

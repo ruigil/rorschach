@@ -504,6 +504,16 @@ export const SessionManager = (
           ctx.publish(SwitchAgentTopic, { userId, mode: frame.mode, source: 'user' })
         }
 
+        if (frame.type === 'cognitive.cancel') {
+          const session = state.sessions[userId]
+          if (session) {
+            const agent = session.agentRefs[session.activeMode]
+            if (agent) {
+              agent.send({ type: 'cancel' })
+            }
+          }
+        }
+
         if (frame.type === 'cognitive.listAgents') {
           const agents = Object.values(state.descriptors).map(d => ({
             mode: d.mode,

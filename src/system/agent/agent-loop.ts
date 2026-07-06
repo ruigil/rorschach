@@ -168,6 +168,7 @@ export type AgentLoopHooks<S extends WithLoopState, M> = {
 export type AgentLoopHandle<M , S extends WithLoopState> = {
   idle: MessageHandler<M, S>
   startTurn: (state: S, params: LoopStartTurnParams, ctx: ActorContext<M>) => ActorResult<M, S>
+  cancelTurn: (state: S, ctx: ActorContext<M>) => ActorResult<M, S>
 }
 
 // ─── Internal engine ────────────────────────────────────────────────────────
@@ -257,6 +258,27 @@ const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, 
       state: { ...state, loop: { phase: 'awaitingLlm', turn: { ...turn, llmSpan } } } as S,
       become: awaitingLlm,
     }
+  }
+
+  const cancelTurn = (state: S, ctx: ActorContext<M>): ActorResult<M, S> => {
+    const turn = state.loop.turn
+    if (state.loop.phase === 'idle') {
+      return { state }
+    }
+
+    if (turn.llmSpan) turn.llmSpan.error('cancelled')
+    if (turn.requestSpan) turn.requestSpan.error('cancelled')
+    if (turn.pendingBatch?.spans) {
+      for (const span of turn.pendingBatch.spans.values()) {
+        span.error('cancelled')
+      }
+    }
+
+    ctx.log.info(`${log}: loop cancelled by user`)
+
+    emitUi(turn.userId, { type: 'done' }, ctx)
+
+    return materialize(state)
   }
 
   // ── Idle handler ─────────────────────────────────────────────────────────
@@ -540,6 +562,7 @@ const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, 
   return {
     idle,
     startTurn,
+    cancelTurn,
   }
 }
 
