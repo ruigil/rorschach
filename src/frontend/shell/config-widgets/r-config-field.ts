@@ -10,6 +10,7 @@ import {
 
 import './r-config-voice-select.js';
 import './r-config-tool-filter.js';
+import './r-config-google-account.js';
 
 export type ConfigFieldSchema = {
   type?: string;

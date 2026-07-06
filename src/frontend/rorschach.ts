@@ -8,32 +8,11 @@
 
 // WebUI-Kit primitives — triggers @customElement for r-icon, r-badge, ...
 import { store } from '@rorschach/webkit';
-// Markdown renderer config (kit utility wrapping global marked/katex/hljs)
-//import '@rorschach/webkit/markdown.js'
-
-// Shell components — triggers @customElement for r-shell, r-view, ...
-import './shell/r-shell.js'
-import './shell/r-view.js'
-import './shell/r-chat-panel.js'
-import './shell/r-chat-input.js'
-import './shell/r-config-form.js'
-import './shell/r-mode-select.js'
-import './shell/r-surface-error.js'
-import './shell/r-welcome-dashboard.js'
-import './shell/r-theme-select.js'
-import './shell/r-tool-history.js'
-import './shell/r-message-bubble.js'
-import './shell/r-status-dot.js'
-
-// Shell boot: store init, plugin-host
 import type { ShellState } from './shell/types.js'
-import { pluginHost } from './shell/plugin-host.js'
-import './shell/theme.js'
 
 // ─── Shell namespace init ───
-//
-// plugin-host seeds the `views` map via `store.ensureView()` in `init()`.
-
+// Initialize the namespace before upgrading any shell components so
+// they can safely subscribe and get values during connection/construction.
 store.namespace<ShellState>('shell').init({
   theme: 'eclipse',
   isConnected: false,
@@ -59,6 +38,27 @@ store.namespace<ShellState>('shell').init({
 }, {
   persist: ['theme', 'currentMode', 'activeWorkspaceTab', 'lastMessages', 'sidebarWidth'],
 })
+
+// Markdown renderer config (kit utility wrapping global marked/katex/hljs)
+//import '@rorschach/webkit/markdown.js'
+
+// Shell components — triggers @customElement for r-shell, r-view, ...
+import './shell/r-shell.js'
+import './shell/r-view.js'
+import './shell/r-chat-panel.js'
+import './shell/r-chat-input.js'
+import './shell/r-config-form.js'
+import './shell/r-mode-select.js'
+import './shell/r-surface-error.js'
+import './shell/r-welcome-dashboard.js'
+import './shell/r-theme-select.js'
+import './shell/r-tool-history.js'
+import './shell/r-message-bubble.js'
+import './shell/r-status-dot.js'
+
+// Shell boot: store init, plugin-host
+import { pluginHost } from './shell/plugin-host.js'
+import './shell/theme.js'
 
 // Hydrate the in-memory message list from the persisted recent messages
 // (stripped of attachment payloads) so the chat panel restores on refresh.

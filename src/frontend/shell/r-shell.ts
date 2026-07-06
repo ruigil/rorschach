@@ -70,6 +70,7 @@ export class RShell extends RorschachBase {
 
     // Sync mode when a view registration is dynamically loaded (handles boot hydration)
     store.namespace<ShellState>('shell').subscribe('views', (views) => {
+      if (!views) return;
       const tab = store.namespace<ShellState>('shell').get('activeWorkspaceTab');
       if (tab && views[tab]) {
         this._switchModeForTab(tab);
@@ -84,7 +85,8 @@ export class RShell extends RorschachBase {
     });
   }
 
-  private _switchModeForTab(tabId: string) {
+  private _switchModeForTab(tabId: string | undefined) {
+    if (!tabId) return;
     if (tabId === 'config') {
       switchMode('chatbot');
       return;

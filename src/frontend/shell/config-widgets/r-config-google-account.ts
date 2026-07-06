@@ -1,7 +1,9 @@
-import { customElement, html, RorschachBase } from '@rorschach/webkit';
+import { customElement, html, RorschachBase, state } from '@rorschach/webkit';
 
 @customElement('r-config-google-account')
 export class RConfigGoogleAccount extends RorschachBase {
+  @state() private _status: 'checking' | 'connected' | 'disconnected' | 'unavailable' = 'checking';
+
   override createRenderRoot() { return this; }
 
   override connectedCallback() {
@@ -10,25 +12,12 @@ export class RConfigGoogleAccount extends RorschachBase {
   }
 
   private async _updateStatus() {
-    const statusEl = this.querySelector('[data-google-status]') as HTMLElement | null;
-    const connectBtn = this.querySelector('[data-google-connect]') as HTMLElement | null;
-    const disconnectBtn = this.querySelector('[data-google-disconnect]') as HTMLElement | null;
-    if (!statusEl) return;
-
     try {
       const res = await fetch(new URL('googleapis/auth/status', location.href));
       const data = res.ok ? await res.json() : { connected: false };
-      if (data.connected) {
-        statusEl.textContent = 'Connected';
-        if (connectBtn) connectBtn.style.display = 'none';
-        if (disconnectBtn) disconnectBtn.style.display = '';
-      } else {
-        statusEl.textContent = 'Not connected';
-        if (connectBtn) connectBtn.style.display = '';
-        if (disconnectBtn) disconnectBtn.style.display = 'none';
-      }
+      this._status = data.connected ? 'connected' : 'disconnected';
     } catch {
-      statusEl.textContent = 'Status unavailable';
+      this._status = 'unavailable';
     }
   }
 
@@ -49,16 +38,35 @@ export class RConfigGoogleAccount extends RorschachBase {
   }
 
   override render() {
+    let statusText = 'checking…';
+    let showConnect = false;
+    let showDisconnect = false;
+
+    if (this._status === 'connected') {
+      statusText = 'Connected';
+      showDisconnect = true;
+    } else if (this._status === 'disconnected') {
+      statusText = 'Not connected';
+      showConnect = true;
+    } else if (this._status === 'unavailable') {
+      statusText = 'Status unavailable';
+    }
+
     return html`
       <div class="field-row">
         <div>
           <div class="field-label">Google account</div>
-          <div class="field-hint" data-google-status>checking…</div>
+          <div class="field-hint" data-google-status>${statusText}</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <button type="button" class="btn-save" data-google-connect style="display:none" @click=${this._connect}>Connect</button>
-          <button type="button" class="btn-reset" data-google-disconnect style="display:none" @click=${this._disconnect}>Disconnect</button>
+          ${showConnect
+            ? html`<button type="button" class="btn-save" data-google-connect @click=${this._connect}>Connect</button>`
+            : ''}
+          ${showDisconnect
+            ? html`<button type="button" class="btn-reset" data-google-disconnect @click=${this._disconnect}>Disconnect</button>`
+            : ''}
         </div>
       </div>`;
   }
 }
+
