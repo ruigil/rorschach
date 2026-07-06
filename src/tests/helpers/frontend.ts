@@ -1,4 +1,5 @@
 import { store, __resetStoreForTests } from '../../frontend/webkit/runtime/store.js'
+import { __resetPluginHostForTests } from '../../frontend/shell/plugin-host.js'
 import type { ShellState } from '../../frontend/shell/types.js'
 
 const defaultState: Partial<ShellState> = {
@@ -25,6 +26,7 @@ const defaultState: Partial<ShellState> = {
 
 export function resetStore() {
   __resetStoreForTests()
+  __resetPluginHostForTests()
   store.namespace<ShellState>('shell').init(defaultState, {
     persist: ['currentMode', 'activeWorkspaceTab', 'lastMessages'],
   })
@@ -72,6 +74,7 @@ export async function mountClass(cls: any, attrs?: Record<string, string>) {
   if (attrs) {
     for (const [k, v] of Object.entries(attrs)) {
       el.setAttribute(k, v)
+      el[k] = v
     }
   }
   document.body.appendChild(el)

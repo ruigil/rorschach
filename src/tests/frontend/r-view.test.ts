@@ -17,10 +17,11 @@ const viewState = (id: string) => ({
 beforeEach(() => {
   cleanup()
   localStorage.clear()
-  pluginHost.viewRegistry.set('code', {
+  const ph = pluginHost()
+  ph.setViewConfig('code', {
     id: 'code', title: 'Code', icon: 'code', contentTag: 'r-code-workspace',
   })
-  pluginHost.viewRegistry.set('workflows', {
+  ph.setViewConfig('workflows', {
     id: 'workflows', title: 'Workflows', icon: 'git-branch', contentTag: 'r-workflow-workspace',
   })
 })
@@ -28,7 +29,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   localStorage.clear()
-  pluginHost.viewRegistry.clear()
 })
 
 describe('r-view', () => {

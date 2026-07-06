@@ -10,27 +10,27 @@ import type { ViewConfig, ShellState } from './types.js'
 // and the `surfaceReducers` Map (surfaceId → reducer). Imports nothing
 // plugin-specific, only from `@rorschach/webkit/`.
 //
-// `pluginHost.init()` is called once at boot. It seeds the built-in config
+// `pluginHost().init()` is called once at boot. It seeds the built-in config
 // view that can be opened as a tab.
 
-const surfaces = new Map<string, UiSurfaceRegistration>()
-const viewRegistry = new Map<string, ViewConfig>()
-const frameOwners = new Map<string, string>()
-const surfaceReducers = new Map<string, (frame: Record<string, any>, host: PluginHostActions) => void>()
 
-// Facade passed to reducers. Bound to the shell's actions; plugins import
-// only the PluginHostActions *type* from the kit, never the implementation.
-const host: PluginHostActions = {
-  openView: (id) => openView(id),
-  closeView: (id) => closeView(id),
-  setMode: (mode) => setMode(mode),
+type PluginHostInstance = {
+  init: () => void;
+  dispatch: (reg: UiSurfaceRegistration) => void;
+  routeFrame: (frame: Record<string, any>) => boolean;
+  getViewConfig: (id: string) => ViewConfig | undefined;
+  setViewConfig: (id: string, config: ViewConfig) => void;
 }
 
-export const pluginHost = {
-  viewRegistry,
-  surfaces,
+let instance: PluginHostInstance | null = null;
 
-  async init() {
+const createPluginHost = (): PluginHostInstance => {
+  const surfaces = new Map<string, UiSurfaceRegistration>()
+  const viewRegistry = new Map<string, ViewConfig>()
+  const frameOwners = new Map<string, string>()
+  const surfaceReducers = new Map<string, (frame: Record<string, any>, host: PluginHostActions) => void>()
+
+  const init = () => {
     const configCfg: ViewConfig = {
       id: 'config',
       title: 'Configuration',
@@ -42,18 +42,18 @@ export const pluginHost = {
 
     // All plugin surfaces (docs, workflows, ...) are now driven by
     // UiSurfaceRegistration WS frames. No legacy seeds remain.
-    this._startModeWatcher()
-  },
+    startModeWatcher()
+  };
 
-  dispatch(reg: UiSurfaceRegistration) {
+  const dispatch = (reg: UiSurfaceRegistration) => {
     if (reg.moduleUrl === null) {
-      this._unregister(reg.id)
+      unregister(reg.id)
       return
     }
-    void this._register(reg)
-  },
+    register(reg)
+  }
 
-  async _register(reg: UiSurfaceRegistration) {
+  const register = async (reg: UiSurfaceRegistration) => {
     surfaces.set(reg.id, reg)
     if (reg.view) {
       const cfg: ViewConfig = { ...reg.view, id: reg.id }
@@ -80,9 +80,9 @@ export const pluginHost = {
       const currentMode = store.namespace<ShellState>('shell').get('currentMode')
       if (currentMode && reg.view.modes.includes(currentMode)) openView(reg.id)
     }
-  },
+  }
 
-  _unregister(id: string) {
+  const unregister = (id: string) => {
     const reg = surfaces.get(id)
     if (!reg) return
     surfaces.delete(id)
@@ -91,17 +91,17 @@ export const pluginHost = {
     for (const ft of reg.frameTypes ?? []) frameOwners.delete(ft)
     store.namespace(id).reset()
     surfaceReducers.delete(id)
-  },
+  }
 
-  routeFrame(frame: Record<string, any>): boolean {
+  const routeFrame = (frame: Record<string, any>): boolean => {
     const owner = frameOwners.get(frame.type)
     if (!owner) return false
-    surfaceReducers.get(owner)?.(frame, host)
+    surfaceReducers.get(owner)?.(frame, { openView, closeView, setMode })
     return true
-  },
+  }
 
   /** Open views whose surface declares `modes` containing the new mode. */
-  _startModeWatcher() {
+  const startModeWatcher = () => {
     store.namespace<ShellState>('shell').subscribe('currentMode', (mode) => {
       for (const [id, reg] of surfaces) {
         if (reg.view?.modes?.includes(mode)) {
@@ -109,5 +109,32 @@ export const pluginHost = {
         }
       }
     })
-  },
+  }
+
+  const getViewConfig = (id: string): ViewConfig | undefined => {
+    return viewRegistry.get(id)
+  }
+  const setViewConfig = (id: string, config: ViewConfig) => {
+    viewRegistry.set(id, config)
+  }
+
+  return {
+    init,
+    dispatch,
+    routeFrame,
+    getViewConfig,
+    setViewConfig
+  }
 }
+
+export const pluginHost = () => {
+  if (!instance) {
+    instance = createPluginHost()
+  }
+  return instance
+}
+
+export const __resetPluginHostForTests = () => {
+  instance = null
+}
+

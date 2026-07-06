@@ -87,7 +87,7 @@ export class RShell extends RorschachBase {
       switchMode('chatbot');
       return;
     }
-    const cfg = pluginHost.viewRegistry.get(tabId);
+    const cfg = pluginHost().getViewConfig(tabId);
     if (cfg && cfg.modes && cfg.modes.length > 0) {
       switchMode(cfg.modes[0]!);
     }
@@ -244,7 +244,7 @@ export class RShell extends RorschachBase {
               <div class="workspace-tabs-bar">
                 <div class="tabs-list">
                   ${this._getActiveWorkspaces().map(id => {
-                    const cfg = pluginHost.viewRegistry.get(id);
+                    const cfg = pluginHost().getViewConfig(id);
                     return html`
                       <button
                         class="workspace-tab ${this._activeWorkspaceTab.value === id ? 'active' : ''}"

@@ -41,10 +41,10 @@ const frameHandlers: Record<string, (msg: Record<string, any>) => void> = {
 
 export const dispatchFrame = (msg: Record<string, any>) => {
   if (msg.type === 'ui.surface') {
-    pluginHost.dispatch(msg.reg)
+    pluginHost().dispatch(msg.reg)
     return
   }
-  if (pluginHost.routeFrame(msg)) return
+  if (pluginHost().routeFrame(msg)) return
   const handler = frameHandlers[msg.type]
   if (handler) handler(msg)
 }

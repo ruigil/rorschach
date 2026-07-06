@@ -69,7 +69,7 @@ if (shellNs.get('messages').length === 0 && shellNs.get('lastMessages').length >
 
 // Start the plugin-host (seeds config/observe views, starts mode
 // watcher, dynamic-imports plugin UI modules).
-await pluginHost.init()
+pluginHost().init()
 console.log('Plugin host initialized, shell is ready.')
 
 // The application is now bootstrapped by the <r-shell> component.

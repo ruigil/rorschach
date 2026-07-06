@@ -24,7 +24,7 @@ export class RView extends RorschachBase {
   }
 
   private _getContentElement() {
-    const cfg = pluginHost.viewRegistry.get(this.viewId);
+    const cfg = pluginHost().getViewConfig(this.viewId);
     if (!cfg) return null;
 
     let el = this._cachedContentElements.get(this.viewId);
@@ -38,9 +38,8 @@ export class RView extends RorschachBase {
 
   override render() {
     const view = this.config;
-    if (!view || !view.isOpen) return html``;
-
     const contentEl = this._getContentElement();
+    if (!view || !view.isOpen) return html``;
 
     return html`${contentEl}`;
   }
