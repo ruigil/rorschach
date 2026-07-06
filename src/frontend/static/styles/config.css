@@ -21,7 +21,7 @@
 .config-sidebar {
   width: 160px;
   border-right: 1px solid var(--border);
-  background: rgba(3, 7, 10, 0.45);
+  background: var(--sidebar-bg);
   backdrop-filter: blur(8px);
   display: flex;
   flex-direction: column;
@@ -51,7 +51,7 @@
 }
 
 .config-sidebar-item:hover {
-  background: rgba(0, 196, 212, 0.04);
+  background: var(--accent-dim);
 }
 
 .config-sidebar-item.active::before {
@@ -249,7 +249,7 @@
 }
 
 .toggle input:checked + .toggle-track { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
-.toggle input:checked + .toggle-track::after { transform: translateX(16px); background: #051018; }
+.toggle input:checked + .toggle-track::after { transform: translateX(16px); background: var(--bg); }
 
 .form-actions {
   display: flex;
@@ -372,12 +372,12 @@
 }
 
 .custom-select-item:hover {
-  background: rgba(0, 196, 212, 0.04);
+  background: var(--accent-dim);
   color: var(--text);
 }
 
 .custom-select-item.selected {
-  background: rgba(0, 196, 212, 0.08);
+  background: var(--accent-glow);
   color: var(--accent-bright);
   border-left: 2px solid var(--accent);
 }

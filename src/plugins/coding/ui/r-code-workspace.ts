@@ -57,8 +57,8 @@ export class RCodeWorkspace extends RorschachBase {
         display: flex;
         flex-direction: column;
         height: 100%;
-        background: #061118;
-        color: #e2e8f0;
+        background: var(--bg);
+        color: var(--text);
         font-family: var(--font-mono, monospace);
         font-size: 0.8rem;
         overflow: hidden;

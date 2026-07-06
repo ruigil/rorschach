@@ -65,7 +65,7 @@
 
 @keyframes incomingShimmer {
   0%   { background: transparent; }
-  20%  { background: rgba(0,196,212,0.03); }
+  20%  { background: var(--accent-dim); }
   100% { background: transparent; }
 }
 
@@ -216,7 +216,7 @@ textarea::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px
 #attach-btn:hover,
 #mic-btn:hover {
   color: var(--accent);
-  background: rgba(0, 196, 212, 0.08);
+  background: var(--accent-dim);
 }
 
 #mic-btn.recording {

@@ -37,7 +37,7 @@ export class RPanel extends RorschachBase {
       align-items: center;
       justify-content: space-between;
       padding: 0.5rem 0.75rem;
-      background: rgba(0, 0, 0, 0.2);
+      background: var(--panel-header-bg);
       border-bottom: 1px solid var(--border);
       min-height: 38px;
     }
@@ -72,7 +72,7 @@ export class RPanel extends RorschachBase {
       display: flex;
       align-items: center;
       padding: 0.5rem 0.75rem;
-      background: rgba(0, 0, 0, 0.1);
+      background: var(--panel-footer-bg);
       border-top: 1px solid var(--border);
     }
   `;

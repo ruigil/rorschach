@@ -52,11 +52,11 @@ export class RTree extends RorschachBase {
     }
 
     .tree-row:hover {
-      background: rgba(0, 196, 212, 0.04);
+      background: var(--accent-dim);
     }
 
     .tree-row.selected {
-      background: rgba(0, 196, 212, 0.08);
+      background: var(--accent-glow);
       color: var(--accent);
       font-weight: 500;
     }
@@ -74,7 +74,7 @@ export class RTree extends RorschachBase {
     }
 
     .tree-chevron:hover {
-      background: rgba(255, 255, 255, 0.05);
+      background: var(--hover-bg);
       color: var(--text-mid);
     }
 
@@ -135,7 +135,7 @@ export class RTree extends RorschachBase {
       font-family: var(--font-mono, monospace);
       font-size: 0.65rem;
       color: var(--text-dim);
-      background: rgba(255, 255, 255, 0.04);
+      background: var(--surface-2);
       padding: 1px 5px;
       border-radius: 8px;
       margin-left: 8px;

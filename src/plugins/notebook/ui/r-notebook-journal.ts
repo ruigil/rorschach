@@ -101,7 +101,7 @@ export class RNotebookJournal extends RorschachBase {
           </div>
 
           <!-- Entry detail side -->
-          <div slot="secondary" class="nb-journal-entry-pane" style="flex: 1; overflow-y: auto; padding: 1rem; background: rgba(2, 6, 10, 0.2); display: flex; flex-direction: column; height: 100%;">
+          <div slot="secondary" class="nb-journal-entry-pane" style="flex: 1; overflow-y: auto; padding: 1rem; background: var(--surface-2); display: flex; flex-direction: column; height: 100%;">
             ${this._selectedDate ? html`
               <div class="nb-entry-header">
               </div>

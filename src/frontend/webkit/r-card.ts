@@ -52,7 +52,7 @@ export class RCard extends RorschachBase {
     .card-footer {
       padding: 0.75rem 1rem;
       border-top: 1px solid var(--border);
-      background: rgba(0, 0, 0, 0.15);
+      background: var(--card-footer-bg);
       display: flex;
       align-items: center;
       justify-content: flex-end;

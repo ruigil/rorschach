@@ -91,7 +91,7 @@ export class RButton extends RorschachBase {
       border-color: transparent;
     }
     :host([variant="ghost"]) button:hover:not(:disabled) {
-      background: rgba(0, 196, 212, 0.05);
+      background: var(--accent-dim);
       color: var(--text);
     }
 
@@ -102,7 +102,7 @@ export class RButton extends RorschachBase {
       border-color: var(--error-border);
     }
     :host([variant="danger"]) button:hover:not(:disabled) {
-      background: rgba(224, 96, 48, 0.15);
+      background: var(--error-hover);
       border-color: var(--error);
     }
 
@@ -130,7 +130,7 @@ export class RButton extends RorschachBase {
     }
     :host([variant="badge"][status="running"]) button:hover:not(:disabled) {
       border-color: var(--accent);
-      background: rgba(0, 196, 212, 0.15);
+      background: var(--accent-hover);
     }
     :host([variant="badge"][status="completed"]) button {
       color: var(--green);
@@ -139,7 +139,7 @@ export class RButton extends RorschachBase {
     }
     :host([variant="badge"][status="completed"]) button:hover:not(:disabled) {
       border-color: var(--green);
-      background: rgba(57, 232, 160, 0.15);
+      background: var(--green-hover);
     }
     :host([variant="badge"][status="blocked"]) button {
       color: var(--warn);
@@ -148,7 +148,7 @@ export class RButton extends RorschachBase {
     }
     :host([variant="badge"][status="blocked"]) button:hover:not(:disabled) {
       border-color: var(--warn);
-      background: rgba(220, 180, 40, 0.15);
+      background: var(--warn-hover);
     }
     :host([variant="badge"][status="failed"]) button,
     :host([variant="badge"][status="error"]) button {
@@ -159,7 +159,7 @@ export class RButton extends RorschachBase {
     :host([variant="badge"][status="failed"]) button:hover:not(:disabled),
     :host([variant="badge"][status="error"]) button:hover:not(:disabled) {
       border-color: var(--error);
-      background: rgba(224, 96, 48, 0.15);
+      background: var(--error-hover);
     }
 
     /* Active State */

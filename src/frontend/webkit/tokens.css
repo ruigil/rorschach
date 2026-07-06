@@ -46,6 +46,40 @@
   --log-warn:      #c4843a;
   --log-error:     #e06030;
 
+  --hover-bg:      rgba(255, 255, 255, 0.05);
+  --active-bg:     rgba(255, 255, 255, 0.08);
+
+  --scrollbar-thumb:       rgba(255, 255, 255, 0.08);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.16);
+
+  --accent-hover:  rgba(0, 196, 212, 0.15);
+  --error-hover:   rgba(224, 96, 48, 0.15);
+  --green-hover:   rgba(57, 232, 160, 0.15);
+  --warn-hover:    rgba(220, 180, 40, 0.15);
+
+  --sidebar-bg:    rgba(3, 7, 10, 0.45);
+
+  --calendar-day-bg:       rgba(10, 24, 32, 0.2);
+  --calendar-day-border:   rgba(13, 31, 45, 0.5);
+  --calendar-day-hover-bg: rgba(10, 24, 32, 0.5);
+  --calendar-day-tracked-bg:     rgba(0, 196, 212, 0.15);
+  --calendar-day-tracked-border: rgba(0, 196, 212, 0.35);
+  --calendar-day-active-bg:      rgba(0, 196, 212, 0.12);
+
+  --panel-header-bg: rgba(0, 0, 0, 0.2);
+  --panel-footer-bg: rgba(0, 0, 0, 0.1);
+  --card-footer-bg:  rgba(0, 0, 0, 0.15);
+
+  --code-header-bg: rgba(22, 46, 63, 0.55);
+  --table-even-bg:  rgba(16, 36, 52, 0.35);
+  --pre-bg:         rgba(4, 13, 20, 0.58);
+
+  --glass-bg:       rgba(10, 24, 32, 0.4);
+  --trace-llm-bg:      rgba(139, 92, 246, 0.2);
+  --trace-llm-border:  rgba(139, 92, 246, 0.55);
+  --trace-tool-bg:     rgba(245, 158, 11, 0.18);
+  --trace-tool-border: rgba(245, 158, 11, 0.5);
+
   --font-ui:   'Space Grotesk', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Menlo', monospace;
   --radius:    8px;
@@ -91,6 +125,40 @@
   --log-info:      #5ba0b8;
   --log-warn:      #c4843a;
   --log-error:     #e06030;
+
+  --hover-bg:      rgba(255, 255, 255, 0.05);
+  --active-bg:     rgba(255, 255, 255, 0.08);
+
+  --scrollbar-thumb:       rgba(255, 255, 255, 0.08);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.16);
+
+  --accent-hover:  rgba(0, 196, 212, 0.15);
+  --error-hover:   rgba(224, 96, 48, 0.15);
+  --green-hover:   rgba(57, 232, 160, 0.15);
+  --warn-hover:    rgba(220, 180, 40, 0.15);
+
+  --sidebar-bg:    rgba(3, 7, 10, 0.45);
+
+  --calendar-day-bg:       rgba(10, 24, 32, 0.2);
+  --calendar-day-border:   rgba(13, 31, 45, 0.5);
+  --calendar-day-hover-bg: rgba(10, 24, 32, 0.5);
+  --calendar-day-tracked-bg:     rgba(0, 196, 212, 0.15);
+  --calendar-day-tracked-border: rgba(0, 196, 212, 0.35);
+  --calendar-day-active-bg:      rgba(0, 196, 212, 0.12);
+
+  --panel-header-bg: rgba(0, 0, 0, 0.2);
+  --panel-footer-bg: rgba(0, 0, 0, 0.1);
+  --card-footer-bg:  rgba(0, 0, 0, 0.15);
+
+  --code-header-bg: rgba(22, 46, 63, 0.55);
+  --table-even-bg:  rgba(16, 36, 52, 0.35);
+  --pre-bg:         rgba(4, 13, 20, 0.58);
+
+  --glass-bg:       rgba(10, 24, 32, 0.4);
+  --trace-llm-bg:      rgba(139, 92, 246, 0.2);
+  --trace-llm-border:  rgba(139, 92, 246, 0.55);
+  --trace-tool-bg:     rgba(245, 158, 11, 0.18);
+  --trace-tool-border: rgba(245, 158, 11, 0.5);
 }
 
 :root[data-theme="light"] {
@@ -131,6 +199,40 @@
   --log-info:      #3070a8;
   --log-warn:      #9a6818;
   --log-error:     #c0381a;
+
+  --hover-bg:      rgba(0, 0, 0, 0.05);
+  --active-bg:     rgba(0, 0, 0, 0.08);
+
+  --scrollbar-thumb:       rgba(0, 0, 0, 0.12);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.2);
+
+  --accent-hover:  rgba(0, 138, 152, 0.15);
+  --error-hover:   rgba(192, 56, 26, 0.15);
+  --green-hover:   rgba(26, 136, 82, 0.15);
+  --warn-hover:    rgba(154, 104, 24, 0.15);
+
+  --sidebar-bg:    rgba(245, 247, 250, 0.45);
+
+  --calendar-day-bg:       rgba(238, 242, 246, 0.5);
+  --calendar-day-border:   rgba(214, 221, 227, 0.5);
+  --calendar-day-hover-bg: rgba(238, 242, 246, 0.85);
+  --calendar-day-tracked-bg:     rgba(0, 138, 152, 0.15);
+  --calendar-day-tracked-border: rgba(0, 138, 152, 0.35);
+  --calendar-day-active-bg:      rgba(0, 138, 152, 0.12);
+
+  --panel-header-bg: rgba(0, 0, 0, 0.03);
+  --panel-footer-bg: rgba(0, 0, 0, 0.02);
+  --card-footer-bg:  rgba(0, 0, 0, 0.03);
+
+  --code-header-bg: var(--surface-2);
+  --table-even-bg:  rgba(0, 0, 0, 0.02);
+  --pre-bg:         var(--surface-2);
+
+  --glass-bg:       rgba(238, 242, 246, 0.4);
+  --trace-llm-bg:      rgba(124, 58, 237, 0.18);
+  --trace-llm-border:  rgba(124, 58, 237, 0.5);
+  --trace-tool-bg:     rgba(217, 119, 6, 0.18);
+  --trace-tool-border: rgba(217, 119, 6, 0.5);
 }
 
 html, body { height: 100%; overscroll-behavior: none; }

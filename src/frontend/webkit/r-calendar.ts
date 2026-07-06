@@ -54,7 +54,7 @@ export class RCalendar extends RorschachBase {
 
     .cal-btn:hover {
       color: var(--text);
-      background: rgba(255, 255, 255, 0.05);
+      background: var(--hover-bg);
     }
 
     .cal-btn svg {
@@ -81,8 +81,8 @@ export class RCalendar extends RorschachBase {
 
     .calendar-day {
       aspect-ratio: 1;
-      background: rgba(10, 24, 32, 0.2);
-      border: 1px solid rgba(13, 31, 45, 0.5);
+      background: var(--calendar-day-bg);
+      border: 1px solid var(--calendar-day-border);
       border-radius: 4px;
       display: flex;
       flex-direction: column;
@@ -95,7 +95,7 @@ export class RCalendar extends RorschachBase {
 
     .calendar-day:hover {
       border-color: var(--accent);
-      background: rgba(10, 24, 32, 0.5);
+      background: var(--calendar-day-hover-bg);
       box-shadow: 0 0 6px var(--accent-glow);
     }
 
@@ -110,7 +110,7 @@ export class RCalendar extends RorschachBase {
 
     .calendar-day.active {
       border-color: var(--accent-bright);
-      background: rgba(0, 196, 212, 0.12);
+      background: var(--calendar-day-active-bg);
       box-shadow: 0 0 8px var(--accent-glow);
       z-index: 2;
     }
@@ -127,8 +127,8 @@ export class RCalendar extends RorschachBase {
     }
 
     .day-tracked {
-      background: rgba(0, 196, 212, 0.15);
-      border-color: rgba(0, 196, 212, 0.35);
+      background: var(--calendar-day-tracked-bg);
+      border-color: var(--calendar-day-tracked-border);
     }
 
     .day-value {

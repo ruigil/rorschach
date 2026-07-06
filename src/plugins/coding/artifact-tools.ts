@@ -165,7 +165,7 @@ export const pageShell = (
     .artifact-header { border-bottom: 1px solid var(--border); margin-bottom: 22px; padding-bottom: 16px; }
     .artifact-title { color: var(--accent-bright); font-size: 1.45rem; letter-spacing: 0; }
     .artifact-meta { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.72rem; margin-top: 8px; }
-    .mermaid { display: flex; justify-content: center; margin: 1.5rem 0; background: rgba(6, 14, 20, 0.4); border: 1px solid var(--border); border-radius: 6px; padding: 16px; overflow-x: auto; }
+    .mermaid { display: flex; justify-content: center; margin: 1.5rem 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 16px; overflow-x: auto; }
     @media (max-width: 760px) {
       .artifact-page { padding: 22px; }
     }

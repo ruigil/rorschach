@@ -199,7 +199,7 @@ export class RNotebookTracker extends RorschachBase {
           <!-- Entries detail side (Right) -->
           <div slot="secondary" style="height: 100%; display: flex; flex-direction: column; overflow: hidden;">
             <!-- Selector Header -->
-            <div class="nb-tracker-selector-bar" style="display: flex; align-items: center; padding: 12px 16px; background: rgba(2, 6, 10, 0.4); border-bottom: 1px solid var(--border); gap: 12px; flex-shrink: 0;">
+            <div class="nb-tracker-selector-bar" style="display: flex; align-items: center; padding: 12px 16px; background: var(--surface-2); border-bottom: 1px solid var(--border); gap: 12px; flex-shrink: 0;">
               <label class="nb-select-label" for="habit-select" style="font-family: var(--font-ui); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.05em; white-space: nowrap;">Tracked Metric:</label>
               <r-select
                 id="habit-select"
@@ -213,15 +213,15 @@ export class RNotebookTracker extends RorschachBase {
             <!-- Telemetry Stats Cards -->
             ${this._stats ? html`
               <div class="nb-tracker-stats-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 16px 4px; flex-shrink: 0;">
-                <r-card style="background: rgba(7, 21, 32, 0.55);">
+                <r-card style="background: var(--surface-2);">
                   <span slot="header" style="font-size: 0.62rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Current Streak</span>
                   <div style="font-size: 0.85rem; font-weight: 600; color: var(--accent-bright); text-align: center;">🔥 ${this._stats.streak} day${this._stats.streak === 1 ? '' : 's'}</div>
                 </r-card>
-                <r-card style="background: rgba(7, 21, 32, 0.55);">
+                <r-card style="background: var(--surface-2);">
                   <span slot="header" style="font-size: 0.62rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Personal Best</span>
                   <div style="font-size: 0.85rem; font-weight: 600; color: var(--green); text-align: center;">${this._stats.personalBest} ${unit}</div>
                 </r-card>
-                <r-card style="background: rgba(7, 21, 32, 0.55);">
+                <r-card style="background: var(--surface-2);">
                   <span slot="header" style="font-size: 0.62rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">This Month</span>
                   <div style="font-size: 0.85rem; font-weight: 600; color: var(--text); text-align: center;">${this._stats.monthlyTotal} ${unit}</div>
                   <div style="font-size: 0.58rem; color: var(--text-dim); text-align: center; margin-top: 4px;">avg: ${this._stats.monthlyAvg}/${unit}</div>
@@ -230,7 +230,7 @@ export class RNotebookTracker extends RorschachBase {
             ` : ''}
 
             <!-- Entries log list -->
-            <div class="nb-tracker-logs-pane" style="flex: 1; overflow-y: auto; padding: 1rem; background: rgba(2, 6, 10, 0.2); display: flex; flex-direction: column; min-height: 0;">
+            <div class="nb-tracker-logs-pane" style="flex: 1; overflow-y: auto; padding: 1rem; background: var(--bg); display: flex; flex-direction: column; min-height: 0;">
               ${this._selectedDate ? html`
                 <r-section-header title="Logs for ${this._selectedDate}"></r-section-header>
                 <div class="nb-entry-body" style="flex: 1; overflow-y: auto;">

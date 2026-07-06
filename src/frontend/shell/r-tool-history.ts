@@ -70,7 +70,7 @@ export class RToolHistory extends RorschachBase {
       flex-direction: column;
       gap: 6px;
       color: var(--text-dim);
-      background: rgba(0, 0, 0, 0.02);
+      background: var(--surface-2);
     }
 
     .tool-item {

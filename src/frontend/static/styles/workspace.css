@@ -143,8 +143,8 @@ r-view > * {
 
 .tab-close:hover {
   opacity: 1;
-  color: #ff5c4c;
-  background: rgba(224, 80, 64, 0.15);
+  color: var(--error);
+  background: var(--error-hover);
 }
 
 /* ==========================================================================

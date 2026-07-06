@@ -98,7 +98,7 @@ export class RWorkflowWorkspace extends RorschachBase {
         gap: 0.75rem;
         padding: 0.55rem 0.75rem;
         border-bottom: 1px solid var(--border);
-        background: rgba(4, 13, 20, 0.42);
+        background: var(--panel-header-bg);
         flex-shrink: 0;
       }
       .plan-run-title {

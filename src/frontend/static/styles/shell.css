@@ -88,7 +88,7 @@ header.streaming::after {
 
 .header-icon-btn:hover {
   color: var(--accent);
-  background: rgba(0, 196, 212, 0.08);
+  background: var(--accent-dim);
 }
 
 .header-icon-btn svg {
@@ -333,7 +333,7 @@ r-shell {
 
 .sidebar-header-btn:hover {
   color: var(--accent);
-  background: rgba(0, 196, 212, 0.08);
+  background: var(--accent-dim);
 }
 
 .sidebar-header-btn svg {

@@ -115,9 +115,9 @@ export class RTraceWaterfall extends RorschachBase {
       min-width: 2px;
     }
     .waterfall-bar.op-request        { background: var(--accent-dim);              border: 1px solid var(--accent);                    }
-    .waterfall-bar.op-llm-call        { background: rgba(139,92,246,0.2);           border: 1px solid rgba(139,92,246,0.55);            }
-    .waterfall-bar.op-tool-invoke     { background: rgba(245,158,11,0.18);          border: 1px solid rgba(245,158,11,0.5);             }
-    .waterfall-bar.op-brave-search    { background: rgba(245,158,11,0.18);          border: 1px solid rgba(245,158,11,0.5);             }
+    .waterfall-bar.op-llm-call        { background: var(--trace-llm-bg);           border: 1px solid var(--trace-llm-border);          }
+    .waterfall-bar.op-tool-invoke     { background: var(--trace-tool-bg);          border: 1px solid var(--trace-tool-border);         }
+    .waterfall-bar.op-brave-search    { background: var(--trace-tool-bg);          border: 1px solid var(--trace-tool-border);         }
     .waterfall-bar.wf-active { animation: wf-pulse-bar 1s ease-in-out infinite; }
     .waterfall-bar.wf-error  { background: var(--error-bg) !important; border-color: var(--error) !important; }
     @keyframes wf-pulse-bar {

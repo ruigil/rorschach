@@ -97,7 +97,7 @@ export class RMarkdown extends RorschachBase {
       align-items: center;
       justify-content: space-between;
       padding: 0.38rem 0.85rem;
-      background: rgba(22, 46, 63, 0.55);
+      background: var(--code-header-bg);
       border-bottom: 1px solid var(--border);
     }
 
@@ -171,7 +171,7 @@ export class RMarkdown extends RorschachBase {
       border: 1px solid var(--border);
       color: var(--text);
     }
-    .md tr:nth-child(even) td { background: rgba(16, 36, 52, 0.35); }
+    .md tr:nth-child(even) td { background: var(--table-even-bg); }
 
     .video-container {
       position: relative;

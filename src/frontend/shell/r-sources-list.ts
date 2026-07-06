@@ -77,12 +77,12 @@ export class RSourcesList extends RorschachBase {
       border-radius: 4px;
       text-decoration: none;
       color: inherit;
-      background: rgba(255, 255, 255, 0.03);
+      background: var(--hover-bg);
       transition: background 0.15s, transform 0.1s;
     }
 
     .source-item:hover {
-      background: rgba(255, 255, 255, 0.06);
+      background: var(--active-bg);
       transform: translateX(2px);
     }
 

@@ -36,7 +36,7 @@ export class RAttachments extends RorschachBase {
       max-width: 100%;
       max-height: 450px;
       object-fit: contain;
-      background: rgba(0, 0, 0, 0.15);
+      background: var(--surface-2);
       display: block;
       border-radius: 4px;
     }
@@ -50,7 +50,7 @@ export class RAttachments extends RorschachBase {
       width: 100%;
       max-width: 100%;
       max-height: 450px;
-      background: rgba(0, 0, 0, 0.15);
+      background: var(--surface-2);
       display: block;
       border-radius: 4px;
     }

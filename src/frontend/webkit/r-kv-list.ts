@@ -68,7 +68,7 @@ export class RKVList extends RorschachBase {
       padding: 8px;
       overflow: auto;
       color: var(--text-mid);
-      background: rgba(4, 13, 20, 0.58);
+      background: var(--pre-bg);
       border: 1px solid var(--border);
       border-radius: 4px;
       font-family: var(--font-mono, monospace);

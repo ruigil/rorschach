@@ -37,7 +37,7 @@ export class RAuthProfile extends RorschachBase {
         max-width: 500px;
         margin: 2rem auto;
         padding: 2rem;
-        background: rgba(10, 24, 32, 0.4);
+        background: var(--glass-bg);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
         border: 1px solid var(--border);

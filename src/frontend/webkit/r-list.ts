@@ -76,7 +76,7 @@ export class RList extends RorschachBase {
     }
     .list-item.selected {
       border-color: var(--accent);
-      background: rgba(0, 196, 212, 0.04);
+      background: var(--accent-dim);
     }
     .list-item-row {
       display: flex;
@@ -142,7 +142,7 @@ export class RList extends RorschachBase {
       transition: color 0.15s, background 0.15s;
     }
     .action-btn:hover {
-      background: rgba(255, 255, 255, 0.05);
+      background: var(--hover-bg);
       color: var(--text);
     }
     .chip-list {
