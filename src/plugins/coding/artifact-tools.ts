@@ -4,8 +4,6 @@ import type { ToolReply } from '../../types/tools.ts'
 import type { ArtifactState, ArtifactToolsMsg, DocPageMeta, DocsManifest } from './types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../../types/persistence.ts'
 import { ask } from '../../system/actor/ask.ts'
-import { join } from 'node:path'
-import { mkdir, rm } from 'node:fs/promises'
 
 export const writeDocPageTool = defineTool('write_doc_page', 'Write one generated documentation page. Content should be semantic HTML for the page body; the tool wraps it in the app documentation shell.', {
   type: 'object',
@@ -61,25 +59,15 @@ const isDocPageMeta = (value: unknown): value is DocPageMeta => {
   )
 }
 
-const readManifest = async (persistenceRef: ActorRef<any> | null, artifactsDir?: string): Promise<DocsManifest | null> => {
+const readManifest = async (persistenceRef: ActorRef<any>): Promise<DocsManifest | null> => {
   let data = ''
-  if (persistenceRef) {
-    const res = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
-      type: 'doc.get',
-      collection: 'artifacts',
-      docId: 'manifest.json',
-      replyTo,
-    }))
-    if (res.ok && res.data) data = res.data
-  }
-  if (!data && artifactsDir) {
-    try {
-      const file = Bun.file(join(artifactsDir, 'manifest.json'))
-      if (await file.exists()) {
-        data = await file.text()
-      }
-    } catch {}
-  }
+  const res = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+    type: 'doc.get',
+    collection: 'artifacts',
+    docId: 'manifest.json',
+    replyTo,
+  }))
+  if (res.ok && res.data) data = res.data
   if (!data) return null
   try {
     const parsed = JSON.parse(data) as Partial<DocsManifest>
@@ -212,7 +200,7 @@ export const indexShell = (manifest: DocsManifest): string => {
 
 
 
-export const ArtifactTools = (_artifactsDir?: string): ActorDef<ArtifactToolsMsg, ArtifactState> => {
+export const ArtifactTools = (): ActorDef<ArtifactToolsMsg, ArtifactState> => {
   const handler: MessageHandler<ArtifactToolsMsg, ArtifactState> = onMessage<ArtifactToolsMsg, ArtifactState>({
     _done: (state) => ({ state }),
 
@@ -221,27 +209,19 @@ export const ArtifactTools = (_artifactsDir?: string): ActorDef<ArtifactToolsMsg
     },
 
     getDoc: (state, msg, ctx) => {
-      if (!state.persistenceRef && !state.artifactsDir) {
+      if (!state.persistenceRef) {
         msg.replyTo.send({ ok: false, error: 'Persistence not resolved' })
         return { state }
       }
       const dl = state.persistenceRef
       const loadDoc = async () => {
-        if (dl) {
-          const res = await ask<PersistenceMsg, PResult<string>>(dl, (replyTo) => ({
-            type: 'doc.get',
-            collection: 'artifacts',
-            docId: msg.filename,
-            replyTo,
-          }))
-          if (res.ok && res.data) return res.data
-        }
-        if (state.artifactsDir) {
-          const file = Bun.file(join(state.artifactsDir, msg.filename))
-          if (await file.exists()) {
-            return await file.text()
-          }
-        }
+        const res = await ask<PersistenceMsg, PResult<string>>(dl, (replyTo) => ({
+          type: 'doc.get',
+          collection: 'artifacts',
+          docId: msg.filename,
+          replyTo,
+        }))
+        if (res.ok && res.data) return res.data
         throw new Error('Document not found')
       }
       ctx.pipeToSelf(
@@ -301,46 +281,38 @@ export const ArtifactTools = (_artifactsDir?: string): ActorDef<ArtifactToolsMsg
 
         ctx.pipeToSelf(
           (async () => {
-            const existingManifest = await readManifest(dl, state.artifactsDir)
-            
+            const existingManifest = await readManifest(dl)
+
             const existingPages = existingManifest?.pages ?? []
             const updatedPages = [...existingPages.filter(p => p.filename !== filename), meta]
-            
+
             const nextManifest: DocsManifest = {
               generatedAt: new Date().toISOString(),
               query: existingManifest?.query ?? 'Project Documentation',
               pages: updatedPages,
             }
 
-            if (dl) {
-              await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
-                type: 'doc.put',
-                collection: 'artifacts',
-                docId: filename,
-                content: pageShell(meta.title, args.bodyHtml),
-                replyTo,
-              }))
-              await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
-                type: 'doc.put',
-                collection: 'artifacts',
-                docId: 'manifest.json',
-                content: JSON.stringify(nextManifest, null, 2),
-                replyTo,
-              }))
-              await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
-                type: 'doc.put',
-                collection: 'artifacts',
-                docId: 'index.html',
-                content: indexShell(nextManifest),
-                replyTo,
-              }))
-            }
-            if (state.artifactsDir) {
-              await mkdir(state.artifactsDir, { recursive: true })
-              await Bun.write(join(state.artifactsDir, filename), pageShell(meta.title, args.bodyHtml))
-              await Bun.write(join(state.artifactsDir, 'manifest.json'), JSON.stringify(nextManifest, null, 2))
-              await Bun.write(join(state.artifactsDir, 'index.html'), indexShell(nextManifest))
-            }
+            await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
+              type: 'doc.put',
+              collection: 'artifacts',
+              docId: filename,
+              content: pageShell(meta.title, args.bodyHtml),
+              replyTo,
+            }))
+            await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
+              type: 'doc.put',
+              collection: 'artifacts',
+              docId: 'manifest.json',
+              content: JSON.stringify(nextManifest, null, 2),
+              replyTo,
+            }))
+            await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
+              type: 'doc.put',
+              collection: 'artifacts',
+              docId: 'index.html',
+              content: indexShell(nextManifest),
+              replyTo,
+            }))
           })(),
           () => ({ type: '_writeDone' as const, replyTo: msg.replyTo, text: `Wrote ${filename}`, span }),
           error => ({ type: '_writeErr' as const, replyTo: msg.replyTo, error: String(error), span }),
@@ -361,7 +333,7 @@ export const ArtifactTools = (_artifactsDir?: string): ActorDef<ArtifactToolsMsg
 
         ctx.pipeToSelf(
           (async () => {
-            const existingManifest = await readManifest(dl, state.artifactsDir)
+            const existingManifest = await readManifest(dl)
             const existingPages = existingManifest?.pages ?? []
             const nextManifest: DocsManifest = {
               generatedAt: new Date().toISOString(),
@@ -369,35 +341,26 @@ export const ArtifactTools = (_artifactsDir?: string): ActorDef<ArtifactToolsMsg
               pages: existingPages.filter(p => p.filename !== filename),
             }
 
-            if (dl) {
-              await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
-                type: 'doc.delete',
-                collection: 'artifacts',
-                docId: filename,
-                replyTo,
-              }))
-              await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
-                type: 'doc.put',
-                collection: 'artifacts',
-                docId: 'manifest.json',
-                content: JSON.stringify(nextManifest, null, 2),
-                replyTo,
-              }))
-              await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
-                type: 'doc.put',
-                collection: 'artifacts',
-                docId: 'index.html',
-                content: indexShell(nextManifest),
-                replyTo,
-              }))
-            }
-            if (state.artifactsDir) {
-              try {
-                await rm(join(state.artifactsDir, filename), { force: true })
-              } catch {}
-              await Bun.write(join(state.artifactsDir, 'manifest.json'), JSON.stringify(nextManifest, null, 2))
-              await Bun.write(join(state.artifactsDir, 'index.html'), indexShell(nextManifest))
-            }
+            await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
+              type: 'doc.delete',
+              collection: 'artifacts',
+              docId: filename,
+              replyTo,
+            }))
+            await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
+              type: 'doc.put',
+              collection: 'artifacts',
+              docId: 'manifest.json',
+              content: JSON.stringify(nextManifest, null, 2),
+              replyTo,
+            }))
+            await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
+              type: 'doc.put',
+              collection: 'artifacts',
+              docId: 'index.html',
+              content: indexShell(nextManifest),
+              replyTo,
+            }))
           })(),
           () => ({ type: '_writeDone' as const, replyTo: msg.replyTo, text: `Deleted ${filename}`, span }),
           error => ({ type: '_writeErr' as const, replyTo: msg.replyTo, error: String(error), span }),
@@ -423,7 +386,7 @@ export const ArtifactTools = (_artifactsDir?: string): ActorDef<ArtifactToolsMsg
   })
 
   return {
-    initialState: () => ({ writing: false, persistenceRef: null, artifactsDir: _artifactsDir }),
+    initialState: () => ({ writing: false, persistenceRef: null }),
     handler,
 
     lifecycle: onLifecycle({

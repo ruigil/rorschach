@@ -1,44 +1,26 @@
-import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdir, rm } from 'node:fs/promises'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { describe, expect, test } from 'bun:test'
 import { AgentSystem, ask } from '../system/index.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import { JobRegistryTopic, type ToolReply, type JobLifecycleEvent } from '../types/tools.ts'
 import { DocsAgent, updateDocsTool } from '../plugins/coding/docs-agent.ts'
 import { ArtifactTools, writeDocPageTool } from '../plugins/coding/artifact-tools.ts'
-import type { DocsAgentMsg } from '../plugins/coding/types.ts'
+import type { ArtifactToolsMsg, DocsAgentMsg } from '../plugins/coding/types.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
-
-const tempDirs: string[] = []
-
-afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
-})
-
-const makeDir = async (prefix: string): Promise<string> => {
-  const dir = join(tmpdir(), `${prefix}-${crypto.randomUUID()}`)
-  tempDirs.push(dir)
-  await mkdir(dir, { recursive: true })
-  return dir
-}
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
 describe('DocsAgent Concurrency Integration', () => {
   test('handles concurrent update_docs requests using child executors and serializes writes', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
-    const artifactsDir = await makeDir('rorschach-artifacts')
 
     // 1. Spawn dependencies and DocsAgent
-    const artifactToolsRef = system.spawn('artifacts-tools', ArtifactTools(artifactsDir))
-    
+    const artifactToolsRef = system.spawn('artifacts-tools', ArtifactTools())
+
     const docsAgentRef = system.spawn('docs-coordinator', DocsAgent({
       model: 'test-model',
       maxToolLoops: 5,
       projectMount: '/mount',
-      artifactsDir,
       tools: {
         write_doc_page: {
           ...writeDocPageTool,
@@ -183,10 +165,18 @@ describe('DocsAgent Concurrency Integration', () => {
     expect(completed1).toBeDefined()
     expect(completed2).toBeDefined()
 
-    // 6. Verify manifest file contents
-    const manifestFile = Bun.file(join(artifactsDir, 'manifest.json'))
-    expect(await manifestFile.exists()).toBe(true)
-    const manifest = await manifestFile.json()
+    // 6. Verify manifest contents via persistence
+    const manifestResult = await ask<ArtifactToolsMsg, { ok: true; content: string } | { ok: false; error: string }>(
+      artifactToolsRef,
+      (replyTo) => ({
+        type: 'getDoc',
+        filename: 'manifest.json',
+        replyTo,
+      }),
+    )
+    expect(manifestResult.ok).toBe(true)
+    if (!manifestResult.ok) return
+    const manifest = JSON.parse(manifestResult.content)
     expect(manifest.pages.length).toBe(2)
     const filenames = manifest.pages.map((p: any) => p.filename)
     expect(filenames).toContain('module-a.html')

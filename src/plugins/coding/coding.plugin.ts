@@ -1,6 +1,5 @@
 import { createPluginFactory, defineConfig } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
-import { dirname } from 'node:path'
 import { AgentRegistrationTopic } from '../../types/agents.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { ToolRegistrationTopic, type ToolCollection, type ToolMsg } from '../../types/tools.ts'
@@ -15,7 +14,6 @@ import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 const defaultConfig: CodingConfig = {
   projectRoot: '/home/rigel/rorschach/src',
   projectMount: '/rorschach',
-  artifactsDir: '/home/rigel/rorschach/workspace/artifacts',
   workspaceDir: '/home/rigel/rorschach/workspace',
   coding: {
     model: 'google/gemini-3.5-flash',
@@ -87,15 +85,13 @@ export default createPluginFactory<CodingConfig>({
         return ProjectShell({
           projectRoot: merged.projectRoot,
           projectMount: merged.projectMount,
-          workspaceDir: merged.workspaceDir ?? dirname(merged.artifactsDir),
-          artifactsDir: merged.artifactsDir,
+          workspaceDir: merged.workspaceDir ?? '/home/rigel/rorschach/workspace',
         })
       },
     },
     artifactTools: {
-      factory: (cfg) => {
-        const merged = mergeConfig(cfg)
-        return ArtifactTools(merged.artifactsDir)
+      factory: (_cfg) => {
+        return ArtifactTools()
       },
     },
     docsAgent: {
@@ -105,7 +101,6 @@ export default createPluginFactory<CodingConfig>({
           model: merged.docs.model,
           maxToolLoops: merged.docs.maxToolLoops ?? 30,
           projectMount: merged.projectMount,
-          artifactsDir: merged.artifactsDir,
           tools: buildDocsTools(
             deps.shell as ActorRef<ProjectShellMsg>,
             deps.artifactTools as ActorRef<ArtifactToolsMsg>

@@ -12,7 +12,7 @@ export const codingProjectSchema: ConfigSchemaSection = {
   routeId: 'config.coding',
   schema: {
     type: 'object',
-    required: ['projectRoot', 'projectMount', 'artifactsDir'],
+    required: ['projectRoot', 'projectMount'],
     properties: {
       projectRoot: { type: 'string', default: '/home/user/project', 'x-ui': { label: 'Project root' } },
       projectMount: { type: 'string', default: '/rorschach/home/user/project', 'x-ui': { label: 'Project mount' } },

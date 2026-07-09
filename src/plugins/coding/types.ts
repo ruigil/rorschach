@@ -9,7 +9,7 @@ import type { ContextView, LoopMsg, LoopState, SpanHandle } from '../../system/i
 export type CodingConfig = {
   projectRoot: string
   projectMount: string
-  artifactsDir: string
+  artifactsDir?: string
   workspaceDir?: string
   coding: AgentModelOptions
   docs: AgentModelOptions
@@ -78,7 +78,6 @@ export type DocsAgentState = {
 export type ArtifactState = {
   writing: boolean
   persistenceRef: ActorRef<any> | null
-  artifactsDir?: string
 }
 
 export type ProjectShellState = {
@@ -113,6 +112,5 @@ export type CodingAgentOptions = AgentModelOptions & {
 export type DocsAgentOptions = AgentModelOptions & {
   maxToolLoops: number
   projectMount: string
-  artifactsDir: string
   tools: ToolCollection
 }

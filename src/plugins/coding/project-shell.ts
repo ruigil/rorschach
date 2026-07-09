@@ -36,7 +36,6 @@ export const ProjectShell = (options: {
   projectRoot: string
   projectMount: string
   workspaceDir: string
-  artifactsDir: string
 }): ActorDef<ProjectShellMsg, ProjectShellState> => {
   const fs = new MountableFs({
     base: new InMemoryFs(),

@@ -82,7 +82,7 @@ export const DocsJobExecutor = (
         status: 'completed',
         statusText: 'Documentation generation completed.',
         result: {
-          text: finalText || `Documentation generated in ${options.artifactsDir}/index.html.`,
+          text: finalText || 'Documentation generated.',
         },
       })
       options.parentRef.send({ type: '_jobCompleted', jobId })
@@ -256,7 +256,6 @@ export const DocsAgent = (options: DocsAgentOptions): ActorDef<DocsAgentMsg, Doc
         model: options.model,
         maxToolLoops: options.maxToolLoops,
         projectMount: options.projectMount,
-        artifactsDir: options.artifactsDir,
         tools: options.tools,
         parentRef: ctx.self as ActorRef<DocsAgentMsg>,
         llmRef: state.llmRef,
