@@ -1,6 +1,6 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { AgentSystem, ask } from '../system/index.ts'
-import type { ActorDef } from '../system/index.ts'
+import type { ActorDef, ActorRef } from '../system/index.ts'
 import {
   WebSearch,
   type WebSearchMsg,
@@ -203,7 +203,7 @@ describe('tools plugin', () => {
             type: 'invoke',
             toolName: 'web_search',
             arguments: JSON.stringify({ query: 'probe' }),
-            replyTo: ctx.self as unknown as import('../system/index.ts').ActorRef<ToolReply>,
+            replyTo: ctx.self as unknown as ActorRef<ToolReply>,
             userId: 'test-user',
           })
         }

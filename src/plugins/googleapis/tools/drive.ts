@@ -1,6 +1,7 @@
 import { google } from 'googleapis'
 import { join } from 'node:path'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
+import { Readable } from 'node:stream'
 import type { ActorDef, ActorRef } from '../../../system/index.ts'
 import { onMessage } from '../../../system/index.ts'
 import { ask } from '../../../system/index.ts'
@@ -87,7 +88,6 @@ const sanitizeBasename = (name: string): string =>
       .replace(/^\.+|\.+$/g, '').replace(/\.{2,}/g, '.')
 
 const resolveUniquePath = async (dir: string, basename: string): Promise<string> => {
-  const { stat } = await import('node:fs/promises')
   let candidate = join(dir, basename)
   try { await stat(candidate) } catch { return candidate }
   const dotIdx = basename.lastIndexOf('.')
@@ -179,7 +179,6 @@ export const Drive = (
             return `Downloaded to: ${filePath}`
           }
           if (msg.toolName === driveUploadFileTool.name) {
-            const { Readable } = await import('node:stream')
             let uploadName: string, uploadMime: string, body: NodeJS.ReadableStream
 
             if (args.filePath) {

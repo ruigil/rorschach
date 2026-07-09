@@ -2,7 +2,7 @@ import { describe, test, expect, afterEach, afterAll } from 'bun:test'
 import { mkdirSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { AgentSystem, TraceTopic, type TraceSpan } from '../system/index.ts'
-import type { MessageHeaders } from '../system/index.ts'
+import type { MessageHeaders, ActorRef } from '../system/index.ts'
 import { ChatbotAgentFactory, type ChatbotState } from '../plugins/cognitive/chatbot-agent.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
 import { LlmProvider } from '../plugins/cognitive/llm-provider.ts'
@@ -247,7 +247,7 @@ describe('distributed tracing', () => {
     let capturedHeaders: MessageHeaders | undefined
 
     // A fake tool actor ref that captures message headers and replies immediately
-    const fakeToolRef: import('../system/index.ts').ActorRef<ToolMsg> = {
+    const fakeToolRef: ActorRef<ToolMsg> = {
       name:    'fake-tool',
       isAlive: () => true,
       send:    (msg: ToolMsg, headers?: MessageHeaders) => {

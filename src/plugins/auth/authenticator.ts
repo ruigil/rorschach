@@ -4,6 +4,7 @@ import { ask } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import type {
   AuthenticatorMsg, AuthSession, AuthChallenge, DeviceKey, UserStoreMsg, User,
+  WebAuthnCredential, RegistrationOptions, AuthenticationOptions,
 } from './types.ts'
 import { AuthLoginTopic, AuthLogoutTopic } from './types.ts'
 
@@ -188,7 +189,7 @@ const importCoseKey = async (coseKeyBytes: Uint8Array): Promise<{ key: CryptoKey
 
 const verifyRegistration = async (
   challengeValue: string,
-  credential: Extract<import('./types.ts').WebAuthnCredential, { type: 'registration' }>,
+  credential: Extract<WebAuthnCredential, { type: 'registration' }>,
   config: AuthConfig,
 ): Promise<{ credentialId: string; publicKey: string; counter: number }> => {
   const { response } = credential
@@ -230,7 +231,7 @@ const verifyRegistration = async (
 
 const verifyAuthentication = async (
   challengeValue: string,
-  credential: Extract<import('./types.ts').WebAuthnCredential, { type: 'authentication' }>,
+  credential: Extract<WebAuthnCredential, { type: 'authentication' }>,
   deviceKey: DeviceKey,
   config: AuthConfig,
 ): Promise<{ newCounter: number }> => {
@@ -541,7 +542,7 @@ export const Authenticator = (opts: {
           replyTo.send(null)
           return { state }
         }
-        const options: import('./types.ts').RegistrationOptions = {
+        const options: RegistrationOptions = {
           challenge:              challenge.value,
           rp:                     { id: config.rpId, name: config.rpName },
           user:                   { id: challengeId, name: challenge.fullName!, displayName: challenge.fullName! },
@@ -560,7 +561,7 @@ export const Authenticator = (opts: {
           replyTo.send(null)
           return { state }
         }
-        const options: import('./types.ts').AuthenticationOptions = {
+        const options: AuthenticationOptions = {
           challenge:        challenge.value,
           rpId:             config.rpId,
           timeout:          60_000,

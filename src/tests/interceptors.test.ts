@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { AgentSystem, SystemLifecycleTopic } from '../system/index.ts'
+import { AgentSystem, SystemLifecycleTopic, LogTopic } from '../system/index.ts'
 import type {
   ActorDef,
   Interceptor,
@@ -324,7 +324,6 @@ describe('Interceptors: context access', () => {
     const system = await AgentSystem()
 
     // Subscribe to log topic to capture interceptor logs
-    const { LogTopic } = await import('../system/index.ts')
     system.subscribe(LogTopic, (event) => {
       if (event.source === 'system/logging-ctx' && event.message.startsWith('interceptor saw:')) {
         logMessages.push(event.message)

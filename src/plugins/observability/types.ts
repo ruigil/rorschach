@@ -1,4 +1,4 @@
-import type { LogEvent, TraceSpan as SystemTraceSpan } from '../../system/index.ts'
+import type { LogEvent, TraceSpan as SystemTraceSpan, ActorRef } from '../../system/index.ts'
 import type { CostEvent } from '../../types/llm.ts'
 
 // ─── JSONL logger message protocol ───
@@ -6,13 +6,14 @@ import type { CostEvent } from '../../types/llm.ts'
 export type JsonlLoggerMsg =
   | { type: 'log'; event: LogEvent }
   | { type: 'flush' }
-  | { type: '_persistenceRef'; ref: import('../../system/index.ts').ActorRef<any> | null }
+  | { type: '_persistenceRef'; ref: ActorRef<any> | null }
 
 // ─── Trace recorder message protocol ───
 
 export type TraceRecorderMsg =
   | { type: 'span'; span: SystemTraceSpan }
   | { type: 'flush' }
+  | { type: '_persistenceRef'; ref: ActorRef<any> | null }
 
 
 // ─── Cost tracker message protocol ───
@@ -20,7 +21,7 @@ export type TraceRecorderMsg =
 export type CostTrackerMsg =
   | { type: 'cost'; event: CostEvent }
   | { type: 'flush' }
-  | { type: '_rotated'; dateStr: string; resolvedPath: string }
+  | { type: '_persistenceRef'; ref: ActorRef<any> | null }
 
 // ─── UI / Observability Introspection Types ───
 

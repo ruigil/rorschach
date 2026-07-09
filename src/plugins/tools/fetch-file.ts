@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { onMessage } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
@@ -69,7 +69,6 @@ const extractBasenameFromUrl = (urlStr: string): string => {
 }
 
 const resolveUniquePath = async (dir: string, basename: string): Promise<string> => {
-  const { stat } = await import('node:fs/promises')
   let candidate = join(dir, basename)
   try { await stat(candidate); } catch { return candidate }
 
