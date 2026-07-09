@@ -17,7 +17,7 @@ import type {
 import { WorkflowTaskExecutor } from './workflow-task-executor.ts'
 import { validateOutputValues } from './validation.ts'
 import { getWorkflowRun, saveWorkflowRun } from './workflow-store.ts'
-import { resolvePersistence } from '../../system/actor/persistence.ts'
+import { resolvePersistence } from '../../system/index.ts'
 
 type RunExecutorState = {
   run: WorkflowRunState

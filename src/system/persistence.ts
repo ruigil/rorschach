@@ -1,6 +1,6 @@
-import { ask } from './ask.ts'
-import type { ActorServices, PersistenceAdapter, ActorRef } from './types.ts'
-import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../../types/persistence.ts'
+import { ask } from './actor/ask.ts'
+import type { ActorServices, PersistenceAdapter, ActorRef } from './actor/types.ts'
+import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../types/persistence.ts'
 
 export const resolvePersistence = (services: ActorServices): Promise<ActorRef<PersistenceMsg>> => {
   const current = services.eventStream.getRetainedValue(PersistenceProviderTopic, 'provider')

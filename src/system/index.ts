@@ -1,14 +1,13 @@
 // ─── Public API ───
 export { AgentSystem, type PluginSystemOptions } from './actor/system.ts'
 export { ask } from './actor/ask.ts'
-export { persistencePluginAdapter } from './actor/persistence.ts'
 export { invokeTool, defineTool, parseToolArgs, applyToolFilter } from './agent/tool-utils.ts'
 export type { InvokeToolArgs, InvokeToolOptions } from './agent/tool-utils.ts'
 export { onLifecycle, onMessage } from './actor/match.ts'
 export { watchTopic } from './actor/services.ts'
 export { createPluginFactory } from './factory.ts'
 export type { SlotDeclaration, AgentDeclaration, ToolDeclaration, PluginBlueprint } from './factory.ts'
-
+export { resolvePersistence, persistencePluginAdapter  } from './persistence.ts'
 // ─── Config utilities ───
 export {
   defineConfig,
