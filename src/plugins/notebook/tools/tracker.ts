@@ -1,12 +1,11 @@
-import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef, SpanHandle } from '../../../system/index.ts'
-import { onMessage } from '../../../system/index.ts'
+import { onLifecycle, onMessage } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { HabitDef } from '../types.ts'
 import { NotebookChangeTopic } from '../../../types/events.ts'
-
-// ─── Tool names & schemas ───
+import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../../../types/persistence.ts'
+import { ask } from '../../../system/actor/ask.ts'
 
 export const trackerLogTool = defineTool('tracker_log', 'Log a numeric value for a tracked habit or any recurring metric (e.g. expenses, weight, steps, mood).', {
   type: 'object',
@@ -42,33 +41,56 @@ export const trackerListHabitsTool = defineTool('tracker_list_habits', 'List all
   properties: {},
 })
 
-// ─── Internal message type ───
+type TrackerState = {
+  persistenceRef: ActorRef<any> | null
+}
 
 type TrackerMsg =
   | ToolInvokeMsg
   | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string; span: SpanHandle | null; userId: string; habit?: string }
   | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string; span: SpanHandle | null }
-
-// ─── File paths ───
-
-const habitsPath  = (notebookDir: string) => `${notebookDir}/tracker/habits.json`
-const csvPath     = (notebookDir: string) => `${notebookDir}/tracker/data.csv`
-const trackerDir  = (notebookDir: string) => `${notebookDir}/tracker`
+  | { type: '_persistenceRef'; ref: ActorRef<any> | null }
+  | { type: '_void' }
 
 const todayISO = (): string => new Date().toISOString().slice(0, 10)
-
-// ─── Operations ───
 
 const csvEscape = (s: string): string =>
   s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s
 
-const logHabit = async (notebookDir: string, habit: string, value: number, date: string, description?: string): Promise<string> => {
-  await mkdir(trackerDir(notebookDir), { recursive: true })
-  const path     = csvPath(notebookDir)
-  const file     = Bun.file(path)
-  const existing = (await file.exists()) ? await file.text() : 'date,habit,value,description\n'
-  const desc     = description ? csvEscape(description) : ''
-  await Bun.write(path, existing + `${date},${habit},${value},${desc}\n`)
+const logHabit = async (
+  persistenceRef: ActorRef<any>,
+  habit: string,
+  value: number,
+  date: string,
+  description?: string,
+): Promise<string> => {
+  const desc = description ? csvEscape(description) : ''
+  const line = `${date},${habit},${value},${desc}\n`
+
+  const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+    type: 'doc.get',
+    collection: 'notebook',
+    docId: 'tracker/data.csv',
+    replyTo,
+  }))
+  if (!getRes.ok) {
+    await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+      type: 'doc.put',
+      collection: 'notebook',
+      docId: 'tracker/data.csv',
+      content: 'date,habit,value,description\n' + line,
+      replyTo,
+    }))
+  } else {
+    await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+      type: 'doc.append',
+      collection: 'notebook',
+      docId: 'tracker/data.csv',
+      content: line,
+      replyTo,
+    }))
+  }
+
   const note = description ? ` (${description})` : ''
   return `Logged ${value} for habit "${habit}" on ${date}${note}.`
 }
@@ -95,18 +117,33 @@ const parseCsvLine = (line: string): string[] => {
   return fields
 }
 
-export const parseCsv = async (notebookDir: string): Promise<CsvRow[]> => {
-  const file = Bun.file(csvPath(notebookDir))
-  if (!(await file.exists())) return []
-  const text = await file.text()
-  const lines = text.split('\n').slice(1) // skip header
-  return lines
-    .filter(l => l.trim())
-    .map(l => {
-      const [date, habit, value, description] = parseCsvLine(l)
-      return { date: date!, habit: habit!, value: parseFloat(value!), description: description || undefined }
-    })
-    .filter(r => !isNaN(r.value))
+export const parseCsv = async (persistenceRef: ActorRef<any>): Promise<CsvRow[]> => {
+  const res = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+    type: 'doc.get',
+    collection: 'notebook',
+    docId: 'tracker/data.csv',
+    replyTo,
+  }))
+  const text = res.ok && res.data ? res.data : ''
+  if (!text) return []
+  const lines = text.split('\n').filter(l => l.trim())
+  if (lines.length <= 1) return []
+  const rows: CsvRow[] = []
+  for (let i = 1; i < lines.length; i++) {
+    const fields = parseCsvLine(lines[i]!)
+    if (fields.length >= 3) {
+      const val = parseFloat(fields[2]!)
+      if (!isNaN(val)) {
+        rows.push({
+          date: fields[0]!,
+          habit: fields[1]!,
+          value: val,
+          description: fields[3] || undefined,
+        })
+      }
+    }
+  }
+  return rows
 }
 
 const shiftDays = (isoDate: string, delta: number): string => {
@@ -117,7 +154,7 @@ const shiftDays = (isoDate: string, delta: number): string => {
 
 const currentWeekStart = (): string => {
   const d = new Date()
-  const day = d.getDay() === 0 ? 6 : d.getDay() - 1 // Monday = 0
+  const day = d.getDay() === 0 ? 6 : d.getDay() - 1
   d.setDate(d.getDate() - day)
   return d.toISOString().slice(0, 10)
 }
@@ -127,8 +164,8 @@ const currentMonthStart = (): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-const computeStats = async (notebookDir: string, habit: string): Promise<string> => {
-  const all = await parseCsv(notebookDir)
+const computeStats = async (persistenceRef: ActorRef<any>, habit: string): Promise<string> => {
+  const all = await parseCsv(persistenceRef)
   const rows = all.filter(r => r.habit === habit)
   if (rows.length === 0) {
     return `No logged entries for habit "${habit}".`
@@ -174,12 +211,23 @@ const computeStats = async (notebookDir: string, habit: string): Promise<string>
     `- Monthly total: ${monthlyTotal}`
 }
 
-const defineHabit = async (notebookDir: string, name: string, unit: string, dailyTarget?: number): Promise<string> => {
-  await mkdir(trackerDir(notebookDir), { recursive: true })
-  const path  = habitsPath(notebookDir)
-  const file  = Bun.file(path)
-  const data: { habits: HabitDef[] } = (await file.exists())
-    ? JSON.parse(await file.text())
+const defineHabit = async (
+  persistenceRef: ActorRef<any>,
+  name: string,
+  unit: string,
+  dailyTarget?: number,
+): Promise<string> => {
+  let getResData = ''
+  const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+    type: 'doc.get',
+    collection: 'notebook',
+    docId: 'tracker/habits.json',
+    replyTo,
+  }))
+  if (getRes.ok && getRes.data) getResData = getRes.data
+
+  const data: { habits: HabitDef[] } = getResData
+    ? JSON.parse(getResData)
     : { habits: [] }
 
   const idx = data.habits.findIndex(h => h.name === name)
@@ -189,42 +237,75 @@ const defineHabit = async (notebookDir: string, name: string, unit: string, dail
   } else {
     data.habits.push(def)
   }
-  await Bun.write(path, JSON.stringify(data, null, 2))
+  await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+    type: 'doc.put',
+    collection: 'notebook',
+    docId: 'tracker/habits.json',
+    content: JSON.stringify(data, null, 2),
+    replyTo,
+  }))
   return `Habit "${name}" saved (unit: ${unit}${dailyTarget !== undefined ? `, target: ${dailyTarget}` : ''}).`
 }
 
-const listHabits = async (notebookDir: string): Promise<string> => {
-  const file = Bun.file(habitsPath(notebookDir))
-  if (!(await file.exists())) return 'No habits defined.'
-  const data: { habits: HabitDef[] } = JSON.parse(await file.text())
+const listHabits = async (persistenceRef: ActorRef<any>): Promise<string> => {
+  let getResData = ''
+  const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+    type: 'doc.get',
+    collection: 'notebook',
+    docId: 'tracker/habits.json',
+    replyTo,
+  }))
+  if (getRes.ok && getRes.data) getResData = getRes.data
+  if (!getResData) return 'No habits defined.'
+  const data: { habits: HabitDef[] } = JSON.parse(getResData)
   if (data.habits.length === 0) return 'No habits defined.'
   return data.habits.map(h =>
     `- ${h.name} (${h.unit}${h.dailyTarget !== undefined ? `, target: ${h.dailyTarget}` : ''})`
   ).join('\n')
 }
 
-// ─── Actor ───
 
-export const Tracker = (notebookDir: string): ActorDef<TrackerMsg, null> => ({
-  initialState: null,
-  handler: onMessage<TrackerMsg, null>({
+
+export const Tracker = (): ActorDef<TrackerMsg, TrackerState> => ({
+  initialState: () => ({ persistenceRef: null }),
+  lifecycle: onLifecycle({
+    start: (state, context) => {
+      context.subscribe(PersistenceProviderTopic, (event) => ({
+        type: '_persistenceRef' as const,
+        ref: event.ref,
+      }))
+      return { state }
+    }
+  }),
+  handler: onMessage<TrackerMsg, TrackerState>({
+    _persistenceRef: (state, msg) => {
+      return { state: { ...state, persistenceRef: msg.ref } }
+    },
+
+    _void: (state) => ({ state }),
+
     invoke: (state, msg, ctx) => {
+      if (!state.persistenceRef) {
+        msg.replyTo.send({ type: 'toolError', error: 'Persistence not ready' })
+        return { state }
+      }
+      const dl = state.persistenceRef
       let promise: Promise<string>
       let habit: string | undefined
       try {
         if (msg.toolName === trackerLogTool.name) {
           const args = JSON.parse(msg.arguments) as { habit: string; value: number; date?: string; description?: string }
           habit = args.habit
-          promise = logHabit(notebookDir, args.habit, args.value, args.date ?? todayISO(), args.description)
+          promise = logHabit(dl, args.habit, args.value, args.date ?? todayISO(), args.description)
         } else if (msg.toolName === trackerStatsTool.name) {
           const args = JSON.parse(msg.arguments) as { habit: string }
-          promise = computeStats(notebookDir, args.habit)
+          promise = computeStats(dl, args.habit)
         } else if (msg.toolName === trackerDefineHabitTool.name) {
           const args = JSON.parse(msg.arguments) as { name: string; unit: string; dailyTarget?: number }
           habit = args.name
-          promise = defineHabit(notebookDir, args.name, args.unit, args.dailyTarget)
+          promise = defineHabit(dl, args.name, args.unit, args.dailyTarget)
         } else if (msg.toolName === trackerListHabitsTool.name) {
-          promise = listHabits(notebookDir)
+          promise = listHabits(dl)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }

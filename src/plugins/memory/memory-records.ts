@@ -1,15 +1,13 @@
-import { mkdir } from 'node:fs/promises'
-import type { ActorDef } from '../../system/index.ts'
-import { onMessage } from '../../system/index.ts'
+import type { ActorDef, ActorRef } from '../../system/index.ts'
+import { onLifecycle, onMessage } from '../../system/index.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 import type { MemoryRecord, MemoryRecordMeta, MemoryRecordsMsg } from './types.ts'
+import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../../types/persistence.ts'
+import { ask } from '../../system/actor/ask.ts'
 
 type MemoryRecordsState = {
-  workPath: string
+  persistenceRef: ActorRef<any> | null
 }
-
-const recordsDir = (userId: string, workPath: string): string => `${workPath}/${userId}/records`
-const recordPath = (userId: string, recordId: string, workPath: string): string => `${recordsDir(userId, workPath)}/${recordId}.md`
 
 const yamlString = (value: string): string => JSON.stringify(value)
 
@@ -68,9 +66,9 @@ const parseRecord = (raw: string, fallbackRecordId: string): MemoryRecord => {
 }
 
 const createRecord = async (
+  persistenceRef: ActorRef<any>,
   userId: string,
   content: string,
-  workPath: string,
   title?: string,
   attachments?: MessageAttachment[],
 ): Promise<MemoryRecord> => {
@@ -81,33 +79,67 @@ const createRecord = async (
     attachments: attachments && attachments.length > 0 ? attachments : undefined,
   }
 
-  await mkdir(recordsDir(userId, workPath), { recursive: true })
-  await Bun.write(recordPath(userId, meta.recordId, workPath), serializeRecord(meta, content))
+  const serialized = serializeRecord(meta, content)
+  const docId = `${userId}/${meta.recordId}`
+  await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+    type: 'doc.put',
+    collection: 'memory-records',
+    docId,
+    content: serialized,
+    replyTo,
+  }))
 
   return { ...meta, content }
 }
 
-const readRecord = async (userId: string, recordId: string, workPath: string): Promise<MemoryRecord | null> => {
+const readRecord = async (persistenceRef: ActorRef<any>, userId: string, recordId: string): Promise<MemoryRecord | null> => {
   try {
-    const raw = await Bun.file(recordPath(userId, recordId, workPath)).text()
-    return parseRecord(raw, recordId)
+    const docId = `${userId}/${recordId}`
+    const res = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+      type: 'doc.get',
+      collection: 'memory-records',
+      docId,
+      replyTo,
+    }))
+    if (res.ok && res.data) return parseRecord(res.data, recordId)
+    return null
   } catch {
     return null
   }
 }
 
-const readMany = async (userId: string, recordIds: string[], workPath: string): Promise<MemoryRecord[]> => {
-  const records = await Promise.all(recordIds.map(recordId => readRecord(userId, recordId, workPath)))
-  return records.filter((record): record is MemoryRecord => record !== null)
+const readMany = async (persistenceRef: ActorRef<any>, userId: string, recordIds: string[]): Promise<MemoryRecord[]> => {
+  const results = await Promise.all(recordIds.map(id => readRecord(persistenceRef, userId, id)))
+  return results.filter((r): r is MemoryRecord => r !== null)
 }
 
-export const MemoryRecords = (workPath: string): ActorDef<MemoryRecordsMsg, MemoryRecordsState> => ({
-  initialState: () => ({ workPath }),
+
+
+export const MemoryRecords = (): ActorDef<MemoryRecordsMsg, MemoryRecordsState> => ({
+  initialState: () => ({ persistenceRef: null }),
+
+  lifecycle: onLifecycle({
+    start: (state, context) => {
+      context.subscribe(PersistenceProviderTopic, (event) => ({
+        type: '_persistenceRef' as const,
+        ref: event.ref,
+      }))
+      return { state }
+    }
+  }),
 
   handler: onMessage<MemoryRecordsMsg, MemoryRecordsState>({
+    _persistenceRef: (state, msg) => {
+      return { state: { ...state, persistenceRef: msg.ref } }
+    },
+
     create: (state, msg, ctx) => {
+      if (!state.persistenceRef) {
+        msg.replyTo.send({ error: 'Persistence not ready' })
+        return { state }
+      }
       ctx.pipeToSelf(
-        createRecord(msg.userId, msg.content, state.workPath, msg.title, msg.attachments),
+        createRecord(state.persistenceRef, msg.userId, msg.content, msg.title, msg.attachments),
         (record) => ({ type: '_created' as const, replyTo: msg.replyTo, record }),
         (error) => ({ type: '_createErr' as const, replyTo: msg.replyTo, error: String(error) }),
       )
@@ -115,8 +147,12 @@ export const MemoryRecords = (workPath: string): ActorDef<MemoryRecordsMsg, Memo
     },
 
     readMany: (state, msg, ctx) => {
+      if (!state.persistenceRef) {
+        msg.replyTo.send([])
+        return { state }
+      }
       ctx.pipeToSelf(
-        readMany(msg.userId, msg.recordIds, state.workPath),
+        readMany(state.persistenceRef, msg.userId, msg.recordIds),
         (records) => ({ type: '_readManyDone' as const, replyTo: msg.replyTo, records }),
         (error) => ({ type: '_readManyErr' as const, replyTo: msg.replyTo, error: String(error) }),
       )

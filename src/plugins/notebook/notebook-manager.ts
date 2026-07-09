@@ -1,14 +1,20 @@
 import { onLifecycle, onMessage } from '../../system/index.ts'
-import type { ActorDef } from '../../system/index.ts'
+import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { OutboundUserMessageTopic, HttpWsFrameTopic, NotebookChangeTopic, type HttpWsFrameEvent, type NotebookChangeEvent } from '../../types/events.ts'
 import { readTodos, completeTodo } from './tools/todos.ts'
 import { readEntry } from './tools/journal.ts'
 import { parseCsv, type CsvRow } from './tools/tracker.ts'
-import { readdir } from 'node:fs/promises'
+import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PList } from '../../types/persistence.ts'
+import { ask } from '../../system/actor/ask.ts'
 
 export type NotebookManagerMsg =
   | { type: '_wsFrame'; event: HttpWsFrameEvent }
   | { type: '_dataChanged'; event: NotebookChangeEvent }
+  | { type: '_persistenceRef'; ref: ActorRef<any> | null }
+
+type NotebookManagerState = {
+  persistenceRef: ActorRef<any> | null
+}
 
 const todayISO = (): string => new Date().toISOString().slice(0, 10)
 
@@ -20,7 +26,7 @@ const shiftDays = (isoDate: string, delta: number): string => {
 
 const currentWeekStart = (): string => {
   const d = new Date()
-  const day = d.getDay() === 0 ? 6 : d.getDay() - 1 // Monday = 0
+  const day = d.getDay() === 0 ? 6 : d.getDay() - 1
   d.setDate(d.getDate() - day)
   return d.toISOString().slice(0, 10)
 }
@@ -86,16 +92,26 @@ function calculateStats(rows: CsvRow[]) {
   }
 }
 
-export const NotebookManager = (notebookDir: string): ActorDef<NotebookManagerMsg, null> => ({
-  initialState: null,
+
+
+export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerState> => ({
+  initialState: () => ({ persistenceRef: null }),
   lifecycle: onLifecycle({
     start: (state, ctx) => {
       ctx.subscribe(HttpWsFrameTopic, e => ({ type: '_wsFrame' as const, event: e }))
       ctx.subscribe(NotebookChangeTopic, e => ({ type: '_dataChanged' as const, event: e }))
+      ctx.subscribe(PersistenceProviderTopic, (event) => ({
+        type: '_persistenceRef' as const,
+        ref: event.ref,
+      }))
       return { state }
     }
   }),
-  handler: onMessage({
+  handler: onMessage<NotebookManagerMsg, NotebookManagerState>({
+    _persistenceRef: (state, msg) => {
+      return { state: { ...state, persistenceRef: msg.ref } }
+    },
+
     _wsFrame: (state, msg, ctx) => {
       const { userId, frame } = msg.event
       if (!frame.type.startsWith('notebook.')) return { state }
@@ -104,10 +120,16 @@ export const NotebookManager = (notebookDir: string): ActorDef<NotebookManagerMs
         ctx.publish(OutboundUserMessageTopic, { userId, text: JSON.stringify(reply) })
       }
 
+      if (!state.persistenceRef) {
+        sendFrame({ type: 'notebookError', message: 'Persistence not ready' })
+        return { state }
+      }
+      const dl = state.persistenceRef
+
       const handle = async () => {
         switch (frame.type) {
           case 'notebook.todos.request': {
-            const data = await readTodos(notebookDir)
+            const data = await readTodos(dl)
             const sorted = [...data.todos].sort((a, b) => {
               if (a.done !== b.done) return a.done ? 1 : -1
               return b.createdAt - a.createdAt
@@ -117,43 +139,56 @@ export const NotebookManager = (notebookDir: string): ActorDef<NotebookManagerMs
           }
           case 'notebook.todos.complete': {
             const { id } = frame
-            await completeTodo(notebookDir, id)
+            await completeTodo(dl, id)
             ctx.publish(NotebookChangeTopic, { type: 'todosUpdated', userId })
             break
           }
           case 'notebook.journal.months.request': {
             const { year, month } = frame
-            const journalMonthDir = `${notebookDir}/journal/${year}/${month}`
+            const prefix = `${year}-${month}`
+            const listRes = await ask<PersistenceMsg, PList>(dl, (replyTo) => ({
+              type: 'doc.list',
+              collection: 'journal',
+              prefix,
+              replyTo,
+            }))
+            console.log('listRes', listRes)
             const days: string[] = []
-            try {
-              const files = await readdir(journalMonthDir)
-              for (const f of files) {
-                if (f.endsWith('.md')) days.push(f.slice(0, -3))
+            if (listRes.ok && listRes.keys) {
+              for (const f of listRes.keys) {
+                if (f.endsWith('.md')) {
+                  days.push(f.slice(0, -3))
+                }
               }
-            } catch {}
+            }
+            console.log('days', days)
             sendFrame({ type: 'notebookJournalMonths', year, month, days })
             break
           }
           case 'notebook.journal.entry.request': {
-            const content = await readEntry(notebookDir, frame.date)
+            const content = await readEntry(dl, frame.date)
             sendFrame({ type: 'notebookJournalEntry', date: frame.date, content })
             break
           }
           case 'notebook.tracker.habits.request': {
-            const path = `${notebookDir}/tracker/habits.json`
-            const file = Bun.file(path)
-            const habitsData = (await file.exists()) ? JSON.parse(await file.text()) : { habits: [] }
+            const res = await ask<PersistenceMsg, PResult<string>>(dl, (replyTo) => ({
+              type: 'doc.get',
+              collection: 'notebook',
+              docId: 'tracker/habits.json',
+              replyTo,
+            }))
+            const habitsData = (res.ok && res.data) ? JSON.parse(res.data) : { habits: [] }
             sendFrame({ type: 'notebookTrackerHabits', habits: habitsData.habits })
             break
           }
           case 'notebook.tracker.entries.request': {
-            const all = await parseCsv(notebookDir)
+            const all = await parseCsv(dl)
             const rows = all.filter(r => r.habit === frame.habit)
             sendFrame({ type: 'notebookTrackerEntries', habit: frame.habit, entries: rows })
             break
           }
           case 'notebook.tracker.stats.request': {
-            const all = await parseCsv(notebookDir)
+            const all = await parseCsv(dl)
             const rows = all.filter(r => r.habit === frame.habit)
             const stats = calculateStats(rows)
             sendFrame({ type: 'notebookTrackerStats', habit: frame.habit, stats })
@@ -173,35 +208,52 @@ export const NotebookManager = (notebookDir: string): ActorDef<NotebookManagerMs
         ctx.publish(OutboundUserMessageTopic, { userId, text: JSON.stringify(reply) })
       }
 
+      if (!state.persistenceRef) return { state }
+      const dl = state.persistenceRef
+
       const reload = async () => {
         if (event.type === 'todosUpdated') {
-          const data = await readTodos(notebookDir)
+          const data = await readTodos(dl)
           const sorted = [...data.todos].sort((a, b) => {
             if (a.done !== b.done) return a.done ? 1 : -1
             return b.createdAt - a.createdAt
           })
           sendFrame({ type: 'notebookTodosList', todos: sorted.slice(0, 10) })
         } else if (event.type === 'journalUpdated') {
-          const content = await readEntry(notebookDir, event.date)
+          const content = await readEntry(dl, event.date)
           sendFrame({ type: 'notebookJournalEntry', date: event.date, content })
 
           const [year, month] = event.date.split('-')
-          const journalMonthDir = `${notebookDir}/journal/${year}/${month}`
+          if (!year || !month) return
+          const prefix = `${year}-${month}`
+          const listRes = await ask<PersistenceMsg, PList>(dl, (replyTo) => ({
+            type: 'doc.list',
+            collection: 'journal',
+            prefix,
+            replyTo,
+          }))
+          console.log('listRes', listRes)
           const days: string[] = []
-          try {
-            const files = await readdir(journalMonthDir)
-            for (const f of files) {
-              if (f.endsWith('.md')) days.push(f.slice(0, -3))
+          if (listRes.ok && listRes.keys) {
+            for (const f of listRes.keys) {
+              if (f.endsWith('.md')) {
+                days.push(f.slice(0, -3))
+              }
             }
-          } catch {}
+          }
+          console.log('days', days)
           sendFrame({ type: 'notebookJournalMonths', year, month, days })
         } else if (event.type === 'trackerUpdated') {
-          const path = `${notebookDir}/tracker/habits.json`
-          const file = Bun.file(path)
-          const habitsData = (await file.exists()) ? JSON.parse(await file.text()) : { habits: [] }
+          const res = await ask<PersistenceMsg, PResult<string>>(dl, (replyTo) => ({
+            type: 'doc.get',
+            collection: 'notebook',
+            docId: 'tracker/habits.json',
+            replyTo,
+          }))
+          const habitsData = (res.ok && res.data) ? JSON.parse(res.data) : { habits: [] }
           sendFrame({ type: 'notebookTrackerHabits', habits: habitsData.habits })
 
-          const all = await parseCsv(notebookDir)
+          const all = await parseCsv(dl)
           const rows = all.filter(r => r.habit === event.habit)
           sendFrame({ type: 'notebookTrackerEntries', habit: event.habit, entries: rows })
 

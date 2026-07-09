@@ -6,7 +6,7 @@ import type { CostEvent } from '../../types/llm.ts'
 export type JsonlLoggerMsg =
   | { type: 'log'; event: LogEvent }
   | { type: 'flush' }
-  | { type: '_rotated'; dateStr: string; resolvedPath: string }
+  | { type: '_persistenceRef'; ref: import('../../system/index.ts').ActorRef<any> | null }
 
 // ─── Trace recorder message protocol ───
 

@@ -6,6 +6,7 @@ import { UserPresenceTopic, InboundMessageTopic, OutboundUserMessageTopic } from
 import { AgentRegistrationTopic, SwitchAgentTopic, SessionLifecycleTopic, type AgentDescriptor, type AgentFactoryOpts } from '../types/agents.ts'
 import { JobRegistryTopic, type ToolMsg } from '../types/tools.ts'
 import { SessionManager } from '../plugins/cognitive/session-manager.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -63,7 +64,7 @@ const parseModeFrames = (frames: string[]) =>
 
 describe('session manager mode UI events', () => {
   test('sends current mode on connect and broadcasts switches to user clients', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const llmRef = system.spawn('null-llm', NullLlm())
     system.spawn('session-manager', SessionManager({
       llmRef,
@@ -113,7 +114,7 @@ describe('session manager mode UI events', () => {
   })
 
   test('rebuilds active interfaces when session manager restarts before agent registration', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const llmRef = system.spawn('null-llm', NullLlm())
     const userFrames: Record<string, string[]> = { u1: [] }
     system.subscribe(OutboundUserMessageTopic, (event) => {
@@ -151,7 +152,7 @@ describe('session manager mode UI events', () => {
   })
 
   test('does not destroy session on disconnect if active jobs are running, and destroys it once jobs complete', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const llmRef = system.spawn('null-llm', NullLlm())
     const toolRef = system.spawn('null-tool', NullTool())
     system.spawn('session-manager', SessionManager({

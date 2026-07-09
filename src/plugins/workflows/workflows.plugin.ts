@@ -14,7 +14,6 @@ import type { WorkflowsConfig, WorkflowRunnerMsg } from './types.ts'
 const getWorkflowRunsDir = (workflowsDir: string): string => join(workflowsDir, 'runs')
 
 const defaultConfig: WorkflowsConfig = {
-  workflowsDir: 'workspace/workflows',
   agent: {
     model: 'z-ai/glm-5.1',
     maxToolLoops: 10,
@@ -55,9 +54,8 @@ export default createPluginFactory<WorkflowsConfig>({
   slots: {
     runner: {
       factory: (cfg) => {
-        const workflowsDir = cfg.workflowsDir ?? 'workspace/workflows'
+        const workflowsDir = cfg.agent?.model ? 'workspace/workflows' : 'workspace/workflows'
         return WorkflowRunner({
-          workflowsDir,
           workflowRunsDir: getWorkflowRunsDir(workflowsDir),
           llmRef: null,
           model: cfg.agent.model,
@@ -66,8 +64,7 @@ export default createPluginFactory<WorkflowsConfig>({
       },
     },
     tools: {
-      factory: (cfg, deps) => WorkflowToolsActor({
-        workflowsDir: cfg.workflowsDir ?? 'workspace/workflows',
+      factory: (_cfg, deps) => WorkflowToolsActor({
         workflowRunnerRef: deps.runner as ActorRef<WorkflowRunnerMsg>,
       }),
       dependsOn: ['runner'],
@@ -79,7 +76,6 @@ export default createPluginFactory<WorkflowsConfig>({
       options: (cfg, deps) => ({
         model: cfg.agent.model,
         maxToolLoops: cfg.agent.maxToolLoops,
-        workflowsDir: cfg.workflowsDir ?? 'workspace/workflows',
         toolFilter: cfg.agent.toolFilter,
         tools: buildWorkflowsTools(deps.tools as ActorRef<ToolMsg>),
       }),
@@ -87,7 +83,7 @@ export default createPluginFactory<WorkflowsConfig>({
     },
   },
   routes: (cfg, deps) => {
-    const workflowsDir = cfg.workflowsDir ?? 'workspace/workflows'
+    const workflowsDir = 'workspace/workflows'
     return buildWorkflowsRoutes(workflowsDir, deps.runner as ActorRef<WorkflowRunnerMsg> | null, getWorkflowRunsDir(workflowsDir))
   },
   uiSurface: workflowsSurfaceRegistration,

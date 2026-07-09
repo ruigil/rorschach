@@ -72,27 +72,14 @@ const mimeType = (path: string): string => {
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
+import { ask } from '../../system/actor/ask.ts'
+import type { ActorRef } from '../../system/index.ts'
+import type { ArtifactToolsMsg } from './types.ts'
+
 const requireSession = (identity: Identity | null): Response | null =>
   identity ? null : json({ error: 'Unauthorized' }, 401)
 
-const artifactPath = (artifactsDir: string, pathname: string): string | null => {
-  if (!pathname.startsWith('/artifacts/')) return null
-  const raw = pathname.slice('/artifacts/'.length) || 'index.html'
-  let decoded: string
-  try {
-    decoded = decodeURIComponent(raw)
-  } catch {
-    return null
-  }
-  if (!decoded || decoded.includes('\0')) return null
-  const root = resolve(artifactsDir)
-  const target = resolve(join(root, decoded))
-  const rel = relative(root, target)
-  if (rel.startsWith('..') || rel === '..' || rel.startsWith('/') || rel.includes('\\..\\')) return null
-  return target
-}
-
-export const buildCodingRoutes = (artifactsDir: string): RouteRegistration[] => [
+export const buildCodingRoutes = (artifactToolsRef: ActorRef<ArtifactToolsMsg>): RouteRegistration[] => [
   {
     id: 'coding.artifacts',
     method: 'GET',
@@ -101,11 +88,24 @@ export const buildCodingRoutes = (artifactsDir: string): RouteRegistration[] => 
     handler: async (_req, url, identity) => {
       const unauthorized = requireSession(identity)
       if (unauthorized) return unauthorized
-      const path = artifactPath(artifactsDir, url.pathname)
-      if (!path) return json({ error: 'Not found' }, 404)
-      const file = Bun.file(path)
-      if (!(await file.exists())) return json({ error: 'Not found' }, 404)
-      return new Response(file, { headers: { 'Content-Type': mimeType(path) } })
+      const rawFilename = url.pathname.slice('/artifacts/'.length) || 'index.html'
+      let filename = 'index.html'
+      try {
+        filename = decodeURIComponent(rawFilename)
+      } catch {}
+      if (filename.includes('\0') || filename.includes('..')) {
+        return json({ error: 'Not found' }, 404)
+      }
+      const res = await ask<ArtifactToolsMsg, { ok: true; content: string } | { ok: false; error: string }>(
+        artifactToolsRef,
+        (replyTo) => ({
+          type: 'getDoc',
+          filename,
+          replyTo,
+        }),
+      )
+      if (!res.ok) return json({ error: 'Not found' }, 404)
+      return new Response(res.content, { headers: { 'Content-Type': mimeType(filename) } })
     },
   },
 ]

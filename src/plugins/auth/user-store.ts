@@ -1,5 +1,4 @@
-import type { ActorDef, PersistenceAdapter } from '../../system/index.ts'
-import { onMessage } from '../../system/index.ts'
+import { onMessage, persistencePluginAdapter, type ActorDef } from '../../system/index.ts'
 import type { User, UserId, DeviceKey, UserStoreMsg } from './types.ts'
 
 // ─── State ───
@@ -16,29 +15,11 @@ const initialUserStoreState = (): UserStoreState => ({
   phoneIndex:      {},
 })
 
-// ─── JSON persistence ───
-// DeviceKey.publicKey is already a base64url string so JSON round-trips cleanly.
-
-const jsonPersistence = (filePath: string): PersistenceAdapter<UserStoreState> => ({
-  load: async () => {
-    const file = Bun.file(filePath)
-    if (!(await file.exists())) return undefined
-    try {
-      return await file.json() as UserStoreState
-    } catch {
-      return undefined
-    }
-  },
-  save: async (state) => {
-    await Bun.write(filePath, JSON.stringify(state, null, 2))
-  },
-})
-
 // ─── Actor definition ───
 
-export const UserStore = (filePath: string): ActorDef<UserStoreMsg, UserStoreState> => ({
+export const UserStore = (): ActorDef<UserStoreMsg, UserStoreState> => ({
   initialState: initialUserStoreState,
-  persistence: jsonPersistence(filePath),
+  persistence: persistencePluginAdapter<UserStoreState>('auth/users'),
 
   handler: onMessage<UserStoreMsg, UserStoreState>({
     createUser: (state, { fullName, phone, roles, replyTo }) => {

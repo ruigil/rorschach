@@ -17,6 +17,7 @@ import type {
 import { WorkflowTaskExecutor } from './workflow-task-executor.ts'
 import { validateOutputValues } from './validation.ts'
 import { getWorkflowRun, saveWorkflowRun } from './workflow-store.ts'
+import { resolvePersistence } from '../../system/actor/persistence.ts'
 
 type RunExecutorState = {
   run: WorkflowRunState
@@ -161,8 +162,9 @@ export const WorkflowRunExecutor = (
 ): ActorDef<WorkflowRunExecutorMsg, RunExecutorState> => {
 
   const runPersistence = (): PersistenceAdapter<RunExecutorState> => ({
-    load: async () => {
-      const result = await getWorkflowRun(workflowRunsDir, userId, runId)
+    load: async (services) => {
+      const dl = await resolvePersistence(services)
+      const result = await getWorkflowRun(dl, userId, runId)
       if (result.ok) {
         const run = result.data
         const workflow = run.workflow
@@ -171,8 +173,9 @@ export const WorkflowRunExecutor = (
       }
       return undefined
     },
-    save: async (state) => {
-      await saveWorkflowRun(workflowRunsDir, state.run)
+    save: async (state, services) => {
+      const dl = await resolvePersistence(services)
+      await saveWorkflowRun(dl, state.run)
     },
   })
   const schedule = (state: RunExecutorState, ctx: ActorContext<WorkflowRunExecutorMsg>): RunExecutorState => {

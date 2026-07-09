@@ -1,5 +1,6 @@
 {
   "plugins": [
+    "./src/plugins/persistence/persistence.plugin.ts",
     "./src/plugins/interfaces/interfaces.plugin.ts",
     "./src/plugins/tools/tools.plugin.ts",
     "./src/plugins/memory/memory.plugin.ts",
@@ -11,6 +12,13 @@
     "./src/plugins/coding/coding.plugin.ts"
   ],
   "config": {
+    "persistence": {
+      "storageRoot": "workspace/persistence",
+      "kvDir": "kv",
+      "docDir": "doc",
+      "objDir": "obj",
+      "graphDir": "graph"
+    },
     "auth": {
       "rpId": "${AUTH_RPID:-localhost}",
       "rpName": "Rorschach",
@@ -82,7 +90,6 @@
       }
     },
     "memory": {
-      "workPath": "workspace/memory",
       "kgraph": {
         "embeddingModel": "gemini-embedding-2-preview",
         "embeddingDimensions": 768,
@@ -95,7 +102,6 @@
       }
     },
     "workflows": {
-      "workflowsDir": "workspace/workflows",
       "agent": {
         "model": "deepseek-v4-flash",
         "maxToolLoops": 10,
@@ -107,7 +113,6 @@
       }
     },
     "notebook": {
-      "notebookDir": "workspace/notebook",
       "agent": {
         "model": "nvidia-nemotron-3-ultra-550b-a55b",
         "maxToolLoops": 10

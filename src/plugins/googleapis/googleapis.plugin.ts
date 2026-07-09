@@ -76,7 +76,7 @@ export default createPluginFactory<GoogleApisConfig>({
   configDescriptor: config,
   slots: {
     tokenStore: {
-      factory: () => TokenStore('workspace/googleapis/tokens.json'),
+      factory: () => TokenStore(),
       surviveConfigChange: true,
     },
     oauthState: {

@@ -1,11 +1,10 @@
-import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef, SpanHandle } from '../../../system/index.ts'
-import { onMessage } from '../../../system/index.ts'
+import { onLifecycle, onMessage } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import { NotebookChangeTopic } from '../../../types/events.ts'
-
-// ─── Tool names & schemas ───
+import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PList } from '../../../types/persistence.ts'
+import { ask } from '../../../system/actor/ask.ts'
 
 export const journalWriteTool = defineTool('journal_write', 'Add an entry to the daily journal.', {
   type: 'object',
@@ -32,52 +31,65 @@ export const journalSearchTool = defineTool('journal_search', 'Search across all
   required: ['query'],
 })
 
-// ─── Internal message type ───
+type JournalState = {
+  persistenceRef: ActorRef<any> | null
+}
 
 type JournalMsg =
   | ToolInvokeMsg
   | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string; span: SpanHandle | null; userId: string; date?: string }
   | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string; span: SpanHandle | null }
-
-// ─── Helpers ───
+  | { type: '_persistenceRef'; ref: ActorRef<any> | null }
+  | { type: '_void' }
 
 const todayISO = (): string => new Date().toISOString().slice(0, 10)
 
-export const journalPath = (notebookDir: string, date: string): string => {
-  const [year, month, day] = date.split('-')
-  return `${notebookDir}/journal/${year}/${month}/${day}.md`
+const writeEntry = async (persistenceRef: ActorRef<any>, entry: string, date: string): Promise<string> => {
+  const time = new Date().toTimeString().slice(0, 5)
+  const section = `\n## ${time}\n\n${entry}\n`
+  const docId = date.endsWith('.md') ? date : `${date}.md`
+  await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+    type: 'doc.append',
+    collection: 'journal',
+    docId,
+    content: section,
+    replyTo,
+  }))
+  return `Journal entry written to journal/${date.replace('.md', '')}.md`
 }
 
-const writeEntry = async (notebookDir: string, entry: string, date: string): Promise<string> => {
-  const path = journalPath(notebookDir, date)
-  const dir  = path.slice(0, path.lastIndexOf('/'))
-  await mkdir(dir, { recursive: true })
-  const time     = new Date().toTimeString().slice(0, 5)
-  const section  = `\n## ${time}\n\n${entry}\n`
-  const existing = await Bun.file(path).text().catch(() => '')
-  await Bun.write(path, existing + section)
-  return `Journal entry written to ${path}`
+export const readEntry = async (persistenceRef: ActorRef<any>, date: string): Promise<string> => {
+  const docId = date.endsWith('.md') ? date : `${date}.md`
+  const res = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+    type: 'doc.get',
+    collection: 'journal',
+    docId,
+    replyTo,
+  }))
+  if (res.ok && res.data) return res.data
+  return `No journal entry found for ${date.replace('.md', '')}.`
 }
 
-export const readEntry = async (notebookDir: string, date: string): Promise<string> => {
-  const path = journalPath(notebookDir, date)
-  const file = Bun.file(path)
-  if (!(await file.exists())) return `No journal entry found for ${date}.`
-  return await file.text()
-}
+const searchJournal = async (persistenceRef: ActorRef<any>, query: string): Promise<string> => {
+  const listRes = await ask<PersistenceMsg, PList>(persistenceRef, (replyTo) => ({
+    type: 'doc.list',
+    collection: 'journal',
+    replyTo,
+  }))
+  if (!listRes.ok || listRes.keys.length === 0) {
+    return `No journal entries found.`
+  }
 
-const searchJournal = async (notebookDir: string, query: string): Promise<string> => {
-  const journalDir = `${notebookDir}/journal`
-  const glob       = new Bun.Glob('**/*.md')
   const results: string[] = []
   const lower = query.toLowerCase()
 
-  for await (const relPath of glob.scan({ cwd: journalDir })) {
-    const content = await Bun.file(`${journalDir}/${relPath}`).text().catch(() => '')
-    const lines   = content.split('\n')
+  for (const docId of listRes.keys) {
+    const content = await readEntry(persistenceRef, docId)
+    const lines = content.split('\n')
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i]!.toLowerCase().includes(lower)) {
-        results.push(`${relPath}:${i + 1}: ${lines[i]}`)
+      const line = lines[i]
+      if (line && line.toLowerCase().includes(lower)) {
+        results.push(`${docId}:${i + 1}: ${line}`)
       }
     }
   }
@@ -87,25 +99,45 @@ const searchJournal = async (notebookDir: string, query: string): Promise<string
     : `No results found for "${query}".`
 }
 
-// ─── Actor ───
 
-export const Journal = (notebookDir: string): ActorDef<JournalMsg, null> => ({
-  initialState: null,
-  handler: onMessage<JournalMsg, null>({
+
+export const Journal = (): ActorDef<JournalMsg, JournalState> => ({
+  initialState: () => ({ persistenceRef: null }),
+  lifecycle: onLifecycle({
+    start: (state, context) => {
+      context.subscribe(PersistenceProviderTopic, (event) => ({
+        type: '_persistenceRef' as const,
+        ref: event.ref,
+      }))
+      return { state }
+    }
+  }),
+  handler: onMessage<JournalMsg, JournalState>({
+    _persistenceRef: (state, msg) => {
+      return { state: { ...state, persistenceRef: msg.ref } }
+    },
+
+    _void: (state) => ({ state }),
+
     invoke: (state, msg, ctx) => {
+      if (!state.persistenceRef) {
+        msg.replyTo.send({ type: 'toolError', error: 'Persistence not ready' })
+        return { state }
+      }
+      const dl = state.persistenceRef
       let promise: Promise<string>
       let date: string | undefined
       try {
         if (msg.toolName === journalWriteTool.name) {
           const args = JSON.parse(msg.arguments) as { entry: string; date?: string }
           date = args.date ?? todayISO()
-          promise = writeEntry(notebookDir, args.entry, date)
+          promise = writeEntry(dl, args.entry, date)
         } else if (msg.toolName === journalReadTool.name) {
           const args = JSON.parse(msg.arguments) as { date: string }
-          promise = readEntry(notebookDir, args.date)
+          promise = readEntry(dl, args.date)
         } else if (msg.toolName === journalSearchTool.name) {
           const args = JSON.parse(msg.arguments) as { query: string }
-          promise = searchJournal(notebookDir, args.query)
+          promise = searchJournal(dl, args.query)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }

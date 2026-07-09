@@ -60,12 +60,10 @@ export type WorkflowDependencyOutput = {
 }
 
 export type WorkflowsConfig = {
-  workflowsDir: string
   agent: AgentModelOptions
 }
 
 export type WorkflowRunnerConfig = {
-  workflowsDir: string
   workflowRunsDir: string
   llmRef: ActorRef<LlmProviderMsg> | null
   model: string
@@ -212,6 +210,7 @@ export type WorkflowRunnerMsg =
   | { type: '_runUpdated'; event: WorkflowEvent }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_wsFrame'; event: HttpWsFrameEvent }
+  | { type: '_persistenceRef'; ref: ActorRef<any> | null }
   | { type: '_done' }
 
 export type WorkflowRunExecutorReply =

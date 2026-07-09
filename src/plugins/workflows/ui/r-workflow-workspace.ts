@@ -161,20 +161,20 @@ export class RWorkflowWorkspace extends RorschachBase {
     if (graphValue !== this._lastGraphValue) {
       this._lastGraphValue = graphValue
       if (graphValue) {
-        if (graphValue.workflowId) {
-          this.openGraph(graphValue.workflowId, graphValue.runId)
-        } else if (graphValue.nodes && graphValue.nodes.length) {
+        if (graphValue.nodes && graphValue.nodes.length) {
           this._view = 'graph'
           this._workflowId = graphValue.workflow?.id ?? graphValue.workflowId ?? null
           this._runId = graphValue.run?.runId ?? graphValue.runId ?? null
-          
+
           const savedTaskId = store.namespace<WorkflowsState>('workflows').get('workspaceSelectedTaskId')
           const candidate = this._selectedTaskId || savedTaskId
           this._selectedTaskId = candidate && graphValue.nodes.some((n: any) => n.id === candidate)
             ? candidate
             : (graphValue.nodes[0]?.id ?? null)
-            
+
           this._lastUpdatedAt = new Date().toISOString()
+        } else if (graphValue.workflowId) {
+          this.openGraph(graphValue.workflowId, graphValue.runId)
         } else {
           this.openList()
         }

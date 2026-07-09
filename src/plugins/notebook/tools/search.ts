@@ -1,10 +1,10 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../../system/index.ts'
-import { onMessage } from '../../../system/index.ts'
+import { onLifecycle, onMessage } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { Todo } from '../types.ts'
-
-// ─── Tool name & schema ───
+import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PList } from '../../../types/persistence.ts'
+import { ask } from '../../../system/actor/ask.ts'
 
 export const notebookSearchTool = defineTool('notebook_search', 'Full-text search across journal entries and todo text.', {
   type: 'object',
@@ -14,49 +14,65 @@ export const notebookSearchTool = defineTool('notebook_search', 'Full-text searc
   required: ['query'],
 })
 
-// ─── Internal message type ───
+type SearchState = {
+  persistenceRef: ActorRef<any> | null
+}
 
 type SearchMsg =
   | ToolInvokeMsg
   | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string; span: SpanHandle | null }
   | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string; span: SpanHandle | null }
+  | { type: '_persistenceRef'; ref: ActorRef<any> | null }
+  | { type: '_void' }
 
-// ─── Search implementation ───
-
-const searchAll = async (notebookDir: string, query: string): Promise<string> => {
-  const lower   = query.toLowerCase()
+const searchAll = async (persistenceRef: ActorRef<any>, query: string): Promise<string> => {
+  const lower = query.toLowerCase()
   const results: string[] = []
 
   // Search journal files
-  const journalDir = `${notebookDir}/journal`
-  const journalGlob = new Bun.Glob('**/*.md')
-  try {
-    for await (const relPath of journalGlob.scan({ cwd: journalDir })) {
-      const content = await Bun.file(`${journalDir}/${relPath}`).text().catch(() => '')
-      const lines   = content.split('\n')
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i]!.toLowerCase().includes(lower)) {
-          results.push(`journal/${relPath}:${i + 1}: ${lines[i]!.trim()}`)
+  const listRes = await ask<PersistenceMsg, PList>(persistenceRef, (replyTo) => ({
+    type: 'doc.list',
+    collection: 'journal',
+    replyTo,
+  }))
+  if (listRes.ok) {
+    for (const docId of listRes.keys) {
+      const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+        type: 'doc.get',
+        collection: 'journal',
+        docId,
+        replyTo,
+      }))
+      if (getRes.ok && getRes.data) {
+        const lines = getRes.data.split('\n')
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i]
+          if (line && line.toLowerCase().includes(lower)) {
+            results.push(`journal/${docId}:${i + 1}: ${line.trim()}`)
+          }
         }
       }
     }
-  } catch {
-    // journal dir may not exist yet
   }
 
   // Search todos
-  try {
-    const todosFile = Bun.file(`${notebookDir}/todos.json`)
-    if (await todosFile.exists()) {
-      const data: { todos: Todo[] } = JSON.parse(await todosFile.text())
+  const todosRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+    type: 'doc.get',
+    collection: 'notebook',
+    docId: 'todos.json',
+    replyTo,
+  }))
+  if (todosRes.ok && todosRes.data) {
+    try {
+      const data: { todos: Todo[] } = JSON.parse(todosRes.data)
       for (const todo of data.todos) {
         if (todo.text.toLowerCase().includes(lower)) {
           results.push(`todos.json: [${todo.id.slice(0, 8)}] ${todo.text}`)
         }
       }
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
   }
 
   return results.length > 0
@@ -64,18 +80,36 @@ const searchAll = async (notebookDir: string, query: string): Promise<string> =>
     : `No results found for "${query}".`
 }
 
-// ─── Actor ───
 
-export const Search = (notebookDir: string): ActorDef<SearchMsg, null> => ({
-  initialState: null,
-  handler: onMessage<SearchMsg, null>({
+
+export const Search = (): ActorDef<SearchMsg, SearchState> => ({
+  initialState: () => ({ persistenceRef: null }),
+  lifecycle: onLifecycle({
+    start: (state, context) => {
+      context.subscribe(PersistenceProviderTopic, (event) => ({
+        type: '_persistenceRef' as const,
+        ref: event.ref,
+      }))
+      return { state }
+    }
+  }),
+  handler: onMessage<SearchMsg, SearchState>({
+    _persistenceRef: (state, msg) => {
+      return { state: { ...state, persistenceRef: msg.ref } }
+    },
+
+    _void: (state) => ({ state }),
+
     invoke: (state, msg, ctx) => {
+      if (!state.persistenceRef) {
+        msg.replyTo.send({ type: 'toolError', error: 'Persistence not ready' })
+        return { state }
+      }
       let promise: Promise<string>
       try {
-        const args = JSON.parse(msg.arguments) as Record<string, string>
         if (msg.toolName === notebookSearchTool.name) {
           const args = JSON.parse(msg.arguments) as { query: string }
-          promise = searchAll(notebookDir, args.query)
+          promise = searchAll(state.persistenceRef, args.query)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }

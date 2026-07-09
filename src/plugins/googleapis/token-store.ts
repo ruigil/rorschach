@@ -1,5 +1,4 @@
-import type { ActorDef, PersistenceAdapter } from '../../system/index.ts'
-import { onMessage } from '../../system/index.ts'
+import { onMessage, persistencePluginAdapter, type ActorDef } from '../../system/index.ts'
 import type { GoogleToken, TokenStoreMsg } from './types.ts'
 
 // ─── State ───
@@ -10,28 +9,11 @@ export type TokenStoreState = {
 
 const initialTokenStoreState = (): TokenStoreState => ({ tokens: {} })
 
-// ─── JSON persistence ───
-
-const jsonPersistence = (filePath: string): PersistenceAdapter<TokenStoreState> => ({
-  load: async () => {
-    const file = Bun.file(filePath)
-    if (!(await file.exists())) return undefined
-    try {
-      return await file.json() as TokenStoreState
-    } catch {
-      return undefined
-    }
-  },
-  save: async (state) => {
-    await Bun.write(filePath, JSON.stringify(state, null, 2))
-  },
-})
-
 // ─── Actor definition ───
 
-export const TokenStore = (filePath: string): ActorDef<TokenStoreMsg, TokenStoreState> => ({
+export const TokenStore = (): ActorDef<TokenStoreMsg, TokenStoreState> => ({
   initialState: initialTokenStoreState,
-  persistence: jsonPersistence(filePath),
+  persistence: persistencePluginAdapter<TokenStoreState>('googleapis/tokens'),
 
   handler: onMessage<TokenStoreMsg, TokenStoreState>({
     getToken: (state, { userId, replyTo }) => {

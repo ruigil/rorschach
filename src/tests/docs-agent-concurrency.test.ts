@@ -9,6 +9,7 @@ import { JobRegistryTopic, type ToolReply, type JobLifecycleEvent } from '../typ
 import { DocsAgent, updateDocsTool } from '../plugins/coding/docs-agent.ts'
 import { ArtifactTools, writeDocPageTool } from '../plugins/coding/artifact-tools.ts'
 import type { DocsAgentMsg } from '../plugins/coding/types.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tempDirs: string[] = []
 
@@ -27,7 +28,7 @@ const tick = (ms = 50) => Bun.sleep(ms)
 
 describe('DocsAgent Concurrency Integration', () => {
   test('handles concurrent update_docs requests using child executors and serializes writes', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const artifactsDir = await makeDir('rorschach-artifacts')
 
     // 1. Spawn dependencies and DocsAgent

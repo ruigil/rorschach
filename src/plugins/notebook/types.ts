@@ -21,7 +21,6 @@ export type Todo = {
 }
 
 export type NotebookConfig = {
-  notebookDir?:  string  // default: workspace/notebook
   agent?:        AgentModelOptions
 }
 

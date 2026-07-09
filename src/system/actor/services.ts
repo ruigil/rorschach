@@ -133,6 +133,10 @@ export const createEventStream = (): EventStream => {
     forward.delete(topic)
   }
 
+  const getRetainedValue = <T>(topic: EventTopic<T>, key: string): T | undefined => {
+    return retained.get(topic)?.get(key) as T | undefined
+  }
+
   const snapshot = () => {
     const result: { topic: string; subscribers: string[] }[] = []
     for (const [topic, entries] of forward) {
@@ -145,6 +149,6 @@ export const createEventStream = (): EventStream => {
   // The internal implementation stores `unknown` callbacks — the phantom type
   // on EventTopic<T> provides compile-time safety at call sites. The cast here
   // bridges the runtime (untyped) implementation to the typed public interface.
-  return { publish, publishRetained, deleteRetained, subscribe, unsubscribe, cleanup, deleteTopic, snapshot } as EventStream
+  return { publish, publishRetained, deleteRetained, getRetainedValue, subscribe, unsubscribe, cleanup, deleteTopic, snapshot } as EventStream
 }
 

@@ -7,6 +7,7 @@ import {
 } from '../system/index.ts'
 import observabilityPlugin from '../plugins/observability/observability.plugin.ts'
 import { AgentSystem } from '../system/index.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
 
 // ─── Helpers ───
 
@@ -21,7 +22,7 @@ const withMetrics = async (intervalMs = 50): Promise<{ system: PluginSystem; eve
   const events: MetricsEvent[] = []
   const system = await AgentSystem({
     config: { observability: { metrics: { intervalMs } } },
-    plugins: [observabilityPlugin],
+    plugins: [MockPersistenceActor(), observabilityPlugin],
   })
   system.subscribe(MetricsTopic, (e) => events.push(e))
   return { system, events }
@@ -334,7 +335,7 @@ describe('Metrics: push-based MetricsTopic', () => {
   })
 
   test('MetricsTopic is not published when observability plugin is not loaded', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     system.spawn('counter', counterDef, { state: 0 })
 
     const events: unknown[] = []

@@ -1,5 +1,4 @@
-import type { ActorDef, PersistenceAdapter } from '../../system/index.ts'
-import { onLifecycle, onMessage } from '../../system/index.ts'
+import { onLifecycle, onMessage, persistencePluginAdapter, type ActorDef, type PersistenceAdapter } from '../../system/index.ts'
 import type { ApiMessage } from '../../types/llm.ts'
 import { UserContextTopic } from './types.ts'
 import {
@@ -68,45 +67,21 @@ type PersistedContextStore = {
   nextTurnSeq:   number
 }
 
-const createPersistence = (userId: string, contextPath: string = 'workspace/context'): PersistenceAdapter<ContextStoreState> => {
-  const path = `${contextPath}/context-${userId}.json`
-
+const createPersistence = (userId: string, _contextPath?: string): PersistenceAdapter<ContextStoreState> => {
+  const baseAdapter = persistencePluginAdapter<ContextStoreState>(`cognitive/contexts/context-${userId}`)
   return {
-    load: async () => {
-      const file = Bun.file(path)
-      if (!await file.exists()) return undefined
-      let saved: PersistedContextStore
-      try {
-        saved = JSON.parse(await file.text()) as PersistedContextStore
-      } catch {
-        return undefined
-      }
-      if (
-        saved.schemaVersion !== CONTEXT_SCHEMA_VERSION ||
-        !Array.isArray(saved.records) ||
-        !Array.isArray(saved.turns) ||
-        typeof saved.nextTurnSeq !== 'number'
-      ) return undefined
+    load: async (services) => {
+      const state = await baseAdapter.load(services)
+      if (!state) return undefined
       return {
-        schemaVersion: CONTEXT_SCHEMA_VERSION,
-        records:       saved.records,
-        turns:         saved.turns,
-        nextTurnSeq:   saved.nextTurnSeq,
-        userContext:   saved.userContext ?? null,
-        version:       0,
+        ...state,
         pendingUserText:     null,
         pendingUserInjected: false,
       }
     },
-    save: async (state) => {
-      const data: PersistedContextStore = {
-        schemaVersion: CONTEXT_SCHEMA_VERSION,
-        userContext:   state.userContext,
-        records:       state.records,
-        turns:         state.turns,
-        nextTurnSeq:   state.nextTurnSeq,
-      }
-      await Bun.write(path, JSON.stringify(data, null, 2))
+    save: async (state, services) => {
+      const { pendingUserText: _p, pendingUserInjected: _i, ...persistedState } = state
+      await baseAdapter.save(persistedState as any, services)
     },
   }
 }

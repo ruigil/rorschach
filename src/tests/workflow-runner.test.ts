@@ -9,6 +9,7 @@ import { startWorkflowRunTool } from '../plugins/workflows/workflow-tools.ts'
 import { ToolRegistrationTopic, type ToolMsg, type ToolReply } from '../types/tools.ts'
 import { OutboundUserMessageTopic } from '../types/events.ts'
 import { initialRunState } from '../plugins/workflows/workflow-store.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tempDirs: string[] = []
 
@@ -67,25 +68,21 @@ const workflow = (executionTools: string[]): Workflow => ({
 })
 
 const spawnRunner = async (runWorkflow: Workflow) => {
-  const workflowsDir = await makeDir('rorschach-workflows')
   const runsDir = await makeDir('rorschach-workflow-runs')
-  await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(runWorkflow))
-  const system = await AgentSystem()
-  const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowsDir, workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
-  return { system, runner, runsDir, workflowsDir }
+  const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+  const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
+  return { system, runner, runsDir }
 }
 
 describe('workflow runner', () => {
   test('hydrates retained execution tools and starts a valid run', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const toolRef = system.spawn('fake-read-tool', FakeTool())
     system.publishRetained(ToolRegistrationTopic, readTool.name, { ...readTool, ref: toolRef })
 
-    const workflowsDir = await makeDir('rorschach-workflows')
     const runsDir = await makeDir('rorschach-workflow-runs')
     const wf = workflow(['read'])
-    await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(wf))
-    const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowsDir, workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
+    const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
 
     const run = initialRunState(wf, 'run-id-1')
     await writeFile(join(runsDir, 'run-id-1.json'), JSON.stringify(run))
@@ -170,16 +167,14 @@ describe('workflow runner', () => {
   })
 
   test('allows workflow control tools and switch_mode as execution tools', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const toolRef = system.spawn('fake-control-tool', FakeTool())
     system.publishRetained(ToolRegistrationTopic, startWorkflowRunTool.name, { ...startWorkflowRunTool, ref: toolRef })
     system.publishRetained(ToolRegistrationTopic, switchModeTool.name, { ...switchModeTool, ref: toolRef })
 
-    const workflowsDir = await makeDir('rorschach-workflows')
     const runsDir = await makeDir('rorschach-workflow-runs')
     const wf = workflow([startWorkflowRunTool.name, switchModeTool.name])
-    await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(wf))
-    const runner = system.spawn('workflow-runner-control', WorkflowRunner({ workflowsDir, workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
+    const runner = system.spawn('workflow-runner-control', WorkflowRunner({ workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
 
     const listed = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       runner,
@@ -228,15 +223,13 @@ describe('workflow runner', () => {
   })
 
   test('removes terminated workflow run from runner cache and resolves via disk', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const toolRef = system.spawn('fake-read-tool', FakeTool())
     system.publishRetained(ToolRegistrationTopic, readTool.name, { ...readTool, ref: toolRef })
 
-    const workflowsDir = await makeDir('rorschach-workflows')
     const runsDir = await makeDir('rorschach-workflow-runs')
     const wf = workflow(['read'])
-    await writeFile(join(workflowsDir, 'workflow.json'), JSON.stringify(wf))
-    const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowsDir, workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
+    const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
 
     const run = initialRunState(wf, 'run-id-cleanup')
     await writeFile(join(runsDir, 'run-id-cleanup.json'), JSON.stringify(run))

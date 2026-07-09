@@ -9,6 +9,7 @@ import { LlmProvider } from '../plugins/cognitive/llm-provider.ts'
 import { OpenRouterAdapter } from '../plugins/cognitive/adapters/openrouter.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import type { BraveLlmContextResponse } from '../plugins/tools/web-search.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
 
 
 // ─── Helpers ───
@@ -147,7 +148,7 @@ describe('chatbot search integration', () => {
 
     const system = await AgentSystem({
       config: { tools: { webSearch: { apiKey: 'brave-key' } } },
-      plugins: [toolsPlugin],
+      plugins: [MockPersistenceActor(), toolsPlugin],
     })
     const events = collectEvents(system)
     const react = spawnChatbot(system)
@@ -177,7 +178,7 @@ describe('chatbot search integration', () => {
 
     const system = await AgentSystem({
       config: { tools: { webSearch: { apiKey: 'brave-key' } } },
-      plugins: [toolsPlugin],
+      plugins: [MockPersistenceActor(), toolsPlugin],
     })
     const events = collectEvents(system)
     const react = spawnChatbot(system)
@@ -210,7 +211,7 @@ describe('chatbot search integration', () => {
     }) as unknown as typeof fetch
 
     // No tools plugin — chatbot actor has no registered tools, LLM call uses empty tool list
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const events = collectEvents(system)
     const react = spawnChatbot(system)
 
@@ -235,7 +236,7 @@ describe('chatbot search integration', () => {
 
     const system = await AgentSystem({
       config: { tools: { webSearch: { apiKey: 'brave-key' } } },
-      plugins: [toolsPlugin],
+      plugins: [MockPersistenceActor(), toolsPlugin],
     })
     const events = collectEvents(system)
     const react = spawnChatbot(system)
@@ -265,7 +266,7 @@ describe('chatbot search integration', () => {
 
     const system = await AgentSystem({
       config: { tools: { webSearch: { apiKey: 'brave-key' } } },
-      plugins: [toolsPlugin],
+      plugins: [MockPersistenceActor(), toolsPlugin],
     })
     const react = spawnChatbot(system)
 

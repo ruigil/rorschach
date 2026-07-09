@@ -39,7 +39,7 @@ export default createPluginFactory<AuthConfig>({
   configDescriptor: config,
   slots: {
     userStore: {
-      factory: () => UserStore('./workspace/auth/users.json'),
+      factory: () => UserStore(),
       surviveConfigChange: true,
     },
     authenticator: {

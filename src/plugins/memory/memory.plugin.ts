@@ -52,9 +52,8 @@ export default createPluginFactory<MemoryConfig>({
       },
     },
     records: {
-      factory: (cfg) => {
-        const workPath = cfg.workPath ?? './workspace/memory'
-        return MemoryRecords(workPath)
+      factory: () => {
+        return MemoryRecords()
       },
     },
     memory: {

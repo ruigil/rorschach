@@ -77,6 +77,8 @@ export type DocsAgentState = {
 
 export type ArtifactState = {
   writing: boolean
+  persistenceRef: ActorRef<any> | null
+  artifactsDir?: string
 }
 
 export type ProjectShellState = {
@@ -100,6 +102,8 @@ export type ArtifactToolsMsg =
   | { type: '_done' }
   | { type: '_writeDone'; replyTo: ActorRef<ToolReply>; text: string; span: SpanHandle | null }
   | { type: '_writeErr'; replyTo: ActorRef<ToolReply>; error: string; span: SpanHandle | null }
+  | { type: 'getDoc'; filename: string; replyTo: ActorRef<{ ok: true; content: string } | { ok: false; error: string }> }
+  | { type: '_persistenceRef'; ref: ActorRef<any> | null }
 
 export type CodingAgentOptions = AgentModelOptions & {
   projectMount: string

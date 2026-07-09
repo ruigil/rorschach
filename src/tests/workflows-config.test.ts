@@ -4,12 +4,13 @@ import workflowsPlugin  from '../plugins/workflows/workflows.plugin.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../types/agents.ts'
 import { RouteRegistrationTopic, type RouteRegistration } from '../types/routes.ts'
 import type { WorkflowsConfig } from '../plugins/workflows/types.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
 const loadWorkflows = async (workflows: WorkflowsConfig): Promise<AgentDescriptor[]> => {
   const registrations: AgentDescriptor[] = []
-  const system = await AgentSystem({ config: { workflows } })
+  const system = await AgentSystem({ plugins: [MockPersistenceActor()], config: { workflows } })
   system.subscribe(AgentRegistrationTopic, (event) => {
     if (event.type === 'register') registrations.push(event.descriptor)
   })
@@ -23,10 +24,10 @@ const loadWorkflows = async (workflows: WorkflowsConfig): Promise<AgentDescripto
 }
 
 describe('workflows config', () => {
-  test('uses default workflow config when only workflowsDir is configured', async () => {
+  test('uses default workflow config when agent is configured', async () => {
     const registrations: AgentDescriptor[] = []
     const routes: RouteRegistration[] = []
-    const system = await AgentSystem({ config: { workflows: { workflowsDir: 'workspace/custom-workflows' } } })
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()], config: { workflows: { agent: { model: 'z-ai/glm-5.1', maxToolLoops: 10 } } } })
     
     system.subscribe(AgentRegistrationTopic, (event) => {
       if (event.type === 'register') registrations.push(event.descriptor)
@@ -47,7 +48,6 @@ describe('workflows config', () => {
     
     const response = await route.handler(new Request('http://localhost/config/workflows'), new URL('http://localhost/config/workflows'), null)
     expect(await response.json()).toMatchObject({
-      workflowsDir: 'workspace/custom-workflows',
       agent: { model: 'z-ai/glm-5.1', maxToolLoops: 10 },
     })
 
@@ -56,7 +56,6 @@ describe('workflows config', () => {
 
   test('registers workflows agent with configured model', async () => {
     const registrations = await loadWorkflows({
-      workflowsDir: 'workspace/workflows-test',
       agent: {
         model: 'test-workflow-model',
         maxToolLoops: 3,

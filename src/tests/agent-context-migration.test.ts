@@ -6,6 +6,7 @@ import type { LlmProviderMsg } from '../types/llm.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
 import { WorkflowsAgentFactory } from '../plugins/workflows/workflows-agent.ts'
 import type { WorkflowRunnerMsg } from '../plugins/workflows/types.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -41,7 +42,7 @@ const NullRunner = (): ActorDef<WorkflowRunnerMsg, null> => ({
 
 describe('session agents use shared context snapshots', () => {
   test('workflows agent builds its prompt from ContextStore context', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const streams: Array<Extract<LlmProviderMsg, { type: 'stream' }>> = []
     const llmRef = system.spawn('llm', CapturingLlm(streams))
 const runnerRef = system.spawn('workflow-runner', NullRunner())

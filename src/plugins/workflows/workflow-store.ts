@@ -1,5 +1,4 @@
-import { mkdir, readdir, unlink } from 'node:fs/promises'
-import { join } from 'node:path'
+import { ask, type ActorRef } from '../../system/index.ts'
 import type {
   Workflow,
   WorkflowGraph,
@@ -9,6 +8,7 @@ import type {
   WorkflowTaskRunState,
 } from './types.ts'
 import { validateWorkflow, validateInputValues } from './validation.ts'
+import { type PersistenceMsg, type PResult, type PList } from '../../types/persistence.ts'
 
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every(item => typeof item === 'string')
@@ -25,26 +25,6 @@ const isWorkflow = (value: unknown): value is Workflow => {
     isStringArray(obj.executionTools) &&
     Array.isArray(obj.tasks)
   )
-}
-
-const readWorkflowFile = async (filepath: string): Promise<Workflow | null> => {
-  try {
-    const parsed = JSON.parse(await Bun.file(filepath).text()) as unknown
-    return isWorkflow(parsed) ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-const listWorkflowFiles = async (workflowsDir: string): Promise<string[]> => {
-  try {
-    const entries = await readdir(workflowsDir, { withFileTypes: true })
-    return entries
-      .filter(entry => entry.isFile() && entry.name.endsWith('.json'))
-      .map(entry => join(workflowsDir, entry.name))
-  } catch {
-    return []
-  }
 }
 
 const summarize = (workflow: Workflow, filepath: string): WorkflowSummary => ({
@@ -119,12 +99,35 @@ export const toWorkflowGraph = (workflow: Workflow, run?: WorkflowRunState): Wor
   }
 }
 
-const loadWorkflows = async (workflowsDir: string, userId: string): Promise<Array<{ workflow: Workflow; filepath: string }>> => {
-  const files = await listWorkflowFiles(workflowsDir)
-  const loaded = await Promise.all(files.map(async filepath => ({ filepath, workflow: await readWorkflowFile(filepath) })))
+const loadWorkflows = async (persistenceRef: ActorRef<any>, userId: string): Promise<Workflow[]> => {
+  const listRes = await ask<PersistenceMsg, PList>(persistenceRef, (replyTo) => ({
+    type: 'doc.list',
+    collection: 'workflows',
+    replyTo,
+  }))
+  if (!listRes.ok) return []
+
+  const loaded = await Promise.all(
+    listRes.keys.map(async (docId) => {
+      const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+        type: 'doc.get',
+        collection: 'workflows',
+        docId,
+        replyTo,
+      }))
+      if (!getRes.ok || !getRes.data) return null
+      try {
+        const parsed = JSON.parse(getRes.data)
+        return isWorkflow(parsed) ? parsed : null
+      } catch {
+        return null
+      }
+    })
+  )
+
   return loaded
-    .filter((entry): entry is { filepath: string; workflow: Workflow } => entry.workflow !== null && entry.workflow.userId === userId)
-    .sort((a, b) => Date.parse(b.workflow.createdAt) - Date.parse(a.workflow.createdAt))
+    .filter((w): w is Workflow => w !== null && w.userId === userId)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
 }
 
 export type StoreResult<T> = { ok: true; data: T } | { ok: false; error: string; status: number }
@@ -134,37 +137,48 @@ export type SaveResult = { workflow: Workflow; filepath: string }
 export type UpdateResult = { updated: true; workflow: Workflow; filepath: string }
 export type DeleteResult = { deleted: true; workflowId: string }
 
-export const listWorkflows = async (workflowsDir: string, userId: string): Promise<WorkflowSummary[]> => {
-  const entries = await loadWorkflows(workflowsDir, userId)
-  return entries.map(entry => summarize(entry.workflow, entry.filepath))
+export const listWorkflows = async (persistenceRef: ActorRef<any>, userId: string): Promise<WorkflowSummary[]> => {
+  const entries = await loadWorkflows(persistenceRef, userId)
+  return entries.map(w => summarize(w, `workflows/${w.id}`))
 }
 
-export const getWorkflow = async (workflowsDir: string, userId: string, workflowId: string): Promise<StoreResult<GetResult>> => {
-  const workflows = await loadWorkflows(workflowsDir, userId)
-  const found = workflows.find(entry => entry.workflow.id === workflowId)
-  if (!found) return { ok: false, error: `Workflow not found: ${workflowId}`, status: 404 }
-  return { ok: true, data: { workflow: found.workflow, filepath: found.filepath } }
+export const getWorkflow = async (persistenceRef: ActorRef<any>, userId: string, workflowId: string): Promise<StoreResult<GetResult>> => {
+  const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+    type: 'doc.get',
+    collection: 'workflows',
+    docId: workflowId,
+    replyTo,
+  }))
+  if (!getRes.ok || !getRes.data) return { ok: false, error: `Workflow not found: ${workflowId}`, status: 404 }
+  try {
+    const parsed = JSON.parse(getRes.data)
+    if (!isWorkflow(parsed) || parsed.userId !== userId) {
+      return { ok: false, error: `Workflow not found: ${workflowId}`, status: 404 }
+    }
+    return { ok: true, data: { workflow: parsed, filepath: `workflows/${workflowId}` } }
+  } catch {
+    return { ok: false, error: `Invalid workflow content`, status: 500 }
+  }
 }
 
-export const getWorkflowGraph = async (workflowsDir: string, userId: string, workflowId: string, run?: WorkflowRunState): Promise<StoreResult<{ graph: WorkflowGraph }>> => {
-  const result = await getWorkflow(workflowsDir, userId, workflowId)
+export const getWorkflowGraph = async (persistenceRef: ActorRef<any>, userId: string, workflowId: string, run?: WorkflowRunState): Promise<StoreResult<{ graph: WorkflowGraph }>> => {
+  const result = await getWorkflow(persistenceRef, userId, workflowId)
   if (!result.ok) return result
   return { ok: true, data: { graph: toWorkflowGraph(result.data.workflow, run) } }
 }
 
-const workflowFilename = (workflow: Workflow): string => {
-  const date = workflow.createdAt.slice(0, 10)
-  const slug = workflow.goal.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50)
-  return `${date}-${slug || 'workflow'}-${workflow.id.slice(0, 8)}.json`
-}
-
-export const saveWorkflow = async (workflowsDir: string, workflow: Workflow): Promise<StoreResult<SaveResult>> => {
+export const saveWorkflow = async (persistenceRef: ActorRef<any>, workflow: Workflow): Promise<StoreResult<SaveResult>> => {
   const errors = validateWorkflow(workflow)
   if (errors.length) return { ok: false, error: `Invalid workflow: ${errors.join('; ')}`, status: 400 }
-  await mkdir(workflowsDir, { recursive: true })
-  const filepath = join(workflowsDir, workflowFilename(workflow))
-  await Bun.write(filepath, JSON.stringify(workflow, null, 2))
-  return { ok: true, data: { workflow, filepath } }
+
+  await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+    type: 'doc.put',
+    collection: 'workflows',
+    docId: workflow.id,
+    content: JSON.stringify(workflow, null, 2),
+    replyTo,
+  }))
+  return { ok: true, data: { workflow, filepath: `workflows/${workflow.id}` } }
 }
 
 export type WorkflowPatch = {
@@ -176,12 +190,8 @@ export type WorkflowPatch = {
   tasks?: Workflow['tasks']
 }
 
-// Mutations (save/update/delete) are only called from the workflows agent tool handler,
-// which serializes turns via the agent loop. There is no concurrent writer — if a second
-// mutation path is added (e.g. an HTTP PUT route), the read-then-write in updateWorkflow
-// will need serialization or atomic writes to avoid lost updates.
-export const updateWorkflow = async (workflowsDir: string, userId: string, workflowId: string, patch: WorkflowPatch): Promise<StoreResult<UpdateResult>> => {
-  const found = await getWorkflow(workflowsDir, userId, workflowId)
+export const updateWorkflow = async (persistenceRef: ActorRef<any>, userId: string, workflowId: string, patch: WorkflowPatch): Promise<StoreResult<UpdateResult>> => {
+  const found = await getWorkflow(persistenceRef, userId, workflowId)
   if (!found.ok) return found
   const existing = found.data.workflow
   const updated: Workflow = {
@@ -195,14 +205,28 @@ export const updateWorkflow = async (workflowsDir: string, userId: string, workf
   }
   const errors = validateWorkflow(updated)
   if (errors.length) return { ok: false, error: `Invalid workflow: ${errors.join('; ')}`, status: 400 }
-  await Bun.write(found.data.filepath, JSON.stringify(updated, null, 2))
+
+  await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+    type: 'doc.put',
+    collection: 'workflows',
+    docId: workflowId,
+    content: JSON.stringify(updated, null, 2),
+    replyTo,
+  }))
   return { ok: true, data: { updated: true, workflow: updated, filepath: found.data.filepath } }
 }
 
-export const deleteWorkflow = async (workflowsDir: string, userId: string, workflowId: string): Promise<StoreResult<DeleteResult>> => {
-  const found = await getWorkflow(workflowsDir, userId, workflowId)
+export const deleteWorkflow = async (persistenceRef: ActorRef<any>, userId: string, workflowId: string): Promise<StoreResult<DeleteResult>> => {
+  const found = await getWorkflow(persistenceRef, userId, workflowId)
   if (!found.ok) return found
-  await unlink(found.data.filepath)
+
+  await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+    type: 'doc.delete',
+    collection: 'workflows',
+    docId: workflowId,
+    replyTo,
+  }))
+
   return { ok: true, data: { deleted: true, workflowId } }
 }
 
@@ -212,9 +236,16 @@ export const withRunDefaults = (run: WorkflowRunState): WorkflowRunState => ({
   outputs: run.outputs ?? {},
 })
 
-const readRunFile = async (filepath: string): Promise<WorkflowRunState | null> => {
+const readRunFile = async (persistenceRef: ActorRef<any>, runId: string): Promise<WorkflowRunState | null> => {
+  const res = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+    type: 'doc.get',
+    collection: 'workflow-runs',
+    docId: runId,
+    replyTo,
+  }))
+  if (!res.ok || !res.data) return null
   try {
-    const parsed = JSON.parse(await Bun.file(filepath).text()) as WorkflowRunState
+    const parsed = JSON.parse(res.data) as WorkflowRunState
     return parsed && typeof parsed.runId === 'string' && typeof parsed.userId === 'string'
       ? withRunDefaults(parsed)
       : null
@@ -223,34 +254,40 @@ const readRunFile = async (filepath: string): Promise<WorkflowRunState | null> =
   }
 }
 
-export const listWorkflowRuns = async (workflowRunsDir: string, userId: string): Promise<WorkflowRunState[]> => {
-  try {
-    const entries = await readdir(workflowRunsDir, { withFileTypes: true })
-    const loaded = await Promise.all(entries
-      .filter(entry => entry.isFile() && entry.name.endsWith('.json'))
-      .map(entry => readRunFile(join(workflowRunsDir, entry.name))))
-    return loaded
-      .filter((run): run is WorkflowRunState => run !== null && run.userId === userId)
-      .sort((a, b) => (b.events[0]?.timestamp ?? '').localeCompare(a.events[0]?.timestamp ?? ''))
-  } catch {
-    return []
-  }
+export const listWorkflowRuns = async (persistenceRef: ActorRef<any>, userId: string): Promise<WorkflowRunState[]> => {
+  const listRes = await ask<PersistenceMsg, PList>(persistenceRef, (replyTo) => ({
+    type: 'doc.list',
+    collection: 'workflow-runs',
+    replyTo,
+  }))
+  if (!listRes.ok) return []
+
+  const loaded = await Promise.all(
+    listRes.keys.map(async (runId) => readRunFile(persistenceRef, runId))
+  )
+
+  return loaded
+    .filter((run): run is WorkflowRunState => run !== null && run.userId === userId)
+    .sort((a, b) => (b.events[0]?.timestamp ?? '').localeCompare(a.events[0]?.timestamp ?? ''))
 }
 
-export const getWorkflowRun = async (workflowRunsDir: string, userId: string, runId: string): Promise<StoreResult<WorkflowRunState>> => {
-  const filepath = join(workflowRunsDir, `${runId}.json`)
-  const run = await readRunFile(filepath)
+export const getWorkflowRun = async (persistenceRef: ActorRef<any>, userId: string, runId: string): Promise<StoreResult<WorkflowRunState>> => {
+  const run = await readRunFile(persistenceRef, runId)
   if (!run || run.userId !== userId) {
     return { ok: false, error: `Workflow run not found: ${runId}`, status: 404 }
   }
   return { ok: true, data: run }
 }
 
-export const saveWorkflowRun = async (workflowRunsDir: string, run: WorkflowRunState): Promise<StoreResult<WorkflowRunState>> => {
+export const saveWorkflowRun = async (persistenceRef: ActorRef<any>, run: WorkflowRunState): Promise<StoreResult<WorkflowRunState>> => {
   try {
-    await mkdir(workflowRunsDir, { recursive: true })
-    const filepath = join(workflowRunsDir, `${run.runId}.json`)
-    await Bun.write(filepath, JSON.stringify(run, null, 2))
+    await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+      type: 'doc.put',
+      collection: 'workflow-runs',
+      docId: `${run.runId}.json`,
+      content: JSON.stringify(run, null, 2),
+      replyTo,
+    }))
     return { ok: true, data: run }
   } catch (err) {
     return { ok: false, error: `Failed to save workflow run: ${String(err)}`, status: 500 }
@@ -281,13 +318,12 @@ export const initialRunState = (
 })
 
 export const createWorkflowRun = async (
-  workflowsDir: string,
-  workflowRunsDir: string,
+  persistenceRef: ActorRef<any>,
   userId: string,
   workflowId: string,
   inputs: Record<string, unknown> | undefined,
 ): Promise<StoreResult<{ run: WorkflowRunState; workflow: Workflow }>> => {
-  const workflowResult = await getWorkflow(workflowsDir, userId, workflowId)
+  const workflowResult = await getWorkflow(persistenceRef, userId, workflowId)
   if (!workflowResult.ok) return workflowResult
 
   const inputValidation = validateInputValues(workflowResult.data.workflow.inputs, inputs)
@@ -295,11 +331,8 @@ export const createWorkflowRun = async (
 
   const run = initialRunState(workflowResult.data.workflow, crypto.randomUUID(), inputValidation.values)
 
-  const saveResult = await saveWorkflowRun(workflowRunsDir, run)
+  const saveResult = await saveWorkflowRun(persistenceRef, run)
   if (!saveResult.ok) return saveResult
-
-  const runArtifactDir = join(workflowRunsDir, run.runId)
-  await mkdir(runArtifactDir, { recursive: true })
 
   return { ok: true, data: { run, workflow: workflowResult.data.workflow } }
 }

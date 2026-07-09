@@ -9,6 +9,7 @@ import type { ActorRef } from '../system/index.ts'
 import type { Identity, IdentityProviderMsg } from '../types/identity.ts'
 import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
 import type { AuthenticatorMsg, AuthSession, User, UserStoreMsg } from '../plugins/auth/types.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -57,7 +58,7 @@ const fakeUserStore = (users: Record<string, User>): ActorDef<UserStoreMsg, null
 const startIdentityProvider = async (
   identityProvider: ActorDef<IdentityProviderMsg, null>,
 ): Promise<{ ref: ActorRef<IdentityProviderMsg>; shutdown: () => Promise<void> }> => {
-  const system = await AgentSystem()
+  const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
   const ref = system.spawn('identity', identityProvider)
   await tick()
   return { ref, shutdown: () => system.shutdown() }
@@ -259,7 +260,7 @@ describe('auth admin allowlist', () => {
   })
 
   test('rehydrates admin roles when validating an existing session token', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const user: User = {
       id: 'u-admin',
       fullName: 'alice',
@@ -295,7 +296,7 @@ describe('auth admin allowlist', () => {
   })
 
   test('rehydrates admin roles when validating a websocket ticket', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const user: User = {
       id: 'u-admin',
       fullName: 'alice',
@@ -331,7 +332,7 @@ describe('auth admin allowlist', () => {
   })
 
   test('getUserProfile and updateUserProfile handlers', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const user: User = {
       id: 'u-user',
       fullName: 'John Doe',
@@ -361,7 +362,7 @@ describe('auth admin allowlist', () => {
   })
 
   test('serves GET and POST /auth/profile routes', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const user: User = {
       id: 'u-user',
       fullName: 'John Doe',
@@ -400,7 +401,7 @@ describe('auth admin allowlist', () => {
   })
 
   test('serves auth static files via prefix dynamic route', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const mockAuthRef = {} as ActorRef<AuthenticatorMsg>
     const routes = buildAuthRoutes(mockAuthRef)
     const staticRoute = routes.find(r => r.id === 'auth.static')

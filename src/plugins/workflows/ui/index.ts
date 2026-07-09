@@ -56,7 +56,6 @@ export const reduceFrame = (frame: any, host: PluginHostActions) => {
   if (frame.type === 'workflowGraph') {
     ns.set('currentGraph', frame)
     ns.set('errorMessage', null)
-    host.openView('workflows')
   } else if (frame.type === 'workflowsList') {
     ns.set('workflows', frame.workflows)
   } else if (frame.type === 'workflowRunsList') {

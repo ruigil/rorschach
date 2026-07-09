@@ -1,6 +1,6 @@
 import { CronExpressionParser } from 'cron-parser'
-import type { ActorDef, PersistenceAdapter } from '../../system/index.ts'
-import { emit } from '../../system/index.ts'
+import type { ActorDef } from '../../system/index.ts'
+import { emit, persistencePluginAdapter } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg } from '../../types/tools.ts'
@@ -54,19 +54,7 @@ type CronMsg =
 
 // ─── Persistence ───
 
-const PERSIST_PATH = 'workspace/cron-jobs.json'
-
-const persistence: PersistenceAdapter<CronState> = {
-  load: async () => {
-    const file = Bun.file(PERSIST_PATH)
-    if (!await file.exists()) return undefined
-    const data = JSON.parse(await file.text()) as { jobs: Record<string, CronJob> }
-    return { jobs: data.jobs ?? {} }
-  },
-  save: async (state) => {
-    await Bun.write(PERSIST_PATH, JSON.stringify({ jobs: state.jobs }, null, 2))
-  },
-}
+const persistence = persistencePluginAdapter<CronState>('tools/cron-jobs')
 
 // ─── Helpers ───
 

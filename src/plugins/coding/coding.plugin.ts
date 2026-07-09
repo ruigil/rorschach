@@ -141,9 +141,8 @@ export default createPluginFactory<CodingConfig>({
       dependsOn: ['shell', 'docsAgent'],
     },
   },
-  routes: (cfg) => {
-    const merged = mergeConfig(cfg)
-    return buildCodingRoutes(merged.artifactsDir)
+  routes: (cfg, deps) => {
+    return buildCodingRoutes(deps.artifactTools as ActorRef<ArtifactToolsMsg>)
   },
   uiSurface: codeSurfaceRegistration,
 })

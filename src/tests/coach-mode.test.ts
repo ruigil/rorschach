@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { MockPersistenceActor } from './mock-persistence.ts'
 import { AgentSystem } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { UserPresenceTopic, OutboundUserMessageTopic } from '../types/events.ts'
@@ -39,7 +40,7 @@ const MockContextStore = (): ActorDef<any, null> => ({
 
 describe('coach mode integration tests', () => {
   test('dynamic mode switching to/from coach', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const llmRef = system.spawn('null-llm', NullLlm())
     system.spawn('session-manager', SessionManager({
       llmRef,
@@ -87,7 +88,7 @@ describe('coach mode integration tests', () => {
   })
 
   test('access to allowed tools and prevention of unauthorized tools in coach mode', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     let receivedTools: LlmTool[] | undefined = undefined
 
     // Spawn a mock LLM that captures tools parameter

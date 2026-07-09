@@ -1,26 +1,19 @@
-import { appendFile, writeFile, mkdir } from 'node:fs/promises'
-import { dirname } from 'node:path'
-import type { ActorDef, MessageHandler } from '../../system/index.ts'
+import type { ActorDef, MessageHandler, ActorRef } from '../../system/index.ts'
 import { LogTopic } from '../../system/index.ts'
 import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
 import type { JsonlLoggerMsg } from './types.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
+import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
 
 // ─── Actor state ───
 
 export type JsonlLoggerState = {
-  /** Path template (may contain `{date}`) or resolved absolute path */
   filePath: string
-  /** Resolved path for the current day (equals filePath when no rotation) */
-  resolvedPath: string
-  /** Current date string YYYY-MM-DD used for daily rotation */
+  docIdTemplate: string
   dateStr: string
-  /** Number of log entries written since start */
   written: number
-  /** Internal buffer for batched writes */
   buffer: string[]
-  /** True when currently awaiting a file rollover directory/file creation */
-  rotating?: boolean
+  persistenceRef: ActorRef<PersistenceMsg> | null
 }
 
 // ─── Helpers ───
@@ -29,64 +22,28 @@ const currentDateStr = (): string => {
   return new Date().toISOString().slice(0, 10)
 }
 
-const resolvePath = (template: string, dateStr: string): string => {
-  return template.replace('{date}', dateStr)
-}
 
-const ensureFile = async (path: string): Promise<void> => {
-  const dir = dirname(path)
-  await mkdir(dir, { recursive: true })
-  try {
-    await writeFile(path, '', { flag: 'wx' })
-  } catch {}
-}
 
 // ─── Options ───
 
 export type JsonlLoggerOptions = {
-  /** Path to the output `.jsonl` file. Directories are created automatically. */
   filePath: string
-  /**
-   * If set, log entries are buffered and flushed every `flushIntervalMs` milliseconds.
-   * If omitted, every log entry is appended immediately (unbuffered).
-   */
   flushIntervalMs?: number
-  /**
-   * Minimum log level to persist.
-   * Entries below this level are silently dropped.
-   * Order: debug < info < warn < error.
-   * Default: 'debug' (persist everything).
-   */
   minLevel?: 'debug' | 'info' | 'warn' | 'error'
 }
 
-// ─── Log level ordering ───
-
 const LOG_LEVEL_ORDER = { debug: 0, info: 1, warn: 2, error: 3 } as const
 
-/**
- * Creates a JSONL log persistence actor definition.
- *
- * The actor subscribes to the system log topic on the `start` lifecycle event and writes
- * every received `LogEvent` as a single JSON line to the configured file.
- *
- * It supports optional buffered writes (via `flushIntervalMs`) and minimum
- * log level filtering (via `minLevel`).
- *
- * On stop, any remaining buffered entries are flushed to disk.
- */
 export const JsonlLogger = (
   options: JsonlLoggerOptions,
 ): ActorDef<JsonlLoggerMsg, JsonlLoggerState> => {
   const { filePath, flushIntervalMs, minLevel = 'debug' } = options
   const minLevelValue = LOG_LEVEL_ORDER[minLevel]
 
+  const docIdTemplate = filePath.substring(filePath.lastIndexOf('/') + 1)
+
   const handler: MessageHandler<JsonlLoggerMsg, JsonlLoggerState> = onMessage<JsonlLoggerMsg, JsonlLoggerState>({
     log: (state, message, context) => {
-      if (state.rotating) {
-        return { state, stash: true }
-      }
-
       // Broadcast to admin WS clients
       context.publish(OutboundAdminBroadcastTopic, {
         type: 'log',
@@ -100,48 +57,60 @@ export const JsonlLogger = (
       const line = JSON.stringify(message.event)
       const today = currentDateStr()
 
-      if (today !== state.dateStr) {
-        context.pipeToSelf(
-          (async () => {
-            const newPath = resolvePath(state.filePath, today)
-            await ensureFile(newPath)
-            return { today, resolvedPath: newPath }
-          })(),
-          res => ({ type: '_rotated' as const, dateStr: res.today, resolvedPath: res.resolvedPath }),
-          err => {
-            context.log.error('log rotation failed', { error: String(err) })
-            return { type: '_rotated' as const, dateStr: today, resolvedPath: state.resolvedPath }
-          }
-        )
-        return { state: { ...state, rotating: true }, stash: true }
+      // If not resolved yet or in buffered mode
+      if (!state.persistenceRef || (flushIntervalMs && flushIntervalMs > 0)) {
+        return {
+          state: {
+            ...state,
+            dateStr: today,
+            buffer: [...state.buffer, line],
+          },
+        }
       }
 
-      // Buffered mode: accumulate lines, write on flush
-      if (flushIntervalMs && flushIntervalMs > 0) {
-        return { state: { ...state, buffer: [...state.buffer, line] } }
-      }
-
-      // Unbuffered mode: append immediately (fire-and-forget async)
-      appendFile(state.resolvedPath, line + '\n').catch(err => {
-        context.log.error('Failed to append log line', { error: String(err) })
+      // Unbuffered mode with resolved persistence: append immediately via fire-and-forget send
+      const docId = state.docIdTemplate.replace('{date}', today)
+      state.persistenceRef.send({
+        type: 'doc.append',
+        collection: 'logs',
+        docId,
+        content: line + '\n',
       })
-      return { state: { ...state, written: state.written + 1 } }
+
+      return { state: { ...state, dateStr: today, written: state.written + 1 } }
     },
 
-    _rotated: (state, message) => {
-      return {
-        state: { ...state, dateStr: message.dateStr, resolvedPath: message.resolvedPath, rotating: false },
-        become: handler,
-        unstashAll: true
+    _persistenceRef: (state, message) => {
+      if (!message.ref) {
+        return { state: { ...state, persistenceRef: null } }
       }
+      // Flush any pre-resolution buffered entries immediately
+      let nextState = { ...state, persistenceRef: message.ref }
+      if (nextState.buffer.length > 0) {
+        const chunk = nextState.buffer.join('\n') + '\n'
+        const docId = nextState.docIdTemplate.replace('{date}', nextState.dateStr)
+        message.ref.send({
+          type: 'doc.append',
+          collection: 'logs',
+          docId,
+          content: chunk,
+        })
+        nextState.written += nextState.buffer.length
+        nextState.buffer = []
+      }
+      return { state: nextState }
     },
-    
+
     flush: (state, _message, context) => {
-      if (state.buffer.length === 0) return { state }
+      if (state.buffer.length === 0 || !state.persistenceRef) return { state }
 
       const chunk = state.buffer.join('\n') + '\n'
-      appendFile(state.resolvedPath, chunk).catch(err => {
-        context.log.error('Failed to flush log lines', { error: String(err) })
+      const docId = state.docIdTemplate.replace('{date}', state.dateStr)
+      state.persistenceRef.send({
+        type: 'doc.append',
+        collection: 'logs',
+        docId,
+        content: chunk,
       })
 
       const written = state.written + state.buffer.length
@@ -150,42 +119,44 @@ export const JsonlLogger = (
   })
 
   return {
-    initialState: { filePath, resolvedPath: filePath, dateStr: '', written: 0, buffer: [] },
+    initialState: { filePath, docIdTemplate, dateStr: '', written: 0, buffer: [], persistenceRef: null },
     handler,
 
     lifecycle: onLifecycle({
-      start: async (state, context) => {
+      start: (state, context) => {
         const dateStr = currentDateStr()
-        const resolvedPath = resolvePath(filePath, dateStr)
-        await ensureFile(resolvedPath)
 
-        // Subscribe to system log topic — adapter receives LogEvent directly (type-safe)
+        // Subscribe to Persistence provider
+        context.subscribe(PersistenceProviderTopic, (event) => ({
+          type: '_persistenceRef' as const,
+          ref: event.ref,
+        }))
+
+        // Subscribe to system log topic
         context.subscribe(LogTopic, (event) => ({ type: 'log', event }))
 
-        // Start a periodic flush timer if buffered mode is configured
+        // Start periodic flush if configured
         if (flushIntervalMs && flushIntervalMs > 0) {
           context.timers.startPeriodicTimer('flush', { type: 'flush' }, flushIntervalMs)
         }
 
-        context.log.info(`persisting logs to ${resolvedPath}`)
-        return { state: { ...state, filePath, resolvedPath, dateStr } }
+        return { state: { ...state, dateStr } }
       },
 
       stopped: async (state, context) => {
-        // Flush any remaining buffered entries before stopping
-        if (state.buffer.length > 0) {
+        if (state.buffer.length > 0 && state.persistenceRef) {
           const chunk = state.buffer.join('\n') + '\n'
-          try {
-            await appendFile(state.resolvedPath, chunk)
-            const written = state.written + state.buffer.length
-            context.log.info(`final flush: ${state.buffer.length} entries (${written} total)`)
-            return { state: { ...state, buffer: [], written } }
-          } catch (err) {
-            context.log.error('Failed to perform final flush', { error: String(err) })
-          }
+          const docId = state.docIdTemplate.replace('{date}', state.dateStr)
+          state.persistenceRef.send({
+            type: 'doc.append',
+            collection: 'logs',
+            docId,
+            content: chunk,
+          })
+          const written = state.written + state.buffer.length
+          context.log.info(`final flush: ${state.buffer.length} entries (${written} total)`)
+          return { state: { ...state, buffer: [], written } }
         }
-
-        context.log.info(`stopped — ${state.written} log entries persisted`)
         return { state }
       },
     }),

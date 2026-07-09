@@ -596,7 +596,7 @@ export const createActor = <M, S>(
     // supervised shutdown path as any other failure.
     try {
       if (def.persistence) {
-        const loaded = await def.persistence.load()
+        const loaded = await def.persistence.load(services)
         if (loaded !== undefined) state = loaded
       }
       currentStateSnapshot = state
@@ -673,7 +673,7 @@ export const createActor = <M, S>(
           // ─── Persistence: snapshot state after successful message ───
           if (def.persistence) {
             try {
-              await def.persistence.save(state)
+              await def.persistence.save(state, services)
             } catch (saveError: unknown) {
               log.warn('persistence save failed — continuing', { error: saveError })
             }
@@ -714,7 +714,7 @@ export const createActor = <M, S>(
 
             state = resolveInitialState()
             if (def.persistence) {
-              const loaded = await def.persistence.load()
+              const loaded = await def.persistence.load(services)
               if (loaded !== undefined) state = loaded
             }
             currentStateSnapshot = state

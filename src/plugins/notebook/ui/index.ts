@@ -38,10 +38,7 @@ export const reduceFrame = (frame: any) => {
   if (frame.type === 'notebookTodosList') {
     ns.set('todos', frame.todos)
   } else if (frame.type === 'notebookJournalMonths') {
-    const yearStr = String(frame.year)
-    const monthStr = String(frame.month).padStart(2, '0')
-    const highlighted = frame.days.map((d: any) => `${yearStr}-${monthStr}-${String(d).padStart(2, '0')}`)
-    ns.set('highlightedDays', highlighted)
+    ns.set('highlightedDays', frame.days)
   } else if (frame.type === 'notebookJournalEntry') {
     ns.set('selectedEntry', frame.content)
   } else if (frame.type === 'notebookTrackerHabits') {

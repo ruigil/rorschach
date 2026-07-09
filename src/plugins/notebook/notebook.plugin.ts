@@ -43,7 +43,6 @@ export const notebookSchema: ConfigSchemaSection = {
   schema: {
     type: 'object',
     properties: {
-      notebookDir: { type: 'string', default: 'workspace/notebook', 'x-ui': { label: 'Notebook directory' } },
       agent: {
         type: 'object',
         properties: {
@@ -58,7 +57,6 @@ export const notebookSchema: ConfigSchemaSection = {
 const notebookSchemas = [notebookSchema]
 
 const config = defineConfig<NotebookConfig>('notebook', {
-  notebookDir:  'workspace/notebook',
   agent: {
     model: 'google/gemini-3.1-pro-preview',
     maxToolLoops: 10,
@@ -98,34 +96,19 @@ export default createPluginFactory<NotebookConfig>({
   uiSurface: notebookSurfaceRegistration,
   slots: {
     manager: {
-      factory: (cfg) => {
-        const notebookDir = cfg.notebookDir ?? 'workspace/notebook'
-        return NotebookManager(notebookDir)
-      },
+      factory: () => NotebookManager(),
     },
     journal: {
-      factory: (cfg) => {
-        const notebookDir = cfg.notebookDir ?? 'workspace/notebook'
-        return Journal(notebookDir)
-      },
+      factory: () => Journal(),
     },
     tracker: {
-      factory: (cfg) => {
-        const notebookDir = cfg.notebookDir ?? 'workspace/notebook'
-        return Tracker(notebookDir)
-      },
+      factory: () => Tracker(),
     },
     todos: {
-      factory: (cfg) => {
-        const notebookDir = cfg.notebookDir ?? 'workspace/notebook'
-        return Todos(notebookDir)
-      },
+      factory: () => Todos(),
     },
     search: {
-      factory: (cfg) => {
-        const notebookDir = cfg.notebookDir ?? 'workspace/notebook'
-        return Search(notebookDir)
-      },
+      factory: () => Search(),
     },
   },
   agents: {
@@ -134,7 +117,7 @@ export default createPluginFactory<NotebookConfig>({
       options: (cfg, deps) => ({
         model: cfg.agent?.model ?? 'google/gemini-3.5-flash',
         maxToolLoops: cfg.agent?.maxToolLoops ?? 15,
-        notebookDir: cfg.notebookDir ?? 'workspace/notebook',
+        notebookDir: 'workspace/notebook',
         tools: buildToolCollection(
           deps.journal as ActorRef<ToolMsg>,
           deps.tracker as ActorRef<ToolMsg>,

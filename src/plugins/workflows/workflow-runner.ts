@@ -13,12 +13,14 @@ import type {
   WorkflowRunnerConfig,
 } from './types.ts'
 import { WorkflowRunExecutor } from './workflow-run-executor.ts'
-import { getWorkflowRun, listWorkflowRuns, listWorkflows, getWorkflow, getWorkflowGraph, createWorkflowRun } from './workflow-store.ts'
+import { getWorkflowRun, listWorkflowRuns, listWorkflows, getWorkflowGraph, createWorkflowRun } from './workflow-store.ts'
+import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
 
 type RunnerState = {
   live: Record<string, ActorRef<WorkflowRunExecutorMsg>>
   executionTools: ToolCollection
   llmRef: ActorRef<LlmProviderMsg> | null
+  persistenceRef: ActorRef<any> | null
 }
 
 const summarizeExecutionTools = (tools: ToolCollection): ExecutionToolSummary[] =>
@@ -28,10 +30,12 @@ const summarizeExecutionTools = (tools: ToolCollection): ExecutionToolSummary[] 
     mayBeLongRunning: tool.mayBeLongRunning,
   }))
 
+
+
 export const WorkflowRunner = (
   config: WorkflowRunnerConfig,
 ): ActorDef<WorkflowRunnerMsg, RunnerState> => {
-  const { workflowsDir, workflowRunsDir, llmRef, model, maxToolLoops } = config
+  const { workflowRunsDir, model, maxToolLoops } = config
 
   const ensureRunActor = (
     state: RunnerState,
@@ -54,8 +58,12 @@ export const WorkflowRunner = (
     msg: Extract<WorkflowRunnerMsg, { type: 'list' }>,
     ctx: ActorContext<WorkflowRunnerMsg>,
   ): ActorResult<WorkflowRunnerMsg, RunnerState> => {
+    if (!state.persistenceRef) {
+      msg.replyTo.send({ ok: false, error: 'Persistence not ready' })
+      return { state }
+    }
     ctx.pipeToSelf(
-      listWorkflowRuns(workflowRunsDir, msg.userId),
+      listWorkflowRuns(state.persistenceRef, msg.userId),
       runs => {
         msg.replyTo.send({ ok: true, runs })
         return { type: '_done' }
@@ -103,6 +111,10 @@ export const WorkflowRunner = (
     msg: Extract<WorkflowRunnerMsg, { type: 'get' }>,
     ctx: ActorContext<WorkflowRunnerMsg>,
   ): ActorResult<WorkflowRunnerMsg, RunnerState> => {
+    if (!state.persistenceRef) {
+      msg.replyTo.send({ ok: false, error: 'Persistence not ready' })
+      return { state }
+    }
     ctx.pipeToSelf(
       (async (): Promise<WorkflowRunnerReply> => {
         const live = state.live[msg.runId]
@@ -113,7 +125,7 @@ export const WorkflowRunner = (
             { timeoutMs: 5_000 },
           )
         }
-        const diskReply = await getWorkflowRun(workflowRunsDir, msg.userId, msg.runId)
+        const diskReply = await getWorkflowRun(state.persistenceRef!, msg.userId, msg.runId)
         if (!diskReply.ok) return diskReply
         return { ok: true, run: diskReply.data }
       })(),
@@ -158,7 +170,7 @@ export const WorkflowRunner = (
   }
 
   return {
-    initialState: () => ({ live: {}, executionTools: {}, llmRef: config.llmRef }),
+    initialState: () => ({ live: {}, executionTools: {}, llmRef: config.llmRef, persistenceRef: null }),
     lifecycle: onLifecycle<WorkflowRunnerMsg, RunnerState>({
       start: (state, ctx) => {
         ctx.subscribe(LlmProviderTopic, event => ({ type: '_llmProvider' as const, ref: event.ref }))
@@ -168,6 +180,10 @@ export const WorkflowRunner = (
         })
         ctx.subscribe(WorkflowEventTopic, event => ({ type: '_runUpdated' as const, event }))
         ctx.subscribe(HttpWsFrameTopic, frameEvent => ({ type: '_wsFrame' as const, event: frameEvent }))
+        ctx.subscribe(PersistenceProviderTopic, (event) => ({
+          type: '_persistenceRef' as const,
+          ref: event.ref,
+        }))
         return { state }
       },
       terminated: (state, event, ctx) => {
@@ -186,6 +202,10 @@ export const WorkflowRunner = (
       }
     }),
     handler: onMessage<WorkflowRunnerMsg, RunnerState>({
+      _persistenceRef: (state, msg) => {
+        return { state: { ...state, persistenceRef: msg.ref } }
+      },
+
       _llmProvider: (state, msg) => {
         return { state: { ...state, llmRef: msg.ref } }
       },
@@ -220,89 +240,60 @@ export const WorkflowRunner = (
         return { state }
       },
 
-      _done: (state) => ({ state }),
-
-      _reply: (state, msg) => {
-        msg.replyTo.send(msg.reply)
-        return { state }
-      },
-
-      listExecutionTools: (state, msg) => {
-        msg.replyTo.send({ ok: true, executionTools: summarizeExecutionTools(state.executionTools) })
-        return { state }
-      },
-
       _wsFrame: (state, msg, ctx) => {
         const { userId, frame } = msg.event
         if (!frame.type.startsWith('workflow.')) return { state }
 
-        const sendFrame = (replyFrame: object) => {
-          ctx.publish(OutboundUserMessageTopic, {
-            userId,
-            text: JSON.stringify(replyFrame),
-          })
+        const sendFrame = (reply: object) => {
+          ctx.publish(OutboundUserMessageTopic, { userId, text: JSON.stringify(reply) })
         }
 
+        if (!state.persistenceRef) {
+          sendFrame({ type: 'workflowError', message: 'Persistence not ready' })
+          return { state }
+        }
+        const dl = state.persistenceRef
+
         const handle = async () => {
-          switch (frame.type) {
-            case 'workflow.list.request': {
-              const workflows = await listWorkflows(workflowsDir, userId)
-              sendFrame({ type: 'workflowsList', workflows })
-              break
+          if (frame.type === 'workflow.list.request') {
+            const list = await listWorkflows(dl, userId)
+            sendFrame({ type: 'workflowsList', workflows: list })
+          } else if (frame.type === 'workflow.runs.request') {
+            const list = await listWorkflowRuns(dl, userId)
+            sendFrame({ type: 'workflowRunsList', runs: list })
+          } else if (frame.type === 'workflow.graph.request') {
+            const { workflowId, runId } = frame
+            let run = undefined
+            if (runId) {
+              const runRes = await getWorkflowRun(dl, userId, runId)
+              if (runRes.ok) run = runRes.data
             }
-            case 'workflow.runs.request': {
-              const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
-                ctx.self,
-                replyTo => ({ type: 'list', userId, replyTo })
-              )
-              if (reply.ok && 'runs' in reply) {
-                sendFrame({ type: 'workflowRunsList', runs: reply.runs })
-              } else {
-                sendFrame({ type: 'workflowError', message: reply.ok ? 'Unexpected response' : reply.error })
-              }
-              break
+            const res = await getWorkflowGraph(dl, userId, workflowId, run)
+            if (res.ok) {
+              sendFrame({ type: 'workflowGraph', workflowId, runId, ...res.data.graph })
+            } else {
+              sendFrame({ type: 'workflowError', message: res.error })
             }
-            case 'workflow.graph.request': {
-              let run = undefined
-              if (frame.runId) {
-                const runReply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
-                  ctx.self,
-                  replyTo => ({ type: 'get', userId, runId: frame.runId, replyTo })
-                )
-                if (runReply.ok && 'run' in runReply) run = runReply.run
-              }
-              const res = await getWorkflowGraph(workflowsDir, userId, frame.workflowId, run)
-              if (res.ok) {
-                sendFrame({ type: 'workflowGraph', ...res.data.graph })
-              } else {
-                sendFrame({ type: 'workflowError', message: res.error })
-              }
-              break
+          } else if (frame.type === 'workflow.start.request') {
+            const result = await createWorkflowRun(dl, userId, frame.workflowId, frame.inputs)
+            if (!result.ok) {
+              sendFrame({ type: 'workflowError', message: result.error })
+              return
             }
-            case 'workflow.start.request': {
-              const result = await createWorkflowRun(workflowsDir, workflowRunsDir, userId, frame.workflowId, frame.inputs)
-              if (!result.ok) {
-                sendFrame({ type: 'workflowError', message: result.error })
-                break
-              }
-              const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
-                ctx.self,
-                replyTo => ({ type: 'start', run: result.data.run, workflow: result.data.workflow, replyTo })
-              )
-              if (!reply.ok) {
-                sendFrame({ type: 'workflowError', message: reply.error })
-              }
-              break
+            const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+              ctx.self,
+              replyTo => ({ type: 'start', run: result.data.run, workflow: result.data.workflow, replyTo }),
+            )
+            if (!reply.ok) {
+              sendFrame({ type: 'workflowError', message: reply.error })
             }
-            case 'workflow.resume.request': {
-              const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
-                ctx.self,
-                replyTo => ({ type: 'resume', userId, runId: frame.runId, replyTo })
-              )
-              if (!reply.ok) {
-                sendFrame({ type: 'workflowError', message: reply.error })
-              }
-              break
+          } else if (frame.type === 'workflow.resume.request') {
+            const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+              ctx.self,
+              replyTo => ({ type: 'resume', userId, runId: frame.runId, replyTo }),
+            )
+            if (!reply.ok) {
+              sendFrame({ type: 'workflowError', message: reply.error })
             }
           }
         }
@@ -311,10 +302,19 @@ export const WorkflowRunner = (
         return { state }
       },
 
-      list: listRuns,
-      start: startRun,
-      get: getRun,
-      resume: resumeRun,
+      start: (state, msg, ctx) => startRun(state, msg, ctx),
+      list: (state, msg, ctx) => listRuns(state, msg, ctx),
+      listExecutionTools: (state, msg) => {
+        msg.replyTo.send({ ok: true, executionTools: summarizeExecutionTools(state.executionTools) })
+        return { state }
+      },
+      get: (state, msg, ctx) => getRun(state, msg, ctx),
+      resume: (state, msg, ctx) => resumeRun(state, msg, ctx),
+      _reply: (state, msg) => {
+        msg.replyTo.send(msg.reply)
+        return { state }
+      },
+      _done: state => ({ state }),
     }),
   }
 }

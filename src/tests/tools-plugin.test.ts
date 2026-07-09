@@ -9,6 +9,7 @@ import {
 import { ToolRegistrationTopic } from '../types/tools.ts'
 import type { ToolInvokeMsg, ToolReply, ToolRegistrationEvent } from '../types/tools.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
 
 // ─── Helpers ───
 
@@ -58,7 +59,7 @@ describe('web-search actor', () => {
   test('sends toolResult to replyTo on successful Brave API response', async () => {
     stubFetchOk(mockBraveResponse)
 
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const ref = system.spawn('web-search', WebSearch({ apiKey: 'test-key' }))
     await tick()
 
@@ -81,7 +82,7 @@ describe('web-search actor', () => {
   test('sends toolError to replyTo when Brave API returns non-ok status', async () => {
     stubFetchError(429, 'Rate limit exceeded')
 
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const ref = system.spawn('web-search', WebSearch({ apiKey: 'test-key' }))
     await tick()
 
@@ -102,7 +103,7 @@ describe('web-search actor', () => {
   test('sends toolError to replyTo when fetch throws a network error', async () => {
     stubFetchThrow('network unreachable')
 
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const ref = system.spawn('web-search', WebSearch({ apiKey: 'test-key' }))
     await tick()
 
@@ -128,7 +129,7 @@ describe('web-search actor', () => {
       return new Response(JSON.stringify(mockBraveResponse), { status: 200 })
     }) as unknown as typeof fetch
 
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const ref = system.spawn('web-search', WebSearch({ apiKey: 'test-key', count: 7 }))
     await tick()
 
@@ -152,7 +153,7 @@ describe('web-search actor', () => {
       return new Response(JSON.stringify(mockBraveResponse), { status: 200 })
     }) as unknown as typeof fetch
 
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const ref = system.spawn('web-search', WebSearch({ apiKey: 'my-secret-key' }))
     await tick()
 
@@ -178,7 +179,7 @@ describe('tools plugin', () => {
 
     const system = await AgentSystem({
       config: { tools: { webSearch: { apiKey: 'test-key', count: 10 } } },
-      plugins: [toolsPlugin],
+      plugins: [MockPersistenceActor(), toolsPlugin],
     })
     await tick()
 
@@ -270,7 +271,7 @@ describe('tools plugin', () => {
 
     const system = await AgentSystem({
       config: { tools: { webSearch: { apiKey: 'initial-key', count: 5 } } },
-      plugins: [toolsPlugin],
+      plugins: [MockPersistenceActor(), toolsPlugin],
     })
     await tick()
 

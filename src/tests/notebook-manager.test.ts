@@ -56,7 +56,7 @@ describe('NotebookManager WebSocket integration', () => {
     })
 
     // Spawn the NotebookManager slot actor
-    system.spawn('notebook-manager', NotebookManager(dir))
+    system.spawn('notebook-manager', NotebookManager())
 
     const waitMessages = async (count: number, timeout = 1000) => {
       const start = Date.now()

@@ -1,6 +1,7 @@
 // ─── Public API ───
 export { AgentSystem, type PluginSystemOptions } from './actor/system.ts'
 export { ask } from './actor/ask.ts'
+export { persistencePluginAdapter } from './actor/persistence.ts'
 export { invokeTool, defineTool, parseToolArgs, applyToolFilter } from './agent/tool-utils.ts'
 export type { InvokeToolArgs, InvokeToolOptions } from './agent/tool-utils.ts'
 export { onLifecycle, onMessage } from './actor/match.ts'
@@ -73,6 +74,7 @@ export type { ConfigSchemaSection, ConfigUpdateRequest } from '../types/config.t
 
 export type {
   ActorRef,
+  ActorServices,
   MessageHeaders,
   ActorDef,
   ActorContext,

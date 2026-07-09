@@ -94,7 +94,7 @@ describe('workflow store', () => {
     await writeFile(join(dir, 'other.json'), JSON.stringify(sampleWorkflow('u2')))
     await writeFile(join(dir, 'bad.json'), '{nope')
 
-    const workflows = await listWorkflows(dir, 'u1')
+    const workflows = await listWorkflows({} as any, 'u1')
     expect(workflows).toHaveLength(1)
     expect(workflows[0]).toMatchObject({ id: 'workflow-1', taskCount: 2, userId: 'u1' })
   })
@@ -103,7 +103,7 @@ describe('workflow store', () => {
     const dir = await makeDir()
     await writeFile(join(dir, 'workflow.json'), JSON.stringify(sampleWorkflow()))
 
-    const result = await getWorkflowGraph(dir, 'u1', 'workflow-1', sampleRun())
+    const result = await getWorkflowGraph({} as any, 'u1', 'workflow-1', sampleRun())
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.data.graph.nodes.map((node) => node.id)).toEqual(['design', 'build'])
@@ -142,7 +142,6 @@ describe('workflow store', () => {
     })
 
     const runner = system.spawn('workflow-runner', WorkflowRunner({
-      workflowsDir: dir,
       workflowRunsDir: join(dir, 'runs'),
       llmRef: null,
       model: 'deepseek/deepseek-v4-flash',
@@ -213,14 +212,14 @@ describe('workflow store', () => {
 
     const listReply = await handleWorkflowTool(
       { type: 'invoke', toolName: listWorkflowsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { workflowsDir: dir, workflowRunnerRef: runner, ctx },
+      { persistenceRef: {} as any, workflowRunnerRef: runner, ctx },
     )
     expect(listReply.type).toBe('toolResult')
     if (listReply.type === 'toolResult') expect(listReply.result.text).toContain('Ship workflow workspace')
 
     const graphReply = await handleWorkflowTool(
       { type: 'invoke', toolName: showWorkflowGraphTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1' }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { workflowsDir: dir, workflowRunnerRef: runner, ctx },
+      { persistenceRef: {} as any, workflowRunnerRef: runner, ctx },
     )
     expect(graphReply.type).toBe('toolResult')
     expect(events.map(event => JSON.parse(event.text))).toContainEqual({ type: 'workflowGraph', workflowId: 'workflow-1' })
@@ -246,7 +245,7 @@ describe('workflow store', () => {
           dependencies: [],
         }],
       }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { workflowsDir: dir, workflowRunnerRef: runner, ctx: { publish: () => {} } },
+      { persistenceRef: {} as any, workflowRunnerRef: runner, ctx: { publish: () => {} } },
     )
 
     expect(reply.type).toBe('toolResult')
@@ -280,7 +279,7 @@ describe('workflow store', () => {
         workflowId: initialWorkflow.id,
         goal: 'Updated Goal',
       }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { workflowsDir: dir, workflowRunnerRef: runner, ctx },
+      { persistenceRef: {} as any, workflowRunnerRef: runner, ctx },
     )
 
     expect(reply.type).toBe('toolResult')
@@ -299,7 +298,7 @@ describe('workflow store', () => {
 
     const reply = await handleWorkflowTool(
       { type: 'invoke', toolName: listExecutionToolsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { workflowsDir: dir, workflowRunnerRef: runner, ctx: { publish: () => {} } },
+      { persistenceRef: {} as any, workflowRunnerRef: runner, ctx: { publish: () => {} } },
     )
 
     expect(reply.type).toBe('toolResult')

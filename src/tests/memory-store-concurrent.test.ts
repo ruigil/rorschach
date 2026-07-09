@@ -50,7 +50,7 @@ describe('Memory Records', () => {
       mimeType: 'image/png',
     }]
 
-    const recordsRef = system.spawn('records', MemoryRecords(workPath)) as ActorRef<MemoryRecordsMsg>
+    const recordsRef = system.spawn('records', MemoryRecords()) as ActorRef<MemoryRecordsMsg>
     const created = await ask<MemoryRecordsMsg, MemoryRecord | { error: string }>(
       recordsRef,
       (replyTo) => ({ type: 'create', content, attachments, userId, replyTo }),
@@ -83,7 +83,7 @@ describe('Memory Records', () => {
       `---\nrecordId: "${recordId}"\ncreatedAt: "2026-01-01T00:00:00.000Z"\n---\n\n${content}`,
     )
 
-    const recordsRef = system.spawn('records', MemoryRecords(workPath)) as ActorRef<MemoryRecordsMsg>
+    const recordsRef = system.spawn('records', MemoryRecords()) as ActorRef<MemoryRecordsMsg>
     const records = await ask<MemoryRecordsMsg, MemoryRecord[]>(
       recordsRef,
       (replyTo) => ({ type: 'readMany', recordIds: [recordId], userId, replyTo }),
@@ -157,7 +157,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     const llmRef = system.spawn('mock-llm', mockLlmDef, { state: {} })
     system.publishRetained(LlmProviderTopic, 'llm', { ref: llmRef })
 
-    const recordsRef = system.spawn('records', MemoryRecords(workPath)) as ActorRef<MemoryRecordsMsg>
+    const recordsRef = system.spawn('records', MemoryRecords()) as ActorRef<MemoryRecordsMsg>
     const kgraphRef = system.spawn(
       'kgraph',
       Kgraph(workPath, { model: 'test-embed', dimensions: 4 }),
@@ -319,7 +319,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     const llmRef = system.spawn('mock-llm', mockLlmDef, { state: {} })
     system.publishRetained(LlmProviderTopic, 'llm', { ref: llmRef })
 
-    const recordsRef = system.spawn('records', MemoryRecords(workPath)) as ActorRef<MemoryRecordsMsg>
+    const recordsRef = system.spawn('records', MemoryRecords()) as ActorRef<MemoryRecordsMsg>
     const kgraphRef = system.spawn(
       'kgraph',
       Kgraph(workPath, { model: 'test-embed', dimensions: 4 }),

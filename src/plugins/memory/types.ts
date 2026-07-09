@@ -173,6 +173,7 @@ export type MemoryRecordsMsg =
   | { type: '_createErr'; replyTo: ActorRef<MemoryRecord | { error: string }>; error: string }
   | { type: '_readManyDone'; replyTo: ActorRef<MemoryRecord[]>; records: MemoryRecord[] }
   | { type: '_readManyErr'; replyTo: ActorRef<MemoryRecord[]>; error: string }
+  | { type: '_persistenceRef'; ref: ActorRef<any> | null }
 
 // ─── Memory consolidation message protocol ───
 

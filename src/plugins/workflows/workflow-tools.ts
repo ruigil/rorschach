@@ -1,5 +1,5 @@
 import type { ActorRef, ActorDef } from '../../system/index.ts'
-import { ask, defineTool, parseToolArgs, onMessage } from '../../system/index.ts'
+import { ask, defineTool, parseToolArgs, onMessage, onLifecycle } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply, ToolMsg } from '../../types/tools.ts'
 import { WorkflowEventTopic } from './types.ts'
 import type {
@@ -12,7 +12,7 @@ import type {
 } from './types.ts'
 import { getWorkflow, getWorkflowGraph, listWorkflows, saveWorkflow, updateWorkflow, deleteWorkflow, createWorkflowRun } from './workflow-store.ts'
 import { validateWorkflow } from './validation.ts'
-import { join } from 'node:path'
+import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
 
 const valueSpecSchema = {
   type: 'object',
@@ -105,7 +105,7 @@ export const startWorkflowRunTool = defineTool('start_workflow_run', 'Start exec
   },
 })
 
-export const listWorkflowRunsTool = defineTool('list_workflow_runs', 'List workflow runs for the current user.', {
+export const listWorkflowRunsTool = defineTool('list_workflow_runs', 'List all workflow run states.', {
   type: 'object',
   properties: {},
 })
@@ -225,16 +225,19 @@ const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch:
   }
 }
 
-export type WorkflowToolDeps = {
-  workflowsDir: string
-  workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
-  ctx: any
-}
-
 const toolError = (error: string): ToolReply => ({ type: 'toolError', error })
 
-export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolDeps): Promise<ToolReply> => {
-  const { workflowsDir, workflowRunnerRef, ctx } = deps
+export type WorkflowToolDeps = {
+  workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
+  ctx: any
+  persistenceRef: ActorRef<any>
+}
+
+export const handleWorkflowTool = async (
+  msg: ToolInvokeMsg,
+  deps: WorkflowToolDeps
+): Promise<ToolReply> => {
+  const { workflowRunnerRef, ctx, persistenceRef } = deps
 
   if (msg.toolName === listExecutionToolsTool.name) {
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'listExecutionTools', replyTo }), { timeoutMs: 5_000 })
@@ -244,24 +247,24 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
   }
 
   if (msg.toolName === listWorkflowsTool.name) {
-    const workflows = await listWorkflows(workflowsDir, msg.userId)
+    const workflows = await listWorkflows(persistenceRef, msg.userId)
     return { type: 'toolResult', result: { text: formatWorkflowList(workflows) } }
   }
 
   if (msg.toolName === saveWorkflowTool.name) {
     const parsed = parseWorkflow(msg.arguments, msg.userId)
     if (!parsed.ok) return toolError(parsed.error)
-    const result = await saveWorkflow(workflowsDir, parsed.workflow)
+    const result = await saveWorkflow(persistenceRef, parsed.workflow)
     if (!result.ok) return toolError(result.error)
     ctx.publish(WorkflowEventTopic, { userId: msg.userId, workflowId: result.data.workflow.id })
-    return { type: 'toolResult', result: { text: `Workflow saved to ${result.data.filepath} - ${result.data.workflow.tasks.length} tasks.` } }
+    return { type: 'toolResult', result: { text: `Workflow saved - ${result.data.workflow.tasks.length} tasks.` } }
   }
 
   if (msg.toolName === getWorkflowTool.name || msg.toolName === showWorkflowGraphTool.name) {
     const arg = workflowIdArg(msg.arguments)
     if (!arg.ok) return toolError(arg.error)
     if (msg.toolName === getWorkflowTool.name) {
-      const result = await getWorkflow(workflowsDir, msg.userId, arg.workflowId)
+      const result = await getWorkflow(persistenceRef, msg.userId, arg.workflowId)
       if (!result.ok) return toolError(result.error)
       return { type: 'toolResult', result: { text: JSON.stringify(result.data.workflow, null, 2) } }
     }
@@ -272,7 +275,7 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
   if (msg.toolName === updateWorkflowTool.name) {
     const parsed = parseWorkflowPatch(msg.arguments)
     if (!parsed.ok) return toolError(parsed.error)
-    const result = await updateWorkflow(workflowsDir, msg.userId, parsed.workflowId, parsed.patch)
+    const result = await updateWorkflow(persistenceRef, msg.userId, parsed.workflowId, parsed.patch)
     if (!result.ok) return toolError(result.error)
     ctx.publish(WorkflowEventTopic, { userId: msg.userId, workflowId: parsed.workflowId })
     return { type: 'toolResult', result: { text: `Workflow ${parsed.workflowId} updated successfully.` } }
@@ -281,7 +284,7 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
   if (msg.toolName === deleteWorkflowTool.name) {
     const arg = workflowIdArg(msg.arguments)
     if (!arg.ok) return toolError(arg.error)
-    const result = await deleteWorkflow(workflowsDir, msg.userId, arg.workflowId)
+    const result = await deleteWorkflow(persistenceRef, msg.userId, arg.workflowId)
     if (!result.ok) return toolError(result.error)
     return { type: 'toolResult', result: { text: `Workflow ${arg.workflowId} deleted.` } }
   }
@@ -290,13 +293,10 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
     const arg = startWorkflowArg(msg.arguments)
     if (!arg.ok) return toolError(arg.error)
 
-    // 1. Initialize the run using the store helper
-    const runsDir = join(workflowsDir, 'runs')
-    const result = await createWorkflowRun(workflowsDir, runsDir, msg.userId, arg.workflowId, arg.inputs)
+    const result = await createWorkflowRun(persistenceRef, msg.userId, arg.workflowId, arg.inputs)
     if (!result.ok) return toolError(result.error)
     const { run, workflow } = result.data
 
-    // 2. Invoke runner actor synchronously
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       workflowRunnerRef,
       replyTo => ({
@@ -342,19 +342,52 @@ export const handleWorkflowTool = async (msg: ToolInvokeMsg, deps: WorkflowToolD
   return toolError(`Unknown tool: ${msg.toolName}`)
 }
 
+type ToolsState = {
+  persistenceRef: ActorRef<any> | null
+}
+
+type ToolsMsg =
+  | ToolMsg
+  | { type: '_persistenceRef'; ref: ActorRef<any> | null }
+  | { type: '_done' }
+
+
+
 export const WorkflowToolsActor = (options: {
-  workflowsDir: string
   workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
-}): ActorDef<ToolMsg, null> => ({
-  initialState: null,
-  handler: onMessage<ToolMsg, null>({
+}): ActorDef<ToolsMsg, ToolsState> => ({
+  initialState: () => ({ persistenceRef: null }),
+  lifecycle: onLifecycle({
+    start: (state, context) => {
+      context.subscribe(PersistenceProviderTopic, (event) => ({
+        type: '_persistenceRef' as const,
+        ref: event.ref,
+      }))
+      return { state }
+    }
+  }),
+  handler: onMessage<ToolsMsg, ToolsState>({
+    _persistenceRef: (state, msg) => {
+      return { state: { ...state, persistenceRef: msg.ref } }
+    },
+
     invoke: (state, msg, ctx) => {
-      handleWorkflowTool(msg, { ...options, ctx }).then(
+      if (!state.persistenceRef) {
+        msg.replyTo.send({ type: 'toolError', error: 'Persistence not ready' })
+        return { state }
+      }
+      handleWorkflowTool(msg, {
+        workflowRunnerRef: options.workflowRunnerRef,
+        ctx,
+        persistenceRef: state.persistenceRef
+      }).then(
         reply => msg.replyTo.send(reply),
         error => msg.replyTo.send({ type: 'toolError', error: String(error) }),
       )
       return { state }
     },
+
+    _done: state => ({ state }),
   }),
   supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
 })

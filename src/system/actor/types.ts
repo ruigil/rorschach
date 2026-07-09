@@ -209,6 +209,8 @@ export type EventStream = {
   readonly publishRetained: <T>(topic: EventTopic<T>, key: string, event: T) => void
   /** Remove a retained entry and publish the tombstone event to current subscribers. */
   readonly deleteRetained: <T>(topic: EventTopic<T>, key: string, tombstone: T) => void
+  /** Synchronously query a retained event value by topic and key. */
+  readonly getRetainedValue: <T>(topic: EventTopic<T>, key: string) => T | undefined
   /** Subscribe to a topic. Matching events are delivered via the callback. */
   readonly subscribe: <T>(
     subscriberName: string,
@@ -386,14 +388,14 @@ export type PersistenceAdapter<S> = {
    * Return the last saved snapshot, or undefined to start from initialState.
    * Errors propagate as startup failures.
    */
-  load: () => Promise<S | undefined>
+  load: (services: ActorServices) => Promise<S | undefined>
   /**
    * Called after each successfully processed message with the new state.
    * Awaited before the next message is dequeued — guarantees at-least-once
    * durability at the cost of throughput. Errors are caught, logged as warnings,
    * and do not crash the actor.
    */
-  save: (state: S) => Promise<void>
+  save: (state: S, services: ActorServices) => Promise<void>
 }
 
 // ─── Actor Definition (behavior specification) ───

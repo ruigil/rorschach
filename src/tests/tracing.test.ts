@@ -11,6 +11,7 @@ import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import type { ToolInvokeMsg, ToolMsg } from '../types/tools.ts'
 import { ToolRegistrationTopic } from '../types/tools.ts'
 import { webSearchTool } from '../plugins/tools/web-search.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
 
 // ─── Helpers ───
 
@@ -125,7 +126,7 @@ describe('distributed tracing', () => {
   test('emits chatbot and llm-call spans with correct traceId and parent chain for a direct response', async () => {
     globalThis.fetch = (async () => makeSSEResponse(contentPayloads('Hello!'))) as unknown as typeof fetch
 
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const spans = collectSpans(system)
     const react = spawnChatbot(system)
 
@@ -177,7 +178,7 @@ describe('distributed tracing', () => {
 
     const system = await AgentSystem({
       config: { tools: { webSearch: { apiKey: 'test-key' } } },
-      plugins: [toolsPlugin],
+      plugins: [MockPersistenceActor(), toolsPlugin],
     })
     const spans = collectSpans(system)
     const react = spawnChatbot(system)
@@ -218,7 +219,7 @@ describe('distributed tracing', () => {
   test('closes chatbot and llm-call spans with error status when the LLM call fails', async () => {
     globalThis.fetch = (async () => new Response('Internal Server Error', { status: 500 })) as unknown as typeof fetch
 
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const spans = collectSpans(system)
     const react = spawnChatbot(system)
 
@@ -264,7 +265,7 @@ describe('distributed tracing', () => {
       ],
     )
 
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const spans = collectSpans(system)
     // Retain the tool before spawning chatbot — replayed on subscribe during chatbot's start lifecycle
     system.publishRetained(ToolRegistrationTopic, webSearchTool.name, { ...webSearchTool, ref: fakeToolRef })

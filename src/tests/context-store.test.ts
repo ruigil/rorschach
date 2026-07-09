@@ -4,6 +4,7 @@ import { AgentSystem } from '../system/index.ts'
 import { assembleAgentMessages } from '../system/index.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
 import { ContextSnapshotTopic, type ContextSnapshotEvent } from '../types/agents.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -32,7 +33,7 @@ describe('ContextStore context snapshots', () => {
       records: [{ message: { role: 'user', content: 'old' }, timestamp: Date.now() }],
     }))
 
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
     system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath }))
@@ -45,7 +46,7 @@ describe('ContextStore context snapshots', () => {
   })
 
   test('publishes conversation messages and compact tool summaries', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
     const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath: await tempContextPath() }))
@@ -85,7 +86,7 @@ describe('ContextStore context snapshots', () => {
   })
 
   test('adds a snapshot turn when user + assistant turn completes', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
     const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath: await tempContextPath() }))
@@ -111,7 +112,7 @@ describe('ContextStore context snapshots', () => {
   })
 
   test('does not add a snapshot turn for tool-call assistant messages', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
     const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath: await tempContextPath() }))
@@ -144,7 +145,7 @@ describe('ContextStore context snapshots', () => {
   })
 
   test('filters injected turns at the context snapshot source', async () => {
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
     const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath: await tempContextPath() }))

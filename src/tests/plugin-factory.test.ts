@@ -1,4 +1,5 @@
 import { describe, test, expect } from 'bun:test';
+import { MockPersistenceActor } from './mock-persistence.ts'
 import { AgentSystem, MetricsTopic } from '../system/index.ts';
 import type { ActorDef, MetricsEvent } from '../system/index.ts';
 import observabilityPlugin from '../plugins/observability/observability.plugin.ts';
@@ -69,7 +70,7 @@ describe('Plugin Factory (createPluginFactory)', () => {
     const events: MetricsEvent[] = [];
     const system = await AgentSystem({
       config: { observability: { metrics: { intervalMs: 50 } } },
-      plugins: [observabilityPlugin],
+      plugins: [MockPersistenceActor(), observabilityPlugin],
     });
     system.subscribe(MetricsTopic, (e) => events.push(e));
 
@@ -202,7 +203,7 @@ describe('Plugin Factory (createPluginFactory)', () => {
     const events: MetricsEvent[] = [];
     const system = await AgentSystem({
       config: { observability: { metrics: { intervalMs: 50 } } },
-      plugins: [observabilityPlugin],
+      plugins: [MockPersistenceActor(), observabilityPlugin],
     });
     system.subscribe(MetricsTopic, (e) => events.push(e));
 
