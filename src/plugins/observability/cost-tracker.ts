@@ -1,19 +1,16 @@
-import { appendFile, writeFile, mkdir } from 'node:fs/promises'
-import { join } from 'node:path'
-import type { ActorDef, MessageHandler } from '../../system/index.ts'
+import type { ActorDef, MessageHandler, ActorRef } from '../../system/index.ts'
 import { CostTopic } from '../../types/llm.ts'
 import type { CostTrackerMsg } from './types.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
+import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
 
 // ─── Actor state ───
 
 export type CostTrackerState = {
-  costsDir: string
   dateStr: string
-  resolvedPath: string
   written: number
   buffer: string[]
-  rotating?: boolean
+  persistenceRef: ActorRef<PersistenceMsg> | null
   dailyTotals: {
     totalCost: number
     totalInputTokens: number
@@ -40,15 +37,8 @@ function currentDateStr(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-function resolvedFilePath(costsDir: string, dateStr: string): string {
-  return join(costsDir, `costs-${dateStr}.jsonl`)
-}
-
-async function ensureFile(path: string, costsDir: string): Promise<void> {
-  await mkdir(costsDir, { recursive: true })
-  try {
-    await writeFile(path, '', { flag: 'wx' })
-  } catch {}
+function docId(dateStr: string): string {
+  return `costs-${dateStr}.jsonl`
 }
 
 const emptyTotals = (): CostTrackerState['dailyTotals'] => ({
@@ -62,57 +52,39 @@ const emptyTotals = (): CostTrackerState['dailyTotals'] => ({
  * Creates a cost tracker actor definition.
  *
  * The actor subscribes to `CostTopic` on the `start` lifecycle event and writes
- * every received `CostEvent` as a single JSON line to a daily file at
- * `{costsDir}/costs-{YYYY-MM-DD}.jsonl`.
+ * every received `CostEvent` as a single JSON line to `costs/costs-{YYYY-MM-DD}.jsonl`
+ * via the persistence plugin's document store.
  *
  * In-memory `dailyTotals` accumulate cost and token counts for the current day,
  * broken down by model. Totals reset automatically when the calendar day rolls over.
  *
  * Supports optional buffered writes via `flushIntervalMs`.
- * On stop, any remaining buffered events are flushed to disk.
+ * On stop, any remaining buffered events are flushed.
  */
 export const CostTracker = (
   options: CostTrackerOptions,
 ): ActorDef<CostTrackerMsg, CostTrackerState> => {
-  const { costsDir, flushIntervalMs } = options
+  const { flushIntervalMs } = options
 
   const handler: MessageHandler<CostTrackerMsg, CostTrackerState> = onMessage<CostTrackerMsg, CostTrackerState>({
     cost: (state, message, context) => {
-      if (state.rotating) {
-        return { state, stash: true }
-      }
-
       const { event } = message
 
-      // Check for day rollover
+      // Check for day rollover (synchronous — persistence actor handles storage)
       const today = currentDateStr()
-      if (today !== state.dateStr) {
-        context.pipeToSelf(
-          (async () => {
-            const newPath = resolvedFilePath(costsDir, today)
-            await ensureFile(newPath, costsDir)
-            return { today, resolvedPath: newPath }
-          })(),
-          res => ({ type: '_rotated' as const, dateStr: res.today, resolvedPath: res.resolvedPath }),
-          err => {
-            context.log.error('cost tracker rotation failed', { error: String(err) })
-            return { type: '_rotated' as const, dateStr: today, resolvedPath: state.resolvedPath }
-          }
-        )
-        return { state: { ...state, rotating: true }, stash: true }
-      }
-
-      const line = JSON.stringify(event)
+      const isNewDay = today !== state.dateStr
+      const dateStr = isNewDay ? today : state.dateStr
+      const totals = isNewDay ? emptyTotals() : state.dailyTotals
 
       // Update in-memory daily totals
       const cost = event.cost ?? 0
-      const prev = state.dailyTotals.byModel[event.model] ?? { cost: 0, inputTokens: 0, outputTokens: 0 }
+      const prev = totals.byModel[event.model] ?? { cost: 0, inputTokens: 0, outputTokens: 0 }
       const dailyTotals: CostTrackerState['dailyTotals'] = {
-        totalCost:         state.dailyTotals.totalCost         + cost,
-        totalInputTokens:  state.dailyTotals.totalInputTokens  + event.inputTokens,
-        totalOutputTokens: state.dailyTotals.totalOutputTokens + event.outputTokens,
+        totalCost:         totals.totalCost         + cost,
+        totalInputTokens:  totals.totalInputTokens  + event.inputTokens,
+        totalOutputTokens: totals.totalOutputTokens + event.outputTokens,
         byModel: {
-          ...state.dailyTotals.byModel,
+          ...totals.byModel,
           [event.model]: {
             cost:         prev.cost         + cost,
             inputTokens:  prev.inputTokens  + event.inputTokens,
@@ -121,30 +93,49 @@ export const CostTracker = (
         },
       }
 
-      if (flushIntervalMs && flushIntervalMs > 0) {
-        return { state: { ...state, buffer: [...state.buffer, line], dailyTotals } }
+      const line = JSON.stringify(event)
+
+      if (!state.persistenceRef || (flushIntervalMs && flushIntervalMs > 0)) {
+        return { state: { ...state, dateStr, buffer: [...state.buffer, line], dailyTotals } }
       }
 
-      appendFile(state.resolvedPath, line + '\n').catch(err => {
-        context.log.error('Failed to append cost event', { error: String(err) })
+      state.persistenceRef.send({
+        type: 'doc.append',
+        collection: 'costs',
+        docId: docId(dateStr),
+        content: line + '\n',
       })
-      return { state: { ...state, written: state.written + 1, dailyTotals } }
+      return { state: { ...state, dateStr, written: state.written + 1, dailyTotals } }
     },
 
-    _rotated: (state, message) => {
-      return {
-        state: { ...state, dateStr: message.dateStr, resolvedPath: message.resolvedPath, dailyTotals: emptyTotals(), rotating: false },
-        become: handler,
-        unstashAll: true
+    _persistenceRef: (state, message) => {
+      if (!message.ref) {
+        return { state: { ...state, persistenceRef: null } }
       }
+      let nextState = { ...state, persistenceRef: message.ref }
+      if (nextState.buffer.length > 0) {
+        const chunk = nextState.buffer.join('\n') + '\n'
+        message.ref.send({
+          type: 'doc.append',
+          collection: 'costs',
+          docId: docId(nextState.dateStr),
+          content: chunk,
+        })
+        nextState.written += nextState.buffer.length
+        nextState.buffer = []
+      }
+      return { state: nextState }
     },
 
     flush: (state, _message, context) => {
-      if (state.buffer.length === 0) return { state }
+      if (state.buffer.length === 0 || !state.persistenceRef) return { state }
 
       const chunk = state.buffer.join('\n') + '\n'
-      appendFile(state.resolvedPath, chunk).catch(err => {
-        context.log.error('Failed to flush cost events', { error: String(err) })
+      state.persistenceRef.send({
+        type: 'doc.append',
+        collection: 'costs',
+        docId: docId(state.dateStr),
+        content: chunk,
       })
 
       const written = state.written + state.buffer.length
@@ -153,14 +144,18 @@ export const CostTracker = (
   })
 
   return {
-    initialState: { costsDir, dateStr: '', resolvedPath: '', written: 0, buffer: [], dailyTotals: { totalCost: 0, totalInputTokens: 0, totalOutputTokens: 0, byModel: {} } },
+    initialState: { dateStr: '', written: 0, buffer: [], persistenceRef: null, dailyTotals: { totalCost: 0, totalInputTokens: 0, totalOutputTokens: 0, byModel: {} } },
     handler,
 
     lifecycle: onLifecycle({
-      start: async (state, context) => {
+      start: (state, context) => {
         const dateStr = currentDateStr()
-        const resolvedPath = resolvedFilePath(costsDir, dateStr)
-        await ensureFile(resolvedPath, costsDir)
+
+        // Subscribe to Persistence provider
+        context.subscribe(PersistenceProviderTopic, (event) => ({
+          type: '_persistenceRef' as const,
+          ref: event.ref,
+        }))
 
         context.subscribe(CostTopic, (event) => ({ type: 'cost', event }))
 
@@ -168,21 +163,22 @@ export const CostTracker = (
           context.timers.startPeriodicTimer('flush', { type: 'flush' }, flushIntervalMs)
         }
 
-        context.log.info(`persisting costs to ${costsDir}/`)
-        return { state: { ...state, costsDir, dateStr, resolvedPath } }
+        context.log.info(`persisting costs via persistence plugin`)
+        return { state: { ...state, dateStr } }
       },
 
       stopped: async (state, context) => {
-        if (state.buffer.length > 0) {
+        if (state.buffer.length > 0 && state.persistenceRef) {
           const chunk = state.buffer.join('\n') + '\n'
-          try {
-            await appendFile(state.resolvedPath, chunk)
-            const written = state.written + state.buffer.length
-            context.log.info(`final flush: ${state.buffer.length} cost events (${written} total)`)
-            return { state: { ...state, buffer: [], written } }
-          } catch (err) {
-            context.log.error('Failed to perform final cost flush', { error: String(err) })
-          }
+          state.persistenceRef.send({
+            type: 'doc.append',
+            collection: 'costs',
+            docId: docId(state.dateStr),
+            content: chunk,
+          })
+          const written = state.written + state.buffer.length
+          context.log.info(`final flush: ${state.buffer.length} cost events (${written} total)`)
+          return { state: { ...state, buffer: [], written } }
         }
 
         context.log.info(`stopped — ${state.written} cost events persisted`)
