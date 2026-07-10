@@ -1,12 +1,10 @@
 import { resolveSafePath, ensureParentDir } from '../utils.ts'
-import type { PObjPut, PObjGet, PObjGetUrl, PObjHead, PObjDelete, PObjList, PResult, PObjGetPayload, PObjGetUrlPayload, PObjMeta, PList } from '../../../types/persistence.ts'
+import type { PObjPut, PObjGet, PObjPutStream, PObjGetStream, PObjHead, PObjDelete, PObjList, PResult, PObjGetPayload, PObjGetStreamPayload, PObjMeta, PList } from '../../../types/persistence.ts'
 import { unlink, readdir, stat } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
-import type { Server } from 'bun'
 
 export const ObjEngine = (baseDir: string) => {
   const resolvedDir = resolve(baseDir)
-  let server: Server<any> | null = null
 
   const getFilePath = (bucket: string, key: string): string => {
     const bucketDir = resolveSafePath(resolvedDir, bucket)
@@ -15,68 +13,6 @@ export const ObjEngine = (baseDir: string) => {
 
   const getMetaPath = (bucket: string, key: string): string => {
     return getFilePath(bucket, key) + '.meta.json'
-  }
-
-  const startServer = (): void => {
-    if (server) return
-
-    server = Bun.serve({
-      port: 0,
-      hostname: '127.0.0.1',
-      async fetch(req) {
-        const url = new URL(req.url)
-        const pathname = decodeURIComponent(url.pathname)
-        const relativePath = pathname.substring(1)
-
-        if (!relativePath) {
-          return new Response('Not found', { status: 404 })
-        }
-
-        try {
-          const filePath = resolveSafePath(resolvedDir, relativePath)
-          if (filePath.endsWith('.meta.json')) {
-            return new Response('Forbidden', { status: 403 })
-          }
-
-          const file = Bun.file(filePath)
-          if (!await file.exists()) {
-            return new Response('Not found', { status: 404 })
-          }
-
-          let contentType = 'application/octet-stream'
-          try {
-            const metaPath = filePath + '.meta.json'
-            const metaFile = Bun.file(metaPath)
-            if (await metaFile.exists()) {
-              const meta = await metaFile.json()
-              if (meta['content-type']) {
-                contentType = meta['content-type']
-              } else if (meta['Content-Type']) {
-                contentType = meta['Content-Type']
-              }
-            }
-          } catch {
-            // Fall back to default
-          }
-
-          return new Response(file, {
-            headers: {
-              'Content-Type': contentType,
-              'Access-Control-Allow-Origin': '*',
-            },
-          })
-        } catch {
-          return new Response('Not found', { status: 404 })
-        }
-      },
-    })
-  }
-
-  const stopServer = (): void => {
-    if (server) {
-      server.stop(true)
-      server = null
-    }
   }
 
   const put = async (msg: PObjPut): Promise<PResult> => {
@@ -118,7 +54,35 @@ export const ObjEngine = (baseDir: string) => {
     }
   }
 
-  const getUrl = async (msg: PObjGetUrl): Promise<PResult<PObjGetUrlPayload>> => {
+  const putStream = async (msg: PObjPutStream): Promise<PResult> => {
+    try {
+      const filePath = getFilePath(msg.bucket, msg.key)
+      const metaPath = getMetaPath(msg.bucket, msg.key)
+
+      await ensureParentDir(filePath)
+
+      const file = Bun.file(filePath)
+      const writer = file.writer()
+      const reader = msg.stream.getReader()
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          writer.write(value)
+        }
+        writer.end()
+      } finally {
+        reader.releaseLock()
+      }
+
+      await Bun.write(metaPath, JSON.stringify(msg.meta || {}))
+      return { ok: true }
+    } catch (err: any) {
+      return { ok: false, error: err.message || String(err) }
+    }
+  }
+
+  const getStream = async (msg: PObjGetStream): Promise<PResult<PObjGetStreamPayload>> => {
     try {
       const filePath = getFilePath(msg.bucket, msg.key)
       const metaPath = getMetaPath(msg.bucket, msg.key)
@@ -134,12 +98,7 @@ export const ObjEngine = (baseDir: string) => {
         meta = await metaFile.json()
       }
 
-      if (!server) {
-        startServer()
-      }
-
-      const url = `http://127.0.0.1:${server?.port ?? 0}/${msg.bucket}/${msg.key}`
-      return { ok: true, data: { url, meta } }
+      return { ok: true, data: { stream: file.stream(), meta } }
     } catch (err: any) {
       return { ok: false, error: err.message || String(err) }
     }
@@ -228,5 +187,5 @@ export const ObjEngine = (baseDir: string) => {
     }
   }
 
-  return { startServer, stopServer, put, get, getUrl, head, delete: del, list }
+  return { put, get, putStream, getStream, head, delete: del, list }
 }

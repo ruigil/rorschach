@@ -45,13 +45,11 @@ export const PersistenceActor = (config: PersistenceConfig): ActorDef<InternalPe
     initialState: {},
     lifecycle: onLifecycle({
       start: async (state, ctx) => {
-        objEngine.startServer()
         ctx.publishRetained(PersistenceProviderTopic, 'data-provider', { ref: ctx.self as ActorRef<PersistenceMsg> })
         ctx.log.info('persistence actor started', { storageRoot })
         return { state }
       },
       stopped: async (state, ctx) => {
-        objEngine.stopServer()
         graphEngine.close()
         ctx.log.info('persistence actor stopped')
         return { state }
@@ -103,11 +101,14 @@ export const PersistenceActor = (config: PersistenceConfig): ActorDef<InternalPe
         case 'obj.put':
           handleAsync(objEngine.put(msg), replyTo, ctx)
           break
+        case 'obj.putStream':
+          handleAsync(objEngine.putStream(msg), replyTo, ctx)
+          break
         case 'obj.get':
           handleAsync(objEngine.get(msg), replyTo, ctx)
           break
-        case 'obj.getUrl':
-          handleAsync(objEngine.getUrl(msg), replyTo, ctx)
+        case 'obj.getStream':
+          handleAsync(objEngine.getStream(msg), replyTo, ctx)
           break
         case 'obj.head':
           handleAsync(objEngine.head(msg), replyTo, ctx)

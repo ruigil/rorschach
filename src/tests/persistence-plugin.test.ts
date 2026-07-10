@@ -153,7 +153,7 @@ describe('Persistence Plugin Engine', () => {
     await system.shutdown()
   })
 
-  test('Object Store: Binary CRUD and HTTP serving proxy', async () => {
+  test('Object Store: Binary CRUD and Streaming', async () => {
     const system = await AgentSystem({
       config: {
         persistence: {
@@ -202,29 +202,63 @@ describe('Persistence Plugin Engine', () => {
     expect(getRes.data.data).toEqual(binaryData)
     expect(getRes.data.meta).toEqual(meta)
 
-    const getUrlRes = await ask<PersistenceMsg, any>(persistenceRef!, (replyTo) => ({
-      type: 'obj.getUrl' as const,
+    const testStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([10, 20, 30, 40]))
+        controller.close()
+      }
+    })
+    const putStreamRes = await ask<PersistenceMsg, any>(persistenceRef!, (replyTo) => ({
+      type: 'obj.putStream' as const,
       bucket: 'photos',
-      key: 'vacation/sunset.png',
+      key: 'vacation/streamed.png',
+      stream: testStream,
+      meta: { 'content-type': 'image/png', source: 'stream' },
       replyTo,
     }))
-    expect(getUrlRes.ok).toBe(true)
-    const proxyUrl = getUrlRes.data.url
-    expect(proxyUrl).toStartWith('http://127.0.0.1:')
+    expect(putStreamRes.ok).toBe(true)
 
-    const httpRes = await fetch(proxyUrl)
-    expect(httpRes.status).toBe(200)
-    expect(httpRes.headers.get('Content-Type')).toBe('image/png')
-    const fetchedBuffer = await httpRes.arrayBuffer()
-    expect(new Uint8Array(fetchedBuffer)).toEqual(binaryData)
+    const getStreamRes = await ask<PersistenceMsg, any>(persistenceRef!, (replyTo) => ({
+      type: 'obj.getStream' as const,
+      bucket: 'photos',
+      key: 'vacation/streamed.png',
+      replyTo,
+    }))
+    expect(getStreamRes.ok).toBe(true)
+    expect(getStreamRes.data.meta['content-type']).toBe('image/png')
+    expect(getStreamRes.data.meta['source']).toBe('stream')
 
-    const delRes = await ask<PersistenceMsg, any>(persistenceRef!, (replyTo) => ({
+    const reader = getStreamRes.data.stream.getReader()
+    const chunks: Uint8Array[] = []
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+    }
+    const combinedLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0)
+    const combined = new Uint8Array(combinedLength)
+    let offset = 0
+    for (const chunk of chunks) {
+      combined.set(chunk, offset)
+      offset += chunk.length
+    }
+    expect(combined).toEqual(new Uint8Array([10, 20, 30, 40]))
+
+    const delRes1 = await ask<PersistenceMsg, any>(persistenceRef!, (replyTo) => ({
       type: 'obj.delete' as const,
       bucket: 'photos',
       key: 'vacation/sunset.png',
       replyTo,
     }))
-    expect(delRes.ok).toBe(true)
+    expect(delRes1.ok).toBe(true)
+
+    const delRes2 = await ask<PersistenceMsg, any>(persistenceRef!, (replyTo) => ({
+      type: 'obj.delete' as const,
+      bucket: 'photos',
+      key: 'vacation/streamed.png',
+      replyTo,
+    }))
+    expect(delRes2.ok).toBe(true)
 
     await system.shutdown()
   })

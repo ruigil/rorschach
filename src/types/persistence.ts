@@ -44,14 +44,16 @@ export type PDocHead   = { type: 'doc.head';   collection: string; docId: string
 
 export type PObjMeta = Record<string, string>
 export type PObjGetPayload = { data: Uint8Array; meta: PObjMeta }
-export type PObjGetUrlPayload = { url: string; meta: PObjMeta }
+export type PObjGetStreamPayload = { stream: ReadableStream<Uint8Array>; meta: PObjMeta }
 
 export type PObjPut    = { type: 'obj.put';    bucket: string; key: string;
                            data: Uint8Array; meta?: PObjMeta; replyTo?: ActorRef<PResult> }
 export type PObjGet    = { type: 'obj.get';    bucket: string; key: string;
                            replyTo: ActorRef<PResult<PObjGetPayload>> }
-export type PObjGetUrl = { type: 'obj.getUrl'; bucket: string; key: string;
-                           replyTo: ActorRef<PResult<PObjGetUrlPayload>> }
+export type PObjPutStream = { type: 'obj.putStream'; bucket: string; key: string;
+                              stream: ReadableStream<Uint8Array>; meta?: PObjMeta; replyTo?: ActorRef<PResult> }
+export type PObjGetStream = { type: 'obj.getStream'; bucket: string; key: string;
+                              replyTo: ActorRef<PResult<PObjGetStreamPayload>> }
 export type PObjHead   = { type: 'obj.head';   bucket: string; key: string;
                            replyTo: ActorRef<PResult<PObjMeta>> }
 export type PObjDelete = { type: 'obj.delete'; bucket: string; key: string;
@@ -86,7 +88,7 @@ export type PGraphDelete = { type: 'graph.delete'; graphId: string;
 export type PersistenceMsg =
   | PKVPut | PKVGet | PKVDelete | PKVList
   | PDocPut | PDocGet | PDocDelete | PDocAppend | PDocList | PDocHead
-  | PObjPut | PObjGet | PObjGetUrl | PObjHead | PObjDelete | PObjList
+  | PObjPut | PObjGet | PObjPutStream | PObjGetStream | PObjHead | PObjDelete | PObjList
   | PGraphUpsert | PGraphSearch | PGraphQuery | PGraphDelete
 
 // ─── Discovery (retained topic) ───
