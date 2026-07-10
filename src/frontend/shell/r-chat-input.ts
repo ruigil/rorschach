@@ -9,9 +9,16 @@ import {
   type MediaItem
 } from '@rorschach/webkit';
 
+type PendingMediaItem = {
+  kind: 'image' | 'audio' | 'pdf'
+  data: string // Object URL
+  name?: string
+  file?: File | Blob
+}
+
 @customElement('r-chat-input')
 export class RChatInput extends RorschachBase {
-  @state() private pendingMedia: MediaItem[] = [];
+  @state() private pendingMedia: PendingMediaItem[] = [];
   @state() private isRecording = false;
 
   private _isConnected = new StoreController(this, ['shell', 'isConnected']);
@@ -37,6 +44,11 @@ export class RChatInput extends RorschachBase {
   }
 
   clearPending() {
+    for (const item of this.pendingMedia) {
+      if (item.data.startsWith('blob:')) {
+        URL.revokeObjectURL(item.data);
+      }
+    }
     this.pendingMedia = [];
   }
 
@@ -62,14 +74,37 @@ export class RChatInput extends RorschachBase {
     }
   }
 
-  private _submit() {
+  private async _submit() {
     const text = this.inputEl.value.trim();
-    const attachments = this.pendingMedia.map(m =>
-      m.kind === 'pdf' ? { kind: 'pdf', data: m.data, name: m.name } : { kind: m.kind, data: m.data }
-    );
+    if (!text && this.pendingMedia.length === 0) return;
 
-    if (!text && attachments.length === 0) return;
+    // 1. Upload files first
+    const attachments = [];
+    for (const item of this.pendingMedia) {
+      if (item.file) {
+        try {
+          const response = await fetch(`/upload/media/${encodeURIComponent(item.name || 'file')}`, {
+            method: 'POST',
+            body: item.file,
+            headers: {
+              'Content-Type': item.file.type || 'application/octet-stream'
+            }
+          });
+          if (!response.ok) throw new Error(response.statusText);
+          const { url } = await response.json();
+          attachments.push({
+            kind: item.kind,
+            url,
+            name: item.name || 'file',
+            mimeType: item.file.type || 'application/octet-stream'
+          });
+        } catch (err) {
+          console.error(`Upload failed for ${item.name || 'file'}:`, err);
+        }
+      }
+    }
 
+    // 2. Dispatch submission event with file references
     this.dispatchEvent(new CustomEvent('chat-submit', {
       bubbles: true,
       composed: true,
@@ -84,19 +119,23 @@ export class RChatInput extends RorschachBase {
   private async _handleFileChange() {
     const files = Array.from(this.fileInputEl.files ?? []);
     for (const file of files) {
-      const dataUrl = await this._readFileAsDataUrl(file);
+      const previewUrl = URL.createObjectURL(file);
       if (file.type.startsWith('image/')) {
-        this.pendingMedia = [...this.pendingMedia, { kind: 'image', data: dataUrl }];
+        this.pendingMedia = [...this.pendingMedia, { kind: 'image', data: previewUrl, name: file.name, file }];
       } else if (file.type.startsWith('audio/') || /\.(mp3|wav)$/i.test(file.name)) {
-        this.pendingMedia = [...this.pendingMedia.filter(m => m.kind !== 'audio'), { kind: 'audio', data: dataUrl }];
+        this.pendingMedia = [...this.pendingMedia.filter(m => m.kind !== 'audio'), { kind: 'audio', data: previewUrl, name: file.name, file }];
       } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        this.pendingMedia = [...this.pendingMedia, { kind: 'pdf', data: dataUrl, name: file.name }];
+        this.pendingMedia = [...this.pendingMedia, { kind: 'pdf', data: previewUrl, name: file.name, file }];
       }
     }
     this.fileInputEl.value = '';
   }
 
   private _removeMedia(index: number) {
+    const item = this.pendingMedia[index];
+    if (item && item.data.startsWith('blob:')) {
+      URL.revokeObjectURL(item.data);
+    }
     this.pendingMedia = this.pendingMedia.filter((_, i) => i !== index);
   }
 
@@ -142,25 +181,13 @@ export class RChatInput extends RorschachBase {
         }
         const wav = this._pcm16ToWav(pcm, 16000);
         const blob = new Blob([wav], { type: 'audio/wav' });
-        const reader = new FileReader();
-        reader.onload = () => {
-          this.pendingMedia = [
-            ...this.pendingMedia.filter(m => m.kind !== 'audio'),
-            { kind: 'audio', data: reader.result as string },
-          ];
-        };
-        reader.readAsDataURL(blob);
+        const previewUrl = URL.createObjectURL(blob);
+        this.pendingMedia = [
+          ...this.pendingMedia.filter(m => m.kind !== 'audio'),
+          { kind: 'audio', data: previewUrl, name: 'audio.wav', file: blob },
+        ];
       },
     };
-  }
-
-  private _readFileAsDataUrl(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
   }
 
   private _pcm16ToWav(pcm: Int16Array, sampleRate: number) {

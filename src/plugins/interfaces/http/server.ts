@@ -23,6 +23,8 @@ export type ServerOptions = {
   onMessage: (clientId: string, userId: string, text: string, attachments?: MessageAttachment[]) => void
   onWsFrame?: (clientId: string, userId: string, roles: string[], frame: any) => void
   onConfigUpdate: (pluginId: string, patch: Record<string, unknown>) => void
+  uploadMedia: (key: string, stream: ReadableStream<Uint8Array>, contentType: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  fetchMedia: (key: string) => Promise<{ stream: ReadableStream<Uint8Array>; mimeType: string } | null>
 };
 
 export const startServer = (options: ServerOptions): Server<WsData> => {
@@ -106,13 +108,51 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         }
       }
 
-      // 8. Static file serving (including media files)
+      // Stream Upload Endpoint
+      if (req.method === 'POST' && url.pathname.startsWith('/upload/media/')) {
+        const identity = await resolveCookieIdentity(req)
+        if (!identity) {
+          return new Response('Unauthorized', { status: 401 })
+        }
+
+        const rawName = url.pathname.slice('/upload/media/'.length)
+        const decodedName = decodeURIComponent(rawName)
+        const baseName = decodedName.split('/').pop() || 'file'
+        const ext = baseName.split('.').pop() || 'bin'
+        const key = `inbound/rorschach-${crypto.randomUUID()}.${ext}`
+
+        const stream = req.body
+        if (!stream) {
+          return new Response('Bad Request: Empty Body', { status: 400 })
+        }
+
+        const uploaded = await options.uploadMedia(key, stream, req.headers.get('Content-Type') || 'application/octet-stream')
+        if (uploaded.ok) {
+          return new Response(JSON.stringify({ url: key }), {
+            headers: { 'Content-Type': 'application/json' }
+          })
+        } else {
+          return new Response(uploaded.error || 'Upload failed', { status: 500 })
+        }
+      }
+
+      // 8. Serving media from Object Store or static files
       const isMedia = url.pathname.startsWith('/inbound/') || url.pathname.startsWith('/generated/')
+      if (isMedia) {
+        const key = url.pathname.slice(1) // e.g. "inbound/rorschach-XYZ..."
+        const media = await options.fetchMedia(key)
+        if (media) {
+          return new Response(media.stream, {
+            headers: { 'Content-Type': media.mimeType }
+          })
+        }
+        return new Response('Not Found', { status: 404 })
+      }
+
+      // 9. Static file serving (excluding media files)
       const filePath = url.pathname === '/'
         ? join(PUBLIC_DIR, 'index.html')
-        : isMedia
-          ? safeJoinUrlPath(MEDIA_DIR, url.pathname)
-          : safeJoinUrlPath(PUBLIC_DIR, url.pathname)
+        : safeJoinUrlPath(PUBLIC_DIR, url.pathname)
 
       if (!filePath) return new Response('Not Found', { status: 404 })
 

@@ -21,8 +21,11 @@ import { resolveIdentity, resolveCookieIdentity } from './types.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 
 
+import { ask } from '../../system/index.ts'
+import { PersistenceProviderTopic } from '../../types/persistence.ts'
+import type { PersistenceMsg, PResult } from '../../types/persistence.ts'
+
 import { canAccessAdminSurface, authorizeConfigAccess } from './http/security.ts'
-import { saveAttachmentsToTempFiles } from './http/media.ts'
 import { startServer, type WsData } from './http/server.ts'
 
 // Re-export helpers imported by other files (e.g. tests)
@@ -30,7 +33,6 @@ export { canAccessAdminSurface, authorizeConfigAccess }
 
 // ─── Public directory (build output served by the HTTP handler) ───
 const PUBLIC_DIR = join(process.cwd(), 'src', 'frontend', 'static')
-const MEDIA_DIR = join(import.meta.dir, '../../..', 'workspace/media')
 
 
 // ─── Message protocol ───
@@ -39,7 +41,7 @@ export type HttpMessage =
   | { type: 'connected'; clientId: string; userId: string; roles: string[] }
   | { type: 'message'; clientId: string; userId: string; text: string; attachments?: MessageAttachment[] }
   | { type: '_wsFrame'; clientId: string; userId: string; roles: string[]; frame: any }
-  | { type: '_mediaSaved'; clientId: string; userId: string; text: string; attachments: MessageAttachment[] }
+  | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
   | { type: 'closed'; clientId: string }
   | { type: '_broadcast'; broadType: string; key: string; payload: any; isTombstone?: boolean; isAdmin?: boolean }
   | { type: 'send'; userId: string; text: string }
@@ -81,6 +83,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
 
   let selfRef:             ActorRef<HttpMessage>         | null = null
   let identityProviderRef: ActorRef<IdentityProviderMsg> | null = null
+  let persistenceRef:      ActorRef<PersistenceMsg>      | null = null
   const retainedAdminBroadcastsMap = new Map<string, { type: string; payload: any }>()
   type RouteHandler = Extract<RouteRegistration, { handler: Function }>['handler']
   type RouteMatch = NonNullable<RouteRegistration['match']>
@@ -196,41 +199,21 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         }
       },
 
+      _persistenceRef: (state, message) => {
+        persistenceRef = message.ref
+        return { state }
+      },
+
       message: (state, message, context) => {
         context.log.debug(`[${message.clientId}] ${message.text}`)
         const span = context.trace.start('request', { clientId: message.clientId })
-        const newState = { ...state, activeSpans: { ...state.activeSpans, [message.clientId]: span } }
-
-        if (message.attachments && message.attachments.length > 0) {
-          context.pipeToSelf(
-            saveAttachmentsToTempFiles(message.attachments),
-            (attachments): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, userId: message.userId, text: message.text, attachments }),
-            (): HttpMessage => ({ type: '_mediaSaved', clientId: message.clientId, userId: message.userId, text: message.text, attachments: [] }),
-          )
-          return { state: newState }
-        }
-
+        
         return {
-          state: newState,
+          state: { ...state, activeSpans: { ...state.activeSpans, [message.clientId]: span } },
           events: [emit(InboundMessageTopic, {
             userId: message.userId,
             text: message.text,
-            traceId: span.traceId,
-            parentSpanId: span.spanId,
-          })],
-        }
-      },
-
-      _mediaSaved: (state, message) => {
-        const { clientId, userId, text, attachments } = message
-        const span = state.activeSpans[clientId]
-        if (!span) return { state }
-        return {
-          state,
-          events: [emit(InboundMessageTopic, {
-            userId,
-            text,
-            attachments: attachments.length > 0 ? attachments : undefined,
+            attachments: message.attachments,
             traceId: span.traceId,
             parentSpanId: span.spanId,
           })],
@@ -353,6 +336,11 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           ref: e.ref,
         }))
 
+        context.subscribe(PersistenceProviderTopic, (e) => ({
+          type: '_persistenceRef' as const,
+          ref: e.ref,
+        }))
+
         context.subscribe(RouteRegistrationTopic, (reg) => ({
           type: '_routeChanged' as const,
           reg,
@@ -362,7 +350,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         const server = startServer({
           port,
           PUBLIC_DIR,
-          MEDIA_DIR,
+          MEDIA_DIR: '',
           checkAdmin: (roles) => canAccessAdminSurface(identityProviderRef, roles),
           resolveIdentity: (ticket) => resolveIdentity(identityProviderRef, r => ({ type: 'resolveTicket', ticket, replyTo: r })),
           resolveCookieIdentity: (req) => resolveCookieIdentity(identityProviderRef, req),
@@ -395,6 +383,37 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           },
           onConfigUpdate: (pluginId, patch) => {
             selfRef?.send({ type: '_configUpdate', pluginId, patch })
+          },
+          uploadMedia: async (key, stream, contentType) => {
+            if (!persistenceRef) {
+              return { ok: false, error: 'Persistence actor not available' }
+            }
+            return await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+              type: 'obj.putStream',
+              bucket: 'media',
+              key,
+              stream,
+              meta: { contentType },
+              replyTo,
+            }))
+          },
+          fetchMedia: async (key) => {
+            if (!persistenceRef) {
+              return null
+            }
+            const res = await ask<PersistenceMsg, PResult<any>>(persistenceRef, (replyTo) => ({
+              type: 'obj.getStream',
+              bucket: 'media',
+              key,
+              replyTo,
+            }))
+            if (res.ok && res.data) {
+              return {
+                stream: res.data.stream,
+                mimeType: res.data.meta?.contentType || 'application/octet-stream'
+              }
+            }
+            return null
           }
         })
 

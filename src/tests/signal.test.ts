@@ -1,9 +1,13 @@
-import { describe, test, expect, afterEach } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { mkdirSync } from 'node:fs'
-import { AgentSystem } from '../system/index.ts'
+import { writeFileSync, mkdirSync, rmSync } from 'node:fs'
+import { AgentSystem, ask } from '../system/index.ts'
 import { Signal, renderForSignal } from '../plugins/interfaces/signal.ts'
 import { UserPresenceTopic, InboundMessageTopic, OutboundUserMessageTopic } from '../types/events.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
+import { PersistenceProviderTopic } from '../types/persistence.ts'
+import type { PersistenceMsg, PResult } from '../types/persistence.ts'
 import type { UserPresenceEvent, InboundMessageEvent, MessageAttachment } from '../types/events.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
@@ -134,7 +138,21 @@ describe('signal actor: TCP socket', () => {
   test('splits message when sending both text and attachments (attachments first)', async () => {
     daemon = startMockSignalDaemon(17596)
 
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+
+    let persistenceRef: any = null
+    system.subscribe(PersistenceProviderTopic, e => { persistenceRef = e.ref })
+    await tick(50)
+
+    expect(persistenceRef).toBeTruthy()
+    await ask(persistenceRef, (replyTo) => ({
+      type: 'obj.put',
+      bucket: 'media',
+      key: 'test.jpg',
+      data: new Uint8Array([1, 2, 3, 4]),
+      replyTo
+    }))
+
     system.spawn('signal', Signal({ host: '127.0.0.1', port: 17596 }),
       { state: { seenIds: new Set<string>(), pending: new Map(), activeSpans: {}, identityProviderRef: null, pendingConnect: new Map(), userIdToPhones: new Map([['u1', ['+6666666666']]]) } })
 
@@ -174,7 +192,13 @@ describe('signal actor: TCP socket', () => {
     await Bun.write(`${attachmentsDir}/${attachmentId}`, 'dummy image data')
 
     daemon = startMockSignalDaemon(17595)
-    const system = await AgentSystem()
+    
+    // Provide MockPersistenceActor so the Signal actor can resolve PersistenceProviderTopic
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    
+    let persistenceRef: any = null
+    system.subscribe(PersistenceProviderTopic, e => { persistenceRef = e.ref })
+    
     system.subscribe(InboundMessageTopic, e => messageEvents.push(e))
 
     system.spawn('signal', Signal({ host: '127.0.0.1', port: 17595, attachmentsDir }),
@@ -194,10 +218,24 @@ describe('signal actor: TCP socket', () => {
     expect(messageEvents[0]!.userId).toBe('anonymous')
     expect(messageEvents[0]!.text).toBe('check this out')
     expect(messageEvents[0]!.attachments).toHaveLength(1)
-    const inboundPath = messageEvents[0]!.attachments![0]!.url
-    expect(inboundPath).toInclude('workspace/media/inbound/rorschach-')
-    expect(inboundPath).toEndWith('.jpg')
-    expect(await Bun.file(inboundPath).exists()).toBe(true)
+    
+    const inboundUrl = messageEvents[0]!.attachments![0]!.url
+    expect(inboundUrl).toStartWith('inbound/rorschach-')
+    expect(inboundUrl).toEndWith('.jpg')
+
+    // Verify file content in mock object store
+    expect(persistenceRef).toBeTruthy()
+    const res = await ask<PersistenceMsg, PResult<any>>(persistenceRef, (replyTo) => ({
+      type: 'obj.get',
+      bucket: 'media',
+      key: inboundUrl,
+      replyTo
+    }))
+    expect(res.ok).toBe(true)
+    if (res.ok && res.data) {
+      expect(res.data).toBeDefined()
+      expect(new TextDecoder().decode(res.data.data)).toBe('dummy image data')
+    }
 
     await system.shutdown()
   })

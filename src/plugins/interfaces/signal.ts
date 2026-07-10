@@ -1,6 +1,7 @@
 import { createConnection } from 'node:net'
 import type { Socket } from 'node:net'
-import { copyFile, mkdir } from 'node:fs/promises'
+import { copyFile, mkdir, unlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { emit } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
@@ -12,6 +13,8 @@ import { IdentityProviderTopic } from '../../types/identity.ts'
 import { resolveIdentity } from './types.ts'
 import type { IdentityProviderMsg, Identity } from '../../types/identity.ts'
 import type { ToolSource } from '../../types/tools.ts'
+import { PersistenceProviderTopic } from '../../types/persistence.ts'
+import type { PersistenceMsg, PResult, PObjGetStreamPayload } from '../../types/persistence.ts'
 
 const INBOUND_DIR = join(import.meta.dir, '../../..', 'workspace/media/inbound')
 const MEDIA_DIR   = join(import.meta.dir, '../../..', 'workspace/media')
@@ -216,6 +219,7 @@ type SignalMsg =
   | { type: '_sendErr';               error: string }
   | { type: '_refreshTyping' }
   | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
+  | { type: '_persistenceRef';         ref: ActorRef<PersistenceMsg> | null }
   | { type: '_phoneResolved';         phone: string; userId: string }
   | { type: '_phoneRejected';         phone: string }
   | { type: '_presenceExpired';       phone: string }
@@ -246,6 +250,7 @@ export const Signal = (
 
   let msgId        = 0
   let activeSocket: Socket | null = null
+  let persistenceRef: ActorRef<PersistenceMsg> | null = null
 
   const writeToSocket = (line: string): Promise<void> =>
     new Promise((resolve, reject) => {
@@ -340,6 +345,7 @@ export const Signal = (
       start: (state, ctx) => {
         ctx.subscribe(OutboundUserMessageTopic,    e => ({ type: '_send'             as const, userId: e.userId, text: e.text }))
         ctx.subscribe(IdentityProviderTopic, e => ({ type: '_identityProviderChanged' as const, ref: e.ref }))
+        ctx.subscribe(PersistenceProviderTopic, e => ({ type: '_persistenceRef' as const, ref: e.ref }))
         ctx.timers.startSingleTimer('reconnect', { type: '_reconnect' }, 0)
         ctx.log.info(`signal actor: connecting to ${host}:${port}`)
         return { state }
@@ -434,6 +440,10 @@ export const Signal = (
           ctx.pipeToSelf(
             (async () => {
               const copied: MessageAttachment[] = []
+              if (!persistenceRef) {
+                ctx.log.warn('signal: persistence actor not available to copy attachments')
+                return copied
+              }
               for (const a of attachments) {
                 const kind: MessageAttachment['kind'] =
                   a.contentType.startsWith('image/') ? 'image' :
@@ -441,10 +451,22 @@ export const Signal = (
                   a.contentType.startsWith('video/') ? 'video' :
                   a.contentType.includes('pdf')      ? 'pdf'   : 'file'
                 const ext  = mimeToExt(a.contentType)
-                const dest = join(INBOUND_DIR, `rorschach-${crypto.randomUUID()}.${ext}`)
-                await mkdir(INBOUND_DIR, { recursive: true })
-                await copyFile(`${attachmentsDir}/${a.id}`, dest)
-                copied.push({ kind, url: dest, mimeType: a.contentType })
+                const key  = `inbound/rorschach-${crypto.randomUUID()}.${ext}`
+                const filePath = `${attachmentsDir}/${a.id}`
+                const stream = Bun.file(filePath).stream()
+                const res = await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+                  type: 'obj.putStream',
+                  bucket: 'media',
+                  key,
+                  stream,
+                  meta: { contentType: a.contentType },
+                  replyTo
+                }))
+                if (res.ok) {
+                  copied.push({ kind, url: key, mimeType: a.contentType })
+                } else {
+                  ctx.log.error(`signal: failed to write inbound attachment stream: ${res.error}`)
+                }
               }
               return copied
             })(),
@@ -525,14 +547,48 @@ export const Signal = (
                 if (pending.size === 0) ctx.timers.cancel('typing')
 
                 const rendered = renderForSignal(buf.text)
-                const allAttachments = buf.attachments.map(a => join(MEDIA_DIR, a.url))
+                const prepareAttachments = async (): Promise<string[]> => {
+                  const paths: string[] = []
+                  if (!persistenceRef) {
+                    ctx.log.warn('signal: persistence actor not available to fetch outbound attachments')
+                    return paths
+                  }
+                  for (const a of buf.attachments) {
+                    const res = await ask<PersistenceMsg, PResult<PObjGetStreamPayload>>(persistenceRef, (replyTo) => ({
+                      type: 'obj.getStream',
+                      bucket: 'media',
+                      key: a.url,
+                      replyTo
+                    }))
+                    if (res.ok && res.data) {
+                      const ext = a.mimeType?.split('/')[1] || a.url.split('.').pop() || 'bin'
+                      const tempPath = join(tmpdir(), `rorschach-signal-temp-${crypto.randomUUID()}.${ext}`)
+                      await Bun.write(tempPath, res.data.stream as any)
+                      paths.push(tempPath)
+                    } else {
+                      ctx.log.warn(`signal: outbound attachment not found in object store: ${a.url}`)
+                    }
+                  }
+                  return paths
+                }
 
                 const sendSeq = async () => {
-                  if (rendered.message && allAttachments.length > 0) {
-                    await sendOverSocket(phone, { message: '', textStyles: [] }, allAttachments)
-                    await sendOverSocket(phone, rendered, [])
-                  } else {
-                    await sendOverSocket(phone, rendered, allAttachments)
+                  const tempPaths = await prepareAttachments()
+                  try {
+                    if (rendered.message && tempPaths.length > 0) {
+                      await sendOverSocket(phone, { message: '', textStyles: [] }, tempPaths)
+                      await sendOverSocket(phone, rendered, [])
+                    } else {
+                      await sendOverSocket(phone, rendered, tempPaths)
+                    }
+                  } finally {
+                    for (const p of tempPaths) {
+                      try {
+                        await unlink(p)
+                      } catch (err) {
+                        ctx.log.error(`signal: failed to delete temp file ${p}`, { error: String(err) })
+                      }
+                    }
                   }
                 }
 
@@ -579,6 +635,11 @@ export const Signal = (
       _identityProviderChanged: (state, msg) => ({
         state: { ...state, identityProviderRef: msg.ref },
       }),
+
+      _persistenceRef: (state, msg) => {
+        persistenceRef = msg.ref
+        return { state }
+      },
 
       _phoneResolved: (state, msg, ctx) => {
         const { phone, userId } = msg
