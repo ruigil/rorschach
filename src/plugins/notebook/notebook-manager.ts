@@ -152,7 +152,6 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
               prefix,
               replyTo,
             }))
-            console.log('listRes', listRes)
             const days: string[] = []
             if (listRes.ok && listRes.keys) {
               for (const f of listRes.keys) {
@@ -161,7 +160,6 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
                 }
               }
             }
-            console.log('days', days)
             sendFrame({ type: 'notebookJournalMonths', year, month, days })
             break
           }
@@ -232,7 +230,6 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
             prefix,
             replyTo,
           }))
-          console.log('listRes', listRes)
           const days: string[] = []
           if (listRes.ok && listRes.keys) {
             for (const f of listRes.keys) {
@@ -241,7 +238,6 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
               }
             }
           }
-          console.log('days', days)
           sendFrame({ type: 'notebookJournalMonths', year, month, days })
         } else if (event.type === 'trackerUpdated') {
           const res = await ask<PersistenceMsg, PResult<string>>(dl, (replyTo) => ({
