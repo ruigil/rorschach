@@ -237,10 +237,11 @@ export const withRunDefaults = (run: WorkflowRunState): WorkflowRunState => ({
 })
 
 const readRunFile = async (persistenceRef: ActorRef<any>, runId: string): Promise<WorkflowRunState | null> => {
+  const docId = runId.endsWith('.json') ? runId : `${runId}.json`
   const res = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
     type: 'doc.get',
     collection: 'workflow-runs',
-    docId: runId,
+    docId,
     replyTo,
   }))
   if (!res.ok || !res.data) return null

@@ -45,7 +45,7 @@ export const PersistenceActor = (config: PersistenceConfig): ActorDef<InternalPe
     initialState: {},
     lifecycle: onLifecycle({
       start: async (state, ctx) => {
-        ctx.publishRetained(PersistenceProviderTopic, 'data-provider', { ref: ctx.self as ActorRef<PersistenceMsg> })
+        ctx.publishRetained(PersistenceProviderTopic, 'provider', { ref: ctx.self as ActorRef<PersistenceMsg> })
         ctx.log.info('persistence actor started', { storageRoot })
         return { state }
       },

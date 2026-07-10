@@ -1,15 +1,16 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentSystem, ask, defineTool, type ActorDef } from '../system/index.ts'
+import { AgentSystem, ask, defineTool, type ActorDef, type ActorRef } from '../system/index.ts'
 import { WorkflowRunner } from '../plugins/workflows/workflow-runner.ts'
 import { WorkflowEventTopic, type Workflow, type WorkflowRunnerMsg, type WorkflowRunnerReply, type WorkflowRunState } from '../plugins/workflows/types.ts'
 import { startWorkflowRunTool } from '../plugins/workflows/workflow-tools.ts'
 import { ToolRegistrationTopic, type ToolMsg, type ToolReply } from '../types/tools.ts'
 import { OutboundUserMessageTopic } from '../types/events.ts'
-import { initialRunState } from '../plugins/workflows/workflow-store.ts'
+import { initialRunState, saveWorkflowRun } from '../plugins/workflows/workflow-store.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
+import { PersistenceProviderTopic } from '../types/persistence.ts'
 
 const tempDirs: string[] = []
 
@@ -74,6 +75,20 @@ const spawnRunner = async (runWorkflow: Workflow) => {
   return { system, runner, runsDir }
 }
 
+const seedRun = async (system: any, run: any) => {
+  let persistenceRef: any = null
+  const unsub = system.subscribe(PersistenceProviderTopic, (e: any) => {
+    if (e?.ref) {
+      persistenceRef = e.ref
+    }
+  })
+  unsub()
+  if (!persistenceRef) {
+    throw new Error('Persistence provider not ready')
+  }
+  await saveWorkflowRun(persistenceRef, run)
+}
+
 describe('workflow runner', () => {
   test('hydrates retained execution tools and starts a valid run', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
@@ -85,7 +100,7 @@ describe('workflow runner', () => {
     const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
 
     const run = initialRunState(wf, 'run-id-1')
-    await writeFile(join(runsDir, 'run-id-1.json'), JSON.stringify(run))
+    await seedRun(system, run)
 
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       runner,
@@ -104,12 +119,12 @@ describe('workflow runner', () => {
 
   test('blocks before spawning when a required execution tool is missing', async () => {
     const wf = workflow(['missing_tool'])
-    const { system, runner, runsDir } = await spawnRunner(wf)
+    const { system, runner } = await spawnRunner(wf)
     const updates: Array<{ userId: string; runId: string; runStatus: string }> = []
     system.subscribe(WorkflowEventTopic, event => updates.push({ userId: event.userId, runId: event.runId!, runStatus: event.run!.status }))
 
     const run = initialRunState(wf, 'run-id-2')
-    await writeFile(join(runsDir, 'run-id-2.json'), JSON.stringify(run))
+    await seedRun(system, run)
 
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       runner,
@@ -187,7 +202,7 @@ describe('workflow runner', () => {
     }
 
     const run = initialRunState(wf, 'run-id-3')
-    await writeFile(join(runsDir, 'run-id-3.json'), JSON.stringify(run))
+    await seedRun(system, run)
 
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       runner,
@@ -232,7 +247,7 @@ describe('workflow runner', () => {
     const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
 
     const run = initialRunState(wf, 'run-id-cleanup')
-    await writeFile(join(runsDir, 'run-id-cleanup.json'), JSON.stringify(run))
+    await seedRun(system, run)
 
     const startReply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       runner,

@@ -1,17 +1,17 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentSystem, type ActorDef, type ActorRef } from '../system/index.ts'
-import { listWorkflows, getWorkflow, getWorkflowGraph, saveWorkflow } from '../plugins/workflows/workflow-store.ts'
-import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
+import { AgentSystem, ask, type ActorDef, type ActorRef } from '../system/index.ts'
+import { listWorkflows, getWorkflowGraph, saveWorkflow } from '../plugins/workflows/workflow-store.ts'
 import { handleWorkflowTool, listExecutionToolsTool, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool, startWorkflowRunTool, updateWorkflowTool } from '../plugins/workflows/workflow-tools.ts'
 import { WorkflowEventTopic } from '../plugins/workflows/types.ts'
 import type { Workflow, WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowRunState } from '../plugins/workflows/types.ts'
-import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
 import { OutboundUserMessageTopic, HttpWsFrameTopic } from '../types/events.ts'
 import { WorkflowRunner } from '../plugins/workflows/workflow-runner.ts'
 import type { ToolReply } from '../types/tools.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
+import { PersistenceProviderTopic } from '../types/persistence.ts'
 
 const tempDirs: string[] = []
 
@@ -49,6 +49,7 @@ const sampleWorkflow = (userId = 'u1'): Workflow => ({
       description: 'Build it.',
       validationCriteria: 'Done.',
       dependencies: ['design'],
+      outputs: { summary: { type: 'string', required: true, description: 'Final summary' } },
     },
   ],
 })
@@ -87,23 +88,59 @@ const FakeRunner = (): ActorDef<WorkflowRunnerMsg, { executionTools: Record<stri
   },
 })
 
+const getPersistenceRef = async (system: any): Promise<ActorRef<any>> => {
+  let ref: any = null
+  const unsub = system.subscribe(PersistenceProviderTopic, (e: any) => {
+    if (e?.ref) ref = e.ref
+  })
+  unsub()
+  if (!ref) throw new Error('Persistence provider not ready')
+  return ref
+}
+
 describe('workflow store', () => {
   test('lists valid workflows for the user and ignores malformed or other-user files', async () => {
-    const dir = await makeDir()
-    await writeFile(join(dir, 'workflow.json'), JSON.stringify(sampleWorkflow('u1')))
-    await writeFile(join(dir, 'other.json'), JSON.stringify(sampleWorkflow('u2')))
-    await writeFile(join(dir, 'bad.json'), '{nope')
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const persistenceRef = await getPersistenceRef(system)
 
-    const workflows = await listWorkflows({} as any, 'u1')
+    // doc.put sample workflow
+    await ask(persistenceRef, replyTo => ({
+      type: 'doc.put',
+      collection: 'workflows',
+      docId: 'workflow-1',
+      content: JSON.stringify(sampleWorkflow('u1')),
+      replyTo,
+    }))
+    // doc.put other user workflow
+    await ask(persistenceRef, replyTo => ({
+      type: 'doc.put',
+      collection: 'workflows',
+      docId: 'other-workflow',
+      content: JSON.stringify(sampleWorkflow('u2')),
+      replyTo,
+    }))
+    // doc.put malformed workflow
+    await ask(persistenceRef, replyTo => ({
+      type: 'doc.put',
+      collection: 'workflows',
+      docId: 'bad-workflow',
+      content: '{nope',
+      replyTo,
+    }))
+
+    const workflows = await listWorkflows(persistenceRef, 'u1')
     expect(workflows).toHaveLength(1)
     expect(workflows[0]).toMatchObject({ id: 'workflow-1', taskCount: 2, userId: 'u1' })
+    await system.shutdown()
   })
 
   test('returns graph edges from prerequisite to dependent task', async () => {
-    const dir = await makeDir()
-    await writeFile(join(dir, 'workflow.json'), JSON.stringify(sampleWorkflow()))
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const persistenceRef = await getPersistenceRef(system)
 
-    const result = await getWorkflowGraph({} as any, 'u1', 'workflow-1', sampleRun())
+    await saveWorkflow(persistenceRef, sampleWorkflow())
+
+    const result = await getWorkflowGraph(persistenceRef, 'u1', 'workflow-1', sampleRun())
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.data.graph.nodes.map((node) => node.id)).toEqual(['design', 'build'])
@@ -128,19 +165,21 @@ describe('workflow store', () => {
         summary: 'Designed.',
       })
     }
+    await system.shutdown()
   })
 
   test('routes return summaries and graph JSON', async () => {
-    const dir = await makeDir()
-    await writeFile(join(dir, 'workflow.json'), JSON.stringify(sampleWorkflow('u1')))
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const persistenceRef = await getPersistenceRef(system)
+    await saveWorkflow(persistenceRef, sampleWorkflow('u1'))
 
-    const system = await AgentSystem()
     const events: Array<{ userId: string; text: string }> = []
     system.subscribe(OutboundUserMessageTopic, event => {
       const e = event as { userId: string; text: string }
       events.push(e)
     })
 
+    const dir = await makeDir()
     const runner = system.spawn('workflow-runner', WorkflowRunner({
       workflowRunsDir: join(dir, 'runs'),
       llmRef: null,
@@ -154,6 +193,9 @@ describe('workflow store', () => {
         await new Promise(r => setTimeout(r, 10))
       }
     }
+
+    // Give some time for WorkflowRunner to resolve persistence ref
+    await new Promise(r => setTimeout(r, 100))
 
     // 1. Request workflow list
     system.publish(HttpWsFrameTopic, {
@@ -188,16 +230,11 @@ describe('workflow store', () => {
   })
 
   test('control tools list workflows and publish workflow graph UI events', async () => {
-    const dir = await makeDir()
-    await writeFile(join(dir, 'workflow.json'), JSON.stringify(sampleWorkflow()))
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const persistenceRef = await getPersistenceRef(system)
+    await saveWorkflow(persistenceRef, sampleWorkflow())
 
-    const system = await AgentSystem()
     const events: Array<{ userId: string; text: string }> = []
-    system.subscribe(OutboundUserMessageTopic, event => {
-      const e = event as { userId: string; text: string }
-      events.push(e)
-    })
-
     const runner = system.spawn('workflow-runner', FakeRunner())
     const ctx = {
       publish: (topic: any, event: any) => {
@@ -212,14 +249,14 @@ describe('workflow store', () => {
 
     const listReply = await handleWorkflowTool(
       { type: 'invoke', toolName: listWorkflowsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { persistenceRef: {} as any, workflowRunnerRef: runner, ctx },
+      { persistenceRef, workflowRunnerRef: runner, ctx },
     )
     expect(listReply.type).toBe('toolResult')
     if (listReply.type === 'toolResult') expect(listReply.result.text).toContain('Ship workflow workspace')
 
     const graphReply = await handleWorkflowTool(
       { type: 'invoke', toolName: showWorkflowGraphTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1' }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { persistenceRef: {} as any, workflowRunnerRef: runner, ctx },
+      { persistenceRef, workflowRunnerRef: runner, ctx },
     )
     expect(graphReply.type).toBe('toolResult')
     expect(events.map(event => JSON.parse(event.text))).toContainEqual({ type: 'workflowGraph', workflowId: 'workflow-1' })
@@ -228,8 +265,8 @@ describe('workflow store', () => {
   })
 
   test('control tools can save workflow with executionTools', async () => {
-    const dir = await makeDir()
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const persistenceRef = await getPersistenceRef(system)
     const runner = system.spawn('workflow-runner', FakeRunner())
 
     const reply = await handleWorkflowTool(
@@ -245,7 +282,7 @@ describe('workflow store', () => {
           dependencies: [],
         }],
       }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { persistenceRef: {} as any, workflowRunnerRef: runner, ctx: { publish: () => {} } },
+      { persistenceRef, workflowRunnerRef: runner, ctx: { publish: () => {} } },
     )
 
     expect(reply.type).toBe('toolResult')
@@ -258,8 +295,13 @@ describe('workflow store', () => {
   })
 
   test('control tools can update workflow and publish workflow event', async () => {
-    const dir = await makeDir()
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const persistenceRef = await getPersistenceRef(system)
+
+    const initialWorkflow = sampleWorkflow('u1')
+    initialWorkflow.outputs = {}
+    await saveWorkflow(persistenceRef, initialWorkflow)
+
     const runner = system.spawn('workflow-runner', FakeRunner())
     const events: any[] = []
     const ctx = {
@@ -270,16 +312,12 @@ describe('workflow store', () => {
       }
     }
 
-    const initialWorkflow = sampleWorkflow('u1')
-    initialWorkflow.outputs = {}
-    await writeFile(join(dir, 'workflow.json'), JSON.stringify(initialWorkflow))
-
     const reply = await handleWorkflowTool(
       { type: 'invoke', toolName: updateWorkflowTool.name, arguments: JSON.stringify({
         workflowId: initialWorkflow.id,
         goal: 'Updated Goal',
       }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { persistenceRef: {} as any, workflowRunnerRef: runner, ctx },
+      { persistenceRef, workflowRunnerRef: runner, ctx },
     )
 
     expect(reply.type).toBe('toolResult')
@@ -292,13 +330,13 @@ describe('workflow store', () => {
   })
 
   test('list_execution_tools reads execution tools from workflow runner', async () => {
-    const dir = await makeDir()
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const persistenceRef = await getPersistenceRef(system)
     const runner = system.spawn('workflow-runner', FakeRunner())
 
     const reply = await handleWorkflowTool(
       { type: 'invoke', toolName: listExecutionToolsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { persistenceRef: {} as any, workflowRunnerRef: runner, ctx: { publish: () => {} } },
+      { persistenceRef, workflowRunnerRef: runner, ctx: { publish: () => {} } },
     )
 
     expect(reply.type).toBe('toolResult')

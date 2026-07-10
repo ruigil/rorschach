@@ -13,7 +13,7 @@ export const MockPersistenceActor = (): PluginDef<PersistenceMsg, {}> => {
     initialState: {},
     lifecycle: onLifecycle({
       start: async (state, ctx) => {
-        ctx.publishRetained(PersistenceProviderTopic, 'data-provider', { ref: ctx.self as ActorRef<PersistenceMsg> })
+        ctx.publishRetained(PersistenceProviderTopic, 'provider', { ref: ctx.self as ActorRef<PersistenceMsg> })
         return { state }
       },
     }),

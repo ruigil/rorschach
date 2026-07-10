@@ -1,59 +1,76 @@
-import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
-import { AgentSystem } from '../system/index.ts'
+import { describe, expect, test } from 'bun:test'
+import { AgentSystem, ask, type ActorRef } from '../system/index.ts'
 import { OutboundUserMessageTopic, HttpWsFrameTopic, NotebookChangeTopic } from '../types/events.ts'
 import { NotebookManager } from '../plugins/notebook/notebook-manager.ts'
-
-const tempDirs: string[] = []
-
-afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
-})
-
-const makeDir = async (): Promise<string> => {
-  const dir = join(tmpdir(), `rorschach-notebook-manager-${crypto.randomUUID()}`)
-  tempDirs.push(dir)
-  await mkdir(dir, { recursive: true })
-  return dir
-}
+import { MockPersistenceActor } from './mock-persistence.ts'
+import { PersistenceProviderTopic } from '../types/persistence.ts'
 
 describe('NotebookManager WebSocket integration', () => {
   test('handles todos requests, journal requests, tracker requests, and change events', async () => {
-    const dir = await makeDir()
 
-    // 1. Set up initial files on disk
-    // Todos
-    await writeFile(join(dir, 'todos.json'), JSON.stringify({
-      todos: [
-        { id: 't1', text: 'Buy milk', done: false, createdAt: Date.now() },
-        { id: 't2', text: 'Clean room', done: true, createdAt: Date.now() - 1000 }
-      ]
-    }))
-
-    // Journal
-    await mkdir(join(dir, 'journal', '2026', '07'), { recursive: true })
-    await writeFile(join(dir, 'journal', '2026', '07', '01.md'), '## 10:00\n\nCompleted websocket refactoring.')
-
-    // Tracker habits
-    await mkdir(join(dir, 'tracker'), { recursive: true })
-    await writeFile(join(dir, 'tracker', 'habits.json'), JSON.stringify({
-      habits: [
-        { name: 'Water', unit: 'ml', dailyTarget: 2000 }
-      ]
-    }))
-
-    // Tracker entries
-    await writeFile(join(dir, 'tracker', 'data.csv'), 'date,habit,value,description\n2026-07-01,Water,500,glass 1\n2026-07-01,Water,750,glass 2\n')
-
-    // 2. Initialize Agent System
-    const system = await AgentSystem()
+    // 1. Initialize Agent System with MockPersistenceActor
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const messages: Array<{ userId: string; text: string }> = []
     system.subscribe(OutboundUserMessageTopic, event => {
       const e = event as { userId: string; text: string }
       messages.push(e)
     })
+
+    let persistenceRef: ActorRef<any> | null = null
+    system.subscribe(PersistenceProviderTopic, event => {
+      persistenceRef = event.ref
+    })
+
+    // Wait for persistence to be ready
+    while (!persistenceRef) {
+      await new Promise(r => setTimeout(r, 10))
+    }
+
+    // Seed mock data through persistence ref
+    // Todos
+    await ask(persistenceRef, replyTo => ({
+      type: 'doc.put',
+      collection: 'notebook',
+      docId: 'todos.json',
+      content: JSON.stringify({
+        todos: [
+          { id: 't1', text: 'Buy milk', done: false, createdAt: Date.now() },
+          { id: 't2', text: 'Clean room', done: true, createdAt: Date.now() - 1000 }
+        ]
+      }),
+      replyTo
+    }))
+
+    // Journal
+    await ask(persistenceRef, replyTo => ({
+      type: 'doc.put',
+      collection: 'journal',
+      docId: '2026-07-01.md',
+      content: '## 10:00\n\nCompleted websocket refactoring.',
+      replyTo
+    }))
+
+    // Tracker habits
+    await ask(persistenceRef, replyTo => ({
+      type: 'doc.put',
+      collection: 'notebook',
+      docId: 'tracker/habits.json',
+      content: JSON.stringify({
+        habits: [
+          { name: 'Water', unit: 'ml', dailyTarget: 2000 }
+        ]
+      }),
+      replyTo
+    }))
+
+    // Tracker entries
+    await ask(persistenceRef, replyTo => ({
+      type: 'doc.put',
+      collection: 'notebook',
+      docId: 'tracker/data.csv',
+      content: 'date,habit,value,description\n2026-07-01,Water,500,glass 1\n2026-07-01,Water,750,glass 2\n',
+      replyTo
+    }))
 
     // Spawn the NotebookManager slot actor
     system.spawn('notebook-manager', NotebookManager())
@@ -64,6 +81,9 @@ describe('NotebookManager WebSocket integration', () => {
         await new Promise(r => setTimeout(r, 10))
       }
     }
+
+    // Give a brief moment for NotebookManager to receive persistenceRef
+    await new Promise(r => setTimeout(r, 100))
 
     // ─── Test 1: notebook.todos.request ───
     messages.length = 0
@@ -92,7 +112,7 @@ describe('NotebookManager WebSocket integration', () => {
     expect(messages).toHaveLength(1)
     const monthsRes = JSON.parse(messages[0]!.text)
     expect(monthsRes.type).toBe('notebookJournalMonths')
-    expect(monthsRes.days).toEqual(['01'])
+    expect(monthsRes.days).toEqual(['2026-07-01'])
 
     // ─── Test 3: notebook.journal.entry.request ───
     messages.length = 0
@@ -168,12 +188,18 @@ describe('NotebookManager WebSocket integration', () => {
 
     // ─── Test 7: NotebookChangeTopic auto-reload push ───
     messages.length = 0
-    // Simulate updating todo on disk and publishing NotebookChangeTopic
-    await writeFile(join(dir, 'todos.json'), JSON.stringify({
-      todos: [
-        { id: 't1', text: 'Buy milk', done: true, createdAt: Date.now() }, // Mark as done
-        { id: 't2', text: 'Clean room', done: true, createdAt: Date.now() - 1000 }
-      ]
+    // Simulate updating todo in mock persistence and publishing NotebookChangeTopic
+    await ask(persistenceRef, replyTo => ({
+      type: 'doc.put',
+      collection: 'notebook',
+      docId: 'todos.json',
+      content: JSON.stringify({
+        todos: [
+          { id: 't1', text: 'Buy milk', done: true, createdAt: Date.now() }, // Mark as done
+          { id: 't2', text: 'Clean room', done: true, createdAt: Date.now() - 1000 }
+        ]
+      }),
+      replyTo
     }))
 
     system.publish(NotebookChangeTopic, {

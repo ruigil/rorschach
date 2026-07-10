@@ -14,7 +14,9 @@ import type {
   WorkflowRunState,
 } from '../plugins/workflows/types.ts'
 import type { ToolReply } from '../types/tools.ts'
-import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
+import { PersistenceProviderTopic } from '../types/persistence.ts'
+import { saveWorkflow } from '../plugins/workflows/workflow-store.ts'
 
 const tempDirs: string[] = []
 
@@ -81,20 +83,15 @@ const runState = (): WorkflowRunState => ({
   workflow: workflow(),
 })
 
-const runningRunState = (inputs: Record<string, unknown> = {}): WorkflowRunState => ({
-  ...runState(),
-  status: 'running',
-  inputs,
-  outputs: {},
-  activeTaskIds: ['write-report'],
-  taskStates: {
-    'write-report': {
-      status: 'running',
-      attempts: 1,
-      startedAt: '2026-06-11T10:00:01.000Z',
-    },
-  },
-})
+const getPersistenceRef = async (system: any): Promise<ActorRef<any>> => {
+  let ref: any = null
+  const unsub = system.subscribe(PersistenceProviderTopic, (e: any) => {
+    if (e?.ref) ref = e.ref
+  })
+  unsub()
+  if (!ref) throw new Error('Persistence provider not ready')
+  return ref
+}
 
 describe('workflow IO and artifacts', () => {
   test('validates workflow output contracts and input values', () => {
@@ -159,16 +156,16 @@ describe('workflow IO and artifacts', () => {
   })
 
   test('start_workflow_run passes tool-only inputs to the runner', async () => {
-    const dir = await makeDir()
-    await mkdir(join(dir, '..'), { recursive: true })
-    await writeFile(join(dir, '..', 'workflow.json'), JSON.stringify(workflow()))
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const persistenceRef = await getPersistenceRef(system)
+    await saveWorkflow(persistenceRef, workflow())
+
     let capturedInputs: Record<string, unknown> | undefined
     const runner = system.spawn('capturing-workflow-runner', CapturingRunner(inputs => { capturedInputs = inputs }))
 
     const reply = await handleWorkflowTool(
       { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1', inputs: { city: 'Paris' } }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'anonymous' },
-      { persistenceRef: {} as any, workflowRunnerRef: runner, ctx: { publish: () => {} } },
+      { persistenceRef, workflowRunnerRef: runner, ctx: { publish: () => {} } },
     )
 
     expect(reply.type).toBe('toolPending')
@@ -177,10 +174,10 @@ describe('workflow IO and artifacts', () => {
   })
 
   test('start_workflow_run returns immediate run state when start blocks before execution', async () => {
-    const dir = await makeDir()
-    await mkdir(join(dir, '..'), { recursive: true })
-    await writeFile(join(dir, '..', 'workflow.json'), JSON.stringify(workflow()))
-    const system = await AgentSystem()
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const persistenceRef = await getPersistenceRef(system)
+    await saveWorkflow(persistenceRef, workflow())
+
     const runner = system.spawn('blocked-workflow-runner', StaticStartRunner({
       ...runState(),
       status: 'blocked',
@@ -197,7 +194,7 @@ describe('workflow IO and artifacts', () => {
 
     const reply = await handleWorkflowTool(
       { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1', inputs: { city: 'Paris' } }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'anonymous' },
-      { persistenceRef: {} as any, workflowRunnerRef: runner, ctx: { publish: () => {} } },
+      { persistenceRef, workflowRunnerRef: runner, ctx: { publish: () => {} } },
     )
 
     expect(reply.type).toBe('toolResult')
@@ -218,25 +215,37 @@ describe('workflow IO and artifacts', () => {
     const route = routes.find(item => item.id === 'workflow-runs.artifact')
     if (!route || route.handler === null) throw new Error('missing artifact route')
 
-    const ok = await route.handler(
+    // test a safe matched artifact path
+    const res = await route.handler(
       new Request('http://localhost/workflow-runs/run-1/artifact?path=report.html'),
       new URL('http://localhost/workflow-runs/run-1/artifact?path=report.html'),
-      ANONYMOUS_IDENTITY,
+      { userId: 'anonymous', roles: [] },
     )
-    expect(ok.status).toBe(200)
-    expect(await ok.text()).toBe('<h1>Report</h1>')
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('<h1>Report</h1>')
 
-    const missing = await route.handler(
-      new Request('http://localhost/workflow-runs/run-1/artifact?path=other.html'),
-      new URL('http://localhost/workflow-runs/run-1/artifact?path=other.html'),
-      ANONYMOUS_IDENTITY,
+    // reject traversal outside the run directory
+    const traversal = await route.handler(
+      new Request('http://localhost/workflow-runs/run-1/artifact?path=../other.html'),
+      new URL('http://localhost/workflow-runs/run-1/artifact?path=../other.html'),
+      { userId: 'anonymous', roles: [] },
     )
-    expect(missing.status).toBe(404)
+    expect(traversal.status).toBe(400)
 
+    // reject unreferenced files (even if present in the folder)
+    await writeFile(join(dir, 'run-1', 'secret.txt'), 'secret')
+    const unref = await route.handler(
+      new Request('http://localhost/workflow-runs/run-1/artifact?path=secret.txt'),
+      new URL('http://localhost/workflow-runs/run-1/artifact?path=secret.txt'),
+      { userId: 'anonymous', roles: [] },
+    )
+    expect(unref.status).toBe(404)
+
+    // reject URL references
     const urlOnly = await route.handler(
       new Request('http://localhost/workflow-runs/run-url/artifact?path=generated/image.png'),
       new URL('http://localhost/workflow-runs/run-url/artifact?path=generated/image.png'),
-      ANONYMOUS_IDENTITY,
+      { userId: 'anonymous', roles: [] },
     )
     expect(urlOnly.status).toBe(404)
     await system.shutdown()

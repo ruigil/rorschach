@@ -2,13 +2,14 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentSystem, ask, defineTool, type ActorDef } from '../system/index.ts'
+import { AgentSystem, ask, defineTool, type ActorDef, type ActorRef } from '../system/index.ts'
 import { WorkflowRunExecutor } from '../plugins/workflows/workflow-run-executor.ts'
 import { WorkflowEventTopic, type Workflow, type WorkflowRunExecutorMsg, type WorkflowRunExecutorReply, type WorkflowRunState } from '../plugins/workflows/types.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import { JobRegistryTopic, type ToolCollection, type ToolMsg, type ToolReply } from '../types/tools.ts'
 import { saveWorkflowRun, initialRunState } from '../plugins/workflows/workflow-store.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
+import { PersistenceProviderTopic } from '../types/persistence.ts'
 
 const tempDirs: string[] = []
 
@@ -65,6 +66,16 @@ const CapturingLlm = (streams: Array<Extract<LlmProviderMsg, { type: 'stream' }>
   },
 })
 
+const getPersistenceRef = async (system: any): Promise<ActorRef<any>> => {
+  let ref: any = null
+  const unsub = system.subscribe(PersistenceProviderTopic, (e: any) => {
+    if (e?.ref) ref = e.ref
+  })
+  unsub()
+  if (!ref) throw new Error('Persistence provider not ready')
+  return ref
+}
+
 describe('workflow run executor', () => {
   test('schedules tasks with constructor-provided execution tools', async () => {
     const dir = await makeDir()
@@ -75,7 +86,9 @@ describe('workflow run executor', () => {
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
 
     const run = initialRunState(workflow, 'run-1')
-    await saveWorkflowRun({} as any, run)
+    const persistenceRef = await getPersistenceRef(system)
+    await saveWorkflowRun(persistenceRef, run)
+
     const executor = system.spawn(
       'workflow-run-run-1',
       WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
@@ -124,7 +137,9 @@ describe('workflow run executor', () => {
         },
       },
     }
-    await saveWorkflowRun({} as any, run)
+    const persistenceRef = await getPersistenceRef(system)
+    await saveWorkflowRun(persistenceRef, run)
+
     const executor = system.spawn(
       'workflow-run-complete-update',
       WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
@@ -164,7 +179,9 @@ describe('workflow run executor', () => {
         },
       },
     }
-    await saveWorkflowRun({} as any, run)
+    const persistenceRef = await getPersistenceRef(system)
+    await saveWorkflowRun(persistenceRef, run)
+
     const executor = system.spawn(
       'workflow-run-run-2',
       WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
@@ -205,7 +222,9 @@ describe('workflow run executor', () => {
         },
       },
     }
-    await saveWorkflowRun({} as any, run)
+    const persistenceRef = await getPersistenceRef(system)
+    await saveWorkflowRun(persistenceRef, run)
+
     const executor = system.spawn(
       'workflow-run-task-blocked',
       WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
@@ -252,7 +271,9 @@ describe('workflow run executor', () => {
         },
       },
     }
-    await saveWorkflowRun({} as any, run)
+    const persistenceRef = await getPersistenceRef(system)
+    await saveWorkflowRun(persistenceRef, run)
+
     const executor = system.spawn(
       'workflow-run-stale-active',
       WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
@@ -293,7 +314,9 @@ describe('workflow run executor', () => {
         },
       },
     }
-    await saveWorkflowRun({} as any, run)
+    const persistenceRef = await getPersistenceRef(system)
+    await saveWorkflowRun(persistenceRef, run)
+
     const executor = system.spawn(
       'workflow-run-failed',
       WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
@@ -333,7 +356,9 @@ describe('workflow run executor', () => {
         },
       },
     }
-    await saveWorkflowRun({} as any, run)
+    const persistenceRef = await getPersistenceRef(system)
+    await saveWorkflowRun(persistenceRef, run)
+
     const executor = system.spawn(
       'workflow-run-noop',
       WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
@@ -380,7 +405,9 @@ describe('workflow run executor', () => {
         },
       },
     }
-    await saveWorkflowRun({} as any, run)
+    const persistenceRef = await getPersistenceRef(system)
+    await saveWorkflowRun(persistenceRef, run)
+
     const executor = system.spawn(
       'workflow-run-run-3',
       WorkflowRunExecutor(dir, llmRef, 'test-model', 1, tools, workflow.userId, run.runId),
