@@ -6,12 +6,13 @@ import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
 import type { ConceptLinksReply, ConceptSearchReply, ConceptUpsertReply, LinkCandidatesReply, MemoryConcept } from '../plugins/memory/types.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
+import persistencePlugin from '../plugins/persistence/persistence.plugin.ts'
 
 const EMBED_MODEL = 'test-embed'
 const DIMS = 4
 
 const tick = (ms = 300) => Bun.sleep(ms)
-const tmpDb = () => `/tmp/kgraph-vs-test-${crypto.randomUUID()}.db`
+const tmpDb = () => `/tmp/kgraph-vs-test-${crypto.randomUUID()}`
 
 const embeddingFor = (text: string): number[] => {
   const t = text.toLowerCase()
@@ -122,14 +123,22 @@ const CONCEPTS: MemoryConcept[] = [
 
 describe('kgraph concept search', () => {
   test('returns nearest neighbour first when querying with a full sentence', async () => {
-    const system = await AgentSystem()
+    const storagePath = tmpDb()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: storagePath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
     const llmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
-      { state: { userDbs: new Map(), llmRef: null } },
+      Kgraph(storagePath, { model: EMBED_MODEL, dimensions: DIMS }),
+      { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -150,14 +159,22 @@ describe('kgraph concept search', () => {
   })
 
   test('respects topN limit with sentence queries', async () => {
-    const system = await AgentSystem()
+    const storagePath = tmpDb()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: storagePath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
     const llmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
-      { state: { userDbs: new Map(), llmRef: null } },
+      Kgraph(storagePath, { model: EMBED_MODEL, dimensions: DIMS }),
+      { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -176,14 +193,22 @@ describe('kgraph concept search', () => {
   })
 
   test('results carry name and description stored at index time', async () => {
-    const system = await AgentSystem()
+    const storagePath = tmpDb()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: storagePath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
     const llmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
-      { state: { userDbs: new Map(), llmRef: null } },
+      Kgraph(storagePath, { model: EMBED_MODEL, dimensions: DIMS }),
+      { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -204,14 +229,22 @@ describe('kgraph concept search', () => {
   })
 
   test('isolates results by userId', async () => {
-    const system = await AgentSystem()
+    const storagePath = tmpDb()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: storagePath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
     const llmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
-      { state: { userDbs: new Map(), llmRef: null } },
+      Kgraph(storagePath, { model: EMBED_MODEL, dimensions: DIMS }),
+      { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -238,14 +271,22 @@ describe('kgraph concept search', () => {
   })
 
   test('returns poorly linked concepts with semantically related anchors', async () => {
-    const system = await AgentSystem()
+    const storagePath = tmpDb()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: storagePath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
     const llmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(tmpDb(), { model: EMBED_MODEL, dimensions: DIMS }),
-      { state: { userDbs: new Map(), llmRef: null } },
+      Kgraph(storagePath, { model: EMBED_MODEL, dimensions: DIMS }),
+      { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()

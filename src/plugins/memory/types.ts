@@ -4,6 +4,7 @@ import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 import type { ContextTurn } from '../../types/agents.ts'
 import type { MessageAttachment } from '../../types/events.ts'
+import type { PersistenceMsg } from '../../types/persistence.ts'
 
 // ─── Graph dump types ───
 
@@ -125,6 +126,7 @@ export type KgraphMsg =
   | { type: 'linkConcepts'; links: MemoryConceptLink[]; userId: string; replyTo: ActorRef<ConceptLinksReply> }
   | { type: 'linkCandidates'; userId: string; limit?: number; anchorsPerTarget?: number; linkLimit?: number; replyTo: ActorRef<LinkCandidatesReply> }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
   | { type: '_conceptSearchDone'; concepts: MemorySearchConcept[]; replyTo: ActorRef<ConceptSearchReply> }
   | { type: '_conceptSearchErr';  error: string;                   replyTo: ActorRef<ConceptSearchReply> }
   | { type: '_conceptUpsertDone'; nodeId: number;                  replyTo: ActorRef<ConceptUpsertReply> }

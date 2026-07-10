@@ -1,8 +1,9 @@
-import { GrafeoDB } from '@grafeo-db/js'
 import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import type { EmbeddingReply, LlmProviderMsg, RerankReply } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
+import { PersistenceProviderTopic } from '../../types/persistence.ts'
+import type { PersistenceMsg, GraphNode, GraphEdge, PResult } from '../../types/persistence.ts'
 import type {
   KgraphGraph,
   KgraphMsg,
@@ -18,16 +19,8 @@ export type { KgraphGraph, KgraphMsg }
 
 // ─── Constants ───
 
-const VECTOR_INDEX_LABEL = 'Concept'
-
 type EmbeddingConfig = { model: string; dimensions: number }
 type RerankerConfig = { model: string; topK?: number }
-
-type UserGraphDb = {
-  db: GrafeoDB
-  vectorIndexReadyFor?: number
-  vectorIndexInit?: Promise<void>
-}
 
 type ConceptVectorMatch = {
   nodeId: number
@@ -41,8 +34,6 @@ type ConceptVectorMatch = {
   kind?: string
 }
 
-type CreatedGraphNode = { name: string; nodeId: number }
-
 type WeakConceptTarget = {
   concept: MemorySearchConcept
   reason: LinkConsolidationReason
@@ -54,39 +45,13 @@ type WeakConceptTarget = {
 // ─── State ───
 
 export type KgraphState = {
-  userDbs: Map<string, UserGraphDb>
+  persistenceRef: ActorRef<PersistenceMsg> | null
   llmRef: ActorRef<LlmProviderMsg> | null
 }
 
 // ─── Helpers ───
 
-const resolveDb = (state: KgraphState, userId: string, workPath: string): UserGraphDb => {
-  const existing = state.userDbs.get(userId)
-  if (existing) return existing
-  const userWorkPath = `${workPath}/${userId}/kgraph`
-  const db = GrafeoDB.create(userWorkPath)
-  const entry = { db }
-  state.userDbs.set(userId, entry)
-  return entry
-}
-
-const ensureVectorIndex = async (entry: UserGraphDb, embedding: EmbeddingConfig): Promise<void> => {
-  if (entry.vectorIndexReadyFor === embedding.dimensions) return
-  if (!entry.vectorIndexInit) {
-    entry.vectorIndexInit = entry.db
-      .execute(`CREATE VECTOR INDEX idx_concept_embedding ON :${VECTOR_INDEX_LABEL}(_embedding) DIMENSION ${embedding.dimensions} METRIC 'cosine'`)
-      .then(() => {
-        entry.vectorIndexReadyFor = embedding.dimensions
-      })
-      .catch(() => {
-        entry.vectorIndexReadyFor = embedding.dimensions
-      })
-      .finally(() => {
-        entry.vectorIndexInit = undefined
-      })
-  }
-  await entry.vectorIndexInit
-}
+const getGraphId = (userId: string): string => `kgraph/${userId}`
 
 const definedEntries = (properties: Record<string, unknown>): Array<[string, unknown]> =>
   Object.entries(properties).filter(([, value]) => value !== undefined)
@@ -145,17 +110,36 @@ const conceptReturnClause =
   'id(n) AS nodeId, n.name AS name, n.description AS description, n.recordIds AS recordIds, n.topics AS topics, n.aliases AS aliases, n.eventTime AS eventTime, n.kind AS kind'
 
 const fetchLinkStubs = async (
-  db: GrafeoDB,
+  persistenceRef: ActorRef<PersistenceMsg>,
+  graphId: string,
   nodeId: number,
   linkLimit: number,
 ): Promise<MemorySearchLinkStub[]> => {
   const returnClause =
     'type(r) AS type, id(other) AS nodeId, other.name AS name, other.kind AS kind, r.confidence AS confidence'
   const limit = Math.max(1, linkLimit)
-  const rows = (await Promise.all([
-    db.execute(`MATCH (n:Concept)-[r]->(other:Concept) WHERE id(n) = ${nodeId} RETURN ${returnClause} LIMIT ${limit}`),
-    db.execute(`MATCH (n:Concept)<-[r]-(other:Concept) WHERE id(n) = ${nodeId} RETURN ${returnClause} LIMIT ${limit}`),
-  ])).flatMap(result => result.toArray() as any[])
+
+  const [outboundRes, inboundRes] = await Promise.all([
+    ask<PersistenceMsg, PResult<Record<string, unknown>[]>>(persistenceRef, (replyTo) => ({
+      type: 'graph.query',
+      graphId,
+      cypher: `MATCH (n:Concept)-[r]->(other:Concept) WHERE id(n) = $nodeId RETURN ${returnClause} LIMIT ${limit}`,
+      params: { nodeId },
+      replyTo,
+    })),
+    ask<PersistenceMsg, PResult<Record<string, unknown>[]>>(persistenceRef, (replyTo) => ({
+      type: 'graph.query',
+      graphId,
+      cypher: `MATCH (n:Concept)<-[r]-(other:Concept) WHERE id(n) = $nodeId RETURN ${returnClause} LIMIT ${limit}`,
+      params: { nodeId },
+      replyTo,
+    })),
+  ])
+
+  const rows = [
+    ...(outboundRes.ok && outboundRes.data ? outboundRes.data : []),
+    ...(inboundRes.ok && inboundRes.data ? inboundRes.data : []),
+  ]
 
   return rows
     .filter(row => typeof row.nodeId === 'number' && typeof row.name === 'string' && typeof row.type === 'string')
@@ -166,22 +150,23 @@ const fetchLinkStubs = async (
     ))
     .slice(0, linkLimit)
     .map(row => ({
-      type: row.type,
-      nodeId: row.nodeId,
-      name: row.name,
-      kind: row.kind,
-      confidence: row.confidence,
+      type: row.type as string,
+      nodeId: row.nodeId as number,
+      name: row.name as string,
+      kind: row.kind as string | undefined,
+      confidence: row.confidence as number | undefined,
     }))
 }
 
 const attachLinkStubs = async (
-  db: GrafeoDB,
+  persistenceRef: ActorRef<PersistenceMsg>,
+  graphId: string,
   concepts: MemorySearchConcept[],
   linkLimit: number,
 ): Promise<MemorySearchConcept[]> =>
   Promise.all(concepts.map(async concept => ({
     ...concept,
-    links: await fetchLinkStubs(db, concept.nodeId, linkLimit),
+    links: await fetchLinkStubs(persistenceRef, graphId, concept.nodeId, linkLimit),
   })))
 
 const embedText = async (
@@ -198,22 +183,38 @@ const embedText = async (
 }
 
 const queryConceptVectors = async (
-  db: GrafeoDB,
+  persistenceRef: ActorRef<PersistenceMsg>,
+  graphId: string,
   vector: number[],
   cosineSimilarityThreshold: number,
   limit: number,
 ): Promise<ConceptVectorMatch[]> => {
   const vectorStr = `vector([${vector.join(',')}])`
-  const seedResult = await db.execute(`
+  const query = `
     MATCH (n:Concept)
     WHERE cosine_similarity(n._embedding, ${vectorStr}) > ${cosineSimilarityThreshold}
     RETURN id(n) AS nodeId, n.name AS name, n.description AS description, n.recordIds AS recordIds, n.topics AS topics, n.aliases AS aliases, n.eventTime AS eventTime, n.kind AS kind, cosine_similarity(n._embedding, ${vectorStr}) AS score
     ORDER BY score DESC
     LIMIT ${Math.max(1, limit)}
-  `)
-  return seedResult.toArray().map((row: any) => ({
-    nodeId: row.nodeId ?? row['id(n)'],
-    score: row.score ?? row['cosine_similarity(n._embedding, ' + vectorStr + ')'],
+  `
+  const res = await ask<PersistenceMsg, PResult<Record<string, unknown>[]>>(persistenceRef, (replyTo) => ({
+    type: 'graph.query',
+    graphId,
+    cypher: query,
+    params: {},
+    replyTo,
+  }))
+
+  if (!res.ok) {
+    throw new Error(res.error)
+  }
+  if (!res.data) {
+    throw new Error('Failed to query concept vectors')
+  }
+
+  return res.data.map((row: any) => ({
+    nodeId: row.nodeId,
+    score: row.score,
     name: row.name ?? '',
     description: row.description ?? '',
     recordIds: asStringArray(row.recordIds),
@@ -257,7 +258,8 @@ const rerankConceptMatches = async (
 }
 
 const searchConcepts = async (
-  entry: UserGraphDb,
+  persistenceRef: ActorRef<PersistenceMsg>,
+  graphId: string,
   llmRef: ActorRef<LlmProviderMsg>,
   embedding: EmbeddingConfig,
   options: {
@@ -269,12 +271,11 @@ const searchConcepts = async (
     onRerankError?: (error: string) => void
   },
 ): Promise<MemorySearchConcept[]> => {
-  await ensureVectorIndex(entry, embedding)
   const fetchLimit = options.reranker
     ? (options.reranker.topK ?? Math.max(options.topN, 10))
     : options.topN
   const vector = await embedText(llmRef, embedding, options.query)
-  const vectorMatches = await queryConceptVectors(entry.db, vector, options.cosineSimilarityThreshold, fetchLimit)
+  const vectorMatches = await queryConceptVectors(persistenceRef, graphId, vector, options.cosineSimilarityThreshold, fetchLimit)
   const matches = options.reranker
     ? await rerankConceptMatches(llmRef, options.reranker, options.query, vectorMatches, options.onRerankError)
     : vectorMatches
@@ -283,19 +284,37 @@ const searchConcepts = async (
     .sort((a, b) => b.score - a.score)
     .slice(0, options.topN)
     .map(conceptFromVectorMatch)
-  return attachLinkStubs(entry.db, concepts, options.linkLimit)
+  return attachLinkStubs(persistenceRef, graphId, concepts, options.linkLimit)
 }
 
 const fetchNeighborConcepts = async (
-  db: GrafeoDB,
+  persistenceRef: ActorRef<PersistenceMsg>,
+  graphId: string,
   nodeId: number,
   limit: number,
 ): Promise<MemorySearchConcept[]> => {
   const rowLimit = Math.max(1, limit)
-  const rows = (await Promise.all([
-    db.execute(`MATCH (base:Concept)-[r]->(n:Concept) WHERE id(base) = ${nodeId} RETURN ${conceptReturnClause}, type(r) AS _linkType, r.confidence AS _confidence LIMIT ${rowLimit}`),
-    db.execute(`MATCH (base:Concept)<-[r]-(n:Concept) WHERE id(base) = ${nodeId} RETURN ${conceptReturnClause}, type(r) AS _linkType, r.confidence AS _confidence LIMIT ${rowLimit}`),
-  ])).flatMap(result => result.toArray() as any[])
+  const [res1, res2] = await Promise.all([
+    ask<PersistenceMsg, PResult<Record<string, unknown>[]>>(persistenceRef, (replyTo) => ({
+      type: 'graph.query',
+      graphId,
+      cypher: `MATCH (base:Concept)-[r]->(n:Concept) WHERE id(base) = $nodeId RETURN ${conceptReturnClause}, type(r) AS _linkType, r.confidence AS _confidence LIMIT ${rowLimit}`,
+      params: { nodeId },
+      replyTo,
+    })),
+    ask<PersistenceMsg, PResult<Record<string, unknown>[]>>(persistenceRef, (replyTo) => ({
+      type: 'graph.query',
+      graphId,
+      cypher: `MATCH (base:Concept)<-[r]-(n:Concept) WHERE id(base) = $nodeId RETURN ${conceptReturnClause}, type(r) AS _linkType, r.confidence AS _confidence LIMIT ${rowLimit}`,
+      params: { nodeId },
+      replyTo,
+    })),
+  ])
+
+  const rows = [
+    ...(res1.ok && res1.data ? res1.data : []),
+    ...(res2.ok && res2.data ? res2.data : []),
+  ]
 
   const seen = new Set<number>()
   const concepts: MemorySearchConcept[] = []
@@ -326,11 +345,12 @@ const weakConceptTargetFromRow = (row: any): WeakConceptTarget | null => {
 }
 
 const fetchWeakConceptTargets = async (
-  db: GrafeoDB,
+  persistenceRef: ActorRef<PersistenceMsg>,
+  graphId: string,
   limit: number,
   linkLimit: number,
 ): Promise<WeakConceptTarget[]> => {
-  const result = await db.execute(`
+  const cypher = `
     MATCH (n:Concept)
     OPTIONAL MATCH (n)-[r]-()
     OPTIONAL MATCH (n)<-[incoming]-()
@@ -343,11 +363,26 @@ const fetchWeakConceptTargets = async (
     RETURN ${conceptReturnClause}, total AS _total, incomingCount AS _incoming, outgoingCount AS _outgoing, "orphan" AS _reason
     ORDER BY _total ASC, _incoming ASC, n.name
     LIMIT ${Math.max(1, limit)}
-  `)
-  const targets = (result.toArray() as any[])
+  `
+  const res = await ask<PersistenceMsg, PResult<Record<string, unknown>[]>>(persistenceRef, (replyTo) => ({
+    type: 'graph.query',
+    graphId,
+    cypher,
+    params: {},
+    replyTo,
+  }))
+
+  if (!res.ok) {
+    throw new Error(res.error)
+  }
+  if (!res.data) {
+    throw new Error('Failed to fetch weak concept targets')
+  }
+
+  const targets = res.data
     .map(weakConceptTargetFromRow)
     .filter((target): target is WeakConceptTarget => target !== null)
-  const concepts = await attachLinkStubs(db, targets.map(target => target.concept), linkLimit)
+  const concepts = await attachLinkStubs(persistenceRef, graphId, targets.map(target => target.concept), linkLimit)
   return targets.map((target, index) => ({ ...target, concept: concepts[index]! }))
 }
 
@@ -366,7 +401,8 @@ const topicOverlap = (a: MemorySearchConcept, b: MemorySearchConcept): number =>
 }
 
 const fetchLinkCandidates = async (
-  entry: UserGraphDb,
+  persistenceRef: ActorRef<PersistenceMsg>,
+  graphId: string,
   llmRef: ActorRef<LlmProviderMsg>,
   embedding: EmbeddingConfig,
   cosineSimilarityThreshold: number,
@@ -374,13 +410,14 @@ const fetchLinkCandidates = async (
   anchorsPerTarget: number,
   linkLimit: number,
 ): Promise<LinkConsolidationCandidate[]> => {
-  const weakTargets = await fetchWeakConceptTargets(entry.db, limit, linkLimit)
+  const weakTargets = await fetchWeakConceptTargets(persistenceRef, graphId, limit, linkLimit)
   const candidates: LinkConsolidationCandidate[] = []
   for (const target of weakTargets) {
     const linkedNodeIds = new Set(target.concept.links.map(link => link.nodeId))
     linkedNodeIds.add(target.concept.nodeId)
     const searchResults = await searchConcepts(
-      entry,
+      persistenceRef,
+      graphId,
       llmRef,
       embedding,
       {
@@ -411,13 +448,19 @@ const fetchLinkCandidates = async (
 }
 
 const readConceptByName = async (
-  db: GrafeoDB,
+  persistenceRef: ActorRef<PersistenceMsg>,
+  graphId: string,
   name: string,
 ): Promise<{ nodeId: number; recordIds: string[] } | null> => {
-  const result = await db.execute(
-    `MATCH (n:Concept {name:${JSON.stringify(name)}}) RETURN id(n) AS nodeId, n.recordIds AS recordIds LIMIT 1`,
-  )
-  const row = result.toArray()[0] as { nodeId?: number; recordIds?: unknown } | undefined
+  const res = await ask<PersistenceMsg, PResult<Record<string, unknown>[]>>(persistenceRef, (replyTo) => ({
+    type: 'graph.query',
+    graphId,
+    cypher: `MATCH (n:Concept {name: $name}) RETURN id(n) AS nodeId, n.recordIds AS recordIds LIMIT 1`,
+    params: { name },
+    replyTo,
+  }))
+  if (!res.ok || !res.data || res.data.length === 0) return null
+  const row = res.data[0]
   if (!row || typeof row.nodeId !== 'number') return null
   return { nodeId: row.nodeId, recordIds: asStringArray(row.recordIds) }
 }
@@ -450,141 +493,142 @@ const conceptEmbeddingText = (concept: MemoryConcept, properties: Record<string,
   ].filter(Boolean).join('\n')
 }
 
-const createGraphNode = async (
-  entry: UserGraphDb,
-  llmRef: ActorRef<LlmProviderMsg>,
-  embedding: EmbeddingConfig,
-  label: string,
-  name: string,
-  properties: Record<string, unknown>,
-  embeddingText: string,
-): Promise<CreatedGraphNode> => {
-  await ensureVectorIndex(entry, embedding)
-  const vector = await embedText(llmRef, embedding, embeddingText)
-
-  const now = new Date().toISOString()
-  const vectorStr = `vector([${vector.join(',')}])`
-  let insertQuery = `INSERT (n:${label} { name: ${JSON.stringify(name)}, _embedding: ${vectorStr}`
-  for (const [k, v] of definedEntries({ ...properties, createdAt: now, updatedAt: now })) {
-    insertQuery += `, ${k}: ${JSON.stringify(v)}`
-  }
-  insertQuery += ` }) RETURN n`
-
-  const result = await entry.db.execute(insertQuery)
-  const nodeId = result.nodes()[0]?.id
-  if (nodeId === undefined) throw new Error('INSERT returned no node')
-  return { name, nodeId }
-}
-
-const updateGraphNode = async (
-  entry: UserGraphDb,
-  llmRef: ActorRef<LlmProviderMsg>,
-  embedding: EmbeddingConfig,
-  nodeId: number,
-  properties: Record<string, unknown>,
-  embeddingText: string,
-): Promise<void> => {
-  await ensureVectorIndex(entry, embedding)
-  const vector = await embedText(llmRef, embedding, embeddingText)
-
-  const setClauses = [`n._embedding = vector([${vector.join(',')}])`]
-  for (const [k, v] of definedEntries(properties)) {
-    setClauses.push(`n.${k} = ${JSON.stringify(v)}`)
-  }
-  setClauses.push(`n.updatedAt = ${JSON.stringify(new Date().toISOString())}`)
-  await entry.db.execute(`MATCH (n) WHERE id(n) = ${nodeId} SET ${setClauses.join(', ')}`)
-}
-
 const upsertConceptNode = async (
-  entry: UserGraphDb,
+  persistenceRef: ActorRef<PersistenceMsg>,
+  graphId: string,
   llmRef: ActorRef<LlmProviderMsg>,
   embedding: EmbeddingConfig,
   concept: MemoryConcept,
   recordId: string,
 ): Promise<number> => {
-  const existing = await readConceptByName(entry.db, concept.name)
+  const existing = await readConceptByName(persistenceRef, graphId, concept.name)
   const recordIds = existing ? uniqueStrings([...existing.recordIds, recordId]) : [recordId]
   const properties = conceptProperties(concept, recordIds)
   const embeddingText = conceptEmbeddingText(concept, properties)
+  const vector = await embedText(llmRef, embedding, embeddingText)
 
-  if (existing) {
-    await updateGraphNode(entry, llmRef, embedding, existing.nodeId, properties, embeddingText)
-    return existing.nodeId
+  const node: GraphNode = {
+    id: concept.name,
+    type: 'Concept',
+    properties: {
+      ...properties,
+      name: concept.name,
+      updatedAt: new Date().toISOString(),
+    },
+    embedding: vector,
   }
 
-  const result = await createGraphNode(entry, llmRef, embedding, 'Concept', concept.name, properties, embeddingText)
-  return result.nodeId
+  if (!existing) {
+    node.properties.createdAt = new Date().toISOString()
+  }
+
+  // Remove undefined properties
+  for (const [k, v] of Object.entries(node.properties)) {
+    if (v === undefined) {
+      delete node.properties[k]
+    }
+  }
+
+  const res = await ask<PersistenceMsg, PResult<{ nodeIds: string[] }>>(persistenceRef, (replyTo) => ({
+    type: 'graph.upsert',
+    graphId,
+    nodes: [node],
+    edges: [],
+    replyTo,
+  }))
+
+  if (!res.ok || !res.data || res.data.nodeIds.length === 0) {
+    throw new Error(res.ok ? 'Failed to get upserted nodeId' : res.error)
+  }
+  return Number(res.data.nodeIds[0])
 }
 
 const readLinkConfidence = async (
-  db: GrafeoDB,
+  persistenceRef: ActorRef<PersistenceMsg>,
+  graphId: string,
   link: MemoryConceptLink,
 ): Promise<number | undefined> => {
-  const result = await db.execute(
-    `MATCH (a:Concept {name:${JSON.stringify(link.from)}})-[r:${link.type}]->(b:Concept {name:${JSON.stringify(link.to)}}) ` +
-    `RETURN r.confidence AS confidence LIMIT 1`,
-  )
-  const row = result.toArray()[0] as { confidence?: unknown } | undefined
-  return typeof row?.confidence === 'number' ? row.confidence : undefined
+  const res = await ask<PersistenceMsg, PResult<Record<string, unknown>[]>>(persistenceRef, (replyTo) => ({
+    type: 'graph.query',
+    graphId,
+    cypher: `MATCH (a:Concept {name: $from})-[r:${link.type}]->(b:Concept {name: $to}) RETURN r.confidence AS confidence LIMIT 1`,
+    params: { from: link.from, to: link.to },
+    replyTo,
+  }))
+  if (!res.ok || !res.data || res.data.length === 0) return undefined
+  const row = res.data[0]
+  return row && typeof row.confidence === 'number' ? row.confidence : undefined
 }
 
 const linkConceptNodes = async (
-  db: GrafeoDB,
+  persistenceRef: ActorRef<PersistenceMsg>,
+  graphId: string,
   links: MemoryConceptLink[],
 ): Promise<number> => {
-  let linked = 0
+  const edges: GraphEdge[] = []
   for (const link of links) {
-    const setClauses: string[] = []
-    if (link.confidence !== undefined) {
-      const existingConfidence = await readLinkConfidence(db, link)
-      const confidence = Math.max(existingConfidence ?? 0, link.confidence)
-      setClauses.push(`r.confidence = ${JSON.stringify(confidence)}`)
-    }
-
-    const result = await db.execute(
-      `MATCH (a:Concept {name:${JSON.stringify(link.from)}}), (b:Concept {name:${JSON.stringify(link.to)}}) ` +
-      `MERGE (a)-[r:${link.type}]->(b) ` +
-      (setClauses.length > 0 ? `SET ${setClauses.join(', ')} ` : '') +
-      `RETURN count(*) AS _n`,
-    )
-    const row = result.toArray()[0] as { _n?: number } | undefined
-    if ((row?._n ?? 0) > 0) linked++
+    const existingConfidence = await readLinkConfidence(persistenceRef, graphId, link)
+    const confidence = link.confidence !== undefined
+      ? Math.max(existingConfidence ?? 0, link.confidence)
+      : undefined
+    edges.push({
+      source: link.from,
+      target: link.to,
+      type: link.type,
+      properties: confidence !== undefined ? { confidence } : undefined,
+    })
   }
-  return linked
+
+  const res = await ask<PersistenceMsg, PResult<{ nodeIds: string[] }>>(persistenceRef, (replyTo) => ({
+    type: 'graph.upsert',
+    graphId,
+    nodes: [],
+    edges,
+    replyTo,
+  }))
+
+  if (!res.ok) {
+    throw new Error(res.error || 'Failed to link concept nodes')
+  }
+
+  return links.length
 }
 
 // ─── Actor definition ───
 
 export const Kgraph = (
-  workPath: string,
+  workPath?: string,
   embedding?: { model: string; dimensions: number },
   cosineSimilarityThreshold = 0.0,
   reranker?: { model: string; topK?: number },
 ): ActorDef<KgraphMsg, KgraphState> => ({
-  initialState: () => ({ userDbs: new Map(), llmRef: null }),
+  initialState: () => ({ persistenceRef: null, llmRef: null }),
 
   lifecycle: onLifecycle({
     start: async (_state, ctx) => {
       if (embedding) {
         ctx.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
       }
+      ctx.subscribe(PersistenceProviderTopic, (e) => ({ type: '_persistenceRef' as const, ref: e.ref }))
 
-      ctx.log.info('kgraph ready (user-isolated mode)', { workPath })
-      return { state: { userDbs: new Map(), llmRef: null } }
+      ctx.log.info('kgraph ready (persistence-delegated mode)')
+      return { state: { persistenceRef: null, llmRef: null } }
     },
 
     stopped: async (state, ctx) => {
-      ctx.log.info('kgraph closing databases')
-      const dbs = Array.from(state.userDbs.values())
-      for (const entry of dbs) entry.db.close()
+      ctx.log.info('kgraph stopped')
       return { state }
     },
   }),
 
   handler: onMessage<KgraphMsg, KgraphState>({
-    _llmProvider: (state, msg) => ({
-      state: { ...state, llmRef: msg.ref },
-    }),
+    _llmProvider: (state, msg) => {
+      return { state: { ...state, llmRef: msg.ref } }
+    },
+
+    _persistenceRef: (state, msg) => {
+      return { state: { ...state, persistenceRef: msg.ref } }
+    },
 
     upsertConcept: (state, message, ctx) => {
       const { concept, recordId, userId, replyTo } = message
@@ -592,11 +636,16 @@ export const Kgraph = (
         replyTo.send({ type: 'conceptUpsertError', error: 'upsertConcept requires embedding to be configured' })
         return { state }
       }
-      const entry = resolveDb(state, userId, workPath)
+      if (!state.persistenceRef) {
+        replyTo.send({ type: 'conceptUpsertError', error: 'upsertConcept requires persistence to be ready' })
+        return { state }
+      }
+      const persistenceRef = state.persistenceRef
+      const graphId = getGraphId(userId)
       const llmRef = state.llmRef
       ctx.log.info('kgraph upsertConcept', { name: concept.name, recordId, userId })
       ctx.pipeToSelf(
-        upsertConceptNode(entry, llmRef, embedding, concept, recordId),
+        upsertConceptNode(persistenceRef, graphId, llmRef, embedding, concept, recordId),
         (nodeId) => ({ type: '_conceptUpsertDone' as const, nodeId, replyTo }),
         (error) => ({ type: '_conceptUpsertErr' as const, error: String(error), replyTo }),
       )
@@ -605,10 +654,15 @@ export const Kgraph = (
 
     linkConcepts: (state, message, ctx) => {
       const { links, userId, replyTo } = message
-      const entry = resolveDb(state, userId, workPath)
+      if (!state.persistenceRef) {
+        replyTo.send({ type: 'conceptLinksError', error: 'linkConcepts requires persistence to be ready' })
+        return { state }
+      }
+      const persistenceRef = state.persistenceRef
+      const graphId = getGraphId(userId)
       ctx.log.info('kgraph linkConcepts', { count: links.length, userId })
       ctx.pipeToSelf(
-        linkConceptNodes(entry.db, links),
+        linkConceptNodes(persistenceRef, graphId, links),
         (linked) => ({ type: '_conceptLinksDone' as const, linked, replyTo }),
         (error) => ({ type: '_conceptLinksErr' as const, error: String(error), replyTo }),
       )
@@ -621,11 +675,17 @@ export const Kgraph = (
         replyTo.send({ type: 'linkCandidatesError', error: 'linkCandidates requires embedding to be configured' })
         return { state }
       }
-      const entry = resolveDb(state, userId, workPath)
+      if (!state.persistenceRef) {
+        replyTo.send({ type: 'linkCandidatesError', error: 'linkCandidates requires persistence to be ready' })
+        return { state }
+      }
+      const persistenceRef = state.persistenceRef
+      const graphId = getGraphId(userId)
       const llmRef = state.llmRef
       ctx.pipeToSelf(
         fetchLinkCandidates(
-          entry,
+          persistenceRef,
+          graphId,
           llmRef,
           embedding,
           cosineSimilarityThreshold,
@@ -646,12 +706,17 @@ export const Kgraph = (
         replyTo.send({ type: 'conceptSearchError', error: 'conceptSearch requires embedding to be configured' })
         return { state }
       }
+      if (!state.persistenceRef) {
+        replyTo.send({ type: 'conceptSearchError', error: 'conceptSearch requires persistence to be ready' })
+        return { state }
+      }
 
       const llmRef = state.llmRef
-      const entry = resolveDb(state, userId, workPath)
+      const persistenceRef = state.persistenceRef
+      const graphId = getGraphId(userId)
 
       ctx.pipeToSelf(
-        searchConcepts(entry, llmRef, embedding, {
+        searchConcepts(persistenceRef, graphId, llmRef, embedding, {
           query,
           topN,
           linkLimit,
@@ -668,10 +733,15 @@ export const Kgraph = (
 
     conceptExpand: (state, message, ctx) => {
       const { nodeId, limit = 8, linkLimit = 5, userId, replyTo } = message
-      const entry = resolveDb(state, userId, workPath)
+      if (!state.persistenceRef) {
+        replyTo.send({ type: 'conceptSearchError', error: 'conceptExpand requires persistence to be ready' })
+        return { state }
+      }
+      const persistenceRef = state.persistenceRef
+      const graphId = getGraphId(userId)
 
       ctx.pipeToSelf(
-        fetchNeighborConcepts(entry.db, nodeId, limit).then(concepts => attachLinkStubs(entry.db, concepts, linkLimit)),
+        fetchNeighborConcepts(persistenceRef, graphId, nodeId, limit).then(concepts => attachLinkStubs(persistenceRef, graphId, concepts, linkLimit)),
         (concepts) => ({ type: '_conceptSearchDone' as const, concepts, replyTo }),
         (error) => ({ type: '_conceptSearchErr' as const, error: String(error), replyTo }),
       )
@@ -730,18 +800,48 @@ export const Kgraph = (
 
     dump: (state, message, ctx) => {
       const { userId } = message
-      const entry = resolveDb(state, userId, workPath)
-
-      const nodeQuery = 'MATCH (n) RETURN n'
-      const edgeQuery = 'MATCH ()-[r]->() RETURN r'
+      if (!state.persistenceRef) {
+        message.replyTo.send({ nodes: [], edges: [] })
+        return { state }
+      }
+      const persistenceRef = state.persistenceRef
+      const graphId = getGraphId(userId)
 
       ctx.pipeToSelf(
         Promise.all([
-          entry.db.execute(nodeQuery),
-          entry.db.execute(edgeQuery),
-        ]).then(([nodesResult, edgesResult]) => ({
-          nodes: nodesResult.nodes().map(n => ({ id: n.id, labels: n.labels, properties: n.properties() as Record<string, unknown> })),
-          edges: edgesResult.edges().map(e => ({ id: e.id, type: e.edgeType, source: e.sourceId, target: e.targetId, properties: e.properties() as Record<string, unknown> })),
+          ask<PersistenceMsg, PResult<Record<string, unknown>[]>>(
+            persistenceRef,
+            (replyTo) => ({
+              type: 'graph.query',
+              graphId,
+              cypher: 'MATCH (n) RETURN id(n) AS id, labels(n) AS labels, properties(n) AS properties',
+              params: {},
+              replyTo,
+            })
+          ).then(res => res.ok && res.data ? res.data : []),
+          ask<PersistenceMsg, PResult<Record<string, unknown>[]>>(
+            persistenceRef,
+            (replyTo) => ({
+              type: 'graph.query',
+              graphId,
+              cypher: 'MATCH (s)-[r]->(t) RETURN id(r) AS id, type(r) AS type, id(s) AS source, id(t) AS target, properties(r) AS properties',
+              params: {},
+              replyTo,
+            })
+          ).then(res => res.ok && res.data ? res.data : []),
+        ]).then(([nodes, edges]) => ({
+          nodes: nodes.map((row: any) => ({
+            id: Number(row.id),
+            labels: Array.isArray(row.labels) ? row.labels : [],
+            properties: row.properties || {},
+          })),
+          edges: edges.map((row: any) => ({
+            id: Number(row.id),
+            type: String(row.type),
+            source: Number(row.source),
+            target: Number(row.target),
+            properties: row.properties || {},
+          })),
         })),
         (graph)  => ({ type: '_dumpDone' as const, graph, replyTo: message.replyTo }),
         (error)  => ({ type: '_dumpErr'  as const, error: String(error), replyTo: message.replyTo }),

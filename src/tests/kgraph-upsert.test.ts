@@ -6,9 +6,10 @@ import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import type { ConceptSearchReply, ConceptUpsertReply, MemoryConcept } from '../plugins/memory/types.ts'
+import persistencePlugin from '../plugins/persistence/persistence.plugin.ts'
 
 const tick = (ms = 100) => Bun.sleep(ms)
-const tmpDb = () => `/tmp/kgraph-test-${crypto.randomUUID()}.db`
+const tmpDb = () => `/tmp/kgraph-test-${crypto.randomUUID()}`
 
 const norm = (v: number[]): number[] => {
   const mag = Math.sqrt(v.reduce((s, x) => s + x * x, 0))
@@ -73,14 +74,22 @@ function conceptSearch(
 
 describe('kgraph concept upsert', () => {
   test('creates a concept and returns its nodeId', async () => {
-    const system = await AgentSystem()
+    const storagePath = tmpDb()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: storagePath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
-      { state: { userDbs: new Map(), llmRef: null } },
+      Kgraph(storagePath, { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
+      { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -93,14 +102,22 @@ describe('kgraph concept upsert', () => {
   })
 
   test('same concept name updates the existing node and appends recordIds', async () => {
-    const system = await AgentSystem()
+    const storagePath = tmpDb()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: storagePath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
-      { state: { userDbs: new Map(), llmRef: null } },
+      Kgraph(storagePath, { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
+      { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -125,14 +142,22 @@ describe('kgraph concept upsert', () => {
   })
 
   test('multiple distinct concepts produce separate nodes', async () => {
-    const system = await AgentSystem()
+    const storagePath = tmpDb()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: storagePath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
-      { state: { userDbs: new Map(), llmRef: null } },
+      Kgraph(storagePath, { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
+      { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -151,12 +176,20 @@ describe('kgraph concept upsert', () => {
   })
 
   test('fails gracefully when no LLM provider is available', async () => {
-    const system = await AgentSystem()
+    const storagePath = tmpDb()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: storagePath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(tmpDb(), { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
-      { state: { userDbs: new Map(), llmRef: null } },
+      Kgraph(storagePath, { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
+      { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()

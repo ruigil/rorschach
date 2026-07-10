@@ -6,10 +6,11 @@ import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
 import type { ConceptSearchReply, ConceptUpsertReply, MemoryConcept } from '../plugins/memory/types.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
+import persistencePlugin from '../plugins/persistence/persistence.plugin.ts'
 
 const DIMS = 4
 const tick = (ms = 150) => Bun.sleep(ms)
-const tmpDb = () => `/tmp/kgraph-rerank-test-${crypto.randomUUID()}.db`
+const tmpDb = () => `/tmp/kgraph-rerank-test-${crypto.randomUUID()}`
 
 const embeddingFor = (text: string): number[] => {
   const t = text.toLowerCase()
@@ -64,14 +65,22 @@ function conceptSearch(
 
 describe('kgraph concept search with reranker', () => {
   test('reranker reorders concept search results', async () => {
-    const system = await AgentSystem()
+    const storagePath = tmpDb()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: storagePath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(tmpDb(), { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
-      { state: { userDbs: new Map(), llmRef: null } },
+      Kgraph(storagePath, { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
+      { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()
@@ -96,7 +105,15 @@ describe('kgraph concept search with reranker', () => {
   })
 
   test('falls back to vector scores when reranker returns error', async () => {
-    const system = await AgentSystem()
+    const storagePath = tmpDb()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: storagePath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
     const errorDef: ActorDef<LlmProviderMsg, null> = {
       handler: (state, msg) => {
         if (msg.type === 'embed') {
@@ -112,8 +129,8 @@ describe('kgraph concept search with reranker', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(tmpDb(), { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
-      { state: { userDbs: new Map(), llmRef: null } },
+      Kgraph(storagePath, { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
+      { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
     await tick()

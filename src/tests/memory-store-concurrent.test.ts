@@ -12,6 +12,7 @@ import type { KgraphMsg, MemoryConcept, MemoryRecord, MemoryRecordsMsg } from '.
 import { MemoryRecords } from '../plugins/memory/memory-records.ts'
 import { Kgraph } from '../plugins/memory/kgraph.ts'
 import type { MessageAttachment } from '../types/events.ts'
+import persistencePlugin from '../plugins/persistence/persistence.plugin.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 const tmpMemory = () => `/tmp/memory-records-test-${crypto.randomUUID()}`
@@ -38,8 +39,15 @@ const spawnMemoryDeps = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
 
 describe('Memory Records', () => {
   test('stores attachment metadata in frontmatter and preserves markdown body bytes', async () => {
-    const system = await AgentSystem()
     const workPath = tmpMemory()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: workPath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
     const userId = 'test-user'
     const content = '# Field Note\n\nBody stays exactly as typed.\n'
     const attachments: MessageAttachment[] = [{
@@ -57,7 +65,7 @@ describe('Memory Records', () => {
     )
     if ('error' in created) throw new Error(created.error)
 
-    const raw = await Bun.file(`${workPath}/${userId}/records/${created.recordId}.md`).text()
+    const raw = await Bun.file(`${workPath}/doc/memory-records/${userId}/${created.recordId}`).text()
     expect(raw).toContain(`attachments: ${JSON.stringify(attachments)}\n`)
     expect(raw.split('\n---\n\n')[1]).toBe(content)
 
@@ -71,15 +79,22 @@ describe('Memory Records', () => {
   })
 
   test('reads old records without attachment frontmatter', async () => {
-    const system = await AgentSystem()
     const workPath = tmpMemory()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: workPath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
     const userId = 'test-user'
     const recordId = 'old-record'
     const content = 'An old body without attachment metadata.\n'
 
-    await mkdir(`${workPath}/${userId}/records`, { recursive: true })
+    await mkdir(`${workPath}/doc/memory-records/${userId}`, { recursive: true })
     await Bun.write(
-      `${workPath}/${userId}/records/${recordId}.md`,
+      `${workPath}/doc/memory-records/${userId}/${recordId}`,
       `---\nrecordId: "${recordId}"\ncreatedAt: "2026-01-01T00:00:00.000Z"\n---\n\n${content}`,
     )
 
@@ -97,8 +112,15 @@ describe('Memory Records', () => {
 
 describe('Memory Store Actor (Supervisor/Worker)', () => {
   test('recall can expand a concept nodeId before reading records', async () => {
-    const system = await AgentSystem()
     const workPath = tmpMemory()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: workPath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
     const userId = 'test-user'
     let expanded = false
 
@@ -161,7 +183,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       Kgraph(workPath, { model: 'test-embed', dimensions: 4 }),
-      { state: { userDbs: new Map(), llmRef: null } },
+      { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
     const storeRef = system.spawn(
       'memory-supervisor',
@@ -198,7 +220,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
         links: [{
           from: 'Notebook Notes',
           to: 'Notebook Memory Storage Decision',
-          type: 'CONSTRAINS',
+          type: 'ABOUT',
           confidence: 0.9,
         }],
         replyTo,
@@ -211,7 +233,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
       (replyTo) => ({
         type: 'invoke',
         toolName: 'recall_memory',
-        arguments: JSON.stringify({ query: 'What did we decide about notebook notes storage?' }),
+        arguments: JSON.stringify({ query: 'notebook notes storage' }),
         replyTo,
         userId,
       }),
@@ -227,8 +249,16 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
   })
 
   test('stores markdown verbatim and indexes derived concept nodes with recordIds', async () => {
-    const system = await AgentSystem()
     const workPath = tmpMemory()
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: workPath,
+        },
+      },
+      plugins: [persistencePlugin],
+    })
+    const userId = 'test-user'
     const markdown = '# Neovim Preference\n\nThe user prefers Neovim for code editing.\n'
     const storedAttachmentUrl = '/home/rigel/rorschach/workspace/media/inbound/neovim.png'
     const storedAttachments: MessageAttachment[] = [{
@@ -264,9 +294,13 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
               })
               return { state }
             }
-            const latestTool = toolMessages.at(-1) as { content?: string } | undefined
-            const payload = latestTool?.content ? JSON.parse(latestTool.content) as any : {}
-            if (Array.isArray(payload.concepts)) {
+
+            const assistantMessages = msg.messages.filter((m: any) => m.role === 'assistant')
+            const lastAssistant = assistantMessages[assistantMessages.length - 1]
+            const toolName = (lastAssistant as any)?.tool_calls?.[0]?.function?.name
+
+            if (toolName === 'memory_search') {
+              const payload = JSON.parse((toolMessages.at(-1) as { content: string }).content) as any
               const recordIds = payload.concepts.flatMap((concept: any) => Array.isArray(concept.recordIds) ? concept.recordIds : [])
               msg.replyTo.send({
                 type: 'llmToolCalls',
@@ -276,27 +310,34 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
               })
               return { state }
             }
-            readPayloads.push(payload)
-            msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'The user prefers Neovim for code editing.' })
-            msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
-            return { state }
+
+            if (toolName === 'memory_read') {
+              const payload = JSON.parse((toolMessages.at(-1) as { content: string }).content) as any
+              readPayloads.push(payload)
+              msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'The user prefers Neovim editor for coding.' })
+              msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+              return { state }
+            }
           }
 
-          extractionUserContents.push(String(msg.messages[1]?.content ?? ''))
-          const text = JSON.stringify({
-              title: 'Neovim Preference',
+          if (typeof systemPrompt === 'string' && systemPrompt.includes('memory indexing agent')) {
+            const content = msg.messages[1]!.content
+            if (typeof content === 'string') {
+              extractionUserContents.push(content)
+            }
+            const text = JSON.stringify({
               concepts: [
                 {
                   name: 'Neovim Preference',
                   kind: 'preference',
                   description: 'The user prefers Neovim for code editing.',
-                  topics: ['editor', 'preference'],
                   aliases: ['preferred editor', 'code editor'],
+                  topics: ['coding', 'editing'],
                 },
                 {
                   name: 'Code Editing',
                   kind: 'task',
-                  description: 'The user edits code as part of their development workflow.',
+                  description: 'The user edits code.',
                   topics: ['coding', 'editing'],
                 },
               ],
@@ -307,8 +348,10 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
                 confidence: 0.8,
               }],
             })
-          msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text })
-          msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+            msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text })
+            msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+          }
+          return { state }
         }
         if (msg.type === 'embed') {
           msg.replyTo.send({ type: 'embeddingResult', embedding: [1, 0, 0, 0] })
@@ -323,7 +366,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     const kgraphRef = system.spawn(
       'kgraph',
       Kgraph(workPath, { model: 'test-embed', dimensions: 4 }),
-      { state: { userDbs: new Map(), llmRef: null } },
+      { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
     const storeRef = system.spawn(
       'memory-supervisor',
@@ -349,7 +392,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     expect(result.indexedConcepts).toBe(2)
     expect(extractionUserContents).toEqual([markdown])
 
-    const stored = await Bun.file(`${workPath}/test-user/records/${result.recordId}.md`).text()
+    const stored = await Bun.file(`${workPath}/doc/memory-records/test-user/${result.recordId}`).text()
     expect(stored).toStartWith('---\n')
     expect(stored).toContain(`recordId: "${result.recordId}"`)
     expect(stored).toContain(`attachments: ${JSON.stringify(storedAttachments)}\n`)
@@ -423,8 +466,15 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
   })
 
   test('handles multiple concurrent invoke requests by spawning workers', async () => {
-    const system = await AgentSystem()
-    
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: tmpMemory(),
+        },
+      },
+      plugins: [persistencePlugin],
+    })
+
     // 1. Mock LLM Provider
     const mockLlmDef = {
       handler: (state: any, msg: LlmProviderMsg) => {
@@ -456,7 +506,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
       'memory-supervisor',
       MemorySupervisor({ model: 'test-model', recordsRef, kgraphRef }),
     )
-    
+
     await tick(100) // Wait for subscriptions
 
     // 3. Send two concurrent requests
@@ -486,7 +536,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
 
     expect(reply1.type).toBe('toolResult')
     expect(reply2.type).toBe('toolResult')
-    
+
     if (reply1.type === 'toolResult') {
       expect(reply1.result.text).toContain('stored')
     }
@@ -498,14 +548,21 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
   })
 
   test('reports error when LLM provider is missing', async () => {
-    const system = await AgentSystem()
-    
+    const system = await AgentSystem({
+      config: {
+        persistence: {
+          storageRoot: tmpMemory(),
+        },
+      },
+      plugins: [persistencePlugin],
+    })
+
     const { recordsRef, kgraphRef } = spawnMemoryDeps(system)
     const storeRef = system.spawn(
       'memory-supervisor',
       MemorySupervisor({ model: 'test-model', recordsRef, kgraphRef }),
     )
-    
+
     await tick()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(

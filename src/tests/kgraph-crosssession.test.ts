@@ -8,6 +8,7 @@ import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
 import type { ConceptSearchReply, ConceptUpsertReply, MemoryConcept } from '../plugins/memory/types.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
+import persistencePlugin from '../plugins/persistence/persistence.plugin.ts'
 
 const EMBED_MODEL = 'test-embed'
 const DIMS = 4
@@ -23,7 +24,14 @@ const embeddingFor = (text: string): number[] => {
 }
 
 function spawnSystem() {
-  return AgentSystem()
+  return AgentSystem({
+    config: {
+      persistence: {
+        storageRoot: TEST_DB,
+      },
+    },
+    plugins: [persistencePlugin],
+  })
 }
 
 function spawnLlm(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<LlmProviderMsg> {
@@ -42,7 +50,7 @@ function spawnKgraph(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<
   return system.spawn(
     'kgraph',
     Kgraph(TEST_DB, { model: EMBED_MODEL, dimensions: DIMS }),
-    { state: { userDbs: new Map(), llmRef: null } },
+    { state: { persistenceRef: null, llmRef: null } },
   ) as ActorRef<KgraphMsg>
 }
 
@@ -98,7 +106,7 @@ describe('kgraph cross-session persistence', () => {
   })
 
   test('raw db: inspect concept properties and test cypher vector search', async () => {
-    const db = GrafeoDB.create(`${TEST_DB}/${USER_ID}/kgraph`)
+    const db = GrafeoDB.create(`${TEST_DB}/graph/kgraph/${USER_ID}`)
     await db.execute(`CREATE VECTOR INDEX idx_concept_embedding ON :Concept(_embedding) DIMENSION ${DIMS} METRIC 'cosine'`).catch(e => console.log('createVectorIndex:', e))
 
     const queryVec = new Array(DIMS).fill(0.1)
