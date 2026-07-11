@@ -43,7 +43,8 @@
         "cwd": "/workspace"
       },
       "vision": {
-        "model": "nano-banana-2"
+        "model": "nano-banana-2",
+        "analysisModel": "gemma-4-uncensored"
       },
       "audio": {
         "ttsModel": "tts-gemini-3-1-flash",

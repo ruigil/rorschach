@@ -42,7 +42,8 @@ export const visionSchema: ConfigSchemaSection = {
   schema: {
     type: 'object',
     properties: {
-      model: { type: 'string', 'x-ui': { widget: 'model-select', label: 'Vision model' } },
+      model: { type: 'string', 'x-ui': { widget: 'model-select', label: 'Vision generation model' } },
+      analysisModel: { type: 'string', 'x-ui': { widget: 'model-select', label: 'Vision analysis model' } },
     },
   },
 }

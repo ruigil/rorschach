@@ -68,6 +68,7 @@ export type VisionOptions = {
   llmRef?: ActorRef<LlmProviderMsg> | null
   persistenceRef?: ActorRef<PersistenceMsg> | null
   model: string
+  analysisModel?: string
 }
 
 // ─── Helpers ───
@@ -110,7 +111,7 @@ const mimeTypeForImagePath = (path: string): string => {
 // ─── Actor definition ───
 
 export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState> => {
-  const { model } = options
+  const { model, analysisModel } = options
 
   return {
     initialState: () => ({ pending: {}, llmRef: options.llmRef ?? null, persistenceRef: options.persistenceRef ?? null }),
@@ -237,7 +238,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
         state.llmRef.send({
           type: 'stream',
           requestId,
-          model,
+          model: analysisModel || model,
           messages: [
             {
               role: 'user',

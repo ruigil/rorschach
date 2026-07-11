@@ -61,24 +61,51 @@ export const ObjEngine = (baseDir: string) => {
 
       await ensureParentDir(filePath)
 
+      if (!msg.stream) {
+        throw new Error('Stream is undefined or null')
+      }
+
       const file = Bun.file(filePath)
       const writer = file.writer()
-      const reader = msg.stream.getReader()
+
       try {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          writer.write(value)
+        if (typeof msg.stream.getReader === 'function') {
+          const reader = msg.stream.getReader()
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+              writer.write(value)
+            }
+          } finally {
+            try {
+                reader.releaseLock()
+            } catch (e) {
+              // Bun bug ?
+              //console.warn('Non-fatal: failed to release stream reader lock:', e)
+            }
+          }
+        } else if (msg.stream && typeof (msg.stream as any)[Symbol.asyncIterator] === 'function') {
+          for await (const chunk of (msg.stream as any)) {
+            writer.write(chunk)
+          }
+        } else {
+          throw new Error('Provided stream is not readable or iterable')
         }
+
         writer.end()
-      } finally {
-        reader.releaseLock()
+      } catch (streamErr) {
+        writer.end()
+        throw streamErr
       }
 
       await Bun.write(metaPath, JSON.stringify(msg.meta || {}))
       return { ok: true }
     } catch (err: any) {
-      return { ok: false, error: err.message || String(err) }
+      const errMsg = err ? (err.message || String(err)) : 'Unknown error'
+      const errStack = err?.stack || ''
+      //console.error(`putStream error: ${errMsg}\nStack: ${errStack}`)
+      return { ok: false, error: errMsg }
     }
   }
 

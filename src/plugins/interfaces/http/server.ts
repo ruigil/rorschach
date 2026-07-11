@@ -125,7 +125,6 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         if (!stream) {
           return new Response('Bad Request: Empty Body', { status: 400 })
         }
-
         const uploaded = await options.uploadMedia(key, stream, req.headers.get('Content-Type') || 'application/octet-stream')
         if (uploaded.ok) {
           return new Response(JSON.stringify({ url: key }), {

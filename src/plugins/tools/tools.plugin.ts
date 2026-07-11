@@ -14,6 +14,7 @@ import { toolsSchemas } from './routes.ts'
 
 type VisionConfig = {
   model: string
+  analysisModel?: string
 }
 
 type AudioConfig = {
@@ -67,7 +68,7 @@ export default createPluginFactory<ToolsConfig>({
       configPath: 'bash',
     },
     vision: {
-      factory: (cfg) => cfg ? Vision({ model: cfg.model }) : null,
+      factory: (cfg) => cfg ? Vision({ model: cfg.model, analysisModel: cfg.analysisModel }) : null,
       configPath: 'vision',
     },
     audio: {
