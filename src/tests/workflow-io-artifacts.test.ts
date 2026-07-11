@@ -219,7 +219,7 @@ describe('workflow IO and artifacts', () => {
     const res = await route.handler(
       new Request('http://localhost/workflow-runs/run-1/artifact?path=report.html'),
       new URL('http://localhost/workflow-runs/run-1/artifact?path=report.html'),
-      { userId: 'anonymous', roles: [] },
+      { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
     )
     expect(res.status).toBe(200)
     expect(await res.text()).toBe('<h1>Report</h1>')
@@ -228,7 +228,7 @@ describe('workflow IO and artifacts', () => {
     const traversal = await route.handler(
       new Request('http://localhost/workflow-runs/run-1/artifact?path=../other.html'),
       new URL('http://localhost/workflow-runs/run-1/artifact?path=../other.html'),
-      { userId: 'anonymous', roles: [] },
+      { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
     )
     expect(traversal.status).toBe(400)
 
@@ -237,7 +237,7 @@ describe('workflow IO and artifacts', () => {
     const unref = await route.handler(
       new Request('http://localhost/workflow-runs/run-1/artifact?path=secret.txt'),
       new URL('http://localhost/workflow-runs/run-1/artifact?path=secret.txt'),
-      { userId: 'anonymous', roles: [] },
+      { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
     )
     expect(unref.status).toBe(404)
 
@@ -245,7 +245,7 @@ describe('workflow IO and artifacts', () => {
     const urlOnly = await route.handler(
       new Request('http://localhost/workflow-runs/run-url/artifact?path=generated/image.png'),
       new URL('http://localhost/workflow-runs/run-url/artifact?path=generated/image.png'),
-      { userId: 'anonymous', roles: [] },
+      { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
     )
     expect(urlOnly.status).toBe(404)
     await system.shutdown()
