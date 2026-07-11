@@ -250,10 +250,10 @@ export const Drive = (
                 throw new Error(`File not found in persistence: ${args.filePath}`)
               }
 
-              uploadMime = getRes.data.meta?.['content-type'] ?? mimeFromPath(args.filePath as string)
+              uploadMime = getRes.data?.meta?.['content-type'] ?? mimeFromPath(args.filePath as string)
               const pathName = (args.filePath as string).split('/').pop() ?? 'upload'
               uploadName = (args.name as string | undefined) ?? pathName
-              body = Readable.fromWeb(getRes.data.stream as any)
+              body = Readable.fromWeb(getRes.data?.stream as any)
             } else if (args.content !== undefined) {
               if (!args.name) throw new Error('name is required when uploading inline content')
               uploadName = args.name as string
