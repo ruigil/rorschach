@@ -120,8 +120,6 @@ describe('BashTool Actor', () => {
 
     expect(replyProj.type).toBe('toolResult')
     if (replyProj.type === 'toolResult') {
-      console.log('Project listing:', replyProj.result.text)
-
       expect(replyProj.result.text).toContain('plugins')
       expect(replyProj.result.text).toContain('system')
     }

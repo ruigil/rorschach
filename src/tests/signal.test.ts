@@ -318,6 +318,7 @@ describe('signal actor: TCP socket', () => {
     await tick(2_000)  // wait for any queued messages to be pushed by the daemon
 
     expect(ref.isAlive()).toBe(true)
+    /*
     console.log(`received ${messageEvents.length} message(s) from ${connectEvents.length} sender(s)`)
     for (const e of messageEvents) {
       console.log(`  [${e.userId}] ${e.text}`)
@@ -329,6 +330,7 @@ describe('signal actor: TCP socket', () => {
         }
       }
     }
+    */
 
     await system.shutdown()
   })
