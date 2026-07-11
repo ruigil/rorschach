@@ -297,15 +297,15 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderIn
       },
 
       downloadVideos: (state, message, context) => {
-        const { requestId, downloads, role, userId, replyTo } = message
-        const destPaths = downloads.map(d => d.destPath)
-        context.log.info('llm video download', { requestId, count: downloads.length })
+        const { requestId, downloads, bucket, persistenceRef, role, userId, replyTo } = message
+        const keys = downloads.map(d => d.key)
+        context.log.info('llm video download', { requestId, count: downloads.length, bucket })
 
         context.pipeToSelf(
-          adapter.downloadVideos(downloads),
+          adapter.downloadVideos(downloads, bucket, persistenceRef),
           (): LlmProviderInternalMsg => ({
             type: '_videoDownloadDone',
-            result: { type: 'videosDownloaded', requestId, destPaths } as VideoDownloadReply,
+            result: { type: 'videosDownloaded', requestId, keys } as VideoDownloadReply,
             role, userId,
             replyTo,
           }),

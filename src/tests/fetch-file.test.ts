@@ -2,8 +2,7 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { AgentSystem, ask } from '../system/index.ts'
 import { FetchFile } from '../plugins/tools/fetch-file.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
-import { unlink } from 'node:fs/promises'
-import { join } from 'node:path'
+import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -14,15 +13,19 @@ afterEach(() => {
 })
 
 describe('fetch-file actor', () => {
-  test('preserves original filename', async () => {
+  test('preserves original filename and stores via obj.putStream', async () => {
     const mockContent = new TextEncoder().encode('hello world')
 
     globalThis.fetch = (async () => new Response(mockContent, {
       status: 200,
-      headers: { 'Content-Type': 'text/plain' },
+      headers: { 
+        'Content-Type': 'text/plain',
+        'Content-Length': String(mockContent.byteLength)
+      },
     })) as unknown as typeof fetch
 
     const system = await AgentSystem()
+    const persistenceRef = system.spawn('mock-persistence', MockPersistenceActor())
     const ref = system.spawn('fetch-file', FetchFile())
     await tick()
 
@@ -40,73 +43,11 @@ describe('fetch-file actor', () => {
 
     expect(reply.type).toBe('toolResult')
     if (reply.type === 'toolResult') {
-      expect(reply.result.text).toContain('Downloaded to:')
-      expect(reply.result.text).toContain('test.txt')
+      expect(reply.result.text).toContain('Downloaded and stored to persistence key:')
+      expect(reply.result.text).toContain('inbound/test.txt')
       expect(reply.result.text).toContain('11 bytes')
-
-      const pathMatch = reply.result.text.match(/Downloaded to: (.*)\b/)
-      if (pathMatch && pathMatch[1]) {
-        const filePath = pathMatch[1]!.split(' (')[0]!
-        try { await unlink(filePath) } catch { /* ignore cleanup errors */ }
-      }
     }
 
-    await system.shutdown()
-  })
-
-  test('adds numeric suffix when filename collides', async () => {
-    const mockContent = new TextEncoder().encode('file content')
-    const runId = crypto.randomUUID().slice(0, 8)
-    const filename = `collision-test-${runId}.txt`
-
-    globalThis.fetch = (async () => new Response(mockContent, {
-      status: 200,
-      headers: { 'Content-Type': 'text/plain' },
-    })) as unknown as typeof fetch
-
-    const system = await AgentSystem()
-    const ref = system.spawn('fetch-file', FetchFile())
-    await tick()
-
-    const reply1 = await ask<ToolInvokeMsg, ToolReply>(
-      ref,
-      (replyTo) => ({
-        type: 'invoke',
-        toolName: 'fetch_file',
-        arguments: JSON.stringify({ url: `https://example.com/${filename}` }),
-        replyTo,
-        userId: 'test-user',
-      }),
-      { timeoutMs: 1000 },
-    )
-    expect(reply1.type).toBe('toolResult')
-    if (reply1.type !== 'toolResult') return
-    const pathMatch1 = reply1.result.text.match(/Downloaded to: (.*?) \(/)
-    if (!pathMatch1) return
-    const filePath1 = pathMatch1[1]!
-
-    const reply2 = await ask<ToolInvokeMsg, ToolReply>(
-      ref,
-      (replyTo) => ({
-        type: 'invoke',
-        toolName: 'fetch_file',
-        arguments: JSON.stringify({ url: `https://example.com/${filename}` }),
-        replyTo,
-        userId: 'test-user',
-      }),
-      { timeoutMs: 1000 },
-    )
-    expect(reply2.type).toBe('toolResult')
-    if (reply2.type !== 'toolResult') return
-    const pathMatch2 = reply2.result.text.match(/Downloaded to: (.*?) \(/)
-    if (!pathMatch2) return
-    const filePath2 = pathMatch2[1]!
-
-    expect(filePath1).toContain(filename)
-    expect(filePath2).toContain(`collision-test-${runId}-1.txt`)
-
-    try { await unlink(filePath1) } catch { /* ignore */ }
-    try { await unlink(filePath2) } catch { /* ignore */ }
     await system.shutdown()
   })
 
@@ -119,6 +60,7 @@ describe('fetch-file actor', () => {
     })) as unknown as typeof fetch
 
     const system = await AgentSystem()
+    const persistenceRef = system.spawn('mock-persistence', MockPersistenceActor())
     const ref = system.spawn('fetch-file', FetchFile())
     await tick(200)
 
@@ -134,17 +76,10 @@ describe('fetch-file actor', () => {
       { timeoutMs: 2000 },
     )
 
-    if (reply.type === 'toolError') {
-      console.error('UUID test error:', reply.error)
-    }
     expect(reply.type).toBe('toolResult')
     if (reply.type === 'toolResult') {
-      expect(reply.result.text).toMatch(/Downloaded to: /)
-      const pathMatch = reply.result.text.match(/Downloaded to: (.*?) \(/)
-      expect(pathMatch).not.toBeNull()
-      const filePath = pathMatch![1]!
-      expect(filePath).toMatch(/rorschach-[a-f0-9-]+\.bin$/)
-      try { await unlink(filePath) } catch { /* ignore */ }
+      expect(reply.result.text).toContain('inbound/rorschach-')
+      expect(reply.result.text).toContain('.bin')
     }
 
     await system.shutdown()
@@ -156,6 +91,7 @@ describe('fetch-file actor', () => {
     })) as unknown as typeof fetch
 
     const system = await AgentSystem()
+    const persistenceRef = system.spawn('mock-persistence', MockPersistenceActor())
     const ref = system.spawn('fetch-file', FetchFile())
     await tick()
 
@@ -185,6 +121,7 @@ describe('fetch-file actor', () => {
     }) as unknown as typeof fetch
 
     const system = await AgentSystem()
+    const persistenceRef = system.spawn('mock-persistence', MockPersistenceActor())
     const ref = system.spawn('fetch-file', FetchFile())
     await tick()
 

@@ -1,15 +1,11 @@
-import { join } from 'node:path'
 import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { onMessage, onLifecycle } from '../../system/index.ts'
 import { JobRegistryTopic } from '../../types/tools.ts'
 import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic, type LlmProviderMsg, type VideoSubmitReply, type VideoPollReply, type VideoDownloadReply } from '../../types/llm.ts'
-
-// ─── Output directory for generated videos ───
-
-const GENERATED_DIR = join(import.meta.dir, '../../..', 'workspace/media/generated')
-const GENERATED_PUBLIC_PREFIX = 'generated'
+import { PersistenceProviderTopic } from '../../types/persistence.ts'
+import type { PersistenceMsg } from '../../types/persistence.ts'
 
 // ─── Tool schema ───
 
@@ -30,6 +26,7 @@ export type VideoMsg =
   | VideoDownloadReply
   | { type: '_pollTick'; requestId: string }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
 
 // ─── State ───
 
@@ -45,6 +42,7 @@ type PendingJob = {
 export type VideoState = {
   pending: Record<string, PendingJob>
   llmRef: ActorRef<LlmProviderMsg> | null
+  persistenceRef: ActorRef<PersistenceMsg> | null
 }
 
 // ─── Options ───
@@ -80,10 +78,11 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
   const videoPollRole = 'video'
 
   return {
-    initialState: () => ({ pending: {}, llmRef: options.llmRef ?? null }),
+    initialState: () => ({ pending: {}, llmRef: options.llmRef ?? null, persistenceRef: null }),
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(LlmProviderTopic, (event) => ({ type: '_llmProvider' as const, ref: event.ref }))
+        ctx.subscribe(PersistenceProviderTopic, (event) => ({ type: '_persistenceRef' as const, ref: event.ref }))
         return { state }
       },
     }),
@@ -91,6 +90,10 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
 
       _llmProvider: (state, msg) => {
         return { state: { ...state, llmRef: msg.ref } }
+      },
+
+      _persistenceRef: (state, msg) => {
+        return { state: { ...state, persistenceRef: msg.ref } }
       },
 
       invoke: (state, message, context) => {
@@ -187,11 +190,18 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
             return { state: { ...state, pending: rest } }
           }
 
+          if (!state.persistenceRef) {
+            context.log.error('video: persistence not ready for download', { requestId, jobId: req.jobId })
+            context.publishRetained(JobRegistryTopic, req.jobId, { jobId: req.jobId, status: 'failed', error: 'Persistence provider not ready' })
+            const { [requestId]: _, ...rest } = state.pending
+            return { state: { ...state, pending: rest } }
+          }
+
           const downloads = unsigned_urls.map((url) => ({
             url,
-            destPath: join(GENERATED_DIR, `${crypto.randomUUID()}.mp4`),
+            key: `generated/${crypto.randomUUID()}.mp4`,
           }))
-          context.log.info('video: downloading', { requestId, jobId: req.jobId, count: downloads.length })
+          context.log.info('video: downloading via persistence', { requestId, jobId: req.jobId, count: downloads.length })
           if (!state.llmRef) {
             context.publishRetained(JobRegistryTopic, req.jobId, { jobId: req.jobId, status: 'failed', error: 'Video model provider not ready.' })
             const { [requestId]: _, ...rest } = state.pending
@@ -201,6 +211,8 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
             type: 'downloadVideos',
             requestId,
             downloads,
+            bucket: 'media',
+            persistenceRef: state.persistenceRef,
             role: videoPollRole,
             userId: req.userId,
             replyTo: context.self as unknown as ActorRef<VideoDownloadReply>,
@@ -260,17 +272,16 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
       },
 
       videosDownloaded: (state, message, context) => {
-        const { requestId, destPaths } = message
+        const { requestId, keys } = message
         const req = state.pending[requestId]
         if (!req) return { state }
 
-        const publicUrls = destPaths.map(p => `${GENERATED_PUBLIC_PREFIX}/${p.split('/').pop()!}`)
-        context.log.info('video: download complete', { requestId, jobId: req.jobId, count: publicUrls.length })
+        context.log.info('video: download complete to persistence', { requestId, jobId: req.jobId, count: keys.length })
 
-        const attachments = publicUrls.map((url, i) => ({
+        const attachments = keys.map((key, i) => ({
           kind: 'video' as const,
-          url,
-          alt: publicUrls.length > 1 ? `Video ${i + 1}` : 'Generated Video',
+          url: key,
+          alt: keys.length > 1 ? `Video ${i + 1}` : 'Generated Video',
         }))
 
         context.publishRetained(JobRegistryTopic, req.jobId, {

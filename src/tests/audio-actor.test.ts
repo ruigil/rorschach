@@ -3,28 +3,17 @@ import { AgentSystem, ask } from '../system/index.ts'
 import { Audio } from '../plugins/tools/audio.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
-import { unlink, writeFile, mkdir, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import type { PersistenceMsg, PResult } from '../types/persistence.ts'
+import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
-const tempDirs: string[] = []
-
-afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
-})
-
-const makeDir = async (prefix: string): Promise<string> => {
-  const dir = join(tmpdir(), `${prefix}-${crypto.randomUUID()}`)
-  tempDirs.push(dir)
-  await mkdir(dir, { recursive: true })
-  return dir
-}
 
 describe('audio actor', () => {
   test('text_to_speech saves audio and returns public url', async () => {
     const system = await AgentSystem()
     
+    const persistenceRef = system.spawn('mock-persistence', MockPersistenceActor())
+
     // Mock LLM Provider
     const llmDef = {
       handler: (state: any, msg: LlmProviderMsg) => {
@@ -40,10 +29,11 @@ describe('audio actor', () => {
 
     const audioRef = system.spawn('audio', Audio({
       llmRef,
+      persistenceRef,
       ttsModel: 'test-tts-model',
       sttModel: 'test-stt-model',
       voice: 'alloy'
-    }), { state: { pending: {}, llmRef } })
+    }), { state: { pending: {}, llmRef, persistenceRef } })
 
     await tick()
 
@@ -64,35 +54,35 @@ describe('audio actor', () => {
       expect(reply.result.text).toContain('Generated speech audio')
       const audioAttachment = reply.result.attachments?.find(a => a.kind === 'audio')
       expect(audioAttachment?.url).toContain('generated/')
-
-      // Extract path for cleanup
-      const match = audioAttachment?.url.match(/(generated\/.*\.wav)/)
-      if (match && match[1]) {
-        const filePath = join(import.meta.dir, '../../workspace/media', match[1])
-        try { await unlink(filePath) } catch {}
-      }
     }
 
     await system.shutdown()
   })
 
   test('transcribe_audio transcribes an audio file', async () => {
-     // This requires a real (small) wav file since ffmpeg will be called
-     const testDir = await makeDir('rorschach-audio')
-     const testFile = join(testDir, 'test-transcribe.wav')
-     
-     // Create a minimal valid WAV file (44 bytes header + some silence)
-     const header = Buffer.alloc(44)
-     header.write('RIFF', 0); header.writeUInt32LE(36 + 8, 4); header.write('WAVE', 8);
-     header.write('fmt ', 12); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20);
-     header.writeUInt16LE(1, 22); header.writeUInt32LE(16000, 24); header.writeUInt32LE(32000, 28);
-     header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34); header.write('data', 36);
-     header.writeUInt32LE(8, 40);
-     const dummyData = Buffer.alloc(8)
-     await writeFile(testFile, Buffer.concat([header, dummyData]))
-
     const system = await AgentSystem()
     
+    const persistenceRef = system.spawn('mock-persistence', MockPersistenceActor())
+
+    // Create a minimal valid WAV file (44 bytes header + some silence)
+    const header = Buffer.alloc(44)
+    header.write('RIFF', 0); header.writeUInt32LE(36 + 8, 4); header.write('WAVE', 8);
+    header.write('fmt ', 12); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(1, 22); header.writeUInt32LE(16000, 24); header.writeUInt32LE(32000, 28);
+    header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34); header.write('data', 36);
+    header.writeUInt32LE(8, 40);
+    const dummyData = Buffer.alloc(8)
+    const fileBytes = Buffer.concat([header, dummyData])
+
+    // Put file in mock persistence
+    await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+      type: 'obj.put' as const,
+      bucket: 'media',
+      key: 'test-transcribe.wav',
+      data: new Uint8Array(fileBytes),
+      replyTo,
+    }))
+
     const llmDef = {
       handler: (state: any, msg: LlmProviderMsg) => {
         if (msg.type === 'transcribe') {
@@ -106,10 +96,11 @@ describe('audio actor', () => {
 
     const audioRef = system.spawn('audio', Audio({
       llmRef,
+      persistenceRef,
       ttsModel: 'test-tts-model',
       sttModel: 'test-stt-model',
       voice: 'alloy'
-    }), { state: { pending: {}, llmRef } })
+    }), { state: { pending: {}, llmRef, persistenceRef } })
 
     await tick()
 
@@ -118,7 +109,7 @@ describe('audio actor', () => {
       (replyTo) => ({
         type: 'invoke',
         toolName: 'transcribe_audio',
-        arguments: JSON.stringify({ audio: testFile, format: 'wav' }),
+        arguments: JSON.stringify({ audio: 'test-transcribe.wav', format: 'wav' }),
         replyTo,
         userId: 'test-user',
       }),

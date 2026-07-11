@@ -3,8 +3,8 @@ import type {
   ModelInfo,
 } from '../../../types/llm.ts'
 import type { LlmProviderAdapter, OpenRouterAdapterOptions } from '../types.ts'
-import { mkdir } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { ask, type ActorRef } from '../../../system/index.ts'
+import type { PersistenceMsg, PResult } from '../../../types/persistence.ts'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
@@ -307,12 +307,24 @@ export const OpenRouterAdapter = (options: OpenRouterAdapterOptions): LlmProvide
       return { status: data.status, unsigned_urls: data.unsigned_urls, error: data.error }
     },
 
-    downloadVideos: async (downloads) => {
-      for (const { url, destPath } of downloads) {
+    downloadVideos: async (downloads, bucket, persistenceRef) => {
+      for (const { url, key } of downloads) {
         const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } })
         if (!res.ok) throw new Error(`HTTP ${res.status} downloading video`)
-        await mkdir(dirname(destPath), { recursive: true })
-        await Bun.write(destPath, res)
+        if (!res.body) throw new Error(`HTTP response has no body to stream for ${url}`)
+
+        const uploadRes = await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+          type: 'obj.putStream',
+          bucket,
+          key,
+          stream: res.body as ReadableStream<Uint8Array>,
+          meta: { contentType: res.headers.get('content-type') || 'video/mp4' },
+          replyTo,
+        }))
+
+        if (!uploadRes.ok) {
+          throw new Error(`Failed to store video in persistence: ${uploadRes.error}`)
+        }
       }
     },
   }

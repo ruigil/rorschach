@@ -1,5 +1,6 @@
 import type { ActorRef, LoopMsg } from '../../system/index.ts'
 import { createTopic } from '../../system/index.ts'
+import type { PersistenceMsg } from '../../types/persistence.ts'
 import type {
   ApiMessage,
   AudioProviderReply,
@@ -73,7 +74,7 @@ export type LlmProviderAdapter = {
   rerank(model: string, query: string, documents: string[], topN?: number): Promise<{ scores: Array<{ index: number; score: number }>; usage: TokenUsage | null }>
   submitVideoGeneration(model: string, prompt: string, aspectRatio?: string, duration?: number, resolution?: string): Promise<{ jobId: string; pollingUrl: string }>
   pollVideoGeneration(pollingUrl: string): Promise<{ status: 'completed' | 'failed' | 'processing'; unsigned_urls?: string[]; error?: string }>
-  downloadVideos(downloads: { url: string; destPath: string }[]): Promise<void>
+  downloadVideos(downloads: { url: string; key: string }[], bucket: string, persistenceRef: ActorRef<PersistenceMsg>): Promise<void>
 }
 
 export type OpenRouterAdapterOptions = {

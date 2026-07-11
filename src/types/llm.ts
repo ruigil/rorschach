@@ -1,5 +1,6 @@
 import { createTopic } from '../system/index.ts'
 import type { ActorRef } from '../system/index.ts'
+import type { PersistenceMsg } from './persistence.ts'
 
 // ─── Shared types ───
 
@@ -94,7 +95,7 @@ export type VideoPollReply =
 // ─── Video download reply type — used by the video actor ───
 
 export type VideoDownloadReply =
-  | { type: 'videosDownloaded';    requestId: string; destPaths: string[] }
+  | { type: 'videosDownloaded';    requestId: string; keys: string[] }
   | { type: 'videoDownloadError';  requestId: string; error: string }
 
 // ─── Public provider messages ───
@@ -111,7 +112,7 @@ export type LlmProviderMsg =
   | { type: 'rerank';            requestId: string; model: string; query: string; documents: string[]; topN?: number; userId?: string; replyTo: ActorRef<RerankReply> }
   | { type: 'submitVideo';       requestId: string; model: string; prompt: string; aspectRatio?: string; duration?: number; resolution?: string; role: string; userId?: string; replyTo: ActorRef<VideoSubmitReply> }
   | { type: 'pollVideo';         requestId: string; pollingUrl: string; role: string; userId?: string; replyTo: ActorRef<VideoPollReply> }
-  | { type: 'downloadVideos';    requestId: string; downloads: { url: string; destPath: string }[]; role: string; userId?: string; replyTo: ActorRef<VideoDownloadReply> }
+  | { type: 'downloadVideos';    requestId: string; downloads: { url: string; key: string }[]; bucket: string; persistenceRef: ActorRef<PersistenceMsg>; role: string; userId?: string; replyTo: ActorRef<VideoDownloadReply> }
 
 // ─── Retained topic: announces the live llm-provider ref to subscribers ───
 

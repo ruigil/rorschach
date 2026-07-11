@@ -1,13 +1,12 @@
-import { join } from 'node:path'
-import { mkdir, stat } from 'node:fs/promises'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
-import { onMessage } from '../../system/index.ts'
+import { onMessage, onLifecycle } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
+import { PersistenceProviderTopic } from '../../types/persistence.ts'
+import type { PersistenceMsg, PResult } from '../../types/persistence.ts'
+import { ask } from '../../system/actor/ask.ts'
 
-const INBOUND_DIR = join(import.meta.dir, '../../..', 'workspace/media/inbound')
-
-export const fetchFileTool = defineTool('fetch_file', 'Download a file from a URL to a local temp path and return the path. Works with PDFs, images (jpeg, png, gif, webp, …), audio, and any other binary or text file. Use the returned path with other tools such as extract_pdf_text or analyze_image.', {
+export const fetchFileTool = defineTool('fetch_file', 'Download a file from a URL to the central persistence store and return the store key. Works with PDFs, images (jpeg, png, gif, webp, …), audio, and any other binary or text file. Use the returned key with other tools such as extract_pdf_text or analyze_image.', {
   type: 'object',
   properties: {
     url: { type: 'string', description: 'The URL of the file to download' },
@@ -15,9 +14,14 @@ export const fetchFileTool = defineTool('fetch_file', 'Download a file from a UR
   required: ['url'],
 })
 
+export type FetchFileState = {
+  persistenceRef: ActorRef<PersistenceMsg> | null
+}
+
 export type FetchFileMsg =
   | ToolInvokeMsg
-  | { type: '_done'; url: string; filePath: string; contentType: string; bytes: number; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
+  | { type: '_done'; url: string; key: string; contentType: string; bytes: number; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_err'; url: string; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
 
 type FetchFileArgs = { url: string }
@@ -68,28 +72,16 @@ const extractBasenameFromUrl = (urlStr: string): string => {
   }
 }
 
-const resolveUniquePath = async (dir: string, basename: string): Promise<string> => {
-  let candidate = join(dir, basename)
-  try { await stat(candidate); } catch { return candidate }
-
-  const dotIdx = basename.lastIndexOf('.')
-  const hasExt = dotIdx > 0 && dotIdx < basename.length - 1
-  const name = hasExt ? basename.slice(0, dotIdx) : basename
-  const ext   = hasExt ? basename.slice(dotIdx) : ''
-
-  for (let i = 1; i < 1000; i++) {
-    candidate = join(dir, `${name}-${i}${ext}`)
-    try { await stat(candidate); } catch { return candidate }
-  }
-
-  candidate = join(dir, `${name}-${crypto.randomUUID()}${ext}`)
-  return candidate
-}
-
-const downloadFile = async (args: FetchFileArgs): Promise<{ filePath: string; contentType: string; bytes: number }> => {
+const downloadAndStreamToPersist = async (
+  args: FetchFileArgs,
+  persistenceRef: ActorRef<PersistenceMsg>
+): Promise<{ key: string; contentType: string; bytes: number }> => {
   const res = await fetch(args.url)
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}: ${await res.text()}`)
+  }
+  if (!res.body) {
+    throw new Error('Response body is empty')
   }
 
   const contentType = res.headers.get('content-type') ?? ''
@@ -107,24 +99,49 @@ const downloadFile = async (args: FetchFileArgs): Promise<{ filePath: string; co
     baseName = `rorschach-${crypto.randomUUID()}.${urlExt}`
   }
 
-  await mkdir(INBOUND_DIR, { recursive: true })
-  const filePath = await resolveUniquePath(INBOUND_DIR, baseName)
+  const key = `inbound/${baseName}`
 
-  const buffer = await res.arrayBuffer()
-  await Bun.write(filePath, buffer)
+  const uploadRes = await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+    type: 'obj.putStream',
+    bucket: 'media',
+    key,
+    stream: res.body!,
+    meta: { 'content-type': contentType },
+    replyTo,
+  }))
 
-  return { filePath, contentType, bytes: buffer.byteLength }
+  if (!uploadRes.ok) {
+    throw new Error(`Persistence upload failed: ${uploadRes.error}`)
+  }
+
+  const contentLength = Number(res.headers.get('content-length') ?? '0')
+  return { key, contentType, bytes: contentLength }
 }
 
 // ─── Actor definition ───
 
-export const FetchFile = (): ActorDef<FetchFileMsg, null> => ({
-  initialState: null,
-  handler: onMessage<FetchFileMsg, null>({
+export const FetchFile = (): ActorDef<FetchFileMsg, FetchFileState> => ({
+  initialState: () => ({ persistenceRef: null }),
+  lifecycle: onLifecycle({
+    start: (state, ctx) => {
+      ctx.subscribe(PersistenceProviderTopic, (event) => ({ type: '_persistenceRef' as const, ref: event.ref }))
+      return { state }
+    },
+  }),
+  handler: onMessage<FetchFileMsg, FetchFileState>({
+    _persistenceRef: (state, msg) => {
+      return { state: { ...state, persistenceRef: msg.ref } }
+    },
+
     invoke: (state, message, ctx) => {
       const { arguments: rawArgs, replyTo } = message
       let args: FetchFileArgs = { url: '' }
       try { args = JSON.parse(rawArgs) as FetchFileArgs } catch { args = { url: rawArgs } }
+
+      if (!state.persistenceRef) {
+        replyTo.send({ type: 'toolError', error: 'Persistence provider not ready.' })
+        return { state }
+      }
 
       const parent = ctx.trace.fromHeaders()
       const span: SpanHandle | null = parent
@@ -132,17 +149,17 @@ export const FetchFile = (): ActorDef<FetchFileMsg, null> => ({
         : null
 
       ctx.pipeToSelf(
-        downloadFile(args),
-        ({ filePath, contentType, bytes }) => ({ type: '_done' as const, url: args.url, filePath, contentType, bytes, replyTo, span }),
+        downloadAndStreamToPersist(args, state.persistenceRef),
+        ({ key, contentType, bytes }) => ({ type: '_done' as const, url: args.url, key, contentType, bytes, replyTo, span }),
         (error) => ({ type: '_err' as const, url: args.url, error: String(error), replyTo, span }),
       )
       return { state }
     },
 
     _done: (state, message) => {
-      const { filePath, contentType, bytes, replyTo, span } = message
-      span?.done({ bytes, filePath })
-      replyTo.send({ type: 'toolResult', result: { text: `Downloaded to: ${filePath} (${contentType}, ${bytes} bytes)` } })
+      const { key, contentType, bytes, replyTo, span } = message
+      span?.done({ bytes, key })
+      replyTo.send({ type: 'toolResult', result: { text: `Downloaded and stored to persistence key: ${key} (${contentType}, ${bytes} bytes)` } })
       return { state }
     },
 
@@ -157,3 +174,4 @@ export const FetchFile = (): ActorDef<FetchFileMsg, null> => ({
 
   supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
 })
+

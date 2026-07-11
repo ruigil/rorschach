@@ -1,15 +1,9 @@
-import { join } from 'node:path'
-import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef } from '../../system/index.ts'
-import { onMessage, onLifecycle } from '../../system/index.ts'
+import { onMessage, onLifecycle, ask } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic, type LlmProviderMsg, type SpeechProviderReply, type TranscriptionProviderReply } from '../../types/llm.ts'
-
-// ─── Output directory for generated audio ───
-
-const GENERATED_DIR = join(import.meta.dir, '../../..', 'workspace/media/generated')
-const GENERATED_PUBLIC_PREFIX = 'generated'
+import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetPayload } from '../../types/persistence.ts'
 
 // ─── Tool schemas ───
 
@@ -31,8 +25,6 @@ export const textToSpeechTool = defineTool('text_to_speech', 'Convert text to sp
   required: ['text'],
 })
 
-
-
 // ─── Messages ───
 
 export type AudioMsg =
@@ -41,9 +33,10 @@ export type AudioMsg =
   | SpeechProviderReply
   | { type: '_audioLoaded';    requestId: string; data: string; format: string; replyTo: ActorRef<ToolReply> }
   | { type: '_audioLoadError'; requestId: string; error: string; replyTo: ActorRef<ToolReply> }
-  | { type: '_audioSaved';     requestId: string; filePath: string; publicUrl: string; spokenText: string; voice: string; replyTo: ActorRef<ToolReply> }
+  | { type: '_audioSaved';     requestId: string; key: string; spokenText: string; voice: string; replyTo: ActorRef<ToolReply> }
   | { type: '_audioSaveError'; requestId: string; error: string; replyTo: ActorRef<ToolReply> }
   | { type: '_llmProvider';    ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
 
 // ─── State ───
 
@@ -56,7 +49,7 @@ type TranscriptionPending = {
 
 type TtsPending = {
   kind: 'tts'
-  audioData: string | null
+  streamController: ReadableStreamDefaultController<Uint8Array> | null
   audioFormat: string
   spokenText: string
   voice: string
@@ -67,12 +60,14 @@ type TtsPending = {
 export type AudioState = {
   pending: Record<string, TranscriptionPending | TtsPending>
   llmRef: ActorRef<LlmProviderMsg> | null
+  persistenceRef: ActorRef<PersistenceMsg> | null
 }
 
 // ─── Options ───
 
 export type AudioOptions = {
   llmRef?: ActorRef<LlmProviderMsg> | null
+  persistenceRef?: ActorRef<PersistenceMsg> | null
   ttsModel: string
   sttModel: string
   voice: string
@@ -84,21 +79,51 @@ const DEFAULT_TTS_FORMAT = 'pcm'
 // ─── Helpers ───
 
 // Always convert to 16kHz mono WAV via ffmpeg — handles wav, mp3, aac, m4a, ogg, etc.
-const loadAudioAsWavBase64 = async (filePath: string): Promise<string> => {
+const loadAudioAsWavBase64 = async (
+  persistenceRef: ActorRef<PersistenceMsg> | null,
+  audioPath: string
+): Promise<string> => {
+  if (!persistenceRef) {
+    throw new Error('Persistence provider not ready.')
+  }
+
+  const res = await ask<PersistenceMsg, PResult<PObjGetPayload>>(persistenceRef, (replyTo) => ({
+    type: 'obj.get' as const,
+    bucket: 'media',
+    key: audioPath,
+    replyTo,
+  }))
+
+  if (!res.ok) {
+    throw new Error(`Failed to load audio from persistence: ${res.error}`)
+  }
+  if (!res.data) {
+    throw new Error('Failed to load audio from persistence: No data')
+  }
+
+  const audioBytes = res.data.data
+
   const proc = Bun.spawn(
-    ['ffmpeg', '-i', filePath, '-ar', '16000', '-ac', '1', '-f', 'wav', 'pipe:1'],
-    { stdout: 'pipe', stderr: 'pipe' },
+    ['ffmpeg', '-i', 'pipe:0', '-ar', '16000', '-ac', '1', '-f', 'wav', 'pipe:1'],
+    { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
   )
+
+  if (proc.stdin) {
+    proc.stdin.write(audioBytes)
+    proc.stdin.flush()
+    proc.stdin.end()
+  }
+
   const output = await new Response(proc.stdout).arrayBuffer()
   const exitCode = await proc.exited
   if (exitCode !== 0) throw new Error(`ffmpeg conversion failed (exit ${exitCode})`)
   return Buffer.from(output).toString('base64')
 }
 
-// Wrap raw PCM16 (mono, little-endian) bytes in a WAV header so the file is playable
-const pcm16ToWav = (pcm: Buffer, sampleRate = 24000, channels = 1): Buffer => {
+// Wrap raw PCM16 (mono, little-endian) bytes in a WAV header with a placeholder data size so the file is playable in streams
+const getWavHeaderPlaceholder = (sampleRate = 24000, channels = 1): Buffer => {
   const header = Buffer.alloc(44)
-  const dataSize = pcm.length
+  const dataSize = 0x7fffffff // Placeholder size for streamed audio data
   header.write('RIFF', 0)
   header.writeUInt32LE(36 + dataSize, 4)
   header.write('WAVE', 8)
@@ -112,19 +137,7 @@ const pcm16ToWav = (pcm: Buffer, sampleRate = 24000, channels = 1): Buffer => {
   header.writeUInt16LE(16, 34)
   header.write('data', 36)
   header.writeUInt32LE(dataSize, 40)
-  return Buffer.concat([header, pcm])
-}
-
-const saveAudio = async (data: string, format: string): Promise<{ filePath: string; publicUrl: string }> => {
-  const raw = Buffer.from(data, 'base64')
-  const isPcm = format === 'pcm'
-  const bytes = isPcm ? pcm16ToWav(raw) : raw
-  const ext = isPcm ? 'wav' : format
-  const name = `${crypto.randomUUID()}.${ext}`
-  await mkdir(GENERATED_DIR, { recursive: true })
-  const filePath = join(GENERATED_DIR, name)
-  await Bun.write(filePath, bytes)
-  return { filePath, publicUrl: `${GENERATED_PUBLIC_PREFIX}/${name}` }
+  return header
 }
 
 // ─── Actor definition ───
@@ -133,10 +146,11 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
   const { ttsModel, sttModel, voice, ttsFormat = DEFAULT_TTS_FORMAT } = options
 
   return {
-    initialState: () => ({ pending: {}, llmRef: options.llmRef ?? null }),
+    initialState: () => ({ pending: {}, llmRef: options.llmRef ?? null, persistenceRef: options.persistenceRef ?? null }),
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(LlmProviderTopic, (event) => ({ type: '_llmProvider' as const, ref: event.ref }))
+        ctx.subscribe(PersistenceProviderTopic, (event) => ({ type: '_persistenceRef' as const, ref: event.ref }))
         return { state }
       },
     }),
@@ -144,6 +158,10 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
 
       _llmProvider: (state, msg) => {
         return { state: { ...state, llmRef: msg.ref } }
+      },
+
+      _persistenceRef: (state, msg) => {
+        return { state: { ...state, persistenceRef: msg.ref } }
       },
 
       invoke: (state, message, context) => {
@@ -169,6 +187,39 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
             replyTo.send({ type: 'toolError', error: 'Audio model provider not ready.' })
             return { state }
           }
+          if (!state.persistenceRef) {
+            replyTo.send({ type: 'toolError', error: 'Persistence provider not ready.' })
+            return { state }
+          }
+
+          let streamController: ReadableStreamDefaultController<Uint8Array> | null = null
+          const audioStream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              streamController = controller
+            }
+          })
+
+          const isPcm = ttsFormat === 'pcm'
+          const ext = isPcm ? 'wav' : ttsFormat
+          const fileKey = `generated/${crypto.randomUUID()}.${ext}`
+
+          if (isPcm) {
+            const header = getWavHeaderPlaceholder(24000, 1)
+            streamController!.enqueue(new Uint8Array(header))
+          }
+
+          context.pipeToSelf(
+            ask<PersistenceMsg, PResult>(state.persistenceRef, (replyTo) => ({
+              type: 'obj.putStream' as const,
+              bucket: 'media',
+              key: fileKey,
+              stream: audioStream,
+              replyTo,
+            })),
+            (): AudioMsg => ({ type: '_audioSaved', requestId, key: fileKey, spokenText: text, voice: ttsVoice, replyTo }),
+            (error): AudioMsg => ({ type: '_audioSaveError', requestId, error: String(error), replyTo })
+          )
+
           state.llmRef.send({
             type: 'speak',
             requestId,
@@ -184,7 +235,10 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
           return {
             state: {
               ...state,
-              pending: { ...state.pending, [requestId]: { kind: 'tts', audioData: null, audioFormat: ttsFormat, spokenText: text, voice: ttsVoice, replyTo, userId } },
+              pending: {
+                ...state.pending,
+                [requestId]: { kind: 'tts', streamController, audioFormat: ttsFormat, spokenText: text, voice: ttsVoice, replyTo, userId }
+              },
             },
           }
         }
@@ -204,7 +258,7 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
         const requestId = crypto.randomUUID()
         context.log.info('audio: loading audio for transcription', { requestId, audioPath, format })
         context.pipeToSelf(
-          loadAudioAsWavBase64(audioPath),
+          loadAudioAsWavBase64(state.persistenceRef, audioPath),
           (data): AudioMsg => ({ type: '_audioLoaded', requestId, data, format: 'wav', replyTo }),
           (error): AudioMsg => ({ type: '_audioLoadError', requestId, error: String(error), replyTo }),
         )
@@ -259,65 +313,67 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
 
       llmAudioChunk: (state, message) => {
         const req = state.pending[message.requestId]
-        if (!req || req.kind !== 'tts') return { state }
-        return {
-          state: {
-            ...state,
-            pending: { ...state.pending, [message.requestId]: { ...req, audioData: message.data, audioFormat: message.format } },
-          },
-        }
+        if (!req || req.kind !== 'tts' || !req.streamController) return { state }
+        const rawBytes = Buffer.from(message.data, 'base64')
+        req.streamController.enqueue(new Uint8Array(rawBytes))
+        return { state }
       },
 
       llmDone: (state, message, context) => {
-        const { [message.requestId]: req, ...rest } = state.pending
+        const req = state.pending[message.requestId]
         if (!req) return { state }
 
         if (req.kind === 'transcription') {
           context.log.info('audio: transcription complete', { requestId: message.requestId })
           req.replyTo.send({ type: 'toolResult', result: { text: req.accumulated || '(no transcription)' } })
+          const { [message.requestId]: _, ...rest } = state.pending
           return { state: { ...state, pending: rest } }
         }
 
-        // tts — save audio bytes to file
-        if (!req.audioData) {
-          context.log.error('audio: TTS completed but no audio data received')
-          req.replyTo.send({ type: 'toolError', error: 'No audio data received from model.' })
-          return { state: { ...state, pending: rest } }
+        // tts — close stream controller
+        if (req.kind === 'tts' && req.streamController) {
+          try {
+            req.streamController.close()
+          } catch (e) {
+            context.log.error('Failed to close audio stream controller', { error: String(e) })
+          }
         }
-
-        context.log.info('audio: TTS complete, saving audio', { requestId: message.requestId, format: req.audioFormat })
-        context.pipeToSelf(
-          saveAudio(req.audioData, req.audioFormat),
-          (r): AudioMsg => ({ type: '_audioSaved',     requestId: message.requestId, filePath: r.filePath, publicUrl: r.publicUrl, spokenText: req.spokenText, voice: req.voice, replyTo: req.replyTo }),
-          (e): AudioMsg => ({ type: '_audioSaveError', requestId: message.requestId, error: String(e), replyTo: req.replyTo }),
-        )
-        return { state: { ...state, pending: rest } }
+        return { state }
       },
 
       llmError: (state, message, context) => {
         const { [message.requestId]: req, ...rest } = state.pending
         if (!req) return { state }
         context.log.error('audio actor llm error', { error: String(message.error) })
+        
+        if (req.kind === 'tts' && req.streamController) {
+          try {
+            req.streamController.close()
+          } catch {}
+        }
+        
         req.replyTo.send({ type: 'toolError', error: String(message.error) })
         return { state: { ...state, pending: rest } }
       },
 
       _audioSaved: (state, message, context) => {
-        const { publicUrl, spokenText, voice, replyTo } = message
-        context.log.info('audio: audio saved', { requestId: message.requestId, publicUrl })
-        const snippet = spokenText.length > 300 ? `${spokenText.slice(0, 300)}…` : spokenText
-        const text = `Generated speech audio (voice: ${voice}) and delivered it to the user as an attachment"`
-        replyTo.send({ type: 'toolResult', result: { text, attachments: [{ kind: 'audio', url: publicUrl }] } })
-        return { state }
+        const { [message.requestId]: _, ...rest } = state.pending
+        const { key, voice, replyTo } = message
+        context.log.info('audio: audio saved', { requestId: message.requestId, key })
+        const text = `Generated speech audio (voice: ${voice}) and delivered it to the user as an attachment`
+        replyTo.send({ type: 'toolResult', result: { text, attachments: [{ kind: 'audio', url: key }] } })
+        return { state: { ...state, pending: rest } }
       },
 
       _audioSaveError: (state, message, context) => {
+        const { [message.requestId]: _, ...rest } = state.pending
         context.log.error('audio: failed to save TTS output', { error: message.error })
         message.replyTo.send({ type: 'toolError', error: `Failed to save audio: ${message.error}` })
-        return { state }
+        return { state: { ...state, pending: rest } }
       },
     }),
 
     supervision: { type: 'restart', maxRetries: 3, withinMs: 30_000 },
   }
 }
+

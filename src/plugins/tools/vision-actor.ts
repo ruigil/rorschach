@@ -1,22 +1,16 @@
-import { join } from 'node:path'
-import { mkdir } from 'node:fs/promises'
 import type { ActorDef, ActorRef } from '../../system/index.ts'
-import { onMessage, onLifecycle } from '../../system/index.ts'
+import { onMessage, onLifecycle, ask } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic, type LlmProviderMsg, type LlmProviderReply, type VisionProviderReply } from '../../types/llm.ts'
-
-// ─── Output directory for generated images ───
-
-const GENERATED_DIR = join(import.meta.dir, '../../..', 'workspace/media/generated')
-const GENERATED_PUBLIC_PREFIX = 'generated'
+import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetPayload } from '../../types/persistence.ts'
 
 // ─── Tool schemas ───
 
 export const analyzeImageTool = defineTool('analyze_image', 'Analyze and describe the content of an image. Use when the user uploads an image or asks about a visual.', {
   type: 'object',
   properties: {
-    image_url: { type: 'string', description: 'An image ID (e.g. "img_0") from the current turn, a base64 data URL, or an HTTP URL.' },
+    image_url: { type: 'string', description: 'An object store key (e.g. "inbound/uuid.png" from attachments), a base64 data URL, or an HTTP URL.' },
     prompt: { type: 'string', description: 'Specific question or instruction about the image. Defaults to a general description.' },
   },
   required: ['image_url'],
@@ -41,6 +35,7 @@ export type VisionMsg =
   | { type: '_imageSaved';   requestId: string; filePath: string; publicUrl: string }
   | { type: '_saveError';    requestId: string; error: string }
   | { type: '_llmProvider';  ref: ActorRef<LlmProviderMsg> | null }
+  | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
 
 // ─── State ───
 
@@ -54,7 +49,7 @@ type AnalysisPending = {
 type GenerationPending = {
   kind: 'generation'
   prompt: string
-  accumulatedImage: string
+  streamController: ReadableStreamDefaultController<Uint8Array> | null
   replyTo: ActorRef<ToolReply>
   userId?: string
 }
@@ -64,34 +59,43 @@ type PendingRequest = AnalysisPending | GenerationPending
 export type VisionState = {
   pending: Record<string, PendingRequest>
   llmRef: ActorRef<LlmProviderMsg> | null
+  persistenceRef: ActorRef<PersistenceMsg> | null
 }
 
 // ─── Options ───
 
 export type VisionOptions = {
   llmRef?: ActorRef<LlmProviderMsg> | null
+  persistenceRef?: ActorRef<PersistenceMsg> | null
   model: string
 }
 
 // ─── Helpers ───
 
-const resolveImageUrl = async (imageUrl: string): Promise<string> => {
+const resolveImageUrl = async (
+  persistenceRef: ActorRef<PersistenceMsg> | null,
+  imageUrl: string
+): Promise<string> => {
   if (imageUrl.startsWith('data:') || imageUrl.startsWith('http')) return imageUrl
-  const buf = await Bun.file(imageUrl).bytes()
+  if (!persistenceRef) {
+    throw new Error('Persistence provider not ready.')
+  }
+  const res = await ask<PersistenceMsg, PResult<PObjGetPayload>>(persistenceRef, (replyTo) => ({
+    type: 'obj.get',
+    bucket: 'media',
+    key: imageUrl,
+    replyTo,
+  }))
+  if (!res.ok) {
+    throw new Error(`Failed to load image from persistence: ${res.error}`)
+  }
+  if (!res.data) {
+    throw new Error('Failed to load image from persistence: No data')
+  }
+  const buf = res.data.data
   const ext = imageUrl.split('.').pop() ?? 'jpeg'
   const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
   return `data:${mimeType};base64,${Buffer.from(buf).toString('base64')}`
-}
-
-const saveGeneratedImage = async (dataUrl: string): Promise<{ filePath: string; publicUrl: string }> => {
-  const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/)
-  const ext    = match?.[1] ?? 'png'
-  const data   = match?.[2] ?? ''
-  const name   = `${crypto.randomUUID()}.${ext}`
-  await mkdir(GENERATED_DIR, { recursive: true })
-  const filePath  = join(GENERATED_DIR, name)
-  await Bun.write(filePath, Buffer.from(data, 'base64'))
-  return { filePath, publicUrl: `${GENERATED_PUBLIC_PREFIX}/${name}` }
 }
 
 const mimeTypeForImagePath = (path: string): string => {
@@ -109,10 +113,11 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
   const { model } = options
 
   return {
-    initialState: () => ({ pending: {}, llmRef: options.llmRef ?? null }),
+    initialState: () => ({ pending: {}, llmRef: options.llmRef ?? null, persistenceRef: options.persistenceRef ?? null }),
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(LlmProviderTopic, (event) => ({ type: '_llmProvider' as const, ref: event.ref }))
+        ctx.subscribe(PersistenceProviderTopic, (event) => ({ type: '_persistenceRef' as const, ref: event.ref }))
         return { state }
       },
     }),
@@ -120,6 +125,10 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
 
       _llmProvider: (state, msg) => {
         return { state: { ...state, llmRef: msg.ref } }
+      },
+
+      _persistenceRef: (state, msg) => {
+        return { state: { ...state, persistenceRef: msg.ref } }
       },
 
       // ── analyze_image invoke ──
@@ -142,6 +151,33 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
             replyTo.send({ type: 'toolError', error: 'Vision model provider not ready.' })
             return { state }
           }
+          if (!state.persistenceRef) {
+            replyTo.send({ type: 'toolError', error: 'Persistence provider not ready.' })
+            return { state }
+          }
+
+          let streamController: ReadableStreamDefaultController<Uint8Array> | null = null
+          const imageStream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              streamController = controller
+            }
+          })
+
+          const fileKey = `generated/${crypto.randomUUID()}.png`
+
+          // Initiate the stream upload to persistence
+          context.pipeToSelf(
+            ask<PersistenceMsg, PResult>(state.persistenceRef, (replyTo) => ({
+              type: 'obj.putStream' as const,
+              bucket: 'media',
+              key: fileKey,
+              stream: imageStream,
+              replyTo,
+            })),
+            () => ({ type: '_imageSaved' as const, requestId, filePath: fileKey, publicUrl: fileKey }),
+            (error) => ({ type: '_saveError' as const, requestId, error: String(error) })
+          )
+
           state.llmRef.send({
             type: 'streamImage',
             requestId,
@@ -151,12 +187,13 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
             userId: userId,
             replyTo: context.self as unknown as ActorRef<VisionProviderReply>,
           })
+
           return {
             state: {
               ...state,
               pending: {
                 ...state.pending,
-                [requestId]: { kind: 'generation', prompt, accumulatedImage: '', replyTo, userId },
+                [requestId]: { kind: 'generation', prompt, streamController, replyTo, userId },
               },
             },
           }
@@ -177,7 +214,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
         const requestId = crypto.randomUUID()
         context.log.info('vision: analyzing image', { requestId, imageUrl, prompt })
         context.pipeToSelf(
-          resolveImageUrl(imageUrl),
+          resolveImageUrl(state.persistenceRef, imageUrl),
           (resolved) => ({ type: '_resolved' as const, requestId, imageUrl: resolved, prompt }),
           (error)    => ({ type: '_resolveError' as const, requestId, error: String(error) }),
         )
@@ -255,6 +292,28 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
         return { state: { ...state, pending: rest } }
       },
 
+      llmDone: (state, message, context) => {
+        const req = state.pending[message.requestId]
+        if (!req) return { state }
+
+        if (req.kind === 'analysis') {
+          context.log.info('vision: analysis complete', { requestId: message.requestId })
+          req.replyTo.send({ type: 'toolResult', result: { text: req.accumulated || 'No description available.' } })
+          const { [message.requestId]: _, ...rest } = state.pending
+          return { state: { ...state, pending: rest } }
+        }
+
+        // Generation: close stream
+        if (req.kind === 'generation' && req.streamController) {
+          try {
+            req.streamController.close()
+          } catch (e) {
+            context.log.error('Failed to close stream controller', { error: String(e) })
+          }
+        }
+        return { state }
+      },
+
       llmChunk: (state, message) => {
         const req = state.pending[message.requestId]
         if (!req || req.kind !== 'analysis') return { state }
@@ -268,40 +327,16 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
 
       llmImageChunk: (state, message) => {
         const req = state.pending[message.requestId]
-        if (!req || req.kind !== 'generation') return { state }
-        // Keep the last image chunk (the final complete PNG data URL)
-        return {
-          state: {
-            ...state,
-            pending: { ...state.pending, [message.requestId]: { ...req, accumulatedImage: message.dataUrl } },
-          },
+        if (!req || req.kind !== 'generation' || !req.streamController) return { state }
+        
+        let base64Data = message.dataUrl
+        const match = base64Data.match(/^data:image\/(\w+);base64,(.+)$/)
+        if (match && match[2]) {
+          base64Data = match[2]
         }
-      },
-
-      llmDone: (state, message, context) => {
-        const { [message.requestId]: req, ...rest } = state.pending
-        if (!req) return { state }
-
-        if (req.kind === 'analysis') {
-          context.log.info('vision: analysis complete', { requestId: message.requestId })
-          req.replyTo.send({ type: 'toolResult', result: { text: req.accumulated || 'No description available.' } })
-          return { state: { ...state, pending: rest } }
-        }
-
-        // generation — save image to disk, then reply via _imageSaved
-        if (!req.accumulatedImage) {
-          context.log.error('vision: image generation completed but no image data received')
-          req.replyTo.send({ type: 'toolError', error: 'No image data received from model.' })
-          return { state: { ...state, pending: rest } }
-        }
-
-        // Keep the pending entry alive until the file is saved
-        context.log.info('vision: generation complete, saving image', { requestId: message.requestId })
-        context.pipeToSelf(
-          saveGeneratedImage(req.accumulatedImage),
-          (r) => ({ type: '_imageSaved'  as const, requestId: message.requestId, filePath: r.filePath, publicUrl: r.publicUrl }),
-          (e) => ({ type: '_saveError'   as const, requestId: message.requestId, error: String(e) }),
-        )
+        const rawBytes = Buffer.from(base64Data, 'base64')
+        req.streamController.enqueue(new Uint8Array(rawBytes))
+        
         return { state }
       },
 
@@ -309,6 +344,14 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
         const { [message.requestId]: req, ...rest } = state.pending
         if (!req) return { state }
         context.log.error('vision llm error', { error: String(message.error) })
+        
+        // If it was a generation, close the stream on error
+        if (req.kind === 'generation' && req.streamController) {
+          try {
+            req.streamController.close()
+          } catch {}
+        }
+        
         req.replyTo.send({ type: 'toolError', error: String(message.error) })
         return { state: { ...state, pending: rest } }
       },

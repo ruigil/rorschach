@@ -4,8 +4,8 @@ import type {
   ApiMessage,
 } from '../../../types/llm.ts'
 import type { LlmProviderAdapter, VeniceAdapterOptions } from '../types.ts'
-import { mkdir } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { ask, type ActorRef } from '../../../system/index.ts'
+import type { PersistenceMsg, PResult } from '../../../types/persistence.ts'
 
 export const VeniceAdapter = (options: VeniceAdapterOptions): LlmProviderAdapter => {
   const { apiKey } = options
@@ -387,8 +387,8 @@ export const VeniceAdapter = (options: VeniceAdapterOptions): LlmProviderAdapter
       return { status: 'completed', unsigned_urls: [pollingUrl] }
     },
 
-    downloadVideos: async (downloads) => {
-      for (const { url, destPath } of downloads) {
+    downloadVideos: async (downloads, bucket, persistenceRef) => {
+      for (const { url, key } of downloads) {
         let actualUrl = url
         let requestInit: RequestInit = {
           headers: {
@@ -419,8 +419,20 @@ export const VeniceAdapter = (options: VeniceAdapterOptions): LlmProviderAdapter
           throw new Error(`HTTP ${res.status} downloading video: ${body}`)
         }
 
-        await mkdir(dirname(destPath), { recursive: true })
-        await Bun.write(destPath, res)
+        if (!res.body) throw new Error(`HTTP response has no body to stream for ${actualUrl}`)
+
+        const uploadRes = await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+          type: 'obj.putStream',
+          bucket,
+          key,
+          stream: res.body as ReadableStream<Uint8Array>,
+          meta: { contentType: res.headers.get('content-type') || 'video/mp4' },
+          replyTo,
+        }))
+
+        if (!uploadRes.ok) {
+          throw new Error(`Failed to store video in persistence: ${uploadRes.error}`)
+        }
 
         // Purge media from Venice servers after downloading is complete
         if (url.startsWith('{') && url.endsWith('}')) {
