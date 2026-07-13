@@ -1,7 +1,6 @@
 import { createTopic } from '../system/index.ts'
 
 // ─── Message attachments ───────────────────────────────────────────────────
-
 export type MessageAttachmentKind = 'image' | 'audio' | 'video' | 'pdf' | 'file'
 
 export type MessageAttachment = {

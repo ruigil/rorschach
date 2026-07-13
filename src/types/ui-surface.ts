@@ -1,5 +1,3 @@
-import { createTopic } from '../system/index.ts'
-
 // ─── Plugin UI surface registration ───
 //
 // Plugins contribute browser-side UI surfaces (windows + their backing module)

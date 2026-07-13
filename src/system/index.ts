@@ -1,12 +1,10 @@
 // ─── Public API ───
-export { AgentSystem, type PluginSystemOptions } from './actor/system.ts'
+export { AgentSystem } from './actor/system.ts'
 export { ask } from './actor/ask.ts'
 export { invokeTool, defineTool, parseToolArgs, applyToolFilter } from './agent/tool-utils.ts'
-export type { InvokeToolArgs, InvokeToolOptions } from './agent/tool-utils.ts'
 export { onLifecycle, onMessage } from './actor/match.ts'
 export { watchTopic } from './actor/services.ts'
 export { createPluginFactory } from './factory.ts'
-export type { SlotDeclaration, AgentDeclaration, ToolDeclaration, PluginBlueprint } from './factory.ts'
 export { resolvePersistence, persistencePluginAdapter  } from './persistence.ts'
 // ─── Config utilities ───
 export {
@@ -19,9 +17,6 @@ export {
   spawnSlot,
   stopSlot,
   stopAllSlots,
-  type ConfigOptions,
-  type ConfigDescriptor,
-  type ActorSlot,
 } from './actor/config.ts'
 
 // ─── Agent Loop & Context Assembly Helpers ───
@@ -32,14 +27,7 @@ export {
   type LoopMsg,
   type LoopState,
   type WithLoopState,
-  type LoopTurn,
-  type LoopPendingBatch,
   type LoopStartTurnParams,
-  type LoopToolResultMsg,
-  type LoopBaseMsg,
-  type LoopError,
-  type StreamChunk,
-  type AgentLoopHooks,
   type AgentLoopHandle,
 } from './agent/agent-loop.ts'
 
@@ -48,11 +36,9 @@ export {
   assembleUserText,
   getTodayDateString,
   type ContextView,
-  type ContextAssemblyPolicy,
 } from './agent/context-assembly.ts'
 
 export { defineAgent } from './agent/define-agent.ts'
-export type { DefineAgentParams } from './agent/define-agent.ts'
 
 export { TraceTopic } from './actor/types.ts'
 export type { TraceSpan } from './actor/types.ts'
@@ -68,9 +54,6 @@ export {
   redact,
 } from './actor/types.ts'
 
-export { ConfigUpdateRequestTopic } from '../types/config.ts'
-export type { ConfigSchemaSection, ConfigUpdateRequest } from '../types/config.ts'
-
 export type {
   ActorRef,
   ActorServices,
@@ -80,34 +63,14 @@ export type {
   ActorIdentity,
   ActorResult,
   Interceptor,
-  LifecycleResult,
   DeadLetter,
-  EventStream,
   EventTopic,
   LifecycleEvent,
   LogEvent,
-  LogLevel,
-  MailboxConfig,
-  MailboxOverflowStrategy,
   MessageHandler,
   PersistenceAdapter,
-  ShutdownConfig,
-  SupervisionStrategy,
-  Timers,
-  TimerKey,
-  TypedEvent,
-  // ─── Metrics / Introspection ───
-  ActorMetrics,
-  ActorSnapshot,
-  ActorStatus,
-  ActorTreeNode,
   MetricsEvent,
-  MetricsRegistry,
-  ProcessingTime,
-  // ─── Plugins ───
   PluginDef,
-  LoadedPlugin,
-  LoadResult,
-  UnloadResult,
   PluginSystem,
 } from './actor/types.ts'
+

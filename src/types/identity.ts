@@ -17,5 +17,4 @@ export type IdentityProviderMsg =
   | { type: 'resolveCookie'; cookie: string; replyTo: ActorRef<Identity | null> }
   | { type: 'resolvePhone';  phone:  string; replyTo: ActorRef<Identity | null> }
 
-export const IdentityProviderTopic =
-  createTopic<{ ref: ActorRef<IdentityProviderMsg> | null }>('identity.provider')
+export const IdentityProviderTopic = createTopic<{ ref: ActorRef<IdentityProviderMsg> | null }>('identity.provider')

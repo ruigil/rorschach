@@ -94,6 +94,4 @@ export type PersistenceMsg =
 // ─── Discovery (retained topic) ───
 
 export type PersistenceProviderEvent = { ref: ActorRef<PersistenceMsg> | null }
-export const PersistenceProviderTopic = createTopic<PersistenceProviderEvent>(
-  'persistence.provider',
-)
+export const PersistenceProviderTopic = createTopic<PersistenceProviderEvent>('persistence.provider')
