@@ -1,5 +1,4 @@
-import { type ActorRef } from '../../system/index.ts'
-import { ask } from '../../system/index.ts'
+import { type ActorRef, ask, createTopic } from '../../system/index.ts'
 import type { Identity, IdentityProviderMsg } from '../../types/identity.ts'
 
 // ─── Anonymous identity ───
@@ -44,3 +43,13 @@ export const resolveCookieIdentity = async (
   req: Request,
 ): Promise<Identity | null> =>
   resolveIdentity(ref, r => ({ type: 'resolveCookie', cookie: parseSessionCookie(req), replyTo: r }))
+
+// ─── Interfaces Config Update ───
+export type ConfigUpdateRequest = {
+  pluginId: string
+  patch: Record<string, unknown>
+}
+
+export const ConfigUpdateRequestTopic = createTopic<ConfigUpdateRequest>('config.update.request')
+
+

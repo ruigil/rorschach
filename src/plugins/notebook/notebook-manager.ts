@@ -1,6 +1,7 @@
 import { onLifecycle, onMessage, ask } from '../../system/index.ts'
 import type { ActorDef, ActorRef } from '../../system/index.ts'
-import { OutboundUserMessageTopic, HttpWsFrameTopic, NotebookChangeTopic, type HttpWsFrameEvent, type NotebookChangeEvent } from '../../types/events.ts'
+import { OutboundUserMessageTopic, HttpWsFrameTopic, type HttpWsFrameEvent } from '../../types/events.ts'
+import { NotebookChangeTopic, type NotebookChangeEvent } from './types.ts'
 import { readTodos, completeTodo } from './tools/todos.ts'
 import { readEntry } from './tools/journal.ts'
 import { parseCsv, type CsvRow } from './tools/tracker.ts'

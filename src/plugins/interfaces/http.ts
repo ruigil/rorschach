@@ -14,10 +14,9 @@ import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
-import { ConfigUpdateRequestTopic } from '../../types/config.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
-import { resolveIdentity, resolveCookieIdentity } from './types.ts'
+import { resolveIdentity, resolveCookieIdentity, ConfigUpdateRequestTopic } from './types.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 
 

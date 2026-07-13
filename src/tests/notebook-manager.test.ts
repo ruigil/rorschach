@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { AgentSystem, ask, type ActorRef } from '../system/index.ts'
-import { OutboundUserMessageTopic, HttpWsFrameTopic, NotebookChangeTopic } from '../types/events.ts'
+import { OutboundUserMessageTopic, HttpWsFrameTopic } from '../types/events.ts'
+import { NotebookChangeTopic } from '../plugins/notebook/types.ts'
 import { NotebookManager } from '../plugins/notebook/notebook-manager.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 import { PersistenceProviderTopic } from '../types/persistence.ts'

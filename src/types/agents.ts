@@ -9,6 +9,8 @@ export type AgentModelOptions = {
   toolFilter?:   ToolFilter
 }
 
+
+
 // ─── Shared context protocol for session-hosted agents ───
 
 export type ContextRecordSource = 'user' | 'assistant' | 'tool'
@@ -27,6 +29,8 @@ export type ContextTurn = {
   assistantText: string
   timestamp:     number
 }
+
+
 
 export type AgentContextMsg =
   | {
@@ -73,24 +77,6 @@ export type AgentRegistrationEvent =
 
 export const AgentRegistrationTopic = createTopic<AgentRegistrationEvent>('agent.registration')
 
-export type SwitchAgentEvent = {
-  userId:   string
-  mode:     string
-  source:   'user' | 'llm' | 'programmatic'
-  reason?:  string
-}
-
-export const SwitchAgentTopic = createTopic<SwitchAgentEvent>('agent.switch')
-
 export type AgentCatalogEvent = {
   agents: Array<{ mode: string; displayName: string; shortDesc: string }>
 }
-
-export type SessionLifecycleEvent =
-  | { type: 'sessionStarted';  userId: string; defaultMode: string; timestamp: number }
-  | { type: 'sessionEnded';    userId: string; reason: 'lastDisconnect' | 'contextStoreCrash'; timestamp: number }
-  | { type: 'modeActivated';   userId: string; mode: string; previousMode: string; source: 'user' | 'llm' | 'programmatic' | 'crashFallback'; timestamp: number }
-  | { type: 'presencePresent'; userId: string; source: 'http' | 'signal' | 'cli'; timestamp: number }
-  | { type: 'presenceAbsent';  userId: string; source: 'http' | 'signal' | 'cli'; timestamp: number }
-
-export const SessionLifecycleTopic = createTopic<SessionLifecycleEvent>('session.lifecycle')

@@ -71,13 +71,7 @@ export type HttpWsFrameEvent = {
 /** Topic published when the HTTP/WS interface receives a custom client WebSocket frame. */
 export const HttpWsFrameTopic = createTopic<HttpWsFrameEvent>('http.ws.frame')
 
-export type NotebookChangeEvent =
-  | { type: 'todosUpdated'; userId: string }
-  | { type: 'journalUpdated'; userId: string; date: string }
-  | { type: 'trackerUpdated'; userId: string; habit: string }
 
-/** Topic published when notebook data is updated by coach tools (journal, tracker, or todos). */
-export const NotebookChangeTopic = createTopic<NotebookChangeEvent>('notebook.change')
 
 export type TraceSpan = {
   traceId: string        // one per user request

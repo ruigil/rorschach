@@ -14,11 +14,10 @@ import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import { ContextStore, type ContextStoreMsg} from './context-store.ts'
 import {
   AgentRegistrationTopic,
-  SessionLifecycleTopic,
-  SwitchAgentTopic,
   type AgentDescriptor,
   type AgentFactoryOpts,
 } from '../../types/agents.ts'
+import { SessionLifecycleTopic, SwitchAgentTopic } from './types.ts'
 import { JobRegistryTopic, type JobLifecycleEvent } from '../../types/tools.ts'
 
 // ─── Message protocol ──────────────────────────────────────────────────────

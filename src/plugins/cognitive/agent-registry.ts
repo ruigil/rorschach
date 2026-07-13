@@ -4,9 +4,9 @@ import type { LlmTool } from '../../types/llm.ts'
 import { ToolRegistrationTopic, type ToolInvokeMsg, type ToolMsg } from '../../types/tools.ts'
 import {
   AgentRegistrationTopic,
-  SwitchAgentTopic,
   type AgentDescriptor,
 } from '../../types/agents.ts'
+import { SwitchAgentTopic } from './types.ts'
 import { OutboundBroadcastTopic } from '../../types/events.ts'
 
 // ─── Message protocol ─────────────────────────────────────────────────────

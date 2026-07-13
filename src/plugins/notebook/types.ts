@@ -1,4 +1,5 @@
 import type { LoopMsg, LoopState, ActorRef, ContextView } from '../../system/index.ts'
+import { createTopic } from '../../system/index.ts'
 import type { ToolCollection, ToolSchema, ToolMsg } from '../../types/tools.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 
@@ -42,3 +43,11 @@ export type CoachAgentState = {
   contextView: ContextView
   tools:       ToolCollection
 }
+
+export type NotebookChangeEvent =
+  | { type: 'todosUpdated'; userId: string }
+  | { type: 'journalUpdated'; userId: string; date: string }
+  | { type: 'trackerUpdated'; userId: string; habit: string }
+
+export const NotebookChangeTopic = createTopic<NotebookChangeEvent>('notebook.change')
+

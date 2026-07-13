@@ -1,5 +1,5 @@
 import { AgentSystem, SystemLifecycleTopic, type LifecycleEvent } from './system/index.ts'
-import { type ConfigUpdateRequest, ConfigUpdateRequestTopic } from './types/config.ts'
+import { type ConfigUpdateRequest, ConfigUpdateRequestTopic } from './plugins/interfaces/types.ts'
 import { loadConfig, saveConfig } from './config.ts'
 
 // ─── Load config and plugins from config.json ───

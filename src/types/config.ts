@@ -1,4 +1,3 @@
-import { createTopic } from '../system/index.ts'
 
 // ─── Config Schema Section ───────────────────────────────────────────────────
 //
@@ -28,14 +27,3 @@ export type ConfigSchemaSection = {
 }
 
 
-// ─── Config Update Request ───────────────────────────────────────────────────
-//
-// Published by the HTTP actor when POST /config/:pluginId is received.
-// Subscribed by index.ts which calls system.updateConfig + saveConfig.
-
-export type ConfigUpdateRequest = {
-  pluginId: string
-  patch: Record<string, unknown>
-}
-
-export const ConfigUpdateRequestTopic = createTopic<ConfigUpdateRequest>('config.update.request')

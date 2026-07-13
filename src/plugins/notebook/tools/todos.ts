@@ -4,7 +4,7 @@ import { onLifecycle, onMessage, ask } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { Todo } from '../types.ts'
-import { NotebookChangeTopic } from '../../../types/events.ts'
+import { NotebookChangeTopic } from '../types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../../../types/persistence.ts'
 
 export const todosCreateTool = defineTool('todos_create', 'Create a new todo item.', {

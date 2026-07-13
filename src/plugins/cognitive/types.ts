@@ -127,3 +127,23 @@ export type ChatbotExtra =
   | { type: '_toolUnregistered'; name: string }
 
 export type ChatbotMsg = LoopMsg<ChatbotExtra>
+
+
+export type SwitchAgentEvent = {
+  userId:   string
+  mode:     string
+  source:   'user' | 'llm' | 'programmatic'
+  reason?:  string
+}
+
+export const SwitchAgentTopic = createTopic<SwitchAgentEvent>('agent.switch')
+
+export type SessionLifecycleEvent =
+  | { type: 'sessionStarted';  userId: string; defaultMode: string; timestamp: number }
+  | { type: 'sessionEnded';    userId: string; reason: 'lastDisconnect' | 'contextStoreCrash'; timestamp: number }
+  | { type: 'modeActivated';   userId: string; mode: string; previousMode: string; source: 'user' | 'llm' | 'programmatic' | 'crashFallback'; timestamp: number }
+  | { type: 'presencePresent'; userId: string; source: 'http' | 'signal' | 'cli'; timestamp: number }
+  | { type: 'presenceAbsent';  userId: string; source: 'http' | 'signal' | 'cli'; timestamp: number }
+
+export const SessionLifecycleTopic = createTopic<SessionLifecycleEvent>('session.lifecycle')
+
