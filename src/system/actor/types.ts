@@ -1,4 +1,7 @@
 import type { ConfigSchemaSection } from '../../types/config.ts'
+import type { TraceSpan } from '../../types/events.ts'
+export type { TraceSpan }
+
 
 // ─── Sentinel for mailbox close ───
 export const STOP = Symbol('STOP')
@@ -117,25 +120,7 @@ export type TraceContext = {
   injectHeaders(span: SpanHandle): MessageHeaders
 }
 
-// ─── Trace Span (published to TraceTopic) ───
-//
-// Each span represents one unit of work in a causal chain. Spans arrive in
-// pairs: a 'started' event (no durationMs) followed by a 'done' or 'error'
-// event (with durationMs). Both share the same spanId so the frontend can
-// merge them into a single bar.
-//
-export type TraceSpan = {
-  traceId: string        // one per user request
-  spanId: string         // unique per logical operation
-  parentSpanId?: string  // nesting — children share the request span as parent
-  actor: string          // actor that emitted this span
-  operation: string      // e.g. 'request', 'chatbot', 'llm-call', 'tool-invoke', 'llm-response'
-  status: 'started' | 'done' | 'error'
-  timestamp: number      // ms epoch (start time on 'started', end time on 'done'/'error')
-  durationMs?: number    // elapsed — only set on 'done' and 'error'
-  data?: Record<string, unknown>
-}
-
+// ─── Trace Topic ───
 export const TraceTopic: EventTopic<TraceSpan> = 'system.trace' as EventTopic<TraceSpan>
 
 // ─── Event Stream Topics ───
