@@ -4,6 +4,7 @@ import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic, type LlmProviderMsg, type SpeechProviderReply, type TranscriptionProviderReply } from '../../types/llm.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetPayload } from '../../types/persistence.ts'
+import type { AudioMsg, AudioState, AudioOptions } from './types.ts'
 
 // ─── Tool schemas ───
 
@@ -25,54 +26,7 @@ export const textToSpeechTool = defineTool('text_to_speech', 'Convert text to sp
   required: ['text'],
 })
 
-// ─── Messages ───
 
-export type AudioMsg =
-  | ToolInvokeMsg
-  | TranscriptionProviderReply
-  | SpeechProviderReply
-  | { type: '_audioLoaded';    requestId: string; data: string; format: string; replyTo: ActorRef<ToolReply> }
-  | { type: '_audioLoadError'; requestId: string; error: string; replyTo: ActorRef<ToolReply> }
-  | { type: '_audioSaved';     requestId: string; key: string; spokenText: string; voice: string; replyTo: ActorRef<ToolReply> }
-  | { type: '_audioSaveError'; requestId: string; error: string; replyTo: ActorRef<ToolReply> }
-  | { type: '_llmProvider';    ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
-
-// ─── State ───
-
-type TranscriptionPending = {
-  kind: 'transcription'
-  accumulated: string
-  replyTo: ActorRef<ToolReply>
-  userId?: string
-}
-
-type TtsPending = {
-  kind: 'tts'
-  streamController: ReadableStreamDefaultController<Uint8Array> | null
-  audioFormat: string
-  spokenText: string
-  voice: string
-  replyTo: ActorRef<ToolReply>
-  userId?: string
-}
-
-export type AudioState = {
-  pending: Record<string, TranscriptionPending | TtsPending>
-  llmRef: ActorRef<LlmProviderMsg> | null
-  persistenceRef: ActorRef<PersistenceMsg> | null
-}
-
-// ─── Options ───
-
-export type AudioOptions = {
-  llmRef?: ActorRef<LlmProviderMsg> | null
-  persistenceRef?: ActorRef<PersistenceMsg> | null
-  ttsModel: string
-  sttModel: string
-  voice: string
-  ttsFormat?: string
-}
 
 const DEFAULT_TTS_FORMAT = 'pcm'
 

@@ -3,9 +3,8 @@ import { AgentSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import {
   WebSearch,
-  type WebSearchMsg,
-  type BraveLlmContextResponse,
 } from '../plugins/tools/web-search.ts'
+import type { WebSearchMsg, BraveLlmContextResponse } from '../plugins/tools/types.ts'
 import { ToolRegistrationTopic } from '../types/tools.ts'
 import type { ToolInvokeMsg, ToolReply, ToolRegistrationEvent } from '../types/tools.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'

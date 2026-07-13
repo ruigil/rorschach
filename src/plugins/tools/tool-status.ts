@@ -3,6 +3,7 @@ import { onLifecycle, onMessage } from '../../system/index.ts'
 import { JobRegistryTopic } from '../../types/tools.ts'
 import { defineTool } from '../../system/index.ts'
 import type { ToolMsg, ToolReply, ToolResultPayload } from '../../types/tools.ts'
+import type { ToolStatusState, JobInfo } from './types.ts'
 
 // ─── Schema ───
 
@@ -16,19 +17,7 @@ export const toolStatusTool = defineTool('tool_status', 'Check the status of a l
   },
 })
 
-// ─── State ───
 
-type JobInfo = {
-  toolName:  string
-  toolRef:   ActorRef<ToolMsg>
-  startedAt: number
-  userId?:   string
-  statusText?: string
-  result?:   ToolResultPayload
-  error?:    string
-}
-
-export type ToolStatusState = { jobs: Record<string, JobInfo> }
 
 
 // ─── Internal message protocol ───

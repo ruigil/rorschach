@@ -2,29 +2,9 @@ import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { onMessage } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply, ToolSource } from '../../types/tools.ts'
+import type { GroundingItem, SourceInfo, BraveLlmContextResponse, WebSearchMsg, WebSearchActorOptions } from './types.ts'
 
-// ─── Brave API types ───
 
-type GroundingItem = {
-  url: string
-  title: string
-  snippets: string[]
-}
-
-type SourceInfo = {
-  title: string
-  hostname: string
-  age: (string | null)[]
-}
-
-export type BraveLlmContextResponse = {
-  grounding: {
-    generic: GroundingItem[]
-    poi: unknown | null
-    map: unknown[]
-  }
-  sources: Record<string, SourceInfo>
-}
 
 // ─── Tool schema ───
 
@@ -34,19 +14,7 @@ export const webSearchTool = defineTool('web_search', 'Search the web for curren
   required: ['query'],
 })
 
-// ─── Internal message protocol ───
 
-export type WebSearchMsg =
-  | ToolInvokeMsg
-  | { type: '_done'; query: string; result: BraveLlmContextResponse; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_err'; query: string; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-
-// ─── Options ───
-
-export type WebSearchActorOptions = {
-  apiKey: string
-  count?: number
-}
 
 // ─── Brave API fetch ───
 

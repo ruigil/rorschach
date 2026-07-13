@@ -4,6 +4,7 @@ import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { onMessage } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
+import type { BashToolMsg } from './types.ts'
 
 // ─── Tool schemas ───
 
@@ -43,18 +44,7 @@ export const editTool = defineTool('edit', 'Safely edit a file in the virtual fi
   required: ['path', 'target', 'replacement'],
 })
 
-// ─── Internal message protocol ───
 
-export type BashToolMsg =
-  | ToolInvokeMsg
-  | { type: '_bashDone'; result: BashExecResult; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_bashErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_writeDone'; path: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_writeErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_readDone'; content: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_readErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_editReadDone'; path: string; target: string; replacement: string; content: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_editWriteDone'; path: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
 
 // ─── Result formatting ───
 

@@ -1,5 +1,5 @@
 import { createPluginFactory } from '../../system/index.ts'
-import { WebSearch, type WebSearchActorOptions as WebSearchActorConfig, webSearchTool } from './web-search.ts'
+import { WebSearch, webSearchTool } from './web-search.ts'
 import { BashTool, bashTool, writeTool, readTool, editTool } from './bash.ts'
 import { Vision, analyzeImageTool, generateImageTool } from './vision-actor.ts'
 import { Cron, cronCreateTool, cronDeleteTool, cronListTool } from './cron.ts'
@@ -8,37 +8,9 @@ import { Video, generateVideoTool } from './video-actor.ts'
 import { PDF, pdfTool } from './pdf.ts'
 import { FetchFile, fetchFileTool } from './fetch-file.ts'
 import { ToolStatus, toolStatusTool } from './tool-status.ts'
-import type { BashOptions as BashConfig } from 'just-bash'
 import { defineConfig } from '../../system/index.ts'
 import { toolsSchemas } from './routes.ts'
-
-type VisionConfig = {
-  model: string
-  analysisModel?: string
-}
-
-type AudioConfig = {
-  ttsModel: string
-  sttModel: string
-  voice?: string
-}
-
-type VideoConfig = {
-  model: string
-  aspectRatio?: string
-  duration?: number
-  resolution?: string
-  pollIntervalMs?: number
-  pollTimeoutMs?: number
-}
-
-export type ToolsConfig = {
-  webSearch?: WebSearchActorConfig
-  bash?: BashConfig
-  vision?: VisionConfig
-  audio?: AudioConfig
-  video?: VideoConfig
-}
+import type { ToolsConfig } from './types.ts'
 
 const config = defineConfig<ToolsConfig>('tools', {
   webSearch: {

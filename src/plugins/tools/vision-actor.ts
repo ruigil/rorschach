@@ -4,6 +4,7 @@ import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic, type LlmProviderMsg, type LlmProviderReply, type VisionProviderReply } from '../../types/llm.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetPayload } from '../../types/persistence.ts'
+import type { VisionMsg, VisionState, VisionOptions } from './types.ts'
 
 // ─── Tool schemas ───
 
@@ -24,52 +25,7 @@ export const generateImageTool = defineTool('generate_image', 'Generate an image
   required: ['prompt'],
 })
 
-// ─── Messages ───
 
-export type VisionMsg =
-  | ToolInvokeMsg
-  | LlmProviderReply
-  | VisionProviderReply
-  | { type: '_resolved';     requestId: string; imageUrl: string; prompt: string }
-  | { type: '_resolveError'; requestId: string; error: string }
-  | { type: '_imageSaved';   requestId: string; filePath: string; publicUrl: string }
-  | { type: '_saveError';    requestId: string; error: string }
-  | { type: '_llmProvider';  ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
-
-// ─── State ───
-
-type AnalysisPending = {
-  kind: 'analysis'
-  accumulated: string
-  replyTo: ActorRef<ToolReply>
-  userId?: string
-}
-
-type GenerationPending = {
-  kind: 'generation'
-  prompt: string
-  streamController: ReadableStreamDefaultController<Uint8Array> | null
-  replyTo: ActorRef<ToolReply>
-  userId?: string
-}
-
-type PendingRequest = AnalysisPending | GenerationPending
-
-export type VisionState = {
-  pending: Record<string, PendingRequest>
-  llmRef: ActorRef<LlmProviderMsg> | null
-  persistenceRef: ActorRef<PersistenceMsg> | null
-}
-
-// ─── Options ───
-
-export type VisionOptions = {
-  llmRef?: ActorRef<LlmProviderMsg> | null
-  persistenceRef?: ActorRef<PersistenceMsg> | null
-  model: string
-  analysisModel?: string
-}
 
 // ─── Helpers ───
 

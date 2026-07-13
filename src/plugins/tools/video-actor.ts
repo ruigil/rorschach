@@ -6,6 +6,7 @@ import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic, type LlmProviderMsg, type VideoSubmitReply, type VideoPollReply, type VideoDownloadReply } from '../../types/llm.ts'
 import { PersistenceProviderTopic } from '../../types/persistence.ts'
 import type { PersistenceMsg } from '../../types/persistence.ts'
+import type { VideoMsg, VideoState, VideoOptions, PendingJob } from './types.ts'
 
 // ─── Tool schema ───
 
@@ -17,45 +18,7 @@ export const generateVideoTool = defineTool('generate_video', 'Generate a video 
   required: ['prompt'],
 })
 
-// ─── Messages ───
 
-export type VideoMsg =
-  | ToolInvokeMsg
-  | VideoSubmitReply
-  | VideoPollReply
-  | VideoDownloadReply
-  | { type: '_pollTick'; requestId: string }
-  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
-
-// ─── State ───
-
-type PendingJob = {
-  requestId: string
-  jobId: string
-  pollingUrl: string
-  replyTo: ActorRef<ToolReply>
-  userId: string
-  deadline: number
-}
-
-export type VideoState = {
-  pending: Record<string, PendingJob>
-  llmRef: ActorRef<LlmProviderMsg> | null
-  persistenceRef: ActorRef<PersistenceMsg> | null
-}
-
-// ─── Options ───
-
-export type VideoOptions = {
-  llmRef?: ActorRef<LlmProviderMsg> | null
-  model: string
-  aspectRatio?: string
-  duration?: number
-  resolution?: string
-  pollIntervalMs?: number
-  pollTimeoutMs?: number
-}
 
 const DEFAULT_ASPECT_RATIO = '16:9'
 const DEFAULT_DURATION = 4

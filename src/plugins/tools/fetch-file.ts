@@ -4,6 +4,7 @@ import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { PersistenceProviderTopic } from '../../types/persistence.ts'
 import type { PersistenceMsg, PResult } from '../../types/persistence.ts'
+import type { FetchFileState, FetchFileMsg } from './types.ts'
 
 export const fetchFileTool = defineTool('fetch_file', 'Download a file from a URL to the central persistence store and return the store key. Works with PDFs, images (jpeg, png, gif, webp, …), audio, and any other binary or text file. Use the returned key with other tools such as extract_pdf_text or analyze_image.', {
   type: 'object',
@@ -13,15 +14,6 @@ export const fetchFileTool = defineTool('fetch_file', 'Download a file from a UR
   required: ['url'],
 })
 
-export type FetchFileState = {
-  persistenceRef: ActorRef<PersistenceMsg> | null
-}
-
-export type FetchFileMsg =
-  | ToolInvokeMsg
-  | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
-  | { type: '_done'; url: string; key: string; contentType: string; bytes: number; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_err'; url: string; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
 
 type FetchFileArgs = { url: string }
 

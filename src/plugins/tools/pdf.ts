@@ -5,6 +5,7 @@ import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { getDocumentProxy, extractText } from 'unpdf'
 import { PersistenceProviderTopic } from '../../types/persistence.ts'
 import type { PersistenceMsg, PResult, PObjGetPayload } from '../../types/persistence.ts'
+import type { PdfState, PdfMsg } from './types.ts'
 
 // ─── Tool schema ───
 
@@ -14,17 +15,7 @@ export const pdfTool = defineTool('extract_pdf_text', 'Extract text content from
   required: ['key'],
 })
 
-// ─── Internal message protocol ───
 
-export type PdfState = {
-  persistenceRef: ActorRef<PersistenceMsg> | null
-}
-
-export type PdfMsg =
-  | ToolInvokeMsg
-  | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
-  | { type: '_done'; key: string; text: string; pages: number; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_err'; key: string; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
 
 // ─── PDF extraction ───
 

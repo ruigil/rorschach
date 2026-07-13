@@ -8,7 +8,7 @@ import { ContextStore } from '../plugins/cognitive/context-store.ts'
 import { LlmProvider } from '../plugins/cognitive/llm-provider.ts'
 import { OpenRouterAdapter } from '../plugins/cognitive/adapters/openrouter.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
-import type { BraveLlmContextResponse } from '../plugins/tools/web-search.ts'
+import type { BraveLlmContextResponse } from '../plugins/tools/types.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 
 

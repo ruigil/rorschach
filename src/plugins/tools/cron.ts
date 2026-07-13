@@ -5,6 +5,7 @@ import { onLifecycle, onMessage } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg } from '../../types/tools.ts'
 import { CronTriggerTopic } from '../../types/events.ts'
+import type { CronState, CronJob } from './types.ts'
 
 // ─── Tool names & schemas ───
 
@@ -31,22 +32,7 @@ export const cronListTool = defineTool('cron_list', 'List all scheduled cron job
   properties: {},
 })
 
-// ─── Types ───
 
-type CronJob = {
-  id: string
-  expression: string
-  prompt: string
-  runOnce: boolean
-  createdAt: number
-  lastFiredAt: number | null
-  nextFireAt: number  // epoch ms — used to detect early wakeups from 32-bit timer cap
-  userId: string
-}
-
-export type CronState = {
-  jobs: Record<string, CronJob>
-}
 
 type CronMsg =
   | ToolInvokeMsg
