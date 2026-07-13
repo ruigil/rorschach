@@ -62,7 +62,7 @@ export const defineAgent = <
 
   return (options: OptionsType): AgentDescriptor => {
     const factory = (opts: AgentFactoryOpts): ActorDef<MsgType, StateType> => {
-      const { userId, contextStoreRef, llmRef } = opts
+      const { userId, contextStoreRef } = opts
     const maxToolLoops = options.maxToolLoops ?? 25
 
     type M = MsgType
@@ -130,7 +130,7 @@ export const defineAgent = <
       logPrefix,
       model: options.model,
       maxToolLoops,
-      llmRef: (state: any) => state.llmRef || llmRef,
+      llmRef: (state: any) => state.llmRef,
       tools: (state) => state.tools,
       uiEvents: OutboundUserMessageTopic,
       errorMessages,

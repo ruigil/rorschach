@@ -127,7 +127,7 @@ const spawnChatbot = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
   const contextStoreRef = system.spawn(`context-store-${userId}`, ContextStore({ userId, contextPath: tempContextPath() }))
   return system.spawn(
     'chatbot',
-    ChatbotAgentFactory({ model: LLM_PROVIDER_ADAPTER_OPTS.model }).factory({ userId, contextStoreRef, llmRef }),
+    ChatbotAgentFactory({ model: LLM_PROVIDER_ADAPTER_OPTS.model }).factory({ userId, contextStoreRef }),
     { state: { ...INITIAL_CHATBOT_STATE } },
   )
 }

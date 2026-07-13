@@ -126,7 +126,6 @@ const ensureAgent = (
   state: SessionManagerState,
   userId: string,
   mode: string,
-  llmRef: ActorRef<LlmProviderMsg>,
   ctx: any,
 ): { state: SessionManagerState; ref: ActorRef<any> | null } => {
   const session = state.sessions[userId]
@@ -146,7 +145,6 @@ const ensureAgent = (
 
   const opts: AgentFactoryOpts = {
     userId,
-    llmRef,
     contextStoreRef: session.contextStoreRef,
   }
   const ref = ctx.spawn(`${mode}-${userId}`, descriptor.factory(opts)) as ActorRef<any>
@@ -253,7 +251,7 @@ export const SessionManager = (
 
         for (const [userId, session] of Object.entries(next.sessions)) {
           if (session.activeMode !== msg.descriptor.mode || session.agentRefs[msg.descriptor.mode]) continue
-          next = ensureAgent(next, userId, msg.descriptor.mode, state.llmRef ?? llmRef, ctx).state
+          next = ensureAgent(next, userId, msg.descriptor.mode, ctx).state
         }
 
         return { state: next }
@@ -300,7 +298,7 @@ export const SessionManager = (
             activeMode:  defaultMode,
           }
           const withSession = setSession(nextState, userId, seeded)
-          const afterAgent  = ensureAgent(withSession, userId, defaultMode, withSession.llmRef ?? llmRef, ctx)
+          const afterAgent  = ensureAgent(withSession, userId, defaultMode, ctx)
 
           ctx.publish(SessionLifecycleTopic, {
             type:          'sessionStarted',
@@ -476,7 +474,7 @@ export const SessionManager = (
         const previousMode = session.activeMode
 
         // Ensure target agent exists, then mark it active.
-        const afterAgent = ensureAgent(state, userId, mode, state.llmRef ?? llmRef, ctx)
+        const afterAgent = ensureAgent(state, userId, mode, ctx)
         if (!afterAgent.ref) return { state: afterAgent.state }
 
         const next = updateSession(afterAgent.state, userId, { activeMode: mode })

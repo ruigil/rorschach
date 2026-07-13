@@ -2,7 +2,7 @@ import { describe, expect, test, afterAll } from 'bun:test'
 import { mkdir, rm } from 'node:fs/promises'
 import { AgentSystem } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
-import type { LlmProviderMsg } from '../types/llm.ts'
+import { LlmProviderTopic, type LlmProviderMsg } from '../types/llm.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
 import { WorkflowsAgentFactory } from '../plugins/workflows/workflows-agent.ts'
 import type { WorkflowRunnerMsg } from '../plugins/workflows/types.ts'
@@ -45,7 +45,8 @@ describe('session agents use shared context snapshots', () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const streams: Array<Extract<LlmProviderMsg, { type: 'stream' }>> = []
     const llmRef = system.spawn('llm', CapturingLlm(streams))
-const runnerRef = system.spawn('workflow-runner', NullRunner())
+    system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
+    const runnerRef = system.spawn('workflow-runner', NullRunner())
     const contextStoreRef = system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath: await tempContextPath() }))
     await tick()
 
@@ -64,7 +65,7 @@ const runnerRef = system.spawn('workflow-runner', NullRunner())
       maxToolLoops: 3,
       workflowsDir: '/tmp/nonexistent-workflows',
       tools: {},
-    }).factory({ userId: 'u1', llmRef, contextStoreRef }))
+    }).factory({ userId: 'u1', contextStoreRef }))
     await tick()
 
     workflows.send({ type: 'userMessage', text: 'make a workflow' })

@@ -9,7 +9,7 @@ import { ToolRegistrationTopic, type ToolMsg } from '../types/tools.ts'
 import { SessionManager } from '../plugins/cognitive/session-manager.ts'
 import notebookPlugin from '../plugins/notebook/notebook.plugin.ts'
 import { CoachAgentFactory } from '../plugins/notebook/coach-agent.ts'
-import type { LlmProviderMsg, LlmTool } from '../types/llm.ts'
+import { LlmProviderTopic, type LlmProviderMsg, type LlmTool } from '../types/llm.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -122,9 +122,9 @@ describe('coach mode integration tests', () => {
       tools,
     })
 
+    system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
     const agentRef = system.spawn('coach-agent', factory.factory({
       userId: 'u1',
-      llmRef,
       contextStoreRef,
     }))
     await tick()

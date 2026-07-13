@@ -57,7 +57,6 @@ export const ContextSnapshotTopic = createTopic<ContextSnapshotEvent>('context.s
 
 export type AgentFactoryOpts = {
   userId:          string
-  llmRef:          ActorRef<LlmProviderMsg>
   contextStoreRef: ActorRef<AgentContextMsg>
 }
 
