@@ -63,7 +63,6 @@ describe('session agents use shared context snapshots', () => {
     const workflows = system.spawn('workflows', WorkflowsAgentFactory({
       model: 'test-model',
       maxToolLoops: 3,
-      workflowsDir: '/tmp/nonexistent-workflows',
       tools: {},
     }).factory({ userId: 'u1', contextStoreRef }))
     await tick()

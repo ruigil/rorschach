@@ -117,7 +117,6 @@ export default createPluginFactory<NotebookConfig>({
       options: (cfg, deps) => ({
         model: cfg.agent?.model ?? 'google/gemini-3.5-flash',
         maxToolLoops: cfg.agent?.maxToolLoops ?? 15,
-        notebookDir: 'workspace/notebook',
         tools: buildToolCollection(
           deps.journal as ActorRef<ToolMsg>,
           deps.tracker as ActorRef<ToolMsg>,

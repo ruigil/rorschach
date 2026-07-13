@@ -118,7 +118,6 @@ describe('coach mode integration tests', () => {
     const factory = CoachAgentFactory({
       model: 'test-coach-model',
       maxToolLoops: 5,
-      notebookDir: 'workspace/notebook',
       tools,
     })
 

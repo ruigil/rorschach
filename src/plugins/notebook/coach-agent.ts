@@ -4,7 +4,6 @@ import type { AgentModelOptions } from '../../types/agents.ts'
 import type { CoachAgentMsg, CoachAgentState } from './types.ts'
 
 export type CoachAgentOptions = AgentModelOptions & {
-  notebookDir:  string
   tools:        ToolCollection
 }
 
@@ -20,7 +19,7 @@ export const COACH_TOOL_FILTER: ToolFilter = {
 
 const buildSystemPrompt = (options: CoachAgentOptions): string =>
   `You are an encouraging, accountability-focused personal coach for health, learning routines, habit building, writing journal entries, and habit tracking. Today is ${getTodayDateString('iso')}.\n` +
-  `You manage and coordinate the user's personal notebook stored at "${options.notebookDir}".\n\n` +
+  `You manage and coordinate the user's personal notebook.\n\n` +
   `Available notebook areas and tools:\n` +
   `- Journal: daily markdown entries (journal_write, journal_read, journal_search)\n` +
   `- Tracker: habit logging and statistics in CSV (tracker_log, tracker_stats, tracker_define_habit, tracker_list_habits). \n` +
