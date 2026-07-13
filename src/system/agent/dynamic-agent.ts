@@ -25,7 +25,7 @@ export type DynamicAgentState = {
   descriptor?: AgentDescriptor
   globalTools?: ToolCollection
   tools: ToolCollection
-  llmRef: ActorRef<LlmProviderMsg> | null
+  llmRef?: ActorRef<LlmProviderMsg> | null
 }
 
 const emptyContextView = (userId = ''): ContextView => ({
@@ -154,7 +154,7 @@ export const DynamicAgentActor = (
     logPrefix,
     model: (state) => (state.descriptor || initialDescriptor).model,
     maxToolLoops: (state) => (state.descriptor || initialDescriptor).maxToolLoops ?? 25,
-    llmRef: (state) => state.llmRef,
+    llmRef: (state) => state.llmRef ?? null,
     tools: (state) => state.tools,
     uiEvents: OutboundUserMessageTopic,
     errorMessages,

@@ -144,7 +144,7 @@ describe('session manager mode UI events', () => {
     })
     await tick(200)
 
-    expect(userFrames.u1.some(f => f.includes('agent-ready'))).toBe(true)
+    expect(userFrames.u1!.some(f => f.includes('agent-ready'))).toBe(true)
 
     await system.shutdown()
   })

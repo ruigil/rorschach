@@ -7,6 +7,7 @@ import type {
   EventTopic,
   Interceptor,
 } from '../actor/types.ts'
+import { onMessage } from '../actor/match.ts'
 import { invokeTool } from './tool-utils.ts'
 import type {
 	ToolCollection,
@@ -118,7 +119,7 @@ export type StreamChunk =
 
 // ─── Hook surface ───────────────────────────────────────────────────────────
 
-export type AgentLoopHooks<S extends WithLoopState, M> = {
+export type AgentLoopHooks<S extends WithLoopState, M extends { type: string }> = {
   role: string
   spanName: string
   logPrefix?: string
@@ -165,7 +166,7 @@ export type AgentLoopHooks<S extends WithLoopState, M> = {
 
 // ─── Exported handle ────────────────────────────────────────────────────────
 
-export type AgentLoopHandle<M , S extends WithLoopState> = {
+export type AgentLoopHandle<M extends { type: string }, S extends WithLoopState> = {
   idle: MessageHandler<M, S>
   startTurn: (state: S, params: LoopStartTurnParams, ctx: ActorContext<M>) => ActorResult<M, S>
   cancelTurn: (state: S, ctx: ActorContext<M>) => ActorResult<M, S>
@@ -173,7 +174,7 @@ export type AgentLoopHandle<M , S extends WithLoopState> = {
 
 // ─── Internal engine ────────────────────────────────────────────────────────
 
-const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, M>) => {
+const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(hooks: AgentLoopHooks<S, M>) => {
   const log = hooks.logPrefix ?? hooks.spanName
   const { tools: toolsCfg } = hooks
 
@@ -294,278 +295,268 @@ const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, 
   }
 
   // ── Awaiting LLM handler ─────────────────────────────────────────────────
-  const awaitingLlm: MessageHandler<M, S> = (state, msg, ctx) => {
-    const m = msg as LoopBaseMsg | { type: string }
-    const turn = state.loop.turn
-
-    switch (m.type) {
-      case 'llmChunk': {
-        const chunk = m as Extract<LlmProviderReply, { type: 'llmChunk' }>
-        if (chunk.requestId !== turn.requestId) return { state }
-        const nextTurn: LoopTurn = { ...turn, pending: turn.pending + chunk.text }
-        let nextState = { ...state, loop: { ...state.loop, turn: nextTurn } } as S
-        if (hooks.onStream) {
-          const r = hooks.onStream(nextState, { kind: 'text', text: chunk.text }, ctx)
-          nextState = r.state
-        }
-        emitUi(turn.userId, { type: 'chunk', text: chunk.text }, ctx)
-        return { state: nextState }
+  const awaitingLlm: MessageHandler<M, S> = onMessage<any, S>({
+    llmChunk: (state, msg, ctx: ActorContext<M>) => {
+      const chunk = msg as Extract<LlmProviderReply, { type: 'llmChunk' }>
+      const turn = state.loop.turn
+      if (chunk.requestId !== turn.requestId) return { state }
+      const nextTurn: LoopTurn = { ...turn, pending: turn.pending + chunk.text }
+      let nextState = { ...state, loop: { ...state.loop, turn: nextTurn } } as S
+      if (hooks.onStream) {
+        const r = hooks.onStream(nextState, { kind: 'text', text: chunk.text }, ctx)
+        nextState = r.state
       }
+      emitUi(turn.userId, { type: 'chunk', text: chunk.text }, ctx)
+      return { state: nextState }
+    },
 
-      case 'llmReasoningChunk': {
-        const chunk = m as Extract<LlmProviderReply, { type: 'llmReasoningChunk' }>
-        if (chunk.requestId !== turn.requestId) return { state }
-        if (!hooks.onStream) {
-          emitUi(turn.userId, { type: 'reasoningChunk', text: chunk.text }, ctx)
-          return { state }
-        }
-        const r = hooks.onStream(state, { kind: 'reasoning', text: chunk.text }, ctx)
+    llmReasoningChunk: (state, msg, ctx: ActorContext<M>) => {
+      const chunk = msg as Extract<LlmProviderReply, { type: 'llmReasoningChunk' }>
+      const turn = state.loop.turn
+      if (chunk.requestId !== turn.requestId) return { state }
+      if (!hooks.onStream) {
         emitUi(turn.userId, { type: 'reasoningChunk', text: chunk.text }, ctx)
-        return { state: r.state }
+        return { state }
+      }
+      const r = hooks.onStream(state, { kind: 'reasoning', text: chunk.text }, ctx)
+      emitUi(turn.userId, { type: 'reasoningChunk', text: chunk.text }, ctx)
+      return { state: r.state }
+    },
+
+    llmToolCalls: (state, msg, ctx: ActorContext<M>) => {
+      const tc = msg as Extract<LlmProviderReply, { type: 'llmToolCalls' }>
+      const turn = state.loop.turn
+      if (tc.requestId !== turn.requestId) return { state }
+
+      turn.llmSpan?.done({ toolCalls: tc.calls.map(c => c.name) })
+      ctx.log.info(`${log}: tool calls`, { tools: tc.calls.map(c => c.name) })
+
+      const accumulatedUsage = addUsage(turn.pendingUsage, tc.usage)
+      emitUi(turn.userId, { type: 'tooling', tools: tc.calls.map(c => c.name) }, ctx)
+
+      const tools = resolveTools(state)
+      const knownCalls: typeof tc.calls = []
+      const skippedUnknownCalls: typeof tc.calls = []
+      for (const call of tc.calls) {
+        if (tools[call.name]) {
+          knownCalls.push(call)
+          continue
+        }
+        ctx.log.warn(`${log}: unknown tool (skipped)`, { tool: call.name })
+        skippedUnknownCalls.push(call)
       }
 
-      case 'llmToolCalls': {
-        const tc = m as Extract<LlmProviderReply, { type: 'llmToolCalls' }>
-        if (tc.requestId !== turn.requestId) return { state }
-
-        turn.llmSpan?.done({ toolCalls: tc.calls.map(c => c.name) })
-        ctx.log.info(`${log}: tool calls`, { tools: tc.calls.map(c => c.name) })
-
-        const accumulatedUsage = addUsage(turn.pendingUsage, tc.usage)
-        emitUi(turn.userId, { type: 'tooling', tools: tc.calls.map(c => c.name) }, ctx)
-
-        const tools = resolveTools(state)
-        const knownCalls: typeof tc.calls = []
-        const skippedUnknownCalls: typeof tc.calls = []
-        for (const call of tc.calls) {
-          if (tools[call.name]) {
-            knownCalls.push(call)
-            continue
-          }
-          ctx.log.warn(`${log}: unknown tool (skipped)`, { tool: call.name })
-          skippedUnknownCalls.push(call)
+      const spans = new Map<string, SpanHandle>()
+      for (const call of knownCalls) {
+        if (turn.requestSpan) {
+          spans.set(call.id, ctx.trace.child(
+            turn.requestSpan.traceId,
+            turn.requestSpan.spanId,
+            'tool-invoke',
+            { toolName: call.name, arguments: call.arguments },
+          ))
         }
+      }
 
-        const spans = new Map<string, SpanHandle>()
-        for (const call of knownCalls) {
-          if (turn.requestSpan) {
-            spans.set(call.id, ctx.trace.child(
-              turn.requestSpan.traceId,
-              turn.requestSpan.spanId,
-              'tool-invoke',
-              { toolName: call.name, arguments: call.arguments },
-            ))
-          }
-        }
+      const batch: LoopPendingBatch = {
+        pending: new Set([...knownCalls.map(c => c.id), ...skippedUnknownCalls.map(c => c.id)]),
+        results: new Map(),
+        spans,
+        calls: tc.calls,
+      }
 
-        const batch: LoopPendingBatch = {
-          pending: new Set([...knownCalls.map(c => c.id), ...skippedUnknownCalls.map(c => c.id)]),
-          results: new Map(),
-          spans,
-          calls: tc.calls,
-        }
+      const userId = turn.userId
 
-        const userId = turn.userId
-
-        for (const call of knownCalls) {
-          const entry = tools[call.name]!
-          const toolSpan = spans.get(call.id)
-	          ctx.pipeToSelf(
-	            invokeTool(ctx, entry.ref,
-	              { toolName: call.name, arguments: call.arguments, userId },
-	              {
-	                headers: toolSpan ? ctx.trace.injectHeaders(toolSpan) : undefined,
-	                jobMetadata: hooks.toolInvocation?.jobMetadata?.(call, turn),
-	              },
-	            ),
-            (reply) => ({
-              type: '_toolResult',
-              toolName: call.name,
-              toolCallId: call.id,
-              reply,
-            } as unknown as M),
-            (error) => ({
-              type: '_toolResult',
-              toolName: call.name,
-              toolCallId: call.id,
-              reply: { type: 'toolError', error: String(error) },
-            } as unknown as M),
-          )
-        }
-
-        for (const call of skippedUnknownCalls) {
-          const synthetic: M = {
+      for (const call of knownCalls) {
+        const entry = tools[call.name]!
+        const toolSpan = spans.get(call.id)
+        ctx.pipeToSelf(
+          invokeTool(ctx, entry.ref,
+            { toolName: call.name, arguments: call.arguments, userId },
+            {
+              headers: toolSpan ? ctx.trace.injectHeaders(toolSpan) : undefined,
+              jobMetadata: hooks.toolInvocation?.jobMetadata?.(call, turn),
+            },
+          ),
+          (reply) => ({
             type: '_toolResult',
             toolName: call.name,
             toolCallId: call.id,
-            reply: { type: 'toolError', error: `Tool not available: ${call.name}` },
-          } as unknown as M
-          ctx.self.send(synthetic)
-        }
-
-        const nextState = {
-          ...state,
-          loop: {
-            phase: 'toolLoop' as const,
-            turn: { ...turn, requestId: null, llmSpan: null, pendingBatch: batch, pendingUsage: accumulatedUsage },
-          },
-        } as S
-
-        return { state: nextState, become: toolLoop }
+            reply,
+          } as unknown as M),
+          (error) => ({
+            type: '_toolResult',
+            toolName: call.name,
+            toolCallId: call.id,
+            reply: { type: 'toolError', error: String(error) },
+          } as unknown as M),
+        )
       }
 
-      case 'llmDone': {
-        const done = m as Extract<LlmProviderReply, { type: 'llmDone' }>
-        if (done.requestId !== turn.requestId) return { state }
-        turn.llmSpan?.done()
-        turn.requestSpan?.done()
-        ctx.log.info(`${log}: done`, { chars: turn.pending.length })
-        const usage = addUsage(turn.pendingUsage, done.usage)
-        const nextState = { ...state, loop: { ...state.loop, turn: { ...turn, pendingUsage: usage } } } as S
-        const r = hooks.onComplete(nextState, turn.pending, usage, ctx)
-        emitUi(turn.userId, { type: 'done' }, ctx)
-        return materialize(r.state)
+      for (const call of skippedUnknownCalls) {
+        const synthetic: M = {
+          type: '_toolResult',
+          toolName: call.name,
+          toolCallId: call.id,
+          reply: { type: 'toolError', error: `Tool not available: ${call.name}` },
+        } as unknown as M
+        ctx.self.send(synthetic)
       }
 
-      case 'llmError': {
-        const err = m as Extract<LlmProviderReply, { type: 'llmError' }>
-        if (err.requestId !== turn.requestId) return { state }
-        turn.llmSpan?.error(err.error)
-        turn.requestSpan?.error(err.error)
-        ctx.log.error(`${log}: LLM error`, { error: String(err.error) })
-        const r = hooks.onError(state, { kind: 'llm', error: err.error }, ctx)
-        emitUi(turn.userId, { type: 'error', text: hooks.errorMessages?.llm ?? 'Something went wrong. Please try again.' }, ctx)
-        return materialize(r.state)
-      }
+      const nextState = {
+        ...state,
+        loop: {
+          phase: 'toolLoop' as const,
+          turn: { ...turn, requestId: null, llmSpan: null, pendingBatch: batch, pendingUsage: accumulatedUsage },
+        },
+      } as S
 
-      default:
-        return { state }
-    }
-  }
+      return { state: nextState, become: toolLoop }
+    },
+
+    llmDone: (state, msg, ctx: ActorContext<M>) => {
+      const done = msg as Extract<LlmProviderReply, { type: 'llmDone' }>
+      const turn = state.loop.turn
+      if (done.requestId !== turn.requestId) return { state }
+      turn.llmSpan?.done()
+      turn.requestSpan?.done()
+      ctx.log.info(`${log}: done`, { chars: turn.pending.length })
+      const usage = addUsage(turn.pendingUsage, done.usage)
+      const nextState = { ...state, loop: { ...state.loop, turn: { ...turn, pendingUsage: usage } } } as S
+      const r = hooks.onComplete(nextState, turn.pending, usage, ctx)
+      emitUi(turn.userId, { type: 'done' }, ctx)
+      return materialize(r.state)
+    },
+
+    llmError: (state, msg, ctx: ActorContext<M>) => {
+      const err = msg as Extract<LlmProviderReply, { type: 'llmError' }>
+      const turn = state.loop.turn
+      if (err.requestId !== turn.requestId) return { state }
+      turn.llmSpan?.error(err.error)
+      turn.requestSpan?.error(err.error)
+      ctx.log.error(`${log}: LLM error`, { error: String(err.error) })
+      const r = hooks.onError(state, { kind: 'llm', error: err.error }, ctx)
+      emitUi(turn.userId, { type: 'error', text: hooks.errorMessages?.llm ?? 'Something went wrong. Please try again.' }, ctx)
+      return materialize(r.state)
+    },
+  })
 
   // ── Tool loop handler ────────────────────────────────────────────────────
-  const toolLoop: MessageHandler<M, S> = (state, msg, ctx) => {
-    const m = msg as LoopBaseMsg | { type: string }
-    const turn = state.loop.turn
+  const toolLoop: MessageHandler<M, S> = onMessage<any, S>({
+    _toolResult: (state, msg, ctx: ActorContext<M>) => {
+      const m = msg as LoopToolResultMsg
+      const turn = state.loop.turn
+      const batch = turn.pendingBatch!
+      const span = batch.spans.get(m.toolCallId)
+      if (m.reply.type === 'toolPending') {
+        const pendingText = m.reply.placeholderText ?? `Background job started for ${m.toolName} (jobId=${m.reply.jobId}).`
+        span?.done({ jobId: m.reply.jobId, pending: true })
+        turn.requestSpan?.done({ pendingJobId: m.reply.jobId, toolName: m.toolName })
+        ctx.log.info(`${log}: tool pending`, { tool: m.toolName, jobId: m.reply.jobId })
+        emitUi(turn.userId, { type: 'chunk', text: pendingText }, ctx)
+        emitUi(turn.userId, { type: 'done' }, ctx)
+        const r = hooks.onToolPending
+          ? hooks.onToolPending(state, {
+            toolName: m.toolName,
+            toolCallId: m.toolCallId,
+            jobId: m.reply.jobId,
+            placeholderText: m.reply.placeholderText,
+          }, ctx)
+          : { state }
+        return materialize(r.state)
+      }
+      if (m.reply.type === 'toolResult') {
+        span?.done()
+        ctx.log.info(`${log}: tool result`, { tool: m.toolName, ok: true })
+      } else {
+        span?.error(m.reply.error)
+        ctx.log.warn(`${log}: tool error`, { tool: m.toolName, error: m.reply.error })
+      }
+      const content = m.reply.type === 'toolResult' ? formatToolResultContent(m.reply.result) : `Tool error: ${m.reply.error}`
+      batch.results.set(m.toolCallId, { toolCallId: m.toolCallId, toolName: m.toolName, content })
+      batch.pending.delete(m.toolCallId)
 
-    switch (m.type) {
-      case '_toolResult': {
-	        const msg = m as LoopToolResultMsg
-	        const batch = turn.pendingBatch!
-	        const span = batch.spans.get(msg.toolCallId)
-	        if (msg.reply.type === 'toolPending') {
-	          const pendingText = msg.reply.placeholderText ?? `Background job started for ${msg.toolName} (jobId=${msg.reply.jobId}).`
-	          span?.done({ jobId: msg.reply.jobId, pending: true })
-	          turn.requestSpan?.done({ pendingJobId: msg.reply.jobId, toolName: msg.toolName })
-	          ctx.log.info(`${log}: tool pending`, { tool: msg.toolName, jobId: msg.reply.jobId })
-	          emitUi(turn.userId, { type: 'chunk', text: pendingText }, ctx)
-	          emitUi(turn.userId, { type: 'done' }, ctx)
-	          const r = hooks.onToolPending
-	            ? hooks.onToolPending(state, {
-	              toolName: msg.toolName,
-	              toolCallId: msg.toolCallId,
-	              jobId: msg.reply.jobId,
-	              placeholderText: msg.reply.placeholderText,
-	            }, ctx)
-	            : { state }
-	          return materialize(r.state)
-	        }
-	        if (msg.reply.type === 'toolResult') {
-	          span?.done()
-	          ctx.log.info(`${log}: tool result`, { tool: msg.toolName, ok: true })
-        } else {
-          span?.error(msg.reply.error)
-          ctx.log.warn(`${log}: tool error`, { tool: msg.toolName, error: msg.reply.error })
-        }
-        const content = msg.reply.type === 'toolResult' ? formatToolResultContent(msg.reply.result) : `Tool error: ${msg.reply.error}`
-        batch.results.set(msg.toolCallId, { toolCallId: msg.toolCallId, toolName: msg.toolName, content })
-        batch.pending.delete(msg.toolCallId)
-
-        let withResultState = state
-        if (hooks.onToolResult) {
-          const r = hooks.onToolResult(state, { toolName: msg.toolName, toolCallId: msg.toolCallId, reply: msg.reply }, ctx)
-          withResultState = r.state
-        }
-
-        // Auto-emit sources/attachments
-        if (msg.reply.type === 'toolResult') {
-          if (msg.reply.result.sources?.length) {
-            emitUi(turn.userId, { type: 'sources', sources: msg.reply.result.sources }, ctx)
-          }
-          if (msg.reply.result.attachments?.length) {
-            emitUi(turn.userId, { type: 'attachments', attachments: msg.reply.result.attachments }, ctx)
-          }
-        }
-
-        if (batch.pending.size > 0) {
-          const nextState = {
-            ...withResultState,
-            loop: {
-              ...withResultState.loop,
-              turn: { ...turn, pendingBatch: { ...batch } },
-            },
-          } as S
-          return { state: nextState }
-        }
-
-        const toolResultMsgs: ApiMessage[] = Array.from(batch.results.values()).map(r => ({
-          role: 'tool', content: r.content, tool_call_id: r.toolCallId,
-        }))
-        const assistantToolCalls: ToolCall[] = batch.calls.map(c => ({
-          id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments },
-        }))
-        const batchHistory: ApiMessage[] = [
-          { role: 'assistant', content: null, tool_calls: assistantToolCalls },
-          ...toolResultMsgs,
-        ]
-
-        let withBatchState = withResultState
-        if (hooks.onBatchHistoryReady) {
-          const r = hooks.onBatchHistoryReady(withResultState, batchHistory, ctx)
-          withBatchState = r.state
-        }
-
-        const nextLoopCount = turn.toolLoopCount + 1
-        const maxToolLoops = resolveMaxToolLoops(withBatchState)
-        if (nextLoopCount >= maxToolLoops) {
-          ctx.log.warn(`${log}: tool loop limit reached`, { limit: maxToolLoops })
-          turn.requestSpan?.error('Tool loop limit reached')
-          const r = hooks.onError(withBatchState, { kind: 'loopLimit', limit: maxToolLoops, finalText: turn.pending }, ctx)
-          emitUi(turn.userId, { type: 'error', text: hooks.errorMessages?.loopLimit ?? 'Tool loop limit reached. Please try again.' }, ctx)
-          return materialize(r.state)
-        }
-
-        const nextMessages: ApiMessage[] = [
-          ...(turn.turnMessages ?? []),
-          ...batchHistory,
-        ]
-
-        const requestId = crypto.randomUUID()
-        const nextTurn: LoopTurn = {
-          ...turn,
-          requestId,
-          turnMessages: nextMessages,
-          pending: '',
-          pendingBatch: null,
-          toolLoopCount: nextLoopCount,
-          llmSpan: null,
-        }
-        const llmSpan = sendStream(withBatchState, requestId, nextMessages, turn.requestSpan, ctx)
-        const nextState = {
-          ...withBatchState,
-          loop: {
-            phase: 'awaitingLlm' as const,
-            turn: { ...nextTurn, llmSpan },
-          },
-        } as S
-
-        return { state: nextState, become: awaitingLlm }
+      let withResultState = state
+      if (hooks.onToolResult) {
+        const r = hooks.onToolResult(state, { toolName: m.toolName, toolCallId: m.toolCallId, reply: m.reply }, ctx)
+        withResultState = r.state
       }
 
-      default:
-        return { state }
+      // Auto-emit sources/attachments
+      if (m.reply.type === 'toolResult') {
+        if (m.reply.result.sources?.length) {
+          emitUi(turn.userId, { type: 'sources', sources: m.reply.result.sources }, ctx)
+        }
+        if (m.reply.result.attachments?.length) {
+          emitUi(turn.userId, { type: 'attachments', attachments: m.reply.result.attachments }, ctx)
+        }
+      }
+
+      if (batch.pending.size > 0) {
+        const nextState = {
+          ...withResultState,
+          loop: {
+            ...withResultState.loop,
+            turn: { ...turn, pendingBatch: { ...batch } },
+          },
+        } as S
+        return { state: nextState }
+      }
+
+      const toolResultMsgs: ApiMessage[] = Array.from(batch.results.values()).map(r => ({
+        role: 'tool', content: r.content, tool_call_id: r.toolCallId,
+      }))
+      const assistantToolCalls: ToolCall[] = batch.calls.map(c => ({
+        id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments },
+      }))
+      const batchHistory: ApiMessage[] = [
+        { role: 'assistant', content: null, tool_calls: assistantToolCalls },
+        ...toolResultMsgs,
+      ]
+
+      let withBatchState = withResultState
+      if (hooks.onBatchHistoryReady) {
+        const r = hooks.onBatchHistoryReady(withResultState, batchHistory, ctx)
+        withBatchState = r.state
+      }
+
+      const nextLoopCount = turn.toolLoopCount + 1
+      const maxToolLoops = resolveMaxToolLoops(withBatchState)
+      if (nextLoopCount >= maxToolLoops) {
+        ctx.log.warn(`${log}: tool loop limit reached`, { limit: maxToolLoops })
+        turn.requestSpan?.error('Tool loop limit reached')
+        const r = hooks.onError(withBatchState, { kind: 'loopLimit', limit: maxToolLoops, finalText: turn.pending }, ctx)
+        emitUi(turn.userId, { type: 'error', text: hooks.errorMessages?.loopLimit ?? 'Tool loop limit reached. Please try again.' }, ctx)
+        return materialize(r.state)
+      }
+
+      const nextMessages: ApiMessage[] = [
+        ...(turn.turnMessages ?? []),
+        ...batchHistory,
+      ]
+
+      const requestId = crypto.randomUUID()
+      const nextTurn: LoopTurn = {
+        ...turn,
+        requestId,
+        turnMessages: nextMessages,
+        pending: '',
+        pendingBatch: null,
+        toolLoopCount: nextLoopCount,
+        llmSpan: null,
+      }
+      const llmSpan = sendStream(withBatchState, requestId, nextMessages, turn.requestSpan, ctx)
+      const nextState = {
+        ...withBatchState,
+        loop: {
+          phase: 'awaitingLlm' as const,
+          turn: { ...nextTurn, llmSpan },
+        },
+      } as S
+
+      return { state: nextState, become: awaitingLlm }
     }
-  }
+  })
 
   return {
     idle,
@@ -574,7 +565,7 @@ const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, 
   }
 }
 
-export const agentLoop = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, M>): AgentLoopHandle<M, S> => createLoopEngine(hooks)
+export const agentLoop = <S extends WithLoopState, M extends { type: string }>(hooks: AgentLoopHooks<S, M>): AgentLoopHandle<M, S> => createLoopEngine(hooks)
 
 // ─── Reusable interceptors ──────────────────────────────────────────────────
 
