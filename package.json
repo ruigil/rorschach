@@ -15,10 +15,10 @@
   "scripts": {
     "clean": "rm -rf src/frontend/static/js",
     "build:shared": "bun build src/frontend/webkit/index.ts --outfile src/frontend/static/js/webkit/index.js --target browser --format esm",
-    "build:frontend": "bun build src/frontend/rorschach.ts --outdir src/frontend/static/js --target browser --format esm --entry-naming 'rorschach.js' --external lit --external 'lit/*' --external '@rorschach/webkit' --minify",
-    "build:plugins": "for dir in src/plugins/*/ui; do [ -d \"$dir\" ] && name=$(basename $(dirname \"$dir\")) && bun build \"$dir/index.ts\" --outfile \"src/frontend/static/js/plugins/$name.js\" --target browser --format esm --external lit --external 'lit/*' --external '@rorschach/webkit' --minify; done",
+    "build:frontend": "bun build src/frontend/rorschach.ts --outdir src/frontend/static/js --target browser --format esm --entry-naming 'rorschach.js' --external '@rorschach/webkit' --minify",
+    "build:plugins": "for dir in src/plugins/*/ui; do [ -d \"$dir\" ] && name=$(basename $(dirname \"$dir\")) && bun build \"$dir/index.ts\" --outfile \"src/frontend/static/js/plugins/$name.js\" --target browser --format esm --external '@rorschach/webkit' --minify; done",
     "build": "bun run clean && bun run build:shared && bun run build:frontend && bun run build:plugins",
-    "dev:frontend": "bun build src/frontend/rorschach.ts --outdir src/frontend/static/js --target browser --format esm --entry-naming 'rorschach.js' --external lit --external 'lit/*' --external '@rorschach/webkit' --watch",
+    "dev:frontend": "bun build src/frontend/rorschach.ts --outdir src/frontend/static/js --target browser --format esm --entry-naming 'rorschach.js' --external '@rorschach/webkit' --watch",
     "dev:backend": "bun run --watch src/index.ts",
     "dev": "bun run build:shared && (bun run dev:frontend & bun run dev:backend)",
     "rorschach": "bun run build && bun run src/index.ts",
