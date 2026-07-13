@@ -4,7 +4,7 @@ import { AgentRegistrationTopic } from '../../types/agents.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { ToolRegistrationTopic, type ToolCollection, type ToolMsg } from '../../types/tools.ts'
 import { ArtifactTools, deleteDocTool, writeDocPageTool } from './artifact-tools.ts'
-import { CodingAgentFactory } from './coding-agent.ts'
+import { CodingAgentDescriptor } from './coding-agent.ts'
 import { DocsAgent, showDocsTool, updateDocsTool } from './docs-agent.ts'
 import { ProjectShell, codingBashTool, codingReadTool } from './project-shell.ts'
 import { buildCodingRoutes, codingSchemas } from './routes.ts'
@@ -119,7 +119,7 @@ export default createPluginFactory<CodingConfig>({
   },
   agents: {
     coding: {
-      factory: CodingAgentFactory,
+      factory: CodingAgentDescriptor,
       options: (cfg, deps) => {
         const merged = mergeConfig(cfg)
         return {

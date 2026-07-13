@@ -1,23 +1,12 @@
-import { defineAgent, getTodayDateString } from '../../system/index.ts'
-import type { ActorRef, LoopState } from '../../system/index.ts'
 import type { ToolCollection } from '../../types/tools.ts'
-import type { AgentModelOptions } from '../../types/agents.ts'
-import type { ContextView } from '../../system/index.ts'
-import type { WorkflowsAgentMsg } from './types.ts'
-
-type WorkflowsAgentState = {
-  loop: LoopState
-  contextView: ContextView
-  tools: ToolCollection
-}
+import type { AgentDescriptor, AgentModelOptions } from '../../types/agents.ts'
 
 export type WorkflowsAgentOptions = AgentModelOptions & {
   tools: ToolCollection
 }
 
-
-const buildSystemPrompt = (): string =>
-  `You are a workflow assistant. Today is ${getTodayDateString('local')}.
+export const WorkflowsAgentDescriptor = (options: WorkflowsAgentOptions): AgentDescriptor => {
+  const systemPrompt = `You are a workflow assistant.
 
 You help the user design, save, inspect, and run workflows.
 
@@ -36,10 +25,16 @@ Workflow rules:
 
 After save_workflow or update_workflow, briefly acknowledge the save and stop.`
 
-export const WorkflowsAgentFactory = defineAgent<WorkflowsAgentOptions, WorkflowsAgentMsg, WorkflowsAgentState>({
-  role: 'reasoning',
-  mode: 'workflows',
-  displayName: 'Plans & Workflows',
-  shortDesc: 'Design plans, save, inspect, and run workflows',
-  buildSystemPrompt,
-})
+  return {
+    mode: 'workflows',
+    role: 'reasoning',
+    displayName: 'Plans & Workflows',
+    shortDesc: 'Design plans, save, inspect, and run workflows',
+    systemPrompt,
+    internalTools: Object.values(options.tools || {}),
+    toolFilter: options.toolFilter,
+    capabilities: { userVisible: true },
+    model: options.model,
+    maxToolLoops: options.maxToolLoops ?? 25,
+  }
+}

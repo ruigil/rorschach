@@ -5,7 +5,7 @@ import { type UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import { AgentRegistrationTopic } from '../../types/agents.ts'
 import type { ToolMsg, ToolCollection } from '../../types/tools.ts'
 import { WorkflowRunner } from './workflow-runner.ts'
-import { WorkflowsAgentFactory } from './workflows-agent.ts'
+import { WorkflowsAgentDescriptor } from './workflows-agent.ts'
 import { WorkflowToolsActor, workflowControlTools, readWorkflowArtifactTool, writeWorkflowArtifactTool } from './workflow-tools.ts'
 import { buildWorkflowsRoutes, workflowsSchemas } from './routes.ts'
 import type { WorkflowsConfig, WorkflowRunnerMsg } from './types.ts'
@@ -71,7 +71,7 @@ export default createPluginFactory<WorkflowsConfig>({
   },
   agents: {
     workflows: {
-      factory: WorkflowsAgentFactory,
+      factory: WorkflowsAgentDescriptor,
       options: (cfg, deps) => ({
         model: cfg.agent.model,
         maxToolLoops: cfg.agent.maxToolLoops,

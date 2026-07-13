@@ -1,5 +1,5 @@
 import type { ActorDef, ActorRef } from '../../system/index.ts'
-import { onLifecycle, onMessage } from '../../system/index.ts'
+import { onLifecycle, onMessage, DynamicAgentActor } from '../../system/index.ts'
 import {
   UserPresenceTopic,
   InboundMessageTopic,
@@ -147,7 +147,7 @@ const ensureAgent = (
     userId,
     contextStoreRef: session.contextStoreRef,
   }
-  const ref = ctx.spawn(`${mode}-${userId}`, descriptor.factory(opts)) as ActorRef<any>
+  const ref = ctx.spawn(`${mode}-${userId}`, DynamicAgentActor(descriptor, opts)) as ActorRef<any>
 
   return {
     state: updateSession(state, userId, {
@@ -250,8 +250,12 @@ export const SessionManager = (
         }
 
         for (const [userId, session] of Object.entries(next.sessions)) {
-          if (session.activeMode !== msg.descriptor.mode || session.agentRefs[msg.descriptor.mode]) continue
-          next = ensureAgent(next, userId, msg.descriptor.mode, ctx).state
+          const existingRef = session.agentRefs[msg.descriptor.mode]
+          if (existingRef) {
+            existingRef.send({ type: '_updateDescriptor', descriptor: msg.descriptor })
+          } else if (session.activeMode === msg.descriptor.mode) {
+            next = ensureAgent(next, userId, msg.descriptor.mode, ctx).state
+          }
         }
 
         return { state: next }

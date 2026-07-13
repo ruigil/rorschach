@@ -124,8 +124,8 @@ export type AgentLoopHooks<S extends WithLoopState, M> = {
   logPrefix?: string
 
   tools: ToolCollection | ((s: S) => ToolCollection)
-  model: string
-  maxToolLoops: number
+  model: string | ((s: S) => string)
+  maxToolLoops: number | ((s: S) => number)
 
   llmRef: (s: S) => ActorRef<LlmProviderMsg> | null
 
@@ -175,7 +175,13 @@ export type AgentLoopHandle<M , S extends WithLoopState> = {
 
 const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, M>) => {
   const log = hooks.logPrefix ?? hooks.spanName
-  const { tools: toolsCfg, model, maxToolLoops } = hooks
+  const { tools: toolsCfg } = hooks
+
+  const resolveModel = (s: S): string =>
+    typeof hooks.model === 'function' ? hooks.model(s) : hooks.model
+
+  const resolveMaxToolLoops = (s: S): number =>
+    typeof hooks.maxToolLoops === 'function' ? hooks.maxToolLoops(s) : hooks.maxToolLoops
 
   const resolveTools = (s: S): ToolCollection =>
     typeof toolsCfg === 'function' ? toolsCfg(s) : toolsCfg
@@ -209,6 +215,7 @@ const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, 
     requestSpan: SpanHandle | null,
     ctx: ActorContext<M>,
   ): SpanHandle | null => {
+    const model = resolveModel(state)
     const llmSpan = requestSpan ? ctx.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model }) : null
     const schemas = resolveSchemas(state)
     const llmRef = hooks.llmRef(state)
@@ -519,6 +526,7 @@ const createLoopEngine = <S extends WithLoopState, M >(hooks: AgentLoopHooks<S, 
         }
 
         const nextLoopCount = turn.toolLoopCount + 1
+        const maxToolLoops = resolveMaxToolLoops(withBatchState)
         if (nextLoopCount >= maxToolLoops) {
           ctx.log.warn(`${log}: tool loop limit reached`, { limit: maxToolLoops })
           turn.requestSpan?.error('Tool loop limit reached')

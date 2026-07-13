@@ -1,10 +1,10 @@
 import { describe, expect, test, afterAll } from 'bun:test'
 import { mkdir, rm } from 'node:fs/promises'
-import { AgentSystem } from '../system/index.ts'
+import { AgentSystem, DynamicAgentActor } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../types/llm.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
-import { WorkflowsAgentFactory } from '../plugins/workflows/workflows-agent.ts'
+import { WorkflowsAgentDescriptor } from '../plugins/workflows/workflows-agent.ts'
 import type { WorkflowRunnerMsg } from '../plugins/workflows/types.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 
@@ -60,11 +60,14 @@ describe('session agents use shared context snapshots', () => {
     })
     await tick()
 
-    const workflows = system.spawn('workflows', WorkflowsAgentFactory({
-      model: 'test-model',
-      maxToolLoops: 3,
-      tools: {},
-    }).factory({ userId: 'u1', contextStoreRef }))
+    const workflows = system.spawn('workflows', DynamicAgentActor(
+      WorkflowsAgentDescriptor({
+        model: 'test-model',
+        maxToolLoops: 3,
+        tools: {},
+      }),
+      { userId: 'u1', contextStoreRef }
+    ))
     await tick()
 
     workflows.send({ type: 'userMessage', text: 'make a workflow' })

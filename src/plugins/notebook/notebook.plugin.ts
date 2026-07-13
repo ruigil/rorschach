@@ -29,7 +29,7 @@ import { Journal, journalWriteTool, journalReadTool, journalSearchTool } from '.
 import { Tracker, trackerLogTool, trackerStatsTool, trackerDefineHabitTool, trackerListHabitsTool } from './tools/tracker.ts'
 import { Todos, todosCreateTool, todosCompleteTool, todosListTool, todosDeleteTool, todosUpdateTool } from './tools/todos.ts'
 import { Search, notebookSearchTool } from './tools/search.ts'
-import { CoachAgentFactory } from './coach-agent.ts'
+import { CoachAgentDescriptor } from './coach-agent.ts'
 import { NotebookManager } from './notebook-manager.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
 
@@ -113,7 +113,7 @@ export default createPluginFactory<NotebookConfig>({
   },
   agents: {
     coach: {
-      factory: CoachAgentFactory,
+      factory: CoachAgentDescriptor,
       options: (cfg, deps) => ({
         model: cfg.agent?.model ?? 'google/gemini-3.5-flash',
         maxToolLoops: cfg.agent?.maxToolLoops ?? 15,

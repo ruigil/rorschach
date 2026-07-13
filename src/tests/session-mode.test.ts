@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
-import type { LlmProviderMsg } from '../types/llm.ts'
+import { LlmProviderTopic, type LlmProviderMsg } from '../types/llm.ts'
 import { UserPresenceTopic, InboundMessageTopic, OutboundUserMessageTopic } from '../types/events.ts'
 import { AgentRegistrationTopic, type AgentDescriptor, type AgentFactoryOpts } from '../types/agents.ts'
 import { SwitchAgentTopic, SessionLifecycleTopic } from '../plugins/cognitive/types.ts'
@@ -13,12 +13,13 @@ const tick = (ms = 50) => Bun.sleep(ms)
 
 const NullLlm = (): ActorDef<LlmProviderMsg, null> => ({
   initialState: null,
-  handler: (state) => ({ state }),
-})
-
-const NullAgent = (): ActorDef<any, null> => ({
-  initialState: null,
-  handler: (state) => ({ state }),
+  handler: (state, msg) => {
+    if (msg && typeof msg === 'object' && msg.type === 'stream') {
+      msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'agent-ready' })
+      msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+    }
+    return { state }
+  },
 })
 
 const NullTool = (): ActorDef<ToolMsg, null> => ({
@@ -26,30 +27,24 @@ const NullTool = (): ActorDef<ToolMsg, null> => ({
   handler: (state) => ({ state }),
 })
 
-const EchoAgent = (userId: string): ActorDef<any, null> => ({
-  initialState: null,
-  handler: (state, msg, ctx) => {
-    if (msg.type === 'userMessage') {
-      ctx.publish(OutboundUserMessageTopic, { userId, text: 'agent-ready' })
-    }
-    return { state }
-  },
-})
-
 const descriptor = (mode: string, displayName: string): AgentDescriptor => ({
   mode,
   displayName,
   shortDesc: `${displayName} mode`,
-  factory: () => NullAgent(),
+  systemPrompt: '',
+  internalTools: [],
   capabilities: { userVisible: true },
+  model: 'test-model',
 })
 
 const echoDescriptor = (mode: string, displayName: string): AgentDescriptor => ({
   mode,
   displayName,
   shortDesc: `${displayName} mode`,
-  factory: (opts: AgentFactoryOpts) => EchoAgent(opts.userId),
+  systemPrompt: '',
+  internalTools: [],
   capabilities: { userVisible: true },
+  model: 'test-model',
 })
 
 const parseModeFrames = (frames: string[]) =>
@@ -67,6 +62,7 @@ describe('session manager mode UI events', () => {
   test('sends current mode on connect and broadcasts switches to user clients', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const llmRef = system.spawn('null-llm', NullLlm())
+    system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
     system.spawn('session-manager', SessionManager({
       llmRef,
       defaultMode:        'chatbot',
@@ -117,6 +113,7 @@ describe('session manager mode UI events', () => {
   test('rebuilds active interfaces when session manager restarts before agent registration', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const llmRef = system.spawn('null-llm', NullLlm())
+    system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
     const userFrames: Record<string, string[]> = { u1: [] }
     system.subscribe(OutboundUserMessageTopic, (event) => {
       const e = event as { userId: string; text: string }
@@ -145,9 +142,9 @@ describe('session manager mode UI events', () => {
       traceId:      '00000000000000000000000000000001',
       parentSpanId: '0000000000000001',
     })
-    await tick()
+    await tick(200)
 
-    expect(userFrames.u1).toContain('agent-ready')
+    expect(userFrames.u1.some(f => f.includes('agent-ready'))).toBe(true)
 
     await system.shutdown()
   })
@@ -155,6 +152,7 @@ describe('session manager mode UI events', () => {
   test('does not destroy session on disconnect if active jobs are running, and destroys it once jobs complete', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const llmRef = system.spawn('null-llm', NullLlm())
+    system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
     const toolRef = system.spawn('null-tool', NullTool())
     system.spawn('session-manager', SessionManager({
       llmRef,

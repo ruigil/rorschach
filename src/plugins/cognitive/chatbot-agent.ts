@@ -1,8 +1,6 @@
-import { defineAgent, getTodayDateString } from '../../system/index.ts'
-import type { AgentModelOptions } from '../../types/agents.ts'
+import type { AgentDescriptor, AgentModelOptions } from '../../types/agents.ts'
 import type { ToolCollection } from '../../types/tools.ts'
 import type { LoopState, ContextView } from '../../system/index.ts'
-import type { ChatbotMsg } from './types.ts'
 
 export type ChatbotState = {
   loop:           LoopState
@@ -14,16 +12,18 @@ export type ChatbotAgentOptions = AgentModelOptions & {
   systemPrompt?: string
 }
 
-const buildSystemPrompt = (options: ChatbotAgentOptions): string => {
-  const todayDateNote = `Today's date is ${getTodayDateString('local')}.`
-  return [options.systemPrompt, todayDateNote].filter(Boolean).join('\n\n---\n\n')
+export const ChatbotAgentDescriptor = (options: ChatbotAgentOptions): AgentDescriptor => {
+  return {
+    mode:         'chatbot',
+    role:         'reasoning',
+    displayName:  'Chatbot',
+    shortDesc:    'General-purpose conversational assistant. Use this mode if you cannot find a tool in your set of specialized tools to handle the user\'s request.',
+    systemPrompt: options.systemPrompt || '',
+    internalTools: [],
+    toolFilter:   options.toolFilter,
+    capabilities: { userVisible: true },
+    model:        options.model,
+    maxToolLoops: options.maxToolLoops ?? 25,
+  }
 }
-
-export const ChatbotAgentFactory = defineAgent<ChatbotAgentOptions, ChatbotMsg, ChatbotState>({
-  role:          'reasoning',
-  mode:          'chatbot',
-  displayName:  'Chatbot',
-  shortDesc:    'General-purpose conversational assistant. Use this mode if you cannot find a tool in your set of specialized tools to handle the user\'s request.',
-  buildSystemPrompt,
-})
 

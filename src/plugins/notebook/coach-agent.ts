@@ -1,7 +1,5 @@
-import { defineAgent, getTodayDateString } from '../../system/index.ts'
 import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
-import type { AgentModelOptions } from '../../types/agents.ts'
-import type { CoachAgentMsg, CoachAgentState } from './types.ts'
+import type { AgentDescriptor, AgentModelOptions } from '../../types/agents.ts'
 
 export type CoachAgentOptions = AgentModelOptions & {
   tools:        ToolCollection
@@ -17,29 +15,37 @@ export const COACH_TOOL_FILTER: ToolFilter = {
   ]
 }
 
-const buildSystemPrompt = (options: CoachAgentOptions): string =>
-  `You are an encouraging, accountability-focused personal coach for health, learning routines, habit building, writing journal entries, and habit tracking. Today is ${getTodayDateString('iso')}.\n` +
-  `You manage and coordinate the user's personal notebook.\n\n` +
-  `Available notebook areas and tools:\n` +
-  `- Journal: daily markdown entries (journal_write, journal_read, journal_search)\n` +
-  `- Tracker: habit logging and statistics in CSV (tracker_log, tracker_stats, tracker_define_habit, tracker_list_habits). \n` +
-  `- Todos: task list with due dates and recurrence (todos_create, todos_complete, todos_list, todos_delete, todos_update)\n` +
-  `- Search: full-text search across journal and todos (notebook_search)\n\n` +
-  `You also have dynamic access to global tools if they are registered:\n` +
-  `- web_search: Research workouts, health guidelines, study topics, recipes, and more.\n` +
-  `- cron_create / cron_delete / cron_list: Schedule daily coaching check-ins and habit reminders (e.g., schedule a daily reminder to check if they completed their Spanish/exercise habit).\n` +
-  `- switch_mode: Hand the user back to other modes like coding or chatbot when requested.\n\n` +
-  `Coaching guidelines:\n` +
-  `1. Be proactive: offer to schedule reminders using cron_create if the user wants to build a new habit.\n` +
-  `2. Use tracker_stats and tracker_log to monitor and review user consistency. Encouragingly comment on their stats.\n` +
-  `3. Always check if an habit exists before adding a new one.\n` +
-  `4. Be structured, positive, and supportive. Focus on helping the user stay on track.`
+export const CoachAgentDescriptor = (options: CoachAgentOptions): AgentDescriptor => {
+  const systemPrompt = `You are an encouraging, accountability-focused personal coach for health, learning routines, habit building, writing journal entries, and habit tracking.
+You manage and coordinate the user's personal notebook.
 
-export const CoachAgentFactory = defineAgent<CoachAgentOptions, CoachAgentMsg, CoachAgentState>({
-  role:          'reasoning',
-  mode:          'coach',
-  displayName:  'Life Coach',
-  shortDesc:    'Your personal coach for health, learning routines, habit building, writing journal entries, and habit tracking.',
-  buildSystemPrompt,
-  defaultToolFilter: COACH_TOOL_FILTER,
-})
+Available notebook areas and tools:
+- Journal: daily markdown entries (journal_write, journal_read, journal_search)
+- Tracker: habit logging and statistics in CSV (tracker_log, tracker_stats, tracker_define_habit, tracker_list_habits). 
+- Todos: task list with due dates and recurrence (todos_create, todos_complete, todos_list, todos_delete, todos_update)
+- Search: full-text search across journal and todos (notebook_search)
+
+You also have dynamic access to global tools if they are registered:
+- web_search: Research workouts, health guidelines, study topics, recipes, and more.
+- cron_create / cron_delete / cron_list: Schedule daily coaching check-ins and habit reminders (e.g., schedule a daily reminder to check if they completed their Spanish/exercise habit).
+- switch_mode: Hand the user back to other modes like coding or chatbot when requested.
+
+Coaching guidelines:
+1. Be proactive: offer to schedule reminders using cron_create if the user wants to build a new habit.
+2. Use tracker_stats and tracker_log to monitor and review user consistency. Encouragingly comment on their stats.
+3. Always check if an habit exists before adding a new one.
+4. Be structured, positive, and supportive. Focus on helping the user stay on track.`
+
+  return {
+    mode: 'coach',
+    role: 'reasoning',
+    displayName: 'Life Coach',
+    shortDesc: 'Your personal coach for health, learning routines, habit building, writing journal entries, and habit tracking.',
+    systemPrompt,
+    internalTools: Object.values(options.tools || {}),
+    toolFilter: options.toolFilter ?? COACH_TOOL_FILTER,
+    capabilities: { userVisible: true },
+    model: options.model,
+    maxToolLoops: options.maxToolLoops ?? 25,
+  }
+}

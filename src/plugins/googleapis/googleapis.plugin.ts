@@ -7,7 +7,7 @@ import type { GoogleApisConfig, TokenStoreMsg, OAuthStateMsg } from './types.ts'
 import { TokenStore } from './token-store.ts'
 import { OAuthState } from './oauth-state.ts'
 import { buildGoogleOAuthRoutes, googleapisSchemas } from './routes.ts'
-import { GoogleAgentFactory } from './google-agent.ts'
+import { GoogleAgentDescriptor } from './google-agent.ts'
 
 import {
   Gmail,
@@ -114,7 +114,7 @@ export default createPluginFactory<GoogleApisConfig>({
   },
   agents: {
     google: {
-      factory: GoogleAgentFactory,
+      factory: GoogleAgentDescriptor,
       options: (cfg, deps) => ({
         model: cfg.agentModel ?? 'google/gemini-2.5-flash',
         maxToolLoops: cfg.maxToolLoops ?? 10,

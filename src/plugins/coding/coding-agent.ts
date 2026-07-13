@@ -1,8 +1,8 @@
-import { defineAgent } from '../../system/index.ts'
-import type { CodingAgentMsg, CodingAgentState, CodingAgentOptions } from './types.ts'
+import type { AgentDescriptor } from '../../types/agents.ts'
+import type { CodingAgentOptions } from './types.ts'
 
-const buildSystemPrompt = (options: CodingAgentOptions): string =>
-  `You are the coding agent for a read-only software project.
+export const CodingAgentDescriptor = (options: CodingAgentOptions): AgentDescriptor => {
+  const systemPrompt = `You are the coding agent for a read-only software project.
 
 Project boundary:
 - The project is mounted at ${options.projectMount}.
@@ -24,11 +24,16 @@ Behavior:
 - If update_docs returns a job id, you can tell the user to ask for a tool status to check progress. Do not do progress updates on your own.
 - Be direct and concise.`
 
-export const CodingAgentFactory = defineAgent<CodingAgentOptions, CodingAgentMsg, CodingAgentState>({
-  role: 'coding',
-  mode: 'coding',
-  displayName: 'Coding & Docs',
-  shortDesc: 'Inspect a read-only project and generate app-styled documentation',
-  buildSystemPrompt,
-  defaultToolFilter: { allow: ['tool_status', 'switch_mode'] },
-})
+  return {
+    mode: 'coding',
+    role: 'coding',
+    displayName: 'Coding & Docs',
+    shortDesc: 'Inspect a read-only project and generate app-styled documentation',
+    systemPrompt,
+    internalTools: Object.values(options.tools || {}),
+    toolFilter: options.toolFilter ?? { allow: ['tool_status', 'switch_mode'] },
+    capabilities: { userVisible: true },
+    model: options.model,
+    maxToolLoops: options.maxToolLoops ?? 25,
+  }
+}

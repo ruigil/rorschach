@@ -8,7 +8,7 @@ import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { SessionConfig, UserContextMsg } from './types.ts'
 import { UserContext } from './user-context.ts'
 import { AgentRegistry } from './agent-registry.ts'
-import { ChatbotAgentFactory, type ChatbotAgentOptions } from './chatbot-agent.ts'
+import { ChatbotAgentDescriptor, type ChatbotAgentOptions } from './chatbot-agent.ts'
 import { buildCognitiveRoutes, cognitiveSchemas } from './routes.ts'
 
 // ─── Config types ───
@@ -103,7 +103,7 @@ export default createPluginFactory<CognitiveConfig>({
   },
   agents: {
     chatbot: {
-      factory: ChatbotAgentFactory,
+      factory: ChatbotAgentDescriptor,
       options: (cfg) => ({
         model:        cfg.chatbot?.model ?? 'deepseek/deepseek-v4-flash',
         systemPrompt: cfg.chatbot?.systemPrompt,

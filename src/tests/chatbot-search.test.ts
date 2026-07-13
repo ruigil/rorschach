@@ -1,9 +1,9 @@
 import { describe, test, expect, afterEach, afterAll } from 'bun:test'
 import { mkdirSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { AgentSystem } from '../system/index.ts'
+import { AgentSystem, DynamicAgentActor } from '../system/index.ts'
 import { OutboundUserMessageTopic } from '../types/events.ts'
-import { ChatbotAgentFactory, type ChatbotState } from '../plugins/cognitive/chatbot-agent.ts'
+import { ChatbotAgentDescriptor, type ChatbotState } from '../plugins/cognitive/chatbot-agent.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
 import { LlmProvider } from '../plugins/cognitive/llm-provider.ts'
 import { OpenRouterAdapter } from '../plugins/cognitive/adapters/openrouter.ts'
@@ -127,7 +127,10 @@ const spawnChatbot = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
   const contextStoreRef = system.spawn(`context-store-${userId}`, ContextStore({ userId, contextPath: tempContextPath() }))
   return system.spawn(
     'chatbot',
-    ChatbotAgentFactory({ model: LLM_PROVIDER_ADAPTER_OPTS.model }).factory({ userId, contextStoreRef }),
+    DynamicAgentActor(
+      ChatbotAgentDescriptor({ model: LLM_PROVIDER_ADAPTER_OPTS.model }),
+      { userId, contextStoreRef }
+    ),
     { state: { ...INITIAL_CHATBOT_STATE } },
   )
 }

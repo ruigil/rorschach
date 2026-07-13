@@ -38,7 +38,7 @@ export {
   type ContextView,
 } from './agent/context-assembly.ts'
 
-export { defineAgent } from './agent/define-agent.ts'
+export { DynamicAgentActor } from './agent/dynamic-agent.ts'
 
 export { TraceTopic } from './actor/types.ts'
 export type { TraceSpan } from './actor/types.ts'

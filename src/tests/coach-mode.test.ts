@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { MockPersistenceActor } from './mock-persistence.ts'
-import { AgentSystem } from '../system/index.ts'
+import { AgentSystem, DynamicAgentActor } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { UserPresenceTopic, OutboundUserMessageTopic } from '../types/events.ts'
 import { AgentRegistrationTopic } from '../types/agents.ts'
@@ -8,7 +8,7 @@ import { SwitchAgentTopic } from '../plugins/cognitive/types.ts'
 import { ToolRegistrationTopic, type ToolMsg } from '../types/tools.ts'
 import { SessionManager } from '../plugins/cognitive/session-manager.ts'
 import notebookPlugin from '../plugins/notebook/notebook.plugin.ts'
-import { CoachAgentFactory } from '../plugins/notebook/coach-agent.ts'
+import { CoachAgentDescriptor } from '../plugins/notebook/coach-agent.ts'
 import { LlmProviderTopic, type LlmProviderMsg, type LlmTool } from '../types/llm.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
@@ -115,14 +115,14 @@ describe('coach mode integration tests', () => {
     }
 
     // Spawn CoachAgent directly
-    const factory = CoachAgentFactory({
+    const descriptor = CoachAgentDescriptor({
       model: 'test-coach-model',
       maxToolLoops: 5,
       tools,
     })
 
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
-    const agentRef = system.spawn('coach-agent', factory.factory({
+    const agentRef = system.spawn('coach-agent', DynamicAgentActor(descriptor, {
       userId: 'u1',
       contextStoreRef,
     }))
