@@ -2,12 +2,11 @@ import { MetricsTopic } from '../../system/index.ts'
 import type { ActorDef, MetricsEvent } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
+import type { MetricsActorOptions } from './types.ts'
 
 type MetricsMsg = { type: 'tick' }
 
-export type MetricsActorOptions = {
-  intervalMs: number
-}
+
 
 export const Metrics = (options: MetricsActorOptions): ActorDef<MetricsMsg, null> => ({
   initialState: null,

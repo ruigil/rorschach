@@ -1,6 +1,6 @@
 import { TraceTopic, type ActorDef, type ActorRef } from '../../system/index.ts'
 import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
-import type { TraceRecorderMsg } from './types.ts'
+import type { TraceRecorderMsg, TraceRecorderState, TraceRecorderOptions } from './types.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
 
@@ -11,24 +11,11 @@ const dayFolder = (timestamp: number): string =>
 
 // ─── Actor state ───
 
-export type TraceRecorderState = {
-  tracesDir: string
-  written: number
-  buffer: { traceId: string; timestamp: number; line: string }[]
-  persistenceRef: ActorRef<PersistenceMsg> | null
-}
+
 
 // ─── Options ───
 
-export type TraceRecorderOptions = {
-  /** Directory where per-trace JSONL files are written. Created automatically. */
-  tracesDir: string
-  /**
-   * If set, spans are buffered and flushed every `flushIntervalMs` milliseconds.
-   * If omitted, every span is appended immediately (unbuffered).
-   */
-  flushIntervalMs?: number
-}
+
 
 /**
  * Creates a trace recorder actor definition.

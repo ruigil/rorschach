@@ -2,14 +2,9 @@ import { onLifecycle, onMessage } from '../../system/index.ts'
 import { ToolRegistrationTopic } from '../../types/tools.ts'
 import { HttpWsFrameTopic, OutboundAdminBroadcastTopic, OutboundUserMessageTopic } from '../../types/events.ts'
 import type { ActorDef } from '../../system/index.ts'
+import type { GlobalToolsMsg, GlobalToolsState } from './types.ts'
 
-export type GlobalToolsMsg =
-  | { type: '_toolReg'; event: any }
-  | { type: '_wsFrame'; event: any }
 
-export type GlobalToolsState = {
-  tools: Record<string, any>
-}
 
 export const GlobalTools = (): ActorDef<GlobalToolsMsg, GlobalToolsState> => ({
   initialState: { tools: {} },

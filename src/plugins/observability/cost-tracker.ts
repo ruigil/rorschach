@@ -1,35 +1,16 @@
 import type { ActorDef, MessageHandler, ActorRef } from '../../system/index.ts'
 import { CostTopic } from '../../types/llm.ts'
-import type { CostTrackerMsg } from './types.ts'
+import type { CostTrackerMsg, CostTrackerState, CostTrackerOptions } from './types.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
 
 // ─── Actor state ───
 
-export type CostTrackerState = {
-  dateStr: string
-  written: number
-  buffer: string[]
-  persistenceRef: ActorRef<PersistenceMsg> | null
-  dailyTotals: {
-    totalCost: number
-    totalInputTokens: number
-    totalOutputTokens: number
-    byModel: Record<string, { cost: number; inputTokens: number; outputTokens: number }>
-  }
-}
+
 
 // ─── Options ───
 
-export type CostTrackerOptions = {
-  /** Directory where daily cost JSONL files are written. Created automatically. */
-  costsDir: string
-  /**
-   * If set, events are buffered and flushed every `flushIntervalMs` milliseconds.
-   * If omitted, every event is appended immediately (unbuffered).
-   */
-  flushIntervalMs?: number
-}
+
 
 // ─── Helpers ───
 

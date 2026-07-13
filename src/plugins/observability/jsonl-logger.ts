@@ -1,20 +1,13 @@
 import type { ActorDef, MessageHandler, ActorRef } from '../../system/index.ts'
 import { LogTopic } from '../../system/index.ts'
 import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
-import type { JsonlLoggerMsg } from './types.ts'
+import type { JsonlLoggerMsg, JsonlLoggerState, JsonlLoggerOptions } from './types.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
 
 // ─── Actor state ───
 
-export type JsonlLoggerState = {
-  filePath: string
-  docIdTemplate: string
-  dateStr: string
-  written: number
-  buffer: string[]
-  persistenceRef: ActorRef<PersistenceMsg> | null
-}
+
 
 // ─── Helpers ───
 
@@ -26,11 +19,7 @@ const currentDateStr = (): string => {
 
 // ─── Options ───
 
-export type JsonlLoggerOptions = {
-  filePath: string
-  flushIntervalMs?: number
-  minLevel?: 'debug' | 'info' | 'warn' | 'error'
-}
+
 
 const LOG_LEVEL_ORDER = { debug: 0, info: 1, warn: 2, error: 3 } as const
 
