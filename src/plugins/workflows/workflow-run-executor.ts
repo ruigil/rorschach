@@ -1,5 +1,4 @@
 
-import { relative, resolve, sep } from 'node:path'
 import type { ActorContext, ActorDef, ActorRef, PersistenceAdapter } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { JobRegistryTopic, type ToolCollection } from '../../types/tools.ts'
@@ -37,14 +36,6 @@ const appendEvent = (run: WorkflowRunState, type: string, message: string, taskI
 })
 
 const fallbackTaskState = (): WorkflowTaskRunState => ({ status: 'pending', attempts: 0 })
-
-const toolArtifactRoot = (workflowRunsDir: string, runId: string): string => {
-  const workspaceRoot = resolve('workspace')
-  const runsRoot = resolve(workflowRunsDir)
-  const rel = relative(workspaceRoot, runsRoot)
-  if (rel && !rel.startsWith('..') && rel !== '..') return `/workspace/${rel.split(sep).join('/')}/${runId}`
-  return `/workspace/workflows/runs/${runId}`
-}
 
 const missingExecutionTool = (workflow: Workflow, tools: ToolCollection): string | undefined =>
   workflow.executionTools.find(name => !tools[name])
@@ -152,7 +143,6 @@ const publishRunUpdate = (ctx: ActorContext<WorkflowRunExecutorMsg>, run: Workfl
 }
 
 export const WorkflowRunExecutor = (
-  workflowRunsDir: string,
   llmRef: ActorRef<LlmProviderMsg> | null,
   model: string,
   maxToolLoops: number,
@@ -189,7 +179,6 @@ export const WorkflowRunExecutor = (
         workflow: state.workflow,
         task,
         inputs: run.inputs,
-        artifactRoot: toolArtifactRoot(workflowRunsDir, run.runId),
         dependencyOutputs: dependencyOutputs(run, task),
         history: run.taskStates[task.id]?.history,
         userId: run.userId,

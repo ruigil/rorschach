@@ -1,4 +1,3 @@
-import { join } from 'node:path'
 import { createPluginFactory, defineConfig } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
@@ -7,11 +6,9 @@ import { AgentRegistrationTopic } from '../../types/agents.ts'
 import type { ToolMsg, ToolCollection } from '../../types/tools.ts'
 import { WorkflowRunner } from './workflow-runner.ts'
 import { WorkflowsAgentFactory } from './workflows-agent.ts'
-import { WorkflowToolsActor, workflowControlTools } from './workflow-tools.ts'
+import { WorkflowToolsActor, workflowControlTools, readWorkflowArtifactTool, writeWorkflowArtifactTool } from './workflow-tools.ts'
 import { buildWorkflowsRoutes, workflowsSchemas } from './routes.ts'
 import type { WorkflowsConfig, WorkflowRunnerMsg } from './types.ts'
-
-const getWorkflowRunsDir = (workflowsDir: string): string => join(workflowsDir, 'runs')
 
 const defaultConfig: WorkflowsConfig = {
   agent: {
@@ -54,9 +51,7 @@ export default createPluginFactory<WorkflowsConfig>({
   slots: {
     runner: {
       factory: (cfg) => {
-        const workflowsDir = cfg.agent?.model ? 'workspace/workflows' : 'workspace/workflows'
         return WorkflowRunner({
-          workflowRunsDir: getWorkflowRunsDir(workflowsDir),
           llmRef: null,
           model: cfg.agent.model,
           maxToolLoops: cfg.agent.maxToolLoops ?? 10,
@@ -69,6 +64,10 @@ export default createPluginFactory<WorkflowsConfig>({
       }),
       dependsOn: ['runner'],
     },
+  },
+  tools: {
+    read_workflow_artifact: { schema: readWorkflowArtifactTool.schema, slot: 'tools' },
+    write_workflow_artifact: { schema: writeWorkflowArtifactTool.schema, slot: 'tools' },
   },
   agents: {
     workflows: {
@@ -83,8 +82,7 @@ export default createPluginFactory<WorkflowsConfig>({
     },
   },
   routes: (cfg, deps) => {
-    const workflowsDir = 'workspace/workflows'
-    return buildWorkflowsRoutes(workflowsDir, deps.runner as ActorRef<WorkflowRunnerMsg> | null, getWorkflowRunsDir(workflowsDir))
+    return buildWorkflowsRoutes(deps.runner as ActorRef<WorkflowRunnerMsg> | null)
   },
   uiSurface: workflowsSurfaceRegistration,
 })

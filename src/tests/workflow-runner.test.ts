@@ -71,7 +71,7 @@ const workflow = (executionTools: string[]): Workflow => ({
 const spawnRunner = async (runWorkflow: Workflow) => {
   const runsDir = await makeDir('rorschach-workflow-runs')
   const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
-  const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
+  const runner = system.spawn('workflow-runner', WorkflowRunner({ llmRef: null, model: 'test-model', maxToolLoops: 1 }))
   return { system, runner, runsDir }
 }
 
@@ -97,7 +97,7 @@ describe('workflow runner', () => {
 
     const runsDir = await makeDir('rorschach-workflow-runs')
     const wf = workflow(['read'])
-    const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
+    const runner = system.spawn('workflow-runner', WorkflowRunner({ llmRef: null, model: 'test-model', maxToolLoops: 1 }))
 
     const run = initialRunState(wf, 'run-id-1')
     await seedRun(system, run)
@@ -189,7 +189,7 @@ describe('workflow runner', () => {
 
     const runsDir = await makeDir('rorschach-workflow-runs')
     const wf = workflow([startWorkflowRunTool.name, switchModeTool.name])
-    const runner = system.spawn('workflow-runner-control', WorkflowRunner({ workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
+    const runner = system.spawn('workflow-runner-control', WorkflowRunner({ llmRef: null, model: 'test-model', maxToolLoops: 1 }))
 
     const listed = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       runner,
@@ -244,7 +244,7 @@ describe('workflow runner', () => {
 
     const runsDir = await makeDir('rorschach-workflow-runs')
     const wf = workflow(['read'])
-    const runner = system.spawn('workflow-runner', WorkflowRunner({ workflowRunsDir: runsDir, llmRef: null, model: 'test-model', maxToolLoops: 1 }))
+    const runner = system.spawn('workflow-runner', WorkflowRunner({ llmRef: null, model: 'test-model', maxToolLoops: 1 }))
 
     const run = initialRunState(wf, 'run-id-cleanup')
     await seedRun(system, run)

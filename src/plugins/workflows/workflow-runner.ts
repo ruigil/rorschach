@@ -14,7 +14,7 @@ import type {
 } from './types.ts'
 import { WorkflowRunExecutor } from './workflow-run-executor.ts'
 import { getWorkflowRun, listWorkflowRuns, listWorkflows, getWorkflowGraph, createWorkflowRun } from './workflow-store.ts'
-import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
+import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetStreamPayload } from '../../types/persistence.ts'
 
 type RunnerState = {
   live: Record<string, ActorRef<WorkflowRunExecutorMsg>>
@@ -35,7 +35,7 @@ const summarizeExecutionTools = (tools: ToolCollection): ExecutionToolSummary[] 
 export const WorkflowRunner = (
   config: WorkflowRunnerConfig,
 ): ActorDef<WorkflowRunnerMsg, RunnerState> => {
-  const { workflowRunsDir, model, maxToolLoops } = config
+  const { model, maxToolLoops } = config
 
   const ensureRunActor = (
     state: RunnerState,
@@ -48,7 +48,7 @@ export const WorkflowRunner = (
 
     const ref = ctx.spawn(
       `workflow-run-${runId}`,
-      WorkflowRunExecutor(workflowRunsDir, state.llmRef, model, maxToolLoops, state.executionTools, userId, runId),
+      WorkflowRunExecutor(state.llmRef, model, maxToolLoops, state.executionTools, userId, runId),
     ) as ActorRef<WorkflowRunExecutorMsg>
     return { ref, spawned: true }
   }
@@ -89,7 +89,7 @@ export const WorkflowRunner = (
 
     const ref = ctx.spawn(
       `workflow-run-${runId}`,
-      WorkflowRunExecutor(workflowRunsDir, state.llmRef, model, maxToolLoops, state.executionTools, msg.run.userId, runId),
+      WorkflowRunExecutor(state.llmRef, model, maxToolLoops, state.executionTools, msg.run.userId, runId),
     ) as ActorRef<WorkflowRunExecutorMsg>
 
     const nextState = { ...state, live: { ...state.live, [runId]: ref } }
@@ -309,6 +309,51 @@ export const WorkflowRunner = (
         return { state }
       },
       get: (state, msg, ctx) => getRun(state, msg, ctx),
+      getArtifact: (state, msg, ctx) => {
+        if (!state.persistenceRef) {
+          msg.replyTo.send({ ok: false, error: 'Persistence not ready' })
+          return { state }
+        }
+        ctx.pipeToSelf(
+          ask<PersistenceMsg, PResult<PObjGetStreamPayload>>(
+            state.persistenceRef,
+            (replyTo) => ({
+              type: 'obj.getStream',
+              bucket: 'workflow-runs',
+              key: `${msg.runId}/${msg.path}`,
+              replyTo,
+            }),
+            { timeoutMs: 10_000 }
+          ),
+          reply => {
+            if (reply.ok && reply.data) {
+              return {
+                type: '_reply' as const,
+                replyTo: msg.replyTo,
+                reply: {
+                  ok: true as const,
+                  stream: reply.data.stream,
+                  mimeType: reply.data.meta?.contentType || reply.data.meta?.mimeType || 'application/octet-stream'
+                }
+              }
+            }
+            return {
+              type: '_reply' as const,
+              replyTo: msg.replyTo,
+              reply: {
+                ok: false as const,
+                error: reply.ok ? 'No data' : reply.error
+              }
+            }
+          },
+          error => ({
+            type: '_reply' as const,
+            replyTo: msg.replyTo,
+            reply: { ok: false as const, error: String(error) }
+          })
+        )
+        return { state }
+      },
       resume: (state, msg, ctx) => resumeRun(state, msg, ctx),
       _reply: (state, msg) => {
         msg.replyTo.send(msg.reply)

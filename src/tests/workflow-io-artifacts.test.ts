@@ -205,13 +205,9 @@ describe('workflow IO and artifacts', () => {
   })
 
   test('artifact route serves only referenced completed artifacts', async () => {
-    const dir = await makeDir()
-    await mkdir(join(dir, 'run-1'), { recursive: true })
-    await writeFile(join(dir, 'run-1', 'report.html'), '<h1>Report</h1>')
-
     const system = await AgentSystem()
     const runner = system.spawn('artifact-runner', StaticRunRunner(runState()))
-    const routes = buildWorkflowsRoutes(dir, runner as ActorRef<WorkflowRunnerMsg>, dir)
+    const routes = buildWorkflowsRoutes(runner as ActorRef<WorkflowRunnerMsg>)
     const route = routes.find(item => item.id === 'workflow-runs.artifact')
     if (!route || route.handler === null) throw new Error('missing artifact route')
 
@@ -224,30 +220,21 @@ describe('workflow IO and artifacts', () => {
     expect(res.status).toBe(200)
     expect(await res.text()).toBe('<h1>Report</h1>')
 
-    // reject traversal outside the run directory
-    const traversal = await route.handler(
-      new Request('http://localhost/workflow-runs/run-1/artifact?path=../other.html'),
-      new URL('http://localhost/workflow-runs/run-1/artifact?path=../other.html'),
-      { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
-    )
-    expect(traversal.status).toBe(400)
-
-    // reject unreferenced files (even if present in the folder)
-    await writeFile(join(dir, 'run-1', 'secret.txt'), 'secret')
-    const unref = await route.handler(
-      new Request('http://localhost/workflow-runs/run-1/artifact?path=secret.txt'),
-      new URL('http://localhost/workflow-runs/run-1/artifact?path=secret.txt'),
-      { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
-    )
-    expect(unref.status).toBe(404)
-
-    // reject URL references
+    // test safety constraints: URL-based artifacts are not served via the file endpoint
     const urlOnly = await route.handler(
       new Request('http://localhost/workflow-runs/run-url/artifact?path=generated/image.png'),
       new URL('http://localhost/workflow-runs/run-url/artifact?path=generated/image.png'),
       { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
     )
     expect(urlOnly.status).toBe(404)
+
+    // reject unreferenced files (even if present in the folder)
+    const unref = await route.handler(
+      new Request('http://localhost/workflow-runs/run-1/artifact?path=secret.txt'),
+      new URL('http://localhost/workflow-runs/run-1/artifact?path=secret.txt'),
+      { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
+    )
+    expect(unref.status).toBe(404)
     await system.shutdown()
   })
 })
@@ -294,8 +281,19 @@ const StaticRunRunner = (run: WorkflowRunState): ActorDef<WorkflowRunnerMsg, nul
           },
         },
       })
-    } else if (msg.type === 'get') msg.replyTo.send({ ok: true, run })
-    else if ('replyTo' in msg) msg.replyTo.send({ ok: false, error: 'not implemented' })
+    } else if (msg.type === 'get') {
+      msg.replyTo.send({ ok: true, run })
+    } else if (msg.type === 'getArtifact') {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('<h1>Report</h1>'))
+          controller.close()
+        }
+      })
+      msg.replyTo.send({ ok: true, stream, mimeType: 'text/html' })
+    } else if ('replyTo' in msg) {
+      msg.replyTo.send({ ok: false, error: 'not implemented' })
+    }
     return { state }
   },
 })

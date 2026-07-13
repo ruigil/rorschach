@@ -181,7 +181,6 @@ describe('workflow store', () => {
 
     const dir = await makeDir()
     const runner = system.spawn('workflow-runner', WorkflowRunner({
-      workflowRunsDir: join(dir, 'runs'),
       llmRef: null,
       model: 'deepseek/deepseek-v4-flash',
       maxToolLoops: 10,

@@ -17,7 +17,6 @@ type TaskExecutorState = {
   workflow: Workflow | null
   task: WorkflowTask | null
   inputs: Record<string, unknown>
-  artifactRoot: string
   dependencyOutputs: Record<string, WorkflowDependencyOutput>
   tools: ToolCollection
   userId: string
@@ -30,7 +29,6 @@ const initialState = (tools: ToolCollection, llmRef: ActorRef<LlmProviderMsg> | 
   workflow: null,
   task: null,
   inputs: {},
-  artifactRoot: '',
   dependencyOutputs: {},
   tools,
   userId: '',
@@ -86,7 +84,6 @@ const buildMessages = (
   workflow: Workflow,
   task: WorkflowTask,
   inputs: Record<string, unknown>,
-  artifactRoot: string,
   dependencyOutputs: Record<string, WorkflowDependencyOutput>,
   resumeContext?: string,
 ): ApiMessage[] => [
@@ -109,14 +106,12 @@ When the task cannot be completed, call block_workflow_task with:
   "reason": "short explanation of what is blocking the task"
 }
 
-The outputs object must contain only declared task output keys. Required outputs must be present. If an output is an artifact, return either a run-local artifact reference after writing under artifactRoot, for example { "type": "artifact", "path": "generated-page.html", "mimeType": "text/html" }, or a public URL artifact reference returned by a tool, for example { "type": "artifact", "url": "generated/image.png", "mimeType": "image/png" }. Do not inline large generated files into JSON outputs.
+The outputs object must contain only declared task output keys. Required outputs must be present. If an output is a local workflow artifact, use the write_workflow_artifact tool to save the content, and return a path artifact reference, for example { "type": "artifact", "path": "generated-page.html", "mimeType": "text/html" }. If it is a public URL artifact reference returned by a tool, return for example { "type": "artifact", "url": "generated/image.png", "mimeType": "image/png" }. Do not inline large generated files into JSON outputs.
 
 Workflow goal: ${workflow.goal}
 Workflow context: ${workflow.context}
 Run inputs:
 ${JSON.stringify(inputs, null, 2)}
-Artifact root:
-${artifactRoot}
 Task id: ${task.id}
 Task name: ${task.name}
 Task description: ${task.description}
@@ -210,7 +205,6 @@ export const WorkflowTaskExecutor = (
       workflow: msg.workflow,
       task: msg.task,
       inputs: msg.inputs,
-      artifactRoot: msg.artifactRoot,
       dependencyOutputs: msg.dependencyOutputs,
       tools: {
         ...tools,
@@ -220,7 +214,7 @@ export const WorkflowTaskExecutor = (
       userId: msg.userId,
       terminalSignaled: false,
     }
-    const messages = msg.history ?? buildMessages(msg.workflow, msg.task, msg.inputs, msg.artifactRoot, msg.dependencyOutputs)
+    const messages = msg.history ?? buildMessages(msg.workflow, msg.task, msg.inputs, msg.dependencyOutputs)
     return loop.startTurn(next, {
       messages,
       userId: msg.userId,

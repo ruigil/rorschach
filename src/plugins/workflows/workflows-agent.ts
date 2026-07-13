@@ -12,7 +12,6 @@ type WorkflowsAgentState = {
 }
 
 export type WorkflowsAgentOptions = AgentModelOptions & {
-  workflowsDir: string
   tools: ToolCollection
 }
 

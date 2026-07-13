@@ -12,7 +12,7 @@ import type {
 } from './types.ts'
 import { getWorkflow, getWorkflowGraph, listWorkflows, saveWorkflow, updateWorkflow, deleteWorkflow, createWorkflowRun } from './workflow-store.ts'
 import { validateWorkflow } from './validation.ts'
-import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
+import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetPayload } from '../../types/persistence.ts'
 
 const valueSpecSchema = {
   type: 'object',
@@ -23,6 +23,26 @@ const valueSpecSchema = {
     description: { type: 'string' },
   },
 }
+
+export const readWorkflowArtifactTool = defineTool('read_workflow_artifact', 'Read text content of a workflow run artifact from persistence.', {
+  type: 'object',
+  required: ['runId', 'path'],
+  properties: {
+    runId: { type: 'string', description: 'The unique workflow run ID.' },
+    path: { type: 'string', description: 'Path/key of the artifact file.' },
+  },
+})
+
+export const writeWorkflowArtifactTool = defineTool('write_workflow_artifact', 'Write/save text content as a workflow run artifact to persistence.', {
+  type: 'object',
+  required: ['runId', 'path', 'content'],
+  properties: {
+    runId: { type: 'string', description: 'The unique workflow run ID.' },
+    path: { type: 'string', description: 'Path/key of the artifact file.' },
+    content: { type: 'string', description: 'The text content to save.' },
+    mimeType: { type: 'string', description: 'Optional MIME type of the content.' },
+  },
+})
 
 export const listExecutionToolsTool = defineTool('list_execution_tools', 'List tools that workflow tasks may use during execution.', {
   type: 'object',
@@ -238,6 +258,52 @@ export const handleWorkflowTool = async (
   deps: WorkflowToolDeps
 ): Promise<ToolReply> => {
   const { workflowRunnerRef, ctx, persistenceRef } = deps
+
+  if (msg.toolName === readWorkflowArtifactTool.name) {
+    let args: { runId: string; path: string }
+    try {
+      args = JSON.parse(msg.arguments) as { runId: string; path: string }
+    } catch {
+      return toolError('Invalid JSON arguments')
+    }
+    if (!args.runId || !args.path) {
+      return toolError('Missing runId or path')
+    }
+    const res = await ask<PersistenceMsg, PResult<PObjGetPayload>>(persistenceRef, (replyTo) => ({
+      type: 'obj.get',
+      bucket: 'workflow-runs',
+      key: `${args.runId}/${args.path}`,
+      replyTo,
+    }))
+    if (!res.ok) return toolError(res.error)
+    if (!res.data) return toolError('No data found')
+    const text = new TextDecoder().decode(res.data.data)
+    return { type: 'toolResult', result: { text } }
+  }
+
+  if (msg.toolName === writeWorkflowArtifactTool.name) {
+    let args: { runId: string; path: string; content: string; mimeType?: string }
+    try {
+      args = JSON.parse(msg.arguments) as { runId: string; path: string; content: string; mimeType?: string }
+    } catch {
+      return toolError('Invalid JSON arguments')
+    }
+    if (!args.runId || !args.path || args.content === undefined) {
+      return toolError('Missing runId, path, or content')
+    }
+    const data = new TextEncoder().encode(args.content)
+    const contentType = args.mimeType || 'text/plain'
+    const res = await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+      type: 'obj.put',
+      bucket: 'workflow-runs',
+      key: `${args.runId}/${args.path}`,
+      data,
+      meta: { contentType },
+      replyTo,
+    }))
+    if (!res.ok) return toolError(res.error)
+    return { type: 'toolResult', result: { text: `Artifact ${args.path} saved successfully.` } }
+  }
 
   if (msg.toolName === listExecutionToolsTool.name) {
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'listExecutionTools', replyTo }), { timeoutMs: 5_000 })

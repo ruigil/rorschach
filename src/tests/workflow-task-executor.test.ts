@@ -67,7 +67,6 @@ const startTask = (executor: ActorRef<WorkflowTaskExecutorMsg>): void => {
     workflow,
     task,
     inputs: {},
-    artifactRoot: '/workspace/workflows/runs/run-1',
     dependencyOutputs: {},
     userId: 'u1',
   })

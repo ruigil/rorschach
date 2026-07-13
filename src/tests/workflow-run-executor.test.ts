@@ -91,7 +91,7 @@ describe('workflow run executor', () => {
 
     const executor = system.spawn(
       'workflow-run-run-1',
-      WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
+      WorkflowRunExecutor(null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
     const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
@@ -142,7 +142,7 @@ describe('workflow run executor', () => {
 
     const executor = system.spawn(
       'workflow-run-complete-update',
-      WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
+      WorkflowRunExecutor(null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
     executor.send({ type: 'taskCompleted', taskId: 'read-task', summary: 'Read the file.', outputs: {} })
@@ -184,7 +184,7 @@ describe('workflow run executor', () => {
 
     const executor = system.spawn(
       'workflow-run-run-2',
-      WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
+      WorkflowRunExecutor(null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
     const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
@@ -227,7 +227,7 @@ describe('workflow run executor', () => {
 
     const executor = system.spawn(
       'workflow-run-task-blocked',
-      WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
+      WorkflowRunExecutor(null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
     const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
@@ -276,7 +276,7 @@ describe('workflow run executor', () => {
 
     const executor = system.spawn(
       'workflow-run-stale-active',
-      WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
+      WorkflowRunExecutor(null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
     const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
@@ -319,7 +319,7 @@ describe('workflow run executor', () => {
 
     const executor = system.spawn(
       'workflow-run-failed',
-      WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
+      WorkflowRunExecutor(null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
     const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
@@ -361,7 +361,7 @@ describe('workflow run executor', () => {
 
     const executor = system.spawn(
       'workflow-run-noop',
-      WorkflowRunExecutor(dir, null, 'test-model', 1, tools, workflow.userId, run.runId),
+      WorkflowRunExecutor(null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
     const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
@@ -410,7 +410,7 @@ describe('workflow run executor', () => {
 
     const executor = system.spawn(
       'workflow-run-run-3',
-      WorkflowRunExecutor(dir, llmRef, 'test-model', 1, tools, workflow.userId, run.runId),
+      WorkflowRunExecutor(llmRef, 'test-model', 1, tools, workflow.userId, run.runId),
     )
     await Bun.sleep(30)
 

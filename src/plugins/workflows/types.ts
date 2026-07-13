@@ -64,7 +64,6 @@ export type WorkflowsConfig = {
 }
 
 export type WorkflowRunnerConfig = {
-  workflowRunsDir: string
   llmRef: ActorRef<LlmProviderMsg> | null
   model: string
   maxToolLoops: number
@@ -196,6 +195,7 @@ export type WorkflowRunnerReply =
   | { ok: true; run: WorkflowRunState }
   | { ok: true; runs: WorkflowRunState[] }
   | { ok: true; executionTools: ExecutionToolSummary[] }
+  | { ok: true; stream: ReadableStream<Uint8Array>; mimeType?: string }
   | { ok: false; error: string; status?: number }
 
 export type WorkflowRunnerMsg =
@@ -203,6 +203,7 @@ export type WorkflowRunnerMsg =
   | { type: 'list'; userId: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'listExecutionTools'; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'get'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
+  | { type: 'getArtifact'; userId: string; runId: string; path: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'resume'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: '_reply'; replyTo: ActorRef<WorkflowRunnerReply>; reply: WorkflowRunnerReply; runId?: string; spawnedRef?: ActorRef<WorkflowRunExecutorMsg> }
   | { type: '_toolRegistered'; tool: Tool }
@@ -235,7 +236,6 @@ export type WorkflowTaskExecutorMsg =
       workflow: Workflow
       task: WorkflowTask
       inputs: Record<string, unknown>
-      artifactRoot: string
       dependencyOutputs: Record<string, WorkflowDependencyOutput>
       history?: ApiMessage[]
       userId: string

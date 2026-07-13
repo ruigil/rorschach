@@ -5,7 +5,6 @@ import type { ConfigSchemaSection } from '../../types/config.ts'
 import type { Identity } from '../../types/identity.ts'
 import type { WorkflowRunnerMsg, WorkflowRunnerReply } from './types.ts'
 import { isRunArtifactRef, validArtifactPath } from './validation.ts'
-import { join, relative, resolve } from 'node:path'
 
 export const workflowsStorageSchema: ConfigSchemaSection = {
   id: 'workflows.storage',
@@ -16,9 +15,8 @@ export const workflowsStorageSchema: ConfigSchemaSection = {
   routeId: 'config.workflows',
   schema: {
     type: 'object',
-    required: ['workflowsDir'],
+    required: ['agent'],
     properties: {
-      workflowsDir: { type: 'string', default: 'workspace/workflows', 'x-ui': { label: 'Workflows directory' } },
       agent: {
         type: 'object',
         required: ['model', 'maxToolLoops'],
@@ -70,9 +68,7 @@ const runIdFromPath = (pathname: string, suffix = ''): string | null => {
 }
 
 export const buildWorkflowsRoutes = (
-  workflowsDir: string,
   workflowRunnerRef: ActorRef<WorkflowRunnerMsg> | null,
-  workflowRunsDir = 'workspace/workflows/runs',
 ): RouteRegistration[] => [
   {
     id: 'workflow-runs.artifact',
@@ -101,15 +97,16 @@ export const buildWorkflowsRoutes = (
       const ref = refs.find(item => item.path === artifactPath)
       if (!ref) return json({ error: 'Artifact is not referenced by completed workflow outputs' }, 404)
 
-      const root = resolve(workflowRunsDir, runId)
-      const filePath = resolve(root, ref.path)
-      const rel = relative(root, filePath)
-      if (rel.startsWith('..') || rel === '..') return json({ error: 'Invalid artifact path' }, 400)
+      const artifactReply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+        workflowRunnerRef,
+        replyTo => ({ type: 'getArtifact', userId: session.userId, runId, path: ref.path, replyTo }),
+        { timeoutMs: 10_000 }
+      )
+      if (!artifactReply.ok) return json({ error: artifactReply.error }, 500)
+      if (!('stream' in artifactReply)) return json({ error: 'Unexpected workflow runner response' }, 500)
 
-      const file = Bun.file(join(root, ref.path))
-      if (!(await file.exists())) return json({ error: 'Artifact file not found' }, 404)
-      return new Response(file, {
-        headers: { 'Content-Type': ref.mimeType ?? 'application/octet-stream' },
+      return new Response(artifactReply.stream, {
+        headers: { 'Content-Type': ref.mimeType ?? artifactReply.mimeType ?? 'application/octet-stream' },
       })
     },
   },
