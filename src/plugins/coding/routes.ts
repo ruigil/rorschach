@@ -72,8 +72,7 @@ const mimeType = (path: string): string => {
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
-import { ask } from '../../system/actor/ask.ts'
-import type { ActorRef } from '../../system/index.ts'
+import { ask, type ActorRef } from '../../system/index.ts'
 import type { ArtifactToolsMsg } from './types.ts'
 
 const requireSession = (identity: Identity | null): Response | null =>

@@ -1,11 +1,10 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../../system/index.ts'
-import { onLifecycle, onMessage } from '../../../system/index.ts'
+import { onLifecycle, onMessage, ask } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { HabitDef } from '../types.ts'
 import { NotebookChangeTopic } from '../../../types/events.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../../../types/persistence.ts'
-import { ask } from '../../../system/actor/ask.ts'
 
 export const trackerLogTool = defineTool('tracker_log', 'Log a numeric value for a tracked habit or any recurring metric (e.g. expenses, weight, steps, mood).', {
   type: 'object',

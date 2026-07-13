@@ -1,11 +1,10 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
-import { onMessage, onLifecycle } from '../../system/index.ts'
+import { onMessage, onLifecycle, ask } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { getDocumentProxy, extractText } from 'unpdf'
 import { PersistenceProviderTopic } from '../../types/persistence.ts'
 import type { PersistenceMsg, PResult, PObjGetPayload } from '../../types/persistence.ts'
-import { ask } from '../../system/actor/ask.ts'
 
 // ─── Tool schema ───
 

@@ -1,9 +1,8 @@
 import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../system/index.ts'
-import { defineTool, onMessage, parseToolArgs, onLifecycle } from '../../system/index.ts'
+import { defineTool, onMessage, parseToolArgs, onLifecycle, ask } from '../../system/index.ts'
 import type { ToolReply } from '../../types/tools.ts'
 import type { ArtifactState, ArtifactToolsMsg, DocPageMeta, DocsManifest } from './types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../../types/persistence.ts'
-import { ask } from '../../system/actor/ask.ts'
 
 export const writeDocPageTool = defineTool('write_doc_page', 'Write one generated documentation page. Content should be semantic HTML for the page body; the tool wraps it in the app documentation shell.', {
   type: 'object',

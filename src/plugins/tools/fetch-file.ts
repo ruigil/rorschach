@@ -1,10 +1,9 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
-import { onMessage, onLifecycle } from '../../system/index.ts'
+import { onMessage, onLifecycle, ask } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { PersistenceProviderTopic } from '../../types/persistence.ts'
 import type { PersistenceMsg, PResult } from '../../types/persistence.ts'
-import { ask } from '../../system/actor/ask.ts'
 
 export const fetchFileTool = defineTool('fetch_file', 'Download a file from a URL to the central persistence store and return the store key. Works with PDFs, images (jpeg, png, gif, webp, …), audio, and any other binary or text file. Use the returned key with other tools such as extract_pdf_text or analyze_image.', {
   type: 'object',

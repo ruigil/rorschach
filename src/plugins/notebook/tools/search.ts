@@ -1,10 +1,9 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../../system/index.ts'
-import { onLifecycle, onMessage } from '../../../system/index.ts'
+import { onLifecycle, onMessage, ask } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import type { Todo } from '../types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PList } from '../../../types/persistence.ts'
-import { ask } from '../../../system/actor/ask.ts'
 
 export const notebookSearchTool = defineTool('notebook_search', 'Full-text search across journal entries and todo text.', {
   type: 'object',

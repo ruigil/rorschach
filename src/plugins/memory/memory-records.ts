@@ -1,9 +1,8 @@
 import type { ActorDef, ActorRef } from '../../system/index.ts'
-import { onLifecycle, onMessage } from '../../system/index.ts'
+import { onLifecycle, onMessage, ask } from '../../system/index.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 import type { MemoryRecord, MemoryRecordMeta, MemoryRecordsMsg } from './types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../../types/persistence.ts'
-import { ask } from '../../system/actor/ask.ts'
 
 type MemoryRecordsState = {
   persistenceRef: ActorRef<any> | null

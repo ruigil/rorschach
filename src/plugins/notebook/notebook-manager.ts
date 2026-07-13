@@ -1,11 +1,10 @@
-import { onLifecycle, onMessage } from '../../system/index.ts'
+import { onLifecycle, onMessage, ask } from '../../system/index.ts'
 import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { OutboundUserMessageTopic, HttpWsFrameTopic, NotebookChangeTopic, type HttpWsFrameEvent, type NotebookChangeEvent } from '../../types/events.ts'
 import { readTodos, completeTodo } from './tools/todos.ts'
 import { readEntry } from './tools/journal.ts'
 import { parseCsv, type CsvRow } from './tools/tracker.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PList } from '../../types/persistence.ts'
-import { ask } from '../../system/actor/ask.ts'
 
 export type NotebookManagerMsg =
   | { type: '_wsFrame'; event: HttpWsFrameEvent }
