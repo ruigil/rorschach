@@ -424,7 +424,7 @@ Workspace folder: /workspace (read-write)</div>
                 ${this._terminalHistory.map(entry => html`
                   <div class="terminal-line ${entry.type === 'input' ? 'input-line' : 'output-line'} ${entry.error ? 'error-line' : ''}">
                     ${entry.type === 'input' 
-                      ? html`<span class="prompt">workspace:${entry.cwd || '~'}$</span> <span class="input-text">${entry.text}</span>` 
+                      ? html`<span class="prompt">rorschach:${entry.cwd || '~'}$</span> <span class="input-text">${entry.text}</span>` 
                       : html`<pre class="output-text">${entry.text}</pre>`}
                   </div>
                 `)}
@@ -432,7 +432,7 @@ Workspace folder: /workspace (read-write)</div>
                   <div class="terminal-line output-line text-dim text-mono">Running...</div>
                 ` : html`
                   <div class="terminal-line input-line">
-                    <span class="prompt">workspace:${this.displayCwd}$</span>
+                    <span class="prompt">rorschach:${this.displayCwd}$</span>
                     <input
                       type="text"
                       class="terminal-input"
