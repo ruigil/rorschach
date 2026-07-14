@@ -3,6 +3,7 @@ import { CostTopic } from '../../types/llm.ts'
 import type { CostTrackerMsg, CostTrackerState, CostTrackerOptions } from './types.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
+import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
 
 // ─── Actor state ───
 
@@ -50,6 +51,13 @@ export const CostTracker = (
   const handler: MessageHandler<CostTrackerMsg, CostTrackerState> = onMessage<CostTrackerMsg, CostTrackerState>({
     cost: (state, message, context) => {
       const { event } = message
+
+      // Broadcast to admin WS clients
+      context.publish(OutboundAdminBroadcastTopic, {
+        type: 'usage',
+        key: `usage-${Date.now()}-${Math.random()}`,
+        payload: JSON.stringify({ type: 'usage', ...event }),
+      })
 
       // Check for day rollover (synchronous — persistence actor handles storage)
       const today = currentDateStr()
