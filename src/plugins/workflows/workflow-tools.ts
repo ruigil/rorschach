@@ -8,9 +8,8 @@ import type {
   WorkflowRunnerReply,
   WorkflowTask,
   WorkflowValueSpec,
-  WorkflowRunState,
 } from './types.ts'
-import { getWorkflow, getWorkflowGraph, listWorkflows, saveWorkflow, updateWorkflow, deleteWorkflow, createWorkflowRun } from './workflow-store.ts'
+import { getWorkflow, listWorkflows, saveWorkflow, updateWorkflow, deleteWorkflow, createWorkflowRun } from './workflow-store.ts'
 import { validateWorkflow } from './validation.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetPayload } from '../../types/persistence.ts'
 

@@ -69,14 +69,7 @@
       },
       "chatbot": {
         "systemPrompt": "You're the user perfect mirror. You always reflect the tone and style you perceive.",
-        "model": "nvidia-nemotron-3-ultra-550b-a55b",
-        "toolFilter": {
-          "deny": [
-            "bash",
-            "write",
-            "edit"
-          ]
-        }
+        "model": "nvidia-nemotron-3-ultra-550b-a55b"
       },
       "session": {
         "contextWindowHours": 2,
