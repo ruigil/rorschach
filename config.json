@@ -39,9 +39,6 @@
         "apiKey": "${BRAVESEARCH_API_KEY}",
         "count": 20
       },
-      "bash": {
-        "cwd": "/workspace"
-      },
       "vision": {
         "model": "nano-banana-2",
         "analysisModel": "gemma-4-uncensored"

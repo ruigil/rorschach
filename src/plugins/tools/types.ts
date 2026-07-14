@@ -2,13 +2,13 @@ import type { ActorRef, SpanHandle } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply, VisionProviderReply, VideoSubmitReply, VideoPollReply, VideoDownloadReply, TranscriptionProviderReply, SpeechProviderReply } from '../../types/llm.ts'
 import type { PersistenceMsg } from '../../types/persistence.ts'
-import type { BashExecResult, BashOptions } from 'just-bash'
+import type { BashExecResult } from 'just-bash'
 
 // ─── Tools Plugin Config ───
 
 export type ToolsConfig = {
   webSearch?: WebSearchActorOptions
-  bash?: BashOptions
+
   vision?: {
     model: string
     analysisModel?: string

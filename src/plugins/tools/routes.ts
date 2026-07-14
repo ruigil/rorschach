@@ -2,21 +2,6 @@ import type { ConfigSchemaSection } from '../../types/config.ts'
 
 // ─── Config Schema Sections ──────────────────────────────────────────────────
 
-export const bashSchema: ConfigSchemaSection = {
-  id: 'tools.bash',
-  title: 'Bash',
-  subtitle: 'tools · shell execution',
-  tab: 'tools',
-  configKey: 'bash',
-  routeId: 'config.tools',
-  schema: {
-    type: 'object',
-    properties: {
-      cwd: { type: 'string', default: '/workspace', 'x-ui': { label: 'Working directory' } },
-    },
-  },
-}
-
 export const webSearchSchema: ConfigSchemaSection = {
   id: 'tools.webSearch',
   title: 'Web Search',
@@ -80,4 +65,4 @@ export const videoSchema: ConfigSchemaSection = {
   },
 }
 
-export const toolsSchemas = [bashSchema, webSearchSchema, visionSchema, audioSchema, videoSchema]
+export const toolsSchemas = [webSearchSchema, visionSchema, audioSchema, videoSchema]

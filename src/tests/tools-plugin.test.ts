@@ -226,7 +226,6 @@ describe('tools plugin', () => {
     const state = {
       initialized: true,
       webSearch: { config: { apiKey: 'super-secret', count: 20 }, ref: null, gen: 0 },
-      bash:      { config: null, ref: null, gen: 0 },
       vision:    { config: null, ref: null, gen: 0 },
       audio:     { config: null, ref: null, gen: 0 },
       video:     { config: null, ref: null, gen: 0 },
@@ -248,7 +247,6 @@ describe('tools plugin', () => {
     const state = {
       initialized: false,
       webSearch: { config: null, ref: null, gen: 0 },
-      bash:      { config: null, ref: null, gen: 0 },
       vision:    { config: null, ref: null, gen: 0 },
       audio:     { config: null, ref: null, gen: 0 },
       video:     { config: null, ref: null, gen: 0 },

@@ -1,6 +1,5 @@
 import { createPluginFactory } from '../../system/index.ts'
 import { WebSearch, webSearchTool } from './web-search.ts'
-import { BashTool, bashTool, writeTool, readTool, editTool } from './bash.ts'
 import { Vision, analyzeImageTool, generateImageTool } from './vision-actor.ts'
 import { Cron, cronCreateTool, cronDeleteTool, cronListTool } from './cron.ts'
 import { Audio, transcribeAudioTool, textToSpeechTool } from './audio.ts'
@@ -17,9 +16,6 @@ const config = defineConfig<ToolsConfig>('tools', {
     apiKey: process.env.BRAVESEARCH_API_KEY ?? '',
     count: 20,
   },
-  bash: {
-    cwd: process.cwd(),
-  },
 }, {
   schemas: toolsSchemas,
 })
@@ -34,10 +30,6 @@ export default createPluginFactory<ToolsConfig>({
     webSearch: {
       factory: (cfg) => cfg ? WebSearch(cfg) : null,
       configPath: 'webSearch',
-    },
-    bash: {
-      factory: (cfg) => BashTool(cfg ?? undefined),
-      configPath: 'bash',
     },
     vision: {
       factory: (cfg) => cfg ? Vision({ model: cfg.model, analysisModel: cfg.analysisModel }) : null,
@@ -66,10 +58,6 @@ export default createPluginFactory<ToolsConfig>({
   },
   tools: {
     webSearch: { schema: webSearchTool.schema, slot: 'webSearch' },
-    bash: { schema: bashTool.schema, slot: 'bash' },
-    write: { schema: writeTool.schema, slot: 'bash' },
-    read: { schema: readTool.schema, slot: 'bash' },
-    edit: { schema: editTool.schema, slot: 'bash' },
     cronCreate: { schema: cronCreateTool.schema, slot: 'cron' },
     cronDelete: { schema: cronDeleteTool.schema, slot: 'cron' },
     cronList: { schema: cronListTool.schema, slot: 'cron' },
