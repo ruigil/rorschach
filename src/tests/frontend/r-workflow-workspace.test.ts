@@ -192,7 +192,7 @@ describe('r-workflow-workspace', () => {
     expect(output?.url).toBe('generated/image.png')
   })
 
-  test('merges workflowRunUpdated frames into the current graph and preserves selection', async () => {
+  test('merges workflow.run.updated frames into the current graph and preserves selection', async () => {
     const el = await mountClass(RWorkflowWorkspace) as any
     const ns = store.namespace<WorkflowsState>('workflows')
     await el.openGraph('workflow-1', 'run-1')
@@ -204,7 +204,7 @@ describe('r-workflow-workspace', () => {
     el._inspectorTab = 'run'
 
     reduceFrame({
-      type: 'workflowRunUpdated',
+      type: 'workflow.run.updated',
       workflowId: 'workflow-1',
       runId: 'run-1',
       run: {
@@ -244,7 +244,7 @@ describe('r-workflow-workspace', () => {
     expect(el._inspectorTab).toBe('run')
   })
 
-  test('ignores unrelated workflowRunUpdated frames', async () => {
+  test('ignores unrelated workflow.run.updated frames', async () => {
     const el = await mountClass(RWorkflowWorkspace) as any
     const ns = store.namespace<WorkflowsState>('workflows')
     await el.openGraph('workflow-1', 'run-1')
@@ -252,7 +252,7 @@ describe('r-workflow-workspace', () => {
     await el.updateComplete
 
     reduceFrame({
-      type: 'workflowRunUpdated',
+      type: 'workflow.run.updated',
       workflowId: 'workflow-1',
       runId: 'other-run',
       run: { ...graph('completed').run, runId: 'other-run' },
@@ -262,7 +262,7 @@ describe('r-workflow-workspace', () => {
     expect(el._currentGraph.run.status).toBe('running')
   })
 
-  test('renders and updates graph view run chips from workflowRunUpdated frames', async () => {
+  test('renders and updates graph view run chips from workflow.run.updated frames', async () => {
     const el = await mountClass(RWorkflowWorkspace) as any
     const ns = store.namespace<WorkflowsState>('workflows')
     await el.openGraph('workflow-1', 'run-1')
@@ -291,7 +291,7 @@ describe('r-workflow-workspace', () => {
     expect(chips1[0]?.classList.contains('active')).toBe(true)
 
     reduceFrame({
-      type: 'workflowRunUpdated',
+      type: 'workflow.run.updated',
       workflowId: 'workflow-1',
       runId: 'run-2',
       run: {

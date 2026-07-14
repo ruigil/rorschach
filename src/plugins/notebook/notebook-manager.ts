@@ -121,7 +121,7 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
       }
 
       if (!state.persistenceRef) {
-        sendFrame({ type: 'notebookError', message: 'Persistence not ready' })
+        sendFrame({ type: 'notebook.error', message: 'Persistence not ready' })
         return { state }
       }
       const dl = state.persistenceRef
@@ -134,7 +134,7 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
               if (a.done !== b.done) return a.done ? 1 : -1
               return b.createdAt - a.createdAt
             })
-            sendFrame({ type: 'notebookTodosList', todos: sorted.slice(0, 10) })
+            sendFrame({ type: 'notebook.todos.list', todos: sorted.slice(0, 10) })
             break
           }
           case 'notebook.todos.complete': {
@@ -160,12 +160,12 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
                 }
               }
             }
-            sendFrame({ type: 'notebookJournalMonths', year, month, days })
+            sendFrame({ type: 'notebook.journal.months', year, month, days })
             break
           }
           case 'notebook.journal.entry.request': {
             const content = await readEntry(dl, frame.date)
-            sendFrame({ type: 'notebookJournalEntry', date: frame.date, content })
+            sendFrame({ type: 'notebook.journal.entry', date: frame.date, content })
             break
           }
           case 'notebook.tracker.habits.request': {
@@ -176,26 +176,26 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
               replyTo,
             }))
             const habitsData = (res.ok && res.data) ? JSON.parse(res.data) : { habits: [] }
-            sendFrame({ type: 'notebookTrackerHabits', habits: habitsData.habits })
+            sendFrame({ type: 'notebook.tracker.habits', habits: habitsData.habits })
             break
           }
           case 'notebook.tracker.entries.request': {
             const all = await parseCsv(dl)
             const rows = all.filter(r => r.habit === frame.habit)
-            sendFrame({ type: 'notebookTrackerEntries', habit: frame.habit, entries: rows })
+            sendFrame({ type: 'notebook.tracker.entries', habit: frame.habit, entries: rows })
             break
           }
           case 'notebook.tracker.stats.request': {
             const all = await parseCsv(dl)
             const rows = all.filter(r => r.habit === frame.habit)
             const stats = calculateStats(rows)
-            sendFrame({ type: 'notebookTrackerStats', habit: frame.habit, stats })
+            sendFrame({ type: 'notebook.tracker.stats', habit: frame.habit, stats })
             break
           }
         }
       }
 
-      handle().catch(err => sendFrame({ type: 'notebookError', message: String(err) }))
+      handle().catch(err => sendFrame({ type: 'notebook.error', message: String(err) }))
       return { state }
     },
 
@@ -216,10 +216,10 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
             if (a.done !== b.done) return a.done ? 1 : -1
             return b.createdAt - a.createdAt
           })
-          sendFrame({ type: 'notebookTodosList', todos: sorted.slice(0, 10) })
+          sendFrame({ type: 'notebook.todos.list', todos: sorted.slice(0, 10) })
         } else if (event.type === 'journalUpdated') {
           const content = await readEntry(dl, event.date)
-          sendFrame({ type: 'notebookJournalEntry', date: event.date, content })
+          sendFrame({ type: 'notebook.journal.entry', date: event.date, content })
 
           const [year, month] = event.date.split('-')
           if (!year || !month) return
@@ -238,7 +238,7 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
               }
             }
           }
-          sendFrame({ type: 'notebookJournalMonths', year, month, days })
+          sendFrame({ type: 'notebook.journal.months', year, month, days })
         } else if (event.type === 'trackerUpdated') {
           const res = await ask<PersistenceMsg, PResult<string>>(dl, (replyTo) => ({
             type: 'doc.get',
@@ -247,18 +247,18 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
             replyTo,
           }))
           const habitsData = (res.ok && res.data) ? JSON.parse(res.data) : { habits: [] }
-          sendFrame({ type: 'notebookTrackerHabits', habits: habitsData.habits })
+          sendFrame({ type: 'notebook.tracker.habits', habits: habitsData.habits })
 
           const all = await parseCsv(dl)
           const rows = all.filter(r => r.habit === event.habit)
-          sendFrame({ type: 'notebookTrackerEntries', habit: event.habit, entries: rows })
+          sendFrame({ type: 'notebook.tracker.entries', habit: event.habit, entries: rows })
 
           const stats = calculateStats(rows)
-          sendFrame({ type: 'notebookTrackerStats', habit: event.habit, stats })
+          sendFrame({ type: 'notebook.tracker.stats', habit: event.habit, stats })
         }
       }
 
-      reload().catch(err => sendFrame({ type: 'notebookError', message: String(err) }))
+      reload().catch(err => sendFrame({ type: 'notebook.error', message: String(err) }))
       return { state }
     }
   })

@@ -70,7 +70,7 @@ const codeSurfaceRegistration: UiSurfaceRegistration = {
     modes: ['coding'],
   },
   moduleUrl: '/js/plugins/coding.js',
-  frameTypes: ['codeWorkspace', 'coding.bash.response', 'coding.bash.autocomplete.response'],
+  frameTypes: ['code.workspace', 'coding.bash.response', 'coding.bash.autocomplete.response'],
 }
 
 export default createPluginFactory<CodingConfig>({

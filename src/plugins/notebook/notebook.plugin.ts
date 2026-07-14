@@ -15,13 +15,13 @@ const notebookSurfaceRegistration: UiSurfaceRegistration = {
   },
   moduleUrl: '/js/plugins/notebook.js',
   frameTypes: [
-    'notebookTodosList',
-    'notebookJournalMonths',
-    'notebookJournalEntry',
-    'notebookTrackerHabits',
-    'notebookTrackerEntries',
-    'notebookTrackerStats',
-    'notebookError'
+    'notebook.todos.list',
+    'notebook.journal.months',
+    'notebook.journal.entry',
+    'notebook.tracker.habits',
+    'notebook.tracker.entries',
+    'notebook.tracker.stats',
+    'notebook.error'
   ],
 }
 

@@ -35,19 +35,19 @@ store.namespace<NotebookState>('notebook').init(
 
 export const reduceFrame = (frame: any) => {
   const ns = store.namespace<NotebookState>('notebook')
-  if (frame.type === 'notebookTodosList') {
+  if (frame.type === 'notebook.todos.list') {
     ns.set('todos', frame.todos)
-  } else if (frame.type === 'notebookJournalMonths') {
+  } else if (frame.type === 'notebook.journal.months') {
     ns.set('highlightedDays', frame.days)
-  } else if (frame.type === 'notebookJournalEntry') {
+  } else if (frame.type === 'notebook.journal.entry') {
     ns.set('selectedEntry', frame.content)
-  } else if (frame.type === 'notebookTrackerHabits') {
+  } else if (frame.type === 'notebook.tracker.habits') {
     ns.set('habits', frame.habits)
-  } else if (frame.type === 'notebookTrackerEntries') {
+  } else if (frame.type === 'notebook.tracker.entries') {
     ns.set('trackerEntries', frame.entries)
-  } else if (frame.type === 'notebookTrackerStats') {
+  } else if (frame.type === 'notebook.tracker.stats') {
     ns.set('trackerStats', frame.stats)
-  } else if (frame.type === 'notebookError') {
+  } else if (frame.type === 'notebook.error') {
     ns.set('errorMessage', frame.message)
   }
 }

@@ -2,7 +2,7 @@
 //
 // Defines the r-workflow-workspace custom element (which composes
 // r-workflow-list and r-workflow-inspector) and exports a reduceFrame that
-// handles workflowGraph and workflowRunUpdated frames.
+// handles workflow.graph and workflow.run.updated frames.
 
 import { RWorkflowWorkspace } from './r-workflow-workspace.js'
 import { RWorkflowList } from './r-workflow-list.js'
@@ -53,16 +53,16 @@ export const WORKFLOW_RUN_UPDATED_EVENT = 'workflow-run-updated'
 
 export const reduceFrame = (frame: any, host: PluginHostActions) => {
   const ns = store.namespace<WorkflowsState>('workflows')
-  if (frame.type === 'workflowGraph') {
+  if (frame.type === 'workflow.graph') {
     ns.set('currentGraph', frame)
     ns.set('errorMessage', null)
-  } else if (frame.type === 'workflowsList') {
+  } else if (frame.type === 'workflows.list') {
     ns.set('workflows', frame.workflows)
-  } else if (frame.type === 'workflowRunsList') {
+  } else if (frame.type === 'workflow.runs.list') {
     ns.set('runs', frame.runs)
-  } else if (frame.type === 'workflowError') {
+  } else if (frame.type === 'workflow.error') {
     ns.set('errorMessage', frame.message)
-  } else if (frame.type === 'workflowRunUpdated') {
+  } else if (frame.type === 'workflow.run.updated') {
     const current = ns.get('currentGraph')
     if (current && (current.run?.runId === frame.runId || current.runId === frame.runId)) {
       const merged = mergeWorkflowRunIntoGraph(current, frame.run)

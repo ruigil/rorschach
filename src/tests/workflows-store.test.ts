@@ -207,7 +207,7 @@ describe('workflow store', () => {
     expect(events).toHaveLength(1)
     const listRes = JSON.parse(events[0]!.text)
     expect(listRes).toMatchObject({
-      type: 'workflowsList',
+      type: 'workflows.list',
       workflows: [{ id: 'workflow-1', taskCount: 2 }]
     })
 
@@ -222,7 +222,7 @@ describe('workflow store', () => {
     await waitEvents(1)
     expect(events).toHaveLength(1)
     const graphRes = JSON.parse(events[0]!.text)
-    expect(graphRes.type).toBe('workflowGraph')
+    expect(graphRes.type).toBe('workflow.graph')
     expect(graphRes.edges).toEqual([{ source: 'design', target: 'build', type: 'depends_on' }])
 
     await system.shutdown()
@@ -240,7 +240,7 @@ describe('workflow store', () => {
         if (topic === WorkflowEventTopic) {
           events.push({
             userId: event.userId,
-            text: JSON.stringify({ type: 'workflowGraph', workflowId: event.workflowId, ...(event.runId ? { runId: event.runId } : {}) })
+            text: JSON.stringify({ type: 'workflow.graph', workflowId: event.workflowId, ...(event.runId ? { runId: event.runId } : {}) })
           })
         }
       }
@@ -258,7 +258,7 @@ describe('workflow store', () => {
       { persistenceRef, workflowRunnerRef: runner, ctx },
     )
     expect(graphReply.type).toBe('toolResult')
-    expect(events.map(event => JSON.parse(event.text))).toContainEqual({ type: 'workflowGraph', workflowId: 'workflow-1' })
+    expect(events.map(event => JSON.parse(event.text))).toContainEqual({ type: 'workflow.graph', workflowId: 'workflow-1' })
 
     await system.shutdown()
   })

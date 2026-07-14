@@ -223,7 +223,7 @@ export const WorkflowRunner = (
         const { userId, workflowId, runId, run } = msg.event
         if (run && runId) {
           const text = JSON.stringify({
-            type: 'workflowRunUpdated',
+            type: 'workflow.run.updated',
             workflowId,
             runId,
             run,
@@ -231,7 +231,7 @@ export const WorkflowRunner = (
           ctx.publish(OutboundUserMessageTopic, { userId, text })
         } else {
           const text = JSON.stringify({
-            type: 'workflowGraph',
+            type: 'workflow.graph',
             workflowId,
             ...(runId ? { runId } : {}),
           })
@@ -249,7 +249,7 @@ export const WorkflowRunner = (
         }
 
         if (!state.persistenceRef) {
-          sendFrame({ type: 'workflowError', message: 'Persistence not ready' })
+          sendFrame({ type: 'workflow.error', message: 'Persistence not ready' })
           return { state }
         }
         const dl = state.persistenceRef
@@ -257,10 +257,10 @@ export const WorkflowRunner = (
         const handle = async () => {
           if (frame.type === 'workflow.list.request') {
             const list = await listWorkflows(dl, userId)
-            sendFrame({ type: 'workflowsList', workflows: list })
+            sendFrame({ type: 'workflows.list', workflows: list })
           } else if (frame.type === 'workflow.runs.request') {
             const list = await listWorkflowRuns(dl, userId)
-            sendFrame({ type: 'workflowRunsList', runs: list })
+            sendFrame({ type: 'workflow.runs.list', runs: list })
           } else if (frame.type === 'workflow.graph.request') {
             const { workflowId, runId } = frame
             let run = undefined
@@ -270,14 +270,14 @@ export const WorkflowRunner = (
             }
             const res = await getWorkflowGraph(dl, userId, workflowId, run)
             if (res.ok) {
-              sendFrame({ type: 'workflowGraph', workflowId, runId, ...res.data.graph })
+              sendFrame({ type: 'workflow.graph', workflowId, runId, ...res.data.graph })
             } else {
-              sendFrame({ type: 'workflowError', message: res.error })
+              sendFrame({ type: 'workflow.error', message: res.error })
             }
           } else if (frame.type === 'workflow.start.request') {
             const result = await createWorkflowRun(dl, userId, frame.workflowId, frame.inputs)
             if (!result.ok) {
-              sendFrame({ type: 'workflowError', message: result.error })
+              sendFrame({ type: 'workflow.error', message: result.error })
               return
             }
             const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
@@ -285,7 +285,7 @@ export const WorkflowRunner = (
               replyTo => ({ type: 'start', run: result.data.run, workflow: result.data.workflow, replyTo }),
             )
             if (!reply.ok) {
-              sendFrame({ type: 'workflowError', message: reply.error })
+              sendFrame({ type: 'workflow.error', message: reply.error })
             }
           } else if (frame.type === 'workflow.resume.request') {
             const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
@@ -293,12 +293,12 @@ export const WorkflowRunner = (
               replyTo => ({ type: 'resume', userId, runId: frame.runId, replyTo }),
             )
             if (!reply.ok) {
-              sendFrame({ type: 'workflowError', message: reply.error })
+              sendFrame({ type: 'workflow.error', message: reply.error })
             }
           }
         }
 
-        handle().catch(err => sendFrame({ type: 'workflowError', message: String(err) }))
+        handle().catch(err => sendFrame({ type: 'workflow.error', message: String(err) }))
         return { state }
       },
 

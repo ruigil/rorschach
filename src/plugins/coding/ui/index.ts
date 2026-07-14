@@ -34,7 +34,7 @@ store.namespace<CodeState>('code').init(
 )
 
 export const reduceFrame = (frame: any, host: PluginHostActions) => {
-  if (frame.type === 'codeWorkspace') {
+  if (frame.type === 'code.workspace') {
     store.namespace<CodeState>('code').set('currentDocArtifact', frame.artifactName)
     host.openView('code')
   } else if (frame.type === 'coding.bash.response') {

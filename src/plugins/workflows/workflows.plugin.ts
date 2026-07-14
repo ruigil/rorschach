@@ -40,7 +40,7 @@ const workflowsSurfaceRegistration: UiSurfaceRegistration = {
     modes: ['workflows'],
   },
   moduleUrl: '/js/plugins/workflows.js',
-  frameTypes: ['workflowGraph', 'workflowRunUpdated', 'workflowsList', 'workflowRunsList', 'workflowError'],
+  frameTypes: ['workflow.graph', 'workflow.run.updated', 'workflows.list', 'workflow.runs.list', 'workflow.error'],
 }
 
 export default createPluginFactory<WorkflowsConfig>({

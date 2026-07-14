@@ -97,7 +97,7 @@ describe('NotebookManager WebSocket integration', () => {
     await waitMessages(1)
     expect(messages).toHaveLength(1)
     const todosRes = JSON.parse(messages[0]!.text)
-    expect(todosRes.type).toBe('notebookTodosList')
+    expect(todosRes.type).toBe('notebook.todos.list')
     expect(todosRes.todos).toHaveLength(2)
     expect(todosRes.todos[0].text).toBe('Buy milk') // Sorted by done: false first
 
@@ -112,7 +112,7 @@ describe('NotebookManager WebSocket integration', () => {
     await waitMessages(1)
     expect(messages).toHaveLength(1)
     const monthsRes = JSON.parse(messages[0]!.text)
-    expect(monthsRes.type).toBe('notebookJournalMonths')
+    expect(monthsRes.type).toBe('notebook.journal.months')
     expect(monthsRes.days).toEqual(['2026-07-01'])
 
     // ─── Test 3: notebook.journal.entry.request ───
@@ -126,7 +126,7 @@ describe('NotebookManager WebSocket integration', () => {
     await waitMessages(1)
     expect(messages).toHaveLength(1)
     const entryRes = JSON.parse(messages[0]!.text)
-    expect(entryRes.type).toBe('notebookJournalEntry')
+    expect(entryRes.type).toBe('notebook.journal.entry')
     expect(entryRes.content).toContain('Completed websocket refactoring.')
 
     // ─── Test 4: notebook.tracker.habits.request ───
@@ -140,7 +140,7 @@ describe('NotebookManager WebSocket integration', () => {
     await waitMessages(1)
     expect(messages).toHaveLength(1)
     const habitsRes = JSON.parse(messages[0]!.text)
-    expect(habitsRes.type).toBe('notebookTrackerHabits')
+    expect(habitsRes.type).toBe('notebook.tracker.habits')
     expect(habitsRes.habits).toEqual([{ name: 'Water', unit: 'ml', dailyTarget: 2000 }])
 
     // ─── Test 5: notebook.tracker.entries.request ───
@@ -154,7 +154,7 @@ describe('NotebookManager WebSocket integration', () => {
     await waitMessages(1)
     expect(messages).toHaveLength(1)
     const trackerEntriesRes = JSON.parse(messages[0]!.text)
-    expect(trackerEntriesRes.type).toBe('notebookTrackerEntries')
+    expect(trackerEntriesRes.type).toBe('notebook.tracker.entries')
     expect(trackerEntriesRes.entries).toHaveLength(2)
     expect(trackerEntriesRes.entries[0].value).toBe(500)
 
@@ -169,7 +169,7 @@ describe('NotebookManager WebSocket integration', () => {
     await waitMessages(1)
     expect(messages).toHaveLength(1)
     const statsRes = JSON.parse(messages[0]!.text)
-    expect(statsRes.type).toBe('notebookTrackerStats')
+    expect(statsRes.type).toBe('notebook.tracker.stats')
     expect(statsRes.stats.personalBest).toBe(1250) // 500 + 750 on 2026-07-01
     expect(statsRes.stats.count).toBe(2)
 
@@ -184,7 +184,7 @@ describe('NotebookManager WebSocket integration', () => {
     await waitMessages(1)
     expect(messages).toHaveLength(1)
     const completeRes = JSON.parse(messages[0]!.text)
-    expect(completeRes.type).toBe('notebookTodosList')
+    expect(completeRes.type).toBe('notebook.todos.list')
     expect(completeRes.todos.find((t: any) => t.id === 't1').done).toBe(true)
 
     // ─── Test 7: NotebookChangeTopic auto-reload push ───
@@ -210,7 +210,7 @@ describe('NotebookManager WebSocket integration', () => {
     await waitMessages(1)
     expect(messages).toHaveLength(1)
     const pushRes = JSON.parse(messages[0]!.text)
-    expect(pushRes.type).toBe('notebookTodosList')
+    expect(pushRes.type).toBe('notebook.todos.list')
     expect(pushRes.todos[0].done).toBe(true)
 
     await system.shutdown()

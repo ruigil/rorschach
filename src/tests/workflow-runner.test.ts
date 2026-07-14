@@ -176,7 +176,7 @@ describe('workflow runner', () => {
 
     expect(outbound).toHaveLength(1)
     expect(outbound[0]?.userId).toBe('u1')
-    expect(outbound[0]?.frame).toMatchObject({ type: 'workflowRunUpdated', workflowId: 'workflow-1', runId: 'run-bridge' })
+    expect(outbound[0]?.frame).toMatchObject({ type: 'workflow.run.updated', workflowId: 'workflow-1', runId: 'run-bridge' })
 
     await system.shutdown()
   })
