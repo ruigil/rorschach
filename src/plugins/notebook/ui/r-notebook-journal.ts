@@ -14,16 +14,19 @@ import type { NotebookState } from './index.js'
 export class RNotebookJournal extends RorschachBase {
   private _splitPercent = new StoreController(this, ['notebook', 'splitPercent'])
   private _storeHighlightedDays = new StoreController(this, ['notebook', 'highlightedDays'])
+  private _storeSelectedDate = new StoreController(this, ['notebook', 'selectedDate'])
   private _storeSelectedEntry = new StoreController(this, ['notebook', 'selectedEntry'])
   private _storeError = new StoreController(this, ['notebook', 'errorMessage'])
 
   @state() private _year = new Date().getFullYear()
   @state() private _month = new Date().getMonth()
-  @state() private _selectedDate: string | null = null
   @state() private _loadingMonths = false
   @state() private _loadingEntry = false
 
+  private _unsubscribeSelectedDate: (() => void) | null = null
+
   private get _highlightedDays() { return this._storeHighlightedDays.value ?? [] }
+  private get _selectedDate() { return this._storeSelectedDate.value ?? null }
   private get _selectedEntry() { return this._storeSelectedEntry.value }
   private get _error() { return this._storeError.value }
 
@@ -38,6 +41,29 @@ export class RNotebookJournal extends RorschachBase {
   override connectedCallback() {
     super.connectedCallback()
     this._fetchMonthData()
+
+    this._unsubscribeSelectedDate = store.namespace<NotebookState>('notebook').subscribe('selectedDate', (date) => {
+      if (date) {
+        const [yearStr, monthStr] = date.split('-')
+        if (yearStr && monthStr) {
+          const y = parseInt(yearStr, 10)
+          const m = parseInt(monthStr, 10) - 1
+          if (y !== this._year || m !== this._month) {
+            this._year = y
+            this._month = m
+            this._fetchMonthData()
+          }
+        }
+      }
+    })
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback()
+    if (this._unsubscribeSelectedDate) {
+      this._unsubscribeSelectedDate()
+      this._unsubscribeSelectedDate = null
+    }
   }
 
   override updated() {
@@ -64,14 +90,14 @@ export class RNotebookJournal extends RorschachBase {
   private _handleMonthChange(e: CustomEvent) {
     this._year = e.detail.year
     this._month = e.detail.month
-    this._selectedDate = null
+    store.namespace<NotebookState>('notebook').set('selectedDate', null)
     store.namespace<NotebookState>('notebook').set('selectedEntry', null)
     this._fetchMonthData()
   }
 
   private _handleDaySelected(e: CustomEvent) {
     const date = e.detail.date
-    this._selectedDate = date
+    store.namespace<NotebookState>('notebook').set('selectedDate', date)
     this._fetchEntry(date)
   }
 

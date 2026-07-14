@@ -11,6 +11,7 @@ export type NotebookState = {
   splitPercent: number
   todos: any[]
   highlightedDays: string[]
+  selectedDate: string | null
   selectedEntry: string | null
   habits: any[]
   trackerEntries: any[]
@@ -24,6 +25,7 @@ store.namespace<NotebookState>('notebook').init(
     splitPercent: 70,
     todos: [],
     highlightedDays: [],
+    selectedDate: null,
     selectedEntry: null,
     habits: [],
     trackerEntries: [],
@@ -40,7 +42,9 @@ export const reduceFrame = (frame: any) => {
   } else if (frame.type === 'notebook.journal.months') {
     ns.set('highlightedDays', frame.days)
   } else if (frame.type === 'notebook.journal.entry') {
+    ns.set('selectedDate', frame.date)
     ns.set('selectedEntry', frame.content)
+    ns.set('activeTab', 'journal')
   } else if (frame.type === 'notebook.tracker.habits') {
     ns.set('habits', frame.habits)
   } else if (frame.type === 'notebook.tracker.entries') {
