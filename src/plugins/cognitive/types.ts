@@ -139,7 +139,7 @@ export type SwitchAgentEvent = {
 export const SwitchAgentTopic = createTopic<SwitchAgentEvent>('agent.switch')
 
 export type SessionLifecycleEvent =
-  | { type: 'sessionStarted';  userId: string; defaultMode: string; timestamp: number }
+  | { type: 'sessionStarted';  userId: string; defaultMode: string; contextStoreRef: ActorRef<any>; timestamp: number }
   | { type: 'sessionEnded';    userId: string; reason: 'lastDisconnect' | 'contextStoreCrash'; timestamp: number }
   | { type: 'modeActivated';   userId: string; mode: string; previousMode: string; source: 'user' | 'llm' | 'programmatic' | 'crashFallback'; timestamp: number }
   | { type: 'presencePresent'; userId: string; source: 'http' | 'signal' | 'cli'; timestamp: number }

@@ -7,6 +7,7 @@ import { AgentRegistrationTopic } from '../types/agents.ts'
 import { SwitchAgentTopic } from '../plugins/cognitive/types.ts'
 import { ToolRegistrationTopic, type ToolMsg } from '../types/tools.ts'
 import { SessionManager } from '../plugins/cognitive/session-manager.ts'
+import { AgentRegistry } from '../plugins/cognitive/agent-registry.ts'
 import notebookPlugin from '../plugins/notebook/notebook.plugin.ts'
 import { CoachAgentDescriptor } from '../plugins/notebook/coach-agent.ts'
 import { LlmProviderTopic, type LlmProviderMsg, type LlmTool } from '../types/llm.ts'
@@ -43,8 +44,10 @@ describe('coach mode integration tests', () => {
   test('dynamic mode switching to/from coach', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const llmRef = system.spawn('null-llm', NullLlm())
+    const registryRef = system.spawn('agent-registry', AgentRegistry())
     system.spawn('session-manager', SessionManager({
       llmRef,
+      agentRegistryRef: registryRef,
       defaultMode: 'chatbot',
       contextWindowHours: 4,
     }))

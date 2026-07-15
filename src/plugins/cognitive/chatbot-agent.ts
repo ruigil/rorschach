@@ -17,7 +17,7 @@ export const ChatbotAgentDescriptor = (options: ChatbotAgentOptions): AgentDescr
     mode:         'chatbot',
     role:         'reasoning',
     displayName:  'Chatbot',
-    shortDesc:    'General-purpose conversational assistant. Use this mode if you cannot find a tool in your set of specialized tools to handle the user\'s request.',
+    shortDesc:    'General conversation, chitchat, general reasoning, meta-questions, or tasks not covered by other specialized modes.',
     systemPrompt: options.systemPrompt || '',
     internalTools: [],
     toolFilter:   options.toolFilter,

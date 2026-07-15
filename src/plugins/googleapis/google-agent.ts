@@ -36,7 +36,7 @@ Be professional, polite, helpful, and directly address the user.`
     mode: 'google',
     role: 'reasoning',
     displayName: 'Google Workspace',
-    shortDesc: 'Access and manage Gmail, Calendar, Google Drive, and YouTube directly in chat.',
+    shortDesc: 'Access and manage Gmail messages, Google Calendar events, Google Drive files (uploads/downloads), and YouTube searches.',
     systemPrompt,
     internalTools: Object.values(options.tools || {}),
     toolFilter: options.toolFilter ?? { allow: ['switch_mode'] },

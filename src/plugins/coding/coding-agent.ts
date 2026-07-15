@@ -28,7 +28,7 @@ Behavior:
     mode: 'coding',
     role: 'coding',
     displayName: 'Coding & Docs',
-    shortDesc: 'Inspect a read-only project and generate app-styled documentation',
+    shortDesc: 'Inspect, explain, and query codebase files, and generate or update app-styled documentation.',
     systemPrompt,
     internalTools: Object.values(options.tools || {}),
     toolFilter: options.toolFilter ?? { allow: ['tool_status', 'switch_mode'] },

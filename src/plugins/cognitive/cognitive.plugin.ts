@@ -78,16 +78,17 @@ export default createPluginFactory<CognitiveConfig>({
     },
     sessionManager: {
       factory: (cfg, deps) => {
-        if (!deps.llmProvider) return null
+        if (!deps.llmProvider || !deps.agentRegistry) return null
         const sessionConfig = cfg.session ?? defaultConfig.session!
         return SessionManager({
           llmRef:             deps.llmProvider as ActorRef<LlmProviderMsg>,
+          agentRegistryRef:   deps.agentRegistry as ActorRef<any>,
           defaultMode:        sessionConfig.defaultMode,
           contextWindowHours: sessionConfig.contextWindowHours,
           contextPath:        sessionConfig.contextPath,
         })
       },
-      dependsOn: ['llmProvider'],
+      dependsOn: ['llmProvider', 'agentRegistry'],
     },
     userContext: {
       factory: (cfg) => {

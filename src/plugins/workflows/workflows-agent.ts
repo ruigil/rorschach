@@ -29,7 +29,7 @@ After save_workflow or update_workflow, briefly acknowledge the save and stop.`
     mode: 'workflows',
     role: 'reasoning',
     displayName: 'Plans & Workflows',
-    shortDesc: 'Design plans, save, inspect, and run workflows',
+    shortDesc: 'Design plans, save, inspect, and execute structured workflow DAGs (directed acyclic graphs of tasks).',
     systemPrompt,
     internalTools: Object.values(options.tools || {}),
     toolFilter: options.toolFilter,

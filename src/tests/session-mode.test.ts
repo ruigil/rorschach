@@ -7,6 +7,7 @@ import { AgentRegistrationTopic, type AgentDescriptor, type AgentFactoryOpts } f
 import { SwitchAgentTopic, SessionLifecycleTopic } from '../plugins/cognitive/types.ts'
 import { JobRegistryTopic, type ToolMsg } from '../types/tools.ts'
 import { SessionManager } from '../plugins/cognitive/session-manager.ts'
+import { AgentRegistry } from '../plugins/cognitive/agent-registry.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
@@ -63,8 +64,10 @@ describe('session manager mode UI events', () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const llmRef = system.spawn('null-llm', NullLlm())
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
+    const registryRef = system.spawn('agent-registry', AgentRegistry())
     system.spawn('session-manager', SessionManager({
       llmRef,
+      agentRegistryRef: registryRef,
       defaultMode:        'chatbot',
       contextWindowHours: 4,
     }))
@@ -127,8 +130,10 @@ describe('session manager mode UI events', () => {
       source:   'cli',
     })
 
+    const registryRef = system.spawn('agent-registry', AgentRegistry())
     system.spawn('session-manager', SessionManager({
       llmRef,
+      agentRegistryRef: registryRef,
       defaultMode:        'chatbot',
       contextWindowHours: 4,
     }))
@@ -154,8 +159,10 @@ describe('session manager mode UI events', () => {
     const llmRef = system.spawn('null-llm', NullLlm())
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
     const toolRef = system.spawn('null-tool', NullTool())
+    const registryRef = system.spawn('agent-registry', AgentRegistry())
     system.spawn('session-manager', SessionManager({
       llmRef,
+      agentRegistryRef: registryRef,
       defaultMode:        'chatbot',
       contextWindowHours: 4,
     }))

@@ -40,7 +40,7 @@ Coaching guidelines:
     mode: 'coach',
     role: 'reasoning',
     displayName: 'Life Coach',
-    shortDesc: 'Your personal coach for health, learning routines, habit building, writing journal entries, and habit tracking.',
+    shortDesc: 'Personal life coach for habits, fitness/learning routines, journaling, and task/todo list management in the personal notebook.',
     systemPrompt,
     internalTools: Object.values(options.tools || {}),
     toolFilter: options.toolFilter ?? COACH_TOOL_FILTER,
