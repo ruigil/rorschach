@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { AgentSystem, ask, type ActorRef } from '../system/index.ts'
 import { OutboundUserMessageTopic, HttpWsFrameTopic } from '../types/events.ts'
 import { NotebookChangeTopic } from '../plugins/notebook/types.ts'
-import { NotebookManager } from '../plugins/notebook/notebook-manager.ts'
+import { NotebookManager, sortTodos } from '../plugins/notebook/notebook-manager.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 import { PersistenceProviderTopic } from '../types/persistence.ts'
 
@@ -187,6 +187,20 @@ describe('NotebookManager WebSocket integration', () => {
     expect(completeRes.type).toBe('notebook.todos.list')
     expect(completeRes.todos.find((t: any) => t.id === 't1').done).toBe(true)
 
+    // ─── Test 6.6: notebook.todos.delete ───
+    messages.length = 0
+    system.publish(HttpWsFrameTopic, {
+      clientId: 'c1',
+      userId: 'u1',
+      roles: [],
+      frame: { type: 'notebook.todos.delete', id: 't2' }
+    })
+    await waitMessages(1)
+    expect(messages).toHaveLength(1)
+    const deleteRes = JSON.parse(messages[0]!.text)
+    expect(deleteRes.type).toBe('notebook.todos.list')
+    expect(deleteRes.todos.find((t: any) => t.id === 't2')).toBeUndefined()
+
     // ─── Test 7: NotebookChangeTopic auto-reload push ───
     messages.length = 0
     // Simulate updating todo in mock persistence and publishing NotebookChangeTopic
@@ -214,5 +228,19 @@ describe('NotebookManager WebSocket integration', () => {
     expect(pushRes.todos[0].done).toBe(true)
 
     await system.shutdown()
+  })
+
+  test('sortTodos correctly sorts by done status, due date, priority, and createdAt', () => {
+    const list = [
+      { id: '1', text: 'no due date, high prio', done: false, priority: 'high' as const, createdAt: 100 },
+      { id: '2', text: 'due date later, medium prio', done: false, dueDate: '2026-07-20', priority: 'medium' as const, createdAt: 100 },
+      { id: '3', text: 'due date earlier, low prio', done: false, dueDate: '2026-07-15', priority: 'low' as const, createdAt: 100 },
+      { id: '4', text: 'done todo', done: true, priority: 'high' as const, createdAt: 100 },
+      { id: '5', text: 'no due date, low prio', done: false, priority: 'low' as const, createdAt: 100 },
+      { id: '6', text: 'due date earlier, high prio', done: false, dueDate: '2026-07-15', priority: 'high' as const, createdAt: 100 },
+    ]
+
+    const sorted = sortTodos(list)
+    expect(sorted.map(t => t.id)).toEqual(['6', '3', '2', '1', '5', '4'])
   })
 })
