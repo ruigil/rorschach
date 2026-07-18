@@ -63,10 +63,10 @@ const createPluginHost = (): PluginHostInstance => {
     for (const ft of reg.frameTypes ?? []) frameOwners.set(ft, reg.id)
     if (reg.moduleUrl) {
       try {
-        const mod = await import(/* @vite-ignore */ reg.moduleUrl)
+        const mod = await import(reg.moduleUrl)
         surfaceReducers.set(reg.id, mod.reduceFrame ?? (() => {}))
       } catch (err) {
-        console.error(`plugin-host: failed to load surface module ${reg.moduleUrl}:`, err)
+        //console.error(`plugin-host: failed to load surface module ${reg.moduleUrl}:`, err)
         if (reg.view) {
           viewRegistry.set(reg.id, { ...reg.view, id: reg.id, contentTag: 'r-surface-error' })
         }
