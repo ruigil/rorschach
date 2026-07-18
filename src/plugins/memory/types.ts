@@ -3,7 +3,7 @@ import type { LoopMsg } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 import type { ContextTurn } from '../../types/agents.ts'
-import type { MessageAttachment } from '../../types/events.ts'
+import type { MessageAttachment, HttpWsFrameEvent } from '../../types/events.ts'
 import type { PersistenceMsg } from '../../types/persistence.ts'
 
 // ─── Graph dump types ───
@@ -129,14 +129,15 @@ export type KgraphMsg =
   | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
   | { type: '_conceptSearchDone'; concepts: MemorySearchConcept[]; replyTo: ActorRef<ConceptSearchReply> }
   | { type: '_conceptSearchErr';  error: string;                   replyTo: ActorRef<ConceptSearchReply> }
-  | { type: '_conceptUpsertDone'; nodeId: number;                  replyTo: ActorRef<ConceptUpsertReply> }
+  | { type: '_conceptUpsertDone'; nodeId: number; userId: string; replyTo: ActorRef<ConceptUpsertReply> }
   | { type: '_conceptUpsertErr';  error: string;                   replyTo: ActorRef<ConceptUpsertReply> }
-  | { type: '_conceptLinksDone';  linked: number;                  replyTo: ActorRef<ConceptLinksReply> }
+  | { type: '_conceptLinksDone';  linked: number; userId: string; replyTo: ActorRef<ConceptLinksReply> }
   | { type: '_conceptLinksErr';   error: string;                   replyTo: ActorRef<ConceptLinksReply> }
   | { type: '_linkCandidatesDone'; candidates: LinkConsolidationCandidate[]; replyTo: ActorRef<LinkCandidatesReply> }
   | { type: '_linkCandidatesErr';  error: string;                         replyTo: ActorRef<LinkCandidatesReply> }
   | { type: '_dumpDone';          graph: KgraphGraph;          replyTo: ActorRef<KgraphGraph> }
   | { type: '_dumpErr';           error: string;               replyTo: ActorRef<KgraphGraph> }
+  | { type: '_wsFrame';           event: HttpWsFrameEvent }
 
 // ─── Memory worker message protocols ───
 // Workers only send `_workerDone` to the supervisor; they never receive it,

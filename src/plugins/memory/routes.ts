@@ -57,28 +57,7 @@ export const memorySystemSchema: ConfigSchemaSection = {
 
 export const memorySchemas = [workPathSchema, graphSchema, memorySystemSchema]
 
-const KGRAPH_ROUTE_ID = 'memory.kgraph.api'
-
-export { KGRAPH_ROUTE_ID }
-
 export const buildMemoryRoutes = (
   kgraphRef: ActorRef<KgraphMsg> | null,
-): RouteRegistration[] => [
-  {
-    id: KGRAPH_ROUTE_ID,
-    method: 'GET',
-    path: '/kgraph',
-    handler: async (_req, _url, identity) => {
-      if (!identity) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
-      }
+): RouteRegistration[] => []
 
-      if (!kgraphRef) {
-        return new Response(JSON.stringify({ nodes: [], edges: [] }), { headers: { 'Content-Type': 'application/json' } })
-      }
-
-      const graph: KgraphGraph = await ask(kgraphRef, replyTo => ({ type: 'dump' as const, replyTo, userId: identity.userId }), { timeoutMs: 5_000 })
-      return new Response(JSON.stringify(graph), { headers: { 'Content-Type': 'application/json' } })
-    },
-  },
-]
