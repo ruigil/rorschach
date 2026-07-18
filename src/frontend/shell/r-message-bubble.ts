@@ -197,9 +197,8 @@ export class RMessageBubble extends RorschachBase {
         ${reasoning ? html`
           <details class="reasoning ${active ? 'reasoning-streaming' : ''}">
             <summary>
-              ${!active ? html`<r-icon class="header-icon done" name="brain"></r-icon>` : ''}
-              <span class="header-text">Thinking...</span>
-              ${active ? html`<span class="header-spinner">⚙</span>` : ''}
+              <r-icon class="header-icon done" name="brain"></r-icon>
+              <span class="header-text">${active ? 'Thinking...' : 'Thoughts'}</span>
             </summary>
             <pre class="reasoning-content">${reasoning}</pre>
           </details>
