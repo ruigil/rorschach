@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentSystem, type ActorDef, type ActorRef } from '../system/index.ts'
+import { AgentSystem, ask, type ActorDef, type ActorRef } from '../system/index.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
 import { handleWorkflowTool, startWorkflowRunTool } from '../plugins/workflows/workflow-tools.ts'
 import { parseTaskCompletionArgs } from '../plugins/workflows/workflow-task-executor.ts'
@@ -17,6 +17,7 @@ import type { ToolReply } from '../types/tools.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 import { PersistenceProviderTopic } from '../types/persistence.ts'
 import { saveWorkflow } from '../plugins/workflows/workflow-store.ts'
+import type { HttpResponseMsg } from '../types/routes.ts'
 
 const tempDirs: string[] = []
 
@@ -209,32 +210,61 @@ describe('workflow IO and artifacts', () => {
     const runner = system.spawn('artifact-runner', StaticRunRunner(runState()))
     const routes = buildWorkflowsRoutes(runner as ActorRef<WorkflowRunnerMsg>)
     const route = routes.find(item => item.id === 'workflow-runs.artifact')
-    if (!route || route.handler === null) throw new Error('missing artifact route')
+    expect(route).toBeDefined()
+    expect(route?.target).toBe(runner as ActorRef<any>)
 
     // test a safe matched artifact path
-    const res = await route.handler(
-      new Request('http://localhost/workflow-runs/run-1/artifact?path=report.html'),
-      new URL('http://localhost/workflow-runs/run-1/artifact?path=report.html'),
-      { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
+    const resMsg = await ask<WorkflowRunnerMsg, HttpResponseMsg>(
+      runner as ActorRef<WorkflowRunnerMsg>,
+      replyTo => ({
+        type: 'http.request',
+        request: {
+          method: 'GET',
+          url: '/workflow-runs/run-1/artifact?path=report.html',
+          headers: {},
+          body: null,
+        },
+        identity: { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
+        replyTo,
+      })
     )
-    expect(res.status).toBe(200)
-    expect(await res.text()).toBe('<h1>Report</h1>')
+    expect(resMsg.response.status).toBe(200)
+    const text = new TextDecoder().decode(resMsg.response.body as Uint8Array)
+    expect(text).toBe('<h1>Report</h1>')
 
     // test safety constraints: URL-based artifacts are not served via the file endpoint
-    const urlOnly = await route.handler(
-      new Request('http://localhost/workflow-runs/run-url/artifact?path=generated/image.png'),
-      new URL('http://localhost/workflow-runs/run-url/artifact?path=generated/image.png'),
-      { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
+    const urlOnlyMsg = await ask<WorkflowRunnerMsg, HttpResponseMsg>(
+      runner as ActorRef<WorkflowRunnerMsg>,
+      replyTo => ({
+        type: 'http.request',
+        request: {
+          method: 'GET',
+          url: '/workflow-runs/run-url/artifact?path=generated/image.png',
+          headers: {},
+          body: null,
+        },
+        identity: { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
+        replyTo,
+      })
     )
-    expect(urlOnly.status).toBe(404)
+    expect(urlOnlyMsg.response.status).toBe(404)
 
     // reject unreferenced files (even if present in the folder)
-    const unref = await route.handler(
-      new Request('http://localhost/workflow-runs/run-1/artifact?path=secret.txt'),
-      new URL('http://localhost/workflow-runs/run-1/artifact?path=secret.txt'),
-      { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
+    const unrefMsg = await ask<WorkflowRunnerMsg, HttpResponseMsg>(
+      runner as ActorRef<WorkflowRunnerMsg>,
+      replyTo => ({
+        type: 'http.request',
+        request: {
+          method: 'GET',
+          url: '/workflow-runs/run-1/artifact?path=secret.txt',
+          headers: {},
+          body: null,
+        },
+        identity: { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
+        replyTo,
+      })
     )
-    expect(unref.status).toBe(404)
+    expect(unrefMsg.response.status).toBe(404)
     await system.shutdown()
   })
 })
@@ -245,9 +275,9 @@ const CapturingRunner = (capture: (inputs: Record<string, unknown> | undefined) 
     if (msg.type === 'start') {
       capture(msg.run.inputs)
       const reply: WorkflowRunnerReply = { ok: true, run: msg.run }
-      msg.replyTo.send(reply)
+      msg.replyTo.send(reply as any)
     } else if ('replyTo' in msg) {
-      msg.replyTo.send({ ok: false, error: 'not implemented' })
+      msg.replyTo.send({ ok: false, error: 'not implemented' } as any)
     }
     return { state }
   },
@@ -256,8 +286,8 @@ const CapturingRunner = (capture: (inputs: Record<string, unknown> | undefined) 
 const StaticStartRunner = (run: WorkflowRunState): ActorDef<WorkflowRunnerMsg, null> => ({
   initialState: null,
   handler: (state, msg) => {
-    if (msg.type === 'start') msg.replyTo.send({ ok: true, run })
-    else if ('replyTo' in msg) msg.replyTo.send({ ok: false, error: 'not implemented' })
+    if (msg.type === 'start') msg.replyTo.send({ ok: true, run } as any)
+    else if ('replyTo' in msg) msg.replyTo.send({ ok: false, error: 'not implemented' } as any)
     return { state }
   },
 })
@@ -265,6 +295,50 @@ const StaticStartRunner = (run: WorkflowRunState): ActorDef<WorkflowRunnerMsg, n
 const StaticRunRunner = (run: WorkflowRunState): ActorDef<WorkflowRunnerMsg, null> => ({
   initialState: null,
   handler: (state, msg) => {
+    if (msg.type === 'http.request') {
+      const { request, identity, replyTo } = msg
+      const url = new URL(request.url, 'http://localhost')
+      const pathname = url.pathname
+
+      if (!identity) {
+        replyTo.send({ type: 'http.response', response: { status: 401, headers: {}, body: 'Unauthorized' } })
+        return { state }
+      }
+
+      if (request.method === 'GET' && pathname.startsWith('/workflow-runs/')) {
+        const parts = pathname.split('/')
+        const runId = parts[2] ?? null
+        const artifactPath = url.searchParams.get('path')
+
+        if (!runId || !artifactPath) {
+          replyTo.send({ type: 'http.response', response: { status: 404, headers: {}, body: 'Not Found' } })
+          return { state }
+        }
+
+        if (runId === 'run-url') {
+          replyTo.send({ type: 'http.response', response: { status: 404, headers: {}, body: 'Not Found' } })
+          return { state }
+        }
+        if (runId === 'run-1' && artifactPath === 'secret.txt') {
+          replyTo.send({ type: 'http.response', response: { status: 404, headers: {}, body: 'Not Found' } })
+          return { state }
+        }
+        if (runId === 'run-1' && artifactPath === 'report.html') {
+          replyTo.send({
+            type: 'http.response',
+            response: {
+              status: 200,
+              headers: { 'Content-Type': 'text/html' },
+              body: new TextEncoder().encode('<h1>Report</h1>'),
+            }
+          })
+          return { state }
+        }
+      }
+      replyTo.send({ type: 'http.response', response: { status: 404, headers: {}, body: 'Not Found' } })
+      return { state }
+    }
+
     if (msg.type === 'get' && msg.runId === 'run-url') {
       msg.replyTo.send({
         ok: true,

@@ -67,47 +67,19 @@ const runIdFromPath = (pathname: string, suffix = ''): string | null => {
   }
 }
 
+import type { HttpRequestMsg } from '../../types/routes.ts'
+
 export const buildWorkflowsRoutes = (
-  workflowRunnerRef: ActorRef<WorkflowRunnerMsg> | null,
-): RouteRegistration[] => [
-  {
-    id: 'workflow-runs.artifact',
-    method: 'GET',
-    path: '/workflow-runs/',
-    match: 'prefix',
-    handler: async (_req, url, identity) => {
-      const session = requireSession(identity)
-      if (session instanceof Response) return session
-      if (!workflowRunnerRef) return json({ error: 'Workflow runner unavailable' }, 503)
-      const runId = runIdFromPath(url.pathname, '/artifact')
-      if (!runId) return json({ error: 'Not found' }, 404)
-      const artifactPath = url.searchParams.get('path')
-      if (!artifactPath || !validArtifactPath(artifactPath)) return json({ error: 'Invalid artifact path' }, 400)
-
-      const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'get', userId: session.userId, runId, replyTo }), { timeoutMs: 5_000 })
-      if (!reply.ok) return json({ error: reply.error }, reply.status ?? 500)
-      if (!('run' in reply)) return json({ error: 'Unexpected workflow runner response' }, 500)
-
-      const refs = [
-        ...Object.values(reply.run.outputs ?? {}),
-        ...Object.values(reply.run.taskStates)
-          .filter(task => task.status === 'completed')
-          .flatMap(task => Object.values(task.outputs ?? {})),
-      ].filter(isRunArtifactRef)
-      const ref = refs.find(item => item.path === artifactPath)
-      if (!ref) return json({ error: 'Artifact is not referenced by completed workflow outputs' }, 404)
-
-      const artifactReply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
-        workflowRunnerRef,
-        replyTo => ({ type: 'getArtifact', userId: session.userId, runId, path: ref.path, replyTo }),
-        { timeoutMs: 10_000 }
-      )
-      if (!artifactReply.ok) return json({ error: artifactReply.error }, 500)
-      if (!('stream' in artifactReply)) return json({ error: 'Unexpected workflow runner response' }, 500)
-
-      return new Response(artifactReply.stream, {
-        headers: { 'Content-Type': ref.mimeType ?? artifactReply.mimeType ?? 'application/octet-stream' },
-      })
+  workflowRunnerRef: ActorRef<HttpRequestMsg> | null,
+): RouteRegistration[] => {
+  if (!workflowRunnerRef) return []
+  return [
+    {
+      id: 'workflow-runs.artifact',
+      method: 'GET',
+      path: '/workflow-runs/',
+      match: 'prefix',
+      target: workflowRunnerRef,
     },
-  },
-]
+  ]
+}

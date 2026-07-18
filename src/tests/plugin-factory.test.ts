@@ -136,7 +136,7 @@ describe('Plugin Factory (createPluginFactory)', () => {
           id: 'mock-route',
           method: 'GET',
           path: '/mock/action',
-          handler: () => new Response('ok'),
+          target: deps.worker,
         },
       ],
       uiSurface: (cfg: any) => ({
@@ -188,7 +188,7 @@ describe('Plugin Factory (createPluginFactory)', () => {
     // Verify tombstones published
     const toolTombstone = registeredTools.find((t) => t.name === 'mock_search' && t.ref === null);
     const agentTombstone = registeredAgents.find((a) => a.type === 'unregister' && a.mode === 'mock-agent');
-    const routeTombstone = registeredRoutes.find((r) => r.id === 'mock-route' && r.handler === null);
+    const routeTombstone = registeredRoutes.find((r) => r.id === 'mock-route' && r.target === null);
     const uiTombstone = registeredUi.find((u) => u.id === 'mock-ui' && u.view === null);
 
     expect(toolTombstone).toBeDefined();

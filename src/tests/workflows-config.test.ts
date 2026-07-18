@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { AgentSystem } from '../system/index.ts'
+import { AgentSystem, ask } from '../system/index.ts'
 import workflowsPlugin  from '../plugins/workflows/workflows.plugin.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../types/agents.ts'
 import { RouteRegistrationTopic, type RouteRegistration } from '../types/routes.ts'
@@ -43,11 +43,25 @@ describe('workflows config', () => {
     expect(registrations.map(d => d.mode)).toEqual(['workflows'])
 
     const route = routes.find(r => r.id === 'config.workflows')
-    expect(route?.handler).not.toBeNull()
-    if (!route || route.handler === null) throw new Error('expected workflows config route handler')
+    expect(route?.target).not.toBeNull()
+    if (!route || route.target === null) throw new Error('expected workflows config route target')
     
-    const response = await route.handler(new Request('http://localhost/config/workflows'), new URL('http://localhost/config/workflows'), null)
-    expect(await response.json()).toMatchObject({
+    const responseMsg = await ask<any, any>(
+      route.target,
+      replyTo => ({
+        type: 'http.request',
+        request: {
+          method: 'GET',
+          url: '/config/workflows',
+          headers: {},
+          body: null,
+        },
+        identity: null,
+        replyTo,
+      })
+    )
+    expect(responseMsg.response.status).toBe(200)
+    expect(JSON.parse(responseMsg.response.body as string)).toMatchObject({
       agent: { model: 'z-ai/glm-5.1', maxToolLoops: 10 },
     })
 

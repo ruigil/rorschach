@@ -89,7 +89,7 @@ describe('appendMessage', () => {
     })
 
     const stored = JSON.parse(localStorage.getItem('rorschach.store.shell.lastMessages')!)
-    expect(stored[0].attachments).toEqual([{ kind: 'image', name: 'screen.png' }])
+    expect(stored[0].attachments).toEqual([{ kind: 'image', name: 'screen.png', url: 'blob:local' }])
     expect(store.namespace<ShellState>('shell').get('messages')[0]!.attachments![0]!.data).toBe('data:image/png;base64,large')
   })
 })

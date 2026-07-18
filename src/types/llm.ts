@@ -100,7 +100,10 @@ export type VideoDownloadReply =
 
 // ─── Public provider messages ───
 
+import type { HttpRequestMsg } from './routes.ts'
+
 export type LlmProviderMsg =
+  | HttpRequestMsg
   | { type: 'stream';            requestId: string; model: string; messages: ApiMessage[]; tools?: LlmTool[]; role: string; userId?: string; replyTo: ActorRef<LlmProviderReply> }
   | { type: 'streamImage';       requestId: string; model: string; messages: ApiMessage[]; role: string; userId?: string; replyTo: ActorRef<VisionProviderReply> }
   | { type: 'streamAudio';       requestId: string; model: string; messages: ApiMessage[]; voice?: string; role: string; userId?: string; replyTo: ActorRef<AudioProviderReply> }

@@ -76,27 +76,18 @@ export const userContextSchema: ConfigSchemaSection = {
 
 export const cognitiveSchemas = [chatbotSchema, sessionSchema, llmSchema, userContextSchema]
 
-import { ask } from '../../system/index.ts'
-import type { RouteRegistration } from '../../types/routes.ts'
 import type { ActorRef } from '../../system/index.ts'
-import type { LlmProviderMsg } from '../../types/llm.ts'
+import type { RouteRegistration, HttpRequestMsg } from '../../types/routes.ts'
 
-export const buildCognitiveRoutes = (llmProviderRef?: ActorRef<LlmProviderMsg>): RouteRegistration[] => [
-  {
-    id: 'cognitive.models',
-    method: 'GET',
-    path: '/models',
-    handler: async () => {
-      if (!llmProviderRef) {
-        return new Response('[]', { headers: { 'Content-Type': 'application/json' } })
-      }
-      try {
-        const models = await ask(llmProviderRef, replyTo => ({ type: 'fetchModels' as const, replyTo }), { timeoutMs: 10_000 })
-        return new Response(JSON.stringify(models), { headers: { 'Content-Type': 'application/json' } })
-      } catch {
-        return new Response('[]', { headers: { 'Content-Type': 'application/json' } })
-      }
+export const buildCognitiveRoutes = (llmProviderRef?: ActorRef<HttpRequestMsg>): RouteRegistration[] => {
+  if (!llmProviderRef) return []
+  return [
+    {
+      id: 'cognitive.models',
+      method: 'GET',
+      path: '/models',
+      target: llmProviderRef,
     }
-  }
-]
+  ]
+}
 

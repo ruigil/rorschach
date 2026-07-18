@@ -15,6 +15,7 @@ import type {
 import { WorkflowRunExecutor } from './workflow-run-executor.ts'
 import { getWorkflowRun, listWorkflowRuns, listWorkflows, getWorkflowGraph, createWorkflowRun } from './workflow-store.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetStreamPayload } from '../../types/persistence.ts'
+import { isRunArtifactRef, validArtifactPath } from './validation.ts'
 
 type RunnerState = {
   live: Record<string, ActorRef<WorkflowRunExecutorMsg>>
@@ -36,6 +37,19 @@ export const WorkflowRunner = (
   config: WorkflowRunnerConfig,
 ): ActorDef<WorkflowRunnerMsg, RunnerState> => {
   const { model, maxToolLoops } = config
+
+  const runIdFromPath = (pathname: string, suffix = ''): string | null => {
+    if (!pathname.startsWith('/workflow-runs/')) return null
+    if (suffix && !pathname.endsWith(suffix)) return null
+    const end = suffix ? pathname.length - suffix.length : pathname.length
+    const raw = pathname.slice('/workflow-runs/'.length, end)
+    if (!raw || raw.includes('/')) return null
+    try {
+      return decodeURIComponent(raw)
+    } catch {
+      return null
+    }
+  }
 
   const ensureRunActor = (
     state: RunnerState,
@@ -202,6 +216,113 @@ export const WorkflowRunner = (
       }
     }),
     handler: onMessage<WorkflowRunnerMsg, RunnerState>({
+      'http.request': (state, message, ctx) => {
+        const { request, identity, replyTo } = message
+        const url = new URL(request.url, 'http://localhost')
+        const pathname = url.pathname
+
+        if (!identity) {
+          replyTo.send({ type: 'http.response', response: { status: 401, headers: {}, body: 'Unauthorized' } })
+          return { state }
+        }
+
+        if (request.method === 'GET' && pathname.startsWith('/workflow-runs/')) {
+          const runId = runIdFromPath(pathname, '/artifact')
+          if (!runId) {
+            replyTo.send({ type: 'http.response', response: { status: 404, headers: {}, body: 'Not Found' } })
+            return { state }
+          }
+          const artifactPath = url.searchParams.get('path')
+          if (!artifactPath || !validArtifactPath(artifactPath)) {
+            replyTo.send({ type: 'http.response', response: { status: 400, headers: {}, body: 'Invalid artifact path' } })
+            return { state }
+          }
+
+          ctx.self.send({
+            type: 'get',
+            userId: identity.userId,
+            runId,
+            replyTo: {
+              name: 'http:workflow-runs:get',
+              isAlive: () => true,
+              send: (reply) => {
+                if (!reply.ok) {
+                  replyTo.send({ type: 'http.response', response: { status: reply.status ?? 500, headers: {}, body: reply.error } })
+                  return
+                }
+                if (!('run' in reply)) {
+                  replyTo.send({ type: 'http.response', response: { status: 500, headers: {}, body: 'Unexpected run response' } })
+                  return
+                }
+
+                const refs = [
+                  ...Object.values(reply.run.outputs ?? {}),
+                  ...Object.values(reply.run.taskStates)
+                    .filter(task => task.status === 'completed')
+                    .flatMap(task => Object.values(task.outputs ?? {})),
+                ].filter(isRunArtifactRef)
+                const ref = refs.find(item => item.path === artifactPath)
+                if (!ref) {
+                  replyTo.send({ type: 'http.response', response: { status: 404, headers: {}, body: 'Artifact is not referenced by completed workflow outputs' } })
+                  return
+                }
+
+                ctx.self.send({
+                  type: 'getArtifact',
+                  userId: identity.userId,
+                  runId,
+                  path: ref.path,
+                  replyTo: {
+                    name: 'http:workflow-runs:getArtifact',
+                    isAlive: () => true,
+                    send: (artifactReply) => {
+                      if (!artifactReply.ok) {
+                        replyTo.send({ type: 'http.response', response: { status: 500, headers: {}, body: artifactReply.error } })
+                        return
+                      }
+                      if (!('stream' in artifactReply)) {
+                        replyTo.send({ type: 'http.response', response: { status: 500, headers: {}, body: 'Unexpected artifact response' } })
+                        return
+                      }
+                      
+                      (async () => {
+                        const reader = artifactReply.stream.getReader()
+                        const chunks: Uint8Array[] = []
+                        while (true) {
+                          const { done, value } = await reader.read()
+                          if (done) break
+                          chunks.push(value)
+                        }
+                        const length = chunks.reduce((acc, c) => acc + c.length, 0)
+                        const buffer = new Uint8Array(length)
+                        let offset = 0
+                        for (const chunk of chunks) {
+                          buffer.set(chunk, offset)
+                          offset += chunk.length
+                        }
+                        replyTo.send({
+                          type: 'http.response',
+                          response: {
+                            status: 200,
+                            headers: { 'Content-Type': ref.mimeType ?? artifactReply.mimeType ?? 'application/octet-stream' },
+                            body: buffer,
+                          }
+                        })
+                      })().catch(err => {
+                        replyTo.send({ type: 'http.response', response: { status: 500, headers: {}, body: String(err) } })
+                      })
+                    }
+                  }
+                })
+              }
+            }
+          })
+        } else {
+          replyTo.send({ type: 'http.response', response: { status: 404, headers: {}, body: 'Not Found' } })
+        }
+        return { state }
+      },
+
       _persistenceRef: (state, msg) => {
         return { state: { ...state, persistenceRef: msg.ref } }
       },

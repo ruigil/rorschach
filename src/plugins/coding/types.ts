@@ -96,7 +96,10 @@ export type ProjectShellMsg =
   | { type: '_readDone'; content: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_readErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
 
+import type { HttpRequestMsg } from '../../types/routes.ts'
+
 export type ArtifactToolsMsg =
+  | HttpRequestMsg
   | ToolInvokeMsg
   | { type: '_done' }
   | { type: '_writeDone'; replyTo: ActorRef<ToolReply>; text: string; span: SpanHandle | null }

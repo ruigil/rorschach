@@ -13,7 +13,7 @@ import {
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import type { RouteRegistration } from '../../types/routes.ts'
+import type { RouteRegistration, HttpRequestMsg } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
 import { resolveIdentity, resolveCookieIdentity, ConfigUpdateRequestTopic } from './types.ts'
@@ -84,9 +84,8 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
   let identityProviderRef: ActorRef<IdentityProviderMsg> | null = null
   let persistenceRef:      ActorRef<PersistenceMsg>      | null = null
   const retainedAdminBroadcastsMap = new Map<string, { type: string; payload: any }>()
-  type RouteHandler = Extract<RouteRegistration, { handler: Function }>['handler']
   type RouteMatch = NonNullable<RouteRegistration['match']>
-  type RouteRecord = { method: string; path: string; match: RouteMatch; handler: RouteHandler }
+  type RouteRecord = { method: string; path: string; match: RouteMatch; target: ActorRef<HttpRequestMsg> }
 
   const routes = new Map<string, RouteRecord>()
   const routeKey = (method: string, path: string, match: RouteMatch = 'exact') => `${method.toUpperCase()} ${match} ${path}`
@@ -108,10 +107,10 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
     }
   }
 
-  const resolveRegisteredRoute = (method: string, pathname: string): RouteHandler | undefined => {
+  const resolveRegisteredRoute = (method: string, pathname: string): ActorRef<HttpRequestMsg> | undefined => {
     const upperMethod = method.toUpperCase()
     const exact = routes.get(routeKey(upperMethod, pathname, 'exact'))
-    if (exact) return exact.handler
+    if (exact) return exact.target
 
     let best: RouteRecord | undefined
     for (const route of routes.values()) {
@@ -119,7 +118,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
       if (!pathname.startsWith(route.path)) continue
       if (!best || route.path.length > best.path.length) best = route
     }
-    return best?.handler
+    return best?.target
   }
 
   return {
@@ -296,8 +295,8 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         const match = reg.match ?? 'exact'
         const method = reg.method.toUpperCase()
         const key = routeKey(method, reg.path, match)
-        if (reg.handler === null) routes.delete(key)
-        else routes.set(key, { method, path: reg.path, match, handler: reg.handler })
+        if (reg.target === null) routes.delete(key)
+        else routes.set(key, { method, path: reg.path, match, target: reg.target })
         return { state }
       },
 

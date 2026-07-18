@@ -4,12 +4,14 @@ import type { ActorDef } from '../system/index.ts'
 import { ask } from '../system/index.ts'
 import { authorizeConfigAccess, canAccessAdminSurface } from '../plugins/interfaces/http.ts'
 import { Authenticator, rolesForIdentity, type AuthConfig } from '../plugins/auth/authenticator.ts'
+import { AuthenticatorRouter } from '../plugins/auth/authenticator-router.ts'
 import { buildAuthRoutes } from '../plugins/auth/routes.ts'
 import type { ActorRef } from '../system/index.ts'
 import type { Identity, IdentityProviderMsg } from '../types/identity.ts'
 import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
 import type { AuthenticatorMsg, AuthSession, User, UserStoreMsg } from '../plugins/auth/types.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
+import type { HttpRequestMsg, HttpResponseMsg } from '../types/routes.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -202,7 +204,7 @@ describe('admin surface access', () => {
   })
 
   test('allows admin HTTP reads for admins and rejects non-admins', async () => {
-    const observeUrl = 'http://127.0.0.1:3000/kgraph'
+    const observeUrl = 'http://127.0.0.1:3000/config/schema'
     const adminIdentity: Identity = { userId: 'u-admin', fullName: 'admin', roles: ['admin'] }
     const userIdentity: Identity = { userId: 'u-user', fullName: 'user', roles: [] }
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({
@@ -372,8 +374,9 @@ describe('auth admin allowlist', () => {
     }
     const userStore = system.spawn('users', fakeUserStore({ [user.id]: user }))
     const auth = system.spawn('auth', Authenticator({ userStore: userStore as ActorRef<UserStoreMsg>, config: baseConfig })) as ActorRef<AuthenticatorMsg>
+    const authRouter = system.spawn('auth-router', AuthenticatorRouter({ authenticator: auth, config: baseConfig }))
     
-    const routes = buildAuthRoutes(auth)
+    const routes = buildAuthRoutes(authRouter)
     const getRoute = routes.find(r => r.id === 'auth.profile.get')
     const postRoute = routes.find(r => r.id === 'auth.profile.update')
 
@@ -382,17 +385,40 @@ describe('auth admin allowlist', () => {
 
     const identity: Identity = { userId: 'u-user', fullName: 'John Doe', roles: ['user'] }
     
-    const getRes = await getRoute!.handler!(new Request('http://localhost/auth/profile'), new URL('http://localhost/auth/profile'), identity)
-    expect(getRes.status).toBe(200)
-    const getData = await getRes.json()
+    const getResMsg = await ask<HttpRequestMsg, HttpResponseMsg>(
+      authRouter,
+      replyTo => ({
+        type: 'http.request',
+        request: {
+          method: 'GET',
+          url: '/auth/profile',
+          headers: {},
+          body: null,
+        },
+        identity,
+        replyTo,
+      })
+    )
+    expect(getResMsg.response.status).toBe(200)
+    const getData = JSON.parse(getResMsg.response.body as string)
     expect(getData.fullName).toBe('John Doe')
 
-    const postRes = await postRoute!.handler!(new Request('http://localhost/auth/profile', {
-      method: 'POST',
-      body: JSON.stringify({ fullName: 'Jane Doe', avatar: 'avatar-data' }),
-    }), new URL('http://localhost/auth/profile'), identity)
-    expect(postRes.status).toBe(200)
-    const postData = await postRes.json()
+    const postResMsg = await ask<HttpRequestMsg, HttpResponseMsg>(
+      authRouter,
+      replyTo => ({
+        type: 'http.request',
+        request: {
+          method: 'POST',
+          url: '/auth/profile',
+          headers: {},
+          body: JSON.stringify({ fullName: 'Jane Doe', avatar: 'avatar-data' }),
+        },
+        identity,
+        replyTo,
+      })
+    )
+    expect(postResMsg.response.status).toBe(200)
+    const postData = JSON.parse(postResMsg.response.body as string)
     expect(postData.ok).toBe(true)
     expect(postData.user.fullName).toBe('Jane Doe')
     expect(postData.user.avatar).toBe('avatar-data')
@@ -402,41 +428,97 @@ describe('auth admin allowlist', () => {
 
   test('serves auth static files via prefix dynamic route', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
-    const mockAuthRef = {} as ActorRef<AuthenticatorMsg>
-    const routes = buildAuthRoutes(mockAuthRef)
+    const user: User = {
+      id: 'u-user',
+      fullName: 'John Doe',
+      createdAt: Date.now(),
+      roles: ['user'],
+      deviceKeys: [],
+    }
+    const userStore = system.spawn('users', fakeUserStore({ [user.id]: user }))
+    const auth = system.spawn('auth', Authenticator({ userStore: userStore as ActorRef<UserStoreMsg>, config: baseConfig })) as ActorRef<AuthenticatorMsg>
+    const authRouter = system.spawn('auth-router', AuthenticatorRouter({ authenticator: auth, config: baseConfig }))
+    
+    const routes = buildAuthRoutes(authRouter)
     const staticRoute = routes.find(r => r.id === 'auth.static')
 
     expect(staticRoute).toBeDefined()
     expect(staticRoute?.method).toBe('GET')
     expect(staticRoute?.path).toBe('/auth/')
     expect(staticRoute?.match).toBe('prefix')
+    expect(staticRoute?.target).toBe(authRouter)
 
-    const handler = staticRoute?.handler
-    expect(handler).toBeFunction()
+    // Test serving login.html on root /auth/
+    const resRootMsg = await ask<HttpRequestMsg, HttpResponseMsg>(
+      authRouter,
+      replyTo => ({
+        type: 'http.request',
+        request: {
+          method: 'GET',
+          url: '/auth/',
+          headers: {},
+          body: null,
+        },
+        identity: null,
+        replyTo,
+      })
+    )
+    expect(resRootMsg.response.status).toBe(200)
+    expect(resRootMsg.response.headers['Content-Type']).toContain('text/html')
+    expect(resRootMsg.response.body as string).toContain('Sign in')
 
-    if (handler) {
-      // Test serving login.html on root /auth/
-      const resRoot = await handler(new Request('http://localhost:3000/auth/'), new URL('http://localhost:3000/auth/'), null)
-      expect(resRoot.status).toBe(200)
-      expect(resRoot.headers.get('Content-Type')).toContain('text/html')
-      const textRoot = await resRoot.text()
-      expect(textRoot).toContain('Sign in')
+    // Test serving auth.js
+    const resJsMsg = await ask<HttpRequestMsg, HttpResponseMsg>(
+      authRouter,
+      replyTo => ({
+        type: 'http.request',
+        request: {
+          method: 'GET',
+          url: '/auth/auth.js',
+          headers: {},
+          body: null,
+        },
+        identity: null,
+        replyTo,
+      })
+    )
+    expect(resJsMsg.response.status).toBe(200)
+    expect(resJsMsg.response.headers['Content-Type']).toContain('application/javascript')
+    expect(resJsMsg.response.body as string).toContain('openWebSocket')
 
-      // Test serving auth.js
-      const resJs = await handler(new Request('http://localhost:3000/auth/auth.js'), new URL('http://localhost:3000/auth/auth.js'), null)
-      expect(resJs.status).toBe(200)
-      expect(resJs.headers.get('Content-Type')).toContain('application/javascript')
-      const textJs = await resJs.text()
-      expect(textJs).toContain('openWebSocket')
+    // Test directory traversal prevention
+    const resTraversalMsg = await ask<HttpRequestMsg, HttpResponseMsg>(
+      authRouter,
+      replyTo => ({
+        type: 'http.request',
+        request: {
+          method: 'GET',
+          url: '/auth/../routes.ts',
+          headers: {},
+          body: null,
+        },
+        identity: null,
+        replyTo,
+      })
+    )
+    expect(resTraversalMsg.response.status).toBe(404)
 
-      // Test directory traversal prevention
-      const resTraversal = await handler(new Request('http://localhost:3000/auth/../routes.ts'), new URL('http://localhost:3000/auth/../routes.ts'), null)
-      expect(resTraversal.status).toBe(404)
-
-      // Test nonexistent file 404
-      const res404 = await handler(new Request('http://localhost:3000/auth/nonexistent.txt'), new URL('http://localhost:3000/auth/nonexistent.txt'), null)
-      expect(res404.status).toBe(404)
-    }
+    // Test nonexistent file 404
+    const res404Msg = await ask<HttpRequestMsg, HttpResponseMsg>(
+      authRouter,
+      replyTo => ({
+        type: 'http.request',
+        request: {
+          method: 'GET',
+          url: '/auth/nonexistent.txt',
+          headers: {},
+          body: null,
+        },
+        identity: null,
+        replyTo,
+      })
+    )
+    expect(res404Msg.response.status).toBe(404)
 
     await system.shutdown()
   })

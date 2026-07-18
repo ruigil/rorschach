@@ -188,7 +188,7 @@ export const createPluginFactory = <
         const initialConfig = (ctx.initialConfig() ?? blueprint.configDescriptor.defaults) as C;
 
         // 1. Publish configuration surface
-        publishConfigSurface(ctx, blueprint.configDescriptor, () => initialConfig);
+        publishConfigSurface(ctx, blueprint.configDescriptor);
 
         // 2. Compute topological spawn order
         const spawnOrder = computeSpawnOrder(blueprint.slots ?? {});
@@ -318,7 +318,7 @@ export const createPluginFactory = <
             id: reg.id,
             method: reg.method,
             path: reg.path,
-            handler: null,
+            target: null,
           });
         }
 
@@ -372,12 +372,34 @@ export const createPluginFactory = <
     }),
 
     handler: onMessage<any, PluginFactoryState>({
+      'http.request': (state, message, ctx) => {
+        const { request, replyTo } = message;
+        const url = new URL(request.url, 'http://localhost');
+        const path = url.pathname;
+        if (request.method === 'GET' && path === `/config/${blueprint.id}`) {
+          replyTo.send({
+            type: 'http.response',
+            response: {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(state.config ?? {}),
+            },
+          });
+        } else {
+          replyTo.send({
+            type: 'http.response',
+            response: { status: 404, headers: {}, body: 'Not Found' }
+          });
+        }
+        return { state };
+      },
+
       config: (state, msg, ctx) => {
         const newConfig = msg.slice;
         const gen = state.generation + 1;
 
         // 1. Update config surface
-        publishConfigSurface(ctx, blueprint.configDescriptor, () => newConfig);
+        publishConfigSurface(ctx, blueprint.configDescriptor);
 
         // 2. Compute sorting spawn order
         const spawnOrder = computeSpawnOrder(blueprint.slots ?? {});
@@ -442,7 +464,7 @@ export const createPluginFactory = <
             id: reg.id,
             method: reg.method,
             path: reg.path,
-            handler: null,
+            target: null,
           });
         }
 

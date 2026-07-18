@@ -198,7 +198,10 @@ export type WorkflowRunnerReply =
   | { ok: true; stream: ReadableStream<Uint8Array>; mimeType?: string }
   | { ok: false; error: string; status?: number }
 
+import type { HttpRequestMsg } from '../../types/routes.ts'
+
 export type WorkflowRunnerMsg =
+  | HttpRequestMsg
   | { type: 'start'; run: WorkflowRunState; workflow: Workflow; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'list'; userId: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'listExecutionTools'; replyTo: ActorRef<WorkflowRunnerReply> }

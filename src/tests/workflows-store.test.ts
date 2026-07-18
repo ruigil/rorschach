@@ -82,7 +82,7 @@ const FakeRunner = (): ActorDef<WorkflowRunnerMsg, { executionTools: Record<stri
       const reply: WorkflowRunnerReply = msg.type === 'listExecutionTools'
         ? { ok: true, executionTools: [{ name: 'read', description: 'Read a file.' }] }
         : { ok: false, error: 'not implemented' }
-      msg.replyTo.send(reply)
+      msg.replyTo.send(reply as any)
     }
     return { state }
   },

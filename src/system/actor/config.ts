@@ -37,23 +37,17 @@ export const defineConfig = <C>(
 
 export const buildConfigRoute = <C>(
   descriptor: ConfigDescriptor<C>,
-  getConfig: () => C | undefined,
+  pluginRef: ActorRef<any>,
 ): RouteRegistration[] => [{
   id: `config.${descriptor.key}`,
   method: 'GET',
   path: `/config/${descriptor.key}`,
-  handler: () => {
-    const slice = getConfig()
-    return new Response(JSON.stringify(slice ?? {}), {
-      headers: { 'Content-Type': 'application/json' },
-    })
-  },
+  target: pluginRef as ActorRef<any>,
 }]
 
 export const publishConfigSurface = <C>(
   ctx: ActorContext<any>,
   descriptor: ConfigDescriptor<C>,
-  getConfig: () => C | undefined,
 ): void => {
   for (const section of descriptor.schemas ?? []) {
     ctx.publishRetained(OutboundAdminBroadcastTopic, section.id, {
@@ -62,7 +56,7 @@ export const publishConfigSurface = <C>(
       payload: { section },
     })
   }
-  for (const reg of buildConfigRoute(descriptor, getConfig)) {
+  for (const reg of buildConfigRoute(descriptor, ctx.self)) {
     ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
   }
 }
@@ -79,13 +73,13 @@ export const deleteConfigSurface = <C>(
       isTombstone: true,
     })
   }
-  for (const reg of buildConfigRoute(descriptor, () => undefined)) {
+  for (const reg of buildConfigRoute(descriptor, ctx.self)) {
     ctx.deleteRetained(RouteRegistrationTopic, reg.id, {
       id: reg.id,
       method: reg.method,
       path: reg.path,
       ...(reg.match !== undefined ? { match: reg.match } : {}),
-      handler: null,
+      target: null,
     })
   }
 }

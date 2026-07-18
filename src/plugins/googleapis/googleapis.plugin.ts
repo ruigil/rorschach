@@ -6,6 +6,7 @@ import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import type { GoogleApisConfig, TokenStoreMsg, OAuthStateMsg } from './types.ts'
 import { TokenStore } from './token-store.ts'
 import { OAuthState } from './oauth-state.ts'
+import { OAuthRouter, type OAuthRouterMsg } from './oauth-router.ts'
 import { buildGoogleOAuthRoutes, googleapisSchemas } from './routes.ts'
 import { GoogleAgentDescriptor } from './google-agent.ts'
 
@@ -83,6 +84,21 @@ export default createPluginFactory<GoogleApisConfig>({
       factory: () => OAuthState(),
       surviveConfigChange: true,
     },
+    oauthRouter: {
+      factory: (cfg, deps) => {
+        const clientId     = cfg.clientId     ?? ''
+        const clientSecret = cfg.clientSecret ?? ''
+        const baseUrl      = (cfg.baseUrl     ?? '').replace(/\/$/, '')
+        return OAuthRouter({
+          tokenStore: deps.tokenStore as ActorRef<TokenStoreMsg>,
+          oauthState: deps.oauthState as ActorRef<OAuthStateMsg>,
+          clientId,
+          clientSecret,
+          baseUrl,
+        })
+      },
+      dependsOn: ['tokenStore', 'oauthState'],
+    },
     gmail: {
       factory: (cfg, deps) => {
         if (!cfg.clientId || !cfg.clientSecret) return null
@@ -129,15 +145,6 @@ export default createPluginFactory<GoogleApisConfig>({
     },
   },
   routes: (cfg, deps) => {
-    const clientId     = cfg.clientId     ?? ''
-    const clientSecret = cfg.clientSecret ?? ''
-    const baseUrl      = (cfg.baseUrl     ?? '').replace(/\/$/, '')
-    return buildGoogleOAuthRoutes({
-      tokenStoreRef: deps.tokenStore as ActorRef<TokenStoreMsg>,
-      oauthStateRef: deps.oauthState as ActorRef<OAuthStateMsg>,
-      clientId,
-      clientSecret,
-      baseUrl,
-    })
+    return buildGoogleOAuthRoutes(deps.oauthRouter as ActorRef<OAuthRouterMsg>)
   },
 })

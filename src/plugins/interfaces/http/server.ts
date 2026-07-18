@@ -3,6 +3,9 @@ import type { Server, ServerWebSocket } from 'bun'
 import { mimeType, safeJoinUrlPath } from './media.ts'
 import type { MessageAttachment } from '../../../types/events.ts'
 import type { Identity } from '../../../types/identity.ts'
+import { ask } from '../../../system/index.ts'
+import type { ActorRef } from '../../../system/index.ts'
+import type { HttpRequestMsg, HttpResponseMsg } from '../../../types/routes.ts'
 
 export type WsData = { clientId: string; userId: string; roles: string[] }
 
@@ -14,7 +17,7 @@ export type ServerOptions = {
   resolveIdentity: (ticket: string) => Promise<Identity | null>
   resolveCookieIdentity: (req: Request) => Promise<Identity | null>
   authorizeConfigAccess: (req: Request, url: URL, identity: Identity | null, options?: { requireSameOrigin?: boolean }) => Promise<Response | null>
-  resolveRegisteredRoute: (method: string, pathname: string) => Function | undefined
+  resolveRegisteredRoute: (method: string, pathname: string) => ActorRef<HttpRequestMsg> | undefined
   getConfigSchemas: () => any[]
   
   // Connection and message callbacks
@@ -65,7 +68,7 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
       }
 
       // 2. Authorization for configuration / knowledge graph APIs
-      const isConfig = url.pathname === '/config/schema' || url.pathname.startsWith('/config/') || url.pathname === '/kgraph'
+      const isConfig = url.pathname === '/config/schema' || url.pathname.startsWith('/config/')
       if (isConfig) {
         const identity = await resolveCookieIdentity(req)
         const denied = await authorizeConfigAccess(req, url, identity, {
@@ -75,10 +78,47 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
       }
 
       // 3. Plugin-registered routes (auth, etc.) win over inline handlers.
-      const registered = resolveRegisteredRoute(req.method, url.pathname)
-      if (registered) {
+      const targetActor = resolveRegisteredRoute(req.method, url.pathname)
+      if (targetActor) {
         const identity = await resolveCookieIdentity(req)
-        return await registered(req, url, identity)
+        
+        const headers: Record<string, string> = {}
+        req.headers.forEach((value, key) => {
+          headers[key] = value
+        })
+
+        let body: string | null = null
+        if (req.body) {
+          body = await req.text()
+        }
+
+        try {
+          const resMsg = await ask<HttpRequestMsg, HttpResponseMsg>(
+            targetActor,
+            replyTo => ({
+              type: 'http.request',
+              request: {
+                method: req.method,
+                url: url.pathname + url.search,
+                headers,
+                body,
+              },
+              identity,
+              replyTo,
+            }),
+            { timeoutMs: 30_000 }
+          )
+
+          return new Response(resMsg.response.body as any, {
+            status: resMsg.response.status,
+            headers: resMsg.response.headers,
+          })
+        } catch (err) {
+          return new Response(JSON.stringify({ error: `Gateway Timeout: ${String(err)}` }), {
+            status: 504,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
       }
 
       // 4. Current user identity

@@ -203,6 +203,96 @@ export const ArtifactTools = (): ActorDef<ArtifactToolsMsg, ArtifactState> => {
   const handler: MessageHandler<ArtifactToolsMsg, ArtifactState> = onMessage<ArtifactToolsMsg, ArtifactState>({
     _done: (state) => ({ state }),
 
+    'http.request': (state, message, ctx) => {
+      const { request, identity, replyTo } = message
+      const url = new URL(request.url, 'http://localhost')
+      const path = url.pathname
+
+      // Check session
+      if (!identity) {
+        replyTo.send({
+          type: 'http.response',
+          response: {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ error: 'Unauthorized' }),
+          }
+        })
+        return { state }
+      }
+
+      // /artifacts/* prefix routing
+      if (request.method === 'GET' && path.startsWith('/artifacts/')) {
+        const rawFilename = path.slice('/artifacts/'.length) || 'index.html'
+        let filename = 'index.html'
+        try {
+          filename = decodeURIComponent(rawFilename)
+        } catch {}
+        if (filename.includes('\0') || filename.includes('..')) {
+          replyTo.send({
+            type: 'http.response',
+            response: {
+              status: 404,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ error: 'Not found' }),
+            }
+          })
+          return { state }
+        }
+
+        // Send a getDoc message to self to fetch the content asynchronously
+        ctx.self.send({
+          type: 'getDoc',
+          filename,
+          replyTo: {
+            name: 'http:artifacts',
+            isAlive: () => true,
+            send: (res) => {
+              if (!res.ok) {
+                replyTo.send({
+                  type: 'http.response',
+                  response: {
+                    status: 404,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ error: 'Not found' }),
+                  }
+                })
+              } else {
+                const mimeType = (path: string): string => {
+                  if (path.endsWith('.html')) return 'text/html; charset=utf-8'
+                  if (path.endsWith('.css')) return 'text/css; charset=utf-8'
+                  if (path.endsWith('.js')) return 'text/javascript; charset=utf-8'
+                  if (path.endsWith('.json')) return 'application/json; charset=utf-8'
+                  if (path.endsWith('.svg')) return 'image/svg+xml'
+                  if (path.endsWith('.png')) return 'image/png'
+                  if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg'
+                  return 'application/octet-stream'
+                }
+                replyTo.send({
+                  type: 'http.response',
+                  response: {
+                    status: 200,
+                    headers: { 'Content-Type': mimeType(filename) },
+                    body: res.content,
+                  }
+                })
+              }
+            }
+          }
+        })
+      } else {
+        replyTo.send({
+          type: 'http.response',
+          response: {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ error: 'Not found' }),
+          }
+        })
+      }
+      return { state }
+    },
+
     _persistenceRef: (state, msg) => {
       return { state: { ...state, persistenceRef: msg.ref } }
     },

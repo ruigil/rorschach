@@ -47,6 +47,42 @@ export const LlmProvider = (options: LlmProviderOptions): ActorDef<LlmProviderIn
   return {
     initialState: null,
     handler: onMessage<LlmProviderInternalMsg, null>({
+      'http.request': (state, message, context) => {
+        const { request, replyTo } = message
+        const url = new URL(request.url, 'http://localhost')
+        const path = url.pathname
+
+        if (request.method === 'GET' && path === '/models') {
+          context.self.send({
+            type: 'fetchModels',
+            replyTo: {
+              name: 'http:models',
+              isAlive: () => true,
+              send: (models) => {
+                replyTo.send({
+                  type: 'http.response',
+                  response: {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(models),
+                  }
+                })
+              }
+            }
+          })
+        } else {
+          replyTo.send({
+            type: 'http.response',
+            response: {
+              status: 404,
+              headers: {},
+              body: 'Not Found',
+            }
+          })
+        }
+        return { state }
+      },
+
       stream: (state, message, context) => {
         const { requestId, model, messages, tools, role, userId, replyTo } = message
 

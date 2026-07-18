@@ -72,39 +72,15 @@ const mimeType = (path: string): string => {
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
-import { ask, type ActorRef } from '../../system/index.ts'
-import type { ArtifactToolsMsg } from './types.ts'
+import type { ActorRef } from '../../system/index.ts'
+import type { HttpRequestMsg } from '../../types/routes.ts'
 
-const requireSession = (identity: Identity | null): Response | null =>
-  identity ? null : json({ error: 'Unauthorized' }, 401)
-
-export const buildCodingRoutes = (artifactToolsRef: ActorRef<ArtifactToolsMsg>): RouteRegistration[] => [
+export const buildCodingRoutes = (artifactToolsRef: ActorRef<HttpRequestMsg>): RouteRegistration[] => [
   {
     id: 'coding.artifacts',
     method: 'GET',
     path: '/artifacts/',
     match: 'prefix',
-    handler: async (_req, url, identity) => {
-      const unauthorized = requireSession(identity)
-      if (unauthorized) return unauthorized
-      const rawFilename = url.pathname.slice('/artifacts/'.length) || 'index.html'
-      let filename = 'index.html'
-      try {
-        filename = decodeURIComponent(rawFilename)
-      } catch {}
-      if (filename.includes('\0') || filename.includes('..')) {
-        return json({ error: 'Not found' }, 404)
-      }
-      const res = await ask<ArtifactToolsMsg, { ok: true; content: string } | { ok: false; error: string }>(
-        artifactToolsRef,
-        (replyTo) => ({
-          type: 'getDoc',
-          filename,
-          replyTo,
-        }),
-      )
-      if (!res.ok) return json({ error: 'Not found' }, 404)
-      return new Response(res.content, { headers: { 'Content-Type': mimeType(filename) } })
-    },
+    target: artifactToolsRef,
   },
 ]
