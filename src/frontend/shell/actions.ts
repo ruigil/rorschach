@@ -7,7 +7,7 @@ const shell = () => store.namespace<ShellState>('shell')
 const toPersistedMessage = (msg: Message): Message => {
   return {
     ...msg,
-    attachments: msg.attachments?.map(({ kind, name }) => ({ kind, name })),
+    attachments: msg.attachments?.map(({ kind, name, url }) => ({ kind, name, url })),
   }
 }
 

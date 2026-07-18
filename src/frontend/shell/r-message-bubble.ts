@@ -31,11 +31,16 @@ export class RMessageBubble extends RorschachBase {
       padding: 5px 10px;
       cursor: pointer;
       color: var(--text-dim);
+      background: var(--surface-2);
       user-select: none;
       list-style: none;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
+    }
+
+    .reasoning summary:hover {
+      background: var(--hover-bg);
     }
 
     .reasoning summary::-webkit-details-marker { display: none; }
@@ -53,6 +58,25 @@ export class RMessageBubble extends RorschachBase {
 
     .reasoning[open] summary {
       border-bottom: 1px solid var(--border);
+    }
+
+    .header-icon.done {
+      width: 14px;
+      height: 14px;
+      opacity: 0.8;
+      display: inline-flex;
+    }
+
+    .header-spinner {
+      font-size: 0.7rem;
+      color: var(--accent);
+      animation: spin 1.5s linear infinite;
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
 
     .reasoning-content {
@@ -171,18 +195,22 @@ export class RMessageBubble extends RorschachBase {
     return html`
       <div class="bubble">
         ${reasoning ? html`
-          <details class="reasoning ${!this.message && this.stream?.reasoning ? 'reasoning-streaming' : ''}">
-            <summary>Thinking...</summary>
+          <details class="reasoning ${active ? 'reasoning-streaming' : ''}">
+            <summary>
+              ${!active ? html`<r-icon class="header-icon done" name="brain"></r-icon>` : ''}
+              <span class="header-text">Thinking...</span>
+              ${active ? html`<span class="header-spinner">⚙</span>` : ''}
+            </summary>
             <pre class="reasoning-content">${reasoning}</pre>
           </details>
         ` : ''}
 
-        ${attachments.length > 0 ? html`
-          <r-attachments .items=${attachments}></r-attachments>
-        ` : ''}
-
         ${toolCalls.length > 0 ? html`
           <r-tool-history .tools=${toolCalls} ?active=${active}></r-tool-history>
+        ` : ''}
+
+        ${attachments.length > 0 ? html`
+          <r-attachments .items=${attachments}></r-attachments>
         ` : ''}
 
         <div class="bubble-body">

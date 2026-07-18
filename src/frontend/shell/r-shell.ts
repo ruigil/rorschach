@@ -77,6 +77,20 @@ export class RShell extends RorschachBase {
       }
     });
 
+    // Enforce that mode matches the active tab's modes
+    store.namespace<ShellState>('shell').subscribe('currentMode', (mode) => {
+      const tab = store.namespace<ShellState>('shell').get('activeWorkspaceTab');
+      if (tab && tab !== 'none' && tab !== 'config') {
+        const cfg = pluginHost().getViewConfig(tab);
+        if (cfg && cfg.modes && cfg.modes.length > 0) {
+          const expectedMode = cfg.modes[0]!;
+          if (mode !== expectedMode) {
+            switchMode(expectedMode);
+          }
+        }
+      }
+    });
+
     // 4. Listen for dynamic plugin shell actions (custom event bubbles)
     this.addEventListener('shell-action', (e: Event) => {
       const { action, id } = (e as CustomEvent).detail;
@@ -86,14 +100,15 @@ export class RShell extends RorschachBase {
   }
 
   private _switchModeForTab(tabId: string | undefined) {
-    if (!tabId) return;
-    if (tabId === 'config') {
+    if (!tabId || tabId === 'none' || tabId === 'config') {
       switchMode('chatbot');
       return;
     }
     const cfg = pluginHost().getViewConfig(tabId);
     if (cfg && cfg.modes && cfg.modes.length > 0) {
       switchMode(cfg.modes[0]!);
+    } else {
+      switchMode('chatbot');
     }
   }
 
@@ -172,15 +187,20 @@ export class RShell extends RorschachBase {
     // Enforce selection of an active tab
     const activeTab = this._activeWorkspaceTab.value as string;
     const openWorkspaces = this._getActiveWorkspaces();
-    if (openWorkspaces.length > 0 && !openWorkspaces.includes(activeTab)) {
-      const fallback = openWorkspaces[0]!;
-      setActiveWorkspaceTab(fallback);
-    } else if (openWorkspaces.length === 0) {
-      if (activeTab !== 'none') {
-        setActiveWorkspaceTab('none');
-      }
-      if (this._currentMode.value !== 'chatbot') {
-        switchMode('chatbot');
+
+    // Only enforce active tab alignment if views have actually loaded to prevent wiping out active tab state during boot
+    const hasLoadedViews = Object.keys(this._views.value || {}).length > 1; // 'config' is always present
+    if (hasLoadedViews) {
+      if (openWorkspaces.length > 0 && !openWorkspaces.includes(activeTab)) {
+        const fallback = openWorkspaces[0]!;
+        setActiveWorkspaceTab(fallback);
+      } else if (openWorkspaces.length === 0) {
+        if (activeTab !== 'none') {
+          setActiveWorkspaceTab('none');
+        }
+        if (this._currentMode.value !== 'chatbot') {
+          switchMode('chatbot');
+        }
       }
     }
   }
@@ -200,6 +220,9 @@ export class RShell extends RorschachBase {
           </svg>
           <span class="logo-name">RORSCHACH</span>
           <div class="header-actions-group">
+            <button class="header-icon-btn" @click=${this._toggleSidebar} title="Toggle sidebar">
+              <r-icon name=${this._isSidebarCollapsed ? 'panel-left-open' : 'panel-left-close'}></r-icon>
+            </button>
             <button class="header-icon-btn" ?hidden=${!userId || userId === 'anonymous'} @click=${() => openView('auth.profile')} title="User Session Profile">
               <r-icon name="user"></r-icon>
             </button>
@@ -227,14 +250,9 @@ export class RShell extends RorschachBase {
 
       <main class="split-pane-layout">
         <!-- Left Sidebar: Chat panel -->
-        <aside class="sidebar-panel ${this._isSidebarCollapsed ? 'collapsed' : ''}" style="width: ${this._isSidebarCollapsed ? '60px' : `${this._sidebarWidth.value}px`};">
+        <aside class="sidebar-panel ${this._isSidebarCollapsed ? 'collapsed' : ''}" style="width: ${this._isSidebarCollapsed ? '0px' : `${this._sidebarWidth.value}px`};">
           <div class="sidebar-content-wrapper">
             <div class="sidebar-title-bar">
-              <div class="sidebar-actions-group">
-                <button class="sidebar-header-btn" @click=${this._toggleSidebar} title="Toggle sidebar">
-                  <r-icon name=${this._isSidebarCollapsed ? 'panel-left-open' : 'panel-left-close'}></r-icon>
-                </button>
-              </div>
               <span class="sidebar-title">${this._currentModeDisplayName.value || this._currentMode.value || 'Chat'}</span>
             </div>
             

@@ -4,8 +4,7 @@ import {
   html,
   property,
   RorschachBase,
-  state,
-  unsafeHTML
+  state
 } from './base.js';
 
 import * as d3 from 'd3';
@@ -33,6 +32,11 @@ export const formatKgEdgeLabel = (edge: { type?: unknown, properties?: Record<st
 export const workflowTaskStatusClass = (status: unknown): string => {
   const value = typeof status === 'string' && status.length > 0 ? status : 'not_tracked';
   return `status-${value.replace(/[^a-z0-9_-]/gi, '-').toLowerCase()}`;
+};
+
+export const shortLabel = (value: unknown, max = 16): string => {
+  const text = String(value || '');
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 };
 
 // ─── Graph strategy config ───
@@ -84,7 +88,7 @@ const KG_CONFIG: GraphConfig = {
       .attr('stroke', (d: any) => (LABEL_COLORS[d.labels[0]] || { stroke: DEFAULT_STROKE }).stroke)
       .attr('stroke-width', 1.5);
     ng.append('text')
-      .text((d: any) => String(d.properties.name || d.properties.topic || `#${d.id}`).slice(0, 12))
+      .text((d: any) => shortLabel(d.properties.name || d.properties.topic || `#${d.id}`, 16))
       .attr('text-anchor', 'middle').attr('dy', '0.35em')
       .attr('font-size', '10px').attr('fill', 'var(--text)')
       .attr('font-family', 'var(--font-mono)').attr('pointer-events', 'none');
@@ -99,9 +103,20 @@ const KG_CONFIG: GraphConfig = {
   onNodeInteraction: (ng, tooltip, container) => {
     ng
       .on('mouseover', (_ev: any, d: any) => {
-        const lines = Object.entries(d.properties).map(([k, v]) => `${k}: ${v}`).join('\n');
+        const parts: string[] = [];
+        if (d.properties.description) {
+          parts.push(`description: ${d.properties.description}`);
+        }
+        if (d.properties.topics) {
+          const topics = Array.isArray(d.properties.topics)
+            ? d.properties.topics.join(', ')
+            : d.properties.topics;
+          parts.push(`topics: ${topics}`);
+        }
+        const lines = parts.join('\n');
+        const title = d.properties.name || d.labels.join(' · ');
         tooltip.style('display', 'block')
-          .html(`<strong>${unsafeHTML(d.labels.join(' · '))}</strong><pre>${unsafeHTML(lines)}</pre>`);
+          .html(`<strong>${title}</strong><pre>${lines}</pre>`);
       })
       .on('mousemove', (ev: any) => {
         const rect = (container as HTMLElement).getBoundingClientRect();
@@ -129,16 +144,12 @@ const PLAN_CONFIG: GraphConfig = {
   edgeOffsetX: 68,
   edgeOffsetY: 28,
   appendNodeShape: (ng, d) => {
-    const shortLabel = (value: string, max = 18) => {
-      const text = String(value || '');
-      return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-    };
     ng.append('rect')
       .attr('x', -62).attr('y', -22)
       .attr('width', 124).attr('height', 44)
       .attr('rx', 6);
     ng.append('text')
-      .text((d: any) => shortLabel(d.label))
+      .text((d: any) => shortLabel(d.label, 18))
       .attr('text-anchor', 'middle').attr('dy', '0.3em')
       .attr('font-size', '10px').attr('font-family', 'var(--font-mono)');
   },

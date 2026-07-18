@@ -36,11 +36,16 @@ export class RToolHistory extends RorschachBase {
       padding: 5px 10px;
       cursor: pointer;
       color: var(--text-dim);
+      background: var(--surface-2);
       user-select: none;
       list-style: none;
       display: flex;
       align-items: center;
       gap: 8px;
+    }
+
+    .tools-summary:hover {
+      background: var(--hover-bg);
     }
 
     .tools-summary::-webkit-details-marker {
@@ -70,7 +75,7 @@ export class RToolHistory extends RorschachBase {
       flex-direction: column;
       gap: 6px;
       color: var(--text-dim);
-      background: var(--surface-2);
+      background: transparent;
     }
 
     .tool-item {
@@ -104,7 +109,8 @@ export class RToolHistory extends RorschachBase {
     }
 
     .header-icon.done {
-      font-size: 0.8rem;
+      width: 14px;
+      height: 14px;
       opacity: 0.8;
       display: inline-flex;
     }
@@ -129,7 +135,7 @@ export class RToolHistory extends RorschachBase {
     return html`
       <details class="tools-details" ?open=${this.active}>
         <summary class="tools-summary">
-          ${!this.active ? html`<span class="header-icon done">🛠</span>` : ''}
+          ${!this.active ? html`<r-icon class="header-icon done" name="wrench"></r-icon>` : ''}
           <span class="header-text">${headerText}</span>
           ${this.active ? html`<span class="header-spinner">⚙</span>` : ''}
         </summary>
