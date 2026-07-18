@@ -1,6 +1,5 @@
 import { createPluginFactory, defineConfig } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
-import { AgentRegistrationTopic } from '../../types/agents.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { ToolRegistrationTopic, type ToolCollection, type ToolMsg } from '../../types/tools.ts'
 import { ArtifactTools, deleteDocTool, writeDocPageTool } from './artifact-tools.ts'

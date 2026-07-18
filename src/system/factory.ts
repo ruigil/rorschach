@@ -264,7 +264,7 @@ export const createPluginFactory = <
             const agentOpts = agentDecl.options(initialConfig, resolvedDeps as any);
             const descriptor = agentDecl.factory(agentOpts);
 
-            ctx.publish(AgentRegistrationTopic, {
+            ctx.publishRetained(AgentRegistrationTopic, descriptor.mode, {
               type: 'register',
               descriptor,
             });
@@ -339,9 +339,9 @@ export const createPluginFactory = <
           });
         }
 
-        // 3. Unregister agents
+        // 3. Unregister agents (delete retained entry so late joiners do not revive the mode)
         for (const mode of state.activeAgents) {
-          ctx.publish(AgentRegistrationTopic, {
+          ctx.deleteRetained(AgentRegistrationTopic, mode, {
             type: 'unregister',
             mode,
           });
@@ -476,7 +476,7 @@ export const createPluginFactory = <
         }
 
         for (const mode of state.activeAgents) {
-          ctx.publish(AgentRegistrationTopic, {
+          ctx.deleteRetained(AgentRegistrationTopic, mode, {
             type: 'unregister',
             mode,
           });
@@ -586,7 +586,7 @@ export const createPluginFactory = <
             const agentOpts = agentDecl.options(newConfig, resolvedDeps as any);
             const descriptor = agentDecl.factory(agentOpts);
 
-            ctx.publish(AgentRegistrationTopic, {
+            ctx.publishRetained(AgentRegistrationTopic, descriptor.mode, {
               type: 'register',
               descriptor,
             });

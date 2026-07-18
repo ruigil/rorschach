@@ -58,7 +58,7 @@ describe('agent registry routing & lifecycle', () => {
     })
 
     await tick()
-    system.publish(AgentRegistrationTopic, { type: 'register', descriptor: descriptor('chatbot', 'Chatbot') })
+    system.publishRetained(AgentRegistrationTopic, 'chatbot', { type: 'register', descriptor: descriptor('chatbot', 'Chatbot') })
     await tick()
 
     // Connect user
@@ -100,8 +100,8 @@ describe('agent registry routing & lifecycle', () => {
     })
 
     await tick()
-    system.publish(AgentRegistrationTopic, { type: 'register', descriptor: descriptor('chatbot', 'Chatbot') })
-    system.publish(AgentRegistrationTopic, { type: 'register', descriptor: descriptor('planner', 'Planner') })
+    system.publishRetained(AgentRegistrationTopic, 'chatbot', { type: 'register', descriptor: descriptor('chatbot', 'Chatbot') })
+    system.publishRetained(AgentRegistrationTopic, 'planner', { type: 'register', descriptor: descriptor('planner', 'Planner') })
     await tick()
 
     // Connect user
@@ -155,7 +155,7 @@ describe('agent registry routing & lifecycle', () => {
     })
 
     await tick()
-    system.publish(AgentRegistrationTopic, { type: 'register', descriptor: descriptor('chatbot', 'Chatbot') })
+    system.publishRetained(AgentRegistrationTopic, 'chatbot', { type: 'register', descriptor: descriptor('chatbot', 'Chatbot') })
     await tick()
 
     // Connect user
@@ -206,7 +206,7 @@ describe('agent registry routing & lifecycle', () => {
     }))
 
     await tick()
-    system.publish(AgentRegistrationTopic, {
+    system.publishRetained(AgentRegistrationTopic, 'chatbot', {
       type: 'register',
       descriptor: {
         mode: 'chatbot',
@@ -239,6 +239,107 @@ describe('agent registry routing & lifecycle', () => {
     expect(systemPromptMsg!.content).toContain('Mode Routing & Agent Hand-off Instructions')
     expect(systemPromptMsg!.content).toContain('Base prompt contents')
     expect(systemPromptMsg!.content).toContain('chatbot: Test chatbot description')
+
+    await system.shutdown()
+  })
+
+  test('replays retained agent registrations when registry starts late', async () => {
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const llmRef = system.spawn('null-llm', NullLlm())
+    system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
+
+    // Register agents before the registry exists (retained store only)
+    system.publishRetained(AgentRegistrationTopic, 'chatbot', {
+      type: 'register',
+      descriptor: descriptor('chatbot', 'Chatbot'),
+    })
+    system.publishRetained(AgentRegistrationTopic, 'planner', {
+      type: 'register',
+      descriptor: descriptor('planner', 'Planner'),
+    })
+    await tick()
+
+    const outboundMsgs: any[] = []
+    system.subscribe(OutboundUserMessageTopic, (event) => {
+      outboundMsgs.push(event)
+    })
+
+    const registryRef = system.spawn('agent-registry', AgentRegistry())
+    system.spawn('session-manager', SessionManager({
+      llmRef,
+      agentRegistryRef: registryRef,
+      defaultMode: 'chatbot',
+      contextWindowHours: 4,
+    }))
+    await tick()
+
+    system.publishRetained(UserPresenceTopic, 'u1-cli', { status: 'present', userId: 'u1', source: 'cli' })
+    await tick()
+
+    system.publish(HttpWsFrameTopic, {
+      clientId: 'c1',
+      userId: 'u1',
+      roles: ['user'],
+      frame: { type: 'cognitive.listAgents' },
+    })
+    await tick()
+
+    const listAgentsPayload = outboundMsgs.find(m => m.userId === 'u1' && m.text.includes('agents'))
+    expect(listAgentsPayload).toBeDefined()
+    const agents = JSON.parse(listAgentsPayload.text).agents as Array<{ mode: string }>
+    expect(agents.map(a => a.mode).sort()).toEqual(['chatbot', 'planner'])
+
+    await system.shutdown()
+  })
+
+  test('deleteRetained unregister removes mode from late subscribers', async () => {
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+
+    system.publishRetained(AgentRegistrationTopic, 'chatbot', {
+      type: 'register',
+      descriptor: descriptor('chatbot', 'Chatbot'),
+    })
+    system.publishRetained(AgentRegistrationTopic, 'planner', {
+      type: 'register',
+      descriptor: descriptor('planner', 'Planner'),
+    })
+    system.deleteRetained(AgentRegistrationTopic, 'planner', {
+      type: 'unregister',
+      mode: 'planner',
+    })
+    await tick()
+
+    const outboundMsgs: any[] = []
+    system.subscribe(OutboundUserMessageTopic, (event) => {
+      outboundMsgs.push(event)
+    })
+
+    const llmRef = system.spawn('null-llm', NullLlm())
+    system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
+    const registryRef = system.spawn('agent-registry', AgentRegistry())
+    system.spawn('session-manager', SessionManager({
+      llmRef,
+      agentRegistryRef: registryRef,
+      defaultMode: 'chatbot',
+      contextWindowHours: 4,
+    }))
+    await tick()
+
+    system.publishRetained(UserPresenceTopic, 'u1-cli', { status: 'present', userId: 'u1', source: 'cli' })
+    await tick()
+
+    system.publish(HttpWsFrameTopic, {
+      clientId: 'c1',
+      userId: 'u1',
+      roles: ['user'],
+      frame: { type: 'cognitive.listAgents' },
+    })
+    await tick()
+
+    const listAgentsPayload = outboundMsgs.find(m => m.userId === 'u1' && m.text.includes('agents'))
+    expect(listAgentsPayload).toBeDefined()
+    const agents = JSON.parse(listAgentsPayload.text).agents as Array<{ mode: string }>
+    expect(agents.map(a => a.mode)).toEqual(['chatbot'])
 
     await system.shutdown()
   })

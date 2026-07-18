@@ -80,8 +80,8 @@ describe('session manager mode UI events', () => {
     })
 
     await tick()
-    system.publish(AgentRegistrationTopic, { type: 'register', descriptor: descriptor('chatbot', 'Chatbot') })
-    system.publish(AgentRegistrationTopic, { type: 'register', descriptor: descriptor('planner', 'Planner') })
+    system.publishRetained(AgentRegistrationTopic, 'chatbot', { type: 'register', descriptor: descriptor('chatbot', 'Chatbot') })
+    system.publishRetained(AgentRegistrationTopic, 'planner', { type: 'register', descriptor: descriptor('planner', 'Planner') })
     await tick()
 
     system.publishRetained(UserPresenceTopic, 'u1-cli', { status: 'present', userId: 'u1', source: 'cli' })
@@ -139,7 +139,7 @@ describe('session manager mode UI events', () => {
     }))
     await tick()
 
-    system.publish(AgentRegistrationTopic, { type: 'register', descriptor: echoDescriptor('chatbot', 'Chatbot') })
+    system.publishRetained(AgentRegistrationTopic, 'chatbot', { type: 'register', descriptor: echoDescriptor('chatbot', 'Chatbot') })
     await tick()
     system.publish(InboundMessageTopic, {
       userId:       'u1',
@@ -173,7 +173,7 @@ describe('session manager mode UI events', () => {
     })
 
     await tick()
-    system.publish(AgentRegistrationTopic, { type: 'register', descriptor: descriptor('chatbot', 'Chatbot') })
+    system.publishRetained(AgentRegistrationTopic, 'chatbot', { type: 'register', descriptor: descriptor('chatbot', 'Chatbot') })
     await tick()
 
     // 1. Connect client u1
