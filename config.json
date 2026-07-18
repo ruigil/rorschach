@@ -44,9 +44,9 @@
         "analysisModel": "gemma-4-uncensored"
       },
       "audio": {
-        "ttsModel": "tts-gemini-3-1-flash",
+        "ttsModel": "tts-xai-v1",
         "sttModel": "stt-xai-v1",
-        "voice": "Achernar"
+        "voice": "leo"
       },
       "video": {
         "model": "veo3.1-fast-text-to-video",
