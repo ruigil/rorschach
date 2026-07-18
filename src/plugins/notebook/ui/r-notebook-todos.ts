@@ -100,8 +100,10 @@ export class RNotebookTodos extends RorschachBase {
     }
     .todo-content {
       display: flex;
-      flex-direction: column;
-      gap: 4px;
+      flex-direction: row;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
       min-width: 0;
     }
     .todo-label {
@@ -111,6 +113,8 @@ export class RNotebookTodos extends RorschachBase {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      flex: 1;
+      min-width: 0;
     }
     .todo-item.done .todo-label {
       text-decoration: line-through;
@@ -120,6 +124,8 @@ export class RNotebookTodos extends RorschachBase {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
+      margin-left: auto;
+      flex-shrink: 0;
     }
     .chip {
       display: inline-flex;
