@@ -13,6 +13,7 @@ export const todosCreateTool = defineTool('todos_create', 'Create a new todo ite
     text:       { type: 'string', description: 'Task description.' },
     dueDate:    { type: 'string', description: 'Due date in YYYY-MM-DD format (optional).' },
     recurrence: { type: 'string', description: 'Cron expression for recurring tasks, e.g. "0 9 * * 1" for Monday 9am (optional).' },
+    priority:   { type: 'string', enum: ['low', 'medium', 'high'], description: 'Priority of the todo (low, medium, or high) (optional).' },
   },
   required: ['text'],
 })
@@ -44,13 +45,14 @@ export const todosDeleteTool = defineTool('todos_delete', 'Delete a todo item pe
   required: ['id'],
 })
 
-export const todosUpdateTool = defineTool('todos_update', "Update a todo item's text, due date, or recurrence.", {
+export const todosUpdateTool = defineTool('todos_update', "Update a todo item's text, due date, recurrence, or priority.", {
   type: 'object',
   properties: {
     id:         { type: 'string', description: 'Todo id.' },
     text:       { type: 'string', description: 'New task description.' },
     dueDate:    { type: 'string', description: 'New due date in YYYY-MM-DD format.' },
     recurrence: { type: 'string', description: 'New cron expression (empty string to remove).' },
+    priority:   { type: 'string', enum: ['low', 'medium', 'high', ''], description: 'New priority (low, medium, high, or empty string to remove).' },
   },
   required: ['id'],
 })
@@ -97,6 +99,7 @@ const writeTodos = async (persistenceRef: ActorRef<any>, data: TodosFile): Promi
 
 const formatTodo = (t: Todo): string =>
   `[${t.id.slice(0, 8)}] [${t.done ? 'x' : ' '}] ${t.text}` +
+  (t.priority ? ` [priority: ${t.priority}]` : '') +
   (t.dueDate ? ` (due: ${t.dueDate})` : '') +
   (t.recurrence ? ` (recurring: ${t.recurrence})` : '')
 
@@ -105,6 +108,7 @@ const createTodo = async (
   text: string,
   dueDate?: string,
   recurrence?: string,
+  priority?: 'low' | 'medium' | 'high',
 ): Promise<string> => {
   const data = await readTodos(persistenceRef)
   const todo: Todo = {
@@ -122,6 +126,7 @@ const createTodo = async (
       throw new Error(`Invalid recurrence cron expression: "${recurrence}"`)
     }
   }
+  if (priority) todo.priority = priority
   data.todos.push(todo)
   await writeTodos(persistenceRef, data)
   return `Todo created: ${formatTodo(todo)}`
@@ -149,6 +154,7 @@ export const completeTodo = async (persistenceRef: ActorRef<any>, id: string): P
         createdAt: Date.now(),
         dueDate: nextDateStr,
         recurrence: todo.recurrence,
+        priority: todo.priority,
       }
       data.todos.push(recurred)
       msg += `\nRecurring todo scheduled for next occurrence on ${nextDateStr}.`
@@ -176,7 +182,7 @@ const listTodos = async (persistenceRef: ActorRef<any>, filter: string): Promise
   return list.map(formatTodo).join('\n')
 }
 
-const deleteTodo = async (persistenceRef: ActorRef<any>, id: string): Promise<string> => {
+export const deleteTodo = async (persistenceRef: ActorRef<any>, id: string): Promise<string> => {
   const data = await readTodos(persistenceRef)
   const index = data.todos.findIndex(t => t.id === id || t.id.startsWith(id))
   if (index === -1) throw new Error(`Todo "${id}" not found.`)
@@ -191,6 +197,7 @@ const updateTodo = async (
   text?: string,
   dueDate?: string,
   recurrence?: string,
+  priority?: 'low' | 'medium' | 'high' | '',
 ): Promise<string> => {
   const data = await readTodos(persistenceRef)
   const todo = data.todos.find(t => t.id === id || t.id.startsWith(id))
@@ -212,6 +219,14 @@ const updateTodo = async (
       } catch {
         throw new Error(`Invalid recurrence cron expression: "${clean}"`)
       }
+    }
+  }
+  if (priority !== undefined) {
+    const clean = priority.trim() as 'low' | 'medium' | 'high' | ''
+    if (clean === '') {
+      todo.priority = undefined
+    } else {
+      todo.priority = clean
     }
   }
 
@@ -248,8 +263,8 @@ export const Todos = (): ActorDef<TodosMsg, TodosState> => ({
       let promise: Promise<string>
       try {
         if (msg.toolName === todosCreateTool.name) {
-          const args = JSON.parse(msg.arguments) as { text: string; dueDate?: string; recurrence?: string }
-          promise = createTodo(dl, args.text, args.dueDate, args.recurrence)
+          const args = JSON.parse(msg.arguments) as { text: string; dueDate?: string; recurrence?: string; priority?: 'low' | 'medium' | 'high' }
+          promise = createTodo(dl, args.text, args.dueDate, args.recurrence, args.priority)
         } else if (msg.toolName === todosCompleteTool.name) {
           const args = JSON.parse(msg.arguments) as { id: string }
           promise = completeTodo(dl, args.id)
@@ -260,8 +275,8 @@ export const Todos = (): ActorDef<TodosMsg, TodosState> => ({
           const args = JSON.parse(msg.arguments) as { id: string }
           promise = deleteTodo(dl, args.id)
         } else if (msg.toolName === todosUpdateTool.name) {
-          const args = JSON.parse(msg.arguments) as { id: string; text?: string; dueDate?: string; recurrence?: string }
-          promise = updateTodo(dl, args.id, args.text, args.dueDate, args.recurrence)
+          const args = JSON.parse(msg.arguments) as { id: string; text?: string; dueDate?: string; recurrence?: string; priority?: 'low' | 'medium' | 'high' | '' }
+          promise = updateTodo(dl, args.id, args.text, args.dueDate, args.recurrence, args.priority)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }

@@ -42,13 +42,13 @@ export class RNotebookWorkspace extends RorschachBase {
               <r-icon name="file" size="sm" style="margin-right: 6px;"></r-icon>
               <span>Journal</span>
             </button>
-            <button ?active=${active === 'tracker'} data-tab="tracker">
-              <r-icon name="activity" size="sm" style="margin-right: 6px;"></r-icon>
-              <span>Tracker</span>
-            </button>
             <button ?active=${active === 'todos'} data-tab="todos">
               <r-icon name="file-text" size="sm" style="margin-right: 6px;"></r-icon>
               <span>Todos</span>
+            </button>
+            <button ?active=${active === 'tracker'} data-tab="tracker">
+              <r-icon name="activity" size="sm" style="margin-right: 6px;"></r-icon>
+              <span>Tracker</span>
             </button>
           </r-tabs>
         </r-toolbar>

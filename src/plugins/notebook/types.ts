@@ -19,6 +19,7 @@ export type Todo = {
   dueDate?:    string  // YYYY-MM-DD
   recurrence?: string  // cron expression
   createdAt:   number
+  priority?:   'low' | 'medium' | 'high'
 }
 
 export type NotebookConfig = {

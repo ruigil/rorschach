@@ -1,11 +1,49 @@
 import { onLifecycle, onMessage, ask } from '../../system/index.ts'
 import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { OutboundUserMessageTopic, HttpWsFrameTopic, type HttpWsFrameEvent } from '../../types/events.ts'
-import { NotebookChangeTopic, type NotebookChangeEvent } from './types.ts'
-import { readTodos, completeTodo } from './tools/todos.ts'
+import { NotebookChangeTopic, type NotebookChangeEvent, type Todo } from './types.ts'
+import { readTodos, completeTodo, deleteTodo } from './tools/todos.ts'
 import { readEntry } from './tools/journal.ts'
 import { parseCsv, type CsvRow } from './tools/tracker.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PList } from '../../types/persistence.ts'
+
+export const sortTodos = (todos: Todo[]): Todo[] => {
+  const getPriorityWeight = (p?: 'low' | 'medium' | 'high'): number => {
+    switch (p) {
+      case 'high': return 3
+      case 'medium': return 2
+      case 'low': return 1
+      default: return 0
+    }
+  }
+
+  return [...todos].sort((a, b) => {
+    // 1. Sort by completed status (pending first)
+    if (a.done !== b.done) {
+      return a.done ? 1 : -1
+    }
+
+    // 2. Sort by due date (earliest first, tasks with due dates before tasks without)
+    if (a.dueDate && b.dueDate) {
+      const cmp = a.dueDate.localeCompare(b.dueDate)
+      if (cmp !== 0) return cmp
+    } else if (a.dueDate) {
+      return -1
+    } else if (b.dueDate) {
+      return 1
+    }
+
+    // 3. Sort by priority (high -> medium -> low -> none)
+    const weightA = getPriorityWeight(a.priority)
+    const weightB = getPriorityWeight(b.priority)
+    if (weightA !== weightB) {
+      return weightB - weightA
+    }
+
+    // 4. Fallback to createdAt (newest first)
+    return b.createdAt - a.createdAt
+  })
+}
 
 export type NotebookManagerMsg =
   | { type: '_wsFrame'; event: HttpWsFrameEvent }
@@ -130,16 +168,19 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
         switch (frame.type) {
           case 'notebook.todos.request': {
             const data = await readTodos(dl)
-            const sorted = [...data.todos].sort((a, b) => {
-              if (a.done !== b.done) return a.done ? 1 : -1
-              return b.createdAt - a.createdAt
-            })
+            const sorted = sortTodos(data.todos)
             sendFrame({ type: 'notebook.todos.list', todos: sorted.slice(0, 10) })
             break
           }
           case 'notebook.todos.complete': {
             const { id } = frame
             await completeTodo(dl, id)
+            ctx.publish(NotebookChangeTopic, { type: 'todosUpdated', userId })
+            break
+          }
+          case 'notebook.todos.delete': {
+            const { id } = frame
+            await deleteTodo(dl, id)
             ctx.publish(NotebookChangeTopic, { type: 'todosUpdated', userId })
             break
           }
@@ -212,10 +253,7 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
       const reload = async () => {
         if (event.type === 'todosUpdated') {
           const data = await readTodos(dl)
-          const sorted = [...data.todos].sort((a, b) => {
-            if (a.done !== b.done) return a.done ? 1 : -1
-            return b.createdAt - a.createdAt
-          })
+          const sorted = sortTodos(data.todos)
           sendFrame({ type: 'notebook.todos.list', todos: sorted.slice(0, 10) })
         } else if (event.type === 'journalUpdated') {
           const content = await readEntry(dl, event.date)
