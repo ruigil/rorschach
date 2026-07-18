@@ -100,7 +100,7 @@ export class RShell extends RorschachBase {
   }
 
   private _switchModeForTab(tabId: string | undefined) {
-    if (!tabId || tabId === 'none' || tabId === 'config') {
+    if (!tabId || tabId === 'none' || tabId === 'config' || tabId === 'observe') {
       switchMode('chatbot');
       return;
     }
@@ -275,14 +275,7 @@ export class RShell extends RorschachBase {
                     return html`
                       <button
                         class="workspace-tab ${this._activeWorkspaceTab.value === id ? 'active' : ''}"
-                        @click=${() => {
-                          if (this._activeWorkspaceTab.value === id) {
-                            this._switchModeForTab(id);
-                          } else {
-                            setActiveWorkspaceTab(id);
-                          }
-                        }}
-                      >
+                        @click=${() => setActiveWorkspaceTab(id) }>
                         <r-icon name=${(cfg?.icon ?? 'file') as any} size="sm"></r-icon>
                         <span>${cfg?.title ?? id}</span>
                         <span class="tab-close" @click=${(e: Event) => {
