@@ -4,6 +4,7 @@ import type { EmbeddingReply, LlmProviderMsg, RerankReply } from '../../types/ll
 import { LlmProviderTopic } from '../../types/llm.ts'
 import { PersistenceProviderTopic } from '../../types/persistence.ts'
 import type { PersistenceMsg, GraphNode, GraphEdge, PResult } from '../../types/persistence.ts'
+import { HttpWsFrameTopic, OutboundUserMessageTopic } from '../../types/events.ts'
 import type {
   KgraphGraph,
   KgraphMsg,
@@ -594,6 +595,95 @@ const linkConceptNodes = async (
   return links.length
 }
 
+// Helper to notify the client that the KGraph has changed (Signal & Pull)
+function notifyKgraphChanged(userId: string, ctx: any) {
+  ctx.publish(OutboundUserMessageTopic, {
+    userId,
+    text: JSON.stringify({ type: 'observe.kgraph.changed' }),
+  })
+}
+
+// Helper to push the full, cleaned KGraph to the user via WebSocket
+async function pushKgraphToUser(state: KgraphState, userId: string, ctx: any) {
+  if (!state.persistenceRef) return
+  const persistenceRef = state.persistenceRef
+  const graphId = getGraphId(userId)
+
+  try {
+    const [nodesRes, edgesRes] = await Promise.all([
+      ask<PersistenceMsg, PResult<Record<string, unknown>[]>>(
+        persistenceRef,
+        (replyTo) => ({
+          type: 'graph.query',
+          graphId,
+          cypher: 'MATCH (n) RETURN id(n) AS id, labels(n) AS labels, properties(n) AS properties',
+          params: {},
+          replyTo,
+        })
+      ),
+      ask<PersistenceMsg, PResult<Record<string, unknown>[]>>(
+        persistenceRef,
+        (replyTo) => ({
+          type: 'graph.query',
+          graphId,
+          cypher: 'MATCH (s)-[r]->(t) RETURN id(r) AS id, type(r) AS type, id(s) AS source, id(t) AS target, properties(r) AS properties',
+          params: {},
+          replyTo,
+        })
+      )
+    ])
+
+    const nodesData = nodesRes.ok && nodesRes.data ? nodesRes.data : []
+    const edgesData = edgesRes.ok && edgesRes.data ? edgesRes.data : []
+
+    const cleanNodes = nodesData.map((row: any) => {
+      let properties = { ...(row.properties || {}) }
+      if (properties.properties && typeof properties.properties === 'object') {
+        properties = { ...properties.properties }
+      }
+      const cleanProperties: Record<string, any> = {}
+      if (properties.id !== undefined) cleanProperties.id = properties.id
+      if (properties.name !== undefined) cleanProperties.name = properties.name
+      if (properties.description !== undefined) cleanProperties.description = properties.description
+      if (properties.topics !== undefined) cleanProperties.topics = properties.topics
+
+      return {
+        id: Number(row.id),
+        labels: Array.isArray(row.labels) ? row.labels : [],
+        properties: cleanProperties,
+      }
+    })
+
+    const cleanEdges = edgesData.map((row: any) => {
+      let properties = { ...(row.properties || {}) }
+      if (properties.properties && typeof properties.properties === 'object') {
+        properties = { ...properties.properties }
+      }
+      delete properties._embedding
+      return {
+        id: Number(row.id),
+        type: String(row.type),
+        source: Number(row.source),
+        target: Number(row.target),
+        properties,
+      }
+    })
+
+    ctx.publish(OutboundUserMessageTopic, {
+      userId,
+      text: JSON.stringify({
+        type: 'observe.kgraph.updated',
+        graph: {
+          nodes: cleanNodes,
+          edges: cleanEdges,
+        }
+      })
+    })
+  } catch (err) {
+    ctx.log.error('Failed to push kgraph to user', { userId, error: String(err) })
+  }
+}
+
 // ─── Actor definition ───
 
 export const Kgraph = (
@@ -610,6 +700,7 @@ export const Kgraph = (
         ctx.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
       }
       ctx.subscribe(PersistenceProviderTopic, (e) => ({ type: '_persistenceRef' as const, ref: e.ref }))
+      ctx.subscribe(HttpWsFrameTopic, (e) => ({ type: '_wsFrame' as const, event: e }))
 
       ctx.log.info('kgraph ready (persistence-delegated mode)')
       return { state: { persistenceRef: null, llmRef: null } }
@@ -646,7 +737,7 @@ export const Kgraph = (
       ctx.log.info('kgraph upsertConcept', { name: concept.name, recordId, userId })
       ctx.pipeToSelf(
         upsertConceptNode(persistenceRef, graphId, llmRef, embedding, concept, recordId),
-        (nodeId) => ({ type: '_conceptUpsertDone' as const, nodeId, replyTo }),
+        (nodeId) => ({ type: '_conceptUpsertDone' as const, nodeId, userId, replyTo }),
         (error) => ({ type: '_conceptUpsertErr' as const, error: String(error), replyTo }),
       )
       return { state }
@@ -663,7 +754,7 @@ export const Kgraph = (
       ctx.log.info('kgraph linkConcepts', { count: links.length, userId })
       ctx.pipeToSelf(
         linkConceptNodes(persistenceRef, graphId, links),
-        (linked) => ({ type: '_conceptLinksDone' as const, linked, replyTo }),
+        (linked) => ({ type: '_conceptLinksDone' as const, linked, userId, replyTo }),
         (error) => ({ type: '_conceptLinksErr' as const, error: String(error), replyTo }),
       )
       return { state }
@@ -752,6 +843,7 @@ export const Kgraph = (
     _conceptUpsertDone: (state, message, ctx) => {
       ctx.log.info('kgraph upsertConcept done', { nodeId: message.nodeId })
       message.replyTo.send({ type: 'conceptUpsertResult', nodeId: message.nodeId })
+      notifyKgraphChanged(message.userId, ctx)
       return { state }
     },
 
@@ -764,6 +856,7 @@ export const Kgraph = (
     _conceptLinksDone: (state, message, ctx) => {
       ctx.log.info('kgraph linkConcepts done', { linked: message.linked })
       message.replyTo.send({ type: 'conceptLinksResult', linked: message.linked })
+      notifyKgraphChanged(message.userId, ctx)
       return { state }
     },
 
@@ -830,18 +923,32 @@ export const Kgraph = (
             })
           ).then(res => res.ok && res.data ? res.data : []),
         ]).then(([nodes, edges]) => ({
-          nodes: nodes.map((row: any) => ({
-            id: Number(row.id),
-            labels: Array.isArray(row.labels) ? row.labels : [],
-            properties: row.properties || {},
-          })),
-          edges: edges.map((row: any) => ({
-            id: Number(row.id),
-            type: String(row.type),
-            source: Number(row.source),
-            target: Number(row.target),
-            properties: row.properties || {},
-          })),
+          nodes: nodes.map((row: any) => {
+            let properties = { ...(row.properties || {}) };
+            if (properties.properties && typeof properties.properties === 'object') {
+              properties = { ...properties.properties };
+            }
+            delete properties._embedding;
+            return {
+              id: Number(row.id),
+              labels: Array.isArray(row.labels) ? row.labels : [],
+              properties,
+            };
+          }),
+          edges: edges.map((row: any) => {
+            let properties = { ...(row.properties || {}) };
+            if (properties.properties && typeof properties.properties === 'object') {
+              properties = { ...properties.properties };
+            }
+            delete properties._embedding;
+            return {
+              id: Number(row.id),
+              type: String(row.type),
+              source: Number(row.source),
+              target: Number(row.target),
+              properties,
+            };
+          }),
         })),
         (graph)  => ({ type: '_dumpDone' as const, graph, replyTo: message.replyTo }),
         (error)  => ({ type: '_dumpErr'  as const, error: String(error), replyTo: message.replyTo }),
@@ -857,6 +964,14 @@ export const Kgraph = (
     _dumpErr: (state, message, ctx) => {
       ctx.log.error('kgraph dump failed', { error: message.error })
       message.replyTo.send({ nodes: [], edges: [] })
+      return { state }
+    },
+
+    _wsFrame: (state, message, ctx) => {
+      const { userId, frame } = message.event
+      if (frame.type === 'observe.kgraph.request') {
+        pushKgraphToUser(state, userId, ctx)
+      }
       return { state }
     },
   }),

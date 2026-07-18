@@ -5,7 +5,8 @@ import {
   RorschachBase,
   state,
   store,
-  StoreController
+  StoreController,
+  send
 } from '@rorschach/webkit';
 
 
@@ -36,8 +37,6 @@ const observe = () => store.namespace<ObservabilityState>('observe')
 
 @customElement('r-observe-panel')
 export class RObservePanel extends RorschachBase {
-  @state() private _memoryStatsText = '';
-  @state() private _kgData: any = null;
   @state() private _selectedActor: Actor | null = null;
 
   @state() private _observeActiveTab: ObserveTab = 'metrics';
@@ -45,6 +44,7 @@ export class RObservePanel extends RorschachBase {
   private _topics = new StoreController(this, ['observe', 'topics']);
   private _logs = new StoreController(this, ['observe', 'logs']);
   private _traces = new StoreController(this, ['observe', 'traces']);
+  private _kgDataController = new StoreController(this, ['observe', 'kgraph']);
 
   static override styles = css`
     :host {
@@ -189,8 +189,8 @@ export class RObservePanel extends RorschachBase {
 
   override updated(changedProperties: Map<string, any>) {
     const tab = this._observeActiveTab;
-    if (tab === 'memory' && !this._kgData) {
-      this._fetchKgraph();
+    if (tab === 'memory' && !this._kgDataController.value) {
+      this._requestKgraph();
     }
   }
 
@@ -198,22 +198,15 @@ export class RObservePanel extends RorschachBase {
     const tab = event.detail?.tab;
     if (!tab) return;
     this._observeActiveTab = tab;
+    observe().set('activeTab', tab);
   }
 
   private _onActorSelect(event: CustomEvent) {
     this._selectedActor = event.detail.actor;
   }
 
-  private async _fetchKgraph() {
-    this._memoryStatsText = 'loading...';
-    try {
-      const res = await fetch(new URL('kgraph', location.href));
-      const graph = await res.json();
-      this._kgData = graph;
-      this._memoryStatsText = `${graph.nodes.length} nodes · ${graph.edges.length} edges`;
-    } catch {
-      this._memoryStatsText = 'error';
-    }
+  private _requestKgraph() {
+    send({ type: 'observe.kgraph.request' });
   }
 
   private _clearLogs() {
@@ -242,6 +235,9 @@ export class RObservePanel extends RorschachBase {
     const showMetrics = activeControl === 'metrics-summary' && actors.length > 0;
     const logCountText = `${logs.length} event${logs.length !== 1 ? 's' : ''}`;
     const tracesCountText = `${traces.length} trace${traces.length !== 1 ? 's' : ''}`;
+
+    const graph = this._kgDataController.value;
+    const statsText = graph ? `${graph.nodes.length} nodes · ${graph.edges.length} edges` : 'loading...';
 
     return html`
       <r-panel elevation="1">
@@ -283,8 +279,7 @@ export class RObservePanel extends RorschachBase {
               <button class="btn-clear" @click=${this._clearTraces}>clear</button>
             </div>
             <div class="obs-memory-controls" ?hidden=${activeControl !== 'obs-memory-controls'}>
-              <span class="log-count">${this._memoryStatsText}</span>
-              <button class="btn-clear" @click=${this._fetchKgraph}>refresh</button>
+              <span class="log-count">${statsText}</span>
             </div>
           </div>
         </r-toolbar>
@@ -321,7 +316,7 @@ export class RObservePanel extends RorschachBase {
           </r-costs-table>
 
           <div class="obs-subpanel ${activeTab === 'memory' ? 'active' : ''}" data-observe-tab="memory">
-            <r-force-graph .kgData=${this._kgData}></r-force-graph>
+            <r-force-graph .kgData=${graph}></r-force-graph>
           </div>
         </div>
       </r-panel>

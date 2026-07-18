@@ -1,4 +1,4 @@
-import { store } from '@rorschach/webkit';
+import { store, send } from '@rorschach/webkit';
 import type { LogEvent } from '@rorschach/webkit/types.js';
 import type { Actor, Topic, TraceSpan, UsageEntry } from '../types.js';
 import { RObservePanel } from './r-observe-panel.js'
@@ -12,6 +12,8 @@ export interface ObservabilityState {
   traces: TraceSpan[]
   usage: UsageEntry[]
   tools: Record<string, { type: 'function'; function: { name: string; description: string; parameters: object } }>
+  activeTab: string
+  kgraph: any | null
 }
 
 declare module '@rorschach/webkit/runtime/store.js' {
@@ -28,7 +30,11 @@ storeNamespace.init({
   traces: [],
   usage: [],
   tools: {},
+  activeTab: 'metrics',
+  kgraph: null,
 })
+
+let debounceTimeout: any = null
 
 export const reduceFrame = (frame: any) => {
   const ns = store.namespace<ObservabilityState>('observe')
@@ -55,5 +61,21 @@ export const reduceFrame = (frame: any) => {
     const nextTools = { ...ns.get('tools') }
     delete nextTools[frame.name]
     ns.set('tools', nextTools)
+  } else if (frame.type === 'observe.kgraph.updated') {
+    ns.set('kgraph', frame.graph)
+  } else if (frame.type === 'observe.kgraph.changed') {
+    const activeTab = ns.get('activeTab')
+    if (activeTab === 'memory') {
+      if (debounceTimeout) clearTimeout(debounceTimeout)
+      debounceTimeout = setTimeout(() => {
+        send({ type: 'observe.kgraph.request' })
+      }, 1000)
+    } else {
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout)
+        debounceTimeout = null
+      }
+      ns.set('kgraph', null)
+    }
   }
 }
