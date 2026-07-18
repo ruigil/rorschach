@@ -119,25 +119,33 @@ export class RToolHistory extends RorschachBase {
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
     }
+
+    @keyframes tools-glow {
+      0%, 100% { color: var(--text-dim); text-shadow: none; }
+      50% { color: var(--accent-bright); text-shadow: 0 0 8px var(--accent-glow); }
+    }
+
+    .tools-streaming .tools-summary {
+      color: var(--accent);
+      animation: tools-glow 1.8s ease-in-out infinite;
+    }
   `;
 
   override render() {
     if (!this.tools || this.tools.length === 0) return html``;
 
-    const lastTool = this.tools[this.tools.length - 1];
     let headerText = '';
     if (this.active) {
-      headerText = lastTool ? `${formatToolName(lastTool)}...` : 'Thinking...';
+      headerText = 'Using tools...';
     } else {
-      headerText = `${this.tools.length} ${this.tools.length === 1 ? 'tool' : 'tools'} used`;
+      headerText = `${this.tools.length} tool(s) used`;
     }
 
     return html`
-      <details class="tools-details" ?open=${this.active}>
+      <details class="tools-details ${this.active ? 'tools-streaming' : ''}">
         <summary class="tools-summary">
-          ${!this.active ? html`<r-icon class="header-icon done" name="wrench"></r-icon>` : ''}
+          <r-icon class="header-icon done" name="wrench"></r-icon>
           <span class="header-text">${headerText}</span>
-          ${this.active ? html`<span class="header-spinner">⚙</span>` : ''}
         </summary>
         <ul class="tools-list">
           ${this.tools.map((tool, idx) => {
