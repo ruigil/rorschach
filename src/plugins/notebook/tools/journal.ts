@@ -43,13 +43,14 @@ type JournalMsg =
 
 const todayISO = (): string => new Date().toISOString().slice(0, 10)
 
-const writeEntry = async (persistenceRef: ActorRef<any>, entry: string, date: string): Promise<string> => {
+const writeEntry = async (persistenceRef: ActorRef<any>, userId: string, entry: string, date: string): Promise<string> => {
   const time = new Date().toTimeString().slice(0, 5)
   const section = `\n## ${time}\n\n${entry}\n`
-  const docId = date.endsWith('.md') ? date : `${date}.md`
+  const dateDoc = date.endsWith('.md') ? date : `${date}.md`
+  const docId = `${userId}/journal/${dateDoc}`
   await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
     type: 'doc.append',
-    collection: 'journal',
+    collection: 'notebook',
     docId,
     content: section,
     replyTo,
@@ -57,11 +58,12 @@ const writeEntry = async (persistenceRef: ActorRef<any>, entry: string, date: st
   return `Journal entry written to journal/${date.replace('.md', '')}.md`
 }
 
-export const readEntry = async (persistenceRef: ActorRef<any>, date: string): Promise<string> => {
-  const docId = date.endsWith('.md') ? date : `${date}.md`
+export const readEntry = async (persistenceRef: ActorRef<any>, userId: string, date: string): Promise<string> => {
+  const dateDoc = date.endsWith('.md') ? date : `${date}.md`
+  const docId = `${userId}/journal/${dateDoc}`
   const res = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
     type: 'doc.get',
-    collection: 'journal',
+    collection: 'notebook',
     docId,
     replyTo,
   }))
@@ -69,10 +71,11 @@ export const readEntry = async (persistenceRef: ActorRef<any>, date: string): Pr
   return `No journal entry found for ${date.replace('.md', '')}.`
 }
 
-const searchJournal = async (persistenceRef: ActorRef<any>, query: string): Promise<string> => {
+const searchJournal = async (persistenceRef: ActorRef<any>, userId: string, query: string): Promise<string> => {
   const listRes = await ask<PersistenceMsg, PList>(persistenceRef, (replyTo) => ({
     type: 'doc.list',
-    collection: 'journal',
+    collection: 'notebook',
+    prefix: `${userId}/journal/`,
     replyTo,
   }))
   if (!listRes.ok || listRes.keys.length === 0) {
@@ -82,13 +85,15 @@ const searchJournal = async (persistenceRef: ActorRef<any>, query: string): Prom
   const results: string[] = []
   const lower = query.toLowerCase()
 
-  for (const docId of listRes.keys) {
-    const content = await readEntry(persistenceRef, docId)
+  for (const fullDocId of listRes.keys) {
+    const parts = fullDocId.split('/')
+    const dateFile = parts[parts.length - 1]!
+    const content = await readEntry(persistenceRef, userId, dateFile)
     const lines = content.split('\n')
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
       if (line && line.toLowerCase().includes(lower)) {
-        results.push(`${docId}:${i + 1}: ${line}`)
+        results.push(`journal/${dateFile}:${i + 1}: ${line}`)
       }
     }
   }
@@ -130,13 +135,13 @@ export const Journal = (): ActorDef<JournalMsg, JournalState> => ({
         if (msg.toolName === journalWriteTool.name) {
           const args = JSON.parse(msg.arguments) as { entry: string; date?: string }
           date = args.date ?? todayISO()
-          promise = writeEntry(dl, args.entry, date)
+          promise = writeEntry(dl, msg.userId, args.entry, date)
         } else if (msg.toolName === journalReadTool.name) {
           const args = JSON.parse(msg.arguments) as { date: string }
-          promise = readEntry(dl, args.date)
+          promise = readEntry(dl, msg.userId, args.date)
         } else if (msg.toolName === journalSearchTool.name) {
           const args = JSON.parse(msg.arguments) as { query: string }
-          promise = searchJournal(dl, args.query)
+          promise = searchJournal(dl, msg.userId, args.query)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }

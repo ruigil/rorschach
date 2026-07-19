@@ -58,6 +58,7 @@ const csvEscape = (s: string): string =>
 
 const logHabit = async (
   persistenceRef: ActorRef<any>,
+  userId: string,
   habit: string,
   value: number,
   date: string,
@@ -69,14 +70,14 @@ const logHabit = async (
   const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
     type: 'doc.get',
     collection: 'notebook',
-    docId: 'tracker/data.csv',
+    docId: `${userId}/tracker/data.csv`,
     replyTo,
   }))
   if (!getRes.ok) {
     await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
       type: 'doc.put',
       collection: 'notebook',
-      docId: 'tracker/data.csv',
+      docId: `${userId}/tracker/data.csv`,
       content: 'date,habit,value,description\n' + line,
       replyTo,
     }))
@@ -84,7 +85,7 @@ const logHabit = async (
     await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
       type: 'doc.append',
       collection: 'notebook',
-      docId: 'tracker/data.csv',
+      docId: `${userId}/tracker/data.csv`,
       content: line,
       replyTo,
     }))
@@ -116,11 +117,11 @@ const parseCsvLine = (line: string): string[] => {
   return fields
 }
 
-export const parseCsv = async (persistenceRef: ActorRef<any>): Promise<CsvRow[]> => {
+export const parseCsv = async (persistenceRef: ActorRef<any>, userId: string): Promise<CsvRow[]> => {
   const res = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
     type: 'doc.get',
     collection: 'notebook',
-    docId: 'tracker/data.csv',
+    docId: `${userId}/tracker/data.csv`,
     replyTo,
   }))
   const text = res.ok && res.data ? res.data : ''
@@ -163,8 +164,8 @@ const currentMonthStart = (): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-const computeStats = async (persistenceRef: ActorRef<any>, habit: string): Promise<string> => {
-  const all = await parseCsv(persistenceRef)
+const computeStats = async (persistenceRef: ActorRef<any>, userId: string, habit: string): Promise<string> => {
+  const all = await parseCsv(persistenceRef, userId)
   const rows = all.filter(r => r.habit === habit)
   if (rows.length === 0) {
     return `No logged entries for habit "${habit}".`
@@ -212,6 +213,7 @@ const computeStats = async (persistenceRef: ActorRef<any>, habit: string): Promi
 
 const defineHabit = async (
   persistenceRef: ActorRef<any>,
+  userId: string,
   name: string,
   unit: string,
   dailyTarget?: number,
@@ -220,7 +222,7 @@ const defineHabit = async (
   const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
     type: 'doc.get',
     collection: 'notebook',
-    docId: 'tracker/habits.json',
+    docId: `${userId}/tracker/habits.json`,
     replyTo,
   }))
   if (getRes.ok && getRes.data) getResData = getRes.data
@@ -239,19 +241,19 @@ const defineHabit = async (
   await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
     type: 'doc.put',
     collection: 'notebook',
-    docId: 'tracker/habits.json',
+    docId: `${userId}/tracker/habits.json`,
     content: JSON.stringify(data, null, 2),
     replyTo,
   }))
   return `Habit "${name}" saved (unit: ${unit}${dailyTarget !== undefined ? `, target: ${dailyTarget}` : ''}).`
 }
 
-const listHabits = async (persistenceRef: ActorRef<any>): Promise<string> => {
+const listHabits = async (persistenceRef: ActorRef<any>, userId: string): Promise<string> => {
   let getResData = ''
   const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
     type: 'doc.get',
     collection: 'notebook',
-    docId: 'tracker/habits.json',
+    docId: `${userId}/tracker/habits.json`,
     replyTo,
   }))
   if (getRes.ok && getRes.data) getResData = getRes.data
@@ -295,16 +297,16 @@ export const Tracker = (): ActorDef<TrackerMsg, TrackerState> => ({
         if (msg.toolName === trackerLogTool.name) {
           const args = JSON.parse(msg.arguments) as { habit: string; value: number; date?: string; description?: string }
           habit = args.habit
-          promise = logHabit(dl, args.habit, args.value, args.date ?? todayISO(), args.description)
+          promise = logHabit(dl, msg.userId, args.habit, args.value, args.date ?? todayISO(), args.description)
         } else if (msg.toolName === trackerStatsTool.name) {
           const args = JSON.parse(msg.arguments) as { habit: string }
-          promise = computeStats(dl, args.habit)
+          promise = computeStats(dl, msg.userId, args.habit)
         } else if (msg.toolName === trackerDefineHabitTool.name) {
           const args = JSON.parse(msg.arguments) as { name: string; unit: string; dailyTarget?: number }
           habit = args.name
-          promise = defineHabit(dl, args.name, args.unit, args.dailyTarget)
+          promise = defineHabit(dl, msg.userId, args.name, args.unit, args.dailyTarget)
         } else if (msg.toolName === trackerListHabitsTool.name) {
-          promise = listHabits(dl)
+          promise = listHabits(dl, msg.userId)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }

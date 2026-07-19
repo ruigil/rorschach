@@ -32,7 +32,7 @@ describe('NotebookManager WebSocket integration', () => {
     await ask(persistenceRef, replyTo => ({
       type: 'doc.put',
       collection: 'notebook',
-      docId: 'todos.json',
+      docId: 'u1/todo/todos.json',
       content: JSON.stringify({
         todos: [
           { id: 't1', text: 'Buy milk', done: false, createdAt: Date.now() },
@@ -45,8 +45,8 @@ describe('NotebookManager WebSocket integration', () => {
     // Journal
     await ask(persistenceRef, replyTo => ({
       type: 'doc.put',
-      collection: 'journal',
-      docId: '2026-07-01.md',
+      collection: 'notebook',
+      docId: 'u1/journal/2026-07-01.md',
       content: '## 10:00\n\nCompleted websocket refactoring.',
       replyTo
     }))
@@ -55,7 +55,7 @@ describe('NotebookManager WebSocket integration', () => {
     await ask(persistenceRef, replyTo => ({
       type: 'doc.put',
       collection: 'notebook',
-      docId: 'tracker/habits.json',
+      docId: 'u1/tracker/habits.json',
       content: JSON.stringify({
         habits: [
           { name: 'Water', unit: 'ml', dailyTarget: 2000 }
@@ -68,7 +68,7 @@ describe('NotebookManager WebSocket integration', () => {
     await ask(persistenceRef, replyTo => ({
       type: 'doc.put',
       collection: 'notebook',
-      docId: 'tracker/data.csv',
+      docId: 'u1/tracker/data.csv',
       content: 'date,habit,value,description\n2026-07-01,Water,500,glass 1\n2026-07-01,Water,750,glass 2\n',
       replyTo
     }))
@@ -207,7 +207,7 @@ describe('NotebookManager WebSocket integration', () => {
     await ask(persistenceRef, replyTo => ({
       type: 'doc.put',
       collection: 'notebook',
-      docId: 'todos.json',
+      docId: 'u1/todo/todos.json',
       content: JSON.stringify({
         todos: [
           { id: 't1', text: 'Buy milk', done: true, createdAt: Date.now() }, // Mark as done
@@ -226,6 +226,32 @@ describe('NotebookManager WebSocket integration', () => {
     const pushRes = JSON.parse(messages[0]!.text)
     expect(pushRes.type).toBe('notebook.todos.list')
     expect(pushRes.todos[0].done).toBe(true)
+
+    // ─── Test 8: Multiuser Isolation (u2 gets empty/isolated responses) ───
+    messages.length = 0
+    system.publish(HttpWsFrameTopic, {
+      clientId: 'c2',
+      userId: 'u2',
+      roles: [],
+      frame: { type: 'notebook.todos.request' }
+    })
+    await waitMessages(1)
+    expect(messages).toHaveLength(1)
+    const u2Todos = JSON.parse(messages[0]!.text)
+    expect(u2Todos.type).toBe('notebook.todos.list')
+    expect(u2Todos.todos).toHaveLength(0)
+
+    messages.length = 0
+    system.publish(HttpWsFrameTopic, {
+      clientId: 'c2',
+      userId: 'u2',
+      roles: [],
+      frame: { type: 'notebook.journal.months.request', year: '2026', month: '07' }
+    })
+    await waitMessages(1)
+    expect(messages).toHaveLength(1)
+    const u2JournalMonths = JSON.parse(messages[0]!.text)
+    expect(u2JournalMonths.days).toHaveLength(0)
 
     await system.shutdown()
   })

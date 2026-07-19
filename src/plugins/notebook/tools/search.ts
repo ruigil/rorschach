@@ -24,21 +24,24 @@ type SearchMsg =
   | { type: '_persistenceRef'; ref: ActorRef<any> | null }
   | { type: '_void' }
 
-const searchAll = async (persistenceRef: ActorRef<any>, query: string): Promise<string> => {
+const searchAll = async (persistenceRef: ActorRef<any>, userId: string, query: string): Promise<string> => {
   const lower = query.toLowerCase()
   const results: string[] = []
 
   // Search journal files
   const listRes = await ask<PersistenceMsg, PList>(persistenceRef, (replyTo) => ({
     type: 'doc.list',
-    collection: 'journal',
+    collection: 'notebook',
+    prefix: `${userId}/journal/`,
     replyTo,
   }))
   if (listRes.ok) {
     for (const docId of listRes.keys) {
+      const parts = docId.split('/')
+      const dateFile = parts[parts.length - 1]!
       const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
         type: 'doc.get',
-        collection: 'journal',
+        collection: 'notebook',
         docId,
         replyTo,
       }))
@@ -47,7 +50,7 @@ const searchAll = async (persistenceRef: ActorRef<any>, query: string): Promise<
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i]
           if (line && line.toLowerCase().includes(lower)) {
-            results.push(`journal/${docId}:${i + 1}: ${line.trim()}`)
+            results.push(`journal/${dateFile}:${i + 1}: ${line.trim()}`)
           }
         }
       }
@@ -58,7 +61,7 @@ const searchAll = async (persistenceRef: ActorRef<any>, query: string): Promise<
   const todosRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
     type: 'doc.get',
     collection: 'notebook',
-    docId: 'todos.json',
+    docId: `${userId}/todo/todos.json`,
     replyTo,
   }))
   if (todosRes.ok && todosRes.data) {
@@ -108,7 +111,7 @@ export const Search = (): ActorDef<SearchMsg, SearchState> => ({
       try {
         if (msg.toolName === notebookSearchTool.name) {
           const args = JSON.parse(msg.arguments) as { query: string }
-          promise = searchAll(state.persistenceRef, args.query)
+          promise = searchAll(state.persistenceRef, msg.userId, args.query)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }

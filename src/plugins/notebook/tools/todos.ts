@@ -72,11 +72,11 @@ type TodosFile = { todos: Todo[] }
 
 const todayISO  = (): string => new Date().toISOString().slice(0, 10)
 
-export const readTodos = async (persistenceRef: ActorRef<any>): Promise<TodosFile> => {
+export const readTodos = async (persistenceRef: ActorRef<any>, userId: string): Promise<TodosFile> => {
   const res = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
     type: 'doc.get',
     collection: 'notebook',
-    docId: 'todos.json',
+    docId: `${userId}/todo/todos.json`,
     replyTo,
   }))
   if (res.ok && res.data) {
@@ -87,11 +87,11 @@ export const readTodos = async (persistenceRef: ActorRef<any>): Promise<TodosFil
   return { todos: [] }
 }
 
-const writeTodos = async (persistenceRef: ActorRef<any>, data: TodosFile): Promise<void> => {
+const writeTodos = async (persistenceRef: ActorRef<any>, userId: string, data: TodosFile): Promise<void> => {
   await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
     type: 'doc.put',
     collection: 'notebook',
-    docId: 'todos.json',
+    docId: `${userId}/todo/todos.json`,
     content: JSON.stringify(data, null, 2),
     replyTo,
   }))
@@ -105,12 +105,13 @@ const formatTodo = (t: Todo): string =>
 
 const createTodo = async (
   persistenceRef: ActorRef<any>,
+  userId: string,
   text: string,
   dueDate?: string,
   recurrence?: string,
   priority?: 'low' | 'medium' | 'high',
 ): Promise<string> => {
-  const data = await readTodos(persistenceRef)
+  const data = await readTodos(persistenceRef, userId)
   const todo: Todo = {
     id: crypto.randomUUID(),
     text: text.trim(),
@@ -128,12 +129,12 @@ const createTodo = async (
   }
   if (priority) todo.priority = priority
   data.todos.push(todo)
-  await writeTodos(persistenceRef, data)
+  await writeTodos(persistenceRef, userId, data)
   return `Todo created: ${formatTodo(todo)}`
 }
 
-export const completeTodo = async (persistenceRef: ActorRef<any>, id: string): Promise<string> => {
-  const data = await readTodos(persistenceRef)
+export const completeTodo = async (persistenceRef: ActorRef<any>, userId: string, id: string): Promise<string> => {
+  const data = await readTodos(persistenceRef, userId)
   const todo = data.todos.find(t => t.id === id || t.id.startsWith(id))
   if (!todo) throw new Error(`Todo "${id}" not found.`)
   if (todo.done) return `Todo is already completed.`
@@ -163,12 +164,12 @@ export const completeTodo = async (persistenceRef: ActorRef<any>, id: string): P
     }
   }
 
-  await writeTodos(persistenceRef, data)
+  await writeTodos(persistenceRef, userId, data)
   return msg
 }
 
-const listTodos = async (persistenceRef: ActorRef<any>, filter: string): Promise<string> => {
-  const data = await readTodos(persistenceRef)
+const listTodos = async (persistenceRef: ActorRef<any>, userId: string, filter: string): Promise<string> => {
+  const data = await readTodos(persistenceRef, userId)
   let list = data.todos
   const today = todayISO()
   if (filter === 'pending') {
@@ -182,24 +183,25 @@ const listTodos = async (persistenceRef: ActorRef<any>, filter: string): Promise
   return list.map(formatTodo).join('\n')
 }
 
-export const deleteTodo = async (persistenceRef: ActorRef<any>, id: string): Promise<string> => {
-  const data = await readTodos(persistenceRef)
+export const deleteTodo = async (persistenceRef: ActorRef<any>, userId: string, id: string): Promise<string> => {
+  const data = await readTodos(persistenceRef, userId)
   const index = data.todos.findIndex(t => t.id === id || t.id.startsWith(id))
   if (index === -1) throw new Error(`Todo "${id}" not found.`)
   const [deleted] = data.todos.splice(index, 1)
-  await writeTodos(persistenceRef, data)
+  await writeTodos(persistenceRef, userId, data)
   return `Todo deleted permanently: ${deleted!.text}`
 }
 
 const updateTodo = async (
   persistenceRef: ActorRef<any>,
+  userId: string,
   id: string,
   text?: string,
   dueDate?: string,
   recurrence?: string,
   priority?: 'low' | 'medium' | 'high' | '',
 ): Promise<string> => {
-  const data = await readTodos(persistenceRef)
+  const data = await readTodos(persistenceRef, userId)
   const todo = data.todos.find(t => t.id === id || t.id.startsWith(id))
   if (!todo) throw new Error(`Todo "${id}" not found.`)
 
@@ -230,7 +232,7 @@ const updateTodo = async (
     }
   }
 
-  await writeTodos(persistenceRef, data)
+  await writeTodos(persistenceRef, userId, data)
   return `Todo updated: ${formatTodo(todo)}`
 }
 
@@ -264,19 +266,19 @@ export const Todos = (): ActorDef<TodosMsg, TodosState> => ({
       try {
         if (msg.toolName === todosCreateTool.name) {
           const args = JSON.parse(msg.arguments) as { text: string; dueDate?: string; recurrence?: string; priority?: 'low' | 'medium' | 'high' }
-          promise = createTodo(dl, args.text, args.dueDate, args.recurrence, args.priority)
+          promise = createTodo(dl, msg.userId, args.text, args.dueDate, args.recurrence, args.priority)
         } else if (msg.toolName === todosCompleteTool.name) {
           const args = JSON.parse(msg.arguments) as { id: string }
-          promise = completeTodo(dl, args.id)
+          promise = completeTodo(dl, msg.userId, args.id)
         } else if (msg.toolName === todosListTool.name) {
           const args = JSON.parse(msg.arguments) as { filter?: string }
-          promise = listTodos(dl, args.filter ?? 'pending')
+          promise = listTodos(dl, msg.userId, args.filter ?? 'pending')
         } else if (msg.toolName === todosDeleteTool.name) {
           const args = JSON.parse(msg.arguments) as { id: string }
-          promise = deleteTodo(dl, args.id)
+          promise = deleteTodo(dl, msg.userId, args.id)
         } else if (msg.toolName === todosUpdateTool.name) {
           const args = JSON.parse(msg.arguments) as { id: string; text?: string; dueDate?: string; recurrence?: string; priority?: 'low' | 'medium' | 'high' | '' }
-          promise = updateTodo(dl, args.id, args.text, args.dueDate, args.recurrence, args.priority)
+          promise = updateTodo(dl, msg.userId, args.id, args.text, args.dueDate, args.recurrence, args.priority)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }

@@ -167,20 +167,20 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
       const handle = async () => {
         switch (frame.type) {
           case 'notebook.todos.request': {
-            const data = await readTodos(dl)
+            const data = await readTodos(dl, userId)
             const sorted = sortTodos(data.todos)
             sendFrame({ type: 'notebook.todos.list', todos: sorted.slice(0, 10) })
             break
           }
           case 'notebook.todos.complete': {
             const { id } = frame
-            await completeTodo(dl, id)
+            await completeTodo(dl, userId, id)
             ctx.publish(NotebookChangeTopic, { type: 'todosUpdated', userId })
             break
           }
           case 'notebook.todos.delete': {
             const { id } = frame
-            await deleteTodo(dl, id)
+            await deleteTodo(dl, userId, id)
             ctx.publish(NotebookChangeTopic, { type: 'todosUpdated', userId })
             break
           }
@@ -189,15 +189,17 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
             const prefix = `${year}-${month}`
             const listRes = await ask<PersistenceMsg, PList>(dl, (replyTo) => ({
               type: 'doc.list',
-              collection: 'journal',
-              prefix,
+              collection: 'notebook',
+              prefix: `${userId}/journal/${prefix}`,
               replyTo,
             }))
             const days: string[] = []
             if (listRes.ok && listRes.keys) {
               for (const f of listRes.keys) {
                 if (f.endsWith('.md')) {
-                  days.push(f.slice(0, -3))
+                  const parts = f.split('/')
+                  const dateFile = parts[parts.length - 1]!
+                  days.push(dateFile.slice(0, -3))
                 }
               }
             }
@@ -205,7 +207,7 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
             break
           }
           case 'notebook.journal.entry.request': {
-            const content = await readEntry(dl, frame.date)
+            const content = await readEntry(dl, userId, frame.date)
             sendFrame({ type: 'notebook.journal.entry', date: frame.date, content })
             break
           }
@@ -213,7 +215,7 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
             const res = await ask<PersistenceMsg, PResult<string>>(dl, (replyTo) => ({
               type: 'doc.get',
               collection: 'notebook',
-              docId: 'tracker/habits.json',
+              docId: `${userId}/tracker/habits.json`,
               replyTo,
             }))
             const habitsData = (res.ok && res.data) ? JSON.parse(res.data) : { habits: [] }
@@ -221,13 +223,13 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
             break
           }
           case 'notebook.tracker.entries.request': {
-            const all = await parseCsv(dl)
+            const all = await parseCsv(dl, userId)
             const rows = all.filter(r => r.habit === frame.habit)
             sendFrame({ type: 'notebook.tracker.entries', habit: frame.habit, entries: rows })
             break
           }
           case 'notebook.tracker.stats.request': {
-            const all = await parseCsv(dl)
+            const all = await parseCsv(dl, userId)
             const rows = all.filter(r => r.habit === frame.habit)
             const stats = calculateStats(rows)
             sendFrame({ type: 'notebook.tracker.stats', habit: frame.habit, stats })
@@ -252,11 +254,11 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
 
       const reload = async () => {
         if (event.type === 'todosUpdated') {
-          const data = await readTodos(dl)
+          const data = await readTodos(dl, userId)
           const sorted = sortTodos(data.todos)
           sendFrame({ type: 'notebook.todos.list', todos: sorted.slice(0, 10) })
         } else if (event.type === 'journalUpdated') {
-          const content = await readEntry(dl, event.date)
+          const content = await readEntry(dl, userId, event.date)
           sendFrame({ type: 'notebook.journal.entry', date: event.date, content })
 
           const [year, month] = event.date.split('-')
@@ -264,15 +266,17 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
           const prefix = `${year}-${month}`
           const listRes = await ask<PersistenceMsg, PList>(dl, (replyTo) => ({
             type: 'doc.list',
-            collection: 'journal',
-            prefix,
+            collection: 'notebook',
+            prefix: `${userId}/journal/${prefix}`,
             replyTo,
           }))
           const days: string[] = []
           if (listRes.ok && listRes.keys) {
             for (const f of listRes.keys) {
               if (f.endsWith('.md')) {
-                days.push(f.slice(0, -3))
+                const parts = f.split('/')
+                const dateFile = parts[parts.length - 1]!
+                days.push(dateFile.slice(0, -3))
               }
             }
           }
@@ -281,13 +285,13 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
           const res = await ask<PersistenceMsg, PResult<string>>(dl, (replyTo) => ({
             type: 'doc.get',
             collection: 'notebook',
-            docId: 'tracker/habits.json',
+            docId: `${userId}/tracker/habits.json`,
             replyTo,
           }))
           const habitsData = (res.ok && res.data) ? JSON.parse(res.data) : { habits: [] }
           sendFrame({ type: 'notebook.tracker.habits', habits: habitsData.habits })
 
-          const all = await parseCsv(dl)
+          const all = await parseCsv(dl, userId)
           const rows = all.filter(r => r.habit === event.habit)
           sendFrame({ type: 'notebook.tracker.entries', habit: event.habit, entries: rows })
 
