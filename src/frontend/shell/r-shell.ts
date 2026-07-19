@@ -68,29 +68,6 @@ export class RShell extends RorschachBase {
       this._switchModeForTab(tab);
     });
 
-    // Sync mode when a view registration is dynamically loaded (handles boot hydration)
-    store.namespace<ShellState>('shell').subscribe('views', (views) => {
-      if (!views) return;
-      const tab = store.namespace<ShellState>('shell').get('activeWorkspaceTab');
-      if (tab && views[tab]) {
-        this._switchModeForTab(tab);
-      }
-    });
-
-    // Enforce that mode matches the active tab's modes
-    store.namespace<ShellState>('shell').subscribe('currentMode', (mode) => {
-      const tab = store.namespace<ShellState>('shell').get('activeWorkspaceTab');
-      if (tab && tab !== 'none' && tab !== 'config') {
-        const cfg = pluginHost().getViewConfig(tab);
-        if (cfg && cfg.modes && cfg.modes.length > 0) {
-          const expectedMode = cfg.modes[0]!;
-          if (mode !== expectedMode) {
-            switchMode(expectedMode);
-          }
-        }
-      }
-    });
-
     // 4. Listen for dynamic plugin shell actions (custom event bubbles)
     this.addEventListener('shell-action', (e: Event) => {
       const { action, id } = (e as CustomEvent).detail;
@@ -100,16 +77,15 @@ export class RShell extends RorschachBase {
   }
 
   private _switchModeForTab(tabId: string | undefined) {
-    if (!tabId || tabId === 'none' || tabId === 'config' || tabId === 'observe') {
+    if (!tabId) return;
+    if (tabId === 'none' || tabId === 'config' || tabId === 'observe') {
       switchMode('chatbot');
       return;
     }
     const cfg = pluginHost().getViewConfig(tabId);
     if (cfg && cfg.modes && cfg.modes.length > 0) {
       switchMode(cfg.modes[0]!);
-    } else {
-      switchMode('chatbot');
-    }
+    }  
   }
 
   private async _bootstrap() {
@@ -184,25 +160,6 @@ export class RShell extends RorschachBase {
     }
     this._prevWaiting = isWaiting;
 
-    // Enforce selection of an active tab
-    const activeTab = this._activeWorkspaceTab.value as string;
-    const openWorkspaces = this._getActiveWorkspaces();
-
-    // Only enforce active tab alignment if views have actually loaded to prevent wiping out active tab state during boot
-    const hasLoadedViews = Object.keys(this._views.value || {}).length > 1; // 'config' is always present
-    if (hasLoadedViews) {
-      if (openWorkspaces.length > 0 && !openWorkspaces.includes(activeTab)) {
-        const fallback = openWorkspaces[0]!;
-        setActiveWorkspaceTab(fallback);
-      } else if (openWorkspaces.length === 0) {
-        if (activeTab !== 'none') {
-          setActiveWorkspaceTab('none');
-        }
-        if (this._currentMode.value !== 'chatbot') {
-          switchMode('chatbot');
-        }
-      }
-    }
   }
 
   override render() {

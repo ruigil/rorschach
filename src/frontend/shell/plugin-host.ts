@@ -40,8 +40,6 @@ const createPluginHost = (): PluginHostInstance => {
     viewRegistry.set('config', configCfg)
     ensureView('config', configCfg)
 
-    // All plugin surfaces (docs, workflows, ...) are now driven by
-    // UiSurfaceRegistration WS frames. No legacy seeds remain.
     startModeWatcher()
   };
 
@@ -94,6 +92,7 @@ const createPluginHost = (): PluginHostInstance => {
   }
 
   const routeFrame = (frame: Record<string, any>): boolean => {
+    //console.log('pluginHost.routeFrame called with frame:', frame)
     const owner = frameOwners.get(frame.type)
     if (!owner) return false
     surfaceReducers.get(owner)?.(frame, { openView, closeView, setMode })

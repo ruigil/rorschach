@@ -94,9 +94,6 @@ export const closeView = (id: string, persist = true) => {
     persistViewState(id, viewState)
   }
 
-  const hasOpenViews = Object.values(views).some(v => v.isOpen)
-  if (!hasOpenViews) {
-    setActiveWorkspaceTab('none')
-  }
+  setActiveWorkspaceTab(Object.keys(views).find(k => views[k]?.isOpen) ?? 'none')
 }
 
