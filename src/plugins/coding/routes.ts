@@ -17,7 +17,6 @@ export const codingProjectSchema: ConfigSchemaSection = {
       projectRoot: { type: 'string', default: '/home/user/project', 'x-ui': { label: 'Project root' } },
       projectMount: { type: 'string', default: '/rorschach/home/user/project', 'x-ui': { label: 'Project mount' } },
       workspaceDir: { type: 'string', default: 'workspace', 'x-ui': { label: 'Workspace directory' } },
-      artifactsDir: { type: 'string', default: 'workspace/artifacts', 'x-ui': { label: 'Artifacts directory' } },
     },
   },
 }
@@ -75,12 +74,12 @@ const json = (body: unknown, status = 200): Response =>
 import type { ActorRef } from '../../system/index.ts'
 import type { HttpRequestMsg } from '../../types/routes.ts'
 
-export const buildCodingRoutes = (artifactToolsRef: ActorRef<HttpRequestMsg>): RouteRegistration[] => [
+export const buildCodingRoutes = (documentationRef: ActorRef<HttpRequestMsg>): RouteRegistration[] => [
   {
-    id: 'coding.artifacts',
+    id: 'coding.documentation',
     method: 'GET',
-    path: '/artifacts/',
+    path: '/documentation/',
     match: 'prefix',
-    target: artifactToolsRef,
+    target: documentationRef,
   },
 ]

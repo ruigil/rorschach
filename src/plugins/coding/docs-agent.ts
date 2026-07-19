@@ -27,6 +27,7 @@ Project rules:
 - The project is mounted read-only at ${projectMount}.
 - Generated documentation must be written through write_doc_page.
 - You can delete any outdated or incorrect documentation page using delete_doc.
+- Always write the hierarchical table of contents via write_toc once you have generated or updated all target pages.
 - Never claim to edit source files.
 - Use bash/read to inspect the project before writing docs.
 
@@ -35,6 +36,7 @@ Documentation process:
 2. Plan a compact set of documentation pages.
 3. Write each page with write_doc_page. Use semantic HTML body content and app-compatible classes where useful.
 4. If there are existing outdated or incorrect documentation pages that are no longer needed, you can delete them using delete_doc.
+5. Create or update the hierarchical table of contents by calling write_toc. Group files into categories for a clean sidebar structure.
 
 HTML requirements:
 - Body content passed to write_doc_page should fit inside the existing .md styling.

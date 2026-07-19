@@ -137,7 +137,6 @@
       "projectRoot": "/home/rigel/rorschach/src",
       "projectMount": "/rorschach",
       "workspaceDir": "workspace",
-      "artifactsDir": "workspace/artifacts",
       "coding": {
         "model": "deepseek-v4-pro",
         "maxToolLoops": 25

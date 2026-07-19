@@ -5,7 +5,7 @@ import { defineTool, onMessage, onLifecycle } from '../../system/index.ts'
 import type { ProjectShellMsg, ProjectShellState } from './types.ts'
 import { HttpWsFrameTopic, OutboundUserMessageTopic } from '../../types/events.ts'
 
-export const codingBashTool = defineTool('bash', 'Execute a read-oriented bash command against the mounted project. The project is mounted read-only at /rorschach. Workspace files live under /workspace, and generated docs live under /workspace/artifacts.', {
+export const codingBashTool = defineTool('bash', 'Execute a read-oriented bash command against the mounted project. The project is mounted read-only at /rorschach. Workspace files live under /workspace.', {
   type: 'object',
   properties: {
     command: { type: 'string', description: 'The bash command to execute.' },

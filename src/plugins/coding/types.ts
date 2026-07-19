@@ -9,7 +9,6 @@ import type { ContextView, LoopMsg, LoopState, SpanHandle } from '../../system/i
 export type CodingConfig = {
   projectRoot: string
   projectMount: string
-  artifactsDir?: string
   workspaceDir?: string
   coding: AgentModelOptions
   docs: AgentModelOptions
@@ -75,7 +74,13 @@ export type DocsAgentState = {
   }>
 }
 
-export type ArtifactState = {
+export interface TocNode {
+  title: string
+  filename?: string
+  children?: TocNode[]
+}
+
+export type DocumentationState = {
   writing: boolean
   persistenceRef: ActorRef<any> | null
 }
@@ -98,7 +103,7 @@ export type ProjectShellMsg =
 
 import type { HttpRequestMsg } from '../../types/routes.ts'
 
-export type ArtifactToolsMsg =
+export type DocumentationMsg =
   | HttpRequestMsg
   | ToolInvokeMsg
   | { type: '_done' }

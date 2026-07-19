@@ -7,7 +7,7 @@ import {
   state,
   store,
   StoreController,
-  type ListItem,
+  type TreeNode,
   send
 } from '@rorschach/webkit';
 
@@ -26,7 +26,7 @@ export class RCodeWorkspace extends RorschachBase {
   private _lastAutocompleteResponse = new StoreController(this, ['code', 'lastAutocompleteResponse']);
 
   @state() private _activeTab: 'bash' | 'docs' = 'bash';
-  @state() private _pages: ListItem[] = [];
+  @state() private _treeData: TreeNode[] = [];
   @state() private _selectedPage: string | null = null;
   @state() private _loading = false;
 
@@ -273,29 +273,57 @@ export class RCodeWorkspace extends RorschachBase {
     }
   }
 
+  private _mapTocToTree(nodes: any[]): TreeNode[] {
+    return nodes.map(node => ({
+      id: node.filename || `folder-${Math.random().toString(36).substring(2, 9)}`,
+      label: node.title,
+      icon: node.filename ? 'file-text' : 'folder',
+      children: node.children ? this._mapTocToTree(node.children) : undefined,
+      data: node.filename ? { filename: node.filename } : undefined
+    }));
+  }
+
   private async _fetchManifest() {
     this._loading = true;
     try {
-      const res = await fetch('/artifacts/manifest.json');
-      if (!res.ok) throw new Error('Failed to fetch manifest');
+      const res = await fetch('/documentation/toc.json');
+      if (!res.ok) throw new Error('Failed to fetch TOC');
       const data = await res.json();
-      if (data && Array.isArray(data.pages)) {
-        this._pages = data.pages.map((p: any) => ({
-          id: p.filename,
-          label: p.title,
-          description: p.summary,
-          icon: 'file-text' as const,
-        }));
+      if (data && Array.isArray(data)) {
+        this._treeData = this._mapTocToTree(data);
+
+        const findFirstLeaf = (nodes: TreeNode[]): string | null => {
+          for (const node of nodes) {
+            if (node.data?.filename) return node.data.filename;
+            if (node.children) {
+              const leaf = findFirstLeaf(node.children);
+              if (leaf) return leaf;
+            }
+          }
+          return null;
+        };
 
         const storeDoc = this._currentDocArtifact.value as string | null;
-        if (storeDoc && this._pages.some(p => p.id === storeDoc)) {
+        const hasPage = (nodes: TreeNode[], filename: string): boolean => {
+          for (const node of nodes) {
+            if (node.data?.filename === filename) return true;
+            if (node.children && hasPage(node.children, filename)) return true;
+          }
+          return false;
+        };
+
+        if (storeDoc && hasPage(this._treeData, storeDoc)) {
           this._selectedPage = storeDoc;
-        } else if (this._pages[0]) {
-          this._selectedPage = this._pages[0].id;
+        } else {
+          const firstLeaf = findFirstLeaf(this._treeData);
+          if (firstLeaf) {
+            this._selectedPage = firstLeaf;
+            store.namespace('code').set('currentDocArtifact', firstLeaf);
+          }
         }
       }
     } catch (err) {
-      console.error('Error fetching documentation manifest:', err);
+      console.error('Error fetching documentation TOC:', err);
     } finally {
       this._loading = false;
     }
@@ -308,10 +336,12 @@ export class RCodeWorkspace extends RorschachBase {
     }
   }
 
-  private _handlePageSelect(e: CustomEvent) {
-    const pageId = e.detail.id;
-    this._selectedPage = pageId;
-    store.namespace('code').set('currentDocArtifact', pageId);
+  private _handleNodeSelect(e: CustomEvent) {
+    const node = e.detail.node;
+    if (node.data?.filename) {
+      this._selectedPage = node.data.filename;
+      store.namespace('code').set('currentDocArtifact', node.data.filename);
+    }
   }
 
   private _handleKeyDown(e: KeyboardEvent) {
@@ -450,27 +480,29 @@ Workspace folder: /workspace (read-write)</div>
             <div class="doc-layout">
               <div class="doc-sidebar">
                 <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); margin-bottom: 12px; font-weight: 700;">
-                  Pages
+                  Documentation
                 </div>
                 ${this._loading ? html`<div class="text-dim text-mono" style="font-size: 0.72rem;">Loading...</div>` : html`
-                  <r-list
-                    .items=${this._pages}
-                    selectable
+                  <r-tree
+                    .data=${this._treeData}
                     .selectedId=${this._selectedPage}
-                    @item-select=${this._handlePageSelect}
-                    emptyText="No documentation pages generated yet."
-                  ></r-list>
+                    @node-select=${this._handleNodeSelect}
+                  >
+                    <div slot="empty" class="text-dim text-mono" style="font-size: 0.72rem;">
+                      No documentation generated yet.
+                    </div>
+                  </r-tree>
                 `}
               </div>
               <div class="doc-content">
                 ${this._selectedPage ? html`
                   <iframe
-                    src="/artifacts/${this._selectedPage}"
+                    src="/documentation/${this._selectedPage}"
                     title="Documentation Page"
                     sandbox="allow-same-origin allow-scripts allow-popups"
                   ></iframe>
                 ` : html`
-                  <r-empty-state name="file-text" text="Select a page from the sidebar."></r-empty-state>
+                  <r-empty-state name="file-text" text="Select a page from the tree."></r-empty-state>
                 `}
               </div>
             </div>

@@ -8,7 +8,7 @@ Project boundary:
 - The project is mounted at ${options.projectMount}.
 - You may inspect and explain project files.
 - You must not claim to edit, patch, or save project source files.
-- Documentation artifacts are generated separately under /workspace/artifacts.
+- Documentation is generated separately and managed under the documentation collection.
 
 Tools:
 - bash: inspect the project with read-oriented shell commands.

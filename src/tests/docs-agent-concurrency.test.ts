@@ -4,8 +4,8 @@ import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import { JobRegistryTopic, type ToolReply, type JobLifecycleEvent } from '../types/tools.ts'
 import { DocsAgent, updateDocsTool } from '../plugins/coding/docs-agent.ts'
-import { ArtifactTools, writeDocPageTool } from '../plugins/coding/artifact-tools.ts'
-import type { ArtifactToolsMsg, DocsAgentMsg } from '../plugins/coding/types.ts'
+import { DocumentationTools, writeDocPageTool } from '../plugins/coding/documentation.ts'
+import type { DocumentationMsg, DocsAgentMsg } from '../plugins/coding/types.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
@@ -15,7 +15,7 @@ describe('DocsAgent Concurrency Integration', () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
 
     // 1. Spawn dependencies and DocsAgent
-    const artifactToolsRef = system.spawn('artifacts-tools', ArtifactTools())
+    const documentationToolsRef = system.spawn('documentation-tools', DocumentationTools())
 
     const docsAgentRef = system.spawn('docs-coordinator', DocsAgent({
       model: 'test-model',
@@ -24,7 +24,7 @@ describe('DocsAgent Concurrency Integration', () => {
       tools: {
         write_doc_page: {
           ...writeDocPageTool,
-          ref: artifactToolsRef as any,
+          ref: documentationToolsRef as any,
         },
       },
     }))
@@ -166,8 +166,8 @@ describe('DocsAgent Concurrency Integration', () => {
     expect(completed2).toBeDefined()
 
     // 6. Verify manifest contents via persistence
-    const manifestResult = await ask<ArtifactToolsMsg, { ok: true; content: string } | { ok: false; error: string }>(
-      artifactToolsRef,
+    const manifestResult = await ask<DocumentationMsg, { ok: true; content: string } | { ok: false; error: string }>(
+      documentationToolsRef,
       (replyTo) => ({
         type: 'getDoc',
         filename: 'manifest.json',

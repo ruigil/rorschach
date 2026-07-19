@@ -1,7 +1,7 @@
 import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../system/index.ts'
 import { defineTool, onMessage, parseToolArgs, onLifecycle, ask } from '../../system/index.ts'
 import type { ToolReply } from '../../types/tools.ts'
-import type { ArtifactState, ArtifactToolsMsg, DocPageMeta, DocsManifest } from './types.ts'
+import type { DocumentationState, DocumentationMsg, DocPageMeta, DocsManifest, TocNode } from './types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../../types/persistence.ts'
 
 export const writeDocPageTool = defineTool('write_doc_page', 'Write one generated documentation page. Content should be semantic HTML for the page body; the tool wraps it in the app documentation shell.', {
@@ -22,6 +22,26 @@ export const deleteDocTool = defineTool('delete_doc', 'Delete a documentation pa
   properties: {
     filename: { type: 'string', description: 'The filename of the documentation page to delete, e.g. architecture.html.' },
   },
+})
+
+export const writeTocTool = defineTool('write_toc', 'Write the hierarchical table of contents for the documentation, grouping files into categories.', {
+  type: 'object',
+  required: ['toc'],
+  properties: {
+    toc: {
+      type: 'array',
+      description: 'The hierarchical array of TOC nodes representing folders or links to pages.',
+      items: {
+        type: 'object',
+        required: ['title'],
+        properties: {
+          title: { type: 'string', description: 'The display title of this TOC node.' },
+          filename: { type: 'string', description: 'The target HTML filename if this represents a page. Omit if it is a folder/category.' },
+          children: { type: 'array', description: 'Sub-nodes under this category.' }
+        }
+      }
+    }
+  }
 })
 
 type PageArgs = {
@@ -62,7 +82,7 @@ const readManifest = async (persistenceRef: ActorRef<any>): Promise<DocsManifest
   let data = ''
   const res = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
     type: 'doc.get',
-    collection: 'artifacts',
+    collection: 'documentation',
     docId: 'manifest.json',
     replyTo,
   }))
@@ -199,8 +219,8 @@ export const indexShell = (manifest: DocsManifest): string => {
 
 
 
-export const ArtifactTools = (): ActorDef<ArtifactToolsMsg, ArtifactState> => {
-  const handler: MessageHandler<ArtifactToolsMsg, ArtifactState> = onMessage<ArtifactToolsMsg, ArtifactState>({
+export const DocumentationTools = (): ActorDef<DocumentationMsg, DocumentationState> => {
+  const handler: MessageHandler<DocumentationMsg, DocumentationState> = onMessage<DocumentationMsg, DocumentationState>({
     _done: (state) => ({ state }),
 
     'http.request': (state, message, ctx) => {
@@ -221,9 +241,9 @@ export const ArtifactTools = (): ActorDef<ArtifactToolsMsg, ArtifactState> => {
         return { state }
       }
 
-      // /artifacts/* prefix routing
-      if (request.method === 'GET' && path.startsWith('/artifacts/')) {
-        const rawFilename = path.slice('/artifacts/'.length) || 'index.html'
+      // /documentation/* prefix routing
+      if (request.method === 'GET' && path.startsWith('/documentation/')) {
+        const rawFilename = path.slice('/documentation/'.length) || 'index.html'
         let filename = 'index.html'
         try {
           filename = decodeURIComponent(rawFilename)
@@ -245,7 +265,7 @@ export const ArtifactTools = (): ActorDef<ArtifactToolsMsg, ArtifactState> => {
           type: 'getDoc',
           filename,
           replyTo: {
-            name: 'http:artifacts',
+            name: 'http:documentation',
             isAlive: () => true,
             send: (res) => {
               if (!res.ok) {
@@ -306,7 +326,7 @@ export const ArtifactTools = (): ActorDef<ArtifactToolsMsg, ArtifactState> => {
       const loadDoc = async () => {
         const res = await ask<PersistenceMsg, PResult<string>>(dl, (replyTo) => ({
           type: 'doc.get',
-          collection: 'artifacts',
+          collection: 'documentation',
           docId: msg.filename,
           replyTo,
         }))
@@ -383,21 +403,21 @@ export const ArtifactTools = (): ActorDef<ArtifactToolsMsg, ArtifactState> => {
 
             await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
               type: 'doc.put',
-              collection: 'artifacts',
+              collection: 'documentation',
               docId: filename,
               content: pageShell(meta.title, args.bodyHtml),
               replyTo,
             }))
             await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
               type: 'doc.put',
-              collection: 'artifacts',
+              collection: 'documentation',
               docId: 'manifest.json',
               content: JSON.stringify(nextManifest, null, 2),
               replyTo,
             }))
             await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
               type: 'doc.put',
-              collection: 'artifacts',
+              collection: 'documentation',
               docId: 'index.html',
               content: indexShell(nextManifest),
               replyTo,
@@ -432,26 +452,54 @@ export const ArtifactTools = (): ActorDef<ArtifactToolsMsg, ArtifactState> => {
 
             await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
               type: 'doc.delete',
-              collection: 'artifacts',
+              collection: 'documentation',
               docId: filename,
               replyTo,
             }))
             await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
               type: 'doc.put',
-              collection: 'artifacts',
+              collection: 'documentation',
               docId: 'manifest.json',
               content: JSON.stringify(nextManifest, null, 2),
               replyTo,
             }))
             await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
               type: 'doc.put',
-              collection: 'artifacts',
+              collection: 'documentation',
               docId: 'index.html',
               content: indexShell(nextManifest),
               replyTo,
             }))
           })(),
           () => ({ type: '_writeDone' as const, replyTo: msg.replyTo, text: `Deleted ${filename}`, span }),
+          error => ({ type: '_writeErr' as const, replyTo: msg.replyTo, error: String(error), span }),
+        )
+        return { state: { ...state, writing: true } }
+      }
+
+      if (msg.toolName === writeTocTool.name) {
+        const parsed = parseToolArgs<{ toc: TocNode[] }>(msg.arguments, obj => {
+          const toc = obj.toc
+          if (!Array.isArray(toc)) return null
+          return { toc }
+        })
+        if (!parsed.ok) {
+          msg.replyTo.send({ type: 'toolError', error: parsed.error })
+          return { state }
+        }
+        const { toc } = parsed.value
+
+        ctx.pipeToSelf(
+          (async () => {
+            await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
+              type: 'doc.put',
+              collection: 'documentation',
+              docId: 'toc.json',
+              content: JSON.stringify(toc, null, 2),
+              replyTo,
+            }))
+          })(),
+          () => ({ type: '_writeDone' as const, replyTo: msg.replyTo, text: 'Wrote table of contents (toc.json)', span }),
           error => ({ type: '_writeErr' as const, replyTo: msg.replyTo, error: String(error), span }),
         )
         return { state: { ...state, writing: true } }

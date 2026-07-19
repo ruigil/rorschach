@@ -1,13 +1,12 @@
 import { createPluginFactory, defineConfig } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
-import { RouteRegistrationTopic } from '../../types/routes.ts'
-import { ToolRegistrationTopic, type ToolCollection, type ToolMsg } from '../../types/tools.ts'
-import { ArtifactTools, deleteDocTool, writeDocPageTool } from './artifact-tools.ts'
+import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
+import { DocumentationTools, deleteDocTool, writeDocPageTool, writeTocTool } from './documentation.ts'
 import { CodingAgentDescriptor } from './coding-agent.ts'
 import { DocsAgent, showDocsTool, updateDocsTool } from './docs-agent.ts'
 import { ProjectShell, codingBashTool, codingReadTool } from './project-shell.ts'
 import { buildCodingRoutes, codingSchemas } from './routes.ts'
-import type { ArtifactToolsMsg, CodingConfig, DocsAgentMsg, ProjectShellMsg } from './types.ts'
+import type { DocumentationMsg, CodingConfig, DocsAgentMsg, ProjectShellMsg } from './types.ts'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 
 const defaultConfig: CodingConfig = {
@@ -51,12 +50,13 @@ const buildCodingTools = (
 
 const buildDocsTools = (
   shellRef: ActorRef<ProjectShellMsg>,
-  artifactToolsRef: ActorRef<ArtifactToolsMsg>,
+  documentationRef: ActorRef<DocumentationMsg>,
 ): ToolCollection => ({
   [codingBashTool.name]: { ...codingBashTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
   [codingReadTool.name]: { ...codingReadTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
-  [deleteDocTool.name]: { ...deleteDocTool, ref: artifactToolsRef as unknown as ActorRef<ToolMsg> },
-  [writeDocPageTool.name]: { ...writeDocPageTool, ref: artifactToolsRef as unknown as ActorRef<ToolMsg> },
+  [deleteDocTool.name]: { ...deleteDocTool, ref: documentationRef as unknown as ActorRef<ToolMsg> },
+  [writeDocPageTool.name]: { ...writeDocPageTool, ref: documentationRef as unknown as ActorRef<ToolMsg> },
+  [writeTocTool.name]: { ...writeTocTool, ref: documentationRef as unknown as ActorRef<ToolMsg> },
 })
 
 const codeSurfaceRegistration: UiSurfaceRegistration = {
@@ -88,9 +88,9 @@ export default createPluginFactory<CodingConfig>({
         })
       },
     },
-    artifactTools: {
+    documentation: {
       factory: (_cfg) => {
-        return ArtifactTools()
+        return DocumentationTools()
       },
     },
     docsAgent: {
@@ -102,11 +102,11 @@ export default createPluginFactory<CodingConfig>({
           projectMount: merged.projectMount,
           tools: buildDocsTools(
             deps.shell as ActorRef<ProjectShellMsg>,
-            deps.artifactTools as ActorRef<ArtifactToolsMsg>
+            deps.documentation as ActorRef<DocumentationMsg>
           ),
         })
       },
-      dependsOn: ['shell', 'artifactTools'],
+      dependsOn: ['shell', 'documentation'],
     },
   },
   tools: {
@@ -136,7 +136,7 @@ export default createPluginFactory<CodingConfig>({
     },
   },
   routes: (cfg, deps) => {
-    return buildCodingRoutes(deps.artifactTools as ActorRef<ArtifactToolsMsg>)
+    return buildCodingRoutes(deps.documentation as ActorRef<DocumentationMsg>)
   },
   uiSurface: codeSurfaceRegistration,
 })

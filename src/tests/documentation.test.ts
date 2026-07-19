@@ -1,5 +1,5 @@
 import { expect, test, describe } from 'bun:test'
-import { pageShell, indexShell } from '../plugins/coding/artifact-tools.ts'
+import { pageShell, indexShell } from '../plugins/coding/documentation.ts'
 
 describe('Artifact Tools Templates', () => {
   test('pageShell includes Highlight.js stylesheet, scripts, and copyCode helper', () => {
