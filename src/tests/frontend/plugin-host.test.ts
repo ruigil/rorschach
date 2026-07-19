@@ -21,6 +21,7 @@ beforeEach(() => {
     activeStream: { isActive: false, reasoning: '', text: '', sources: [], attachments: [], toolCalls: [] },
     views: {},
     activeWorkspaceTab: 'none',
+    workspaceTabOrder: [],
   })
 })
 

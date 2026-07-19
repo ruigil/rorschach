@@ -11,9 +11,17 @@ import {
 
 import { dispatchFrame } from './dispatcher.js';
 import { logout, switchMode } from './actions.js';
-import { openView, closeView, setActiveWorkspaceTab } from './view-actions.js';
+import {
+  openView,
+  closeView,
+  setActiveWorkspaceTab,
+  reorderWorkspaceTabs,
+  reconcileWorkspaceTabOrder,
+} from './view-actions.js';
 import type { ShellState } from './types.js';
 import { pluginHost } from './plugin-host.js';
+
+const TAB_DND_MIME = 'application/x-rorschach-tab';
 
 @customElement('r-shell')
 export class RShell extends RorschachBase {
@@ -23,6 +31,7 @@ export class RShell extends RorschachBase {
 
   private _views = new StoreController(this, ['shell', 'views']);
   private _activeWorkspaceTab = new StoreController(this, ['shell', 'activeWorkspaceTab']);
+  private _workspaceTabOrder = new StoreController(this, ['shell', 'workspaceTabOrder']);
   private _currentMode = new StoreController(this, ['shell', 'currentMode']);
   private _currentModeDisplayName = new StoreController(this, ['shell', 'currentModeDisplayName']);
 
@@ -31,6 +40,11 @@ export class RShell extends RorschachBase {
 
   private _sidebarWidth = new StoreController(this, ['shell', 'sidebarWidth']);
   @state() private _isSidebarCollapsed = false;
+
+  @state() private _draggingTabId: string | null = null;
+  @state() private _dropTargetId: string | null = null;
+  @state() private _dropPlace: 'before' | 'after' = 'before';
+  private _didDrag = false;
 
   override createRenderRoot() {
     return this; // Light DOM to integrate globally
@@ -103,6 +117,9 @@ export class RShell extends RorschachBase {
     onMessage(dispatchFrame);
     connect();
 
+    // Align restored open views with any persisted tab order.
+    reconcileWorkspaceTabOrder();
+
     // In the new layout, chat is always a persistent sidebar and never a dock window.
   }
 
@@ -122,8 +139,96 @@ export class RShell extends RorschachBase {
   }
 
   private _getActiveWorkspaces() {
-    const views = this._views.value;
-    return views ? Object.keys(views).filter(id => views[id]?.isOpen) : [];
+    const views = this._views.value ?? {};
+    const order = (this._workspaceTabOrder.value as string[] | undefined) ?? [];
+    const ordered = order.filter(id => views[id]?.isOpen);
+    for (const id of Object.keys(views)) {
+      if (views[id]?.isOpen && !ordered.includes(id)) ordered.push(id);
+    }
+    return ordered;
+  }
+
+  private _clearDragState() {
+    this._draggingTabId = null;
+    this._dropTargetId = null;
+    this._dropPlace = 'before';
+  }
+
+  private _onTabDragStart(e: DragEvent, id: string) {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest?.('.tab-close')) {
+      e.preventDefault();
+      return;
+    }
+    this._didDrag = true;
+    this._draggingTabId = id;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData(TAB_DND_MIME, id);
+      // Some browsers require a text/plain payload for drag to proceed.
+      e.dataTransfer.setData('text/plain', id);
+    }
+  }
+
+  private _onTabDragOver(e: DragEvent, id: string) {
+    if (!this._draggingTabId || this._draggingTabId === id) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+
+    const el = e.currentTarget as HTMLElement;
+    const rect = el.getBoundingClientRect();
+    const place: 'before' | 'after' =
+      e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+    this._dropTargetId = id;
+    this._dropPlace = place;
+  }
+
+  private _onTabDragLeave(e: DragEvent, id: string) {
+    if (this._dropTargetId !== id) return;
+    const related = e.relatedTarget as Node | null;
+    const current = e.currentTarget as Node;
+    if (related && current.contains(related)) return;
+    this._dropTargetId = null;
+  }
+
+  private _onTabDrop(e: DragEvent, targetId: string) {
+    e.preventDefault();
+    const draggedId =
+      e.dataTransfer?.getData(TAB_DND_MIME) ||
+      e.dataTransfer?.getData('text/plain') ||
+      this._draggingTabId;
+    if (!draggedId || draggedId === targetId) {
+      this._clearDragState();
+      return;
+    }
+
+    const el = e.currentTarget as HTMLElement;
+    const rect = el.getBoundingClientRect();
+    const place: 'before' | 'after' =
+      this._dropTargetId === targetId
+        ? this._dropPlace
+        : e.clientX < rect.left + rect.width / 2
+          ? 'before'
+          : 'after';
+
+    reorderWorkspaceTabs(draggedId, targetId, place);
+    this._clearDragState();
+  }
+
+  private _onTabDragEnd() {
+    this._clearDragState();
+    // Allow a microtask so a spurious click after drag is suppressed.
+    queueMicrotask(() => {
+      this._didDrag = false;
+    });
+  }
+
+  private _onTabClick(id: string) {
+    if (this._didDrag) {
+      this._didDrag = false;
+      return;
+    }
+    setActiveWorkspaceTab(id);
   }
 
   private _handleSidebarResize(e: PointerEvent) {
@@ -229,16 +334,31 @@ export class RShell extends RorschachBase {
                 <div class="tabs-list">
                   ${this._getActiveWorkspaces().map(id => {
                     const cfg = pluginHost().getViewConfig(id);
+                    const isDragging = this._draggingTabId === id;
+                    const isDropTarget = this._dropTargetId === id && this._draggingTabId && this._draggingTabId !== id;
+                    const dropClass = isDropTarget
+                      ? (this._dropPlace === 'before' ? 'drop-before' : 'drop-after')
+                      : '';
                     return html`
                       <button
-                        class="workspace-tab ${this._activeWorkspaceTab.value === id ? 'active' : ''}"
-                        @click=${() => setActiveWorkspaceTab(id) }>
+                        class="workspace-tab ${this._activeWorkspaceTab.value === id ? 'active' : ''} ${isDragging ? 'dragging' : ''} ${dropClass}"
+                        draggable="true"
+                        aria-grabbed=${isDragging ? 'true' : 'false'}
+                        @click=${() => this._onTabClick(id)}
+                        @dragstart=${(e: DragEvent) => this._onTabDragStart(e, id)}
+                        @dragover=${(e: DragEvent) => this._onTabDragOver(e, id)}
+                        @dragleave=${(e: DragEvent) => this._onTabDragLeave(e, id)}
+                        @drop=${(e: DragEvent) => this._onTabDrop(e, id)}
+                        @dragend=${() => this._onTabDragEnd()}>
                         <r-icon name=${(cfg?.icon ?? 'file') as any} size="sm"></r-icon>
                         <span>${cfg?.title ?? id}</span>
-                        <span class="tab-close" @click=${(e: Event) => {
-                          e.stopPropagation();
-                          closeView(id);
-                        }}>×</span>
+                        <span class="tab-close"
+                          draggable="false"
+                          @click=${(e: Event) => {
+                            e.stopPropagation();
+                            closeView(id);
+                          }}
+                          @dragstart=${(e: Event) => e.stopPropagation()}>×</span>
                       </button>
                     `;
                   })}

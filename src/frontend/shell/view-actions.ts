@@ -7,6 +7,7 @@ type ShellViewSlice = {
   isWaiting: boolean
   views: Record<string, ViewRuntimeState>
   activeWorkspaceTab: string
+  workspaceTabOrder: string[]
 };
 
 const shell = () => store.namespace<ShellViewSlice>('shell')
@@ -40,6 +41,22 @@ const persistViewState = (id: string, state: ViewRuntimeState) => {
   }
 }
 
+/** Pure reorder helper — exported for unit tests. */
+export const moveTabInOrder = (
+  order: string[],
+  draggedId: string,
+  targetId: string,
+  place: 'before' | 'after',
+): string[] => {
+  if (draggedId === targetId) return order
+  const next = order.filter(id => id !== draggedId)
+  const targetIndex = next.indexOf(targetId)
+  if (targetIndex === -1) return order
+  const insertAt = place === 'before' ? targetIndex : targetIndex + 1
+  next.splice(insertAt, 0, draggedId)
+  return next
+}
+
 export const ensureView = (id: string, cfg: ViewConfig): void => {
   const views = { ...shell().get('views') }
   if (views[id]) return
@@ -47,6 +64,14 @@ export const ensureView = (id: string, cfg: ViewConfig): void => {
   const state = readSavedViewState(id, cfg)
   views[id] = state
   shell().set('views', views)
+
+  // Restored open views must appear in the tab strip order.
+  if (state.isOpen) {
+    const order = shell().get('workspaceTabOrder') ?? []
+    if (!order.includes(id)) {
+      shell().set('workspaceTabOrder', [...order, id])
+    }
+  }
 }
 
 export const setMode = (mode: string, displayName?: string) => {
@@ -79,6 +104,11 @@ export const openView = (id: string) => {
   viewState.isOpen = true
   setActiveWorkspaceTab(id)
 
+  const order = shell().get('workspaceTabOrder') ?? []
+  if (!order.includes(id)) {
+    shell().set('workspaceTabOrder', [...order, id])
+  }
+
   shell().set('views', views)
   persistViewState(id, viewState)
 }
@@ -94,6 +124,37 @@ export const closeView = (id: string, persist = true) => {
     persistViewState(id, viewState)
   }
 
-  setActiveWorkspaceTab(Object.keys(views).find(k => views[k]?.isOpen) ?? 'none')
+  const order = (shell().get('workspaceTabOrder') ?? []).filter(tabId => tabId !== id)
+  shell().set('workspaceTabOrder', order)
+
+  const wasActive = shell().get('activeWorkspaceTab') === id
+  if (wasActive) {
+    setActiveWorkspaceTab(order[0] ?? 'none')
+  }
 }
 
+export const reorderWorkspaceTabs = (
+  draggedId: string,
+  targetId: string,
+  place: 'before' | 'after',
+) => {
+  const order = shell().get('workspaceTabOrder') ?? []
+  const next = moveTabInOrder(order, draggedId, targetId, place)
+  if (next === order) return
+  shell().set('workspaceTabOrder', next)
+}
+
+/** Drop closed/missing ids; append any open views missing from order. */
+export const reconcileWorkspaceTabOrder = () => {
+  const views = shell().get('views') ?? {}
+  const order = shell().get('workspaceTabOrder') ?? []
+  const next = order.filter(id => views[id]?.isOpen)
+  for (const id of Object.keys(views)) {
+    if (views[id]?.isOpen && !next.includes(id)) next.push(id)
+  }
+  const unchanged =
+    next.length === order.length && next.every((id, i) => id === order[i])
+  if (!unchanged) {
+    shell().set('workspaceTabOrder', next)
+  }
+}

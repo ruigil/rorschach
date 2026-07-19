@@ -22,6 +22,7 @@ const defaultState: Partial<ShellState> = {
   },
   views: {},
   activeWorkspaceTab: 'none',
+  workspaceTabOrder: [],
 }
 
 export function resetStore() {

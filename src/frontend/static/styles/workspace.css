@@ -99,9 +99,40 @@ r-view > * {
   border-radius: 0;
   font-size: 0.76rem;
   color: var(--text-dim);
-  cursor: pointer;
-  transition: all 0.2s ease;
+  cursor: grab;
+  transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
   height: 100%;
+  position: relative;
+  user-select: none;
+}
+
+.workspace-tab:active {
+  cursor: grabbing;
+}
+
+.workspace-tab.dragging {
+  opacity: 0.45;
+}
+
+.workspace-tab.drop-before::before,
+.workspace-tab.drop-after::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.workspace-tab.drop-before::before {
+  left: 0;
+}
+
+.workspace-tab.drop-after::after {
+  right: 0;
 }
 
 .workspace-tab svg {

@@ -34,9 +34,10 @@ store.namespace<ShellState>('shell').init({
   },
   views: {},
   activeWorkspaceTab: 'none',
+  workspaceTabOrder: [],
   sidebarWidth: 360,
 }, {
-  persist: ['theme', 'currentMode', 'activeWorkspaceTab', 'lastMessages', 'sidebarWidth'],
+  persist: ['theme', 'currentMode', 'activeWorkspaceTab', 'workspaceTabOrder', 'lastMessages', 'sidebarWidth'],
 })
 
 // Markdown renderer config (kit utility wrapping global marked/katex/hljs)

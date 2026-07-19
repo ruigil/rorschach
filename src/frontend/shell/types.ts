@@ -76,6 +76,8 @@ export type ShellState = {
   activeStream: ActiveStream
   views: Record<string, ViewRuntimeState>
   activeWorkspaceTab: string
+  /** Left-to-right order of open workspace tab ids. */
+  workspaceTabOrder: string[]
   sidebarWidth: number
 };
 

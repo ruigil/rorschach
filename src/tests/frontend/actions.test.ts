@@ -3,7 +3,16 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 
 import { store } from '../../frontend/webkit/runtime/store.js'
 import { resetStore } from '../helpers/frontend.js'
-import { setMode, setActiveWorkspaceTab, updateViewState, closeView } from '../../frontend/shell/view-actions.js'
+import {
+  setMode,
+  setActiveWorkspaceTab,
+  updateViewState,
+  closeView,
+  openView,
+  moveTabInOrder,
+  reorderWorkspaceTabs,
+  reconcileWorkspaceTabOrder,
+} from '../../frontend/shell/view-actions.js'
 import {
   appendMessage,
   updateActiveStream,
@@ -201,12 +210,99 @@ describe('view state actions', () => {
         params: {},
       }
     })
+    store.namespace<ShellState>('shell').set('workspaceTabOrder', ['docs'])
     setActiveWorkspaceTab('docs')
 
     closeView('docs')
 
     expect(store.namespace<ShellState>('shell').get('activeWorkspaceTab')).toBe('none')
+    expect(store.namespace<ShellState>('shell').get('workspaceTabOrder')).toEqual([])
     const view = store.namespace<ShellState>('shell').get('views').docs!
     expect(view.isOpen).toBe(false)
+  })
+
+  test('openView appends to workspaceTabOrder once', () => {
+    store.namespace<ShellState>('shell').set('views', {
+      docs: { id: 'docs', isOpen: false, params: {} },
+      code: { id: 'code', isOpen: false, params: {} },
+    })
+    store.namespace<ShellState>('shell').set('workspaceTabOrder', [])
+
+    openView('docs')
+    openView('code')
+    openView('docs')
+
+    expect(store.namespace<ShellState>('shell').get('workspaceTabOrder')).toEqual(['docs', 'code'])
+    expect(store.namespace<ShellState>('shell').get('activeWorkspaceTab')).toBe('docs')
+  })
+
+  test('closeView removes from order and activates next ordered tab', () => {
+    store.namespace<ShellState>('shell').set('views', {
+      a: { id: 'a', isOpen: true, params: {} },
+      b: { id: 'b', isOpen: true, params: {} },
+      c: { id: 'c', isOpen: true, params: {} },
+    })
+    store.namespace<ShellState>('shell').set('workspaceTabOrder', ['a', 'b', 'c'])
+    setActiveWorkspaceTab('b')
+
+    closeView('b')
+
+    expect(store.namespace<ShellState>('shell').get('workspaceTabOrder')).toEqual(['a', 'c'])
+    expect(store.namespace<ShellState>('shell').get('activeWorkspaceTab')).toBe('a')
+  })
+
+  test('closeView does not change active tab when closing a non-active tab', () => {
+    store.namespace<ShellState>('shell').set('views', {
+      a: { id: 'a', isOpen: true, params: {} },
+      b: { id: 'b', isOpen: true, params: {} },
+    })
+    store.namespace<ShellState>('shell').set('workspaceTabOrder', ['a', 'b'])
+    setActiveWorkspaceTab('b')
+
+    closeView('a')
+
+    expect(store.namespace<ShellState>('shell').get('workspaceTabOrder')).toEqual(['b'])
+    expect(store.namespace<ShellState>('shell').get('activeWorkspaceTab')).toBe('b')
+  })
+})
+
+describe('workspace tab reorder', () => {
+  test('moveTabInOrder places dragged tab before target', () => {
+    expect(moveTabInOrder(['a', 'b', 'c'], 'a', 'c', 'before')).toEqual(['b', 'a', 'c'])
+  })
+
+  test('moveTabInOrder places dragged tab after target', () => {
+    expect(moveTabInOrder(['a', 'b', 'c'], 'a', 'c', 'after')).toEqual(['b', 'c', 'a'])
+  })
+
+  test('moveTabInOrder is no-op for same id or missing target', () => {
+    const order = ['a', 'b', 'c']
+    expect(moveTabInOrder(order, 'a', 'a', 'before')).toBe(order)
+    expect(moveTabInOrder(order, 'a', 'missing', 'after')).toBe(order)
+  })
+
+  test('reorderWorkspaceTabs updates store', () => {
+    store.namespace<ShellState>('shell').set('workspaceTabOrder', ['a', 'b', 'c'])
+    reorderWorkspaceTabs('c', 'a', 'before')
+    expect(store.namespace<ShellState>('shell').get('workspaceTabOrder')).toEqual(['c', 'a', 'b'])
+  })
+
+  test('reorderWorkspaceTabs no-ops for same id', () => {
+    store.namespace<ShellState>('shell').set('workspaceTabOrder', ['a', 'b'])
+    reorderWorkspaceTabs('a', 'a', 'after')
+    expect(store.namespace<ShellState>('shell').get('workspaceTabOrder')).toEqual(['a', 'b'])
+  })
+
+  test('reconcileWorkspaceTabOrder drops closed ids and appends open orphans', () => {
+    store.namespace<ShellState>('shell').set('views', {
+      a: { id: 'a', isOpen: true, params: {} },
+      b: { id: 'b', isOpen: false, params: {} },
+      c: { id: 'c', isOpen: true, params: {} },
+    })
+    store.namespace<ShellState>('shell').set('workspaceTabOrder', ['b', 'a', 'ghost'])
+
+    reconcileWorkspaceTabOrder()
+
+    expect(store.namespace<ShellState>('shell').get('workspaceTabOrder')).toEqual(['a', 'c'])
   })
 })
