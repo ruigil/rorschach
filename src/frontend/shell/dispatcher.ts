@@ -36,6 +36,7 @@ const frameHandlers: Record<string, (msg: Record<string, any>) => void> = {
   done: () => commitActiveStream(),
   error: (msg) => commitActiveStream('error', msg.text),
   agents: (msg) => shell().set('agents', Array.isArray(msg.agents) ? msg.agents : []),
+  'cognitive.agents.updated': (msg) => shell().set('agents', Array.isArray(msg.agents) ? msg.agents : []),
   modeChanged: (msg) => setMode(msg.mode, msg.displayName)
 }
 

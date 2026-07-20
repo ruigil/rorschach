@@ -20,7 +20,7 @@ import {
   type CronTriggerEvent,
   type MessageAttachment,
 } from '../../types/events.ts'
-import { JobRegistryTopic, type JobLifecycleEvent } from '../../types/tools.ts'
+import { JobRegistryTopic, type JobLifecycleEvent, type ToolInvokeMsg } from '../../types/tools.ts'
 
 // ─── Message protocol ─────────────────────────────────────────────────────
 
@@ -480,15 +480,18 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
           }
         }
 
-        if (frame.type === 'cognitive.listAgents') {
+        if (frame.type === 'cognitive.agents.request') {
           const agents = Object.values(state.descriptors).map(d => ({
             mode: d.mode,
             displayName: d.displayName,
             shortDesc: d.shortDesc,
+            userVisible: d.capabilities.userVisible !== false,
+            role: d.role,
+            model: d.model,
           }))
           ctx.publish(OutboundUserMessageTopic, {
             userId,
-            text: JSON.stringify({ type: 'agents', agents }),
+            text: JSON.stringify({ type: 'cognitive.agents.updated', agents }),
           })
         }
         return { state }

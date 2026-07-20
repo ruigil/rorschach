@@ -38,6 +38,7 @@ export function resetStore() {
     traces: [],
     usage: [],
     tools: {},
+    agents: [],
   })
 }
 

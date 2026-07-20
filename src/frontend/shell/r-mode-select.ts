@@ -37,8 +37,9 @@ export class RModeSelect extends RorschachBase {
     const isConnected = this._isConnected.value;
     const isWaiting = this._isWaiting.value;
 
-    const agentList = agents.length > 0
-      ? agents
+    const visibleAgents = agents.filter((a: any) => a.userVisible !== false);
+    const agentList = visibleAgents.length > 0
+      ? visibleAgents
       : currentMode ? [{
           mode: currentMode,
           displayName: currentModeDisplayName,
