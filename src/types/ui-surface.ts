@@ -1,3 +1,5 @@
+import type { FrameType } from './events.ts'
+
 // ─── Plugin UI surface registration ───
 //
 // Plugins contribute browser-side UI surfaces (windows + their backing module)
@@ -29,8 +31,6 @@ export type UiSurfaceRegistration =
       moduleUrl: string
       /** WS frame types this surface claims. The dispatcher routes them to the
        *  surface's reducer instead of the shell's handlers. */
-      frameTypes?: string[]
+      frameTypes?: FrameType[]
     }
   | { id: string; view?: null; moduleUrl: null; frameTypes?: null }
-
-

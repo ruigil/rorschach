@@ -1,5 +1,55 @@
 import { createTopic } from '../system/index.ts'
 
+// ─── Strongly Typed Domain Frame Names ─────────────────────────────────────
+
+export type CognitiveFrameType =
+  | 'cognitive.agents.request'
+  | 'cognitive.agents.updated'
+  | 'cognitive.switchMode'
+  | 'cognitive.cancel'
+
+export type MemoryFrameType =
+  | 'memory.kgraph.request'
+  | 'memory.kgraph.updated'
+  | 'memory.kgraph.changed'
+
+export type ToolsFrameType =
+  | 'tools.list.request'
+  | 'tools.registered'
+  | 'tools.unregistered'
+
+export type ObservabilityFrameType =
+  | 'observability.log.entry'
+  | 'observability.metrics.updated'
+  | 'observability.trace.span'
+  | 'observability.usage.entry'
+
+export type NotebookFrameType =
+  | 'notebook.todos.request'
+  | 'notebook.todos.list'
+  | 'notebook.todos.complete'
+  | 'notebook.todos.delete'
+  | 'notebook.journal.months.request'
+  | 'notebook.journal.months'
+  | 'notebook.journal.entry.request'
+  | 'notebook.journal.entry'
+  | 'notebook.tracker.habits.request'
+  | 'notebook.tracker.habits'
+  | 'notebook.tracker.entries.request'
+  | 'notebook.tracker.entries'
+  | 'notebook.tracker.stats.request'
+  | 'notebook.tracker.stats'
+
+export type SystemFrameType =
+  | CognitiveFrameType
+  | MemoryFrameType
+  | ToolsFrameType
+  | ObservabilityFrameType
+  | NotebookFrameType
+
+/** Strongly-typed frame type with autocomplete for known domain frames and string fallback for dynamic plugin frames. */
+export type FrameType = SystemFrameType | (string & {})
+
 // ─── Message attachments ───────────────────────────────────────────────────
 export type MessageAttachmentKind = 'image' | 'audio' | 'video' | 'pdf' | 'file'
 
@@ -41,12 +91,12 @@ export const OutboundUserMessageTopic = createTopic<OutboundUserMessageEvent>('u
 
 // ─── Domain event: emit to broadcast a message to all connected clients ───
 
-export type OutboundBroadcastEvent = { type: string; payload: any; key: string; isTombstone?: boolean }
+export type OutboundBroadcastEvent = { type: FrameType; payload: any; key: string; isTombstone?: boolean }
 
 /** Topic for broadcasting messages to all connected clients. */
 export const OutboundBroadcastTopic = createTopic<OutboundBroadcastEvent>('outbound.broadcast')
 
-export type OutboundAdminBroadcastEvent = { type: string; payload: any; key: string; isTombstone?: boolean }
+export type OutboundAdminBroadcastEvent = { type: FrameType; payload: any; key: string; isTombstone?: boolean }
 
 /** Topic for broadcasting admin-only messages. */
 export const OutboundAdminBroadcastTopic = createTopic<OutboundAdminBroadcastEvent>('outbound.admin.broadcast')
@@ -63,15 +113,13 @@ export type HttpWsFrameEvent = {
   userId: string
   roles: string[]
   frame: {
-    type: string
+    type: FrameType
     [key: string]: any
   }
 }
 
 /** Topic published when the HTTP/WS interface receives a custom client WebSocket frame. */
 export const HttpWsFrameTopic = createTopic<HttpWsFrameEvent>('http.ws.frame')
-
-
 
 export type TraceSpan = {
   traceId: string        // one per user request
@@ -84,6 +132,3 @@ export type TraceSpan = {
   durationMs?: number    // elapsed — only set on 'done' and 'error'
   data?: Record<string, unknown>
 }
-
-
-
