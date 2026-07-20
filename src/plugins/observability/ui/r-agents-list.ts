@@ -35,9 +35,9 @@ export class RAgentsList extends RorschachBase {
     }
 
     .agent-card {
-      background: var(--bg-surface, rgba(255, 255, 255, 0.03));
-      border: 1px solid var(--border-mid, rgba(255, 255, 255, 0.1));
-      border-radius: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius, 8px);
       padding: 0.85rem;
       display: flex;
       flex-direction: column;
@@ -46,8 +46,8 @@ export class RAgentsList extends RorschachBase {
     }
 
     .agent-card:hover {
-      border-color: var(--border-focus, #5c9eff);
-      background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+      border-color: var(--border-mid);
+      background: var(--surface-2);
     }
 
     .agent-header {
@@ -59,22 +59,23 @@ export class RAgentsList extends RorschachBase {
     .agent-title {
       font-size: 0.85rem;
       font-weight: 600;
-      color: var(--text, #fff);
+      color: var(--text);
       font-family: var(--font-ui);
     }
 
     .agent-mode {
       font-size: 0.65rem;
       font-family: var(--font-mono);
-      color: var(--text-dim, #888);
-      background: var(--bg-subtle, rgba(255, 255, 255, 0.06));
+      color: var(--text-dim);
+      background: var(--surface-2);
       padding: 0.15rem 0.4rem;
       border-radius: 4px;
+      border: 1px solid var(--border);
     }
 
     .agent-desc {
       font-size: 0.75rem;
-      color: var(--text-mid, #ccc);
+      color: var(--text-mid);
       line-height: 1.35;
     }
 
@@ -84,7 +85,7 @@ export class RAgentsList extends RorschachBase {
       gap: 0.5rem;
       margin-top: auto;
       padding-top: 0.35rem;
-      border-top: 1px dashed var(--border-subtle, rgba(255, 255, 255, 0.08));
+      border-top: 1px dashed var(--border);
     }
 
     .agent-badge {
@@ -97,21 +98,21 @@ export class RAgentsList extends RorschachBase {
     }
 
     .badge-visible {
-      background: rgba(46, 204, 113, 0.15);
-      color: #2ecc71;
-      border: 1px solid rgba(46, 204, 113, 0.3);
+      background: var(--green-glow);
+      color: var(--green);
+      border: 1px solid var(--green-hover);
     }
 
     .badge-internal {
-      background: rgba(241, 196, 15, 0.15);
-      color: #f1c40f;
-      border: 1px solid rgba(241, 196, 15, 0.3);
+      background: var(--warn-hover);
+      color: var(--warn);
+      border: 1px solid var(--warn-hover);
     }
 
     .agent-model {
       font-size: 0.65rem;
       font-family: var(--font-mono);
-      color: var(--text-dim, #888);
+      color: var(--text-dim);
       margin-left: auto;
     }
   `;
