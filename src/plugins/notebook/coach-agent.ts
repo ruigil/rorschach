@@ -11,7 +11,6 @@ export const COACH_TOOL_FILTER: ToolFilter = {
     'cron_create',   // For scheduling daily coaching check-ins and habit reminders
     'cron_delete',   // For cancelling habits/schedules
     'cron_list',     // For viewing active reminders
-    'switch_mode',   // For handing the user back to coding or chatbot modes
   ]
 }
 

@@ -31,7 +31,7 @@ Behavior:
     shortDesc: 'Inspect, explain, and query codebase files, and generate or update app-styled documentation.',
     systemPrompt,
     internalTools: Object.values(options.tools || {}),
-    toolFilter: options.toolFilter ?? { allow: ['tool_status', 'switch_mode'] },
+    toolFilter: options.toolFilter ?? { allow: ['tool_status'] },
     capabilities: { userVisible: true },
     model: options.model,
     maxToolLoops: options.maxToolLoops ?? 25,

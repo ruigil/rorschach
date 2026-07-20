@@ -13,7 +13,6 @@ const defaultConfig: WorkflowsConfig = {
   agent: {
     model: 'z-ai/glm-5.1',
     maxToolLoops: 10,
-    toolFilter: { allow: ['switch_mode'] },
   },
 }
 

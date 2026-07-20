@@ -1,7 +1,7 @@
 import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { onLifecycle, onMessage, DynamicAgentActor } from '../../system/index.ts'
 import type { LlmTool } from '../../types/llm.ts'
-import { ToolRegistrationTopic, type ToolInvokeMsg, type ToolMsg, type Tool } from '../../types/tools.ts'
+import type { Tool } from '../../types/tools.ts'
 import {
   AgentRegistrationTopic,
   type AgentDescriptor,
@@ -241,20 +241,6 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
         agents: userVisible.map(d => ({ mode: d.mode, displayName: d.displayName, shortDesc: d.shortDesc })),
       },
     })
-
-    // Always publish the tool — single-element enum is harmless. The tool
-    // becomes useful once 2+ agents are registered.
-    if (userVisible.length === 0) {
-      ctx.deleteRetained(ToolRegistrationTopic, SWITCH_MODE_TOOL_NAME, { name: SWITCH_MODE_TOOL_NAME, ref: null })
-      return
-    }
-
-    ctx.publishRetained(ToolRegistrationTopic, SWITCH_MODE_TOOL_NAME, {
-      name:             SWITCH_MODE_TOOL_NAME,
-      schema:           buildSwitchModeSchema(state.descriptors),
-      ref:              ctx.self as unknown as ActorRef<ToolMsg>,
-      mayBeLongRunning: false,
-    })
   }
 
   return {
@@ -281,7 +267,6 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
           payload: { agents: [] },
           isTombstone: true,
         })
-        ctx.deleteRetained(ToolRegistrationTopic, SWITCH_MODE_TOOL_NAME, { name: SWITCH_MODE_TOOL_NAME, ref: null })
         return { state }
       },
       terminated: (state, event, ctx) => {
