@@ -18,8 +18,28 @@
   box-sizing: border-box;
 }
 
+.config-toolbar-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.config-toolbar-breadcrumb {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  text-transform: none;
+  font-family: var(--font-mono);
+}
+
 .config-sidebar {
-  width: 160px;
+  width: 240px;
   border-right: 1px solid var(--border);
   background: var(--sidebar-bg);
   backdrop-filter: blur(8px);
@@ -27,60 +47,160 @@
   flex-direction: column;
   flex-shrink: 0;
   overflow-y: auto;
-  padding: 1rem 0.5rem;
+  padding: 0.75rem 0.5rem;
 }
 
-.config-sidebar-menu {
+.config-sidebar-header {
+  padding: 0.25rem 0.5rem 0.5rem 0.5rem;
+}
+
+.config-sidebar-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-mid);
+}
+
+.config-tree-search {
+  margin-bottom: 0.6rem;
+  padding: 0 0.25rem;
+}
+
+.config-tree-search input {
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.config-tree-search input:focus {
+  border-color: rgba(54, 184, 204, 0.4);
+}
+
+.config-tree {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
 }
 
-.config-sidebar-item {
+.config-tree-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.config-tree-group-header {
   display: flex;
   align-items: center;
-  padding: 0.5rem 0.75rem;
+  justify-content: space-between;
+  padding: 0.45rem 0.5rem;
   background: transparent;
   border: none;
   border-radius: var(--radius);
   cursor: pointer;
+  width: 100%;
   text-align: left;
-  transition: background 0.15s;
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-mid);
+  transition: background 0.15s, color 0.15s;
+}
+
+.config-tree-group-header:hover {
+  background: var(--accent-dim);
+  color: var(--text);
+}
+
+.group-label-container {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.config-tree-chevron {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  transition: transform 0.15s ease;
+  display: inline-block;
+}
+
+.config-tree-group.expanded .config-tree-chevron {
+  transform: rotate(90deg);
+}
+
+.config-tree-children {
+  display: none;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding-left: 0.5rem;
+  margin-top: 0.15rem;
+  border-left: 1px solid var(--border-mid);
+  margin-left: 0.6rem;
+}
+
+.config-tree-group.expanded .config-tree-children {
+  display: flex;
+}
+
+.config-tree-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.6rem;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
   position: relative;
   font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-mid);
+  transition: background 0.15s, color 0.15s;
 }
 
-.config-sidebar-item:hover {
+.config-tree-item:hover {
   background: var(--accent-dim);
+  color: var(--text);
 }
 
-.config-sidebar-item.active::before {
+.config-tree-item.active {
+  background: var(--accent-dim);
+  color: var(--accent-bright);
+  font-weight: 600;
+}
+
+.config-tree-item.active::before {
   content: '';
   position: absolute;
   left: 0;
-  top: 0.5rem;
-  bottom: 0.5rem;
+  top: 0.35rem;
+  bottom: 0.35rem;
   width: 3px;
   background: var(--accent);
   border-radius: 0 4px 4px 0;
   box-shadow: 0 0 8px var(--accent-glow);
 }
 
-.config-sidebar-item-title {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-mid);
-  transition: color 0.15s;
-}
-
-.config-sidebar-item:hover .config-sidebar-item-title {
-  color: var(--text);
-}
-
-.config-sidebar-item.active .config-sidebar-item-title {
-  color: var(--accent-bright);
+.tree-dirty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+  display: inline-block;
+  flex-shrink: 0;
 }
 
 #config-form {

@@ -180,4 +180,65 @@ describe('r-config-form', () => {
       deny: ['delete_file', 'format_disk']
     })
   })
+
+  test('renders left navigation tree sidebar and handles section selection & search filtering', async () => {
+    const mockMultiSchema = [
+      {
+        id: 'notebook.config',
+        title: 'Notebook General',
+        subtitle: 'journal and todos',
+        tab: 'notebook',
+        configKey: '',
+        schema: { type: 'object', properties: { dir: { type: 'string' } } }
+      },
+      {
+        id: 'cognitive.agent',
+        title: 'Cognitive Memory',
+        subtitle: 'vector graph memory',
+        tab: 'cognitive',
+        configKey: '',
+        schema: { type: 'object', properties: { graph: { type: 'boolean' } } }
+      }
+    ]
+
+    globalThis.fetch = (async (url: string | URL) => {
+      const urlStr = url.toString()
+      if (urlStr.includes('config/schema')) {
+        return new Response(JSON.stringify(mockMultiSchema), { headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({}), { headers: { 'Content-Type': 'application/json' } })
+    }) as unknown as typeof fetch
+
+    mockStore('currentUserId', 'anonymous')
+    mockStore('currentUserRoles', ['admin'])
+
+    const el = await mountClass(RConfigForm) as any
+    await el.updateComplete
+    await new Promise(r => setTimeout(r, 50))
+    await el.updateComplete
+
+    // Check tree container and tree sidebar menu exists
+    const sidebar = el.querySelector('.config-sidebar')
+    expect(sidebar).toBeTruthy()
+
+    // Check group headers (Notebook, Cognitive)
+    const groupHeaders = el.querySelectorAll('.config-tree-group-header')
+    expect(groupHeaders.length).toBe(2)
+
+    // Check tree section items
+    const treeItems = el.querySelectorAll('.config-tree-item')
+    expect(treeItems.length).toBe(2)
+
+    // Test search filtering
+    const searchInput = el.querySelector('.config-tree-search input') as HTMLInputElement
+    expect(searchInput).toBeTruthy()
+
+    searchInput.value = 'Cognitive'
+    searchInput.dispatchEvent(new Event('input'))
+    await el.updateComplete
+
+    const filteredItems = el.querySelectorAll('.config-tree-item')
+    expect(filteredItems.length).toBe(1)
+    expect(filteredItems[0].textContent).toContain('Cognitive Memory')
+  })
 })

@@ -9,7 +9,14 @@ import {
 
 import type { ShellState } from './types.js';
 import type { ConfigFieldChangeEvent } from './config-widgets/r-config-field.js';
-import { pluginIdFromSection, resolvePath, writeAtPath } from './config-widgets/path-utils.js';
+import {
+  buildConfigTree,
+  filterConfigTree,
+  pluginIdFromSection,
+  resolvePath,
+  writeAtPath,
+  type ConfigTreeNode
+} from './config-widgets/path-utils.js';
 import './config-widgets/r-config-field.js';
 
 type ConfigSchema = {
@@ -25,9 +32,12 @@ type ConfigSchema = {
 export class RConfigForm extends RorschachBase {
   @state() private schemas: ConfigSchema[] = [];
   @state() private currentValues: Record<string, any> = {};
+  @state() private initialValues: Record<string, any> = {};
   @state() private models: string[] = [];
   @state() private activeTab: string | null = null;
   @state() private activeSectionId: string | null = null;
+  @state() private searchQuery: string = '';
+  @state() private expandedGroups: Set<string> = new Set();
 
   @query('#flash-msg') private _flashMsg!: any;
 
@@ -39,7 +49,18 @@ export class RConfigForm extends RorschachBase {
 
   override connectedCallback() {
     super.connectedCallback();
-    this.addEventListener('tab-change', (e: any) => { this.activeTab = e.detail?.tab; });
+    this.addEventListener('tab-change', (e: any) => {
+      const tab = e.detail?.tab;
+      if (tab) {
+        this.activeTab = tab;
+        const matchingSection = this.schemas.find(s => s.tab === tab);
+        if (matchingSection) {
+          this.activeSectionId = matchingSection.id;
+          const groupNodeId = `group:${tab}`;
+          this.expandedGroups = new Set([...this.expandedGroups, groupNodeId]);
+        }
+      }
+    });
     this.addEventListener('config-field-change', this._onFieldChange as EventListener);
   }
 
@@ -57,18 +78,16 @@ export class RConfigForm extends RorschachBase {
 
   override willUpdate(changedProperties: Map<string, any>) {
     if (changedProperties.has('activeTab') || changedProperties.has('schemas')) {
-      const tab = this.activeTab;
-      if (tab) {
-        const sections = this.schemas.filter(s => s.tab === tab);
+      if (this.activeTab) {
+        const sections = this.schemas.filter(s => s.tab === this.activeTab);
         if (sections.length > 0) {
           if (!this.activeSectionId || !sections.some(s => s.id === this.activeSectionId)) {
             this.activeSectionId = sections[0]?.id || null;
           }
-        } else {
-          this.activeSectionId = null;
         }
-      } else {
-        this.activeSectionId = null;
+      } else if (this.schemas.length > 0 && !this.activeSectionId) {
+        this.activeSectionId = this.schemas[0]?.id || null;
+        this.activeTab = this.schemas[0]?.tab || null;
       }
     }
   }
@@ -91,8 +110,14 @@ export class RConfigForm extends RorschachBase {
   async loadSchemas() {
     await this._fetchConfigSchema();
     if (this.schemas.length === 0) return;
-    if (!this.activeTab) this.activeTab = this.schemas[0]?.tab || null;
+    if (!this.activeSectionId) {
+      this.activeSectionId = this.schemas[0]?.id || null;
+      this.activeTab = this.schemas[0]?.tab || null;
+    }
     await Promise.all([this._fetchCurrentValues(), this._fetchModels()]);
+    this.initialValues = structuredClone(this.currentValues);
+    const tree = buildConfigTree(this.schemas);
+    this.expandedGroups = new Set(tree.map(g => g.id));
     this.requestUpdate();
   }
 
@@ -127,10 +152,16 @@ export class RConfigForm extends RorschachBase {
   }
 
   async save() {
-    const activeSchemas = this.schemas.filter(s => s.tab === this.activeTab);
-    const activePluginIds = new Set(activeSchemas.map(s => s.id.split('.')[0]));
+    const activeSection = this.schemas.find(s => s.id === this.activeSectionId);
+    const activeTab = activeSection?.tab || this.activeTab;
+    const targetPluginIds = new Set(
+      this.schemas
+        .filter(s => !activeTab || s.tab === activeTab)
+        .map(s => s.id.split('.')[0])
+    );
+
     for (const [pluginId, patch] of Object.entries(this.currentValues)) {
-      if (!activePluginIds.has(pluginId)) continue;
+      if (targetPluginIds.size > 0 && !targetPluginIds.has(pluginId)) continue;
       try {
         const res = await fetch(new URL(`config/${pluginId}`, location.href), {
           method: 'POST',
@@ -143,6 +174,7 @@ export class RConfigForm extends RorschachBase {
         return;
       }
     }
+    this.initialValues = structuredClone(this.currentValues);
     this._flashSaved();
   }
 
@@ -150,42 +182,53 @@ export class RConfigForm extends RorschachBase {
     this.loadSchemas();
   }
 
+  private _toggleGroup(groupId: string) {
+    const next = new Set(this.expandedGroups);
+    if (next.has(groupId)) {
+      next.delete(groupId);
+    } else {
+      next.add(groupId);
+    }
+    this.expandedGroups = next;
+  }
+
+  private _selectSection(section: ConfigSchema) {
+    this.activeSectionId = section.id;
+    this.activeTab = section.tab;
+  }
+
+  private _onSearchInput = (e: Event) => {
+    this.searchQuery = (e.target as HTMLInputElement).value;
+  };
+
+  private _isPluginDirty(pluginId: string): boolean {
+    if (!this.initialValues[pluginId] || !this.currentValues[pluginId]) return false;
+    return JSON.stringify(this.initialValues[pluginId]) !== JSON.stringify(this.currentValues[pluginId]);
+  }
+
+  private _isSectionDirty(sectionId: string): boolean {
+    const pluginId = pluginIdFromSection(sectionId);
+    return this._isPluginDirty(pluginId);
+  }
+
   override render() {
-    const byTab: Record<string, ConfigSchema[]> = {};
-    for (const s of this.schemas) (byTab[s.tab] ??= []).push(s);
-    const tabNames = Object.keys(byTab);
-    const activeSections = byTab[this.activeTab ?? ''] ?? [];
+    const activeSection = this.schemas.find(s => s.id === this.activeSectionId) || this.schemas[0];
 
     return html`
       <r-panel elevation="1">
         <r-toolbar slot="header-container">
-          <r-tabs @tab-change=${(e: CustomEvent) => this.activeTab = e.detail.tab}>
-            ${tabNames.map(tab => html`
-              <button ?active=${this.activeTab === tab} data-tab="${tab}">${tab}</button>
-            `)}
-          </r-tabs>
+          <div class="config-toolbar-header">
+            <span class="config-toolbar-title">Workspace Configuration</span>
+            ${activeSection ? html`
+              <span class="config-toolbar-breadcrumb">/ ${activeSection.tab} / ${activeSection.title}</span>
+            ` : ''}
+          </div>
         </r-toolbar>
         <div class="config-content">
-          ${activeSections.length > 0 ? html`
-            <div class="config-sidebar">
-              <div class="config-sidebar-menu">
-                ${activeSections.map(section => html`
-                  <button type="button"
-                          class="config-sidebar-item ${this.activeSectionId === section.id ? 'active' : ''}"
-                          @click=${() => this.activeSectionId = section.id}>
-                    <span class="config-sidebar-item-title">${section.title}</span>
-                  </button>
-                `)}
-              </div>
-            </div>
-          ` : ''}
+          ${this.schemas.length > 0 ? this._renderTree() : ''}
           <form id="config-form" novalidate @submit=${(e: Event) => { e.preventDefault(); this.save(); }}>
             <div id="config-form-container">
-              ${tabNames.map(tab => html`
-                <div class="config-pane ${this.activeTab === tab ? 'active' : ''}" data-config-pane="${tab}">
-                  ${byTab[tab]?.map(section => this._renderSection(section))}
-                </div>
-              `)}
+              ${this.schemas.map(section => this._renderSection(section))}
             </div>
             <div class="form-actions">
               <button type="submit" class="btn-save">Save</button>
@@ -195,6 +238,71 @@ export class RConfigForm extends RorschachBase {
           </form>
         </div>
       </r-panel>
+    `;
+  }
+
+  private _renderTree() {
+    const rawTree = buildConfigTree(this.schemas);
+    const { filteredNodes, autoExpandIds } = filterConfigTree(rawTree, this.searchQuery);
+
+    return html`
+      <div class="config-sidebar">
+        <div class="config-sidebar-header">
+          <span class="config-sidebar-title">Config Tree</span>
+        </div>
+        <div class="config-tree-search">
+          <input
+            type="text"
+            placeholder="Search configuration..."
+            .value=${this.searchQuery}
+            @input=${this._onSearchInput}
+          />
+        </div>
+        <div class="config-tree">
+          ${filteredNodes.map(group => this._renderGroupNode(group, autoExpandIds))}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderGroupNode(group: ConfigTreeNode, autoExpandIds: Set<string>) {
+    const isExpanded = this.searchQuery ? autoExpandIds.has(group.id) || this.expandedGroups.has(group.id) : this.expandedGroups.has(group.id);
+    const groupHasDirty = group.children?.some(child => child.id && this._isSectionDirty(child.id)) ?? false;
+
+    return html`
+      <div class="config-tree-group ${isExpanded ? 'expanded' : ''}">
+        <button
+          type="button"
+          class="config-tree-group-header"
+          @click=${() => this._toggleGroup(group.id)}
+        >
+          <span class="group-label-container">
+            <span class="config-tree-chevron">▶</span>
+            <span class="group-label">${group.label}</span>
+          </span>
+          ${groupHasDirty ? html`<span class="tree-dirty-dot" title="Unsaved changes"></span>` : ''}
+        </button>
+        <div class="config-tree-children">
+          ${group.children?.map(child => this._renderSectionNode(child))}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderSectionNode(node: ConfigTreeNode) {
+    const isSelected = this.activeSectionId === node.id;
+    const isDirty = node.id ? this._isSectionDirty(node.id) : false;
+
+    return html`
+      <button
+        type="button"
+        class="config-tree-item ${isSelected ? 'active' : ''}"
+        data-section-id="${node.id}"
+        @click=${() => node.section && this._selectSection(node.section)}
+      >
+        <span class="config-tree-item-title">${node.label}</span>
+        ${isDirty ? html`<span class="tree-dirty-dot" title="Unsaved changes"></span>` : ''}
+      </button>
     `;
   }
 
@@ -213,7 +321,7 @@ export class RConfigForm extends RorschachBase {
     const props = section.schema.properties ?? {};
 
     return html`
-      <div class="config-section ${this.activeSectionId === section.id ? 'active' : ''}">
+      <div class="config-section ${this.activeSectionId === section.id ? 'active' : ''}" data-section-id="${section.id}">
         <div class="pane-header">
           <span class="pane-title">${section.title}</span>
           ${section.subtitle ? html`<span class="pane-sub">${section.subtitle}</span>` : ''}

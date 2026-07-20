@@ -47,3 +47,82 @@ export function pluginIdFromSection(sectionId: string): string {
 export function childConfigKey(parentKey: string, childKey: string): string {
   return parentKey ? `${parentKey}.${childKey}` : childKey
 }
+
+export type ConfigTreeNode = {
+  id: string
+  label: string
+  subtitle?: string
+  type: 'group' | 'section'
+  tab?: string
+  children?: ConfigTreeNode[]
+  section?: any
+}
+
+export function buildConfigTree(schemas: Array<{ id: string; tab: string; title: string; subtitle?: string; schema: any }>): ConfigTreeNode[] {
+  const byTab: Record<string, any[]> = {}
+  for (const s of schemas) {
+    (byTab[s.tab] ??= []).push(s)
+  }
+
+  const nodes: ConfigTreeNode[] = []
+  for (const [tab, sections] of Object.entries(byTab)) {
+    nodes.push({
+      id: `group:${tab}`,
+      label: tab.charAt(0).toUpperCase() + tab.slice(1),
+      type: 'group',
+      tab,
+      children: sections.map(s => ({
+        id: s.id,
+        label: s.title,
+        subtitle: s.subtitle,
+        type: 'section',
+        tab: s.tab,
+        section: s
+      }))
+    })
+  }
+
+  return nodes
+}
+
+export function filterConfigTree(nodes: ConfigTreeNode[], query: string): { filteredNodes: ConfigTreeNode[]; autoExpandIds: Set<string> } {
+  if (!query.trim()) return { filteredNodes: nodes, autoExpandIds: new Set() }
+  const q = query.toLowerCase().trim()
+  const autoExpandIds = new Set<string>()
+
+  function matchSection(s: any): boolean {
+    if (s.title?.toLowerCase().includes(q)) return true
+    if (s.subtitle?.toLowerCase().includes(q)) return true
+    if (s.id?.toLowerCase().includes(q)) return true
+    const props = s.schema?.properties || {}
+    for (const [key, prop] of Object.entries<any>(props)) {
+      if (key.toLowerCase().includes(q)) return true;
+      if (prop?.['x-ui']?.label?.toLowerCase().includes(q)) return true;
+    }
+    return false
+  }
+
+  function filterNodes(nodeList: ConfigTreeNode[]): ConfigTreeNode[] {
+    const result: ConfigTreeNode[] = []
+    for (const node of nodeList) {
+      if (node.type === 'section') {
+        if (node.label.toLowerCase().includes(q) || (node.section && matchSection(node.section))) {
+          result.push(node)
+        }
+      } else if (node.type === 'group') {
+        const matchingChildren = filterNodes(node.children || [])
+        if (node.label.toLowerCase().includes(q) || matchingChildren.length > 0) {
+          autoExpandIds.add(node.id)
+          result.push({
+            ...node,
+            children: matchingChildren.length > 0 ? matchingChildren : node.children
+          })
+        }
+      }
+    }
+    return result
+  }
+
+  return { filteredNodes: filterNodes(nodes), autoExpandIds }
+}
+
