@@ -88,7 +88,7 @@ describe('kgraph concept upsert', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(storagePath, { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
+      Kgraph({ model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
       { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -116,7 +116,7 @@ describe('kgraph concept upsert', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(storagePath, { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
+      Kgraph({ model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
       { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -156,7 +156,7 @@ describe('kgraph concept upsert', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(storagePath, { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
+      Kgraph({ model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
       { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -188,7 +188,7 @@ describe('kgraph concept upsert', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(storagePath, { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
+      Kgraph({ model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMS }),
       { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 

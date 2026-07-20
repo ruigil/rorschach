@@ -27,7 +27,6 @@ import type { ToolSchema, ToolMsg } from '../../types/tools.ts'
 export type SessionConfig = {
   defaultMode:        string   // mode for first-connect, cron routing, crash fallback. Defaults to 'chatbot'.
   contextWindowHours: number   // trim ContextStore records older than this on every append.
-  contextPath?:       string
 }
 
 // ─── LLM provider adapter contracts ───

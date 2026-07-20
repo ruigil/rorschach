@@ -6,21 +6,6 @@ import type { KgraphGraph, KgraphMsg } from './types.ts'
 
 // ─── Config Schema Sections ──────────────────────────────────────────────────
 
-export const workPathSchema: ConfigSchemaSection = {
-  id: 'memory.workPath',
-  title: 'Database',
-  subtitle: 'memory · storage location',
-  tab: 'memory',
-  configKey: '',
-  routeId: 'config.memory',
-  schema: {
-    type: 'object',
-    properties: {
-      workPath: { type: 'string', default: './workspace/memory/kgraph', 'x-ui': { label: 'Database path' } },
-    },
-  },
-}
-
 export const graphSchema: ConfigSchemaSection = {
   id: 'memory.graph',
   title: 'Knowledge Graph',
@@ -55,7 +40,7 @@ export const memorySystemSchema: ConfigSchemaSection = {
   },
 }
 
-export const memorySchemas = [workPathSchema, graphSchema, memorySystemSchema]
+export const memorySchemas = [graphSchema, memorySystemSchema]
 
 export const buildMemoryRoutes = (
   kgraphRef: ActorRef<KgraphMsg> | null,

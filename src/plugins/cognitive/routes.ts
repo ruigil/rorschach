@@ -29,7 +29,6 @@ export const sessionSchema: ConfigSchemaSection = {
     type: 'object',
     properties: {
       contextWindowHours: { type: 'number', default: 4, minimum: 1, description: 'Maximum hours of context records kept in short-term memory' },
-      contextPath: { type: 'string', default: 'workspace/context', description: 'Base path for storing conversation context and user context' },
     },
   },
 }

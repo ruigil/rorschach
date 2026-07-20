@@ -9,18 +9,13 @@
   "config": {
     "observability": {
       "jsonlLogger": {
-        "filePath": "workspace/benchmark/observability/logs/rorschach-{date}.jsonl",
         "minLevel": "debug"
       },
-      "traceRecorder": {
-        "tracesDir": "workspace/benchmark/observability/traces"
-      },
+      "traceRecorder": {},
       "metrics": {
         "intervalMs": 5000
       },
-      "costTracker": {
-        "costsDir": "workspace/benchmark/observability/costs"
-      }
+      "costTracker": {}
     },
     "interfaces": {
       "http": {
@@ -36,8 +31,7 @@
         "systemPrompt": "You are a helpful assistant with access to a long-term memory system. Whenever the user shares a personal fact, preference, or piece of information about themselves, you MUST use the 'store_memory' tool to record it. Conversely, whenever the user asks a question about themselves, their past, their preferences, or any information that is not in the current conversation context, you MUST use the 'recall_memory' tool to retrieve the relevant information. Do not assume you know the answer if it is not in the immediate context; always check your memory first. This is critical for the user's experience."
       },
       "session": {
-        "contextWindowHours": 2,
-        "contextPath": "workspace/benchmark/context"
+        "contextWindowHours": 2
       },
       "userContext": {
         "model": "deepseek/deepseek-v4-flash",
@@ -45,7 +39,6 @@
       }
     },
     "memory": {
-      "workPath": "workspace/benchmark",
       "kgraph": {
         "embeddingModel": "google/gemini-embedding-2",
         "embeddingDimensions": 768,

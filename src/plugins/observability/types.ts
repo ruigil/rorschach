@@ -81,8 +81,6 @@ export type GlobalToolsState = {
 // ─── JSONL Logger Actor Types ───
 
 export type JsonlLoggerState = {
-  filePath: string
-  docIdTemplate: string
   dateStr: string
   written: number
   buffer: string[]
@@ -90,7 +88,6 @@ export type JsonlLoggerState = {
 }
 
 export type JsonlLoggerOptions = {
-  filePath: string
   flushIntervalMs?: number
   minLevel?: 'debug' | 'info' | 'warn' | 'error'
 }
@@ -98,15 +95,12 @@ export type JsonlLoggerOptions = {
 // ─── Trace Recorder Actor Types ───
 
 export type TraceRecorderState = {
-  tracesDir: string
   written: number
   buffer: { traceId: string; timestamp: number; line: string }[]
   persistenceRef: ActorRef<PersistenceMsg> | null
 }
 
 export type TraceRecorderOptions = {
-  /** Directory where per-trace JSONL files are written. Created automatically. */
-  tracesDir: string
   /**
    * If set, spans are buffered and flushed every `flushIntervalMs` milliseconds.
    * If omitted, every span is appended immediately (unbuffered).
@@ -130,8 +124,6 @@ export type CostTrackerState = {
 }
 
 export type CostTrackerOptions = {
-  /** Directory where daily cost JSONL files are written. Created automatically. */
-  costsDir: string
   /**
    * If set, events are buffered and flushed every `flushIntervalMs` milliseconds.
    * If omitted, every event is appended immediately (unbuffered).

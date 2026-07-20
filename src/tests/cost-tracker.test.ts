@@ -14,7 +14,6 @@ describe('Cost Tracker', () => {
       config: {
         observability: {
           costTracker: {
-            costsDir: 'workspace/observability/costs',
             flushIntervalMs: 0, // unbuffered
           },
         },

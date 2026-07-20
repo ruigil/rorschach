@@ -49,7 +49,7 @@ function spawnLlm(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<Llm
 function spawnKgraph(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<KgraphMsg> {
   return system.spawn(
     'kgraph',
-    Kgraph(TEST_DB, { model: EMBED_MODEL, dimensions: DIMS }),
+    Kgraph({ model: EMBED_MODEL, dimensions: DIMS }),
     { state: { persistenceRef: null, llmRef: null } },
   ) as ActorRef<KgraphMsg>
 }

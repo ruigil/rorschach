@@ -72,8 +72,7 @@
         "model": "nvidia-nemotron-3-ultra-550b-a55b"
       },
       "session": {
-        "contextWindowHours": 2,
-        "contextPath": "workspace/context"
+        "contextWindowHours": 2
       },
       "userContext": {
         "model": "deepseek-v4-flash",
@@ -113,7 +112,6 @@
     },
     "observability": {
       "jsonlLogger": {
-        "filePath": "workspace/observability/logs/rorschach-{date}.jsonl",
         "minLevel": "debug",
         "flushIntervalMs": 300000
       },
@@ -121,10 +119,9 @@
         "intervalMs": 5000
       },
       "traceRecorder": {
-        "tracesDir": "workspace/observability/traces"
+        "flushIntervalMs": 300000
       },
       "costTracker": {
-        "costsDir": "workspace/observability/costs",
         "flushIntervalMs": 300000
       }
     },

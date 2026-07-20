@@ -79,7 +79,7 @@ describe('kgraph concept search with reranker', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(storagePath, { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
+      Kgraph({ model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
       { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -129,7 +129,7 @@ describe('kgraph concept search with reranker', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(storagePath, { model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
+      Kgraph({ model: 'test-embed', dimensions: DIMS }, 0.0, { model: 'mock/rerank', topK: 3 }),
       { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 

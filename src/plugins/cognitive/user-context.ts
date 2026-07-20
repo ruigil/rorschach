@@ -15,7 +15,6 @@ import { ContextSnapshotTopic, type ContextTurn } from '../../types/agents.ts'
 export type UserContextOptions = {
   model:         string
   intervalMs:    number
-  contextPath?:  string
 }
 
 // ─── Internal types ───
@@ -66,7 +65,7 @@ const buildMessages = (userId: string, currentContext: string, turns: ContextTur
 // ─── Actor ───
 
 export const UserContext = (options: UserContextOptions): ActorDef<UserContextMsg, UserContextState> => {
-  const { model, intervalMs, contextPath = 'workspace/context' } = options
+  const { model, intervalMs } = options
 
   const startUserUpdate = (userId: string, turns: ContextTurn[], llmRef: ActorRef<LlmProviderMsg>, state: UserContextState, ctx: any): UserContextState => {
     const requestId = crypto.randomUUID()

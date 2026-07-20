@@ -29,9 +29,9 @@ const dayFolder = (timestamp: number): string =>
  * On stop, any remaining buffered spans are flushed.
  */
 export const TraceRecorder = (
-  options: TraceRecorderOptions,
+  options: TraceRecorderOptions = {},
 ): ActorDef<TraceRecorderMsg, TraceRecorderState> => {
-  const { tracesDir, flushIntervalMs } = options
+  const { flushIntervalMs } = options
 
   const flushBuffer = (ref: ActorRef<PersistenceMsg>, buffer: TraceRecorderState['buffer']): void => {
     if (buffer.length === 0) return
@@ -53,7 +53,7 @@ export const TraceRecorder = (
   }
 
   return {
-    initialState: { tracesDir, written: 0, buffer: [], persistenceRef: null },
+    initialState: { written: 0, buffer: [], persistenceRef: null },
     handler: onMessage({
       span(state, message, context) {
         // Broadcast to admin WS clients

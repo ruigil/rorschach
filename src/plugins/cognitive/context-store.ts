@@ -54,7 +54,6 @@ const initialContextStoreState = (): ContextStoreState => ({
 export type ContextStoreOptions = {
   userId:              string
   contextWindowHours?: number   // when set, trim context records older than the window on each append
-  contextPath?:        string
 }
 
 // ─── On-disk format ───
@@ -67,7 +66,7 @@ type PersistedContextStore = {
   nextTurnSeq:   number
 }
 
-const createPersistence = (userId: string, _contextPath?: string): PersistenceAdapter<ContextStoreState> => {
+const createPersistence = (userId: string): PersistenceAdapter<ContextStoreState> => {
   const baseAdapter = persistencePluginAdapter<ContextStoreState>(`cognitive/contexts/context-${userId}`)
   return {
     load: async (services) => {
@@ -159,7 +158,7 @@ const buildToolSummaries = (records: ContextRecord[]): ToolSummary[] => {
 export const ContextStore = (
   options: ContextStoreOptions,
 ): ActorDef<ContextStoreMsg, ContextStoreState> => {
-  const { userId, contextWindowHours, contextPath } = options
+  const { userId, contextWindowHours } = options
 
   const publishSnapshot = (state: ContextStoreState, ctx: { publishRetained: any }) => {
     const recentMessages = toRecentMessages(state.records)
@@ -175,7 +174,7 @@ export const ContextStore = (
 
   return {
     initialState: initialContextStoreState,
-    persistence: createPersistence(userId, contextPath),
+    persistence: createPersistence(userId),
 
     lifecycle: onLifecycle({
       start: (state, ctx) => {

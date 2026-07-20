@@ -12,7 +12,6 @@ export const loggingSchema: ConfigSchemaSection = {
   schema: {
     type: 'object',
     properties: {
-      filePath: { type: 'string', default: 'logs/app.jsonl', 'x-ui': { label: 'Log file path' } },
       minLevel: { type: 'string', default: 'debug', enum: ['debug', 'info', 'warn', 'error'] },
       flushIntervalMs: { type: 'number', default: 3000, minimum: 100 },
     },
@@ -44,7 +43,7 @@ export const tracesSchema: ConfigSchemaSection = {
   schema: {
     type: 'object',
     properties: {
-      tracesDir: { type: 'string', default: 'workspace/observability/traces', 'x-ui': { label: 'Traces directory' } },
+      flushIntervalMs: { type: 'number', default: 300000, minimum: 1000, 'x-ui': { label: 'Flush interval (ms)' } },
     },
   },
 }
@@ -59,7 +58,6 @@ export const costsSchema: ConfigSchemaSection = {
   schema: {
     type: 'object',
     properties: {
-      costsDir: { type: 'string', default: 'workspace/observability/costs', 'x-ui': { label: 'Costs directory' } },
       flushIntervalMs: { type: 'number', default: 300000, minimum: 1000, 'x-ui': { label: 'Flush interval (ms)' } },
     },
   },

@@ -15,21 +15,19 @@ const currentDateStr = (): string => {
   return new Date().toISOString().slice(0, 10)
 }
 
-
+const docId = (dateStr: string): string => {
+  return `logs-${dateStr}.jsonl`
+}
 
 // ─── Options ───
-
-
 
 const LOG_LEVEL_ORDER = { debug: 0, info: 1, warn: 2, error: 3 } as const
 
 export const JsonlLogger = (
-  options: JsonlLoggerOptions,
+  options: JsonlLoggerOptions = {},
 ): ActorDef<JsonlLoggerMsg, JsonlLoggerState> => {
-  const { filePath, flushIntervalMs, minLevel = 'debug' } = options
+  const { flushIntervalMs, minLevel = 'debug' } = options
   const minLevelValue = LOG_LEVEL_ORDER[minLevel]
-
-  const docIdTemplate = filePath.substring(filePath.lastIndexOf('/') + 1)
 
   const handler: MessageHandler<JsonlLoggerMsg, JsonlLoggerState> = onMessage<JsonlLoggerMsg, JsonlLoggerState>({
     log: (state, message, context) => {
@@ -58,11 +56,10 @@ export const JsonlLogger = (
       }
 
       // Unbuffered mode with resolved persistence: append immediately via fire-and-forget send
-      const docId = state.docIdTemplate.replace('{date}', today)
       state.persistenceRef.send({
         type: 'doc.append',
         collection: 'logs',
-        docId,
+        docId: docId(today),
         content: line + '\n',
       })
 
@@ -77,11 +74,10 @@ export const JsonlLogger = (
       let nextState = { ...state, persistenceRef: message.ref }
       if (nextState.buffer.length > 0) {
         const chunk = nextState.buffer.join('\n') + '\n'
-        const docId = nextState.docIdTemplate.replace('{date}', nextState.dateStr)
         message.ref.send({
           type: 'doc.append',
           collection: 'logs',
-          docId,
+          docId: docId(nextState.dateStr),
           content: chunk,
         })
         nextState.written += nextState.buffer.length
@@ -94,11 +90,10 @@ export const JsonlLogger = (
       if (state.buffer.length === 0 || !state.persistenceRef) return { state }
 
       const chunk = state.buffer.join('\n') + '\n'
-      const docId = state.docIdTemplate.replace('{date}', state.dateStr)
       state.persistenceRef.send({
         type: 'doc.append',
         collection: 'logs',
-        docId,
+        docId: docId(state.dateStr),
         content: chunk,
       })
 
@@ -108,7 +103,7 @@ export const JsonlLogger = (
   })
 
   return {
-    initialState: { filePath, docIdTemplate, dateStr: '', written: 0, buffer: [], persistenceRef: null },
+    initialState: { dateStr: '', written: 0, buffer: [], persistenceRef: null },
     handler,
 
     lifecycle: onLifecycle({
@@ -135,11 +130,10 @@ export const JsonlLogger = (
       stopped: async (state, context) => {
         if (state.buffer.length > 0 && state.persistenceRef) {
           const chunk = state.buffer.join('\n') + '\n'
-          const docId = state.docIdTemplate.replace('{date}', state.dateStr)
           state.persistenceRef.send({
             type: 'doc.append',
             collection: 'logs',
-            docId,
+            docId: docId(state.dateStr),
             content: chunk,
           })
           const written = state.written + state.buffer.length

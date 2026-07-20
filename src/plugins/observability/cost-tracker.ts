@@ -44,7 +44,7 @@ const emptyTotals = (): CostTrackerState['dailyTotals'] => ({
  * On stop, any remaining buffered events are flushed.
  */
 export const CostTracker = (
-  options: CostTrackerOptions,
+  options: CostTrackerOptions = {},
 ): ActorDef<CostTrackerMsg, CostTrackerState> => {
   const { flushIntervalMs } = options
 

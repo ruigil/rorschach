@@ -47,7 +47,7 @@ describe('session agents use shared context snapshots', () => {
     const llmRef = system.spawn('llm', CapturingLlm(streams))
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
     const runnerRef = system.spawn('workflow-runner', NullRunner())
-    const contextStoreRef = system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath: await tempContextPath() }))
+    const contextStoreRef = system.spawn('context-store-u1', ContextStore({ userId: 'u1' }))
     await tick()
 
     contextStoreRef.send({

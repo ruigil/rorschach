@@ -26,17 +26,11 @@ afterAll(async () => {
 })
 
 describe('ContextStore context snapshots', () => {
-  test('starts empty for an old persisted context shape', async () => {
-    const contextPath = await tempContextPath()
-    await Bun.write(`${contextPath}/context-u1.json`, JSON.stringify({
-      userContext: null,
-      records: [{ message: { role: 'user', content: 'old' }, timestamp: Date.now() }],
-    }))
-
+  test('starts empty for a fresh context store', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
-    system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath }))
+    system.spawn('context-store-u1', ContextStore({ userId: 'u1' }))
     await tick()
 
     expect(snapshots.at(-1)?.recentMessages).toEqual([])
@@ -49,7 +43,7 @@ describe('ContextStore context snapshots', () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
-    const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath: await tempContextPath() }))
+    const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1' }))
     await tick()
 
     ref.send({
@@ -89,7 +83,7 @@ describe('ContextStore context snapshots', () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
-    const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath: await tempContextPath() }))
+    const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1' }))
     await tick()
 
     // User message only — no completed turn yet
@@ -115,7 +109,7 @@ describe('ContextStore context snapshots', () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
-    const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath: await tempContextPath() }))
+    const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1' }))
     await tick()
 
     ref.send({ type: 'append', mode: 'chatbot', messages: [{ role: 'user', content: 'search' }] })
@@ -148,7 +142,7 @@ describe('ContextStore context snapshots', () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
-    const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1', contextPath: await tempContextPath() }))
+    const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1' }))
     await tick()
 
     ref.send({ type: 'append', mode: 'chatbot', injected: true, messages: [{ role: 'user', content: 'cron task' }] })

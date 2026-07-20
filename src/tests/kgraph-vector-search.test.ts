@@ -137,7 +137,7 @@ describe('kgraph concept search', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(storagePath, { model: EMBED_MODEL, dimensions: DIMS }),
+      Kgraph({ model: EMBED_MODEL, dimensions: DIMS }),
       { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -173,7 +173,7 @@ describe('kgraph concept search', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(storagePath, { model: EMBED_MODEL, dimensions: DIMS }),
+      Kgraph({ model: EMBED_MODEL, dimensions: DIMS }),
       { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -207,7 +207,7 @@ describe('kgraph concept search', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(storagePath, { model: EMBED_MODEL, dimensions: DIMS }),
+      Kgraph({ model: EMBED_MODEL, dimensions: DIMS }),
       { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -243,7 +243,7 @@ describe('kgraph concept search', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(storagePath, { model: EMBED_MODEL, dimensions: DIMS }),
+      Kgraph({ model: EMBED_MODEL, dimensions: DIMS }),
       { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 
@@ -285,7 +285,7 @@ describe('kgraph concept search', () => {
 
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(storagePath, { model: EMBED_MODEL, dimensions: DIMS }),
+      Kgraph({ model: EMBED_MODEL, dimensions: DIMS }),
       { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
 

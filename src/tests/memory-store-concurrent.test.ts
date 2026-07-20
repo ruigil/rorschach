@@ -182,7 +182,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     const recordsRef = system.spawn('records', MemoryRecords()) as ActorRef<MemoryRecordsMsg>
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(workPath, { model: 'test-embed', dimensions: 4 }),
+      Kgraph({ model: 'test-embed', dimensions: 4 }),
       { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
     const storeRef = system.spawn(
@@ -365,7 +365,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     const recordsRef = system.spawn('records', MemoryRecords()) as ActorRef<MemoryRecordsMsg>
     const kgraphRef = system.spawn(
       'kgraph',
-      Kgraph(workPath, { model: 'test-embed', dimensions: 4 }),
+      Kgraph({ model: 'test-embed', dimensions: 4 }),
       { state: { persistenceRef: null, llmRef: null } },
     ) as ActorRef<KgraphMsg>
     const storeRef = system.spawn(

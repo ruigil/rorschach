@@ -15,7 +15,6 @@ export type MemoryActorConfig = {
 }
 
 export type MemoryConfig = {
-  workPath?: string
   kgraph?: {
     embeddingModel?:            string
     embeddingDimensions?:       number
@@ -26,9 +25,7 @@ export type MemoryConfig = {
   system?: MemoryActorConfig
 }
 
-const config = defineConfig<MemoryConfig>('memory', {
-  workPath: './workspace/memory/kgraph',
-}, {
+const config = defineConfig<MemoryConfig>('memory', {}, {
   schemas: memorySchemas,
 })
 
@@ -40,7 +37,6 @@ export default createPluginFactory<MemoryConfig>({
   slots: {
     kgraph: {
       factory: (cfg) => {
-        const workPath = cfg.workPath ?? './workspace/memory'
         const kgraphConfig = cfg.kgraph ?? {}
         const embeddingCfg = kgraphConfig.embeddingModel && kgraphConfig.embeddingDimensions
           ? { model: kgraphConfig.embeddingModel, dimensions: kgraphConfig.embeddingDimensions }
@@ -48,7 +44,7 @@ export default createPluginFactory<MemoryConfig>({
         const rerankerCfg = kgraphConfig.rerankerModel
           ? { model: kgraphConfig.rerankerModel, topK: kgraphConfig.rerankerTopK }
           : undefined
-        return Kgraph(workPath, embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg)
+        return Kgraph(embeddingCfg, kgraphConfig.cosineSimilarityThreshold, rerankerCfg)
       },
     },
     records: {

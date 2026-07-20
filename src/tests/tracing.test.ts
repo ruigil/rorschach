@@ -110,7 +110,7 @@ afterAll(async () => {
 const spawnChatbot = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
   const userId = `test-user-${crypto.randomUUID()}`
   const llmRef = system.spawn('llm-provider', LlmProvider({ adapter: OpenRouterAdapter(LLM_PROVIDER_ADAPTER_OPTS) }))
-  const contextStoreRef = system.spawn(`context-store-${userId}`, ContextStore({ userId, contextPath: tempContextPath() }))
+  const contextStoreRef = system.spawn(`context-store-${userId}`, ContextStore({ userId }))
   return system.spawn(
     'chatbot',
     DynamicAgentActor(

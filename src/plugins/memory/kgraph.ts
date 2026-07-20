@@ -687,7 +687,6 @@ async function pushKgraphToUser(state: KgraphState, userId: string, ctx: any) {
 // ─── Actor definition ───
 
 export const Kgraph = (
-  workPath?: string,
   embedding?: { model: string; dimensions: number },
   cosineSimilarityThreshold = 0.0,
   reranker?: { model: string; topK?: number },
