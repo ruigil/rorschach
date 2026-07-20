@@ -1,19 +1,23 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { mountClass, cleanup, mockStore } from '../helpers/frontend.js'
-import { RModeSelect } from '../../frontend/shell/r-mode-select.js'
+import { RAgentSelect } from '../../frontend/shell/r-agent-select.js'
 
 beforeEach(cleanup)
 afterEach(cleanup)
 
-describe('r-mode-select', () => {
-  test('renders loading state when no agents', async () => {
+describe('r-agent-select', () => {
+  test('renders loading state and Agents label when no agents', async () => {
     mockStore('agents', [])
     mockStore('currentMode', '')
     mockStore('isConnected', true)
-    const el = await mountClass(RModeSelect) as any
+    const el = await mountClass(RAgentSelect) as any
     await el.updateComplete
 
-    const select = el.querySelector('#mode-select') as HTMLSelectElement
+    const labelSpan = el.querySelector('.header-select-wrap span') as HTMLElement
+    expect(labelSpan).toBeTruthy()
+    expect(labelSpan.textContent).toBe('Agents')
+
+    const select = el.querySelector('#agent-select') as HTMLSelectElement
     expect(select).toBeTruthy()
     expect(select.disabled).toBe(true)
     expect(select.textContent).toContain('loading')
@@ -24,10 +28,10 @@ describe('r-mode-select', () => {
     mockStore('currentMode', 'chatbot')
     mockStore('currentModeDisplayName', 'Chatbot')
     mockStore('isConnected', true)
-    const el = await mountClass(RModeSelect) as any
+    const el = await mountClass(RAgentSelect) as any
     await el.updateComplete
 
-    const select = el.querySelector('#mode-select') as HTMLSelectElement
+    const select = el.querySelector('#agent-select') as HTMLSelectElement
     expect(select.options.length).toBe(1)
     expect(select.options[0]!.textContent!.trim()).toBe('Chatbot')
   })
@@ -39,10 +43,10 @@ describe('r-mode-select', () => {
     ])
     mockStore('currentMode', 'chatbot')
     mockStore('isConnected', true)
-    const el = await mountClass(RModeSelect) as any
+    const el = await mountClass(RAgentSelect) as any
     await el.updateComplete
 
-    const select = el.querySelector('#mode-select') as HTMLSelectElement
+    const select = el.querySelector('#agent-select') as HTMLSelectElement
     expect(select.options.length).toBe(2)
     expect(select.options[0]!.textContent.trim()).toBe('Chatbot')
     expect(select.options[1]!.textContent.trim()).toBe('Planner')
@@ -55,10 +59,10 @@ describe('r-mode-select', () => {
     ])
     mockStore('currentMode', 'chatbot')
     mockStore('isConnected', true)
-    const el = await mountClass(RModeSelect) as any
+    const el = await mountClass(RAgentSelect) as any
     await el.updateComplete
 
-    const select = el.querySelector('#mode-select') as HTMLSelectElement
+    const select = el.querySelector('#agent-select') as HTMLSelectElement
     expect(select.value).toBe('chatbot')
 
     mockStore('currentMode', 'workflows')
@@ -73,10 +77,10 @@ describe('r-mode-select', () => {
     ])
     mockStore('currentMode', 'chatbot')
     mockStore('isConnected', false)
-    const el = await mountClass(RModeSelect) as any
+    const el = await mountClass(RAgentSelect) as any
     await el.updateComplete
 
-    const select = el.querySelector('#mode-select') as HTMLSelectElement
+    const select = el.querySelector('#agent-select') as HTMLSelectElement
     expect(select.disabled).toBe(true)
   })
 
@@ -86,10 +90,10 @@ describe('r-mode-select', () => {
     ])
     mockStore('currentMode', 'chatbot')
     mockStore('isConnected', true)
-    const el = await mountClass(RModeSelect) as any
+    const el = await mountClass(RAgentSelect) as any
     await el.updateComplete
 
-    const select = el.querySelector('#mode-select') as HTMLSelectElement
+    const select = el.querySelector('#agent-select') as HTMLSelectElement
     expect(select.disabled).toBe(true)
   })
 })

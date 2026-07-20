@@ -7,7 +7,7 @@ r-shell,
 r-view,
 r-chat-panel,
 r-chat-input,
-r-mode-select,
+r-agent-select,
 r-welcome-dashboard,
 r-observe-panel,
 r-config-form,
@@ -115,7 +115,8 @@ header.streaming::after {
 }
 
 .header-select-wrap span {
-  display: none;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .header-select {
@@ -137,9 +138,9 @@ header.streaming::after {
   opacity: 0.62;
 }
 
-/* Legacy alias — keep #mode-select styling identical to .header-select so
-   r-mode-select keeps working until it migrates to the class. */
-#mode-select {
+/* Legacy alias — keep #agent-select styling identical to .header-select so
+   r-agent-select keeps working until it migrates to the class. */
+#agent-select {
   min-width: 9rem;
   max-width: 14rem;
   height: 1.75rem;
@@ -153,7 +154,7 @@ header.streaming::after {
   cursor: pointer;
 }
 
-#mode-select:disabled {
+#agent-select:disabled {
   cursor: default;
   opacity: 0.62;
 }

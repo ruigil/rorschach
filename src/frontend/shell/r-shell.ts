@@ -300,7 +300,7 @@ export class RShell extends RorschachBase {
           </div>
         </div>
         <div class="header-end">
-          <r-mode-select></r-mode-select>
+          <r-agent-select></r-agent-select>
           <r-theme-select></r-theme-select>
           ${userId && userId !== 'anonymous' ? html`
             <button class="logout-btn" title="Sign out" @click=${this._handleLogout}>

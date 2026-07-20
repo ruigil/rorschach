@@ -9,8 +9,8 @@ import {
 import { switchMode } from './actions.js';
 import type { ShellState } from './types.js';
 
-@customElement('r-mode-select')
-export class RModeSelect extends RorschachBase {
+@customElement('r-agent-select')
+export class RAgentSelect extends RorschachBase {
   private _agents = new StoreController(this, ['shell', 'agents']);
   private _currentMode = new StoreController(this, ['shell', 'currentMode']);
   private _currentModeDisplayName = new StoreController(this, ['shell', 'currentModeDisplayName']);
@@ -50,9 +50,9 @@ export class RModeSelect extends RorschachBase {
 
     if (agentList.length === 0) {
       return html`
-        <label class="header-select-wrap" for="mode-select">
-          <span>mode</span>
-          <select id="mode-select" class="header-select" disabled>
+        <label class="header-select-wrap" for="agent-select">
+          <span>Agents</span>
+          <select id="agent-select" class="header-select" disabled>
             <option value="">loading</option>
           </select>
         </label>
@@ -60,9 +60,9 @@ export class RModeSelect extends RorschachBase {
     }
 
     return html`
-      <label class="header-select-wrap" for="mode-select">
-        <span>mode</span>
-        <select id="mode-select" class="header-select" .value=${currentMode} ?disabled=${isDisabled} @change=${this._handleChange}>
+      <label class="header-select-wrap" for="agent-select">
+        <span>Agents</span>
+        <select id="agent-select" class="header-select" .value=${currentMode} ?disabled=${isDisabled} @change=${this._handleChange}>
           ${agentList.map(agent => html`
             <option
                value=${agent.mode}
