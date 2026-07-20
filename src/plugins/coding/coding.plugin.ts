@@ -3,10 +3,10 @@ import type { ActorRef } from '../../system/index.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { DocumentationTools, deleteDocTool, writeDocPageTool, writeTocTool } from './documentation.ts'
 import { CodingAgentDescriptor } from './coding-agent.ts'
-import { DocsAgent, showDocsTool, updateDocsTool } from './docs-agent.ts'
+import { DocsAgentDescriptor } from './docs-agent.ts'
 import { ProjectShell, codingBashTool, codingReadTool } from './project-shell.ts'
 import { buildCodingRoutes, codingSchemas } from './routes.ts'
-import type { DocumentationMsg, CodingConfig, DocsAgentMsg, ProjectShellMsg } from './types.ts'
+import type { DocumentationMsg, CodingConfig, ProjectShellMsg } from './types.ts'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 
 const defaultConfig: CodingConfig = {
@@ -36,16 +36,9 @@ const mergeConfig = (slice: CodingConfig | undefined): CodingConfig => ({
 
 const buildCodingTools = (
   shellRef: ActorRef<ProjectShellMsg>,
-  docsAgentRef: ActorRef<DocsAgentMsg>,
 ): ToolCollection => ({
   [codingBashTool.name]: { ...codingBashTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
   [codingReadTool.name]: { ...codingReadTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
-  [updateDocsTool.name]: {
-    ...updateDocsTool,
-    ref: docsAgentRef as unknown as ActorRef<ToolMsg>,
-    mayBeLongRunning: true,
-  },
-  [showDocsTool.name]: { ...showDocsTool, ref: docsAgentRef as unknown as ActorRef<ToolMsg> },
 })
 
 const buildDocsTools = (
@@ -93,28 +86,6 @@ export default createPluginFactory<CodingConfig>({
         return DocumentationTools()
       },
     },
-    docsAgent: {
-      factory: (cfg, deps) => {
-        const merged = mergeConfig(cfg)
-        return DocsAgent({
-          model: merged.docs.model,
-          maxToolLoops: merged.docs.maxToolLoops ?? 30,
-          projectMount: merged.projectMount,
-          tools: buildDocsTools(
-            deps.shell as ActorRef<ProjectShellMsg>,
-            deps.documentation as ActorRef<DocumentationMsg>
-          ),
-        })
-      },
-      dependsOn: ['shell', 'documentation'],
-    },
-  },
-  tools: {
-    updateDocs: {
-      schema: updateDocsTool.schema,
-      slot: 'docsAgent',
-      mayBeLongRunning: true,
-    },
   },
   agents: {
     coding: {
@@ -127,12 +98,27 @@ export default createPluginFactory<CodingConfig>({
           projectMount: merged.projectMount,
           tools: buildCodingTools(
             deps.shell as ActorRef<ProjectShellMsg>,
-            deps.docsAgent as ActorRef<DocsAgentMsg>
           ),
           toolFilter: merged.coding.toolFilter,
         }
       },
-      dependsOn: ['shell', 'docsAgent'],
+      dependsOn: ['shell'],
+    },
+    docs: {
+      factory: DocsAgentDescriptor,
+      options: (cfg, deps) => {
+        const merged = mergeConfig(cfg)
+        return {
+          model: merged.docs.model,
+          maxToolLoops: merged.docs.maxToolLoops ?? 30,
+          projectMount: merged.projectMount,
+          tools: buildDocsTools(
+            deps.shell as ActorRef<ProjectShellMsg>,
+            deps.documentation as ActorRef<DocumentationMsg>
+          ),
+        }
+      },
+      dependsOn: ['shell', 'documentation'],
     },
   },
   routes: (cfg, deps) => {

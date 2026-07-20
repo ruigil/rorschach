@@ -42,37 +42,6 @@ export type CodingAgentState = {
   tools: ToolCollection
 }
 
-export type DocsJobExecutorExtra =
-  | { type: 'startJob'; userId: string }
-  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
-
-export type DocsJobExecutorMsg = LoopMsg<DocsJobExecutorExtra>
-
-export type DocsJobExecutorState = {
-  loop: LoopState
-  llmRef: ActorRef<LlmProviderMsg> | null
-  pagesWritten: number
-  startedAt: number
-  userId?: string
-}
-
-export type DocsAgentMsg =
-  | { type: 'invoke' } & ToolInvokeMsg
-  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_pagesWrittenUpdated'; jobId: string; pagesWritten: number }
-  | { type: '_jobCompleted'; jobId: string }
-  | { type: '_jobFailed'; jobId: string; error: string }
-
-export type DocsAgentState = {
-  llmRef: ActorRef<LlmProviderMsg> | null
-  activeJobs: Record<string, {
-    jobId: string
-    executorRef: ActorRef<DocsJobExecutorMsg>
-    query: string
-    userId: string
-    pagesWritten: number
-  }>
-}
 
 export interface TocNode {
   title: string
