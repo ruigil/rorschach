@@ -144,11 +144,11 @@ export const reorderWorkspaceTabs = (
   shell().set('workspaceTabOrder', next)
 }
 
-/** Drop closed/missing ids; append any open views missing from order. */
+/** Drop closed ids; append any open views missing from order. Unregistered views are preserved so async plugin loading does not wipe tab order on refresh. */
 export const reconcileWorkspaceTabOrder = () => {
   const views = shell().get('views') ?? {}
   const order = shell().get('workspaceTabOrder') ?? []
-  const next = order.filter(id => views[id]?.isOpen)
+  const next = order.filter(id => !views[id] || views[id].isOpen)
   for (const id of Object.keys(views)) {
     if (views[id]?.isOpen && !next.includes(id)) next.push(id)
   }

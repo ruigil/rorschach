@@ -293,16 +293,16 @@ describe('workspace tab reorder', () => {
     expect(store.namespace<ShellState>('shell').get('workspaceTabOrder')).toEqual(['a', 'b'])
   })
 
-  test('reconcileWorkspaceTabOrder drops closed ids and appends open orphans', () => {
+  test('reconcileWorkspaceTabOrder drops closed ids, preserves unregistered ids, and appends open orphans', () => {
     store.namespace<ShellState>('shell').set('views', {
       a: { id: 'a', isOpen: true, params: {} },
       b: { id: 'b', isOpen: false, params: {} },
       c: { id: 'c', isOpen: true, params: {} },
     })
-    store.namespace<ShellState>('shell').set('workspaceTabOrder', ['b', 'a', 'ghost'])
+    store.namespace<ShellState>('shell').set('workspaceTabOrder', ['b', 'a', 'asyncPlugin'])
 
     reconcileWorkspaceTabOrder()
 
-    expect(store.namespace<ShellState>('shell').get('workspaceTabOrder')).toEqual(['a', 'c'])
+    expect(store.namespace<ShellState>('shell').get('workspaceTabOrder')).toEqual(['a', 'asyncPlugin', 'c'])
   })
 })
