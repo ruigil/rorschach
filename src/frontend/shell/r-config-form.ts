@@ -1,10 +1,13 @@
 import {
+  css,
   customElement,
   html,
   query,
   RorschachBase,
   state,
-  StoreController
+  StoreController,
+  workspaceStyles,
+  type TreeNode
 } from '@rorschach/webkit';
 
 import type { ShellState } from './types.js';
@@ -45,7 +48,210 @@ export class RConfigForm extends RorschachBase {
   private _currentUserId = new StoreController(this, ['shell', 'currentUserId']);
   private _hasLoaded = false;
 
-  override createRenderRoot() { return this; }
+  static override styles = [
+    workspaceStyles,
+    css`
+      :host {
+        display: block;
+        height: 100%;
+        width: 100%;
+      }
+
+      .config-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .btn-save {
+        padding: 0.35rem 0.9rem;
+        background: var(--accent);
+        border: none;
+        border-radius: var(--radius, 4px);
+        color: #03070a;
+        font-family: var(--font-ui);
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+        box-shadow: 0 2px 10px var(--accent-glow);
+      }
+
+      .btn-save:hover {
+        background: var(--accent-bright);
+        box-shadow: 0 2px 16px rgba(0, 196, 212, 0.4);
+        transform: translateY(-1px);
+      }
+
+      .btn-save:active {
+        transform: translateY(0);
+      }
+
+      .btn-reset {
+        padding: 0.35rem 0.75rem;
+        background: transparent;
+        border: 1px solid var(--border-mid);
+        border-radius: var(--radius, 4px);
+        color: var(--text-dim);
+        font-family: var(--font-ui);
+        font-size: 0.7rem;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: border-color 0.15s, color 0.15s;
+      }
+
+      .btn-reset:hover {
+        border-color: var(--text-mid);
+        color: var(--text);
+      }
+
+      .config-search-box {
+        padding: 0.5rem 0.5rem 0.25rem 0.5rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .config-search-box input {
+        width: 100%;
+        padding: 0.4rem 0.6rem;
+        background: var(--surface-2);
+        border: 1px solid var(--border-mid);
+        border-radius: 4px;
+        color: var(--text);
+        font-family: var(--font-ui);
+        font-size: 0.75rem;
+        outline: none;
+        box-sizing: border-box;
+      }
+
+      .config-search-box input:focus {
+        border-color: var(--accent);
+      }
+
+      .config-section-container {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1.25rem 1.5rem;
+        box-sizing: border-box;
+      }
+
+      .config-section-container::-webkit-scrollbar { width: 4px; }
+      .config-section-container::-webkit-scrollbar-track { background: transparent; }
+      .config-section-container::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
+
+      .config-section {
+        display: none;
+        flex-direction: column;
+        gap: 1.25rem;
+        max-width: 700px;
+      }
+
+      .config-section.active {
+        display: flex;
+      }
+
+      .pane-header {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 0.5rem;
+      }
+
+      .pane-title {
+        font-size: 0.9rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text);
+        font-family: var(--font-ui);
+      }
+
+      .pane-sub {
+        font-size: 0.72rem;
+        color: var(--text-dim);
+        font-family: var(--font-mono);
+        font-weight: 300;
+      }
+
+      r-config-field {
+        display: block;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+        width: 100%;
+        max-width: 600px;
+      }
+
+      .field-label {
+        font-size: 0.72rem;
+        font-weight: 500;
+        color: var(--text-mid);
+        letter-spacing: 0.04em;
+      }
+
+      .field-hint {
+        font-size: 0.65rem;
+        color: var(--text-dim);
+        font-family: var(--font-mono);
+        font-weight: 300;
+      }
+
+      .field textarea {
+        width: 100%;
+        padding: 0.65rem 0.9rem;
+        background: var(--surface-2);
+        border: 1px solid var(--border-mid);
+        border-radius: var(--radius, 6px);
+        color: var(--text);
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+        font-weight: 400;
+        line-height: 1.6;
+        resize: vertical;
+        outline: none;
+        transition: border-color 0.2s, box-shadow 0.2s;
+        min-height: 90px;
+        box-sizing: border-box;
+      }
+
+      .field textarea:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-glow);
+      }
+
+      .field input[type="text"],
+      .field input[type="number"],
+      .field input[type="password"],
+      .field select {
+        width: 100%;
+        padding: 0.55rem 0.85rem;
+        background: var(--surface-2);
+        border: 1px solid var(--border-mid);
+        border-radius: var(--radius, 6px);
+        color: var(--text);
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+        font-weight: 400;
+        outline: none;
+        transition: border-color 0.2s, box-shadow 0.2s;
+        box-sizing: border-box;
+      }
+
+      .field input:focus,
+      .field select:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-glow);
+      }
+    `
+  ];
 
   override connectedCallback() {
     super.connectedCallback();
@@ -182,16 +388,6 @@ export class RConfigForm extends RorschachBase {
     this.loadSchemas();
   }
 
-  private _toggleGroup(groupId: string) {
-    const next = new Set(this.expandedGroups);
-    if (next.has(groupId)) {
-      next.delete(groupId);
-    } else {
-      next.add(groupId);
-    }
-    this.expandedGroups = next;
-  }
-
   private _selectSection(section: ConfigSchema) {
     this.activeSectionId = section.id;
     this.activeTab = section.tab;
@@ -211,98 +407,86 @@ export class RConfigForm extends RorschachBase {
     return this._isPluginDirty(pluginId);
   }
 
+  private get _treeData(): TreeNode[] {
+    const rawTree = buildConfigTree(this.schemas);
+    const { filteredNodes } = filterConfigTree(rawTree, this.searchQuery);
+
+    return filteredNodes.map(group => {
+      const groupHasDirty = group.children?.some(child => child.id && this._isSectionDirty(child.id)) ?? false;
+      return {
+        id: group.id,
+        label: group.label,
+        icon: 'folder',
+        status: groupHasDirty ? 'warn' : undefined,
+        children: group.children?.map(child => {
+          const isDirty = child.id ? this._isSectionDirty(child.id) : false;
+          return {
+            id: child.id,
+            label: child.label,
+            icon: 'settings',
+            status: isDirty ? 'warn' : undefined,
+            data: child.section ? { section: child.section } : undefined
+          };
+        })
+      };
+    });
+  }
+
+  private _onNodeSelect(event: CustomEvent<{ node: TreeNode }>) {
+    const node = event.detail?.node;
+    if (node?.data?.section) {
+      this._selectSection(node.data.section);
+    } else if (node?.id) {
+      const section = this.schemas.find(s => s.id === node.id);
+      if (section) this._selectSection(section);
+    }
+  }
+
   override render() {
     const activeSection = this.schemas.find(s => s.id === this.activeSectionId) || this.schemas[0];
+    const activeLabel = activeSection ? `${activeSection.tab} / ${activeSection.title}` : 'Configuration';
 
     return html`
-      <r-panel elevation="1">
+      <r-panel elevation="1" style="height: 100%; display: flex; flex-direction: column;">
         <r-toolbar slot="header-container">
-          <div class="config-toolbar-header">
-            <span class="config-toolbar-title">Workspace Configuration</span>
-            ${activeSection ? html`
-              <span class="config-toolbar-breadcrumb">/ ${activeSection.tab} / ${activeSection.title}</span>
-            ` : ''}
+          <div class="ws-header-title">
+            <span class="ws-title-base">Configuration</span>
+            <span class="ws-title-sep">/</span>
+            <span class="ws-title-active">${activeLabel}</span>
+          </div>
+          <div slot="actions" class="config-actions">
+            <r-flash-message id="flash-msg"></r-flash-message>
+            <button type="button" class="btn-reset" id="reset-btn" @click=${this.reset}>Reset</button>
+            <button type="button" class="btn-save" @click=${this.save}>Save</button>
           </div>
         </r-toolbar>
-        <div class="config-content">
-          ${this.schemas.length > 0 ? this._renderTree() : ''}
-          <form id="config-form" novalidate @submit=${(e: Event) => { e.preventDefault(); this.save(); }}>
-            <div id="config-form-container">
+
+        <div class="ws-body">
+          <aside class="ws-sidebar">
+            <div class="config-search-box">
+              <input
+                type="text"
+                placeholder="Search configuration..."
+                .value=${this.searchQuery}
+                @input=${this._onSearchInput}
+              />
+            </div>
+            <div class="ws-sidebar-tree">
+              <r-tree
+                .data=${this._treeData}
+                .selectedId=${this.activeSectionId}
+                @node-select=${this._onNodeSelect}
+              ></r-tree>
+            </div>
+          </aside>
+
+          <main class="ws-main">
+            <div class="config-section-container">
               ${this.schemas.map(section => this._renderSection(section))}
             </div>
-            <div class="form-actions">
-              <button type="submit" class="btn-save">Save</button>
-              <button type="button" class="btn-reset" id="reset-btn" @click=${this.reset}>Reset</button>
-              <r-flash-message id="flash-msg"></r-flash-message>
-            </div>
-          </form>
+          </main>
         </div>
       </r-panel>
-    `;
-  }
-
-  private _renderTree() {
-    const rawTree = buildConfigTree(this.schemas);
-    const { filteredNodes, autoExpandIds } = filterConfigTree(rawTree, this.searchQuery);
-
-    return html`
-      <div class="config-sidebar">
-        <div class="config-sidebar-header">
-          <span class="config-sidebar-title">Config Tree</span>
-        </div>
-        <div class="config-tree-search">
-          <input
-            type="text"
-            placeholder="Search configuration..."
-            .value=${this.searchQuery}
-            @input=${this._onSearchInput}
-          />
-        </div>
-        <div class="config-tree">
-          ${filteredNodes.map(group => this._renderGroupNode(group, autoExpandIds))}
-        </div>
-      </div>
-    `;
-  }
-
-  private _renderGroupNode(group: ConfigTreeNode, autoExpandIds: Set<string>) {
-    const isExpanded = this.searchQuery ? autoExpandIds.has(group.id) || this.expandedGroups.has(group.id) : this.expandedGroups.has(group.id);
-    const groupHasDirty = group.children?.some(child => child.id && this._isSectionDirty(child.id)) ?? false;
-
-    return html`
-      <div class="config-tree-group ${isExpanded ? 'expanded' : ''}">
-        <button
-          type="button"
-          class="config-tree-group-header"
-          @click=${() => this._toggleGroup(group.id)}
-        >
-          <span class="group-label-container">
-            <span class="config-tree-chevron">▶</span>
-            <span class="group-label">${group.label}</span>
-          </span>
-          ${groupHasDirty ? html`<span class="tree-dirty-dot" title="Unsaved changes"></span>` : ''}
-        </button>
-        <div class="config-tree-children">
-          ${group.children?.map(child => this._renderSectionNode(child))}
-        </div>
-      </div>
-    `;
-  }
-
-  private _renderSectionNode(node: ConfigTreeNode) {
-    const isSelected = this.activeSectionId === node.id;
-    const isDirty = node.id ? this._isSectionDirty(node.id) : false;
-
-    return html`
-      <button
-        type="button"
-        class="config-tree-item ${isSelected ? 'active' : ''}"
-        data-section-id="${node.id}"
-        @click=${() => node.section && this._selectSection(node.section)}
-      >
-        <span class="config-tree-item-title">${node.label}</span>
-        ${isDirty ? html`<span class="tree-dirty-dot" title="Unsaved changes"></span>` : ''}
-      </button>
     `;
   }
 

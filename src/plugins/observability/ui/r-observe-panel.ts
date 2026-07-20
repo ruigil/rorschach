@@ -7,6 +7,7 @@ import {
   store,
   StoreController,
   send,
+  workspaceStyles,
   type TreeNode
 } from '@rorschach/webkit';
 
@@ -62,16 +63,19 @@ export class RObservePanel extends RorschachBase {
   private _agents = new StoreController(this, ['observe', 'agents']);
   private _kgDataController = new StoreController(this, ['observe', 'kgraph']);
 
-  static override styles = css`
-    :host {
-      display: block;
-      height: 100%;
-      width: 100%;
-    }
+  static override styles = [
+    workspaceStyles,
+    css`
+      :host {
+        display: block;
+        height: 100%;
+        width: 100%;
+      }
 
-    [hidden] {
-      display: none !important;
-    }
+      [hidden] {
+        display: none !important;
+      }
+
 
     .obs-header-title-container {
       display: flex;
@@ -273,12 +277,9 @@ export class RObservePanel extends RorschachBase {
     }
 
     /* ─── Memory controls ─── */
-    .obs-memory-controls {
-      display: flex;
-      align-items: center;
-      gap: 10px;
     }
-  `;
+  `
+];
 
   override updated(changedProperties: Map<string, any>) {
     const tab = this._observeActiveTab;
@@ -382,10 +383,10 @@ export class RObservePanel extends RorschachBase {
     return html`
       <r-panel elevation="1" style="height: 100%; display: flex; flex-direction: column;">
         <r-toolbar slot="header-container">
-          <div class="obs-header-title-container">
-            <span class="obs-title-base">Observability</span>
-            <span class="obs-title-sep">/</span>
-            <span class="obs-title-active">${activeTabLabel}</span>
+          <div class="ws-header-title">
+            <span class="ws-title-base">Observability</span>
+            <span class="ws-title-sep">/</span>
+            <span class="ws-title-active">${activeTabLabel}</span>
           </div>
           <div slot="actions" class="obs-bar-end">
             <div class="metrics-summary" ?hidden=${!showMetrics}>
@@ -420,9 +421,9 @@ export class RObservePanel extends RorschachBase {
           </div>
         </r-toolbar>
 
-        <div class="obs-body">
-          <aside class="obs-sidebar">
-            <div class="obs-sidebar-tree">
+        <div class="ws-body">
+          <aside class="ws-sidebar">
+            <div class="ws-sidebar-tree">
               <r-tree
                 .data=${this._treeData}
                 .selectedId=${activeTab}
@@ -431,7 +432,7 @@ export class RObservePanel extends RorschachBase {
             </div>
           </aside>
 
-          <main class="obs-main">
+          <main class="ws-main">
             <div class="obs-subpanel ${activeTab === 'metrics' ? 'active' : ''}" data-observe-tab="metrics">
               <div class="metrics-layout">
                 <div class="tree-col">

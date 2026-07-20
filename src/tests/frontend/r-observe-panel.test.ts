@@ -11,8 +11,8 @@ describe('r-observe-panel', () => {
     const el = await mountClass(RObservePanel) as any
     await el.updateComplete
 
-    const sidebar = el.shadowRoot.querySelector('.obs-sidebar')
-    const main = el.shadowRoot.querySelector('.obs-main')
+    const sidebar = el.shadowRoot.querySelector('.ws-sidebar') || el.shadowRoot.querySelector('.obs-sidebar')
+    const main = el.shadowRoot.querySelector('.ws-main') || el.shadowRoot.querySelector('.obs-main')
     const tree = el.shadowRoot.querySelector('r-tree')
 
     expect(sidebar).toBeTruthy()
@@ -59,7 +59,7 @@ describe('r-observe-panel', () => {
     const activeSubpanel = el.shadowRoot.querySelector('.obs-subpanel.active')
     expect(activeSubpanel.getAttribute('data-observe-tab')).toBe('logs')
 
-    const activePill = el.shadowRoot.querySelector('.obs-title-active')
+    const activePill = el.shadowRoot.querySelector('.ws-title-active') || el.shadowRoot.querySelector('.obs-title-active')
     expect(activePill).toBeTruthy()
     expect(activePill.textContent).toBe('Logs')
   })

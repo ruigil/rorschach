@@ -61,13 +61,15 @@ describe('r-config-form', () => {
     await new Promise(r => setTimeout(r, 50))
     await el.updateComplete
 
-    // The nested object label is rendered in light DOM
-    const label = el.querySelector('.nested-object-label')
+    const root = el.shadowRoot || el
+
+    // The nested object label is rendered
+    const label = root.querySelector('.nested-object-label')
     expect(label).toBeTruthy()
     expect(label.textContent).toBe('agent')
 
     // The nested fields container is rendered
-    const fieldsContainer = el.querySelector('.nested-object-fields')
+    const fieldsContainer = root.querySelector('.nested-object-fields')
     expect(fieldsContainer).toBeTruthy()
 
     // The reactive value model holds the fetched values
@@ -146,8 +148,10 @@ describe('r-config-form', () => {
     await new Promise(r => setTimeout(r, 50))
     await el.updateComplete
 
-    // The tool-filter container is rendered in light DOM
-    const container = el.querySelector('.tool-filter-container')
+    const root = el.shadowRoot || el
+
+    // The tool-filter container is rendered
+    const container = root.querySelector('.tool-filter-container')
     expect(container).toBeTruthy()
 
     // The reactive value model holds the fetched values
@@ -217,28 +221,26 @@ describe('r-config-form', () => {
     await new Promise(r => setTimeout(r, 50))
     await el.updateComplete
 
+    const root = el.shadowRoot || el
+
     // Check tree container and tree sidebar menu exists
-    const sidebar = el.querySelector('.config-sidebar')
+    const sidebar = root.querySelector('.ws-sidebar') || root.querySelector('.config-sidebar')
     expect(sidebar).toBeTruthy()
 
-    // Check group headers (Notebook, Cognitive)
-    const groupHeaders = el.querySelectorAll('.config-tree-group-header')
-    expect(groupHeaders.length).toBe(2)
-
-    // Check tree section items
-    const treeItems = el.querySelectorAll('.config-tree-item')
-    expect(treeItems.length).toBe(2)
+    // Check r-tree component exists and receives schema nodes
+    const tree = root.querySelector('r-tree') as any
+    expect(tree).toBeTruthy()
+    expect(tree.data.length).toBe(2)
 
     // Test search filtering
-    const searchInput = el.querySelector('.config-tree-search input') as HTMLInputElement
+    const searchInput = (root.querySelector('.config-search-box input') || root.querySelector('.config-tree-search input')) as HTMLInputElement
     expect(searchInput).toBeTruthy()
 
     searchInput.value = 'Cognitive'
     searchInput.dispatchEvent(new Event('input'))
     await el.updateComplete
 
-    const filteredItems = el.querySelectorAll('.config-tree-item')
-    expect(filteredItems.length).toBe(1)
-    expect(filteredItems[0].textContent).toContain('Cognitive Memory')
+    expect(tree.data.length).toBe(1)
+    expect(tree.data[0].label).toContain('Cognitive')
   })
 })
