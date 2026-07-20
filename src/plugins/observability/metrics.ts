@@ -26,9 +26,9 @@ export const Metrics = (options: MetricsActorOptions): ActorDef<MetricsMsg, null
       }
       ctx.publish(MetricsTopic, event)
       ctx.publish(OutboundAdminBroadcastTopic, {
-        type: 'metrics',
+        type: 'observability.metrics.updated',
         key: 'metrics',
-        payload: JSON.stringify({ type: 'metrics', ...event }),
+        payload: JSON.stringify({ type: 'observability.metrics.updated', ...event }),
       })
       return { state }
     }

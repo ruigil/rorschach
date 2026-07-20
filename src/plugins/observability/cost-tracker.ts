@@ -54,9 +54,9 @@ export const CostTracker = (
 
       // Broadcast to admin WS clients
       context.publish(OutboundAdminBroadcastTopic, {
-        type: 'usage',
+        type: 'observability.usage.entry',
         key: `usage-${Date.now()}-${Math.random()}`,
-        payload: JSON.stringify({ type: 'usage', ...event }),
+        payload: JSON.stringify({ type: 'observability.usage.entry', ...event }),
       })
 
       // Check for day rollover (synchronous — persistence actor handles storage)

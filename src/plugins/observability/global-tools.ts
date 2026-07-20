@@ -22,27 +22,27 @@ export const GlobalTools = (): ActorDef<GlobalToolsMsg, GlobalToolsState> => ({
       if (event.ref === null) {
         delete tools[event.name]
         ctx.publish(OutboundAdminBroadcastTopic, {
-          type: 'tool_unregistered',
+          type: 'tools.unregistered',
           key: event.name,
-          payload: JSON.stringify({ type: 'tool_unregistered', name: event.name })
+          payload: JSON.stringify({ type: 'tools.unregistered', name: event.name })
         })
       } else {
         tools[event.name] = event
         ctx.publish(OutboundAdminBroadcastTopic, {
-          type: 'tool_registered',
+          type: 'tools.registered',
           key: event.name,
-          payload: JSON.stringify({ type: 'tool_registered', name: event.name, schema: event.schema })
+          payload: JSON.stringify({ type: 'tools.registered', name: event.name, schema: event.schema })
         })
       }
       return { state: { ...state, tools } }
     },
     _wsFrame: (state, msg, ctx) => {
       const { userId, frame } = msg.event
-      if (frame.type === 'observe.tools.request') {
+      if (frame.type === 'tools.list.request') {
         for (const [name, event] of Object.entries(state.tools)) {
           ctx.publish(OutboundUserMessageTopic, {
             userId,
-            text: JSON.stringify({ type: 'tool_registered', name, schema: event.schema })
+            text: JSON.stringify({ type: 'tools.registered', name, schema: event.schema })
           })
         }
       }

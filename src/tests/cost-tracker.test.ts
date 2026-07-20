@@ -41,13 +41,13 @@ describe('Cost Tracker', () => {
     await tick(100)
 
     // Check that we received the usage frame broadcast
-    const usageBroadcast = broadcasts.find((b) => b.type === 'usage')
+    const usageBroadcast = broadcasts.find((b) => b.type === 'observability.usage.entry')
     expect(usageBroadcast).toBeDefined()
-    expect(usageBroadcast.type).toBe('usage')
+    expect(usageBroadcast.type).toBe('observability.usage.entry')
     expect(usageBroadcast.key).toStartWith('usage-')
     const payload = JSON.parse(usageBroadcast.payload)
     expect(payload).toEqual({
-      type: 'usage',
+      type: 'observability.usage.entry',
       ...costEvent,
     })
 

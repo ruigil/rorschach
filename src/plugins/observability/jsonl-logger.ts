@@ -35,9 +35,9 @@ export const JsonlLogger = (
     log: (state, message, context) => {
       // Broadcast to admin WS clients
       context.publish(OutboundAdminBroadcastTopic, {
-        type: 'log',
+        type: 'observability.log.entry',
         key: 'log',
-        payload: JSON.stringify({ type: 'log', ...message.event }),
+        payload: JSON.stringify({ type: 'observability.log.entry', ...message.event }),
       })
 
       // Drop events below the minimum level for file storage

@@ -599,7 +599,7 @@ const linkConceptNodes = async (
 function notifyKgraphChanged(userId: string, ctx: any) {
   ctx.publish(OutboundUserMessageTopic, {
     userId,
-    text: JSON.stringify({ type: 'observe.kgraph.changed' }),
+    text: JSON.stringify({ type: 'memory.kgraph.changed' }),
   })
 }
 
@@ -672,7 +672,7 @@ async function pushKgraphToUser(state: KgraphState, userId: string, ctx: any) {
     ctx.publish(OutboundUserMessageTopic, {
       userId,
       text: JSON.stringify({
-        type: 'observe.kgraph.updated',
+        type: 'memory.kgraph.updated',
         graph: {
           nodes: cleanNodes,
           edges: cleanEdges,
@@ -969,7 +969,7 @@ export const Kgraph = (
 
     _wsFrame: (state, message, ctx) => {
       const { userId, frame } = message.event
-      if (frame.type === 'observe.kgraph.request') {
+      if (frame.type === 'memory.kgraph.request') {
         pushKgraphToUser(state, userId, ctx)
       }
       return { state }

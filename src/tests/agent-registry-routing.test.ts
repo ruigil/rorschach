@@ -108,12 +108,12 @@ describe('agent registry routing & lifecycle', () => {
     system.publishRetained(UserPresenceTopic, 'u1-cli', { status: 'present', userId: 'u1', source: 'cli' })
     await tick()
 
-    // 1. WebSocket Frame: cognitive.listAgents
+    // 1. WebSocket Frame: cognitive.agents.request
     system.publish(HttpWsFrameTopic, {
       clientId: 'c1',
       userId: 'u1',
       roles: ['user'],
-      frame: { type: 'cognitive.listAgents' },
+      frame: { type: 'cognitive.agents.request' },
     })
     await tick()
 
@@ -280,7 +280,7 @@ describe('agent registry routing & lifecycle', () => {
       clientId: 'c1',
       userId: 'u1',
       roles: ['user'],
-      frame: { type: 'cognitive.listAgents' },
+      frame: { type: 'cognitive.agents.request' },
     })
     await tick()
 
@@ -332,7 +332,7 @@ describe('agent registry routing & lifecycle', () => {
       clientId: 'c1',
       userId: 'u1',
       roles: ['user'],
-      frame: { type: 'cognitive.listAgents' },
+      frame: { type: 'cognitive.agents.request' },
     })
     await tick()
 

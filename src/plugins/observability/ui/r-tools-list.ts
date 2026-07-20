@@ -9,7 +9,7 @@ export class RToolsList extends RorschachBase {
 
   override connectedCallback() {
     super.connectedCallback();
-    send({ type: 'observe.tools.request' });
+    send({ type: 'tools.list.request' });
   }
 
   override render() {

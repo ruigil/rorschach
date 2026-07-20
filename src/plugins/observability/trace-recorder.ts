@@ -58,9 +58,9 @@ export const TraceRecorder = (
       span(state, message, context) {
         // Broadcast to admin WS clients
         context.publish(OutboundAdminBroadcastTopic, {
-          type: 'trace',
+          type: 'observability.trace.span',
           key: message.span.spanId,
-          payload: JSON.stringify({ type: 'trace', ...message.span }),
+          payload: JSON.stringify({ type: 'observability.trace.span', ...message.span }),
         })
 
         const line = JSON.stringify(message.span)

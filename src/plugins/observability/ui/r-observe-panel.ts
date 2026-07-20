@@ -15,11 +15,12 @@ import './r-costs-table.js';
 import './r-actor-tree.js';
 import './r-actor-detail.js';
 import './r-tools-list.js';
+import './r-agents-list.js';
 import './r-topic-list.js';
 import './r-trace-waterfall.js';
 import type { Actor } from '../types.js';
 
-export const OBSERVE_TABS = ['metrics', 'topics', 'logs', 'traces', 'tools', 'memory', 'costs'] as const;
+export const OBSERVE_TABS = ['metrics', 'topics', 'logs', 'traces', 'tools', 'agents', 'memory', 'costs'] as const;
 export type ObserveTab = typeof OBSERVE_TABS[number];
 export const DEFAULT_OBSERVE_TAB: ObserveTab = 'metrics';
 
@@ -30,6 +31,7 @@ const CONTROL_BY_TAB: Record<ObserveTab, string> = {
   memory:  'obs-memory-controls',
   topics:  '',
   tools:   '',
+  agents:  '',
   costs:   '',
 };
 
@@ -206,7 +208,7 @@ export class RObservePanel extends RorschachBase {
   }
 
   private _requestKgraph() {
-    send({ type: 'observe.kgraph.request' });
+    send({ type: 'memory.kgraph.request' });
   }
 
   private _clearLogs() {
@@ -248,6 +250,7 @@ export class RObservePanel extends RorschachBase {
             <button ?active=${activeTab === 'logs'} data-subtab="logs">logs</button>
             <button ?active=${activeTab === 'traces'} data-subtab="traces">traces</button>
             <button ?active=${activeTab === 'tools'} data-subtab="tools">tools</button>
+            <button ?active=${activeTab === 'agents'} data-subtab="agents">agents</button>
             <button ?active=${activeTab === 'memory'} data-subtab="memory">memory</button>
             <button ?active=${activeTab === 'costs'} data-subtab="costs">costs</button>
           </r-tabs>
@@ -310,6 +313,10 @@ export class RObservePanel extends RorschachBase {
 
           <div class="obs-subpanel ${activeTab === 'tools' ? 'active' : ''}" data-observe-tab="tools">
             <r-tools-list></r-tools-list>
+          </div>
+
+          <div class="obs-subpanel ${activeTab === 'agents' ? 'active' : ''}" data-observe-tab="agents">
+            <r-agents-list></r-agents-list>
           </div>
 
           <r-costs-table class="obs-subpanel ${activeTab === 'costs' ? 'active' : ''}" data-observe-tab="costs">

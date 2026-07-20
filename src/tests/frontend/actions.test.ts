@@ -50,8 +50,8 @@ describe('setMode', () => {
 
 describe('observability reduceFrame logs', () => {
   test('prepends log to logs array in observe namespace', () => {
-    reduceFrame({ type: 'log', message: 'first' })
-    reduceFrame({ type: 'log', message: 'second' })
+    reduceFrame({ type: 'observability.log.entry', message: 'first' })
+    reduceFrame({ type: 'observability.log.entry', message: 'second' })
     const logs = store.namespace<ObservabilityState>('observe').get('logs')
     expect(logs[0]!.message).toBe('second')
     expect(logs[1]!.message).toBe('first')
@@ -59,7 +59,7 @@ describe('observability reduceFrame logs', () => {
 
   test('caps logs at 500 entries', () => {
     for (let i = 0; i < 510; i++) {
-      reduceFrame({ type: 'log', message: `log-${i}` })
+      reduceFrame({ type: 'observability.log.entry', message: `log-${i}` })
     }
     expect(store.namespace<ObservabilityState>('observe').get('logs').length).toBe(500)
     expect(store.namespace<ObservabilityState>('observe').get('logs')[0]!.message).toBe('log-509')
