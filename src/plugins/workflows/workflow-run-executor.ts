@@ -176,6 +176,7 @@ export const WorkflowRunExecutor = (
       const child = ctx.spawn(actorName, WorkflowTaskExecutor(ctx.self, state.llmRef, model, maxToolLoops, state.tools))
       child.send({
         type: 'startTask',
+        runId: state.run.runId,
         workflow: state.workflow,
         task,
         inputs: run.inputs,

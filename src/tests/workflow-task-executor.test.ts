@@ -19,6 +19,7 @@ const tick = (ms = 80) => Bun.sleep(ms)
 const workflow: Workflow = {
   id: 'workflow-1',
   userId: 'u1',
+  title: 'Generate a report',
   goal: 'Generate a report',
   context: 'Task executor test workflow.',
   createdAt: '2026-06-12T10:00:00.000Z',
@@ -64,6 +65,7 @@ const SequenceLlm = (
 const startTask = (executor: ActorRef<WorkflowTaskExecutorMsg>): void => {
   executor.send({
     type: 'startTask',
+    runId: 'run-1',
     workflow,
     task,
     inputs: {},
@@ -89,7 +91,7 @@ describe('workflow task executor', () => {
             name: completeWorkflowTaskTool.name,
             arguments: JSON.stringify({
               summary: 'Wrote the report.',
-              outputs: { report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' } },
+              outputs: { report: { type: 'artifact', key: 'workflow-runs/run-1/report.html', mimeType: 'text/html' } },
             }),
           }],
         })
@@ -107,7 +109,7 @@ describe('workflow task executor', () => {
       type: 'taskCompleted',
       taskId: 'write-report',
       summary: 'Wrote the report.',
-      outputs: { report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' } },
+      outputs: { report: { type: 'artifact', key: 'workflow-runs/run-1/report.html', mimeType: 'text/html' } },
     })
     await system.shutdown()
   })
@@ -144,7 +146,7 @@ describe('workflow task executor', () => {
             name: completeWorkflowTaskTool.name,
             arguments: JSON.stringify({
               summary: 'Wrote the report.',
-              outputs: { report: { type: 'artifact', path: 'report.html' } },
+              outputs: { report: { type: 'artifact', key: 'workflow-runs/run-1/report.html' } },
             }),
           }],
         })

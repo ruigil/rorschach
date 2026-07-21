@@ -188,6 +188,8 @@ export class RForceGraph extends RorschachBase {
       width: 100%;
       height: 100%;
       overflow: hidden;
+      background-image: radial-gradient(var(--border-mid, rgba(255, 255, 255, 0.15)) 1px, transparent 1px);
+      background-size: 16px 16px;
     }
     :host svg {
       display: block;
@@ -337,7 +339,7 @@ export class RForceGraph extends RorschachBase {
     // Prepare nodes/edges
     const simNodes = data.nodes.map((n: any) => ({ ...n }));
     const nodeById = Object.fromEntries(simNodes.map((n: any) => [n.id, n]));
-    const simEdges = data.edges
+    const simEdges = (data.edges || [])
       .map((e: any) => ({ ...e, source: nodeById[e.source], target: nodeById[e.target] }))
       .filter((e: any) => e.source && e.target);
 

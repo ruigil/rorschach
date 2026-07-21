@@ -31,17 +31,17 @@ export class RKVList extends RorschachBase {
     .kv-list {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 6px;
       margin: 0;
       padding: 0;
     }
     .kv-item {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 2px;
     }
     .kv-key {
-      color: var(--text-dim);
+      color: var(--accent);
       font-family: var(--font-mono, monospace);
       font-size: 0.62rem;
       text-transform: uppercase;
@@ -50,10 +50,10 @@ export class RKVList extends RorschachBase {
     .kv-value {
       color: var(--text-mid);
       font-size: 0.78rem;
-      line-height: 1.45;
+      line-height: 1.4;
       min-width: 0;
       overflow-wrap: anywhere;
-      margin-left: 20px;
+      margin: 2px 0 0 0;
     }
     .kv-muted {
       color: var(--text-dim);
@@ -110,7 +110,7 @@ export class RKVList extends RorschachBase {
 
   private _renderValue(item: KVListItem) {
     if (item.type === 'artifact' || this._isArtifactRef(item.value)) {
-      const path = item.artifactPath || item.value?.path || item.value?.url || '';
+      const path = item.artifactPath || item.value?.path || item.value?.key || item.value?.url || '';
       const href = item.artifactHref || item.value?.url || '';
       if (!href) return this._renderJson(item.value);
       return html`
@@ -141,7 +141,7 @@ export class RKVList extends RorschachBase {
   private _isArtifactRef(value: unknown): boolean {
     return !!value && typeof value === 'object' && !Array.isArray(value) &&
       (value as any).type === 'artifact' &&
-      (typeof (value as any).path === 'string' || typeof (value as any).url === 'string');
+      (typeof (value as any).path === 'string' || typeof (value as any).url === 'string' || typeof (value as any).key === 'string');
   }
 
   override render() {

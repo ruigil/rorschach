@@ -24,7 +24,7 @@ export type SerializedRequest = {
 export type SerializedResponse = {
   status: number
   headers: Record<string, string>
-  body: string | Uint8Array | null
+  body: string | Uint8Array | ReadableStream<Uint8Array> | null
 }
 
 export type HttpRequestMsg = {

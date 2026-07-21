@@ -53,6 +53,7 @@ const FakeTool = (): ActorDef<ToolMsg, null> => ({
 const workflow = (executionTools: string[]): Workflow => ({
   id: 'workflow-1',
   userId: 'u1',
+  title: 'Run one task',
   goal: 'Run one task',
   context: 'Runner execution-tool boundary test.',
   createdAt: '2026-06-10T10:00:00.000Z',

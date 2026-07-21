@@ -29,6 +29,7 @@ const makeDir = async (): Promise<string> => {
 const sampleWorkflow = (userId = 'u1'): Workflow => ({
   id: 'workflow-1',
   userId,
+  title: 'Ship Workflow Workspace',
   goal: 'Ship workflow workspace',
   context: 'User accepted a workflow for execution UI.',
   createdAt: '2026-05-16T10:00:00.000Z',
@@ -251,7 +252,7 @@ describe('workflow store', () => {
       { persistenceRef, workflowRunnerRef: runner, ctx },
     )
     expect(listReply.type).toBe('toolResult')
-    if (listReply.type === 'toolResult') expect(listReply.result.text).toContain('Ship workflow workspace')
+    if (listReply.type === 'toolResult') expect(listReply.result.text).toContain('Ship Workflow Workspace')
 
     const graphReply = await handleWorkflowTool(
       { type: 'invoke', toolName: showWorkflowGraphTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1' }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },

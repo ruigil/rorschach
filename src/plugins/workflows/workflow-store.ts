@@ -19,6 +19,7 @@ const isWorkflow = (value: unknown): value is Workflow => {
   return (
     typeof obj.id === 'string' &&
     typeof obj.userId === 'string' &&
+    typeof obj.title === 'string' &&
     typeof obj.goal === 'string' &&
     typeof obj.context === 'string' &&
     typeof obj.createdAt === 'string' &&
@@ -27,9 +28,18 @@ const isWorkflow = (value: unknown): value is Workflow => {
   )
 }
 
+const normalizeWorkflow = (parsed: any): Workflow | null => {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  if (typeof parsed.title !== 'string' || !parsed.title.trim()) {
+    parsed.title = (typeof parsed.goal === 'string' && parsed.goal.trim()) ? parsed.goal.trim() : String(parsed.id ?? 'Workflow')
+  }
+  return isWorkflow(parsed) ? parsed : null
+}
+
 const summarize = (workflow: Workflow, filepath: string): WorkflowSummary => ({
   id: workflow.id,
   userId: workflow.userId,
+  title: workflow.title,
   goal: workflow.goal,
   createdAt: workflow.createdAt,
   taskCount: workflow.tasks.length,
@@ -50,6 +60,7 @@ export const toWorkflowGraph = (workflow: Workflow, run?: WorkflowRunState): Wor
     workflow: {
       id: workflow.id,
       userId: workflow.userId,
+      title: workflow.title,
       goal: workflow.goal,
       context: workflow.context,
       createdAt: workflow.createdAt,
@@ -118,7 +129,7 @@ const loadWorkflows = async (persistenceRef: ActorRef<any>, userId: string): Pro
       if (!getRes.ok || !getRes.data) return null
       try {
         const parsed = JSON.parse(getRes.data)
-        return isWorkflow(parsed) ? parsed : null
+        return normalizeWorkflow(parsed)
       } catch {
         return null
       }
@@ -152,10 +163,11 @@ export const getWorkflow = async (persistenceRef: ActorRef<any>, userId: string,
   if (!getRes.ok || !getRes.data) return { ok: false, error: `Workflow not found: ${workflowId}`, status: 404 }
   try {
     const parsed = JSON.parse(getRes.data)
-    if (!isWorkflow(parsed) || parsed.userId !== userId) {
+    const normalized = normalizeWorkflow(parsed)
+    if (!normalized || normalized.userId !== userId) {
       return { ok: false, error: `Workflow not found: ${workflowId}`, status: 404 }
     }
-    return { ok: true, data: { workflow: parsed, filepath: `workflows/${workflowId}` } }
+    return { ok: true, data: { workflow: normalized, filepath: `workflows/${workflowId}` } }
   } catch {
     return { ok: false, error: `Invalid workflow content`, status: 500 }
   }
@@ -182,6 +194,7 @@ export const saveWorkflow = async (persistenceRef: ActorRef<any>, workflow: Work
 }
 
 export type WorkflowPatch = {
+  title?: string
   goal?: string
   context?: string
   executionTools?: string[]
@@ -196,6 +209,7 @@ export const updateWorkflow = async (persistenceRef: ActorRef<any>, userId: stri
   const existing = found.data.workflow
   const updated: Workflow = {
     ...existing,
+    title: patch.title ?? existing.title,
     goal: patch.goal ?? existing.goal,
     context: patch.context ?? existing.context,
     executionTools: patch.executionTools ?? existing.executionTools,
@@ -278,6 +292,21 @@ export const getWorkflowRun = async (persistenceRef: ActorRef<any>, userId: stri
     return { ok: false, error: `Workflow run not found: ${runId}`, status: 404 }
   }
   return { ok: true, data: run }
+}
+
+export const deleteWorkflowRun = async (persistenceRef: ActorRef<any>, userId: string, runId: string): Promise<StoreResult<{ deleted: true; runId: string }>> => {
+  const found = await getWorkflowRun(persistenceRef, userId, runId)
+  if (!found.ok) return found
+
+  const docId = runId.endsWith('.json') ? runId : `${runId}.json`
+  await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+    type: 'doc.delete',
+    collection: 'workflow-runs',
+    docId,
+    replyTo,
+  }))
+
+  return { ok: true, data: { deleted: true, runId } }
 }
 
 export const saveWorkflowRun = async (persistenceRef: ActorRef<any>, run: WorkflowRunState): Promise<StoreResult<WorkflowRunState>> => {

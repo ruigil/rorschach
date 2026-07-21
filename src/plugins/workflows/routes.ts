@@ -77,8 +77,8 @@ export const buildWorkflowsRoutes = (
     {
       id: 'workflow-runs.artifact',
       method: 'GET',
-      path: '/workflow-runs/',
-      match: 'prefix',
+      path: '/artifact',
+      match: 'exact',
       target: workflowRunnerRef,
     },
   ]

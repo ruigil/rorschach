@@ -13,9 +13,9 @@ import type {
   WorkflowRunnerConfig,
 } from './types.ts'
 import { WorkflowRunExecutor } from './workflow-run-executor.ts'
-import { getWorkflowRun, listWorkflowRuns, listWorkflows, getWorkflowGraph, createWorkflowRun } from './workflow-store.ts'
+import { getWorkflowRun, listWorkflowRuns, listWorkflows, getWorkflowGraph, createWorkflowRun, deleteWorkflow, deleteWorkflowRun } from './workflow-store.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetStreamPayload } from '../../types/persistence.ts'
-import { isRunArtifactRef, validArtifactPath } from './validation.ts'
+import { validArtifactPath } from './validation.ts'
 
 type RunnerState = {
   live: Record<string, ActorRef<WorkflowRunExecutorMsg>>
@@ -38,18 +38,9 @@ export const WorkflowRunner = (
 ): ActorDef<WorkflowRunnerMsg, RunnerState> => {
   const { model, maxToolLoops } = config
 
-  const runIdFromPath = (pathname: string, suffix = ''): string | null => {
-    if (!pathname.startsWith('/workflow-runs/')) return null
-    if (suffix && !pathname.endsWith(suffix)) return null
-    const end = suffix ? pathname.length - suffix.length : pathname.length
-    const raw = pathname.slice('/workflow-runs/'.length, end)
-    if (!raw || raw.includes('/')) return null
-    try {
-      return decodeURIComponent(raw)
-    } catch {
-      return null
-    }
-  }
+
+
+
 
   const ensureRunActor = (
     state: RunnerState,
@@ -226,92 +217,36 @@ export const WorkflowRunner = (
           return { state }
         }
 
-        if (request.method === 'GET' && pathname.startsWith('/workflow-runs/')) {
-          const runId = runIdFromPath(pathname, '/artifact')
-          if (!runId) {
-            replyTo.send({ type: 'http.response', response: { status: 404, headers: {}, body: 'Not Found' } })
-            return { state }
-          }
-          const artifactPath = url.searchParams.get('path')
-          if (!artifactPath || !validArtifactPath(artifactPath)) {
-            replyTo.send({ type: 'http.response', response: { status: 400, headers: {}, body: 'Invalid artifact path' } })
+        if (request.method === 'GET' && pathname === '/artifact') {
+          const artifactKey = url.searchParams.get('key')
+          if (!artifactKey || !validArtifactPath(artifactKey)) {
+            replyTo.send({ type: 'http.response', response: { status: 400, headers: {}, body: 'Invalid artifact key' } })
             return { state }
           }
 
           ctx.self.send({
-            type: 'get',
+            type: 'getArtifact',
             userId: identity.userId,
-            runId,
+            key: artifactKey,
             replyTo: {
-              name: 'http:workflow-runs:get',
+              name: 'http:workflow-runs:getArtifact',
               isAlive: () => true,
-              send: (reply) => {
-                if (!reply.ok) {
-                  replyTo.send({ type: 'http.response', response: { status: reply.status ?? 500, headers: {}, body: reply.error } })
+              send: (artifactReply) => {
+                if (!artifactReply.ok) {
+                  replyTo.send({ type: 'http.response', response: { status: 404, headers: {}, body: artifactReply.error ?? 'Artifact not found' } })
                   return
                 }
-                if (!('run' in reply)) {
-                  replyTo.send({ type: 'http.response', response: { status: 500, headers: {}, body: 'Unexpected run response' } })
-                  return
-                }
-
-                const refs = [
-                  ...Object.values(reply.run.outputs ?? {}),
-                  ...Object.values(reply.run.taskStates)
-                    .filter(task => task.status === 'completed')
-                    .flatMap(task => Object.values(task.outputs ?? {})),
-                ].filter(isRunArtifactRef)
-                const ref = refs.find(item => item.path === artifactPath)
-                if (!ref) {
-                  replyTo.send({ type: 'http.response', response: { status: 404, headers: {}, body: 'Artifact is not referenced by completed workflow outputs' } })
+                if (!('stream' in artifactReply)) {
+                  replyTo.send({ type: 'http.response', response: { status: 500, headers: {}, body: 'Unexpected artifact response' } })
                   return
                 }
 
-                ctx.self.send({
-                  type: 'getArtifact',
-                  userId: identity.userId,
-                  runId,
-                  path: ref.path,
-                  replyTo: {
-                    name: 'http:workflow-runs:getArtifact',
-                    isAlive: () => true,
-                    send: (artifactReply) => {
-                      if (!artifactReply.ok) {
-                        replyTo.send({ type: 'http.response', response: { status: 500, headers: {}, body: artifactReply.error } })
-                        return
-                      }
-                      if (!('stream' in artifactReply)) {
-                        replyTo.send({ type: 'http.response', response: { status: 500, headers: {}, body: 'Unexpected artifact response' } })
-                        return
-                      }
-                      
-                      (async () => {
-                        const reader = artifactReply.stream.getReader()
-                        const chunks: Uint8Array[] = []
-                        while (true) {
-                          const { done, value } = await reader.read()
-                          if (done) break
-                          chunks.push(value)
-                        }
-                        const length = chunks.reduce((acc, c) => acc + c.length, 0)
-                        const buffer = new Uint8Array(length)
-                        let offset = 0
-                        for (const chunk of chunks) {
-                          buffer.set(chunk, offset)
-                          offset += chunk.length
-                        }
-                        replyTo.send({
-                          type: 'http.response',
-                          response: {
-                            status: 200,
-                            headers: { 'Content-Type': ref.mimeType ?? artifactReply.mimeType ?? 'application/octet-stream' },
-                            body: buffer,
-                          }
-                        })
-                      })().catch(err => {
-                        replyTo.send({ type: 'http.response', response: { status: 500, headers: {}, body: String(err) } })
-                      })
-                    }
+                replyTo.send({
+                  type: 'http.response',
+                  response: {
+                    status: 200,
+                    headers: { 'Content-Type': artifactReply.mimeType ?? 'application/octet-stream' },
+                    body: artifactReply.stream,
                   }
                 })
               }
@@ -416,6 +351,22 @@ export const WorkflowRunner = (
             if (!reply.ok) {
               sendFrame({ type: 'workflow.error', message: reply.error })
             }
+          } else if (frame.type === 'workflow.delete.request' || frame.type === 'workflow.delete') {
+            const res = await deleteWorkflow(dl, userId, frame.workflowId)
+            if (res.ok) {
+              const list = await listWorkflows(dl, userId)
+              sendFrame({ type: 'workflows.list', workflows: list })
+            } else {
+              sendFrame({ type: 'workflow.error', message: res.error })
+            }
+          } else if (frame.type === 'workflow.run.delete.request' || frame.type === 'workflow.run.delete') {
+            const res = await deleteWorkflowRun(dl, userId, frame.runId)
+            if (res.ok) {
+              const list = await listWorkflowRuns(dl, userId)
+              sendFrame({ type: 'workflow.runs.list', runs: list })
+            } else {
+              sendFrame({ type: 'workflow.error', message: res.error })
+            }
           }
         }
 
@@ -435,13 +386,18 @@ export const WorkflowRunner = (
           msg.replyTo.send({ ok: false, error: 'Persistence not ready' })
           return { state }
         }
+        const cleanKey = msg.key.replace(/^\/+/, '')
+        const [bucket, ...rest] = cleanKey.split('/')
+        const bucketName = bucket || 'workflow-runs'
+        const keyName = rest.join('/')
+
         ctx.pipeToSelf(
           ask<PersistenceMsg, PResult<PObjGetStreamPayload>>(
             state.persistenceRef,
             (replyTo) => ({
               type: 'obj.getStream',
-              bucket: 'workflow-runs',
-              key: `${msg.runId}/${msg.path}`,
+              bucket: bucketName,
+              key: keyName,
               replyTo,
             }),
             { timeoutMs: 10_000 }

@@ -24,6 +24,7 @@ export type WorkflowsState = {
   workflows: any[]
   runs: any[]
   errorMessage: string | null
+  panelStates: Record<string, boolean>
 };
 
 store.namespace<WorkflowsState>('workflows').init(
@@ -37,6 +38,14 @@ store.namespace<WorkflowsState>('workflows').init(
     workflows: [],
     runs: [],
     errorMessage: null,
+    panelStates: {
+      'workflow-info': false,
+      'task-info': false,
+      'run-info': false,
+      'task-run-state': false,
+      'run-events': false,
+      'graph': true,
+    },
   },
   {
     persist: [
@@ -45,6 +54,7 @@ store.namespace<WorkflowsState>('workflows').init(
       'workspaceWorkflowId',
       'workspaceRunId',
       'workspaceSelectedTaskId',
+      'panelStates',
     ],
   },
 )

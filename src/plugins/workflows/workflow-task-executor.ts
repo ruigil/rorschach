@@ -1,7 +1,8 @@
 import type { ActorContext, ActorDef, ActorRef, ActorResult, Interceptor } from '../../system/index.ts'
-import { agentLoop, defineTool, idleLoopState, parseToolArgs, onLifecycle } from '../../system/index.ts'
+import { agentLoop, defineTool, idleLoopState, parseToolArgs, onLifecycle, ask } from '../../system/index.ts'
 import type { ToolCollection, ToolMsg, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic, type ApiMessage, type LlmProviderMsg } from '../../types/llm.ts'
+import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetPayload } from '../../types/persistence.ts'
 import type {
   WorkflowRunExecutorMsg,
   WorkflowTaskExecutorMsg,
@@ -14,6 +15,7 @@ import { validateOutputValues } from './validation.ts'
 
 type TaskExecutorState = {
   loop: ReturnType<typeof idleLoopState>
+  runId: string
   workflow: Workflow | null
   task: WorkflowTask | null
   inputs: Record<string, unknown>
@@ -22,10 +24,12 @@ type TaskExecutorState = {
   userId: string
   terminalSignaled: boolean
   llmRef: ActorRef<LlmProviderMsg> | null
+  persistenceRef: ActorRef<any> | null
 }
 
 const initialState = (tools: ToolCollection, llmRef: ActorRef<LlmProviderMsg> | null): TaskExecutorState => ({
   loop: idleLoopState(),
+  runId: '',
   workflow: null,
   task: null,
   inputs: {},
@@ -34,6 +38,7 @@ const initialState = (tools: ToolCollection, llmRef: ActorRef<LlmProviderMsg> | 
   userId: '',
   terminalSignaled: false,
   llmRef,
+  persistenceRef: null,
 })
 
 export const completeWorkflowTaskTool = defineTool('complete_workflow_task', 'Complete the current workflow task with validated structured outputs.', {
@@ -50,6 +55,26 @@ export const blockWorkflowTaskTool = defineTool('block_workflow_task', 'Mark the
   required: ['reason'],
   properties: {
     reason: { type: 'string' },
+  },
+})
+
+export const readArtifactTool = defineTool('read_artifact', 'Read text content of a workflow run artifact from persistence.', {
+  type: 'object',
+  properties: {
+    key: { type: 'string', description: 'Canonical key of the artifact file.' },
+    path: { type: 'string', description: 'Path of the artifact file.' },
+    root: { type: 'string', description: 'Optional root directory override.' },
+  },
+})
+
+export const writeArtifactTool = defineTool('write_artifact', 'Write/save text content as a workflow run artifact to persistence.', {
+  type: 'object',
+  required: ['path', 'content'],
+  properties: {
+    path: { type: 'string', description: 'Path of the artifact file.' },
+    root: { type: 'string', description: 'Optional root directory override (e.g. "documentation"). Defaults to "workflow-runs/<runId>" if omitted.' },
+    content: { type: 'string', description: 'The text content to save.' },
+    mimeType: { type: 'string', description: 'Optional MIME type of the content.' },
   },
 })
 
@@ -98,15 +123,18 @@ Do not finish by writing the task result in the assistant message.
 When the validation criteria are satisfied, call complete_workflow_task with:
 {
   "summary": "short human-readable completion summary",
-  "outputs": {}
+  "outputs": { The task outputs object must contain only declared task output keys }
 }
 
 When the task cannot be completed, call block_workflow_task with:
 {
   "reason": "short explanation of what is blocking the task"
 }
-
-The outputs object must contain only declared task output keys. Required outputs must be present. If an output is a local workflow artifact, use the write_workflow_artifact tool to save the content, and return a path artifact reference, for example { "type": "artifact", "path": "generated-page.html", "mimeType": "text/html" }. If it is a public URL artifact reference returned by a tool, return for example { "type": "artifact", "url": "generated/image.png", "mimeType": "image/png" }. Do not inline large generated files into JSON outputs.
+Artifact rules:
+- Reading artifacts: Call read_artifact only if the task description, validation criteria, or dependency outputs require inspecting an artifact stored in persistence. Use the canonical "key" provided in Dependency outputs.
+- Writing artifacts: Call write_artifact only if a declared task output has type "artifact". Do not call write_artifact for standard non-artifact outputs.
+- Custom root: Specify "root" in write_artifact ONLY if the task description or validation criteria explicitly requires a custom root directory (e.g., root: "documentation"). Otherwise, omit "root" so it defaults automatically to the run directory.
+- Output reference: In complete_workflow_task, for declared artifact outputs, return an artifact reference using the canonical key returned by write_artifact, for example { "type": "artifact", "key": "workflow-runs/<runId>/report.html", "mimeType": "text/html" }.
 
 Workflow goal: ${workflow.goal}
 Workflow context: ${workflow.context}
@@ -119,7 +147,8 @@ Validation criteria: ${task.validationCriteria}
 Declared task outputs:
 ${JSON.stringify(task.outputs ?? {}, null, 2)}
 Dependency outputs:
-${JSON.stringify(dependencyOutputs, null, 2)}${resumeContext ? `\nResume context:\n${resumeContext}` : ''}`,
+${JSON.stringify(dependencyOutputs, null, 2)}${resumeContext ? `\nResume context:\n${resumeContext}` : ''}
+`,
   },
   {
     role: 'user',
@@ -202,6 +231,7 @@ export const WorkflowTaskExecutor = (
   const startTask = (state: S, msg: Extract<M, { type: 'startTask' }>, ctx: Ctx): ActorResult<M, S> => {
     const next: S = {
       ...state,
+      runId: msg.runId,
       workflow: msg.workflow,
       task: msg.task,
       inputs: msg.inputs,
@@ -210,6 +240,8 @@ export const WorkflowTaskExecutor = (
         ...tools,
         [completeWorkflowTaskTool.name]: { ...completeWorkflowTaskTool, ref: ctx.self as ActorRef<ToolMsg> },
         [blockWorkflowTaskTool.name]: { ...blockWorkflowTaskTool, ref: ctx.self as ActorRef<ToolMsg> },
+        [readArtifactTool.name]: { ...readArtifactTool, ref: ctx.self as ActorRef<ToolMsg> },
+        [writeArtifactTool.name]: { ...writeArtifactTool, ref: ctx.self as ActorRef<ToolMsg> },
       },
       userId: msg.userId,
       terminalSignaled: false,
@@ -252,16 +284,125 @@ export const WorkflowTaskExecutor = (
     return { state }
   }
 
+  const invokeArtifactTool = (state: S, msg: Extract<M, { type: 'invoke' }>): ActorResult<M, S> => {
+    if (!state.persistenceRef) {
+      msg.replyTo.send({ type: 'toolError', error: 'Persistence not ready' })
+      return { state }
+    }
+    if (msg.toolName === readArtifactTool.name) {
+      let args: { key?: string; root?: string; path?: string }
+      try {
+        args = JSON.parse(msg.arguments)
+      } catch {
+        msg.replyTo.send({ type: 'toolError', error: 'Invalid JSON arguments' })
+        return { state }
+      }
+      const rawPath = args.key ?? (args.root ? `${args.root}/${args.path ?? ''}` : (args.path ? (args.path.startsWith('workflow-runs/') ? args.path : `workflow-runs/${state.runId}/${args.path}`) : ''))
+      const canonicalKey = rawPath.replace(/^\/+/, '')
+      if (!canonicalKey) {
+        msg.replyTo.send({ type: 'toolError', error: 'Missing artifact path or key' })
+        return { state }
+      }
+      const [bucket, ...rest] = canonicalKey.split('/')
+      const key = rest.join('/')
+      if (!bucket || !key) {
+        msg.replyTo.send({ type: 'toolError', error: 'Invalid artifact location' })
+        return { state }
+      }
+      ask<PersistenceMsg, PResult<PObjGetPayload>>(state.persistenceRef, replyTo => ({
+        type: 'obj.get',
+        bucket,
+        key,
+        replyTo,
+      })).then(
+        res => {
+          if (!res.ok) {
+            msg.replyTo.send({ type: 'toolError', error: res.error })
+          } else if (!res.data) {
+            msg.replyTo.send({ type: 'toolError', error: 'No data found' })
+          } else {
+            const text = new TextDecoder().decode(res.data.data)
+            msg.replyTo.send({ type: 'toolResult', result: { text } })
+          }
+        },
+        err => msg.replyTo.send({ type: 'toolError', error: String(err) })
+      )
+      return { state }
+    }
+    if (msg.toolName === writeArtifactTool.name) {
+      let args: { root?: string; path: string; content: string; mimeType?: string }
+      try {
+        args = JSON.parse(msg.arguments)
+      } catch {
+        msg.replyTo.send({ type: 'toolError', error: 'Invalid JSON arguments' })
+        return { state }
+      }
+      if (!args.path) {
+        msg.replyTo.send({ type: 'toolError', error: 'Missing path' })
+        return { state }
+      }
+      if (args.content === undefined) {
+        msg.replyTo.send({ type: 'toolError', error: 'Missing content' })
+        return { state }
+      }
+      const cleanPath = args.path.replace(/^\/+/, '')
+      const cleanRoot = args.root?.trim()?.replace(/^\/+/, '')
+      const canonicalKey = cleanRoot
+        ? `${cleanRoot}/${cleanPath}`
+        : `workflow-runs/${state.runId}/${cleanPath}`
+
+      const [bucket, ...rest] = canonicalKey.split('/')
+      const key = rest.join('/')
+      if (!bucket || !key) {
+        msg.replyTo.send({ type: 'toolError', error: 'Invalid artifact location' })
+        return { state }
+      }
+
+      const data = new TextEncoder().encode(args.content)
+      const contentType = args.mimeType || 'text/plain'
+      ask<PersistenceMsg, PResult>(state.persistenceRef, replyTo => ({
+        type: 'obj.put',
+        bucket,
+        key,
+        data,
+        meta: { contentType },
+        replyTo,
+      })).then(
+        res => {
+          if (!res.ok) {
+            msg.replyTo.send({ type: 'toolError', error: res.error })
+          } else {
+            msg.replyTo.send({
+              type: 'toolResult',
+              result: { text: `Artifact saved with key "${canonicalKey}".` },
+            })
+          }
+        },
+        err => msg.replyTo.send({ type: 'toolError', error: String(err) })
+      )
+      return { state }
+    }
+    return { state }
+  }
+
   const host: Interceptor<M, S> = (state, msg, ctx, next) => {
     if (msg.type === 'startTask') {
       if (state.loop.phase !== 'idle') return { state, stash: true }
       return startTask(state, msg, ctx)
     }
-    if (msg.type === 'invoke' && (msg.toolName === completeWorkflowTaskTool.name || msg.toolName === blockWorkflowTaskTool.name)) {
-      return invokeControlTool(state, msg)
+    if (msg.type === 'invoke') {
+      if (msg.toolName === completeWorkflowTaskTool.name || msg.toolName === blockWorkflowTaskTool.name) {
+        return invokeControlTool(state, msg)
+      }
+      if (msg.toolName === readArtifactTool.name || msg.toolName === writeArtifactTool.name) {
+        return invokeArtifactTool(state, msg)
+      }
     }
     if (msg.type === '_llmProvider') {
       return { state: { ...state, llmRef: msg.ref } }
+    }
+    if (msg.type === '_persistenceRef') {
+      return { state: { ...state, persistenceRef: msg.ref } }
     }
     return next(state, msg)
   }
@@ -271,6 +412,7 @@ export const WorkflowTaskExecutor = (
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(LlmProviderTopic, event => ({ type: '_llmProvider' as const, ref: event.ref }))
+        ctx.subscribe(PersistenceProviderTopic, event => ({ type: '_persistenceRef' as const, ref: event.ref }))
         return { state }
       },
     }),

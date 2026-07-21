@@ -52,6 +52,7 @@ const validateStringArray = (label: string, value: unknown, errors: string[]): s
 export const validateWorkflow = (workflow: Workflow): string[] => {
   const errors: string[] = []
   if (!workflow || typeof workflow !== 'object' || Array.isArray(workflow)) return ['workflow must be an object']
+  if (typeof workflow.title !== 'string' || !workflow.title.trim()) errors.push('title must be a non-empty string')
   if (typeof workflow.goal !== 'string' || !workflow.goal.trim()) errors.push('goal must be a non-empty string')
   if (typeof workflow.context !== 'string' || !workflow.context.trim()) errors.push('context must be a non-empty string')
   const executionTools = validateStringArray('executionTools', workflow.executionTools, errors)
@@ -195,14 +196,14 @@ export const isArtifactRef = (value: unknown): value is WorkflowArtifactRef =>
   isRecord(value) &&
   value.type === 'artifact' &&
   (
-    (typeof value.path === 'string' && value.url === undefined && validArtifactPath(value.path)) ||
-    (typeof value.url === 'string' && value.path === undefined && validArtifactUrl(value.url))
+    (typeof value.key === 'string' && value.url === undefined && validArtifactPath(value.key)) ||
+    (typeof value.url === 'string' && value.key === undefined && validArtifactUrl(value.url))
   ) &&
   (value.mimeType === undefined || typeof value.mimeType === 'string') &&
   (value.name === undefined || typeof value.name === 'string')
 
-export const isRunArtifactRef = (value: unknown): value is Extract<WorkflowArtifactRef, { path: string }> =>
-  isArtifactRef(value) && 'path' in value
+export const isRunArtifactRef = (value: unknown): value is Extract<WorkflowArtifactRef, { key: string }> =>
+  isArtifactRef(value) && 'key' in value
 
 const validateValue = (label: string, spec: WorkflowValueSpec, value: unknown): string | null => {
   switch (spec.type) {

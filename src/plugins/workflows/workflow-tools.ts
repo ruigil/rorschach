@@ -23,35 +23,17 @@ const valueSpecSchema = {
   },
 }
 
-export const readWorkflowArtifactTool = defineTool('read_workflow_artifact', 'Read text content of a workflow run artifact from persistence.', {
-  type: 'object',
-  required: ['runId', 'path'],
-  properties: {
-    runId: { type: 'string', description: 'The unique workflow run ID.' },
-    path: { type: 'string', description: 'Path/key of the artifact file.' },
-  },
-})
-
-export const writeWorkflowArtifactTool = defineTool('write_workflow_artifact', 'Write/save text content as a workflow run artifact to persistence.', {
-  type: 'object',
-  required: ['runId', 'path', 'content'],
-  properties: {
-    runId: { type: 'string', description: 'The unique workflow run ID.' },
-    path: { type: 'string', description: 'Path/key of the artifact file.' },
-    content: { type: 'string', description: 'The text content to save.' },
-    mimeType: { type: 'string', description: 'Optional MIME type of the content.' },
-  },
-})
 
 export const listExecutionToolsTool = defineTool('list_execution_tools', 'List tools that workflow tasks may use during execution.', {
   type: 'object',
   properties: {},
 })
 
-export const saveWorkflowTool = defineTool('save_workflow', 'Save an accepted workflow. Requires goal, summary, executionTools, and tasks.', {
+export const saveWorkflowTool = defineTool('save_workflow', 'Save an accepted workflow. Requires title, goal, summary, executionTools, and tasks.', {
   type: 'object',
   required: ['goal', 'summary', 'executionTools', 'tasks'],
   properties: {
+    title: { type: 'string' },
     goal: { type: 'string' },
     summary: { type: 'string' },
     executionTools: { type: 'array', items: { type: 'string' } },
@@ -80,6 +62,7 @@ export const updateWorkflowTool = defineTool('update_workflow', 'Update an exist
   required: ['workflowId'],
   properties: {
     workflowId: { type: 'string' },
+    title: { type: 'string' },
     goal: { type: 'string' },
     summary: { type: 'string' },
     executionTools: { type: 'array', items: { type: 'string' } },
@@ -189,9 +172,9 @@ const startWorkflowArg = (raw: string): { ok: true; workflowId: string; inputs?:
   return parsed.ok ? { ok: true, ...parsed.value } : parsed
 }
 
-const formatWorkflowList = (workflows: Array<{ id: string; goal: string; createdAt: string; taskCount: number }>): string =>
+const formatWorkflowList = (workflows: Array<{ id: string; title?: string; goal: string; createdAt: string; taskCount: number }>): string =>
   workflows.length
-    ? workflows.map(workflow => `- ${workflow.goal} (id: ${workflow.id}, created: ${workflow.createdAt.slice(0, 10)}, tasks: ${workflow.taskCount})`).join('\n')
+    ? workflows.map(workflow => `- ${workflow.title || workflow.goal} (id: ${workflow.id}, created: ${workflow.createdAt.slice(0, 10)}, tasks: ${workflow.taskCount})`).join('\n')
     : 'No saved workflows found.'
 
 const formatRunList = (runs: Array<{ runId: string; workflowId: string; status: string }>): string =>
@@ -201,14 +184,16 @@ const formatRunList = (runs: Array<{ runId: string; workflowId: string; status: 
 
 const parseWorkflow = (raw: string, userId: string): { ok: true; workflow: Workflow } | { ok: false; error: string } => {
   try {
-    const args = JSON.parse(raw) as { goal?: string; summary?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
+    const args = JSON.parse(raw) as { title?: string; goal?: string; summary?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
     if (!args.goal || typeof args.goal !== 'string') throw new Error('missing goal')
     if (!args.summary || typeof args.summary !== 'string') throw new Error('missing summary')
     if (!Array.isArray(args.executionTools) || !args.executionTools.every(item => typeof item === 'string')) throw new Error('missing executionTools')
     if (!Array.isArray(args.tasks)) throw new Error('missing tasks')
+    const title = (typeof args.title === 'string' && args.title.trim()) ? args.title.trim() : args.goal.trim()
     const workflow: Workflow = {
       id: crypto.randomUUID(),
       userId,
+      title,
       goal: args.goal,
       context: args.summary,
       createdAt: new Date().toISOString(),
@@ -225,11 +210,12 @@ const parseWorkflow = (raw: string, userId: string): { ok: true; workflow: Workf
   }
 }
 
-const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch: { goal?: string; context?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] } } | { ok: false; error: string } => {
+const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch: { title?: string; goal?: string; context?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] } } | { ok: false; error: string } => {
   try {
-    const args = JSON.parse(raw) as { workflowId?: string; goal?: string; summary?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
+    const args = JSON.parse(raw) as { workflowId?: string; title?: string; goal?: string; summary?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
     if (!args.workflowId || typeof args.workflowId !== 'string') throw new Error('missing workflowId')
     const patch = {
+      ...(args.title !== undefined ? { title: args.title } : {}),
       ...(args.goal !== undefined ? { goal: args.goal } : {}),
       ...(args.summary !== undefined ? { context: args.summary } : {}),
       ...(args.executionTools !== undefined ? { executionTools: args.executionTools } : {}),
@@ -257,52 +243,6 @@ export const handleWorkflowTool = async (
   deps: WorkflowToolDeps
 ): Promise<ToolReply> => {
   const { workflowRunnerRef, ctx, persistenceRef } = deps
-
-  if (msg.toolName === readWorkflowArtifactTool.name) {
-    let args: { runId: string; path: string }
-    try {
-      args = JSON.parse(msg.arguments) as { runId: string; path: string }
-    } catch {
-      return toolError('Invalid JSON arguments')
-    }
-    if (!args.runId || !args.path) {
-      return toolError('Missing runId or path')
-    }
-    const res = await ask<PersistenceMsg, PResult<PObjGetPayload>>(persistenceRef, (replyTo) => ({
-      type: 'obj.get',
-      bucket: 'workflow-runs',
-      key: `${args.runId}/${args.path}`,
-      replyTo,
-    }))
-    if (!res.ok) return toolError(res.error)
-    if (!res.data) return toolError('No data found')
-    const text = new TextDecoder().decode(res.data.data)
-    return { type: 'toolResult', result: { text } }
-  }
-
-  if (msg.toolName === writeWorkflowArtifactTool.name) {
-    let args: { runId: string; path: string; content: string; mimeType?: string }
-    try {
-      args = JSON.parse(msg.arguments) as { runId: string; path: string; content: string; mimeType?: string }
-    } catch {
-      return toolError('Invalid JSON arguments')
-    }
-    if (!args.runId || !args.path || args.content === undefined) {
-      return toolError('Missing runId, path, or content')
-    }
-    const data = new TextEncoder().encode(args.content)
-    const contentType = args.mimeType || 'text/plain'
-    const res = await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
-      type: 'obj.put',
-      bucket: 'workflow-runs',
-      key: `${args.runId}/${args.path}`,
-      data,
-      meta: { contentType },
-      replyTo,
-    }))
-    if (!res.ok) return toolError(res.error)
-    return { type: 'toolResult', result: { text: `Artifact ${args.path} saved successfully.` } }
-  }
 
   if (msg.toolName === listExecutionToolsTool.name) {
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'listExecutionTools', replyTo }), { timeoutMs: 5_000 })

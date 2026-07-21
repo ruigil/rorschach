@@ -27,6 +27,7 @@ const makeDir = async (): Promise<string> => {
 const workflow: Workflow = {
   id: 'workflow-1',
   userId: 'u1',
+  title: 'Read a file',
   goal: 'Read a file',
   context: 'Regression test workflow.',
   createdAt: '2026-06-10T10:00:00.000Z',

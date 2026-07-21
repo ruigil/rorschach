@@ -5,7 +5,7 @@ import { type UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import type { ToolMsg, ToolCollection } from '../../types/tools.ts'
 import { WorkflowRunner } from './workflow-runner.ts'
 import { WorkflowsAgentDescriptor } from './workflows-agent.ts'
-import { WorkflowToolsActor, workflowControlTools, readWorkflowArtifactTool, writeWorkflowArtifactTool } from './workflow-tools.ts'
+import { WorkflowToolsActor, workflowControlTools } from './workflow-tools.ts'
 import { buildWorkflowsRoutes, workflowsSchemas } from './routes.ts'
 import type { WorkflowsConfig, WorkflowRunnerMsg } from './types.ts'
 
@@ -38,7 +38,7 @@ const workflowsSurfaceRegistration: UiSurfaceRegistration = {
     modes: ['workflows'],
   },
   moduleUrl: '/js/plugins/workflows.js',
-  frameTypes: ['workflow.graph', 'workflow.run.updated', 'workflows.list', 'workflow.runs.list', 'workflow.error'],
+  frameTypes: ['workflow.graph', 'workflow.run.updated', 'workflows.list', 'workflow.runs.list', 'workflow.error', 'workflow.delete', 'workflow.run.delete'],
 }
 
 export default createPluginFactory<WorkflowsConfig>({
@@ -63,10 +63,7 @@ export default createPluginFactory<WorkflowsConfig>({
       dependsOn: ['runner'],
     },
   },
-  tools: {
-    read_workflow_artifact: { schema: readWorkflowArtifactTool.schema, slot: 'tools' },
-    write_workflow_artifact: { schema: writeWorkflowArtifactTool.schema, slot: 'tools' },
-  },
+
   agents: {
     workflows: {
       factory: WorkflowsAgentDescriptor,

@@ -1,9 +1,8 @@
 import { createTopic, type ActorRef } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolCollection, ToolReply, ToolMsg, ToolFilter, ToolSchema, Tool, JobLifecycleEvent } from '../../types/tools.ts'
+import type { ToolInvokeMsg, ToolMsg, ToolSchema, Tool, JobLifecycleEvent } from '../../types/tools.ts'
 import type { LlmProviderMsg, ApiMessage } from '../../types/llm.ts'
-import type { LoopMsg, LoopState } from '../../system/index.ts'
+import type { LoopMsg } from '../../system/index.ts'
 import type { MessageAttachment, HttpWsFrameEvent } from '../../types/events.ts'
-import type { ContextView } from '../../system/index.ts'
 import type { ContextSnapshotEvent, AgentModelOptions } from '../../types/agents.ts'
 
 export type WorkflowTask = {
@@ -18,6 +17,7 @@ export type WorkflowTask = {
 export type Workflow = {
   id: string
   userId: string
+  title: string
   goal: string
   context: string
   createdAt: string
@@ -36,7 +36,7 @@ export type WorkflowValueSpec = {
 export type WorkflowArtifactRef =
   | {
       type: 'artifact'
-      path: string
+      key: string
       mimeType?: string
     }
   | {
@@ -72,6 +72,7 @@ export type WorkflowRunnerConfig = {
 export type WorkflowSummary = {
   id: string
   userId: string
+  title: string
   goal: string
   createdAt: string
   taskCount: number
@@ -163,6 +164,7 @@ export type WorkflowGraph = {
   workflow: {
     id: string
     userId: string
+    title: string
     goal: string
     context: string
     createdAt: string
@@ -206,7 +208,7 @@ export type WorkflowRunnerMsg =
   | { type: 'list'; userId: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'listExecutionTools'; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'get'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
-  | { type: 'getArtifact'; userId: string; runId: string; path: string; replyTo: ActorRef<WorkflowRunnerReply> }
+  | { type: 'getArtifact'; userId: string; key: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'resume'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: '_reply'; replyTo: ActorRef<WorkflowRunnerReply>; reply: WorkflowRunnerReply; runId?: string; spawnedRef?: ActorRef<WorkflowRunExecutorMsg> }
   | { type: '_toolRegistered'; tool: Tool }
@@ -236,6 +238,7 @@ export type WorkflowRunExecutorMsg =
 export type WorkflowTaskExecutorMsg =
   | LoopMsg<{
       type: 'startTask'
+      runId: string
       workflow: Workflow
       task: WorkflowTask
       inputs: Record<string, unknown>
@@ -246,6 +249,9 @@ export type WorkflowTaskExecutorMsg =
     } | {
       type: '_llmProvider'
       ref: ActorRef<LlmProviderMsg> | null
+    } | {
+      type: '_persistenceRef'
+      ref: ActorRef<any> | null
     }>
   | ToolInvokeMsg
 

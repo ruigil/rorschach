@@ -35,6 +35,7 @@ const makeDir = async (): Promise<string> => {
 const workflow = (): Workflow => ({
   id: 'workflow-1',
   userId: 'anonymous',
+  title: 'Generate a report',
   goal: 'Generate a report',
   context: 'Use structured workflow IO.',
   createdAt: '2026-06-11T10:00:00.000Z',
@@ -65,7 +66,7 @@ const runState = (): WorkflowRunState => ({
   status: 'completed',
   inputs: { city: 'Paris' },
   outputs: {
-    report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' },
+    report: { type: 'artifact', key: 'workflow-runs/run-1/report.html', mimeType: 'text/html' },
   },
   activeTaskIds: [],
   activeTasks: {},
@@ -76,7 +77,7 @@ const runState = (): WorkflowRunState => ({
       attempts: 1,
       summary: 'Wrote the report.',
       outputs: {
-        report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' },
+        report: { type: 'artifact', key: 'workflow-runs/run-1/report.html', mimeType: 'text/html' },
       },
     },
   },
@@ -120,14 +121,14 @@ describe('workflow IO and artifacts', () => {
     if (!task) throw new Error('missing sample task')
     const parsed = parseTaskCompletionArgs(task, JSON.stringify({
       summary: 'Wrote the report.',
-      outputs: { report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' } },
+      outputs: { report: { type: 'artifact', key: 'workflow-runs/run-1/report.html', mimeType: 'text/html' } },
     }))
     expect(parsed.ok).toBe(true)
-    if (parsed.ok) expect(parsed.outputs.report).toEqual({ type: 'artifact', path: 'report.html', mimeType: 'text/html' })
+    if (parsed.ok) expect(parsed.outputs.report).toEqual({ type: 'artifact', key: 'workflow-runs/run-1/report.html', mimeType: 'text/html' })
 
     expect(parseTaskCompletionArgs(task, JSON.stringify({
       summary: 'Wrote the report.',
-      outputs: { report: { type: 'artifact', path: '../report.html' } },
+      outputs: { report: { type: 'artifact', key: '../report.html' } },
     }))).toEqual({ ok: false, error: 'task write-report.report must be an artifact reference with either a safe relative path or a public URL' })
 
     const urlParsed = parseTaskCompletionArgs(task, JSON.stringify({
@@ -150,7 +151,7 @@ describe('workflow IO and artifacts', () => {
     expect(parseTaskCompletionArgs(task, JSON.stringify({
       summary: 'Wrote the report.',
       outputs: {
-        report: { type: 'artifact', path: 'report.html' },
+        report: { type: 'artifact', key: 'workflow-runs/run-1/report.html' },
         extra: true,
       },
     }))).toEqual({ ok: false, error: 'task write-report output is not declared: extra' })
@@ -220,7 +221,7 @@ describe('workflow IO and artifacts', () => {
         type: 'http.request',
         request: {
           method: 'GET',
-          url: '/workflow-runs/run-1/artifact?path=report.html',
+          url: '/artifact?key=workflow-runs/run-1/report.html',
           headers: {},
           body: null,
         },
@@ -229,17 +230,17 @@ describe('workflow IO and artifacts', () => {
       })
     )
     expect(resMsg.response.status).toBe(200)
-    const text = new TextDecoder().decode(resMsg.response.body as Uint8Array)
+    const text = await new Response(resMsg.response.body as ReadableStream).text()
     expect(text).toBe('<h1>Report</h1>')
 
-    // test safety constraints: URL-based artifacts are not served via the file endpoint
-    const urlOnlyMsg = await ask<WorkflowRunnerMsg, HttpResponseMsg>(
+    // test missing key
+    const missingMsg = await ask<WorkflowRunnerMsg, HttpResponseMsg>(
       runner as ActorRef<WorkflowRunnerMsg>,
       replyTo => ({
         type: 'http.request',
         request: {
           method: 'GET',
-          url: '/workflow-runs/run-url/artifact?path=generated/image.png',
+          url: '/artifact',
           headers: {},
           body: null,
         },
@@ -247,24 +248,7 @@ describe('workflow IO and artifacts', () => {
         replyTo,
       })
     )
-    expect(urlOnlyMsg.response.status).toBe(404)
-
-    // reject unreferenced files (even if present in the folder)
-    const unrefMsg = await ask<WorkflowRunnerMsg, HttpResponseMsg>(
-      runner as ActorRef<WorkflowRunnerMsg>,
-      replyTo => ({
-        type: 'http.request',
-        request: {
-          method: 'GET',
-          url: '/workflow-runs/run-1/artifact?path=secret.txt',
-          headers: {},
-          body: null,
-        },
-        identity: { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
-        replyTo,
-      })
-    )
-    expect(unrefMsg.response.status).toBe(404)
+    expect(missingMsg.response.status).toBe(400)
     await system.shutdown()
   })
 })
@@ -280,7 +264,7 @@ const CapturingRunner = (capture: (inputs: Record<string, unknown> | undefined) 
       msg.replyTo.send({ ok: false, error: 'not implemented' } as any)
     }
     return { state }
-  },
+  }
 })
 
 const StaticStartRunner = (run: WorkflowRunState): ActorDef<WorkflowRunnerMsg, null> => ({
@@ -305,25 +289,15 @@ const StaticRunRunner = (run: WorkflowRunState): ActorDef<WorkflowRunnerMsg, nul
         return { state }
       }
 
-      if (request.method === 'GET' && pathname.startsWith('/workflow-runs/')) {
-        const parts = pathname.split('/')
-        const runId = parts[2] ?? null
-        const artifactPath = url.searchParams.get('path')
+      if (request.method === 'GET' && pathname === '/artifact') {
+        const artifactPath = url.searchParams.get('key') ?? url.searchParams.get('path')
 
-        if (!runId || !artifactPath) {
-          replyTo.send({ type: 'http.response', response: { status: 404, headers: {}, body: 'Not Found' } })
+        if (!artifactPath) {
+          replyTo.send({ type: 'http.response', response: { status: 400, headers: {}, body: 'Invalid artifact path or key' } })
           return { state }
         }
 
-        if (runId === 'run-url') {
-          replyTo.send({ type: 'http.response', response: { status: 404, headers: {}, body: 'Not Found' } })
-          return { state }
-        }
-        if (runId === 'run-1' && artifactPath === 'secret.txt') {
-          replyTo.send({ type: 'http.response', response: { status: 404, headers: {}, body: 'Not Found' } })
-          return { state }
-        }
-        if (runId === 'run-1' && artifactPath === 'report.html') {
+        if (artifactPath.endsWith('report.html')) {
           replyTo.send({
             type: 'http.response',
             response: {
@@ -371,3 +345,5 @@ const StaticRunRunner = (run: WorkflowRunState): ActorDef<WorkflowRunnerMsg, nul
     return { state }
   },
 })
+
+

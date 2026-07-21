@@ -14,6 +14,7 @@ const graph = (status = 'running') => ({
   workflow: {
     id: 'workflow-1',
     userId: 'anonymous',
+    title: 'Build a report',
     goal: 'Build a report',
     context: 'Use workflow context in the UI.',
     createdAt: '2026-06-12T10:00:00.000Z',
@@ -28,6 +29,7 @@ const graph = (status = 'running') => ({
   },
   run: {
     runId: 'run-1',
+    workflowId: 'workflow-1',
     status,
     inputs: { city: 'Rio' },
     activeTaskIds: status === 'running' ? ['write-report'] : [],
@@ -87,34 +89,24 @@ describe('r-workflow-workspace', () => {
     expect(clampWorkflowInspectorWidthPercent('bad')).toBe(34)
   })
 
-  test('renders a vertical inspector splitter with saved width', async () => {
-    localStorage.setItem('rorschach.store.workflows.inspectorWidthPercent', '62')
-    store.namespace<WorkflowsState>('workflows').init(
-      {
-        inspectorWidthPercent: 34,
-      },
-      {
-        persist: ['inspectorWidthPercent'],
-      }
-    )
-
+  test('renders r-tree sidebar and workflow inspector', async () => {
     const el = await mountClass(RWorkflowWorkspace) as any
     const ns = store.namespace<WorkflowsState>('workflows')
+    ns.set('workflows', [graph().workflow])
+    ns.set('runs', [graph().run])
     await el.openGraph('workflow-1', 'run-1')
     ns.set('currentGraph', graph())
     await el.updateComplete
 
-    // The component uses r-split-pane (orientation=vertical).
-    const splitPane = el.shadowRoot.querySelector('r-split-pane') as any
-    expect(splitPane).not.toBeNull()
-    expect(splitPane?.orientation).toBe('vertical')
-    // splitPercent is reflected as a property; it is clamped to [18, 72].
-    expect(splitPane?.splitPercent).toBe(62)
-    // Inspector is in the primary (left) slot; graph in the secondary (right) slot.
-    const inspector = el.shadowRoot.querySelector('[slot="primary"] r-workflow-inspector') as any
+    const tree = el.shadowRoot.querySelector('.ws-sidebar-tree r-tree') as any
+    expect(tree).not.toBeNull()
+    expect(tree?.data?.length).toBe(1)
+    expect(tree?.data[0]?.label).toBe('Build a report')
+    expect(tree?.data[0]?.children?.length).toBe(1)
+    expect(tree?.data[0]?.children[0]?.label).toContain('run-1')
+
+    const inspector = el.shadowRoot.querySelector('r-workflow-inspector') as any
     expect(inspector).not.toBeNull()
-    const graphEl = el.shadowRoot.querySelector('r-force-graph[slot="secondary"]') as any
-    expect(graphEl).not.toBeNull()
   })
 
   test('renders workflow context and declared IO in the inspector', async () => {
@@ -262,11 +254,10 @@ describe('r-workflow-workspace', () => {
     expect(el._currentGraph.run.status).toBe('running')
   })
 
-  test('renders and updates graph view run chips from workflow.run.updated frames', async () => {
+  test('renders and updates r-tree sidebar run nodes from workflow.run.updated frames', async () => {
     const el = await mountClass(RWorkflowWorkspace) as any
     const ns = store.namespace<WorkflowsState>('workflows')
-    await el.openGraph('workflow-1', 'run-1')
-    ns.set('currentGraph', graph('running'))
+    ns.set('workflows', [graph().workflow])
     ns.set('runs', [{
       schemaVersion: 1,
       runId: 'run-1',
@@ -281,14 +272,15 @@ describe('r-workflow-workspace', () => {
       taskStates: {},
       events: [],
     }])
+    await el.openGraph('workflow-1', 'run-1')
+    ns.set('currentGraph', graph('running'))
     await el.updateComplete
 
-    // Run chips are rendered in a .plan-workspace-runs div inside the r-toolbar slot,
-    // all in shadow DOM — query directly on the shadow root.
-    const chips1 = el.shadowRoot.querySelectorAll('.workflow-run-chip') as NodeListOf<HTMLElement>
-    expect(chips1.length).toBe(1)
-    expect(chips1[0]?.textContent).toContain('run-1')
-    expect(chips1[0]?.classList.contains('active')).toBe(true)
+    const tree1 = el.shadowRoot.querySelector('.ws-sidebar-tree r-tree') as any
+    expect(tree1).not.toBeNull()
+    const wfNode1 = tree1.data[0]
+    expect(wfNode1.children.length).toBe(1)
+    expect(wfNode1.children[0].label).toContain('run-1')
 
     reduceFrame({
       type: 'workflow.run.updated',
@@ -311,14 +303,12 @@ describe('r-workflow-workspace', () => {
     }, { openView: () => {} } as any)
     await el.updateComplete
 
-    const chips2 = el.shadowRoot.querySelectorAll('.workflow-run-chip') as NodeListOf<HTMLElement>
-    expect(chips2.length).toBe(2)
-    // run-1 should remain the active chip (it is the currently open run)
-    const activeChip = el.shadowRoot.querySelector('.workflow-run-chip.active') as HTMLElement | null
-    expect(activeChip?.textContent).toContain('run-1')
-    // run-2 chip is also present
-    const allText = Array.from(chips2).map(c => c.textContent).join('')
-    expect(allText).toContain('run-2')
+    const tree2 = el.shadowRoot.querySelector('.ws-sidebar-tree r-tree') as any
+    const wfNode2 = tree2.data[0]
+    expect(wfNode2.children.length).toBe(2)
+    const runLabels = wfNode2.children.map((c: any) => c.label).join(' ')
+    expect(runLabels).toContain('run-1')
+    expect(runLabels).toContain('run-2')
   })
 
   test('pure graph merge projects taskStates onto nodes', () => {
@@ -337,4 +327,158 @@ describe('r-workflow-workspace', () => {
     expect(merged.nodes[0].attempts).toBe(3)
     expect(merged.nodes[0].error).toBe('Tool failed.')
   })
+
+  test('requests workflow list on initialization and openGraph (refresh scenario)', async () => {
+    const el = await mountClass(RWorkflowWorkspace) as any
+    const ns = store.namespace<WorkflowsState>('workflows')
+    ns.set('workflows', [graph().workflow])
+    
+    await el.openGraph('workflow-1')
+    await el.updateComplete
+
+    const tree = el.shadowRoot.querySelector('.ws-sidebar-tree r-tree') as any
+    expect(tree).not.toBeNull()
+    expect(tree.data[0].label).toBe('Build a report')
+  })
+
+  test('collapses non-graph panels by default and persists panel open/closed states', async () => {
+    const el = await mountClass(RWorkflowWorkspace) as any
+    const ns = store.namespace<WorkflowsState>('workflows')
+    ns.set('workflows', [graph().workflow])
+    ns.set('panelStates', { 'workflow-info': true, 'graph': false })
+    
+    await el.openGraph('workflow-1')
+    ns.set('currentGraph', { ...graph(), run: undefined })
+    await el.updateComplete
+
+    const inspector = el.shadowRoot.querySelector('r-workflow-inspector') as any
+    expect(inspector).not.toBeNull()
+
+    const findPanel = (title: string) => Array.from(inspector.shadowRoot.querySelectorAll('r-collapse-panel')).find((p: any) => p.title === title) as any
+
+    const workflowPanel = findPanel('Workflow')
+    const graphPanel = findPanel('Graph')
+
+    // Workflow Info panel should read persisted open state (true)
+    expect(workflowPanel).not.toBeUndefined()
+    expect(workflowPanel.open).toBe(true)
+
+    // Graph panel should read persisted open state (false)
+    expect(graphPanel).not.toBeUndefined()
+    expect(graphPanel.open).toBe(false)
+  })
+
+  test('removes not tracked badge and renders visual timing bar without task output collapse panel', async () => {
+    const el = await mountClass(RWorkflowWorkspace) as any
+    const ns = store.namespace<WorkflowsState>('workflows')
+    await el.openGraph('workflow-1', 'run-1')
+    ns.set('currentGraph', graph('running'))
+    el._selectedTaskId = 'write-report'
+    await el.updateComplete
+
+    const inspector = el.shadowRoot.querySelector('r-workflow-inspector') as any
+    expect(inspector).not.toBeNull()
+    await inspector.updateComplete
+
+    // Inspect shadow root html
+    const shadowHtml = inspector.shadowRoot.innerHTML
+    expect(shadowHtml).not.toContain('not tracked')
+    expect(shadowHtml).toContain('inspector-info-bar')
+    expect(shadowHtml).toContain('inspector-grid')
+
+    // Verify task output collapse panel is NOT present in task detail
+    const taskOutputPanel = inspector.shadowRoot.querySelector('.plan-task-detail .task-output-panel')
+    expect(taskOutputPanel).toBeNull()
+  })
+
+  test('handles 2-step in-place delete confirmation on info bar', async () => {
+    const el = await mountClass(RWorkflowWorkspace) as any
+    const ns = store.namespace<WorkflowsState>('workflows')
+    await el.openGraph('workflow-1')
+    ns.set('currentGraph', { workflow: graph('idle').workflow, nodes: graph('idle').nodes })
+    await el.updateComplete
+
+    const inspector = el.shadowRoot.querySelector('r-workflow-inspector') as any
+    expect(inspector).not.toBeNull()
+    await inspector.updateComplete
+
+    // Find delete button
+    const deleteBtn = inspector.shadowRoot.querySelector('.info-bar-right r-button[variant="danger"]') as any
+    expect(deleteBtn).not.toBeNull()
+
+    // Step 1: Click delete button once -> transforms into "Confirm Delete?"
+    const deleteInner = deleteBtn.shadowRoot.querySelector('button')
+    deleteInner?.click()
+    await inspector.updateComplete
+
+    const confirmBtn = inspector.shadowRoot.querySelector('.info-bar-right r-button[variant="danger"]') as any
+    expect(confirmBtn.textContent).toContain('Confirm Delete?')
+
+    // Step 2: Click confirm delete button -> dispatches workflow-delete
+    let deletedWorkflowId = ''
+    inspector.addEventListener('workflow-delete', (e: any) => {
+      deletedWorkflowId = e.detail.workflowId
+    })
+
+    const confirmInner = confirmBtn.shadowRoot.querySelector('button')
+    confirmInner?.click()
+    await inspector.updateComplete
+
+    expect(deletedWorkflowId).toBe('workflow-1')
+  })
+
+  test('renders task outputs in the workflow inspector task detail r-kv-list', async () => {
+    const data: any = graph('idle')
+    data.nodes[0].outputs = {
+      report: { type: 'artifact', description: 'Generated HTML report' }
+    }
+
+    const el = await mountClass(RWorkflowWorkspace) as any
+    const ns = store.namespace<WorkflowsState>('workflows')
+    await el.openGraph('workflow-1')
+    ns.set('currentGraph', data)
+    el._selectedTaskId = 'write-report'
+    await el.updateComplete
+
+    const inspector = el.shadowRoot.querySelector('r-workflow-inspector') as any
+    expect(inspector).not.toBeNull()
+    await inspector.updateComplete
+
+    const taskNode = inspector._taskById('write-report')
+    expect(taskNode.outputs).toBeDefined()
+    expect(taskNode.outputs.report.description).toBe('Generated HTML report')
+  })
+
+  test('renders output collapse panels at bottom of task run panel with artifact links and omits task output from grid kv list', async () => {
+    const el = await mountClass(RWorkflowWorkspace) as any
+    const ns = store.namespace<WorkflowsState>('workflows')
+    await el.openGraph('workflow-1', 'run-1')
+    ns.set('currentGraph', graph('running'))
+    el._selectedTaskId = 'write-report'
+    await el.updateComplete
+
+    const inspector = el.shadowRoot.querySelector('r-workflow-inspector') as any
+    expect(inspector).not.toBeNull()
+    await inspector.updateComplete
+
+    // In task run mode, task detail grid should not contain Task outputs in KV list
+    const taskPanel = inspector.shadowRoot.querySelector('.plan-task-detail')
+    expect(taskPanel).not.toBeNull()
+    const gridKvLists = Array.from(taskPanel.querySelectorAll('.inspector-grid r-kv-list'))
+    const gridItems = gridKvLists.flatMap((kv: any) => kv.items ?? [])
+    const gridOutputItem = gridItems.find((item: any) => item.key === 'outputs' || item.label === 'Task outputs')
+    expect(gridOutputItem).toBeUndefined()
+
+    // But output collapse panel IS rendered at bottom of task run panel
+    const outputPanel = inspector.shadowRoot.querySelector('.plan-task-detail .task-output-panel r-collapse-panel') as any
+    expect(outputPanel).not.toBeNull()
+    expect(outputPanel.title).toBe('Output: report')
+
+    // Verify artifact link inside the collapse panel
+    const kvList = outputPanel.querySelector('r-kv-list') as any
+    expect(kvList).not.toBeNull()
+    expect(kvList.items[0].type).toBe('artifact')
+    expect(kvList.items[0].artifactHref).toContain('artifact?key=workflow-runs%2Frun-1%2Freport.html')
+  })
 })
+

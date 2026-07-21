@@ -8,16 +8,17 @@ import {
   state,
   store,
   StoreController,
-  send
+  send,
+  workspaceStyles,
+  type TreeNode,
 } from '@rorschach/webkit';
 
-import type { WorkflowsState } from './index.js'
+import type { WorkflowsState } from './index.js';
 import {
   isLiveWorkflowRunStatus,
   mergeWorkflowRunIntoGraph,
-} from './r-workflow-inspector.js'
+} from './r-workflow-inspector.js';
 
-type InspectorTab = 'task' | 'workflow' | 'run' | 'events'
 
 const DEFAULT_INSPECTOR_WIDTH_PERCENT = 34
 const MIN_INSPECTOR_WIDTH_PERCENT = 18
@@ -31,10 +32,7 @@ export const clampWorkflowInspectorWidthPercent = (value: unknown): number => {
 
 export { isLiveWorkflowRunStatus, mergeWorkflowRunIntoGraph }
 
-// Workflow workspace container — owns view state, composes r-workflow-list
-// and r-workflow-inspector. Phase 3.2: still reads from namespace('shell')
-// (currentWorkflowGraph, currentMode). Phase 3.3 migrates to namespace
-// ('workflows').
+// Workflow workspace container — owns view state, composes r-tree sidebar and r-workflow-inspector.
 
 @customElement('r-workflow-workspace')
 export class RWorkflowWorkspace extends RorschachBase {
@@ -43,7 +41,7 @@ export class RWorkflowWorkspace extends RorschachBase {
   @state() private _workflowId: string | null = null
   @state() private _runId: string | null = null
   @state() private _lastUpdatedAt: string | null = null
-  @state() private _inspectorTab: InspectorTab = 'task'
+  @state() private _inspectorTab: 'task' | 'workflow' | 'run' | 'events' = 'task'
 
   private _lastMode = ''
   private _lastGraphValue: any = null
@@ -62,6 +60,7 @@ export class RWorkflowWorkspace extends RorschachBase {
 
   static override styles = [
     sharedStyles,
+    workspaceStyles,
     css`
       :host {
         display: block;
@@ -73,15 +72,6 @@ export class RWorkflowWorkspace extends RorschachBase {
         font-size: 0.62rem;
         color: var(--text-dim);
       }
-      .plan-workspace-runs {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 0.35rem;
-        flex: 1;
-        min-width: 0;
-        overflow: hidden;
-      }
       .plan-empty {
         display: flex;
         align-items: center;
@@ -91,52 +81,18 @@ export class RWorkflowWorkspace extends RorschachBase {
         font-size: 0.72rem;
         font-family: var(--font-mono);
       }
-      .plan-run-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.75rem;
-        padding: 0.55rem 0.75rem;
-        border-bottom: 1px solid var(--border);
-        background: var(--panel-header-bg);
-        flex-shrink: 0;
-      }
-      .plan-run-title {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        min-width: 0;
-        flex: 1;
-      }
-      .plan-run-refresh {
-        display: flex;
-        align-items: center;
-        gap: 0.4rem;
-        color: var(--text-dim);
-        font-family: var(--font-mono);
-        font-size: 0.56rem;
-        white-space: nowrap;
-      }
       .plan-task-detail-wrap {
-        min-height: 0;
+        height: 100%;
         overflow-y: auto;
-      }
-      .plan-graph {
-        position: relative;
-        min-height: 180px;
-        overflow: hidden;
-      }
-      .plan-workspace-body-container {
-        flex: 1;
-        min-height: 0;
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
       }
     `
   ];
 
-  // Connected/disconnected lifecycles do not need local updates anymore
+  override connectedCallback() {
+    super.connectedCallback();
+    send({ type: 'workflow.list.request' });
+    send({ type: 'workflow.runs.request' });
+  }
 
   override updated() {
     const mode = this._currentMode.value as string
@@ -146,10 +102,9 @@ export class RWorkflowWorkspace extends RorschachBase {
       if (mode === 'workflows') {
         if (isInitialLoad) {
           const ns = store.namespace<WorkflowsState>('workflows')
-          const savedView = ns.get('workspaceView')
           const savedWorkflowId = ns.get('workspaceWorkflowId')
           const savedRunId = ns.get('workspaceRunId')
-          if (savedView === 'graph' && savedWorkflowId) this.openGraph(savedWorkflowId, savedRunId || undefined)
+          if (savedWorkflowId) this.openGraph(savedWorkflowId, savedRunId || undefined)
           else this.openList()
         } else {
           this.openList()
@@ -176,9 +131,15 @@ export class RWorkflowWorkspace extends RorschachBase {
         } else if (graphValue.workflowId) {
           this.openGraph(graphValue.workflowId, graphValue.runId)
         } else {
-          this.openList()
+          this._view = 'list'
         }
       }
+    }
+
+    // Auto-select first workflow if list loaded and none selected
+    if (this._view === 'list' && this._workflows.length > 0 && !this._workflowId) {
+      const firstWf = this._workflows[0]
+      this.openGraph(firstWf.id)
     }
   }
 
@@ -208,64 +169,94 @@ export class RWorkflowWorkspace extends RorschachBase {
     ns.set('workspaceWorkflowId', workflowId)
     ns.set('workspaceRunId', runId ?? null)
 
+    send({ type: 'workflow.list.request' })
     send({ type: 'workflow.graph.request', workflowId, runId })
     send({ type: 'workflow.runs.request' })
 
     this._view = 'graph'
   }
 
-  override render() {
-    const showBack = this._view === 'graph'
-    return html`
-      <r-panel elevation="1">
-        <r-toolbar slot="header-container">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            ${showBack ? html`
-              <r-button variant="ghost" size="sm" icon="chevron-left" @click=${() => this.openList()}>
-                Back to Workflows
-              </r-button>
-              <div style="font-weight: 600; font-size: 0.72rem; color: var(--text); border-left: 1px solid var(--border); padding-left: 8px; margin-left: 4px;">
-                ${this._currentGraph?.workflow?.goal ?? 'Workflow'}
-              </div>
-            ` : html`
-              <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-mid);">
-                <r-icon name="git-branch" size="sm" style="margin-right: 6px;"></r-icon>
-                <span>Workflows</span>
-              </div>
-            `}
-          </div>
-          <span slot="actions" class="plan-workspace-meta-text">
-            ${showBack ? this._renderToolbarMeta() : ''}
-          </span>
-        </r-toolbar>
-        <div class="plan-workspace-body-container" style="height: 100%; display: flex; flex-direction: column;">
-          ${this._renderContent()}
-        </div>
-      </r-panel>
-    `
+  private get _treeData(): TreeNode[] {
+    const workflows = this._workflows
+    const runs = this._runs
+    return workflows.map(wf => {
+      const wfRuns = runs.filter((r: any) => r.workflowId === wf.id)
+      return {
+        id: `wf-${wf.id}`,
+        label: wf.title || wf.goal || wf.id,
+        icon: 'git-branch' as const,
+        badge: wfRuns.length ? wfRuns.length : undefined,
+        data: { type: 'workflow', workflowId: wf.id },
+        children: wfRuns.map((r: any) => ({
+          id: `run-${r.runId}`,
+          label: `Run ${this._shortRunId(r.runId)}`,
+          status: r.status,
+          icon: 'play' as const,
+          data: { type: 'run', workflowId: wf.id, runId: r.runId },
+        })),
+      }
+    })
   }
 
-  private _renderHeaderRuns() {
-    if (!this._workflowId) return nothing
-    const runs = this._runs
-      .filter(run => run.workflowId === this._workflowId)
-      .slice(0, 8)
-    if (!runs.length) return nothing
+  private get _selectedTreeNodeId(): string | null {
+    if (this._runId) return `run-${this._runId}`
+    if (this._workflowId) return `wf-${this._workflowId}`
+    return null
+  }
+
+  private _onNodeSelect(e: CustomEvent) {
+    const node = e.detail.node
+    if (!node || !node.data) return
+    const { type, workflowId, runId } = node.data
+    if (type === 'workflow') {
+      this.openGraph(workflowId)
+    } else if (type === 'run') {
+      this.openGraph(workflowId, runId)
+    }
+  }
+
+  private get _selectedWorkflowTitle(): string {
+    const wf = this._workflows.find(w => w.id === this._workflowId) || this._currentGraph?.workflow
+    return wf?.title || wf?.goal || ''
+  }
+
+  override render() {
     return html`
-      <div class="plan-workspace-runs">
-        ${runs.map(run => html`
-          <r-button
-            class=${`workflow-run-chip${run.runId === this._runId ? ' active' : ''}`}
-            variant="badge"
-            status=${run.status}
-            ?active=${run.runId === this._runId}
-            @click=${() => this.openGraph(this._workflowId!, run.runId)}
-          >
-            <span>${run.status}</span>
-            <span>${this._shortRunId(run.runId)}</span>
-          </r-button>
-        `)}
-      </div>
+      <r-panel elevation="1" style="height: 100%; display: flex; flex-direction: column;">
+        <r-toolbar slot="header-container">
+          <div class="ws-header-title">
+            <span class="ws-title-base">Workflows</span>
+            ${this._selectedWorkflowTitle ? html`
+              <span class="ws-title-sep">/</span>
+              <span class="ws-title-active">${this._selectedWorkflowTitle}</span>
+            ` : nothing}
+            ${this._runId ? html`
+              <span class="ws-title-sep">/</span>
+              <span class="ws-title-active">Run ${this._shortRunId(this._runId)}</span>
+            ` : nothing}
+          </div>
+        </r-toolbar>
+        <div class="ws-body">
+          <aside class="ws-sidebar">
+            <div class="ws-sidebar-tree">
+              ${this._workflows.length ? html`
+                <r-tree
+                  .data=${this._treeData}
+                  .selectedId=${this._selectedTreeNodeId}
+                  @node-select=${(e: CustomEvent) => this._onNodeSelect(e)}
+                ></r-tree>
+              ` : (this._view === 'loading' ? html`
+                <div style="padding: 1rem; color: var(--text-dim); font-family: var(--font-mono); font-size: 0.72rem;">loading workflows...</div>
+              ` : html`
+                <r-empty-state name="git-branch" text="No saved workflows"></r-empty-state>
+              `)}
+            </div>
+          </aside>
+          <main class="ws-main">
+            ${this._renderContent()}
+          </main>
+        </div>
+      </r-panel>
     `
   }
 
@@ -276,92 +267,62 @@ export class RWorkflowWorkspace extends RorschachBase {
       case 'error':
         return html`<div class="plan-empty"><span>${this._errorMsg}</span></div>`
       case 'list':
-        return html`
-          <div style="padding: 1rem; overflow-y: auto; height: 100%; box-sizing: border-box;">
-            <r-workflow-list
-              .workflows=${this._workflows}
-              @open-workflow=${(e: CustomEvent) => this.openGraph(e.detail.workflowId, e.detail.runId)}
-            ></r-workflow-list>
-          </div>
-        `
       case 'graph':
-        return this._renderGraphView()
+        return this._renderMainInspector()
       default:
         return nothing
     }
   }
 
-  private _renderGraphView() {
+  private _renderMainInspector() {
     if (!this._currentGraph || !this._currentGraph.nodes?.length) {
-      return html`<div class="plan-empty"><span>workflow has no tasks</span></div>`
+      return html`<div class="plan-empty"><span>Select a workflow from the left sidebar</span></div>`
     }
     return html`
-      <div class="plan-run-header">
-        <div class="plan-run-title">
-          ${this._renderHeaderRuns()}
-        </div>
-        <div class="plan-run-refresh">
-          ${this._runId ? html`<span>${isLiveWorkflowRunStatus(this._currentGraph.run?.status) ? 'live' : 'snapshot'}</span>` : html`<span>definition</span>`}
-          ${this._lastUpdatedAt ? html`<span>${this._formatTime(this._lastUpdatedAt)}</span>` : nothing}
-        </div>
-      </div>
-      <r-split-pane
-        orientation="vertical"
-        style="flex: 1; min-height: 0;"
-        .splitPercent=${clampWorkflowInspectorWidthPercent(this._storeWidth.value)}
-        .minPercent=${MIN_INSPECTOR_WIDTH_PERCENT}
-        .maxPercent=${MAX_INSPECTOR_WIDTH_PERCENT}
-        @resize-end=${(e: CustomEvent) => {
-          store.namespace<WorkflowsState>('workflows').set('inspectorWidthPercent', e.detail.splitPercent)
-        }}
-      >
-        <div slot="primary" class="plan-task-detail-wrap" style="height: 100%; overflow: hidden;">
-          <r-workflow-inspector
-            style="height: 100%; display: flex; flex-direction: column;"
-            .graph=${this._currentGraph}
-            .selectedTaskId=${this._selectedTaskId}
-            .tab=${this._inspectorTab}
-            @task-select=${(e: CustomEvent) => { this._selectedTaskId = e.detail.id }}
-            @tab-change=${(e: CustomEvent) => { this._inspectorTab = e.detail.tab }}
-          ></r-workflow-inspector>
-        </div>
-        <r-force-graph
-          slot="secondary"
-          class="plan-graph"
-          .planData=${this._currentGraph}
+      <div class="plan-task-detail-wrap">
+        <r-workflow-inspector
+          .graph=${this._currentGraph}
           .selectedTaskId=${this._selectedTaskId}
-          @node-select=${(e: CustomEvent) => this._selectTask(e.detail.id)}
-        ></r-force-graph>
-      </r-split-pane>
+          .tab=${this._inspectorTab}
+          @task-select=${(e: CustomEvent) => this._selectTask(e.detail.id)}
+          @tab-change=${(e: CustomEvent) => { this._inspectorTab = e.detail.tab }}
+          @workflow-start=${(e: CustomEvent) => this._startWorkflow(e.detail.workflowId)}
+          @workflow-delete=${(e: CustomEvent) => this._deleteWorkflow(e.detail.workflowId)}
+          @run-delete=${(e: CustomEvent) => this._deleteRun(e.detail.runId, e.detail.workflowId)}
+        ></r-workflow-inspector>
+      </div>
     `
   }
 
   private _selectTask(taskId: string) {
     this._selectedTaskId = taskId
-    this._inspectorTab = 'task'
     store.namespace<WorkflowsState>('workflows').set('workspaceSelectedTaskId', taskId)
   }
 
-  private _renderToolbarMeta() {
-    const workflow = this._currentGraph?.workflow
-    if (!workflow) return nothing
-    return html`${this._formatDateTime(workflow.createdAt)} · ${workflow.taskCount} tasks`
+  private _startWorkflow(workflowId: string) {
+    send({ type: 'workflow.run.start', workflowId })
   }
 
-  // Old fetch/REST helpers have been replaced by reactive WebSocket state management
+  private _deleteWorkflow(workflowId: string) {
+    send({ type: 'workflow.delete', workflowId })
+    this.openList()
+  }
+
+  private _deleteRun(runId: string, workflowId?: string) {
+    send({ type: 'workflow.run.delete', runId })
+    if (workflowId) {
+      this.openGraph(workflowId)
+    } else {
+      this.openList()
+    }
+  }
 
   private _formatDateTime(value: any) {
     const date = new Date(value)
     return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
   }
 
-  private _formatTime(value: any) {
-    const date = new Date(value)
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString()
-  }
-
   private _shortRunId(value: string) {
     return value.length > 8 ? value.slice(0, 8) : value
   }
-
 }
