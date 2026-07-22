@@ -23,7 +23,6 @@ const isWorkflow = (value: unknown): value is Workflow => {
     typeof obj.goal === 'string' &&
     typeof obj.context === 'string' &&
     typeof obj.createdAt === 'string' &&
-    isStringArray(obj.executionTools) &&
     Array.isArray(obj.tasks)
   )
 }
@@ -57,7 +56,6 @@ export const toWorkflowGraph = (workflow: Workflow, run?: WorkflowRunState): Wor
       context: workflow.context,
       createdAt: workflow.createdAt,
       taskCount: workflow.tasks.length,
-      executionTools: workflow.executionTools,
       ...(workflow.inputs ? { inputs: workflow.inputs } : {}),
       ...(workflow.outputs ? { outputs: workflow.outputs } : {}),
     },
@@ -82,6 +80,8 @@ export const toWorkflowGraph = (workflow: Workflow, run?: WorkflowRunState): Wor
         validationCriteria: task.validationCriteria,
         dependencies: task.dependencies,
         dependents: dependents.get(task.id) ?? [],
+        agentMode: task.agentMode,
+        ...(task.executionTools ? { executionTools: task.executionTools } : {}),
         status: taskState?.status ?? 'not_tracked',
         ...(taskState?.attempts !== undefined ? { attempts: taskState.attempts } : {}),
         ...(taskState?.startedAt ? { startedAt: taskState.startedAt } : {}),
@@ -102,7 +102,28 @@ export const toWorkflowGraph = (workflow: Workflow, run?: WorkflowRunState): Wor
   }
 }
 
-const loadWorkflows = async (persistenceRef: ActorRef<any>, userId: string): Promise<Workflow[]> => {
+const workflowDocId = (workflowId: string): string =>
+  workflowId.endsWith('.json') ? workflowId : `${workflowId}.json`
+
+const readWorkflowFile = async (persistenceRef: ActorRef<any>, workflowId: string): Promise<Workflow | null> => {
+  const docId = workflowDocId(workflowId)
+  const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+    type: 'doc.get',
+    collection: 'workflows',
+    docId,
+    replyTo,
+  }))
+
+  if (!getRes.ok || !getRes.data) return null
+  try {
+    const parsed = JSON.parse(getRes.data)
+    return isWorkflow(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+const loadWorkflows = async (persistenceRef: ActorRef<any>, userId: string): Promise<WorkflowSummary[]> => {
   const listRes = await ask<PersistenceMsg, PList>(persistenceRef, (replyTo) => ({
     type: 'doc.list',
     collection: 'workflows',
@@ -120,7 +141,9 @@ const loadWorkflows = async (persistenceRef: ActorRef<any>, userId: string): Pro
       }))
       if (!getRes.ok || !getRes.data) return null
       try {
-        return JSON.parse(getRes.data)
+        const parsed = JSON.parse(getRes.data)
+        if (!isWorkflow(parsed) || parsed.userId !== userId) return null
+        return summarize(parsed, `workflows/${workflowDocId(docId)}`)
       } catch {
         return null
       }
@@ -128,7 +151,7 @@ const loadWorkflows = async (persistenceRef: ActorRef<any>, userId: string): Pro
   )
 
   return loaded
-    .filter((w): w is Workflow => w !== null && w.userId === userId)
+    .filter((w): w is WorkflowSummary => w !== null)
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
 }
 
@@ -140,27 +163,16 @@ export type UpdateResult = { updated: true; workflow: Workflow; filepath: string
 export type DeleteResult = { deleted: true; workflowId: string }
 
 export const listWorkflows = async (persistenceRef: ActorRef<any>, userId: string): Promise<WorkflowSummary[]> => {
-  const entries = await loadWorkflows(persistenceRef, userId)
-  return entries.map(w => summarize(w, `workflows/${w.id}`))
+  return loadWorkflows(persistenceRef, userId)
 }
 
 export const getWorkflow = async (persistenceRef: ActorRef<any>, userId: string, workflowId: string): Promise<StoreResult<GetResult>> => {
-  const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
-    type: 'doc.get',
-    collection: 'workflows',
-    docId: workflowId,
-    replyTo,
-  }))
-  if (!getRes.ok || !getRes.data) return { ok: false, error: `Workflow not found: ${workflowId}`, status: 404 }
-  try {
-    const parsed = JSON.parse(getRes.data)
-    if (!isWorkflow(parsed) || parsed.userId !== userId) {
-      return { ok: false, error: `Workflow not found: ${workflowId}`, status: 404 }
-    }
-    return { ok: true, data: { workflow: parsed, filepath: `workflows/${workflowId}` } }
-  } catch {
-    return { ok: false, error: `Invalid workflow content`, status: 500 }
+  const docId = workflowDocId(workflowId)
+  const parsed = await readWorkflowFile(persistenceRef, workflowId)
+  if (!parsed || parsed.userId !== userId) {
+    return { ok: false, error: `Workflow not found: ${workflowId}`, status: 404 }
   }
+  return { ok: true, data: { workflow: parsed, filepath: `workflows/${docId}` } }
 }
 
 export const getWorkflowGraph = async (persistenceRef: ActorRef<any>, userId: string, workflowId: string, run?: WorkflowRunState): Promise<StoreResult<{ graph: WorkflowGraph }>> => {
@@ -173,21 +185,21 @@ export const saveWorkflow = async (persistenceRef: ActorRef<any>, workflow: Work
   const errors = validateWorkflow(workflow)
   if (errors.length) return { ok: false, error: `Invalid workflow: ${errors.join('; ')}`, status: 400 }
 
+  const docId = workflowDocId(workflow.id)
   await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
     type: 'doc.put',
     collection: 'workflows',
-    docId: workflow.id,
+    docId,
     content: JSON.stringify(workflow, null, 2),
     replyTo,
   }))
-  return { ok: true, data: { workflow, filepath: `workflows/${workflow.id}` } }
+  return { ok: true, data: { workflow, filepath: `workflows/${docId}` } }
 }
 
 export type WorkflowPatch = {
   title?: string
   goal?: string
   context?: string
-  executionTools?: string[]
   inputs?: Record<string, WorkflowValueSpec>
   outputs?: Record<string, WorkflowValueSpec>
   tasks?: Workflow['tasks']
@@ -202,7 +214,6 @@ export const updateWorkflow = async (persistenceRef: ActorRef<any>, userId: stri
     title: patch.title ?? existing.title,
     goal: patch.goal ?? existing.goal,
     context: patch.context ?? existing.context,
-    executionTools: patch.executionTools ?? existing.executionTools,
     inputs: patch.inputs ?? existing.inputs,
     outputs: patch.outputs ?? existing.outputs,
     tasks: patch.tasks ?? existing.tasks,
@@ -210,24 +221,26 @@ export const updateWorkflow = async (persistenceRef: ActorRef<any>, userId: stri
   const errors = validateWorkflow(updated)
   if (errors.length) return { ok: false, error: `Invalid workflow: ${errors.join('; ')}`, status: 400 }
 
+  const docId = workflowDocId(workflowId)
   await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
     type: 'doc.put',
     collection: 'workflows',
-    docId: workflowId,
+    docId,
     content: JSON.stringify(updated, null, 2),
     replyTo,
   }))
-  return { ok: true, data: { updated: true, workflow: updated, filepath: found.data.filepath } }
+  return { ok: true, data: { updated: true, workflow: updated, filepath: `workflows/${docId}` } }
 }
 
 export const deleteWorkflow = async (persistenceRef: ActorRef<any>, userId: string, workflowId: string): Promise<StoreResult<DeleteResult>> => {
   const found = await getWorkflow(persistenceRef, userId, workflowId)
   if (!found.ok) return found
 
+  const docId = workflowDocId(workflowId)
   await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
     type: 'doc.delete',
     collection: 'workflows',
-    docId: workflowId,
+    docId,
     replyTo,
   }))
 

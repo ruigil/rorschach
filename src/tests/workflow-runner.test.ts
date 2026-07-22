@@ -50,14 +50,13 @@ const FakeTool = (): ActorDef<ToolMsg, null> => ({
   },
 })
 
-const workflow = (executionTools: string[]): Workflow => ({
+const workflow = (executionTools?: string[], agentMode = 'tool-executor'): Workflow => ({
   id: 'workflow-1',
   userId: 'u1',
   title: 'Run one task',
   goal: 'Run one task',
   context: 'Runner execution-tool boundary test.',
   createdAt: '2026-06-10T10:00:00.000Z',
-  executionTools,
   tasks: [
     {
       id: 'task-1',
@@ -65,6 +64,8 @@ const workflow = (executionTools: string[]): Workflow => ({
       description: 'Use the configured tool.',
       validationCriteria: 'The task starts.',
       dependencies: [],
+      agentMode,
+      ...(executionTools ? { executionTools } : {}),
     },
   ],
 })
@@ -118,8 +119,8 @@ describe('workflow runner', () => {
     await system.shutdown()
   })
 
-  test('blocks before spawning when a required execution tool is missing', async () => {
-    const wf = workflow(['missing_tool'])
+  test('blocks task execution when task agentMode is unregistered', async () => {
+    const wf = workflow(undefined, 'unregistered_mode')
     const { system, runner } = await spawnRunner(wf)
     const updates: Array<{ userId: string; runId: string; runStatus: string }> = []
     system.subscribe(WorkflowEventTopic, event => updates.push({ userId: event.userId, runId: event.runId!, runStatus: event.run!.status }))
@@ -134,11 +135,7 @@ describe('workflow runner', () => {
     )
 
     expect(reply.ok).toBe(true)
-    if (reply.ok && 'run' in reply) {
-      expect(reply.run.status).toBe('blocked')
-      expect(reply.run.taskStates['task-1']?.status).toBe('blocked')
-      expect(reply.run.taskStates['task-1']?.error).toBe('Required execution tool is unavailable: missing_tool')
-    }
+    await Bun.sleep(60)
     expect(updates.at(-1)?.userId).toBe('u1')
     expect(updates.at(-1)?.runStatus).toBe('blocked')
 

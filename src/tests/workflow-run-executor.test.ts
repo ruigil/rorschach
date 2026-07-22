@@ -31,7 +31,6 @@ const workflow: Workflow = {
   goal: 'Read a file',
   context: 'Regression test workflow.',
   createdAt: '2026-06-10T10:00:00.000Z',
-  executionTools: ['read'],
   tasks: [
     {
       id: 'read-task',
@@ -39,6 +38,7 @@ const workflow: Workflow = {
       description: 'Read a file.',
       validationCriteria: 'A file has been read.',
       dependencies: [],
+      agentMode: 'tool-executor',
     },
   ],
 }

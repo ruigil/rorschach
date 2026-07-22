@@ -543,6 +543,8 @@ export class RWorkflowInspector extends RorschachBase {
         <div class="inspector-grid">
           <div class="inspector-col">
             <r-kv-list .items=${[
+              { key: 'agentMode', label: 'Agent mode', value: task.agentMode || 'tool-executor' },
+              ...(task.executionTools?.length ? [{ key: 'tools', label: 'Execution tools', value: task.executionTools.join(', ') }] : []),
               { key: 'description', label: 'Description', value: task.description || 'No description' },
               { key: 'validation', label: 'Validation', value: task.validationCriteria || 'No validation criteria' },
               ...(task.attempts !== undefined ? [{ key: 'attempts', label: 'Attempts', value: task.attempts }] : []),
@@ -576,7 +578,6 @@ export class RWorkflowInspector extends RorschachBase {
               { key: 'goal', label: 'Goal', value: workflow.goal || 'No goal' },
               { key: 'context', label: 'Context', value: workflow.context || 'No context' },
               { key: 'taskCount', label: 'Tasks', value: `${workflow.taskCount ?? this.graph?.nodes?.length ?? 0} tasks` },
-              { key: 'tools', label: 'Execution tools', value: workflow.executionTools?.length ? workflow.executionTools.join(', ') : 'none' },
             ]}></r-kv-list>
           </div>
           <div class="inspector-col">

@@ -55,7 +55,6 @@ export const validateWorkflow = (workflow: Workflow): string[] => {
   if (typeof workflow.title !== 'string' || !workflow.title.trim()) errors.push('title must be a non-empty string')
   if (typeof workflow.goal !== 'string' || !workflow.goal.trim()) errors.push('goal must be a non-empty string')
   if (typeof workflow.context !== 'string' || !workflow.context.trim()) errors.push('context must be a non-empty string')
-  const executionTools = validateStringArray('executionTools', workflow.executionTools, errors)
   validateSpecMap('inputs', workflow.inputs, errors)
   const workflowOutputs = validateSpecMap('outputs', workflow.outputs, errors)
 
@@ -75,6 +74,10 @@ export const validateWorkflow = (workflow: Workflow): string[] => {
     if (typeof task.name !== 'string' || !task.name.trim()) errors.push(`task ${String(task.id)} name must be a non-empty string`)
     if (typeof task.description !== 'string' || !task.description.trim()) errors.push(`task ${String(task.id)} description must be a non-empty string`)
     if (typeof task.validationCriteria !== 'string' || !task.validationCriteria.trim()) errors.push(`task ${String(task.id)} validationCriteria must be a non-empty string`)
+    if (typeof task.agentMode !== 'string' || !task.agentMode.trim()) errors.push(`task ${String(task.id)} agentMode must be a non-empty string`)
+    if (task.executionTools !== undefined) {
+      validateStringArray(`task ${String(task.id)} executionTools`, task.executionTools, errors)
+    }
     const dependencies = validateStringArray(`task ${String(task.id)} dependencies`, task.dependencies, errors)
     if (typeof task.id === 'string') {
       if (taskIds.has(task.id)) errors.push(`duplicate task id: ${task.id}`)

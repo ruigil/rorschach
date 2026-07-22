@@ -37,36 +37,6 @@ const appendEvent = (run: WorkflowRunState, type: string, message: string, taskI
 
 const fallbackTaskState = (): WorkflowTaskRunState => ({ status: 'pending', attempts: 0 })
 
-const missingExecutionTool = (workflow: Workflow, tools: ToolCollection): string | undefined =>
-  workflow.executionTools.find(name => !tools[name])
-
-const blockedMissingToolRun = (run: WorkflowRunState, missingTool: string): WorkflowRunState => {
-  const message = `Required execution tool is unavailable: ${missingTool}`
-  return {
-    ...run,
-    status: 'blocked',
-    taskStates: Object.fromEntries(Object.entries(run.taskStates).map(([taskId, task]) => [
-      taskId,
-      {
-        ...task,
-        status: 'blocked' as const,
-        error: message,
-        blockedReason: { type: 'task_blocked' as const, message },
-      },
-    ])),
-    events: [...run.events, { timestamp: new Date().toISOString(), type: 'runBlocked', message }],
-  }
-}
-
-const filterWorkflowTools = (workflow: Workflow, tools: ToolCollection): ToolCollection => {
-  const filtered: ToolCollection = {}
-  for (const name of workflow.executionTools) {
-    const tool = tools[name]
-    if (tool) filtered[name] = tool
-  }
-  return filtered
-}
-
 const dependencyOutputs = (run: WorkflowRunState, task: WorkflowTask): Record<string, WorkflowDependencyOutput> =>
   Object.fromEntries(task.dependencies.map(depId => [
     depId,
@@ -75,8 +45,6 @@ const dependencyOutputs = (run: WorkflowRunState, task: WorkflowTask): Record<st
       ...(run.taskStates[depId]?.outputs ? { outputs: run.taskStates[depId]?.outputs } : {}),
     },
   ]))
-
-
 
 const readyTasks = (workflow: Workflow, run: WorkflowRunState): WorkflowTask[] =>
   workflow.tasks.filter(task =>
@@ -158,8 +126,7 @@ export const WorkflowRunExecutor = (
       if (result.ok) {
         const run = result.data
         const workflow = run.workflow
-        const tools = filterWorkflowTools(workflow, allTools)
-        return { run, workflow, tools, llmRef }
+        return { run, workflow, tools: allTools, llmRef }
       }
       return undefined
     },
@@ -288,18 +255,10 @@ export const WorkflowRunExecutor = (
       },
 
       start: (state, msg, ctx) => {
-        const missingTool = missingExecutionTool(state.workflow, state.tools)
-        if (missingTool) {
-          const blocked = blockedMissingToolRun(state.run, missingTool)
-          publishTerminalJob(ctx, blocked)
-          publishRunUpdate(ctx, blocked)
-          msg.replyTo.send({ ok: true, run: blocked })
-          ctx.stop(ctx.self)
-          return { state: { ...state, run: blocked } }
-        }
         const next = schedule(state, ctx)
         publishRunUpdate(ctx, next.run)
         if (isTerminalStatus(next.run.status)) {
+          publishTerminalJob(ctx, next.run)
           ctx.stop(ctx.self)
         }
         msg.replyTo.send({ ok: true, run: next.run })
@@ -322,15 +281,6 @@ export const WorkflowRunExecutor = (
           ctx.stop(ctx.self)
           return { state }
         }
-        const missingTool = missingExecutionTool(state.workflow, state.tools)
-        if (missingTool) {
-          const blocked = blockedMissingToolRun(state.run, missingTool)
-          publishTerminalJob(ctx, blocked)
-          publishRunUpdate(ctx, blocked)
-          msg.replyTo.send({ ok: true, run: blocked })
-          ctx.stop(ctx.self)
-          return { state: { ...state, run: blocked } }
-        }
         const next = resumeRun(state, ctx)
         if (!next.ok) {
           msg.replyTo.send(next)
@@ -338,6 +288,7 @@ export const WorkflowRunExecutor = (
         }
         publishRunUpdate(ctx, next.state.run)
         if (isTerminalStatus(next.state.run.status)) {
+          publishTerminalJob(ctx, next.state.run)
           ctx.stop(ctx.self)
         }
         msg.replyTo.send({ ok: true, run: next.state.run })
@@ -388,7 +339,6 @@ export const WorkflowRunExecutor = (
         const { [msg.taskId]: _active, ...activeTasks } = state.run.activeTasks
         const run = appendEvent({
           ...state.run,
-          status: 'blocked',
           activeTaskIds: state.run.activeTaskIds.filter(id => id !== msg.taskId),
           activeTasks,
           taskStates: {
@@ -401,10 +351,13 @@ export const WorkflowRunExecutor = (
             },
           },
         }, 'taskBlocked', msg.message, msg.taskId)
-        publishTerminalJob(ctx, run)
-        publishRunUpdate(ctx, run)
-        ctx.stop(ctx.self)
-        return { state: { ...state, run } }
+        const next = schedule({ ...state, run }, ctx)
+        publishRunUpdate(ctx, next.run)
+        if (isTerminalStatus(next.run.status)) {
+          publishTerminalJob(ctx, next.run)
+          ctx.stop(ctx.self)
+        }
+        return { state: next }
       },
 
       taskFailed: (state, msg, ctx) => {
@@ -481,3 +434,4 @@ export const WorkflowRunExecutor = (
     }),
   }
 }
+

@@ -3,6 +3,7 @@ import { agentLoop, defineTool, idleLoopState, parseToolArgs, onLifecycle, ask }
 import type { ToolCollection, ToolMsg, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic, type ApiMessage, type LlmProviderMsg } from '../../types/llm.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetPayload } from '../../types/persistence.ts'
+import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
 import type {
   WorkflowRunExecutorMsg,
   WorkflowTaskExecutorMsg,
@@ -12,6 +13,27 @@ import type {
   WorkflowOutputValue,
 } from './types.ts'
 import { validateOutputValues } from './validation.ts'
+
+export const TOOL_EXECUTOR_DESCRIPTOR: AgentDescriptor = {
+  mode: 'tool-executor',
+  displayName: 'Tool Executor',
+  shortDesc: 'Generic agent responsible for mapping task inputs, executing task tools, and outputting results',
+  role: 'tool-executor',
+  systemPrompt: `You are a generic workflow tool executor agent.
+Your primary role is to execute workflow tasks by invoking available task execution tools.
+
+Task Execution Instructions:
+1. Review the workflow task goal, inputs, and dependency outputs.
+2. Translate task inputs and dependency outputs into accurate parameter arguments for the declared task execution tools.
+3. Invoke the execution tool(s) required to complete the task.
+4. When tool execution settles, inspect the results and format declared task outputs.
+5. Call complete_workflow_task with a summary and structured outputs matching task output specifications.
+6. If a required tool fails or cannot satisfy validation criteria, call block_workflow_task with a clear reason.`,
+  internalTools: [], // System control tools (complete/block/read/write) are injected by TaskExecutor
+  capabilities: { userVisible: false },
+  model: 'default',
+  maxToolLoops: 5,
+}
 
 type TaskExecutorState = {
   loop: ReturnType<typeof idleLoopState>
@@ -25,6 +47,7 @@ type TaskExecutorState = {
   terminalSignaled: boolean
   llmRef: ActorRef<LlmProviderMsg> | null
   persistenceRef: ActorRef<any> | null
+  descriptors: Record<string, AgentDescriptor>
 }
 
 const initialState = (tools: ToolCollection, llmRef: ActorRef<LlmProviderMsg> | null): TaskExecutorState => ({
@@ -39,6 +62,9 @@ const initialState = (tools: ToolCollection, llmRef: ActorRef<LlmProviderMsg> | 
   terminalSignaled: false,
   llmRef,
   persistenceRef: null,
+  descriptors: {
+    [TOOL_EXECUTOR_DESCRIPTOR.mode]: TOOL_EXECUTOR_DESCRIPTOR,
+  },
 })
 
 export const completeWorkflowTaskTool = defineTool('complete_workflow_task', 'Complete the current workflow task with validated structured outputs.', {
@@ -106,6 +132,7 @@ export const parseTaskBlockArgs = (
 }
 
 const buildMessages = (
+  descriptor: AgentDescriptor,
   workflow: Workflow,
   task: WorkflowTask,
   inputs: Record<string, unknown>,
@@ -114,10 +141,10 @@ const buildMessages = (
 ): ApiMessage[] => [
   {
     role: 'system',
-    content: `You execute exactly one workflow task.
+    content: `${descriptor.systemPrompt}
 
-Complete the task using only available tools.
-
+You execute exactly one workflow task.
+Complete the task using available tools.
 Do not finish by writing the task result in the assistant message.
 
 When the validation criteria are satisfied, call complete_workflow_task with:
@@ -144,6 +171,7 @@ Task id: ${task.id}
 Task name: ${task.name}
 Task description: ${task.description}
 Validation criteria: ${task.validationCriteria}
+Declaring Agent Mode: ${descriptor.mode}
 Declared task outputs:
 ${JSON.stringify(task.outputs ?? {}, null, 2)}
 Dependency outputs:
@@ -229,6 +257,48 @@ export const WorkflowTaskExecutor = (
   })
 
   const startTask = (state: S, msg: Extract<M, { type: 'startTask' }>, ctx: Ctx): ActorResult<M, S> => {
+    const descriptor = state.descriptors[msg.task.agentMode]
+    if (!descriptor) {
+      parentRef.send({
+        type: 'taskBlocked',
+        taskId: msg.task.id,
+        message: `Agent mode '${msg.task.agentMode}' is not registered`,
+      })
+      return {
+        state: {
+          ...state,
+          runId: msg.runId,
+          workflow: msg.workflow,
+          task: msg.task,
+          inputs: msg.inputs,
+          dependencyOutputs: msg.dependencyOutputs,
+          userId: msg.userId,
+          terminalSignaled: true,
+        },
+      }
+    }
+
+    let externalTaskTools: ToolCollection = {}
+    for (const [toolName, tool] of Object.entries(tools)) {
+      externalTaskTools[toolName] = tool
+    }
+
+    const descriptorInternalTools: ToolCollection = {}
+    if (descriptor.internalTools) {
+      for (const tool of descriptor.internalTools) {
+        descriptorInternalTools[tool.name] = tool
+      }
+    }
+
+    const finalTools: ToolCollection = {
+      ...externalTaskTools,
+      ...descriptorInternalTools,
+      [completeWorkflowTaskTool.name]: { ...completeWorkflowTaskTool, ref: ctx.self as ActorRef<ToolMsg> },
+      [blockWorkflowTaskTool.name]: { ...blockWorkflowTaskTool, ref: ctx.self as ActorRef<ToolMsg> },
+      [readArtifactTool.name]: { ...readArtifactTool, ref: ctx.self as ActorRef<ToolMsg> },
+      [writeArtifactTool.name]: { ...writeArtifactTool, ref: ctx.self as ActorRef<ToolMsg> },
+    }
+
     const next: S = {
       ...state,
       runId: msg.runId,
@@ -236,17 +306,11 @@ export const WorkflowTaskExecutor = (
       task: msg.task,
       inputs: msg.inputs,
       dependencyOutputs: msg.dependencyOutputs,
-      tools: {
-        ...tools,
-        [completeWorkflowTaskTool.name]: { ...completeWorkflowTaskTool, ref: ctx.self as ActorRef<ToolMsg> },
-        [blockWorkflowTaskTool.name]: { ...blockWorkflowTaskTool, ref: ctx.self as ActorRef<ToolMsg> },
-        [readArtifactTool.name]: { ...readArtifactTool, ref: ctx.self as ActorRef<ToolMsg> },
-        [writeArtifactTool.name]: { ...writeArtifactTool, ref: ctx.self as ActorRef<ToolMsg> },
-      },
+      tools: finalTools,
       userId: msg.userId,
       terminalSignaled: false,
     }
-    const messages = msg.history ?? buildMessages(msg.workflow, msg.task, msg.inputs, msg.dependencyOutputs)
+    const messages = msg.history ?? buildMessages(descriptor, msg.workflow, msg.task, msg.inputs, msg.dependencyOutputs)
     return loop.startTurn(next, {
       messages,
       userId: msg.userId,
@@ -404,6 +468,16 @@ export const WorkflowTaskExecutor = (
     if (msg.type === '_persistenceRef') {
       return { state: { ...state, persistenceRef: msg.ref } }
     }
+    if (msg.type === '_agentRegistration') {
+      const event = msg.event
+      if (event.type === 'register') {
+        return { state: { ...state, descriptors: { ...state.descriptors, [event.descriptor.mode]: event.descriptor } } }
+      } else if (event.type === 'unregister') {
+        const descriptors = { ...state.descriptors }
+        delete descriptors[event.mode]
+        return { state: { ...state, descriptors } }
+      }
+    }
     return next(state, msg)
   }
 
@@ -413,6 +487,7 @@ export const WorkflowTaskExecutor = (
       start: (state, ctx) => {
         ctx.subscribe(LlmProviderTopic, event => ({ type: '_llmProvider' as const, ref: event.ref }))
         ctx.subscribe(PersistenceProviderTopic, event => ({ type: '_persistenceRef' as const, ref: event.ref }))
+        ctx.subscribe(AgentRegistrationTopic, event => ({ type: '_agentRegistration' as const, event }))
         return { state }
       },
     }),
@@ -421,3 +496,4 @@ export const WorkflowTaskExecutor = (
     supervision: { type: 'restart', maxRetries: 1, withinMs: 30_000 },
   }
 }
+

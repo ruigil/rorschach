@@ -23,7 +23,6 @@ const workflow: Workflow = {
   goal: 'Generate a report',
   context: 'Task executor test workflow.',
   createdAt: '2026-06-12T10:00:00.000Z',
-  executionTools: [],
   outputs: { report: { type: 'artifact' } },
   tasks: [],
 }
@@ -34,6 +33,7 @@ const task: WorkflowTask = {
   description: 'Write the report artifact.',
   validationCriteria: 'The report artifact exists.',
   dependencies: [],
+  agentMode: 'tool-executor',
   outputs: { report: { type: 'artifact' } },
 }
 
@@ -215,6 +215,31 @@ describe('workflow task executor', () => {
       type: 'taskBlocked',
       taskId: 'write-report',
       message: 'Missing source data.',
+    }])
+    await system.shutdown()
+  })
+
+  test('unregistered agentMode immediately blocks task execution', async () => {
+    const system = await AgentSystem()
+    const events: ParentEvent[] = []
+    const parent = system.spawn('parent-unregistered', ParentRecorder(events))
+    const executor = system.spawn('task-unregistered', WorkflowTaskExecutor(parent, null, 'test-model', 3, {} as ToolCollection))
+
+    executor.send({
+      type: 'startTask',
+      runId: 'run-1',
+      workflow,
+      task: { ...task, agentMode: 'unknown-mode' },
+      inputs: {},
+      dependencyOutputs: {},
+      userId: 'u1',
+    })
+    await tick()
+
+    expect(events).toEqual([{
+      type: 'taskBlocked',
+      taskId: 'write-report',
+      message: "Agent mode 'unknown-mode' is not registered",
     }])
     await system.shutdown()
   })

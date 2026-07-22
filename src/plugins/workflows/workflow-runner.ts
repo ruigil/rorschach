@@ -3,13 +3,16 @@ import { ask, onLifecycle, onMessage } from '../../system/index.ts'
 import { ToolRegistrationTopic, type ToolCollection } from '../../types/tools.ts'
 import { OutboundUserMessageTopic, HttpWsFrameTopic } from '../../types/events.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
+import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
 import { WorkflowEventTopic } from './types.ts'
+import { TOOL_EXECUTOR_DESCRIPTOR } from './workflow-task-executor.ts'
 import type {
   WorkflowRunExecutorMsg,
   WorkflowRunExecutorReply,
   WorkflowRunnerMsg,
   WorkflowRunnerReply,
   ExecutionToolSummary,
+  AgentModeSummary,
   WorkflowRunnerConfig,
 } from './types.ts'
 import { WorkflowRunExecutor } from './workflow-run-executor.ts'
@@ -22,6 +25,7 @@ type RunnerState = {
   executionTools: ToolCollection
   llmRef: ActorRef<LlmProviderMsg> | null
   persistenceRef: ActorRef<any> | null
+  descriptors: Record<string, AgentDescriptor>
 }
 
 const summarizeExecutionTools = (tools: ToolCollection): ExecutionToolSummary[] =>
@@ -31,7 +35,12 @@ const summarizeExecutionTools = (tools: ToolCollection): ExecutionToolSummary[] 
     mayBeLongRunning: tool.mayBeLongRunning,
   }))
 
-
+const summarizeAgentModes = (descriptors: Record<string, AgentDescriptor>): AgentModeSummary[] =>
+  Object.values(descriptors).map(desc => ({
+    mode: desc.mode,
+    displayName: desc.displayName,
+    shortDesc: desc.shortDesc,
+  }))
 
 export const WorkflowRunner = (config: WorkflowRunnerConfig ): ActorDef<WorkflowRunnerMsg, RunnerState> => {
   const { model, maxToolLoops } = config
@@ -118,15 +127,11 @@ export const WorkflowRunner = (config: WorkflowRunnerConfig ): ActorDef<Workflow
       (async (): Promise<WorkflowRunnerReply> => {
         const live = state.live[msg.runId]
         if (live) {
-          return await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
-            live,
-            replyTo => ({ type: 'get', replyTo }),
-            { timeoutMs: 5_000 },
-          )
+          const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(live, replyTo => ({ type: 'get', replyTo }))
+          if (reply.ok) return reply
         }
-        const diskReply = await getWorkflowRun(state.persistenceRef!, msg.userId, msg.runId)
-        if (!diskReply.ok) return diskReply
-        return { ok: true, run: diskReply.data }
+        const result = await getWorkflowRun(state.persistenceRef!, msg.userId, msg.runId)
+        return result.ok ? { ok: true, run: result.data } : { ok: false, error: result.error, status: 404 }
       })(),
       reply => ({ type: '_reply' as const, replyTo: msg.replyTo, reply }),
       error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { ok: false as const, error: String(error) } }),
@@ -139,20 +144,6 @@ export const WorkflowRunner = (config: WorkflowRunnerConfig ): ActorDef<Workflow
     msg: Extract<WorkflowRunnerMsg, { type: 'resume' }>,
     ctx: ActorContext<WorkflowRunnerMsg>,
   ): ActorResult<WorkflowRunnerMsg, RunnerState> => {
-    const live = state.live[msg.runId]
-    if (live) {
-      ctx.pipeToSelf(
-        ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(
-          live,
-          replyTo => ({ type: 'resume', replyTo }),
-          { timeoutMs: 5_000 },
-        ),
-        reply => ({ type: '_reply' as const, replyTo: msg.replyTo, reply }),
-        error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { ok: false as const, error: String(error) } }),
-      )
-      return { state }
-    }
-
     const { ref, spawned } = ensureRunActor(state, ctx, msg.userId, msg.runId)
     const nextState = spawned ? { ...state, live: { ...state.live, [msg.runId]: ref } } : state
 
@@ -169,17 +160,28 @@ export const WorkflowRunner = (config: WorkflowRunnerConfig ): ActorDef<Workflow
   }
 
   return {
-    initialState: () => ({ live: {}, executionTools: {}, llmRef: config.llmRef, persistenceRef: null }),
+    initialState: () => ({
+      live: {},
+      executionTools: {},
+      llmRef: null,
+      persistenceRef: null,
+      descriptors: {
+        [TOOL_EXECUTOR_DESCRIPTOR.mode]: TOOL_EXECUTOR_DESCRIPTOR,
+      },
+    }),
     lifecycle: onLifecycle<WorkflowRunnerMsg, RunnerState>({
       start: (state, ctx) => {
         ctx.subscribe(LlmProviderTopic, event => ({ type: '_llmProvider' as const, ref: event.ref }))
         ctx.subscribe(ToolRegistrationTopic, toolEvent => {
-          if ('schema' in toolEvent) return { type: '_toolRegistered' as const, tool: toolEvent }
+          if (toolEvent && 'schema' in toolEvent && toolEvent.schema) {
+            return { type: '_toolRegistered' as const, tool: toolEvent }
+          }
           return { type: '_toolUnregistered' as const, name: toolEvent.name }
         })
         ctx.subscribe(WorkflowEventTopic, event => ({ type: '_runUpdated' as const, event }))
         ctx.subscribe(HttpWsFrameTopic, frameEvent => ({ type: '_wsFrame' as const, event: frameEvent }))
         ctx.subscribe(PersistenceProviderTopic, (event) => ({type: '_persistenceRef' as const, ref: event.ref }))
+        ctx.subscribe(AgentRegistrationTopic, event => ({ type: '_agentRegistration' as const, event }))
         return { state }
       },
       terminated: (state, event, ctx) => {
@@ -264,6 +266,18 @@ export const WorkflowRunner = (config: WorkflowRunnerConfig ): ActorDef<Workflow
       _toolUnregistered: (state, msg) => {
         const { [msg.name]: _, ...executionTools } = state.executionTools
         return { state: { ...state, executionTools } }
+      },
+
+      _agentRegistration: (state, msg) => {
+        const event = msg.event
+        if (event.type === 'register') {
+          return { state: { ...state, descriptors: { ...state.descriptors, [event.descriptor.mode]: event.descriptor } } }
+        } else if (event.type === 'unregister') {
+          const descriptors = { ...state.descriptors }
+          delete descriptors[event.mode]
+          return { state: { ...state, descriptors } }
+        }
+        return { state }
       },
 
       _runUpdated: (state, msg, ctx) => {
@@ -369,6 +383,10 @@ export const WorkflowRunner = (config: WorkflowRunnerConfig ): ActorDef<Workflow
       list: (state, msg, ctx) => listRuns(state, msg, ctx),
       listExecutionTools: (state, msg) => {
         msg.replyTo.send({ ok: true, executionTools: summarizeExecutionTools(state.executionTools) })
+        return { state }
+      },
+      listAgentModes: (state, msg) => {
+        msg.replyTo.send({ ok: true, agentModes: summarizeAgentModes(state.descriptors) })
         return { state }
       },
       get: (state, msg, ctx) => getRun(state, msg, ctx),

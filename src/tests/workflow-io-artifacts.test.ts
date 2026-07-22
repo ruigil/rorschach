@@ -39,7 +39,6 @@ const workflow = (): Workflow => ({
   goal: 'Generate a report',
   context: 'Use structured workflow IO.',
   createdAt: '2026-06-11T10:00:00.000Z',
-  executionTools: ['write'],
   inputs: {
     city: { type: 'string' },
   },
@@ -52,6 +51,7 @@ const workflow = (): Workflow => ({
     description: 'Write the report artifact.',
     validationCriteria: 'The report artifact exists.',
     dependencies: [],
+    agentMode: 'tool-executor',
     outputs: {
       report: { type: 'artifact' },
     },
@@ -110,6 +110,7 @@ describe('workflow IO and artifacts', () => {
         description: 'Duplicate output.',
         validationCriteria: 'No duplicate outputs.',
         dependencies: [],
+        agentMode: 'tool-executor',
         outputs: { report: { type: 'artifact' } },
       },
     ]

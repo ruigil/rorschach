@@ -33,7 +33,6 @@ const sampleWorkflow = (userId = 'u1'): Workflow => ({
   goal: 'Ship workflow workspace',
   context: 'User accepted a workflow for execution UI.',
   createdAt: '2026-05-16T10:00:00.000Z',
-  executionTools: ['read'],
   inputs: { topic: { type: 'string', required: true, description: 'Workflow topic' } },
   outputs: { summary: { type: 'string', required: true, description: 'Final summary' } },
   tasks: [
@@ -43,6 +42,7 @@ const sampleWorkflow = (userId = 'u1'): Workflow => ({
       description: 'Design it.',
       validationCriteria: 'Done.',
       dependencies: [],
+      agentMode: 'tool-executor',
     },
     {
       id: 'build',
@@ -50,6 +50,7 @@ const sampleWorkflow = (userId = 'u1'): Workflow => ({
       description: 'Build it.',
       validationCriteria: 'Done.',
       dependencies: ['design'],
+      agentMode: 'tool-executor',
       outputs: { summary: { type: 'string', required: true, description: 'Final summary' } },
     },
   ],
@@ -148,7 +149,6 @@ describe('workflow store', () => {
       expect(result.data.graph.edges).toEqual([{ source: 'design', target: 'build', type: 'depends_on' }])
       expect(result.data.graph.workflow).toMatchObject({
         context: 'User accepted a workflow for execution UI.',
-        executionTools: ['read'],
         inputs: { topic: { type: 'string', required: true, description: 'Workflow topic' } },
         outputs: { summary: { type: 'string', required: true, description: 'Final summary' } },
       })
@@ -273,13 +273,13 @@ describe('workflow store', () => {
       { type: 'invoke', toolName: saveWorkflowTool.name, arguments: JSON.stringify({
         goal: 'Learn antigravity',
         summary: 'Decided to use Gemini 3.5.',
-        executionTools: ['read', startWorkflowRunTool.name],
         tasks: [{
           id: 'research',
           name: 'Research',
           description: 'Read the source material.',
           validationCriteria: 'A summary exists.',
           dependencies: [],
+          agentMode: 'tool-executor',
         }],
       }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
       { persistenceRef, workflowRunnerRef: runner, ctx: { publish: () => {} } },
@@ -344,6 +344,29 @@ describe('workflow store', () => {
       const listed = JSON.parse(reply.result.text) as Array<{ name: string; description: string }>
       expect(listed).toEqual([{ name: 'read', description: 'Read a file.' }])
     }
+
+    await system.shutdown()
+  })
+
+  test('saveWorkflow persists workflow document with a .json extension', async () => {
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const persistenceRef = await getPersistenceRef(system)
+
+    const wf = sampleWorkflow()
+    const result = await saveWorkflow(persistenceRef, wf)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.filepath).toBe(`workflows/${wf.id}.json`)
+    }
+
+    const docGet = await ask<any, any>(persistenceRef, replyTo => ({
+      type: 'doc.get',
+      collection: 'workflows',
+      docId: `${wf.id}.json`,
+      replyTo,
+    }))
+    expect(docGet.ok).toBe(true)
 
     await system.shutdown()
   })

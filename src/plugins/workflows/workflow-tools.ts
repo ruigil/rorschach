@@ -24,32 +24,38 @@ const valueSpecSchema = {
 }
 
 
+export const listAgentModesTool = defineTool('list_agent_modes', 'List available specialized agent modes that can be configured on workflow tasks.', {
+  type: 'object',
+  properties: {},
+})
+
 export const listExecutionToolsTool = defineTool('list_execution_tools', 'List tools that workflow tasks may use during execution.', {
   type: 'object',
   properties: {},
 })
 
-export const saveWorkflowTool = defineTool('save_workflow', 'Save an accepted workflow. Requires title, goal, summary, executionTools, and tasks.', {
+export const saveWorkflowTool = defineTool('save_workflow', 'Save an accepted workflow. Requires title, goal, summary, and tasks.', {
   type: 'object',
-  required: ['goal', 'summary', 'executionTools', 'tasks'],
+  required: ['goal', 'summary', 'tasks'],
   properties: {
     title: { type: 'string' },
     goal: { type: 'string' },
     summary: { type: 'string' },
-    executionTools: { type: 'array', items: { type: 'string' } },
     inputs: { type: 'object', additionalProperties: valueSpecSchema },
     outputs: { type: 'object', additionalProperties: valueSpecSchema },
     tasks: {
       type: 'array',
       items: {
         type: 'object',
-        required: ['id', 'name', 'description', 'validationCriteria', 'dependencies'],
+        required: ['id', 'name', 'description', 'validationCriteria', 'dependencies', 'agentMode'],
         properties: {
           id: { type: 'string' },
           name: { type: 'string' },
           description: { type: 'string' },
           validationCriteria: { type: 'string' },
           dependencies: { type: 'array', items: { type: 'string' } },
+          agentMode: { type: 'string' },
+          executionTools: { type: 'array', items: { type: 'string' } },
           outputs: { type: 'object', additionalProperties: valueSpecSchema },
         },
       },
@@ -65,7 +71,6 @@ export const updateWorkflowTool = defineTool('update_workflow', 'Update an exist
     title: { type: 'string' },
     goal: { type: 'string' },
     summary: { type: 'string' },
-    executionTools: { type: 'array', items: { type: 'string' } },
     inputs: { type: 'object', additionalProperties: valueSpecSchema },
     outputs: { type: 'object', additionalProperties: valueSpecSchema },
     tasks: { type: 'array', items: { type: 'object' } },
@@ -125,6 +130,7 @@ export const resumeWorkflowRunTool = defineTool('resume_workflow_run', 'Resume a
 })
 
 export const workflowControlTools = [
+  listAgentModesTool,
   listExecutionToolsTool,
   saveWorkflowTool,
   updateWorkflowTool,
@@ -184,10 +190,9 @@ const formatRunList = (runs: Array<{ runId: string; workflowId: string; status: 
 
 const parseWorkflow = (raw: string, userId: string): { ok: true; workflow: Workflow } | { ok: false; error: string } => {
   try {
-    const args = JSON.parse(raw) as { title?: string; goal?: string; summary?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
+    const args = JSON.parse(raw) as { title?: string; goal?: string; summary?: string; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
     if (!args.goal || typeof args.goal !== 'string') throw new Error('missing goal')
     if (!args.summary || typeof args.summary !== 'string') throw new Error('missing summary')
-    if (!Array.isArray(args.executionTools) || !args.executionTools.every(item => typeof item === 'string')) throw new Error('missing executionTools')
     if (!Array.isArray(args.tasks)) throw new Error('missing tasks')
     const title = (typeof args.title === 'string' && args.title.trim()) ? args.title.trim() : args.goal.trim()
     const workflow: Workflow = {
@@ -197,7 +202,6 @@ const parseWorkflow = (raw: string, userId: string): { ok: true; workflow: Workf
       goal: args.goal,
       context: args.summary,
       createdAt: new Date().toISOString(),
-      executionTools: args.executionTools,
       ...(args.inputs !== undefined ? { inputs: args.inputs } : {}),
       ...(args.outputs !== undefined ? { outputs: args.outputs } : {}),
       tasks: args.tasks,
@@ -210,15 +214,14 @@ const parseWorkflow = (raw: string, userId: string): { ok: true; workflow: Workf
   }
 }
 
-const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch: { title?: string; goal?: string; context?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] } } | { ok: false; error: string } => {
+const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch: { title?: string; goal?: string; context?: string; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] } } | { ok: false; error: string } => {
   try {
-    const args = JSON.parse(raw) as { workflowId?: string; title?: string; goal?: string; summary?: string; executionTools?: string[]; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
+    const args = JSON.parse(raw) as { workflowId?: string; title?: string; goal?: string; summary?: string; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
     if (!args.workflowId || typeof args.workflowId !== 'string') throw new Error('missing workflowId')
     const patch = {
       ...(args.title !== undefined ? { title: args.title } : {}),
       ...(args.goal !== undefined ? { goal: args.goal } : {}),
       ...(args.summary !== undefined ? { context: args.summary } : {}),
-      ...(args.executionTools !== undefined ? { executionTools: args.executionTools } : {}),
       ...(args.inputs !== undefined ? { inputs: args.inputs } : {}),
       ...(args.outputs !== undefined ? { outputs: args.outputs } : {}),
       ...(args.tasks !== undefined ? { tasks: args.tasks } : {}),
@@ -243,6 +246,13 @@ export const handleWorkflowTool = async (
   deps: WorkflowToolDeps
 ): Promise<ToolReply> => {
   const { workflowRunnerRef, ctx, persistenceRef } = deps
+
+  if (msg.toolName === listAgentModesTool.name) {
+    const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'listAgentModes', replyTo }), { timeoutMs: 5_000 })
+    return reply.ok && 'agentModes' in reply
+      ? { type: 'toolResult', result: { text: JSON.stringify(reply.agentModes, null, 2) } }
+      : toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
+  }
 
   if (msg.toolName === listExecutionToolsTool.name) {
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'listExecutionTools', replyTo }), { timeoutMs: 5_000 })
