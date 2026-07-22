@@ -1,12 +1,11 @@
 import { createPluginFactory, defineConfig } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
-import { DocumentationTools, deleteDocTool, writeDocPageTool, writeTocTool } from './documentation.ts'
+import { PageTools, writeHTMLPageTool } from './page-tools.ts'
 import { CodingAgentDescriptor } from './coding-agent.ts'
-import { DocsAgentDescriptor } from './docs-agent.ts'
 import { ProjectShell, codingBashTool, codingReadTool } from './project-shell.ts'
 import { buildCodingRoutes, codingSchemas } from './routes.ts'
-import type { DocumentationMsg, CodingConfig, ProjectShellMsg } from './types.ts'
+import type { PageToolsMsg, CodingConfig, ProjectShellMsg } from './types.ts'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 
 const defaultConfig: CodingConfig = {
@@ -16,10 +15,6 @@ const defaultConfig: CodingConfig = {
   coding: {
     model: 'google/gemini-3.5-flash',
     maxToolLoops: 25,
-  },
-  docs: {
-    model: 'google/gemini-3.5-flash',
-    maxToolLoops: 30,
   },
 }
 
@@ -31,25 +26,15 @@ const mergeConfig = (slice: CodingConfig | undefined): CodingConfig => ({
   ...defaultConfig,
   ...(slice ?? {}),
   coding: { ...defaultConfig.coding, ...(slice?.coding ?? {}) },
-  docs: { ...defaultConfig.docs, ...(slice?.docs ?? {}) },
 })
 
 const buildCodingTools = (
   shellRef: ActorRef<ProjectShellMsg>,
+  pageToolsRef: ActorRef<PageToolsMsg>,
 ): ToolCollection => ({
   [codingBashTool.name]: { ...codingBashTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
   [codingReadTool.name]: { ...codingReadTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
-})
-
-const buildDocsTools = (
-  shellRef: ActorRef<ProjectShellMsg>,
-  documentationRef: ActorRef<DocumentationMsg>,
-): ToolCollection => ({
-  [codingBashTool.name]: { ...codingBashTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
-  [codingReadTool.name]: { ...codingReadTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
-  [deleteDocTool.name]: { ...deleteDocTool, ref: documentationRef as unknown as ActorRef<ToolMsg> },
-  [writeDocPageTool.name]: { ...writeDocPageTool, ref: documentationRef as unknown as ActorRef<ToolMsg> },
-  [writeTocTool.name]: { ...writeTocTool, ref: documentationRef as unknown as ActorRef<ToolMsg> },
+  [writeHTMLPageTool.name]: { ...writeHTMLPageTool, ref: pageToolsRef as unknown as ActorRef<ToolMsg> },
 })
 
 const codeSurfaceRegistration: UiSurfaceRegistration = {
@@ -68,7 +53,7 @@ const codeSurfaceRegistration: UiSurfaceRegistration = {
 export default createPluginFactory<CodingConfig>({
   id: 'coding',
   version: '1.0.0',
-  description: 'Coding agent for read-only project inspection and app-styled documentation generation',
+  description: 'Coding agent for project inspection and HTML page generation',
   configDescriptor: config,
   slots: {
     shell: {
@@ -83,7 +68,7 @@ export default createPluginFactory<CodingConfig>({
     },
     documentation: {
       factory: (_cfg) => {
-        return DocumentationTools()
+        return PageTools()
       },
     },
   },
@@ -98,31 +83,16 @@ export default createPluginFactory<CodingConfig>({
           projectMount: merged.projectMount,
           tools: buildCodingTools(
             deps.shell as ActorRef<ProjectShellMsg>,
+            deps.documentation as ActorRef<PageToolsMsg>,
           ),
           toolFilter: merged.coding.toolFilter,
-        }
-      },
-      dependsOn: ['shell'],
-    },
-    docs: {
-      factory: DocsAgentDescriptor,
-      options: (cfg, deps) => {
-        const merged = mergeConfig(cfg)
-        return {
-          model: merged.docs.model,
-          maxToolLoops: merged.docs.maxToolLoops ?? 30,
-          projectMount: merged.projectMount,
-          tools: buildDocsTools(
-            deps.shell as ActorRef<ProjectShellMsg>,
-            deps.documentation as ActorRef<DocumentationMsg>
-          ),
         }
       },
       dependsOn: ['shell', 'documentation'],
     },
   },
   routes: (cfg, deps) => {
-    return buildCodingRoutes(deps.documentation as ActorRef<DocumentationMsg>)
+    return buildCodingRoutes(deps.documentation as ActorRef<PageToolsMsg>)
   },
   uiSurface: codeSurfaceRegistration,
 })

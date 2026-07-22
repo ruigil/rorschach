@@ -1,7 +1,7 @@
-import { join, resolve, relative } from 'node:path'
 import type { ConfigSchemaSection } from '../../types/config.ts'
-import type { Identity } from '../../types/identity.ts'
 import type { RouteRegistration } from '../../types/routes.ts'
+import type { ActorRef } from '../../system/index.ts'
+import type { HttpRequestMsg } from '../../types/routes.ts'
 
 export const codingProjectSchema: ConfigSchemaSection = {
   id: 'coding.project',
@@ -38,48 +38,14 @@ export const codingAgentSchema: ConfigSchemaSection = {
   },
 }
 
-export const docsAgentSchema: ConfigSchemaSection = {
-  id: 'coding.docs',
-  title: 'Docs Agent',
-  subtitle: 'coding · documentation generation',
-  tab: 'coding',
-  configKey: 'docs',
-  routeId: 'config.coding',
-  schema: {
-    type: 'object',
-    required: ['model', 'maxToolLoops'],
-    properties: {
-      model: { type: 'string', default: 'google/gemini-3.5-flash', 'x-ui': { widget: 'model-select', label: 'Docs model' } },
-      maxToolLoops: { type: 'number', default: 30, minimum: 1, maximum: 100 },
-    },
-  },
-}
+export const codingSchemas = [codingProjectSchema, codingAgentSchema]
 
-export const codingSchemas = [codingProjectSchema, codingAgentSchema, docsAgentSchema]
-
-const mimeType = (path: string): string => {
-  if (path.endsWith('.html')) return 'text/html; charset=utf-8'
-  if (path.endsWith('.css')) return 'text/css; charset=utf-8'
-  if (path.endsWith('.js')) return 'text/javascript; charset=utf-8'
-  if (path.endsWith('.json')) return 'application/json; charset=utf-8'
-  if (path.endsWith('.svg')) return 'image/svg+xml'
-  if (path.endsWith('.png')) return 'image/png'
-  if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg'
-  return 'application/octet-stream'
-}
-
-const json = (body: unknown, status = 200): Response =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
-
-import type { ActorRef } from '../../system/index.ts'
-import type { HttpRequestMsg } from '../../types/routes.ts'
-
-export const buildCodingRoutes = (documentationRef: ActorRef<HttpRequestMsg>): RouteRegistration[] => [
+export const buildCodingRoutes = (pageToolsRef: ActorRef<HttpRequestMsg>): RouteRegistration[] => [
   {
     id: 'coding.documentation',
     method: 'GET',
     path: '/documentation/',
     match: 'prefix',
-    target: documentationRef,
+    target: pageToolsRef,
   },
 ]

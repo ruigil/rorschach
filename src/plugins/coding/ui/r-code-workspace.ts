@@ -2,6 +2,7 @@ import {
   css,
   customElement,
   html,
+  property,
   RorschachBase,
   sharedStyles,
   state,
@@ -25,7 +26,10 @@ export class RCodeWorkspace extends RorschachBase {
   private _currentCwd = new StoreController(this, ['code', 'cwd']);
   private _lastAutocompleteResponse = new StoreController(this, ['code', 'lastAutocompleteResponse']);
 
-  @state() private _activeTab: 'bash' | 'docs' = 'bash';
+  @property({ type: String }) collection = 'documentation';
+
+  @state() private _activeTab: 'bash' | 'docs' = 'docs';
+  @state() private _sidebarCollapsed = false;
   @state() private _treeData: TreeNode[] = [];
   @state() private _selectedPage: string | null = null;
   @state() private _loading = false;
@@ -134,6 +138,10 @@ export class RCodeWorkspace extends RorschachBase {
         padding: 10px;
         flex-shrink: 0;
         background: var(--surface-1);
+        transition: width 0.2s ease, padding 0.2s ease;
+      }
+      .doc-sidebar.collapsed {
+        display: none;
       }
       .doc-content {
         flex: 1;
@@ -168,6 +176,10 @@ export class RCodeWorkspace extends RorschachBase {
 
   override updated(changedProperties: Map<string, any>) {
     super.updated(changedProperties);
+
+    if (changedProperties.has('collection')) {
+      this._fetchManifest();
+    }
 
     const storeDoc = this._currentDocArtifact.value as string | null;
     if (storeDoc && storeDoc !== this._selectedPage) {
@@ -286,11 +298,23 @@ export class RCodeWorkspace extends RorschachBase {
   private async _fetchManifest() {
     this._loading = true;
     try {
-      const res = await fetch('/documentation/toc.json');
+      const res = await fetch(`/${this.collection}/toc.json`);
       if (!res.ok) throw new Error('Failed to fetch TOC');
       const data = await res.json();
       if (data && Array.isArray(data)) {
-        this._treeData = this._mapTocToTree(data);
+        if (data.length > 0) {
+          const mappedNodes = this._mapTocToTree(data);
+          this._treeData = [
+            {
+              id: `collection-${this.collection}`,
+              label: this.collection,
+              icon: 'folder',
+              children: mappedNodes
+            }
+          ];
+        } else {
+          this._treeData = [];
+        }
 
         const findFirstLeaf = (nodes: TreeNode[]): string | null => {
           for (const node of nodes) {
@@ -432,15 +456,26 @@ export class RCodeWorkspace extends RorschachBase {
       <r-panel elevation="1">
         <r-toolbar slot="header-container">
           <r-tabs @tab-change=${this._handleTabChange}>
-            <button ?active=${this._activeTab === 'bash'} data-tab="bash">
-              <r-icon name="terminal" size="sm" style="margin-right: 6px;"></r-icon>
-              <span>Bash</span>
-            </button>
             <button ?active=${this._activeTab === 'docs'} data-tab="docs">
               <r-icon name="file-text" size="sm" style="margin-right: 6px;"></r-icon>
               <span>Documentation</span>
             </button>
+            <button ?active=${this._activeTab === 'bash'} data-tab="bash">
+              <r-icon name="terminal" size="sm" style="margin-right: 6px;"></r-icon>
+              <span>Bash</span>
+            </button>
           </r-tabs>
+          ${this._activeTab === 'docs' ? html`
+            <r-button
+              slot="actions"
+              variant="ghost"
+              size="sm"
+              title="${this._sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}"
+              @click=${() => this._sidebarCollapsed = !this._sidebarCollapsed}
+            >
+              <r-icon name=${this._sidebarCollapsed ? 'panel-left-open' : 'panel-left-close'} size="sm"></r-icon>
+            </r-button>
+          ` : ''}
         </r-toolbar>
 
         <div class="flex-column flex-grow-1" style="height: 100%; display: flex; flex-direction: column; overflow: hidden;">
@@ -478,10 +513,7 @@ Workspace folder: /workspace (read-write)</div>
             </div>
           ` : html`
             <div class="doc-layout">
-              <div class="doc-sidebar">
-                <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); margin-bottom: 12px; font-weight: 700;">
-                  Documentation
-                </div>
+              <div class="doc-sidebar ${this._sidebarCollapsed ? 'collapsed' : ''}">
                 ${this._loading ? html`<div class="text-dim text-mono" style="font-size: 0.72rem;">Loading...</div>` : html`
                   <r-tree
                     .data=${this._treeData}
@@ -497,7 +529,7 @@ Workspace folder: /workspace (read-write)</div>
               <div class="doc-content">
                 ${this._selectedPage ? html`
                   <iframe
-                    src="/documentation/${this._selectedPage}"
+                    src="/${this.collection}/${this._selectedPage}"
                     title="Documentation Page"
                     sandbox="allow-same-origin allow-scripts allow-popups"
                   ></iframe>

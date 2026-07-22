@@ -2,30 +2,15 @@ import type { ActorRef } from '../../system/index.ts'
 import type { BashExecResult } from 'just-bash'
 import type { ContextSnapshotEvent, AgentModelOptions } from '../../types/agents.ts'
 import type { MessageAttachment, HttpWsFrameEvent } from '../../types/events.ts'
-import type { LlmProviderMsg } from '../../types/llm.ts'
-import type { ToolCollection, ToolFinalReply, ToolInvokeMsg, ToolMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import type { ToolCollection, ToolInvokeMsg, ToolMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
 import type { ContextView, LoopMsg, LoopState, SpanHandle } from '../../system/index.ts'
+import type { HttpRequestMsg } from '../../types/routes.ts'
 
 export type CodingConfig = {
   projectRoot: string
   projectMount: string
   workspaceDir?: string
   coding: AgentModelOptions
-  docs: AgentModelOptions
-}
-
-export type DocPageMeta = {
-  title: string
-  filename: string
-  summary: string
-  sourcePaths: string[]
-  createdAt: string
-}
-
-export type DocsManifest = {
-  generatedAt: string
-  query: string
-  pages: DocPageMeta[]
 }
 
 export type CodingAgentExtra =
@@ -42,14 +27,13 @@ export type CodingAgentState = {
   tools: ToolCollection
 }
 
-
 export interface TocNode {
   title: string
   filename?: string
   children?: TocNode[]
 }
 
-export type DocumentationState = {
+export type PageToolsState = {
   writing: boolean
   persistenceRef: ActorRef<any> | null
 }
@@ -70,9 +54,7 @@ export type ProjectShellMsg =
   | { type: '_readDone'; content: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_readErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
 
-import type { HttpRequestMsg } from '../../types/routes.ts'
-
-export type DocumentationMsg =
+export type PageToolsMsg =
   | HttpRequestMsg
   | ToolInvokeMsg
   | { type: '_done' }
@@ -82,12 +64,6 @@ export type DocumentationMsg =
   | { type: '_persistenceRef'; ref: ActorRef<any> | null }
 
 export type CodingAgentOptions = AgentModelOptions & {
-  projectMount: string
-  tools: ToolCollection
-}
-
-export type DocsAgentOptions = AgentModelOptions & {
-  maxToolLoops: number
   projectMount: string
   tools: ToolCollection
 }
