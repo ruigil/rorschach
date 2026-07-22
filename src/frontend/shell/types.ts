@@ -27,6 +27,8 @@ export type Source = {
   snippet?: string
 };
 
+export type ToolCallItem = string | { name: string; arguments?: string }
+
 export type Message = {
   id: string
   role: 'user' | 'assistant' | 'error'
@@ -35,12 +37,12 @@ export type Message = {
   sources?: Source[]
   attachments?: Attachment[]
   timestamp: number
-  toolCalls?: string[]
+  toolCalls?: ToolCallItem[]
 };
 
 export type ActiveStream = {
   isActive: boolean
-  toolCalls: string[]
+  toolCalls: ToolCallItem[]
   reasoning: string
   text: string
   sources: Source[]

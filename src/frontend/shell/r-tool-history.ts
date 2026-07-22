@@ -16,7 +16,7 @@ const formatToolName = (toolName: string): string => {
 
 @customElement('r-tool-history')
 export class RToolHistory extends RorschachBase {
-  @property({ type: Array }) tools: string[] = [];
+  @property({ type: Array }) tools: Array<string | { name: string; arguments?: string }> = [];
   @property({ type: Boolean }) active = false;
 
   static override styles = css`
@@ -82,6 +82,21 @@ export class RToolHistory extends RorschachBase {
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .tool-args {
+      font-family: var(--font-mono, monospace);
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      opacity: 0.85;
+      background: var(--surface-3, rgba(255, 255, 255, 0.05));
+      padding: 1px 6px;
+      border-radius: 4px;
+      max-width: 320px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .status-icon {
@@ -148,15 +163,20 @@ export class RToolHistory extends RorschachBase {
           <span class="header-text">${headerText}</span>
         </summary>
         <ul class="tools-list">
-          ${this.tools.map((tool, idx) => {
+          ${this.tools.map((item, idx) => {
             const isLast = idx === this.tools.length - 1;
             const isActive = isLast && this.active;
+            const toolName = typeof item === 'string' ? item : item.name;
+            const rawArgs = typeof item === 'object' ? item.arguments : undefined;
+            const argsSnippet = rawArgs ? (rawArgs.length > 80 ? rawArgs.slice(0, 80) + '…' : rawArgs) : '';
+
             return html`
               <li class="tool-item">
                 <span class="status-icon ${isActive ? 'active' : 'done'}">
                   ${isActive ? '⚙' : '✓'}
                 </span>
-                <span class="tool-name">${formatToolName(tool)}</span>
+                <span class="tool-name">${formatToolName(toolName)}</span>
+                ${argsSnippet ? html`<code class="tool-args">${argsSnippet}</code>` : ''}
               </li>
             `;
           })}

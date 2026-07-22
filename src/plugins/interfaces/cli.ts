@@ -393,7 +393,8 @@ export const CLI = (): ActorDef<CliMsg, CliState> => {
 
           // ─── Tool call — replace thinking line, add new thinking below ───
           case 'tooling': {
-            const tools = (ev.tools as string[]).join(', ')
+            const rawTools = ev.tools as Array<string | { name: string; arguments?: string }>
+            const tools = rawTools.map(t => typeof t === 'string' ? t : t.name).join(', ')
             setScrollEnd(`${C.cyan}⚙${C.reset} ${C.dim}${tools}…${C.reset}`)
             appendScroll([`${C.dim}⟳ thinking…${C.reset}`])
             // Reposition cursor at the new thinking line so the next chunk's \r\x1b[K clears it.

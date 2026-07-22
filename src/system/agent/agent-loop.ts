@@ -332,7 +332,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
       ctx.log.info(`${log}: tool calls`, { tools: tc.calls.map(c => c.name) })
 
       const accumulatedUsage = addUsage(turn.pendingUsage, tc.usage)
-      emitUi(turn.userId, { type: 'tooling', tools: tc.calls.map(c => c.name) }, ctx)
+      emitUi(turn.userId, { type: 'tooling', tools: tc.calls.map(c => ({ name: c.name, arguments: c.arguments })) }, ctx)
 
       const tools = resolveTools(state)
       const knownCalls: typeof tc.calls = []
