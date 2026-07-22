@@ -28,14 +28,6 @@ const isWorkflow = (value: unknown): value is Workflow => {
   )
 }
 
-const normalizeWorkflow = (parsed: any): Workflow | null => {
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
-  if (typeof parsed.title !== 'string' || !parsed.title.trim()) {
-    parsed.title = (typeof parsed.goal === 'string' && parsed.goal.trim()) ? parsed.goal.trim() : String(parsed.id ?? 'Workflow')
-  }
-  return isWorkflow(parsed) ? parsed : null
-}
-
 const summarize = (workflow: Workflow, filepath: string): WorkflowSummary => ({
   id: workflow.id,
   userId: workflow.userId,
@@ -95,7 +87,7 @@ export const toWorkflowGraph = (workflow: Workflow, run?: WorkflowRunState): Wor
         ...(taskState?.startedAt ? { startedAt: taskState.startedAt } : {}),
         ...(taskState?.completedAt ? { completedAt: taskState.completedAt } : {}),
         ...(taskState?.summary ? { summary: taskState.summary } : {}),
-        ...(taskState?.outputs ? { outputs: taskState.outputs } : {}),
+        ...(taskState?.outputs ? { outputs: taskState.outputs } : (task.outputs ? { outputs: task.outputs } : {})),
         ...(taskState?.error ? { error: taskState.error } : {}),
         ...(taskState?.blockedReason ? { blockedReason: taskState.blockedReason } : {}),
       }
@@ -128,8 +120,7 @@ const loadWorkflows = async (persistenceRef: ActorRef<any>, userId: string): Pro
       }))
       if (!getRes.ok || !getRes.data) return null
       try {
-        const parsed = JSON.parse(getRes.data)
-        return normalizeWorkflow(parsed)
+        return JSON.parse(getRes.data)
       } catch {
         return null
       }
@@ -163,11 +154,10 @@ export const getWorkflow = async (persistenceRef: ActorRef<any>, userId: string,
   if (!getRes.ok || !getRes.data) return { ok: false, error: `Workflow not found: ${workflowId}`, status: 404 }
   try {
     const parsed = JSON.parse(getRes.data)
-    const normalized = normalizeWorkflow(parsed)
-    if (!normalized || normalized.userId !== userId) {
+    if (!isWorkflow(parsed) || parsed.userId !== userId) {
       return { ok: false, error: `Workflow not found: ${workflowId}`, status: 404 }
     }
-    return { ok: true, data: { workflow: normalized, filepath: `workflows/${workflowId}` } }
+    return { ok: true, data: { workflow: parsed, filepath: `workflows/${workflowId}` } }
   } catch {
     return { ok: false, error: `Invalid workflow content`, status: 500 }
   }

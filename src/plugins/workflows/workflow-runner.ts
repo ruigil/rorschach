@@ -33,14 +33,8 @@ const summarizeExecutionTools = (tools: ToolCollection): ExecutionToolSummary[] 
 
 
 
-export const WorkflowRunner = (
-  config: WorkflowRunnerConfig,
-): ActorDef<WorkflowRunnerMsg, RunnerState> => {
+export const WorkflowRunner = (config: WorkflowRunnerConfig ): ActorDef<WorkflowRunnerMsg, RunnerState> => {
   const { model, maxToolLoops } = config
-
-
-
-
 
   const ensureRunActor = (
     state: RunnerState,
@@ -185,10 +179,7 @@ export const WorkflowRunner = (
         })
         ctx.subscribe(WorkflowEventTopic, event => ({ type: '_runUpdated' as const, event }))
         ctx.subscribe(HttpWsFrameTopic, frameEvent => ({ type: '_wsFrame' as const, event: frameEvent }))
-        ctx.subscribe(PersistenceProviderTopic, (event) => ({
-          type: '_persistenceRef' as const,
-          ref: event.ref,
-        }))
+        ctx.subscribe(PersistenceProviderTopic, (event) => ({type: '_persistenceRef' as const, ref: event.ref }))
         return { state }
       },
       terminated: (state, event, ctx) => {

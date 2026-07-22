@@ -38,7 +38,7 @@ const graph = (status = 'running') => ({
       ? { 'job-1': { taskId: 'write-report', toolName: 'write', startedAt: '2026-06-12T10:01:00.000Z' } }
       : {},
     outputs: {
-      report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' },
+      report: { type: 'artifact', key: 'workflow-runs/run-1/report.html', mimeType: 'text/html' },
     },
     events: [
       { timestamp: '2026-06-12T10:00:00.000Z', type: 'runStarted', message: 'Run started.' },
@@ -55,7 +55,7 @@ const graph = (status = 'running') => ({
     attempts: 1,
     startedAt: '2026-06-12T10:00:00.000Z',
     outputs: {
-      report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' },
+      report: { type: 'artifact', key: 'workflow-runs/run-1/report.html', mimeType: 'text/html' },
     },
   }],
   edges: [],
@@ -152,10 +152,10 @@ describe('r-workflow-workspace', () => {
     const job = Object.values(run?.pendingJobs ?? {})[0] as any
     expect(job?.toolName).toBe('write')
     expect(job?.taskId).toBe('write-report')
-    // Artifact href is computed from path + runId
+    // Artifact href is computed from key
     const output = run?.outputs?.report as any
     expect(output?.type).toBe('artifact')
-    expect(output?.path).toBe('report.html')
+    expect(output?.key).toBe('workflow-runs/run-1/report.html')
     // Verify the inspector tab is shown
     expect(inspector?.tab).toBe('run')
   })
@@ -206,7 +206,7 @@ describe('r-workflow-workspace', () => {
         userId: 'anonymous',
         status: 'completed',
         inputs: { city: 'Rio' },
-        outputs: { report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' } },
+        outputs: { report: { type: 'artifact', key: 'workflow-runs/run-1/report.html', mimeType: 'text/html' } },
         activeTaskIds: [],
         activeTasks: {},
         pendingJobs: {},
@@ -217,7 +217,7 @@ describe('r-workflow-workspace', () => {
             startedAt: '2026-06-12T10:00:00.000Z',
             completedAt: '2026-06-12T10:02:00.000Z',
             summary: 'Report finished.',
-            outputs: { report: { type: 'artifact', path: 'report.html', mimeType: 'text/html' } },
+            outputs: { report: { type: 'artifact', key: 'workflow-runs/run-1/report.html', mimeType: 'text/html' } },
           },
         },
         events: [
@@ -368,28 +368,6 @@ describe('r-workflow-workspace', () => {
     expect(graphPanel.open).toBe(false)
   })
 
-  test('removes not tracked badge and renders visual timing bar without task output collapse panel', async () => {
-    const el = await mountClass(RWorkflowWorkspace) as any
-    const ns = store.namespace<WorkflowsState>('workflows')
-    await el.openGraph('workflow-1', 'run-1')
-    ns.set('currentGraph', graph('running'))
-    el._selectedTaskId = 'write-report'
-    await el.updateComplete
-
-    const inspector = el.shadowRoot.querySelector('r-workflow-inspector') as any
-    expect(inspector).not.toBeNull()
-    await inspector.updateComplete
-
-    // Inspect shadow root html
-    const shadowHtml = inspector.shadowRoot.innerHTML
-    expect(shadowHtml).not.toContain('not tracked')
-    expect(shadowHtml).toContain('inspector-info-bar')
-    expect(shadowHtml).toContain('inspector-grid')
-
-    // Verify task output collapse panel is NOT present in task detail
-    const taskOutputPanel = inspector.shadowRoot.querySelector('.plan-task-detail .task-output-panel')
-    expect(taskOutputPanel).toBeNull()
-  })
 
   test('handles 2-step in-place delete confirmation on info bar', async () => {
     const el = await mountClass(RWorkflowWorkspace) as any

@@ -42,7 +42,7 @@ export const mergeWorkflowRunIntoGraph = (graph: any, run: any) => {
         startedAt: taskState.startedAt,
         completedAt: taskState.completedAt,
         summary: taskState.summary,
-        outputs: taskState.outputs,
+        outputs: taskState.outputs ?? node.outputs,
         error: taskState.error,
         blockedReason: taskState.blockedReason,
       }
@@ -395,7 +395,7 @@ export class RWorkflowInspector extends RorschachBase {
   }
 
   private _renderIndividualOutputCollapses(ownerId: string, outputs: Record<string, unknown> | undefined) {
-    if (!outputs || Object.keys(outputs).length === 0) return nothing;
+    if (!outputs || Object.keys(outputs).length === 0 || this._isSpecMap(outputs)) return nothing;
     const entries = Object.entries(outputs);
 
     return html`
@@ -520,7 +520,7 @@ export class RWorkflowInspector extends RorschachBase {
     if (values.length === 0) return false
     const first = values[0]
     if (!first || typeof first !== 'object') return false
-    return ('type' in first) && !('path' in first) && !('url' in first) && (('required' in first) || ('description' in first) || ['string', 'number', 'boolean', 'object', 'array', 'artifact'].includes((first as any).type))
+    return ('type' in first) && !('key' in first) && !('path' in first) && !('url' in first) && (('required' in first) || ('description' in first) || ['string', 'number', 'boolean', 'object', 'array', 'artifact'].includes((first as any).type))
   }
 
   private _renderTaskDetail(task: any) {

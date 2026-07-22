@@ -149,7 +149,7 @@ export type WorkflowGraphNode = {
   startedAt?: string
   completedAt?: string
   summary?: string
-  outputs?: Record<string, WorkflowOutputValue>
+  outputs?: Record<string, WorkflowOutputValue> | Record<string, WorkflowValueSpec>
   error?: string
   blockedReason?: WorkflowTaskBlockedReason
 }
