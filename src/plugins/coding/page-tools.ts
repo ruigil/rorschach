@@ -685,49 +685,51 @@ export const PageTools = (): ActorDef<PageToolsMsg, PageToolsState> => {
         const cleanFilename = safePathFilename(filename)
         const fullPath = `/${collection}/${cleanFilename}`
 
+        const writePageAndToc = async () => {
+          const bodyHtml = await Promise.resolve(marked.parse(markdown))
+          const fullHtml = pageShell(title, bodyHtml)
+
+          // 1. Put the page HTML
+          await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
+            type: 'doc.put',
+            collection,
+            docId: cleanFilename,
+            content: fullHtml,
+            replyTo,
+          }))
+
+          // 2. Fetch existing toc.json
+          let currentToc: TocNode[] = []
+          const tocRes = await ask<PersistenceMsg, PResult<string>>(dl, (replyTo) => ({
+            type: 'doc.get',
+            collection,
+            docId: 'toc.json',
+            replyTo,
+          }))
+          if (tocRes.ok && tocRes.data) {
+            try {
+              const parsedToc = JSON.parse(tocRes.data)
+              if (Array.isArray(parsedToc)) {
+                currentToc = parsedToc
+              }
+            } catch {}
+          }
+
+          // 3. Update TOC tree incrementally
+          const updatedToc = updateTocTree(currentToc, cleanFilename, title)
+
+          // 4. Put updated toc.json
+          await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
+            type: 'doc.put',
+            collection,
+            docId: 'toc.json',
+            content: JSON.stringify(updatedToc, null, 2),
+            replyTo,
+          }))
+        }
+
         ctx.pipeToSelf(
-          (async () => {
-            const bodyHtml = await Promise.resolve(marked.parse(markdown))
-            const fullHtml = pageShell(title, bodyHtml)
-
-            // 1. Put the page HTML
-            await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
-              type: 'doc.put',
-              collection,
-              docId: cleanFilename,
-              content: fullHtml,
-              replyTo,
-            }))
-
-            // 2. Fetch existing toc.json
-            let currentToc: TocNode[] = []
-            const tocRes = await ask<PersistenceMsg, PResult<string>>(dl, (replyTo) => ({
-              type: 'doc.get',
-              collection,
-              docId: 'toc.json',
-              replyTo,
-            }))
-            if (tocRes.ok && tocRes.data) {
-              try {
-                const parsedToc = JSON.parse(tocRes.data)
-                if (Array.isArray(parsedToc)) {
-                  currentToc = parsedToc
-                }
-              } catch {}
-            }
-
-            // 3. Update TOC tree incrementally
-            const updatedToc = updateTocTree(currentToc, cleanFilename, title)
-
-            // 4. Put updated toc.json
-            await ask<PersistenceMsg, PResult>(dl, (replyTo) => ({
-              type: 'doc.put',
-              collection,
-              docId: 'toc.json',
-              content: JSON.stringify(updatedToc, null, 2),
-              replyTo,
-            }))
-          })(),
+          writePageAndToc(),
           () => ({ type: '_writeDone' as const, replyTo: msg.replyTo, text: `wrote ${fullPath}`, span }),
           error => ({ type: '_writeErr' as const, replyTo: msg.replyTo, error: String(error), span }),
         )

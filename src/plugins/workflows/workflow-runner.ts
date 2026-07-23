@@ -123,16 +123,18 @@ export const WorkflowRunner = (config: WorkflowRunnerConfig ): ActorDef<Workflow
       msg.replyTo.send({ ok: false, error: 'Persistence not ready' })
       return { state }
     }
+    const fetchRun = async (): Promise<WorkflowRunnerReply> => {
+      const live = state.live[msg.runId]
+      if (live) {
+        const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(live, replyTo => ({ type: 'get', replyTo }))
+        if (reply.ok) return reply
+      }
+      const result = await getWorkflowRun(state.persistenceRef!, msg.userId, msg.runId)
+      return result.ok ? { ok: true, run: result.data } : { ok: false, error: result.error, status: 404 }
+    }
+
     ctx.pipeToSelf(
-      (async (): Promise<WorkflowRunnerReply> => {
-        const live = state.live[msg.runId]
-        if (live) {
-          const reply = await ask<WorkflowRunExecutorMsg, WorkflowRunExecutorReply>(live, replyTo => ({ type: 'get', replyTo }))
-          if (reply.ok) return reply
-        }
-        const result = await getWorkflowRun(state.persistenceRef!, msg.userId, msg.runId)
-        return result.ok ? { ok: true, run: result.data } : { ok: false, error: result.error, status: 404 }
-      })(),
+      fetchRun(),
       reply => ({ type: '_reply' as const, replyTo: msg.replyTo, reply }),
       error => ({ type: '_reply' as const, replyTo: msg.replyTo, reply: { ok: false as const, error: String(error) } }),
     )

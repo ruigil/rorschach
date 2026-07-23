@@ -52,18 +52,20 @@ export const OAuthRouter = (opts: OAuthRouterOptions): ActorDef<OAuthRouterMsg, 
           return
         }
 
+        const generateAuthUrl = async () => {
+          const stateToken = await ask<OAuthStateMsg, string>(oauthState, r => ({
+            type: 'createState' as const,
+            userId: identity.userId,
+            replyTo: r,
+          }))
+          const redirectUri = baseUrl.replace(/\/$/, '') + '/googleapis/auth/callback'
+          const oauth2      = new google.auth.OAuth2(clientId, clientSecret, redirectUri)
+          const authUrl     = oauth2.generateAuthUrl({ access_type: 'offline', scope: SCOPES, state: stateToken, prompt: 'consent' })
+          return authUrl
+        }
+
         ctx.pipeToSelf(
-          (async () => {
-            const stateToken = await ask<OAuthStateMsg, string>(oauthState, r => ({
-              type: 'createState' as const,
-              userId: identity.userId,
-              replyTo: r,
-            }))
-            const redirectUri = baseUrl.replace(/\/$/, '') + '/googleapis/auth/callback'
-            const oauth2      = new google.auth.OAuth2(clientId, clientSecret, redirectUri)
-            const authUrl     = oauth2.generateAuthUrl({ access_type: 'offline', scope: SCOPES, state: stateToken, prompt: 'consent' })
-            return authUrl
-          })(),
+          generateAuthUrl(),
           (authUrl) => {
             replyTo.send({
               type: 'http.response',
@@ -98,21 +100,23 @@ export const OAuthRouter = (opts: OAuthRouterOptions): ActorDef<OAuthRouterMsg, 
           return
         }
 
-        ctx.pipeToSelf(
-          (async () => {
-            const userId = await ask<OAuthStateMsg, string | null>(oauthState, r => ({
-              type: 'resolveState' as const,
-              state: stateToken,
-              replyTo: r,
-            }))
-            if (!userId) throw new Error('Authorization failed: invalid or expired state.')
+        const handleOAuthCallback = async () => {
+          const userId = await ask<OAuthStateMsg, string | null>(oauthState, r => ({
+            type: 'resolveState' as const,
+            state: stateToken,
+            replyTo: r,
+          }))
+          if (!userId) throw new Error('Authorization failed: invalid or expired state.')
 
-            const redirectUri = baseUrl.replace(/\/$/, '') + '/googleapis/auth/callback'
-            const oauth2      = new google.auth.OAuth2(clientId, clientSecret, redirectUri)
-            const { tokens }  = await oauth2.getToken(code)
-            tokenStore.send({ type: 'setToken' as const, userId, token: tokens as GoogleToken })
-            return 'Connected! You can close this window.'
-          })(),
+          const redirectUri = baseUrl.replace(/\/$/, '') + '/googleapis/auth/callback'
+          const oauth2      = new google.auth.OAuth2(clientId, clientSecret, redirectUri)
+          const { tokens }  = await oauth2.getToken(code)
+          tokenStore.send({ type: 'setToken' as const, userId, token: tokens as GoogleToken })
+          return 'Connected! You can close this window.'
+        }
+
+        ctx.pipeToSelf(
+          handleOAuthCallback(),
           (msg) => {
             replyTo.send({ type: 'http.response', response: closeWindowHtml(msg as string) })
             return { type: 'noop' as const }
@@ -130,15 +134,17 @@ export const OAuthRouter = (opts: OAuthRouterOptions): ActorDef<OAuthRouterMsg, 
           return
         }
 
+        const checkAuthStatus = async () => {
+          const token = await ask(tokenStore, r => ({
+            type: 'getToken' as const,
+            userId: identity.userId,
+            replyTo: r,
+          }))
+          return token !== null
+        }
+
         ctx.pipeToSelf(
-          (async () => {
-            const token = await ask(tokenStore, r => ({
-              type: 'getToken' as const,
-              userId: identity.userId,
-              replyTo: r,
-            }))
-            return token !== null
-          })(),
+          checkAuthStatus(),
           (connected) => {
             jsonResponse({ connected })
             return { type: 'noop' as const }

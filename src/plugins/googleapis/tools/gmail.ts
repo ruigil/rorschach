@@ -94,65 +94,67 @@ export const Gmail = (
   initialState: null,
   handler: onMessage<GmailMsg, null>({
     invoke: (state, msg, ctx) => {
-      ctx.pipeToSelf(
-        (async () => {
-          const token = await ask<TokenStoreMsg, GoogleToken | null>(tokenStoreRef, r => ({ type: 'getToken' as const, userId: msg.userId, replyTo: r }))
-          if (!token) throw new Error('Not authenticated. Connect your Google account via Config > googleapis.')
+      const executeGmailTool = async () => {
+        const token = await ask<TokenStoreMsg, GoogleToken | null>(tokenStoreRef, r => ({ type: 'getToken' as const, userId: msg.userId, replyTo: r }))
+        if (!token) throw new Error('Not authenticated. Connect your Google account via Config > googleapis.')
 
-          const auth = new google.auth.OAuth2(clientId, clientSecret)
-          auth.setCredentials(token)
-          if (token.expiry_date - Date.now() < 5 * 60 * 1000) {
-            const { credentials } = await auth.refreshAccessToken()
-            tokenStoreRef.send({ type: 'setToken', userId: msg.userId, token: credentials as GoogleToken })
-            auth.setCredentials(credentials)
-          }
+        const auth = new google.auth.OAuth2(clientId, clientSecret)
+        auth.setCredentials(token)
+        if (token.expiry_date - Date.now() < 5 * 60 * 1000) {
+          const { credentials } = await auth.refreshAccessToken()
+          tokenStoreRef.send({ type: 'setToken', userId: msg.userId, token: credentials as GoogleToken })
+          auth.setCredentials(credentials)
+        }
 
-          const gmail = google.gmail({ version: 'v1', auth })
-          const args  = JSON.parse(msg.arguments) as Record<string, any>
+        const gmail = google.gmail({ version: 'v1', auth })
+        const args  = JSON.parse(msg.arguments) as Record<string, any>
 
-            if (msg.toolName === gmailListMessagesTool.name) {
-              const res = await gmail.users.messages.list({ userId: 'me', maxResults: args.maxResults ?? 10, labelIds: args.labelIds })
-              const msgs = res.data.messages ?? []
-              const details = await Promise.all(msgs.slice(0, 50).map(async (m) => {
-                const d = await gmail.users.messages.get({ userId: 'me', id: m.id!, format: 'metadata', metadataHeaders: ['Subject', 'From', 'Date'] })
-                return { id: m.id, subject: header(d.data, 'Subject'), from: header(d.data, 'From'), date: header(d.data, 'Date'), snippet: d.data.snippet }
-              }))
-              return JSON.stringify(details)
-            }
+        if (msg.toolName === gmailListMessagesTool.name) {
+          const res = await gmail.users.messages.list({ userId: 'me', maxResults: args.maxResults ?? 10, labelIds: args.labelIds })
+          const msgs = res.data.messages ?? []
+          const details = await Promise.all(msgs.slice(0, 50).map(async (m) => {
+            const d = await gmail.users.messages.get({ userId: 'me', id: m.id!, format: 'metadata', metadataHeaders: ['Subject', 'From', 'Date'] })
+            return { id: m.id, subject: header(d.data, 'Subject'), from: header(d.data, 'From'), date: header(d.data, 'Date'), snippet: d.data.snippet }
+          }))
+          return JSON.stringify(details)
+        }
 
-            if (msg.toolName === gmailGetMessageTool.name) {
-              const res = await gmail.users.messages.get({ userId: 'me', id: args.id, format: 'full' })
-              const body = extractBody(res.data.payload)
-              const subject = header(res.data, 'Subject')
-              const from = header(res.data, 'From')
-              const date = header(res.data, 'Date')
-              return `From: ${from}\nDate: ${date}\nSubject: ${subject}\n\n${body}`
-            }
+        if (msg.toolName === gmailGetMessageTool.name) {
+          const res = await gmail.users.messages.get({ userId: 'me', id: args.id, format: 'full' })
+          const body = extractBody(res.data.payload)
+          const subject = header(res.data, 'Subject')
+          const from = header(res.data, 'From')
+          const date = header(res.data, 'Date')
+          return `From: ${from}\nDate: ${date}\nSubject: ${subject}\n\n${body}`
+        }
 
-            if (msg.toolName === gmailSendMessageTool.name) {
-              const raw = buildRawEmail(args.to, args.subject, args.body, args.cc)
-              await gmail.users.messages.send({ userId: 'me', requestBody: { raw } })
-              return `Sent email to ${args.to}`
-            }
+        if (msg.toolName === gmailSendMessageTool.name) {
+          const raw = buildRawEmail(args.to, args.subject, args.body, args.cc)
+          await gmail.users.messages.send({ userId: 'me', requestBody: { raw } })
+          return `Sent email to ${args.to}`
+        }
 
-            if (msg.toolName === gmailSearchTool.name) {
-            const res = await gmail.users.messages.list({ userId: 'me', q: args.query, maxResults: args.maxResults ?? 10 })
-            const messages = await Promise.all(
-              (res.data.messages ?? []).map(m =>
-                gmail.users.messages.get({ userId: 'me', id: m.id!, format: 'metadata', metadataHeaders: ['Subject', 'From', 'Date'] })
-              )
+        if (msg.toolName === gmailSearchTool.name) {
+          const res = await gmail.users.messages.list({ userId: 'me', q: args.query, maxResults: args.maxResults ?? 10 })
+          const messages = await Promise.all(
+            (res.data.messages ?? []).map(m =>
+              gmail.users.messages.get({ userId: 'me', id: m.id!, format: 'metadata', metadataHeaders: ['Subject', 'From', 'Date'] })
             )
-            return JSON.stringify(messages.map(m => ({
-              id:      m.data.id,
-              subject: header(m.data, 'Subject'),
-              from:    header(m.data, 'From'),
-              date:    header(m.data, 'Date'),
-              snippet: m.data.snippet,
-            })))
-          }
+          )
+          return JSON.stringify(messages.map(m => ({
+            id:      m.data.id,
+            subject: header(m.data, 'Subject'),
+            from:    header(m.data, 'From'),
+            date:    header(m.data, 'Date'),
+            snippet: m.data.snippet,
+          })))
+        }
 
-          throw new Error(`Unknown Gmail tool: ${msg.toolName}`)
-        })(),
+        throw new Error(`Unknown Gmail tool: ${msg.toolName}`)
+      }
+
+      ctx.pipeToSelf(
+        executeGmailTool(),
         (result): GmailMsg => ({ type: '_done', replyTo: msg.replyTo, result }),
         (err):    GmailMsg => ({ type: '_error', replyTo: msg.replyTo, error: String(err) }),
       )

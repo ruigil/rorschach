@@ -437,39 +437,41 @@ export const Signal = (
         const phone = source
 
         if (attachments.length > 0) {
-          ctx.pipeToSelf(
-            (async () => {
-              const copied: MessageAttachment[] = []
-              if (!persistenceRef) {
-                ctx.log.warn('signal: persistence actor not available to copy attachments')
-                return copied
-              }
-              for (const a of attachments) {
-                const kind: MessageAttachment['kind'] =
-                  a.contentType.startsWith('image/') ? 'image' :
-                  a.contentType.startsWith('audio/') ? 'audio' :
-                  a.contentType.startsWith('video/') ? 'video' :
-                  a.contentType.includes('pdf')      ? 'pdf'   : 'file'
-                const ext  = mimeToExt(a.contentType)
-                const key  = `inbound/rorschach-${crypto.randomUUID()}.${ext}`
-                const filePath = `${attachmentsDir}/${a.id}`
-                const stream = Bun.file(filePath).stream()
-                const res = await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
-                  type: 'obj.putStream',
-                  bucket: 'media',
-                  key,
-                  stream,
-                  meta: { contentType: a.contentType },
-                  replyTo
-                }))
-                if (res.ok) {
-                  copied.push({ kind, url: key, mimeType: a.contentType })
-                } else {
-                  ctx.log.error(`signal: failed to write inbound attachment stream: ${res.error}`)
-                }
-              }
+          const copyAttachments = async () => {
+            const copied: MessageAttachment[] = []
+            if (!persistenceRef) {
+              ctx.log.warn('signal: persistence actor not available to copy attachments')
               return copied
-            })(),
+            }
+            for (const a of attachments) {
+              const kind: MessageAttachment['kind'] =
+                a.contentType.startsWith('image/') ? 'image' :
+                a.contentType.startsWith('audio/') ? 'audio' :
+                a.contentType.startsWith('video/') ? 'video' :
+                a.contentType.includes('pdf')      ? 'pdf'   : 'file'
+              const ext  = mimeToExt(a.contentType)
+              const key  = `inbound/rorschach-${crypto.randomUUID()}.${ext}`
+              const filePath = `${attachmentsDir}/${a.id}`
+              const stream = Bun.file(filePath).stream()
+              const res = await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
+                type: 'obj.putStream',
+                bucket: 'media',
+                key,
+                stream,
+                meta: { contentType: a.contentType },
+                replyTo
+              }))
+              if (res.ok) {
+                copied.push({ kind, url: key, mimeType: a.contentType })
+              } else {
+                ctx.log.error(`signal: failed to write inbound attachment stream: ${res.error}`)
+              }
+            }
+            return copied
+          }
+
+          ctx.pipeToSelf(
+            copyAttachments(),
             copied => ({ type: '_attachmentsCopied' as const, phone, text, messageAttachments: copied }),
             err => {
               ctx.log.error('signal: failed to copy attachments, proceeding without them', { error: String(err) })

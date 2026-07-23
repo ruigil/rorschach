@@ -43,62 +43,64 @@ export const Youtube = (
     initialState: null,
     handler: onMessage<YoutubeMsg, null>({
       invoke: (state, msg, ctx) => {
+        const executeYoutubeTool = async () => {
+          const token = await ask<TokenStoreMsg, GoogleToken | null>(tokenStoreRef, r => ({ type: 'getToken' as const, userId: msg.userId, replyTo: r }))
+          if (!token) throw new Error('Not authenticated. Connect your Google account via Config > googleapis.')
+
+          const auth = new google.auth.OAuth2(clientId, clientSecret)
+          auth.setCredentials(token)
+          if (token.expiry_date - Date.now() < 5 * 60 * 1000) {
+            const { credentials } = await auth.refreshAccessToken()
+            tokenStoreRef.send({ type: 'setToken', userId: msg.userId, token: credentials as GoogleToken })
+            auth.setCredentials(credentials)
+          }
+
+          const youtube = google.youtube({ version: 'v3', auth })
+          const args    = JSON.parse(msg.arguments) as Record<string, any>
+
+          if (msg.toolName === youtubeSearchVideosTool.name) {
+            const res = await youtube.search.list({
+              q: args.query,
+              part: ['snippet'],
+              type: ['video'],
+              maxResults: args.maxResults ?? 5,
+            })
+            return JSON.stringify(res.data.items)
+          }
+
+          if (msg.toolName === youtubeVideoDetailsTool.name) {
+            const res = await youtube.videos.list({
+              id: [args.videoId],
+              part: ['snippet', 'statistics', 'contentDetails'],
+            })
+            return JSON.stringify(res.data.items)
+          }
+
+          if (msg.toolName === youtubeVideoDetailsTool.name) {
+            const res = await youtube.videos.list({
+              id:   [args.videoId],
+              part: ['snippet', 'statistics'],
+            })
+            const item = res.data.items?.[0]
+            if (!item) return `No video found with ID: ${args.videoId}`
+
+            return JSON.stringify({
+              videoId:      item.id,
+              title:        item.snippet?.title,
+              description:  item.snippet?.description,
+              viewCount:    item.statistics?.viewCount,
+              likeCount:    item.statistics?.likeCount,
+              commentCount: item.statistics?.commentCount,
+              channelTitle: item.snippet?.channelTitle,
+              publishedAt:  item.snippet?.publishedAt,
+            })
+          }
+
+          throw new Error(`Unknown YouTube tool: ${msg.toolName}`)
+        }
+
         ctx.pipeToSelf(
-          (async () => {
-            const token = await ask<TokenStoreMsg, GoogleToken | null>(tokenStoreRef, r => ({ type: 'getToken' as const, userId: msg.userId, replyTo: r }))
-            if (!token) throw new Error('Not authenticated. Connect your Google account via Config > googleapis.')
-
-            const auth = new google.auth.OAuth2(clientId, clientSecret)
-            auth.setCredentials(token)
-            if (token.expiry_date - Date.now() < 5 * 60 * 1000) {
-              const { credentials } = await auth.refreshAccessToken()
-              tokenStoreRef.send({ type: 'setToken', userId: msg.userId, token: credentials as GoogleToken })
-              auth.setCredentials(credentials)
-            }
-
-            const youtube = google.youtube({ version: 'v3', auth })
-            const args    = JSON.parse(msg.arguments) as Record<string, any>
-
-            if (msg.toolName === youtubeSearchVideosTool.name) {
-              const res = await youtube.search.list({
-                q: args.query,
-                part: ['snippet'],
-                type: ['video'],
-                maxResults: args.maxResults ?? 5,
-              })
-              return JSON.stringify(res.data.items)
-            }
-
-            if (msg.toolName === youtubeVideoDetailsTool.name) {
-              const res = await youtube.videos.list({
-                id: [args.videoId],
-                part: ['snippet', 'statistics', 'contentDetails'],
-              })
-              return JSON.stringify(res.data.items)
-            }
-
-            if (msg.toolName === youtubeVideoDetailsTool.name) {
-              const res = await youtube.videos.list({
-                id:   [args.videoId],
-                part: ['snippet', 'statistics'],
-              })
-              const item = res.data.items?.[0]
-              if (!item) return `No video found with ID: ${args.videoId}`
-
-              return JSON.stringify({
-                videoId:      item.id,
-                title:        item.snippet?.title,
-                description:  item.snippet?.description,
-                viewCount:    item.statistics?.viewCount,
-                likeCount:    item.statistics?.likeCount,
-                commentCount: item.statistics?.commentCount,
-                channelTitle: item.snippet?.channelTitle,
-                publishedAt:  item.snippet?.publishedAt,
-              })
-            }
-
-            throw new Error(`Unknown YouTube tool: ${msg.toolName}`)
-          })(),
+          executeYoutubeTool(),
           (result): YoutubeMsg => ({ type: '_done', replyTo: msg.replyTo, result }),
           (err):    YoutubeMsg => ({ type: '_error', replyTo: msg.replyTo, error: String(err) }),
         )

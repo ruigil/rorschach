@@ -480,24 +480,26 @@ export const Authenticator = (opts: {
         }
         const credentialId = credential.id
 
+        const processAuthentication = async () => {
+          const user = await ask<UserStoreMsg, User | null>(
+            userStore,
+            (r) => ({ type: 'getUserByCredential' as const, credentialId, replyTo: r }),
+            { timeoutMs: 5_000 },
+          )
+          if (!user) throw new Error('credential not found')
+          const deviceKey = user.deviceKeys.find(k => k.id === credentialId)
+          if (!deviceKey) throw new Error('device key not found')
+          const { newCounter } = await verifyAuthentication(
+            challenge.value,
+            credential as Extract<typeof credential, { type: 'authentication' }>,
+            deviceKey,
+            config,
+          )
+          return { userId: user.id, fullName: user.fullName, roles: rolesForIdentity(config, user), newCounter }
+        }
+
         context.pipeToSelf(
-          (async () => {
-            const user = await ask<UserStoreMsg, User | null>(
-              userStore,
-              (r) => ({ type: 'getUserByCredential' as const, credentialId, replyTo: r }),
-              { timeoutMs: 5_000 },
-            )
-            if (!user) throw new Error('credential not found')
-            const deviceKey = user.deviceKeys.find(k => k.id === credentialId)
-            if (!deviceKey) throw new Error('device key not found')
-            const { newCounter } = await verifyAuthentication(
-              challenge.value,
-              credential as Extract<typeof credential, { type: 'authentication' }>,
-              deviceKey,
-              config,
-            )
-            return { userId: user.id, fullName: user.fullName, roles: rolesForIdentity(config, user), newCounter }
-          })(),
+          processAuthentication(),
           ({ userId, fullName, roles, newCounter }): AuthenticatorMsg =>
             ({ type: '_authDone', userId, fullName, roles, challengeId, credentialId, newCounter, replyTo }),
           (err): AuthenticatorMsg => ({ type: '_authFailed', error: String(err), replyTo }),

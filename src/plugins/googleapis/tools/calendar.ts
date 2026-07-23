@@ -74,84 +74,86 @@ export const Calendar = (
   initialState: null,
   handler: onMessage<CalendarMsg, null>({
     invoke: (state, msg, ctx) => {
-      ctx.pipeToSelf(
-        (async () => {
-          const token = await ask<TokenStoreMsg, GoogleToken | null>(tokenStoreRef, r => ({ type: 'getToken' as const, userId: msg.userId, replyTo: r }))
-          if (!token) throw new Error('Not authenticated. Connect your Google account via Config > googleapis.')
+      const executeCalendarTool = async () => {
+        const token = await ask<TokenStoreMsg, GoogleToken | null>(tokenStoreRef, r => ({ type: 'getToken' as const, userId: msg.userId, replyTo: r }))
+        if (!token) throw new Error('Not authenticated. Connect your Google account via Config > googleapis.')
 
-          const auth = new google.auth.OAuth2(clientId, clientSecret)
-          auth.setCredentials(token)
-          if (token.expiry_date - Date.now() < 5 * 60 * 1000) {
-            const { credentials } = await auth.refreshAccessToken()
-            tokenStoreRef.send({ type: 'setToken', userId: msg.userId, token: credentials as GoogleToken })
-            auth.setCredentials(credentials)
+        const auth = new google.auth.OAuth2(clientId, clientSecret)
+        auth.setCredentials(token)
+        if (token.expiry_date - Date.now() < 5 * 60 * 1000) {
+          const { credentials } = await auth.refreshAccessToken()
+          tokenStoreRef.send({ type: 'setToken', userId: msg.userId, token: credentials as GoogleToken })
+          auth.setCredentials(credentials)
+        }
+
+        const calendar = google.calendar({ version: 'v3', auth })
+        const args     = JSON.parse(msg.arguments) as Record<string, any>
+        const calId    = args.calendarId ?? 'primary'
+
+        if (cachedTimezone === null) {
+          try {
+            cachedTimezone = (await calendar.settings.get({ setting: 'timezone' })).data.value ?? 'UTC'
+          } catch {
+            cachedTimezone = 'UTC'
           }
+        }
+        const tz = cachedTimezone
 
-          const calendar = google.calendar({ version: 'v3', auth })
-          const args     = JSON.parse(msg.arguments) as Record<string, any>
-          const calId    = args.calendarId ?? 'primary'
+        if (msg.toolName === calendarListEventsTool.name) {
+          const res = await calendar.events.list({
+            calendarId: args.calendarId ?? 'primary',
+            timeMin: args.timeMin ?? new Date().toISOString(),
+            timeMax: args.timeMax,
+            maxResults: args.maxResults ?? 10,
+            singleEvents: true,
+            orderBy: 'startTime',
+          })
+          return JSON.stringify(res.data.items)
+        }
 
-          if (cachedTimezone === null) {
-            try {
-              cachedTimezone = (await calendar.settings.get({ setting: 'timezone' })).data.value ?? 'UTC'
-            } catch {
-              cachedTimezone = 'UTC'
-            }
+        if (msg.toolName === calendarCreateEventTool.name) {
+          if (!cachedTimezone) {
+            const settings = await calendar.calendarList.get({ calendarId: args.calendarId ?? 'primary' })
+            cachedTimezone = settings.data.timeZone ?? 'UTC'
           }
           const tz = cachedTimezone
-
-          if (msg.toolName === calendarListEventsTool.name) {
-            const res = await calendar.events.list({
-              calendarId: args.calendarId ?? 'primary',
-              timeMin: args.timeMin ?? new Date().toISOString(),
-              timeMax: args.timeMax,
-              maxResults: args.maxResults ?? 10,
-              singleEvents: true,
-              orderBy: 'startTime',
-            })
-            return JSON.stringify(res.data.items)
+          const event = {
+            summary: args.summary,
+            description: args.description,
+            location: args.location,
+            start: { dateTime: args.start, timeZone: tz },
+            end:   { dateTime: args.end,   timeZone: tz },
           }
+          const res = await calendar.events.insert({ calendarId: args.calendarId ?? 'primary', requestBody: event })
+          return `Created event ${res.data.id}`
+        }
 
-          if (msg.toolName === calendarCreateEventTool.name) {
-            if (!cachedTimezone) {
-              const settings = await calendar.calendarList.get({ calendarId: args.calendarId ?? 'primary' })
-              cachedTimezone = settings.data.timeZone ?? 'UTC'
-            }
-            const tz = cachedTimezone
-            const event = {
-              summary: args.summary,
-              description: args.description,
-              location: args.location,
-              start: { dateTime: args.start, timeZone: tz },
-              end:   { dateTime: args.end,   timeZone: tz },
-            }
-            const res = await calendar.events.insert({ calendarId: args.calendarId ?? 'primary', requestBody: event })
-            return `Created event ${res.data.id}`
+        if (msg.toolName === calendarUpdateEventTool.name) {
+          if (!cachedTimezone) {
+            const settings = await calendar.calendarList.get({ calendarId: args.calendarId ?? 'primary' })
+            cachedTimezone = settings.data.timeZone ?? 'UTC'
           }
+          const tz = cachedTimezone
+          const patch: any = {}
+          if (args.summary !== undefined) patch.summary = args.summary
+          if (args.description !== undefined) patch.description = args.description
+          if (args.location !== undefined) patch.location = args.location
+          if (args.start !== undefined) patch.start = { dateTime: args.start, timeZone: tz }
+          if (args.end !== undefined) patch.end = { dateTime: args.end, timeZone: tz }
+          await calendar.events.patch({ calendarId: args.calendarId ?? 'primary', eventId: args.eventId, requestBody: patch })
+          return `Updated event ${args.eventId}`
+        }
 
-          if (msg.toolName === calendarUpdateEventTool.name) {
-            if (!cachedTimezone) {
-              const settings = await calendar.calendarList.get({ calendarId: args.calendarId ?? 'primary' })
-              cachedTimezone = settings.data.timeZone ?? 'UTC'
-            }
-            const tz = cachedTimezone
-            const patch: any = {}
-            if (args.summary !== undefined) patch.summary = args.summary
-            if (args.description !== undefined) patch.description = args.description
-            if (args.location !== undefined) patch.location = args.location
-            if (args.start !== undefined) patch.start = { dateTime: args.start, timeZone: tz }
-            if (args.end !== undefined) patch.end = { dateTime: args.end, timeZone: tz }
-            await calendar.events.patch({ calendarId: args.calendarId ?? 'primary', eventId: args.eventId, requestBody: patch })
-            return `Updated event ${args.eventId}`
-          }
+        if (msg.toolName === calendarDeleteEventTool.name) {
+          await calendar.events.delete({ calendarId: args.calendarId ?? 'primary', eventId: args.eventId })
+          return `Deleted event ${args.eventId}`
+        }
 
-          if (msg.toolName === calendarDeleteEventTool.name) {
-            await calendar.events.delete({ calendarId: args.calendarId ?? 'primary', eventId: args.eventId })
-            return `Deleted event ${args.eventId}`
-          }
+        throw new Error(`Unknown Calendar tool: ${msg.toolName}`)
+      }
 
-          throw new Error(`Unknown Calendar tool: ${msg.toolName}`)
-        })(),
+      ctx.pipeToSelf(
+        executeCalendarTool(),
         (result): CalendarMsg => ({ type: '_done', replyTo: msg.replyTo, result }),
         (err):    CalendarMsg => ({ type: '_error', replyTo: msg.replyTo, error: String(err) }),
       )
