@@ -19,13 +19,16 @@ import {
 import {
   codingGlobTool,
   codingGrepTool,
+  codingStrReplaceTool,
   codingWriteTool,
   assertWorkspaceWritePath,
   runGlob,
   runGrep,
+  runStrReplace,
   runWrite,
   type GlobToolArgs,
   type GrepToolArgs,
+  type StrReplaceToolArgs,
   type WriteToolArgs,
 } from './project-shell-tools.ts'
 
@@ -35,9 +38,11 @@ export {
   MAX_READ_LINE_LIMIT,
   MAX_TOOL_RESULT_CHARS,
   WORKSPACE_MOUNT,
+  formatNumberedLine,
   formatReadResult,
   isAllowedMountPath,
   normalizeVirtualPath,
+  numberLineWindowBody,
   resolveAllowedPath,
   sliceLineWindow,
   truncateForAgent,
@@ -47,6 +52,7 @@ export type { LineWindow } from './project-shell-path.ts'
 export {
   codingGlobTool,
   codingGrepTool,
+  codingStrReplaceTool,
   codingWriteTool,
   DEFAULT_GLOB_MAX_RESULTS,
   DEFAULT_GREP_MAX_MATCHES,
@@ -56,9 +62,11 @@ export {
   assertWorkspaceWritePath,
   compileGlob,
   compileSearchRegex,
+  countOccurrences,
   matchGlob,
   formatGlobResult,
   formatGrepResult,
+  lineNumberAtIndex,
 } from './project-shell-tools.ts'
 
 /** just-bash sandbox output cap (bytes) before agent-side truncation. */
@@ -73,7 +81,8 @@ export const codingBashTool = defineTool(
       command: { type: 'string', description: 'The bash command to execute.' },
       cwd: {
         type: 'string',
-        description: 'Working directory for this command (absolute path under /rorschach or /workspace). Defaults to the session cwd.',
+        description:
+          'Working directory for this command (absolute path under /rorschach or /workspace). Defaults to the agent session cwd (independent of the UI terminal).',
       },
       stdin: { type: 'string', description: 'Optional stdin to pipe to the command.' },
     },
@@ -83,7 +92,7 @@ export const codingBashTool = defineTool(
 
 export const codingReadTool = defineTool(
   'read',
-  'Read a UTF-8 file under /rorschach or /workspace. Returns a line window (default 300 lines). Use offset/limit to page through large files.',
+  'Read a UTF-8 file under /rorschach or /workspace. Returns a line window (default 300 lines) with absolute 1-based LINE| prefixes. Use offset/limit to page through large files. Do not include the LINE| prefixes in str_replace old_string.',
   {
     type: 'object',
     properties: {
@@ -190,8 +199,18 @@ export const ProjectShell = (options: {
     return { ok: true, cwd: normalized }
   }
 
+  /** Prefer shell-reported PWD when it remains under allowed mounts; else keep session cwd. */
+  const nextSessionCwd = (result: BashExecResult, sessionCwd: string, fallbackExecCwd?: string): string => {
+    const raw = result.env?.PWD || fallbackExecCwd || sessionCwd
+    const resolved = resolveCwd(raw, sessionCwd)
+    return resolved.ok ? resolved.cwd : sessionCwd
+  }
+
   return {
-    initialState: { cwd: options.projectMount },
+    initialState: {
+      uiCwd: options.projectMount,
+      agentCwd: options.projectMount,
+    },
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(HttpWsFrameTopic, e => ({ type: '_wsFrame' as const, event: e }))
@@ -201,8 +220,9 @@ export const ProjectShell = (options: {
     handler: onMessage<ProjectShellMsg, ProjectShellState>({
       _wsFrame: (state, msg, ctx) => {
         const { userId, frame } = msg.event
-        const resolved = resolveCwd(frame.cwd, state.cwd || options.projectMount)
-        const execCwd = resolved.ok ? resolved.cwd : state.cwd || options.projectMount
+        const sessionCwd = state.uiCwd || options.projectMount
+        const resolved = resolveCwd(frame.cwd, sessionCwd)
+        const execCwd = resolved.ok ? resolved.cwd : sessionCwd
 
         if (frame.type === 'coding.bash.command') {
           ctx.pipeToSelf(
@@ -226,7 +246,7 @@ export const ProjectShell = (options: {
       },
 
       _wsBashDone: (state, msg, ctx) => {
-        const nextCwd = msg.result.env?.PWD || state.cwd
+        const nextCwd = nextSessionCwd(msg.result, state.uiCwd || options.projectMount)
         const reply = {
           type: 'coding.bash.response',
           cmdId: msg.cmdId,
@@ -236,7 +256,7 @@ export const ProjectShell = (options: {
           cwd: nextCwd,
         }
         ctx.publish(OutboundUserMessageTopic, { userId: msg.userId, text: JSON.stringify(reply) })
-        return { state: { ...state, cwd: nextCwd } }
+        return { state: { ...state, uiCwd: nextCwd } }
       },
 
       _wsBashErr: (state, msg, ctx) => {
@@ -245,7 +265,7 @@ export const ProjectShell = (options: {
           cmdId: msg.cmdId,
           error: msg.error,
           exitCode: -1,
-          cwd: state.cwd,
+          cwd: state.uiCwd,
         }
         ctx.publish(OutboundUserMessageTopic, { userId: msg.userId, text: JSON.stringify(reply) })
         return { state }
@@ -288,7 +308,7 @@ export const ProjectShell = (options: {
             return { state }
           }
 
-          const cwdResolved = resolveCwd(args.cwd, state.cwd || options.projectMount)
+          const cwdResolved = resolveCwd(args.cwd, state.agentCwd || options.projectMount)
           if (!cwdResolved.ok) {
             replyToolError(msg.replyTo, span, cwdResolved.error)
             return { state }
@@ -307,7 +327,7 @@ export const ProjectShell = (options: {
               span,
               cwd: cwdResolved.cwd,
             }),
-            error => ({ type: '_bashErr' as const, error: String(error), replyTo: msg.replyTo, span }),
+            error => ({ type: '_opErr' as const, error: String(error), replyTo: msg.replyTo, span }),
           )
           return { state }
         }
@@ -338,20 +358,20 @@ export const ProjectShell = (options: {
             content => {
               if (content.includes('\0')) {
                 return {
-                  type: '_readErr' as const,
+                  type: '_opErr' as const,
                   error: `Refusing to read binary file: ${resolved.path}`,
                   replyTo: msg.replyTo,
                   span,
                 }
               }
               return {
-                type: '_readDone' as const,
-                content: formatReadResult(resolved.path, content, args.offset, args.limit),
+                type: '_opDone' as const,
+                text: formatReadResult(resolved.path, content, args.offset, args.limit),
                 replyTo: msg.replyTo,
                 span,
               }
             },
-            error => ({ type: '_readErr' as const, error: String(error), replyTo: msg.replyTo, span }),
+            error => ({ type: '_opErr' as const, error: String(error), replyTo: msg.replyTo, span }),
           )
           return { state }
         }
@@ -393,9 +413,9 @@ export const ProjectShell = (options: {
             runGrep(fs, resolved.path, args),
             result =>
               result.ok
-                ? { type: '_grepDone' as const, text: result.text, replyTo: msg.replyTo, span }
-                : { type: '_grepErr' as const, error: result.error, replyTo: msg.replyTo, span },
-            error => ({ type: '_grepErr' as const, error: String(error), replyTo: msg.replyTo, span }),
+                ? { type: '_opDone' as const, text: result.text, replyTo: msg.replyTo, span }
+                : { type: '_opErr' as const, error: result.error, replyTo: msg.replyTo, span },
+            error => ({ type: '_opErr' as const, error: String(error), replyTo: msg.replyTo, span }),
           )
           return { state }
         }
@@ -429,9 +449,9 @@ export const ProjectShell = (options: {
             runGlob(fs, resolved.path, args),
             result =>
               result.ok
-                ? { type: '_globDone' as const, text: result.text, replyTo: msg.replyTo, span }
-                : { type: '_globErr' as const, error: result.error, replyTo: msg.replyTo, span },
-            error => ({ type: '_globErr' as const, error: String(error), replyTo: msg.replyTo, span }),
+                ? { type: '_opDone' as const, text: result.text, replyTo: msg.replyTo, span }
+                : { type: '_opErr' as const, error: result.error, replyTo: msg.replyTo, span },
+            error => ({ type: '_opErr' as const, error: String(error), replyTo: msg.replyTo, span }),
           )
           return { state }
         }
@@ -470,9 +490,61 @@ export const ProjectShell = (options: {
             runWrite(fs, ws.path, { content: args.content, createDirs: args.createDirs }),
             result =>
               result.ok
-                ? { type: '_writeDone' as const, text: result.text, replyTo: msg.replyTo, span }
-                : { type: '_writeErr' as const, error: result.error, replyTo: msg.replyTo, span },
-            error => ({ type: '_writeErr' as const, error: String(error), replyTo: msg.replyTo, span }),
+                ? { type: '_opDone' as const, text: result.text, replyTo: msg.replyTo, span }
+                : { type: '_opErr' as const, error: result.error, replyTo: msg.replyTo, span },
+            error => ({ type: '_opErr' as const, error: String(error), replyTo: msg.replyTo, span }),
+          )
+          return { state }
+        }
+
+        if (msg.toolName === codingStrReplaceTool.name) {
+          const parsed = parseToolArgs<StrReplaceToolArgs>(msg.arguments, obj => {
+            if (typeof obj.path !== 'string' || !obj.path.trim()) return null
+            if (typeof obj.old_string !== 'string') return null
+            if (typeof obj.new_string !== 'string') return null
+            return {
+              path: obj.path,
+              old_string: obj.old_string,
+              new_string: obj.new_string,
+              replace_all: typeof obj.replace_all === 'boolean' ? obj.replace_all : undefined,
+            }
+          }, 'Missing required arguments: path, old_string, new_string')
+
+          if (!parsed.ok) {
+            replyToolError(msg.replyTo, span, parsed.error)
+            return { state }
+          }
+
+          const args = parsed.value
+          const normalized = normalizeVirtualPath(args.path)
+          if (!normalized) {
+            replyToolError(msg.replyTo, span, `Invalid path: ${args.path}`)
+            return { state }
+          }
+          const ws = assertWorkspaceWritePath(normalized)
+          if (!ws.ok) {
+            replyToolError(msg.replyTo, span, ws.error)
+            return { state }
+          }
+
+          ctx.log.info('coding str_replace', {
+            path: ws.path,
+            oldLen: args.old_string.length,
+            newLen: args.new_string.length,
+            replaceAll: args.replace_all === true,
+          })
+
+          ctx.pipeToSelf(
+            runStrReplace(fs, ws.path, {
+              old_string: args.old_string,
+              new_string: args.new_string,
+              replace_all: args.replace_all,
+            }),
+            result =>
+              result.ok
+                ? { type: '_opDone' as const, text: result.text, replyTo: msg.replyTo, span }
+                : { type: '_opErr' as const, error: result.error, replyTo: msg.replyTo, span },
+            error => ({ type: '_opErr' as const, error: String(error), replyTo: msg.replyTo, span }),
           )
           return { state }
         }
@@ -482,63 +554,22 @@ export const ProjectShell = (options: {
       },
 
       _bashDone: (state, msg) => {
-        msg.span?.done({ exitCode: msg.result.exitCode })
+        const nextCwd = nextSessionCwd(msg.result, state.agentCwd || options.projectMount, msg.cwd)
+        msg.span?.done({ exitCode: msg.result.exitCode, cwd: nextCwd })
         msg.replyTo.send({
           type: 'toolResult',
-          result: { text: formatExecResult(msg.result, msg.cwd) },
+          result: { text: formatExecResult(msg.result, nextCwd) },
         })
-        return { state }
+        return { state: { ...state, agentCwd: nextCwd } }
       },
 
-      _bashErr: (state, msg) => {
-        msg.span?.error(msg.error)
-        msg.replyTo.send({ type: 'toolError', error: msg.error })
-        return { state }
-      },
-
-      _readDone: (state, msg) => {
-        msg.span?.done()
-        msg.replyTo.send({ type: 'toolResult', result: { text: msg.content } })
-        return { state }
-      },
-
-      _readErr: (state, msg) => {
-        msg.span?.error(msg.error)
-        msg.replyTo.send({ type: 'toolError', error: msg.error })
-        return { state }
-      },
-
-      _grepDone: (state, msg) => {
+      _opDone: (state, msg) => {
         msg.span?.done()
         msg.replyTo.send({ type: 'toolResult', result: { text: msg.text } })
         return { state }
       },
 
-      _grepErr: (state, msg) => {
-        msg.span?.error(msg.error)
-        msg.replyTo.send({ type: 'toolError', error: msg.error })
-        return { state }
-      },
-
-      _globDone: (state, msg) => {
-        msg.span?.done()
-        msg.replyTo.send({ type: 'toolResult', result: { text: msg.text } })
-        return { state }
-      },
-
-      _globErr: (state, msg) => {
-        msg.span?.error(msg.error)
-        msg.replyTo.send({ type: 'toolError', error: msg.error })
-        return { state }
-      },
-
-      _writeDone: (state, msg) => {
-        msg.span?.done()
-        msg.replyTo.send({ type: 'toolResult', result: { text: msg.text } })
-        return { state }
-      },
-
-      _writeErr: (state, msg) => {
+      _opErr: (state, msg) => {
         msg.span?.error(msg.error)
         msg.replyTo.send({ type: 'toolError', error: msg.error })
         return { state }

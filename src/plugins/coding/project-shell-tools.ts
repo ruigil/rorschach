@@ -102,6 +102,33 @@ export const codingWriteTool = defineTool(
   },
 )
 
+export const codingStrReplaceTool = defineTool(
+  'str_replace',
+  'Replace an exact UTF-8 substring in an existing file under /workspace only. Prefer over write for small edits. Fails if old_string is missing or not unique (unless replace_all). Never include read-tool line-number prefixes (N|) in old_string/new_string.',
+  {
+    type: 'object',
+    properties: {
+      path: {
+        type: 'string',
+        description: 'Absolute path under /workspace.',
+      },
+      old_string: {
+        type: 'string',
+        description: 'Exact text to find (include enough surrounding context to be unique).',
+      },
+      new_string: {
+        type: 'string',
+        description: 'Replacement text (may be empty to delete the matched text).',
+      },
+      replace_all: {
+        type: 'boolean',
+        description: 'Replace every non-overlapping occurrence (default false; requires a unique match when false).',
+      },
+    },
+    required: ['path', 'old_string', 'new_string'],
+  },
+)
+
 export type GrepToolArgs = {
   pattern: string
   path?: string
@@ -123,7 +150,39 @@ export type WriteToolArgs = {
   createDirs?: boolean
 }
 
+export type StrReplaceToolArgs = {
+  path: string
+  old_string: string
+  new_string: string
+  replace_all?: boolean
+}
+
 export type PathResolveResult = { ok: true; path: string } | { ok: false; error: string }
+
+/** Count non-overlapping occurrences of needle in haystack (left-to-right). */
+export const countOccurrences = (haystack: string, needle: string): number => {
+  if (!needle) return 0
+  let count = 0
+  let from = 0
+  while (from <= haystack.length) {
+    const idx = haystack.indexOf(needle, from)
+    if (idx === -1) break
+    count += 1
+    from = idx + needle.length
+  }
+  return count
+}
+
+/** 1-based line number of the first character index in content (1 if empty). */
+export const lineNumberAtIndex = (content: string, index: number): number => {
+  if (index <= 0) return 1
+  let line = 1
+  const end = Math.min(index, content.length)
+  for (let i = 0; i < end; i++) {
+    if (content[i] === '\n') line += 1
+  }
+  return line
+}
 
 /**
  * Convert a glob pattern to a RegExp that matches full relative paths.
@@ -539,5 +598,90 @@ export const runWrite = async (
   return {
     ok: true,
     text: `${action} ${args.content.length} chars to ${path}`,
+  }
+}
+
+export const runStrReplace = async (
+  fs: IFileSystem,
+  path: string,
+  args: { old_string: string; new_string: string; replace_all?: boolean },
+): Promise<{ ok: true; text: string } | { ok: false; error: string }> => {
+  if (typeof args.old_string !== 'string' || args.old_string.length === 0) {
+    return { ok: false, error: 'old_string must be a non-empty string' }
+  }
+  if (typeof args.new_string !== 'string') {
+    return { ok: false, error: 'Missing required argument: new_string' }
+  }
+  if (args.old_string === args.new_string) {
+    return { ok: false, error: 'old_string and new_string are identical; no change to apply' }
+  }
+
+  let content: string
+  try {
+    const exists = await fs.exists(path)
+    if (!exists) {
+      return { ok: false, error: `File not found: ${path}` }
+    }
+    content = await fs.readFile(path)
+  } catch (err) {
+    return { ok: false, error: String(err) }
+  }
+
+  if (content.includes('\0')) {
+    return { ok: false, error: `Refusing to edit binary file: ${path}` }
+  }
+  if (content.length > MAX_WRITE_CHARS) {
+    return {
+      ok: false,
+      error: `file too large to edit (max ${MAX_WRITE_CHARS} chars, got ${content.length})`,
+    }
+  }
+
+  const replaceAll = args.replace_all === true
+  const matches = countOccurrences(content, args.old_string)
+
+  if (matches === 0) {
+    const preview =
+      args.old_string.length > 80 ? `${args.old_string.slice(0, 80)}…` : args.old_string
+    return {
+      ok: false,
+      error: `old_string not found in ${path}: ${JSON.stringify(preview)}`,
+    }
+  }
+
+  if (!replaceAll && matches > 1) {
+    return {
+      ok: false,
+      error:
+        `old_string matched ${matches} times in ${path}; provide more context for a unique match, or set replace_all: true`,
+    }
+  }
+
+  const firstIdx = content.indexOf(args.old_string)
+  const firstLine = lineNumberAtIndex(content, firstIdx)
+
+  const next = replaceAll
+    ? content.split(args.old_string).join(args.new_string)
+    : content.slice(0, firstIdx) + args.new_string + content.slice(firstIdx + args.old_string.length)
+
+  if (next.length > MAX_WRITE_CHARS) {
+    return {
+      ok: false,
+      error: `result too large (max ${MAX_WRITE_CHARS} chars, got ${next.length})`,
+    }
+  }
+
+  try {
+    await fs.writeFile(path, next)
+  } catch (err) {
+    return { ok: false, error: String(err) }
+  }
+
+  const n = replaceAll ? matches : 1
+  return {
+    ok: true,
+    text:
+      `Replaced ${n} occurrence${n === 1 ? '' : 's'} in ${path}` +
+      ` (first at line ${firstLine}; was ${content.length} chars, now ${next.length} chars)`,
   }
 }

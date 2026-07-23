@@ -6,6 +6,7 @@ import {
   codingGlobTool,
   codingGrepTool,
   codingReadTool,
+  codingStrReplaceTool,
   codingWriteTool,
 } from '../plugins/coding/project-shell.ts'
 import type { TocNode } from '../plugins/coding/types.ts'
@@ -64,13 +65,14 @@ describe('Page Tools Suite', () => {
     ])
   })
 
-  test('CodingAgentDescriptor registers coding tools including grep/glob/write', () => {
+  test('CodingAgentDescriptor registers coding tools including grep/glob/write/str_replace', () => {
     const mockTools = {
       bash: codingBashTool,
       read: codingReadTool,
       grep: codingGrepTool,
       glob: codingGlobTool,
       write: codingWriteTool,
+      str_replace: codingStrReplaceTool,
       write_html_page: writeHTMLPageTool,
     } as any
 
@@ -86,6 +88,8 @@ describe('Page Tools Suite', () => {
     expect(descriptor.systemPrompt).toContain('grep')
     expect(descriptor.systemPrompt).toContain('glob')
     expect(descriptor.systemPrompt).toContain('write:')
+    expect(descriptor.systemPrompt).toContain('str_replace')
+    expect(descriptor.systemPrompt).toContain('LINE|')
 
     const toolNames = descriptor.internalTools.map(t => t.name)
     expect(toolNames).toContain('bash')
@@ -93,6 +97,7 @@ describe('Page Tools Suite', () => {
     expect(toolNames).toContain('grep')
     expect(toolNames).toContain('glob')
     expect(toolNames).toContain('write')
+    expect(toolNames).toContain('str_replace')
     expect(toolNames).toContain('write_html_page')
   })
 })

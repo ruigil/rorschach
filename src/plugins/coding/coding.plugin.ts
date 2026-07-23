@@ -9,6 +9,7 @@ import {
   codingGlobTool,
   codingGrepTool,
   codingReadTool,
+  codingStrReplaceTool,
   codingWriteTool,
 } from './project-shell.ts'
 import { buildCodingRoutes, codingSchemas } from './routes.ts'
@@ -44,6 +45,7 @@ const buildCodingTools = (
   [codingGrepTool.name]: { ...codingGrepTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
   [codingGlobTool.name]: { ...codingGlobTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
   [codingWriteTool.name]: { ...codingWriteTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
+  [codingStrReplaceTool.name]: { ...codingStrReplaceTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
   [writeHTMLPageTool.name]: { ...writeHTMLPageTool, ref: pageToolsRef as unknown as ActorRef<ToolMsg> },
 })
 

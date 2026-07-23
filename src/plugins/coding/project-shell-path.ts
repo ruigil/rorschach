@@ -102,6 +102,18 @@ export const sliceLineWindow = (content: string, offset = 1, limit = DEFAULT_REA
   }
 }
 
+/** Format one content line with absolute 1-based line number prefix (`N|…`). */
+export const formatNumberedLine = (lineNo: number, text: string, width: number): string =>
+  `${String(lineNo).padStart(Math.max(1, width), ' ')}|${text}`
+
+/** Prefix each line of a window body with absolute file line numbers. */
+export const numberLineWindowBody = (body: string, startLine: number, endLine: number): string => {
+  if (body === '' && endLine < startLine) return ''
+  const width = String(Math.max(endLine, startLine, 1)).length
+  const lines = body.split('\n')
+  return lines.map((line, i) => formatNumberedLine(startLine + i, line, width)).join('\n')
+}
+
 /** Format a read-tool payload with path/line metadata for the agent. */
 export const formatReadResult = (path: string, content: string, offset?: number, limit?: number): string => {
   const window = sliceLineWindow(content, offset ?? 1, limit ?? DEFAULT_READ_LINE_LIMIT)
@@ -110,7 +122,12 @@ export const formatReadResult = (path: string, content: string, offset?: number,
       ? `// path: ${path}\n// empty file\n`
       : `// path: ${path}\n// lines ${window.startLine}-${window.endLine} of ${window.totalLines}\n`
 
-  let text = header + window.body
+  const numberedBody =
+    window.totalLines === 0
+      ? ''
+      : numberLineWindowBody(window.body, window.startLine, window.endLine)
+
+  let text = header + numberedBody
   if (window.truncatedByLines && window.endLine < window.totalLines) {
     text += `\n// … truncated; use offset=${window.endLine + 1} to continue`
   } else if (window.truncatedByLines && window.startLine > 1) {

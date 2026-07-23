@@ -39,7 +39,10 @@ export type PageToolsState = {
 }
 
 export type ProjectShellState = {
-  cwd: string
+  /** Working directory for the Code surface terminal (UI websocket bash). */
+  uiCwd: string
+  /** Working directory for the coding agent bash tool (independent of UI). */
+  agentCwd: string
 }
 
 export type ProjectShellMsg =
@@ -50,15 +53,10 @@ export type ProjectShellMsg =
   | { type: '_wsAutocompleteDone'; result: BashExecResult; userId: string; cmdId: string }
   | { type: '_wsAutocompleteErr'; error: string; userId: string; cmdId: string }
   | { type: '_bashDone'; result: BashExecResult; replyTo: ActorRef<ToolReply>; span: SpanHandle | null; cwd: string }
-  | { type: '_bashErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_readDone'; content: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_readErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_grepDone'; text: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_grepErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_globDone'; text: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_globErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_writeDone'; text: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_writeErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  /** Shared success path for tool ops that only return text (read/grep/glob/write/str_replace). */
+  | { type: '_opDone'; text: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  /** Shared error path for all tool ops (including bash). */
+  | { type: '_opErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
 
 export type PageToolsMsg =
   | HttpRequestMsg
