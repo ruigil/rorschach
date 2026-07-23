@@ -23,7 +23,7 @@ const config = defineConfig<ToolsConfig>('tools', {
 export default createPluginFactory<ToolsConfig>({
   id: 'tools',
   version: '1.0.0',
-  description: 'Tool actors: web search, bash execution, and vision analysis',
+  description: 'Tool actors: web search, vision, audio, video, cron, PDF, and file fetch',
   configDescriptor: config,
   maskKeys: ['apiKey'],
   slots: {

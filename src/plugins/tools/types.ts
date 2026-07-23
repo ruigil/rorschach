@@ -2,7 +2,6 @@ import type { ActorRef, SpanHandle } from '../../system/index.ts'
 import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply, VisionProviderReply, VideoSubmitReply, VideoPollReply, VideoDownloadReply, TranscriptionProviderReply, SpeechProviderReply } from '../../types/llm.ts'
 import type { PersistenceMsg } from '../../types/persistence.ts'
-import type { BashExecResult } from 'just-bash'
 
 // ─── Tools Plugin Config ───
 
@@ -60,19 +59,6 @@ export type WebSearchActorOptions = {
   apiKey: string
   count?: number
 }
-
-// ─── Bash Tool Actor Types ───
-
-export type BashToolMsg =
-  | ToolInvokeMsg
-  | { type: '_bashDone'; result: BashExecResult; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_bashErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_writeDone'; path: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_writeErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_readDone'; content: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_readErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_editReadDone'; path: string; target: string; replacement: string; content: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_editWriteDone'; path: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
 
 // ─── Vision Actor Types ───
 
