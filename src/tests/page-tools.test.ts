@@ -1,7 +1,13 @@
 import { expect, test, describe } from 'bun:test'
 import { pageShell, safePathFilename, updateTocTree, writeHTMLPageTool } from '../plugins/coding/page-tools.ts'
 import { CodingAgentDescriptor } from '../plugins/coding/coding-agent.ts'
-import { codingBashTool, codingReadTool } from '../plugins/coding/project-shell.ts'
+import {
+  codingBashTool,
+  codingGlobTool,
+  codingGrepTool,
+  codingReadTool,
+  codingWriteTool,
+} from '../plugins/coding/project-shell.ts'
 import type { TocNode } from '../plugins/coding/types.ts'
 
 describe('Page Tools Suite', () => {
@@ -58,10 +64,13 @@ describe('Page Tools Suite', () => {
     ])
   })
 
-  test('CodingAgentDescriptor registers bash, read, and write_html_page tools', () => {
+  test('CodingAgentDescriptor registers coding tools including grep/glob/write', () => {
     const mockTools = {
       bash: codingBashTool,
       read: codingReadTool,
+      grep: codingGrepTool,
+      glob: codingGlobTool,
+      write: codingWriteTool,
       write_html_page: writeHTMLPageTool,
     } as any
 
@@ -74,10 +83,16 @@ describe('Page Tools Suite', () => {
     expect(descriptor.mode).toBe('coding')
     expect(descriptor.capabilities).toEqual({ userVisible: true })
     expect(descriptor.systemPrompt).toContain('write_html_page')
+    expect(descriptor.systemPrompt).toContain('grep')
+    expect(descriptor.systemPrompt).toContain('glob')
+    expect(descriptor.systemPrompt).toContain('write:')
 
     const toolNames = descriptor.internalTools.map(t => t.name)
     expect(toolNames).toContain('bash')
     expect(toolNames).toContain('read')
+    expect(toolNames).toContain('grep')
+    expect(toolNames).toContain('glob')
+    expect(toolNames).toContain('write')
     expect(toolNames).toContain('write_html_page')
   })
 })

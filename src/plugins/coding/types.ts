@@ -49,10 +49,16 @@ export type ProjectShellMsg =
   | { type: '_wsBashErr'; error: string; userId: string; cmdId: string }
   | { type: '_wsAutocompleteDone'; result: BashExecResult; userId: string; cmdId: string }
   | { type: '_wsAutocompleteErr'; error: string; userId: string; cmdId: string }
-  | { type: '_bashDone'; result: BashExecResult; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_bashDone'; result: BashExecResult; replyTo: ActorRef<ToolReply>; span: SpanHandle | null; cwd: string }
   | { type: '_bashErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_readDone'; content: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
   | { type: '_readErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_grepDone'; text: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_grepErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_globDone'; text: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_globErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_writeDone'; text: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_writeErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
 
 export type PageToolsMsg =
   | HttpRequestMsg

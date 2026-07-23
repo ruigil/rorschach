@@ -3,7 +3,14 @@ import type { ActorRef } from '../../system/index.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { PageTools, writeHTMLPageTool } from './page-tools.ts'
 import { CodingAgentDescriptor } from './coding-agent.ts'
-import { ProjectShell, codingBashTool, codingReadTool } from './project-shell.ts'
+import {
+  ProjectShell,
+  codingBashTool,
+  codingGlobTool,
+  codingGrepTool,
+  codingReadTool,
+  codingWriteTool,
+} from './project-shell.ts'
 import { buildCodingRoutes, codingSchemas } from './routes.ts'
 import type { PageToolsMsg, CodingConfig, ProjectShellMsg } from './types.ts'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
@@ -34,6 +41,9 @@ const buildCodingTools = (
 ): ToolCollection => ({
   [codingBashTool.name]: { ...codingBashTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
   [codingReadTool.name]: { ...codingReadTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
+  [codingGrepTool.name]: { ...codingGrepTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
+  [codingGlobTool.name]: { ...codingGlobTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
+  [codingWriteTool.name]: { ...codingWriteTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
   [writeHTMLPageTool.name]: { ...writeHTMLPageTool, ref: pageToolsRef as unknown as ActorRef<ToolMsg> },
 })
 
