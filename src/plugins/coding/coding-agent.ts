@@ -27,7 +27,7 @@ Behavior:
     mode: 'coding',
     role: 'coding',
     displayName: 'Coding & Docs',
-    shortDesc: 'Inspect codebase files and write documentation pages.',
+    shortDesc: 'Inspect codebase files write code and documentation pages.',
     systemPrompt,
     internalTools: Object.values(options.tools || {}),
     toolFilter: options.toolFilter,
