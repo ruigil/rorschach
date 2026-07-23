@@ -20,7 +20,7 @@ const embeddingFor = (text: string): number[] => {
   return [1, 1, 1, 1]
 }
 
-function spawnMockLlm(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<LlmProviderMsg> {
+const spawnMockLlm = (system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<LlmProviderMsg> => {
   const def: ActorDef<LlmProviderMsg, null> = {
     handler: (state, msg) => {
       if (msg.type === 'embed') {
@@ -35,13 +35,13 @@ function spawnMockLlm(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef
   return system.spawn('mock-llm', def) as ActorRef<LlmProviderMsg>
 }
 
-function createConcept(
+const createConcept = (
   kgraphRef: ActorRef<KgraphMsg>,
   name: string,
   description: string,
   recordId: string,
   userId = 'test-user',
-): Promise<ConceptUpsertReply> {
+): Promise<ConceptUpsertReply> => {
   const concept: MemoryConcept = { name, description, kind: 'fact', topics: [] }
   return ask<KgraphMsg, ConceptUpsertReply>(
     kgraphRef,
@@ -50,12 +50,12 @@ function createConcept(
   )
 }
 
-function conceptSearch(
+const conceptSearch = (
   kgraphRef: ActorRef<KgraphMsg>,
   query: string,
   topN?: number,
   userId = 'test-user',
-): Promise<ConceptSearchReply> {
+): Promise<ConceptSearchReply> => {
   return ask<KgraphMsg, ConceptSearchReply>(
     kgraphRef,
     (replyTo) => ({ type: 'conceptSearch', query, topN, userId, replyTo }),

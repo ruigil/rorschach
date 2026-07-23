@@ -25,7 +25,7 @@ const defaultState: Partial<ShellState> = {
   workspaceTabOrder: [],
 }
 
-export function resetStore() {
+export const resetStore = () => {
   __resetStoreForTests()
   __resetPluginHostForTests()
   store.namespace<ShellState>('shell').init(defaultState, {
@@ -42,13 +42,13 @@ export function resetStore() {
   })
 }
 
-export function mockStore(key: keyof ShellState, value: any) {
+export const mockStore = (key: keyof ShellState, value: any) => {
   store.namespace<ShellState>('shell').set(key, value)
 }
 
 const registry: Record<string, any> = {}
 
-export function register(tag: string, cls: any) {
+export const register = (tag: string, cls: any) => {
   if (!registry[tag]) {
     registry[tag] = cls
     if (!customElements.get(tag)) {
@@ -57,7 +57,7 @@ export function register(tag: string, cls: any) {
   }
 }
 
-export async function mount(tag: string, attrs?: Record<string, string>) {
+export const mount = async (tag: string, attrs?: Record<string, string>) => {
   const el = document.createElement(tag)
   if (attrs) {
     for (const [k, v] of Object.entries(attrs)) {
@@ -71,7 +71,7 @@ export async function mount(tag: string, attrs?: Record<string, string>) {
   return el
 }
 
-export async function mountClass(cls: any, attrs?: Record<string, string>) {
+export const mountClass = async (cls: any, attrs?: Record<string, string>) => {
   const el = new cls()
   if (attrs) {
     for (const [k, v] of Object.entries(attrs)) {
@@ -86,11 +86,11 @@ export async function mountClass(cls: any, attrs?: Record<string, string>) {
   return el
 }
 
-export async function nextFrame() {
+export const nextFrame = async () => {
   return new Promise(r => requestAnimationFrame(r))
 }
 
-export function cleanup() {
+export const cleanup = () => {
   document.body.innerHTML = ''
   resetStore()
 }

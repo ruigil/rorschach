@@ -25,7 +25,8 @@
     "test": "bun test",
     "typecheck": "bun tsc --noEmit",
     "test:watch": "bun test --watch",
-    "test:coverage": "bun test --coverage"
+    "test:coverage": "bun test --coverage",
+    "lint": "bun x eslint src/"
   },
   "type": "module",
   "dependencies": {
@@ -38,6 +39,7 @@
     "katex": "^0.17.0",
     "lit": "^3.3.3",
     "marked": "^18.0.5",
+    "typescript-eslint": "^8.65.0",
     "unpdf": "^1.6.2"
   }
 }

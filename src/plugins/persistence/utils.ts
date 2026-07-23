@@ -4,7 +4,7 @@ import { mkdir } from 'node:fs/promises'
 /**
  * Resolves a path relative to baseDir, preventing directory traversal.
  */
-export function resolveSafePath(baseDir: string, relativePath: string): string {
+export const resolveSafePath = (baseDir: string, relativePath: string): string => {
   const absoluteBase = resolve(baseDir)
   const absoluteTarget = resolve(join(absoluteBase, relativePath))
 
@@ -17,7 +17,7 @@ export function resolveSafePath(baseDir: string, relativePath: string): string {
 /**
  * Ensures the parent directory of filePath exists.
  */
-export async function ensureParentDir(filePath: string): Promise<void> {
+export const ensureParentDir = async (filePath: string): Promise<void> => {
   const parent = dirname(filePath)
   await mkdir(parent, { recursive: true })
 }

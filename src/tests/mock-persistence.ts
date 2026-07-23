@@ -157,7 +157,7 @@ export const MockPersistenceActor = (): PluginDef<PersistenceMsg, {}> => {
   }
 }
 
-async function readStream(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+const readStream = async (stream: ReadableStream<Uint8Array>): Promise<Uint8Array> => {
   const chunks: Uint8Array[] = []
   const reader = stream.getReader()
   try {

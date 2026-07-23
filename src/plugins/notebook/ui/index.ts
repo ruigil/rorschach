@@ -57,6 +57,7 @@ export const reduceFrame = (frame: any) => {
 }
 
 declare module '@rorschach/webkit/runtime/store.js' {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
   interface NamespaceRegistry {
     notebook: NotebookState
   }

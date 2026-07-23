@@ -15,11 +15,11 @@ import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
 
 // ─── Helpers ───
 
-function currentDateStr(): string {
+const currentDateStr = (): string => {
   return new Date().toISOString().slice(0, 10)
 }
 
-function docId(dateStr: string): string {
+const docId = (dateStr: string): string => {
   return `costs-${dateStr}.jsonl`
 }
 

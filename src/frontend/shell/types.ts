@@ -84,6 +84,7 @@ export type ShellState = {
 };
 
 declare module '@rorschach/webkit/runtime/store.js' {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
   interface NamespaceRegistry {
     shell: ShellState
   }

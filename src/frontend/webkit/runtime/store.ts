@@ -30,11 +30,12 @@ export type Namespace<T extends object> = {
   reset(): void
 };
 
+// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
 export interface NamespaceRegistry {
   // Merged by plugins & shell to map namespace ID -> state shape
 }
 
-export interface Store {
+export type Store = {
   namespace<N extends keyof NamespaceRegistry>(id: N): Namespace<NamespaceRegistry[N]>
   namespace<T extends object>(id: string): Namespace<T>
 }

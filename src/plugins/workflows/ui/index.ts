@@ -92,6 +92,7 @@ export const reduceFrame = (frame: any, host: PluginHostActions) => {
 }
 
 declare module '@rorschach/webkit/runtime/store.js' {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
   interface NamespaceRegistry {
     workflows: WorkflowsState
   }

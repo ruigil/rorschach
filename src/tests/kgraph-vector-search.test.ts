@@ -24,7 +24,7 @@ const embeddingFor = (text: string): number[] => {
   return [1, 1, 1, 1]
 }
 
-function spawnMockLlm(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<LlmProviderMsg> {
+const spawnMockLlm = (system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<LlmProviderMsg> => {
   const def: ActorDef<LlmProviderMsg, null> = {
     handler: (state, msg) => {
       if (msg.type === 'embed') {
@@ -36,12 +36,12 @@ function spawnMockLlm(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef
   return system.spawn('mock-llm', def) as ActorRef<LlmProviderMsg>
 }
 
-function upsertConcept(
+const upsertConcept = (
   kgraphRef: ActorRef<KgraphMsg>,
   concept: MemoryConcept,
   recordId: string,
   userId = 'test-user',
-): Promise<ConceptUpsertReply> {
+): Promise<ConceptUpsertReply> => {
   return ask<KgraphMsg, ConceptUpsertReply>(
     kgraphRef,
     (replyTo) => ({ type: 'upsertConcept', concept, recordId, userId, replyTo }),
@@ -49,12 +49,12 @@ function upsertConcept(
   )
 }
 
-function conceptSearch(
+const conceptSearch = (
   kgraphRef: ActorRef<KgraphMsg>,
   query: string,
   topN?: number,
   userId = 'test-user',
-): Promise<ConceptSearchReply> {
+): Promise<ConceptSearchReply> => {
   return ask<KgraphMsg, ConceptSearchReply>(
     kgraphRef,
     (replyTo) => ({ type: 'conceptSearch', query, topN, userId, replyTo }),
@@ -62,10 +62,10 @@ function conceptSearch(
   )
 }
 
-function linkConcepts(
+const linkConcepts = (
   kgraphRef: ActorRef<KgraphMsg>,
   userId = 'test-user',
-): Promise<ConceptLinksReply> {
+): Promise<ConceptLinksReply> => {
   return ask<KgraphMsg, ConceptLinksReply>(
     kgraphRef,
     (replyTo) => ({
@@ -83,10 +83,10 @@ function linkConcepts(
   )
 }
 
-function linkCandidates(
+const linkCandidates = (
   kgraphRef: ActorRef<KgraphMsg>,
   userId = 'test-user',
-): Promise<LinkCandidatesReply> {
+): Promise<LinkCandidatesReply> => {
   return ask<KgraphMsg, LinkCandidatesReply>(
     kgraphRef,
     (replyTo) => ({ type: 'linkCandidates', userId, limit: 6, anchorsPerTarget: 4, replyTo }),

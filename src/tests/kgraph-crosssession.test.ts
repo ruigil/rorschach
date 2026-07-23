@@ -23,7 +23,7 @@ const embeddingFor = (text: string): number[] => {
   return [1, 1, 1, 1]
 }
 
-function spawnSystem() {
+const spawnSystem = () => {
   return AgentSystem({
     config: {
       persistence: {
@@ -34,7 +34,7 @@ function spawnSystem() {
   })
 }
 
-function spawnLlm(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<LlmProviderMsg> {
+const spawnLlm = (system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<LlmProviderMsg> => {
   const def: ActorDef<LlmProviderMsg, null> = {
     handler: (state, msg) => {
       if (msg.type === 'embed') {
@@ -46,7 +46,7 @@ function spawnLlm(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<Llm
   return system.spawn('mock-llm', def) as ActorRef<LlmProviderMsg>
 }
 
-function spawnKgraph(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<KgraphMsg> {
+const spawnKgraph = (system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<KgraphMsg> => {
   return system.spawn(
     'kgraph',
     Kgraph({ model: EMBED_MODEL, dimensions: DIMS }),
@@ -54,7 +54,7 @@ function spawnKgraph(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<
   ) as ActorRef<KgraphMsg>
 }
 
-function upsertConcept(kgraphRef: ActorRef<KgraphMsg>, concept: MemoryConcept): Promise<ConceptUpsertReply> {
+const upsertConcept = (kgraphRef: ActorRef<KgraphMsg>, concept: MemoryConcept): Promise<ConceptUpsertReply> => {
   return ask<KgraphMsg, ConceptUpsertReply>(
     kgraphRef,
     (replyTo) => ({ type: 'upsertConcept', concept, recordId: 'home-location-record', userId: USER_ID, replyTo }),
@@ -62,7 +62,7 @@ function upsertConcept(kgraphRef: ActorRef<KgraphMsg>, concept: MemoryConcept): 
   )
 }
 
-function conceptSearch(kgraphRef: ActorRef<KgraphMsg>, query: string): Promise<ConceptSearchReply> {
+const conceptSearch = (kgraphRef: ActorRef<KgraphMsg>, query: string): Promise<ConceptSearchReply> => {
   return ask<KgraphMsg, ConceptSearchReply>(
     kgraphRef,
     (replyTo) => ({ type: 'conceptSearch', query, topN: 5, userId: USER_ID, replyTo }),

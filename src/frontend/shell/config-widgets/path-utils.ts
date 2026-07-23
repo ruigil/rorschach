@@ -10,7 +10,7 @@ export type ConfigValues = Record<string, any>
 /** Navigate to the object at `configKey` (dotted path) within `values`,
  *  creating intermediate objects as needed. Returns the parent object that
  *  holds the leaf key. */
-export function resolvePath(values: ConfigValues, configKey: string): ConfigValues {
+export const resolvePath = (values: ConfigValues, configKey: string): ConfigValues => {
   let target = values
   if (configKey) {
     for (const part of configKey.split('.')) {
@@ -21,7 +21,7 @@ export function resolvePath(values: ConfigValues, configKey: string): ConfigValu
 }
 
 /** Read the value at `configKey.key` within `values`, or `undefined`. */
-export function readAtPath(values: ConfigValues, configKey: string, key: string): any {
+export const readAtPath = (values: ConfigValues, configKey: string, key: string): any => {
   let target = values
   if (configKey) {
     for (const part of configKey.split('.')) {
@@ -33,18 +33,18 @@ export function readAtPath(values: ConfigValues, configKey: string, key: string)
 }
 
 /** Write `value` at `configKey.key` within `values`, mutating in place. */
-export function writeAtPath(values: ConfigValues, configKey: string, key: string, value: any): void {
+export const writeAtPath = (values: ConfigValues, configKey: string, key: string, value: any): void => {
   const target = resolvePath(values, configKey)
   target[key] = value
 }
 
 /** Derive the plugin id from a section id (the part before the first dot). */
-export function pluginIdFromSection(sectionId: string): string {
+export const pluginIdFromSection = (sectionId: string): string => {
   return sectionId.split('.')[0]!
 }
 
 /** Compose the next-level config key when recursing into a sub-object. */
-export function childConfigKey(parentKey: string, childKey: string): string {
+export const childConfigKey = (parentKey: string, childKey: string): string => {
   return parentKey ? `${parentKey}.${childKey}` : childKey
 }
 
@@ -58,7 +58,7 @@ export type ConfigTreeNode = {
   section?: any
 }
 
-export function buildConfigTree(schemas: Array<{ id: string; tab: string; title: string; subtitle?: string; schema: any }>): ConfigTreeNode[] {
+export const buildConfigTree = (schemas: Array<{ id: string; tab: string; title: string; subtitle?: string; schema: any }>): ConfigTreeNode[] => {
   const byTab: Record<string, any[]> = {}
   for (const s of schemas) {
     (byTab[s.tab] ??= []).push(s)
@@ -85,12 +85,12 @@ export function buildConfigTree(schemas: Array<{ id: string; tab: string; title:
   return nodes
 }
 
-export function filterConfigTree(nodes: ConfigTreeNode[], query: string): { filteredNodes: ConfigTreeNode[]; autoExpandIds: Set<string> } {
+export const filterConfigTree = (nodes: ConfigTreeNode[], query: string): { filteredNodes: ConfigTreeNode[]; autoExpandIds: Set<string> } => {
   if (!query.trim()) return { filteredNodes: nodes, autoExpandIds: new Set() }
   const q = query.toLowerCase().trim()
   const autoExpandIds = new Set<string>()
 
-  function matchSection(s: any): boolean {
+  const matchSection = (s: any): boolean => {
     if (s.title?.toLowerCase().includes(q)) return true
     if (s.subtitle?.toLowerCase().includes(q)) return true
     if (s.id?.toLowerCase().includes(q)) return true
@@ -102,7 +102,7 @@ export function filterConfigTree(nodes: ConfigTreeNode[], query: string): { filt
     return false
   }
 
-  function filterNodes(nodeList: ConfigTreeNode[]): ConfigTreeNode[] {
+  const filterNodes = (nodeList: ConfigTreeNode[]): ConfigTreeNode[] => {
     const result: ConfigTreeNode[] = []
     for (const node of nodeList) {
       if (node.type === 'section') {
@@ -125,4 +125,3 @@ export function filterConfigTree(nodes: ConfigTreeNode[], query: string): { filt
 
   return { filteredNodes: filterNodes(nodes), autoExpandIds }
 }
-

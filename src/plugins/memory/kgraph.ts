@@ -596,7 +596,7 @@ const linkConceptNodes = async (
 }
 
 // Helper to notify the client that the KGraph has changed (Signal & Pull)
-function notifyKgraphChanged(userId: string, ctx: any) {
+const notifyKgraphChanged = (userId: string, ctx: any) => {
   ctx.publish(OutboundUserMessageTopic, {
     userId,
     text: JSON.stringify({ type: 'memory.kgraph.changed' }),
@@ -604,7 +604,7 @@ function notifyKgraphChanged(userId: string, ctx: any) {
 }
 
 // Helper to push the full, cleaned KGraph to the user via WebSocket
-async function pushKgraphToUser(state: KgraphState, userId: string, ctx: any) {
+const pushKgraphToUser = async (state: KgraphState, userId: string, ctx: any) => {
   if (!state.persistenceRef) return
   const persistenceRef = state.persistenceRef
   const graphId = getGraphId(userId)

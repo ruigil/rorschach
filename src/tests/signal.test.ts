@@ -18,7 +18,7 @@ const tick = (ms = 50) => Bun.sleep(ms)
 // and captures any JSON-RPC requests sent back by the actor.
 //
 //
-function startMockSignalDaemon(port: number) {
+const startMockSignalDaemon = (port: number) => {
   type BunSocket = Parameters<NonNullable<Parameters<typeof Bun.listen>[0]['socket']['open']>>[0]
   const sockets: BunSocket[] = []
   const receivedLines: string[] = []

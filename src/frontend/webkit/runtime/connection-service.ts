@@ -15,24 +15,24 @@ type MessageHandler = (msg: any) => void
 let messageHandler: MessageHandler | null = null
 
 /** Register a callback for incoming WebSocket messages. */
-export function onMessage(handler: MessageHandler): void {
+export const onMessage = (handler: MessageHandler): void => {
   messageHandler = handler
 }
 
 /** Whether the socket is open and ready to send. */
-export function isConnected(): boolean {
+export const isConnected = (): boolean => {
   return socket?.readyState === WebSocket.OPEN
 }
 
 /** Send a JSON frame to the backend. No-op if the socket isn't open. */
-export function send(frame: object): void {
+export const send = (frame: object): void => {
   if (socket?.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(frame))
   }
 }
 
 /** Close the current socket and cancel any pending reconnect. */
-export function disconnect(): void {
+export const disconnect = (): void => {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
@@ -45,7 +45,7 @@ export function disconnect(): void {
 
 /** Open the WebSocket, authenticating via a one-time ticket. Reconnects
  *  automatically on close. Called once by `r-shell._bootstrap()`. */
-export async function connect(): Promise<void> {
+export const connect = async (): Promise<void> => {
   const wsUrl = new URL('ws', location.href)
   wsUrl.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
 

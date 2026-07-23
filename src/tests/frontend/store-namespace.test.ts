@@ -5,6 +5,7 @@ import type { ShellState } from '../../frontend/shell/types.js'
 import { ensureView, closeView } from '../../frontend/shell/view-actions.js'
 
 declare module '../../frontend/webkit/runtime/store.js' {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
   interface NamespaceRegistry {
     ctrltest: { mode: string }
   }
@@ -24,8 +25,8 @@ afterEach(() => {
 
 describe('store.namespace() isolation', () => {
   test('set/get on one namespace does not leak to another', () => {
-    interface FooState { value: string }
-    interface BarState { value: string }
+    type FooState = { value: string }
+    type BarState = { value: string }
 
     store.namespace<FooState>('foo').set('value', 'hello')
     store.namespace<BarState>('bar').set('value', 'world')
@@ -35,8 +36,8 @@ describe('store.namespace() isolation', () => {
   })
 
   test('subscribe on one namespace does not fire for the same key on another', () => {
-    interface FooState { messages: string[] }
-    interface BarState { messages: string[] }
+    type FooState = { messages: string[] }
+    type BarState = { messages: string[] }
 
     const fooCalls: string[][] = []
     const barCalls: string[][] = []
@@ -58,7 +59,7 @@ describe('store.namespace() isolation', () => {
   })
 
   test('init seeds defaults only for absent keys', () => {
-    interface S { a: string; b: string }
+    type S = { a: string; b: string }
     const ns = store.namespace<S>('test')
     ns.init({ a: 'default-a', b: 'default-b' })
     expect(ns.get('a')).toBe('default-a')
@@ -76,7 +77,7 @@ describe('store.namespace() isolation', () => {
     // top-level store.namespace('shell').init({...}) call runs. Without
     // notify, the controller stays stuck on `undefined` and the shell never
     // re-renders with the seeded value.
-    interface S { testField: string }
+    type S = { testField: string }
     const ns = store.namespace<S>('lateinit')
     const calls: (string | undefined)[] = []
     ns.subscribe('testField', (v) => calls.push(v))
@@ -88,7 +89,7 @@ describe('store.namespace() isolation', () => {
   })
 
   test('reset deletes the namespace and drops listeners', () => {
-    interface S { count: number }
+    type S = { count: number }
     const ns = store.namespace<S>('resettest')
     ns.init({ count: 0 })
     const calls: number[] = []
@@ -106,7 +107,7 @@ describe('store.namespace() isolation', () => {
 
 describe('store.namespace() persistence', () => {
   test('set writes to localStorage for a persisted key', () => {
-    interface S { width: number }
+    type S = { width: number }
     const ns = store.namespace<S>('persist-write')
     ns.init({ width: 34 }, { persist: ['width'] })
     ns.set('width', 55)
@@ -115,21 +116,21 @@ describe('store.namespace() persistence', () => {
 
   test('init reads saved localStorage value for a persisted key', () => {
     localStorage.setItem('rorschach.store.persist-read.width', '62')
-    interface S { width: number }
+    type S = { width: number }
     const ns = store.namespace<S>('persist-read')
     ns.init({ width: 34 }, { persist: ['width'] })
     expect(ns.get('width')).toBe(62)
   })
 
   test('init falls back to default when no localStorage entry exists', () => {
-    interface S { width: number }
+    type S = { width: number }
     const ns = store.namespace<S>('persist-default')
     ns.init({ width: 34 }, { persist: ['width'] })
     expect(ns.get('width')).toBe(34)
   })
 
   test('non-persisted keys are not written to localStorage', () => {
-    interface S { a: number; b: number }
+    type S = { a: number; b: number }
     const ns = store.namespace<S>('persist-selective')
     ns.init({ a: 1, b: 2 }, { persist: ['a'] })
     ns.set('a', 10)
@@ -139,7 +140,7 @@ describe('store.namespace() persistence', () => {
   })
 
   test('reset clears persisted key registration so set no longer writes', () => {
-    interface S { width: number }
+    type S = { width: number }
     const ns = store.namespace<S>('persist-reset')
     ns.init({ width: 34 }, { persist: ['width'] })
     ns.set('width', 55)
@@ -154,7 +155,7 @@ describe('store.namespace() persistence', () => {
   })
 
   test('__resetStoreForTests clears persisted key registrations', () => {
-    interface S { width: number }
+    type S = { width: number }
     store.namespace<S>('persist-testreset').init({ width: 34 }, { persist: ['width'] })
     __resetStoreForTests()
     // After full reset, set on the same namespace should not write to localStorage
@@ -200,7 +201,7 @@ describe('shell view actions: ensureView / closeView', () => {
 
 describe('StoreController two-element path', () => {
   test('binds to a namespace key and updates on set', () => {
-    interface TestState { mode: string }
+    type TestState = { mode: string }
 
     // A minimal fake host that implements ReactiveControllerHost
     let updateRequested = false

@@ -11,7 +11,7 @@ import {
 import './r-icon.js';
 import { type IconName } from './icons.js';
 
-export interface TreeNode<T = any> {
+export type TreeNode<T = any> = {
   id: string;
   label: string;
   children?: TreeNode<T>[];

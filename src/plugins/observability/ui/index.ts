@@ -6,7 +6,7 @@ import { RAgentsList, type AgentInfo } from './r-agents-list.js';
 
 export { RObservePanel, RAgentsList };
 
-export interface ObservabilityState {
+export type ObservabilityState = {
   actors: Actor[]
   topics: Topic[]
   logs: LogEvent[]
@@ -19,6 +19,7 @@ export interface ObservabilityState {
 }
 
 declare module '@rorschach/webkit/runtime/store.js' {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
   interface NamespaceRegistry {
     observe: ObservabilityState
   }

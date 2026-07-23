@@ -26,7 +26,7 @@ const EMBEDDINGS: Record<string, number[]> = {
 const EMBEDDING_DIMS = 4
 const EMBEDDING_MODEL = 'test-embed'
 
-function spawnMockLlm(system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<LlmProviderMsg> {
+const spawnMockLlm = (system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<LlmProviderMsg> => {
   const def: ActorDef<LlmProviderMsg, null> = {
     handler: (state, msg) => {
       if (msg.type === 'embed') {
@@ -49,11 +49,11 @@ const concept = (
   topics: [name.toLowerCase()],
 })
 
-function upsertConcept(
+const upsertConcept = (
   kgraphRef: ActorRef<KgraphMsg>,
   value: MemoryConcept,
   recordId: string,
-): Promise<ConceptUpsertReply> {
+): Promise<ConceptUpsertReply> => {
   return ask<KgraphMsg, ConceptUpsertReply>(
     kgraphRef,
     (replyTo) => ({ type: 'upsertConcept', concept: value, recordId, userId: 'test-user', replyTo }),
@@ -61,10 +61,10 @@ function upsertConcept(
   )
 }
 
-function conceptSearch(
+const conceptSearch = (
   kgraphRef: ActorRef<KgraphMsg>,
   query: string,
-): Promise<ConceptSearchReply> {
+): Promise<ConceptSearchReply> => {
   return ask<KgraphMsg, ConceptSearchReply>(
     kgraphRef,
     (replyTo) => ({ type: 'conceptSearch', query, topN: 8, userId: 'test-user', replyTo }),

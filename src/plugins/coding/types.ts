@@ -27,7 +27,7 @@ export type CodingAgentState = {
   tools: ToolCollection
 }
 
-export interface TocNode {
+export type TocNode = {
   title: string
   filename?: string
   children?: TocNode[]

@@ -74,7 +74,7 @@ const currentMonthStart = (): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-function calculateStats(rows: CsvRow[]) {
+const calculateStats = (rows: CsvRow[]) => {
   if (rows.length === 0) {
     return { streak: 0, personalBest: 0, personalBestDay: undefined, weeklyTotal: 0, weeklyAvg: 0, monthlyTotal: 0, monthlyAvg: 0, count: 0, daysCount: 0 }
   }
