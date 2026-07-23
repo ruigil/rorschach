@@ -21,7 +21,8 @@ import { STOP, type Mailbox, type MailboxConfig, type Stop } from './types.ts'
  * In both cases, the `onOverflow` callback is invoked with the dropped item.
  */
 export const createMailbox = <T>(config?: MailboxConfig): Mailbox<T> => {
-  const queue: (T | Stop)[] = []
+  const queue: (T | Stop | undefined)[] = []
+  let head = 0
   let waiter: ((item: T | Stop) => void) | null = null
   let closed = false
   let draining = false
@@ -29,6 +30,15 @@ export const createMailbox = <T>(config?: MailboxConfig): Mailbox<T> => {
   const capacity = config?.capacity
   const strategy = config?.overflowStrategy ?? 'drop-newest'
   const onOverflow = config?.onOverflow
+
+  const getActiveSize = (): number => queue.length - head
+
+  const compactIfNeeded = (): void => {
+    if (head > 1024 && head === queue.length) {
+      queue.length = 0
+      head = 0
+    }
+  }
 
   const deliverOrBuffer = (item: T | Stop): void => {
     if (waiter !== null) {
@@ -54,7 +64,7 @@ export const createMailbox = <T>(config?: MailboxConfig): Mailbox<T> => {
     }
 
     // ─── Bounded check (only when buffering) ───
-    if (capacity !== undefined && queue.length >= capacity) {
+    if (capacity !== undefined && getActiveSize() >= capacity) {
       if (strategy === 'drop-newest') {
         // Drop the incoming message
         onOverflow?.(item)
@@ -62,7 +72,10 @@ export const createMailbox = <T>(config?: MailboxConfig): Mailbox<T> => {
       }
       if (strategy === 'drop-oldest') {
         // Drop the oldest message from the front to make room
-        const dropped = queue.shift()
+        const dropped = queue[head] as T | undefined
+        queue[head] = undefined
+        head++
+        compactIfNeeded()
         onOverflow?.(dropped)
       }
     }
@@ -77,8 +90,12 @@ export const createMailbox = <T>(config?: MailboxConfig): Mailbox<T> => {
 
   const take = (): Promise<T | Stop> => {
     // Messages already buffered — return the next one immediately
-    if (queue.length > 0) {
-      return Promise.resolve(queue.shift()!)
+    if (head < queue.length) {
+      const item = queue[head]!
+      queue[head] = undefined
+      head++
+      compactIfNeeded()
+      return Promise.resolve(item)
     }
 
     // Mailbox closed and empty — signal stop
@@ -103,7 +120,7 @@ export const createMailbox = <T>(config?: MailboxConfig): Mailbox<T> => {
 
     // If consumer is suspended and queue is empty, all messages are already
     // processed — wake immediately with STOP.
-    if (waiter !== null && queue.length === 0) {
+    if (waiter !== null && getActiveSize() === 0) {
       const resolve = waiter
       waiter = null
       resolve(STOP)
@@ -133,6 +150,6 @@ export const createMailbox = <T>(config?: MailboxConfig): Mailbox<T> => {
     take,
     close,
     drain,
-    size: () => queue.length,
+    size: () => getActiveSize(),
   }
 }
