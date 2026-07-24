@@ -1,9 +1,4 @@
-import { join, resolve, sep } from 'node:path'
-import { mkdir } from 'node:fs/promises'
-import type { MessageAttachment } from '../../../types/events.ts'
-
-const MEDIA_DIR = join(import.meta.dir, '../../../../', 'workspace/media')
-const INBOUND_DIR = join(MEDIA_DIR, 'inbound')
+import { resolve, sep } from 'node:path'
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -40,18 +35,3 @@ export const safeJoinUrlPath = (baseDir: string, pathname: string): string | nul
   return filePath === base || filePath.startsWith(base + sep) ? filePath : null
 }
 
-export const saveAttachmentsToTempFiles = (attachments: MessageAttachment[]): Promise<MessageAttachment[]> =>
-  Promise.all(attachments.map(async (att) => {
-    if (!att.data) return att
-
-    const match = att.data.match(/^data:[^;]+;base64,(.+)$/)
-    const b64 = match?.[1] ?? att.data
-    const ext = att.mimeType?.split('/')[1] || att.name?.split('.').pop() || (att.kind === 'image' ? 'jpeg' : att.kind === 'audio' ? 'wav' : 'bin')
-    const fileName = att.name ? `${att.name}-${crypto.randomUUID()}` : `rorschach-${crypto.randomUUID()}.${ext}`
-    const filePath = join(INBOUND_DIR, fileName)
-
-    await mkdir(INBOUND_DIR, { recursive: true })
-    await Bun.write(filePath, Buffer.from(b64, 'base64'))
-
-    return { ...att, url: filePath, data: undefined }
-  }))

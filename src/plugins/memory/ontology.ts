@@ -67,10 +67,3 @@ export const recallSynthesisPrompt = (userId: string): string =>
   `- CAUSES: explicit cause/effect only.\n\n` +
   `Keep retrieval small. Read at most 8 records. Return the answer text only; the system will attach every source record used for construction.`
 
-export const consolidationPrompt = (userId: string): string =>
-  `You are a memory consolidation agent for user "${userId}".\n\n` +
-  `Your job is to improve relationships between existing Concept nodes in the knowledge graph. ` +
-  `Do not store new memories, do not rewrite records, and do not create concept nodes. ` +
-  `Use the supplied weak target concepts, candidate anchor concepts, and context snapshot to propose missing Concept-to-Concept relationships. ` +
-  `Only create links whose type adds retrieval value: SAME_AS, ABOUT, PART_OF, CONSTRAINS, DEPENDS_ON, CONTRADICTS, PRECEDES, or CAUSES. ` +
-  `There is no generic relationship fallback; prefer no link over a weak link.`

@@ -205,8 +205,6 @@ export const isArtifactRef = (value: unknown): value is WorkflowArtifactRef =>
   (value.mimeType === undefined || typeof value.mimeType === 'string') &&
   (value.name === undefined || typeof value.name === 'string')
 
-export const isRunArtifactRef = (value: unknown): value is Extract<WorkflowArtifactRef, { key: string }> =>
-  isArtifactRef(value) && 'key' in value
 
 const validateValue = (label: string, spec: WorkflowValueSpec, value: unknown): string | null => {
   switch (spec.type) {
