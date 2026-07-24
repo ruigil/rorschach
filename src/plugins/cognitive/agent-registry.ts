@@ -15,9 +15,7 @@ import {
   OutboundBroadcastTopic,
   OutboundUserMessageTopic,
   HttpWsFrameTopic,
-  CronTriggerTopic,
   type HttpWsFrameEvent,
-  type CronTriggerEvent,
   type MessageAttachment,
 } from '../../types/events.ts'
 import { JobRegistryTopic, type JobLifecycleEvent, type ToolInvokeMsg } from '../../types/tools.ts'
@@ -31,7 +29,6 @@ type AgentRegistryMsg =
   | { type: '_switchAgent'; userId: string; mode: string; source: 'user' | 'llm' | 'programmatic'; reason?: string }
   | { type: '_jobRegistry'; event: JobLifecycleEvent }
   | { type: '_wsFrame'; event: HttpWsFrameEvent }
-  | { type: '_cronTrigger'; event: CronTriggerEvent }
   | { type: 'routeMessage'; userId: string; text: string; attachments?: MessageAttachment[]; traceId: string; parentSpanId: string }
   | ToolInvokeMsg
 
@@ -256,7 +253,6 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
         ctx.subscribe(SwitchAgentTopic, e => ({ type: '_switchAgent' as const, userId: e.userId, mode: e.mode, source: e.source, reason: e.reason }))
         ctx.subscribe(JobRegistryTopic, e => ({ type: '_jobRegistry' as const, event: e }))
         ctx.subscribe(HttpWsFrameTopic, e => ({ type: '_wsFrame' as const, event: e }))
-        ctx.subscribe(CronTriggerTopic, e => ({ type: '_cronTrigger' as const, event: e }))
         republish(state, ctx)
         return { state }
       },
@@ -413,14 +409,12 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
 
           const { userId, toolName } = cached
 
-          // Format out-of-band text
           const resultText = event.status === 'completed'
             ? (event.result?.text ?? 'Success')
             : (event.error ?? 'Unknown error')
 
-          const userText = `[Background tool result — ${toolName}]: ${resultText}`
+          const userText = `[Job · ${toolName}] ${resultText}`
 
-          // 1. Publish sources and attachments outbound directly
           if (event.status === 'completed' && event.result) {
             if (event.result.sources?.length) {
               ctx.publish(OutboundUserMessageTopic, {
@@ -436,23 +430,20 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
             }
           }
 
-          // 2. Clear retained topic entry
-          ctx.publishRetained(JobRegistryTopic, event.jobId, { jobId: event.jobId, status: 'cleared' })
+          // Do not publish cleared here: a producer may re-arm the same jobId
+          // (e.g. recurring cron) with running immediately after completed.
 
-          // 3. Inject back into the active agent for that session
-          const defaultMode = 'chatbot'
-          const activeMode = state.activeMode[userId] || defaultMode
-          const agent = state.sessionAgents[userId]?.[activeMode]
+          const activeMode = state.activeMode[userId] || 'chatbot'
+          const { state: afterAgent, ref } = ensureAgent(state, userId, activeMode, ctx)
 
-          if (agent) {
-            agent.send({ type: 'userMessage', text: userText, isInjected: true })
+          if (ref) {
+            ref.send({ type: 'userMessage', text: userText, isInjected: true })
           } else {
             ctx.log.warn('job completion but no agent found to inject into', { userId, activeMode, jobId: event.jobId })
           }
 
-          // 4. Remove from active jobs cache
-          const { [event.jobId]: _, ...activeJobs } = state.activeJobs
-          return { state: { ...state, activeJobs } }
+          const { [event.jobId]: _, ...activeJobs } = afterAgent.activeJobs
+          return { state: { ...afterAgent, activeJobs } }
         }
 
         if (event.status === 'cleared') {
@@ -495,27 +486,6 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
           })
         }
         return { state }
-      },
-
-      _cronTrigger: (state, msg, ctx) => {
-        const { userId, text, traceId, parentSpanId } = msg.event
-        const contextStoreRef = state.contextStores[userId]
-        if (!contextStoreRef) {
-          ctx.log.warn('cron job fired but user context store not active', { userId })
-          return { state }
-        }
-
-        const defaultMode = 'chatbot'
-        const { state: afterAgent, ref } = ensureAgent(state, userId, defaultMode, ctx)
-
-        if (ref) {
-          const headers = traceId && parentSpanId
-            ? { traceparent: `00-${traceId}-${parentSpanId}-01` }
-            : undefined
-          const formattedText = `[Internal Instruction] ${text}`
-          ref.send({ type: 'userMessage', text: formattedText, isInjected: true }, headers)
-        }
-        return { state: afterAgent }
       },
 
       routeMessage: (state, msg, ctx) => {

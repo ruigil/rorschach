@@ -50,11 +50,12 @@ export type ContextAssemblyPolicy = {
 }
 
 const HISTORY_MARKERS_NOTE =
-  'Messages prefixed with [Internal Instruction] in the conversation history are past internal ' +
-  'instructions that you already carried out. Do not act on them again.\n' +
-  'Messages prefixed with [Background tool result — ...] are deferred results from long-running ' +
-  'tools whose work has now completed. Use them to inform your reply to the user — relay the ' +
-  'result naturally rather than restating the bracketed prefix.'
+  'Messages prefixed with [Job · <tool>] are system-delivered background completions ' +
+  'from that tool (scheduled tasks, long-running work, and similar). They appear as ' +
+  'user messages but were not written or initiated by the user. Respond to the ' +
+  'content naturally, but do not imply the user just said or requested it ' +
+  '(e.g. avoid “Thanks for asking…” / “As you requested…”). Do not restate the ' +
+  '[Job · …] marker.'
 
 const sameMessage = (a: ApiMessage, b: ApiMessage): boolean =>
   a.role === b.role && JSON.stringify(a.content) === JSON.stringify(b.content)

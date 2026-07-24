@@ -1,28 +1,27 @@
 import { CronExpressionParser } from 'cron-parser'
-import type { ActorDef } from '../../system/index.ts'
-import { emit, persistencePluginAdapter } from '../../system/index.ts'
+import type { ActorContext, ActorDef, ActorRef } from '../../system/index.ts'
+import { persistencePluginAdapter } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
-import type { ToolInvokeMsg } from '../../types/tools.ts'
-import { CronTriggerTopic } from '../../types/events.ts'
+import { JobRegistryTopic, type ToolInvokeMsg, type ToolMsg } from '../../types/tools.ts'
 import type { CronState, CronJob } from './types.ts'
 
 // ─── Tool names & schemas ───
 
-export const cronCreateTool = defineTool('cron_create', 'Schedule a prompt to be sent on a recurring cron schedule. Returns the job ID.', {
+export const cronCreateTool = defineTool('cron_create', 'Schedule a prompt to be delivered later on a cron schedule. Returns toolPending until the next fire; that completion injects the prompt.', {
   type: 'object',
   properties: {
     expression: { type: 'string', description: 'Standard 5-field cron expression (e.g. "0 9 * * 1-5" for weekdays at 9am).' },
-    prompt:     { type: 'string', description: 'The prompt to send when the schedule fires.' },
-    run_once:   { type: 'boolean', description: 'If true, the job is deleted after firing once. Defaults to false.' },
+    prompt:     { type: 'string', description: 'The prompt delivered when the schedule fires.' },
+    run_once:   { type: 'boolean', description: 'If true, the schedule is deleted after firing once. Defaults to false.' },
   },
   required: ['expression', 'prompt'],
 })
 
-export const cronDeleteTool = defineTool('cron_delete', 'Delete a scheduled cron job by ID.', {
+export const cronDeleteTool = defineTool('cron_delete', 'Delete a scheduled cron job by schedule ID (from cron_list or the create acknowledgment).', {
   type: 'object',
   properties: {
-    jobId: { type: 'string', description: 'The job ID returned by cron_create.' },
+    jobId: { type: 'string', description: 'The schedule ID.' },
   },
   required: ['jobId'],
 })
@@ -32,11 +31,10 @@ export const cronListTool = defineTool('cron_list', 'List all scheduled cron job
   properties: {},
 })
 
-
-
 type CronMsg =
   | ToolInvokeMsg
   | { type: '_tick'; jobId: string }
+
 
 // ─── Persistence ───
 
@@ -65,15 +63,29 @@ const scheduleTimer = (job: CronJob, ctx: { timers: { startSingleTimer: (key: st
   ctx.timers.startSingleTimer(job.id, { type: '_tick', jobId: job.id }, delayMs)
 }
 
+/** Arm the schedule on the job bus (create / re-arm / restore). Not used at fire time. */
+const publishArmed = (job: CronJob, ctx: ActorContext<ToolMsg>) => {
+  ctx.publishRetained(JobRegistryTopic, job.id, {
+    jobId: job.id,
+    status: 'running',
+    toolName: cronCreateTool.name,
+    toolRef: ctx.self as unknown as ActorRef<ToolMsg>,
+    startedAt: Date.now(),
+    userId: job.userId,
+    statusText: `Next run: ${formatLocalDate(job.nextFireAt)}`,
+  })
+}
+
 // ─── Actor ───
 
 export const Cron = (): ActorDef<CronMsg, CronState> => ({
-  initialState: () => ({ jobs: {}, clientIds: new Set() }),
+  initialState: () => ({ jobs: {} }),
   persistence,
 
   lifecycle: onLifecycle({
     start: (state, ctx) => {
       for (const job of Object.values(state.jobs)) {
+        publishArmed(job, ctx)
         scheduleTimer(job, ctx)
       }
 
@@ -100,12 +112,26 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
 
         const id = crypto.randomUUID()
         const fireAt = nextFireAt(args.expression)
-        const job: CronJob = { id, expression: args.expression, prompt: args.prompt, runOnce: args.run_once ?? false, createdAt: Date.now(), lastFiredAt: null, nextFireAt: fireAt, userId: msg.userId }
+        const job: CronJob = {
+          id,
+          expression: args.expression,
+          prompt: args.prompt,
+          runOnce: args.run_once ?? false,
+          createdAt: Date.now(),
+          lastFiredAt: null,
+          nextFireAt: fireAt,
+          userId: msg.userId,
+        }
 
         scheduleTimer(job, ctx)
+        // running is published by invokeTool when it sees toolPending (schedule time).
         ctx.log.info('cron job created', { id, expression: args.expression, nextIn: `${Math.round((fireAt - Date.now()) / 1000)}s` })
 
-        replyTo.send({ type: 'toolResult', result: { text: `Created cron job ${id}. Next run: ${formatLocalDate(fireAt)}` } })
+        replyTo.send({
+          type: 'toolPending',
+          jobId: id,
+          placeholderText: `Scheduled. Schedule id: ${id}. Next run: ${formatLocalDate(fireAt)}.`,
+        })
         return { state: { ...state, jobs: { ...state.jobs, [id]: job } } }
       }
 
@@ -116,16 +142,21 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
           return { state }
         }
 
-        if (!state.jobs[args.jobId]) {
+        const job = state.jobs[args.jobId]
+        if (!job) {
           replyTo.send({ type: 'toolError', error: `Job ${args.jobId} not found` })
           return { state }
         }
 
-        ctx.timers.cancel(args.jobId)
-        const { [args.jobId]: _removed, ...remaining } = state.jobs
-        ctx.log.info('cron job deleted', { id: args.jobId })
+        ctx.timers.cancel(job.id)
+        ctx.publishRetained(JobRegistryTopic, job.id, {
+          jobId: job.id,
+          status: 'cleared',
+        })
+        const { [job.id]: _removed, ...remaining } = state.jobs
+        ctx.log.info('cron job deleted', { id: job.id })
 
-        replyTo.send({ type: 'toolResult', result: { text: `Deleted cron job ${args.jobId}` } })
+        replyTo.send({ type: 'toolResult', result: { text: `Deleted cron job ${job.id}` } })
         return { state: { ...state, jobs: remaining } }
       }
 
@@ -159,29 +190,33 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
         return { state }
       }
 
+      // job fired
       ctx.log.info('cron job fired', { id: job.id, expression: job.expression, userId: job.userId })
-
-      const span = ctx.trace.start('cron', { userId: job.userId, jobId: job.id })
-      const events = [emit(CronTriggerTopic, {
-        userId:      job.userId,
-        text:        job.prompt,
-        traceId:     span.traceId,
-        parentSpanId: span.spanId,
-      })]
+      ctx.publishRetained(JobRegistryTopic, job.id, {
+        jobId: job.id,
+        status: 'completed',
+        result: { text: job.prompt },
+      })
 
       if (job.runOnce) {
         ctx.log.info('cron job completed (run_once)', { id: job.id })
+        ctx.publishRetained(JobRegistryTopic, job.id, { jobId: job.id, status: 'cleared' })
         const { [job.id]: _removed, ...remaining } = state.jobs
-        return { state: { ...state, jobs: remaining }, events }
+        return { state: { ...state, jobs: remaining } }
       }
 
       const fireAt = nextFireAt(job.expression)
-      const updatedJob = { ...job, lastFiredAt: Date.now(), nextFireAt: fireAt }
+      const updatedJob: CronJob = {
+        ...job,
+        lastFiredAt: Date.now(),
+        nextFireAt: fireAt,
+      }
+      // Re-arm same id for the next window (schedule time, not fire time).
+      publishArmed(updatedJob, ctx)
       scheduleTimer(updatedJob, ctx)
 
       return {
         state: { ...state, jobs: { ...state.jobs, [job.id]: updatedJob } },
-        events,
       }
     },
 

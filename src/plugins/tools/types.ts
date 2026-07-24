@@ -175,6 +175,7 @@ export type AudioOptions = {
 // ─── Cron Actor Types ───
 
 export type CronJob = {
+  /** Schedule id — also the JobRegistryTopic job id for the whole lifetime. */
   id: string
   expression: string
   prompt: string

@@ -7,8 +7,8 @@ import {
   InboundMessageTopic,
   OutboundUserMessageTopic,
   HttpWsFrameTopic,
-  CronTriggerTopic,
 } from '../types/events.ts'
+import { JobRegistryTopic } from '../types/tools.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../types/agents.ts'
 import { SessionLifecycleTopic, SwitchAgentTopic } from '../plugins/cognitive/types.ts'
 import { SessionManager } from '../plugins/cognitive/session-manager.ts'
@@ -136,7 +136,7 @@ describe('agent registry routing & lifecycle', () => {
     await system.shutdown()
   })
 
-  test('routes cron triggers directly to the default mode', async () => {
+  test('injects job completions into the active mode agent', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const llmRef = system.spawn('null-llm', NullLlm())
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
@@ -158,22 +158,28 @@ describe('agent registry routing & lifecycle', () => {
     system.publishRetained(AgentRegistrationTopic, 'chatbot', { type: 'register', descriptor: descriptor('chatbot', 'Chatbot') })
     await tick()
 
-    // Connect user
+    // Connect user (creates context store)
     system.publishRetained(UserPresenceTopic, 'u1-cli', { status: 'present', userId: 'u1', source: 'cli' })
     await tick()
 
-    // Publish cron trigger
-    system.publish(CronTriggerTopic, {
+    system.publishRetained(JobRegistryTopic, 'job-cron-1', {
+      jobId: 'job-cron-1',
+      status: 'running',
+      toolName: 'cron_create',
+      toolRef: registryRef as any,
+      startedAt: Date.now(),
       userId: 'u1',
-      text: 'run daily backup',
-      traceId: 'trace-1',
-      parentSpanId: 'span-1',
+    })
+    await tick()
+    system.publishRetained(JobRegistryTopic, 'job-cron-1', {
+      jobId: 'job-cron-1',
+      status: 'completed',
+      result: { text: 'run daily backup' },
     })
     await tick(200)
 
-    // Verify cron instruction is routed through the default agent by asserting response
-    const cronReply = outboundMsgs.find(m => m.userId === 'u1' && m.text.includes('agent-ready'))
-    expect(cronReply).toBeDefined()
+    const jobReply = outboundMsgs.find(m => m.userId === 'u1' && m.text.includes('agent-ready'))
+    expect(jobReply).toBeDefined()
 
     await system.shutdown()
   })

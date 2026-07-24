@@ -101,13 +101,6 @@ export type OutboundAdminBroadcastEvent = { type: FrameType; payload: any; key: 
 /** Topic for broadcasting admin-only messages. */
 export const OutboundAdminBroadcastTopic = createTopic<OutboundAdminBroadcastEvent>('outbound.admin.broadcast')
 
-// ─── Domain event: emitted by cron actor to trigger a user-specific proactive message ───
-
-export type CronTriggerEvent = { userId: string; text: string; traceId: string; parentSpanId: string }
-
-/** Topic emitted when a cron job fires for a specific user. Session manager routes to that user's chatbot actor. */
-export const CronTriggerTopic = createTopic<CronTriggerEvent>('cron.trigger.user')
-
 export type HttpWsFrameEvent = {
   clientId: string
   userId: string

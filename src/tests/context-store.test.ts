@@ -176,8 +176,7 @@ describe('assembleAgentMessages', () => {
 
     expect(messages.filter(m => m.role === 'user' && m.content === 'current')).toHaveLength(1)
     expect(messages[0]!.content).toContain('Base prompt')
-    expect(messages[0]!.content).toContain('Messages prefixed with [Internal Instruction]')
-    expect(messages[0]!.content).toContain('Messages prefixed with [Background tool result — ...]')
+    expect(messages[0]!.content).toContain('Messages prefixed with [Job · <tool>]')
     expect(messages.some(m => m.role === 'system' && m.content.includes('User context'))).toBe(true)
     expect(messages.some(m => m.role === 'system' && m.content.includes('Recent tool results'))).toBe(true)
   })

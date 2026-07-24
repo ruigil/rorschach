@@ -58,7 +58,7 @@ export default createPluginFactory<ToolsConfig>({
   },
   tools: {
     webSearch: { schema: webSearchTool.schema, slot: 'webSearch' },
-    cronCreate: { schema: cronCreateTool.schema, slot: 'cron' },
+    cronCreate: { schema: cronCreateTool.schema, slot: 'cron', mayBeLongRunning: true },
     cronDelete: { schema: cronDeleteTool.schema, slot: 'cron' },
     cronList: { schema: cronListTool.schema, slot: 'cron' },
     pdf: { schema: pdfTool.schema, slot: 'pdf' },
