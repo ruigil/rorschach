@@ -7,7 +7,7 @@ import { ask } from '../../../system/index.ts'
 import type { ActorRef } from '../../../system/index.ts'
 import type { HttpRequestMsg, HttpResponseMsg } from '../../../types/routes.ts'
 
-export type WsData = { clientId: string; userId: string; roles: string[] }
+export type WsData = { clientId: string; userId: string; roles: string[]; timezone?: string }
 
 export type ServerOptions = {
   port: number
@@ -62,7 +62,7 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         const session = await resolveIdentity(ticket)
         if (!session) return new Response('Unauthorized', { status: 401 })
         const clientId = crypto.randomUUID()
-        const upgraded = server.upgrade(req, { data: { clientId, userId: session.userId, roles: session.roles } })
+        const upgraded = server.upgrade(req, { data: { clientId, userId: session.userId, roles: session.roles, timezone: session.timezone } })
         if (!upgraded) return new Response('WebSocket upgrade failed', { status: 400 })
         return undefined as unknown as Response
       }

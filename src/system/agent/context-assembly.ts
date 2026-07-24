@@ -38,7 +38,7 @@ export const assembleUserText = (
 
 export type ContextView = Pick<
   ContextSnapshotEvent,
-  'userId' | 'version' | 'recentMessages' | 'userContext' | 'toolSummaries'
+  'userId' | 'version' | 'recentMessages' | 'userContext' | 'toolSummaries' | 'timezone'
 >
 
 export type ContextAssemblyPolicy = {
@@ -114,4 +114,84 @@ export const getTodayDateString = (format: 'iso' | 'local' = 'local'): string =>
   }
   return new Date().toDateString()
 }
+
+export type UserTimeContext = {
+  iso: string
+  formatted: string
+  timezone: string
+  offset: string
+  dayOfWeek: string
+}
+
+export const isValidTimezone = (tz: string): boolean => {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export const getUserTimeContext = (timezone?: string, date = new Date()): UserTimeContext => {
+  const resolvedTz = timezone && isValidTimezone(timezone)
+    ? timezone
+    : (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
+
+  let offset = 'Z'
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: resolvedTz, timeZoneName: 'longOffset' }).formatToParts(date)
+    const tzPart = parts.find(p => p.type === 'timeZoneName')?.value
+    if (tzPart) {
+      const match = tzPart.match(/GMT([+-]\d{1,2}):?(\d{2})?/)
+      if (match) {
+        const sign = match[1]!.startsWith('+') ? '+' : '-'
+        const hours = Math.abs(parseInt(match[1]!, 10)).toString().padStart(2, '0')
+        const mins = match[2] || '00'
+        offset = `${sign}${hours}:${mins}`
+      } else if (tzPart === 'GMT') {
+        offset = '+00:00'
+      }
+    }
+  } catch {
+    offset = 'Z'
+  }
+
+  let iso = date.toISOString()
+  try {
+    const year = new Intl.DateTimeFormat('en-US', { timeZone: resolvedTz, year: 'numeric' }).format(date)
+    const month = new Intl.DateTimeFormat('en-US', { timeZone: resolvedTz, month: '2-digit' }).format(date)
+    const day = new Intl.DateTimeFormat('en-US', { timeZone: resolvedTz, day: '2-digit' }).format(date)
+    const hour = new Intl.DateTimeFormat('en-US', { timeZone: resolvedTz, hour: '2-digit', hour12: false }).format(date)
+    const minute = new Intl.DateTimeFormat('en-US', { timeZone: resolvedTz, minute: '2-digit' }).format(date)
+    const second = new Intl.DateTimeFormat('en-US', { timeZone: resolvedTz, second: '2-digit' }).format(date)
+    
+    let cleanHour = hour.trim()
+    if (cleanHour === '24') cleanHour = '00'
+    else if (cleanHour.length === 1) cleanHour = `0${cleanHour}`
+
+    iso = `${year}-${month}-${day}T${cleanHour}:${minute}:${second}${offset === 'Z' ? '+00:00' : offset}`
+  } catch {
+    iso = date.toISOString()
+  }
+
+  const formatted = date.toLocaleString('en-US', {
+    timeZone: resolvedTz,
+    dateStyle: 'full',
+    timeStyle: 'medium',
+  })
+  
+  const dayOfWeek = date.toLocaleString('en-US', {
+    timeZone: resolvedTz,
+    weekday: 'long',
+  })
+
+  return {
+    iso,
+    formatted,
+    timezone: resolvedTz,
+    offset,
+    dayOfWeek,
+  }
+}
+
 

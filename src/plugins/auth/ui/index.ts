@@ -16,6 +16,7 @@ export class RAuthProfile extends RorschachBase {
   @state() private phone = '';
   @state() private roles: string[] = [];
   @state() private saving = false;
+  @state() private timezone = '';
 
   @query('#flash-msg') private _flashMsg!: any;
 
@@ -165,6 +166,7 @@ export class RAuthProfile extends RorschachBase {
         this.avatar = data.avatar || '';
         this.phone = data.phone || '';
         this.roles = data.roles || [];
+        this.timezone = data.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       }
     } catch (err) {
       console.error('Failed to fetch profile', err);
@@ -189,6 +191,32 @@ export class RAuthProfile extends RorschachBase {
     this.fullName = e.detail?.value || '';
   }
 
+  private _handleTimezoneChange(e: any) {
+    this.timezone = e.detail?.value || '';
+  }
+
+  private get _timezoneOptions() {
+    const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const standardTzs = [
+      { value: 'UTC', label: 'UTC' },
+      { value: 'America/New_York', label: 'New York (EST/EDT)' },
+      { value: 'America/Los_Angeles', label: 'Los Angeles (PST/PDT)' },
+      { value: 'Europe/London', label: 'London (GMT/BST)' },
+      { value: 'Europe/Paris', label: 'Paris (CET/CEST)' },
+      { value: 'Asia/Tokyo', label: 'Tokyo (JST)' },
+      { value: 'Australia/Sydney', label: 'Sydney (AEST/AEDT)' },
+    ];
+    if (detected && !standardTzs.some(tz => tz.value === detected)) {
+      standardTzs.unshift({ value: detected, label: `Local (${detected})` });
+    } else if (detected) {
+      const idx = standardTzs.findIndex(tz => tz.value === detected);
+      if (idx !== -1) {
+        standardTzs[idx]!.label = `Local (${standardTzs[idx]!.label})`;
+      }
+    }
+    return standardTzs;
+  }
+
   private async _saveProfile() {
     if (this.saving) return;
     this.saving = true;
@@ -199,6 +227,7 @@ export class RAuthProfile extends RorschachBase {
         body: JSON.stringify({
           fullName: this.fullName,
           avatar: this.avatar,
+          timezone: this.timezone,
         }),
       });
       if (res.ok) {
@@ -242,6 +271,14 @@ export class RAuthProfile extends RorschachBase {
               .value=${this.fullName}
               @change=${this._handleNameChange}
             ></r-input>
+
+            <r-select
+              label="Timezone"
+              variant="field"
+              .value=${this.timezone}
+              .options=${this._timezoneOptions}
+              @change=${this._handleTimezoneChange}
+            ></r-select>
 
             <r-input
               label="Phone"

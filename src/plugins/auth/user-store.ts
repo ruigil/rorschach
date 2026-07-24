@@ -45,7 +45,7 @@ export const UserStore = (): ActorDef<UserStoreMsg, UserStoreState> => ({
       }
     },
 
-    updateUser: (state, { userId, fullName, avatar, replyTo }) => {
+    updateUser: (state, { userId, fullName, avatar, timezone, replyTo }) => {
       const user = state.users[userId]
       if (!user) {
         replyTo.send({ error: 'user not found' })
@@ -55,6 +55,7 @@ export const UserStore = (): ActorDef<UserStoreMsg, UserStoreState> => ({
         ...user,
         fullName,
         avatar,
+        timezone: timezone !== undefined ? timezone : user.timezone,
       }
       replyTo.send({ ok: updatedUser })
       return {

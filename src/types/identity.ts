@@ -4,6 +4,7 @@ export type Identity = {
   userId:   string
   fullName: string
   roles:    string[]
+  timezone?: string
 }
 
 // ─── Provider protocol ───

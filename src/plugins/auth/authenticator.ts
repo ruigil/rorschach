@@ -682,10 +682,10 @@ export const Authenticator = (opts: {
         return { state }
       },
 
-      updateUserProfile: (state, { userId, fullName, avatar, replyTo }) => {
+      updateUserProfile: (state, { userId, fullName, avatar, timezone, replyTo }) => {
         ask<UserStoreMsg, { ok: User } | { error: string }>(
           userStore,
-          (r) => ({ type: 'updateUser' as const, userId, fullName, avatar, replyTo: r }),
+          (r) => ({ type: 'updateUser' as const, userId, fullName, avatar, timezone, replyTo: r }),
           { timeoutMs: 3_000 },
         )
           .then(res => replyTo.send(res))

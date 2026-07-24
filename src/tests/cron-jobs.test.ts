@@ -169,4 +169,33 @@ describe('cron job registry integration', () => {
 
     await system.shutdown()
   })
+
+  test('cron_create respects explicit timezone arguments', async () => {
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const cron = system.spawn('cron-tz', Cron()) as unknown as ActorRef<ToolMsg>
+    await tick()
+
+    const reply = await ask<ToolMsg, ToolReply>(
+      cron,
+      replyTo => ({
+        type: 'invoke',
+        toolName: 'cron_create',
+        arguments: JSON.stringify({
+          expression: '0 9 * * *',
+          prompt: 'morning alert',
+          timezone: 'America/New_York',
+          run_once: true,
+        }),
+        userId: 'u1',
+        replyTo,
+      }),
+    )
+
+    expect(reply.type).toBe('toolPending')
+    if (reply.type !== 'toolPending') return
+    expect(reply.placeholderText).toContain('Next run')
+    expect(/-0[45]:00/.test(reply.placeholderText ?? '')).toBe(true)
+
+    await system.shutdown()
+  })
 })

@@ -152,6 +152,9 @@ export const SessionManager = (
           const existingSession = nextState.sessions[userId]
 
           if (existingSession) {
+            if (event.timezone) {
+              existingSession.contextStoreRef.send({ type: 'setTimezone', timezone: event.timezone })
+            }
             ctx.publish(SessionLifecycleTopic, {
               type:      'presencePresent',
               userId,
@@ -163,6 +166,9 @@ export const SessionManager = (
 
           // First connect for this userId — spawn context store
           const contextStoreRef = ctx.spawn(`context-store-${userId}`, ContextStore({ userId, contextWindowHours })) as ActorRef<ContextStoreMsg>
+          if (event.timezone) {
+            contextStoreRef.send({ type: 'setTimezone', timezone: event.timezone })
+          }
           const seeded: Session = {
             contextStoreRef,
           }

@@ -48,6 +48,7 @@ const fakeUserStore = (users: Record<string, User>): ActorDef<UserStoreMsg, null
       if (user) {
         user.fullName = msg.fullName
         user.avatar = msg.avatar
+        user.timezone = msg.timezone
         msg.replyTo.send({ ok: user })
       } else {
         msg.replyTo.send({ error: 'user not found' })
@@ -402,6 +403,7 @@ describe('auth admin allowlist', () => {
     expect(getResMsg.response.status).toBe(200)
     const getData = JSON.parse(getResMsg.response.body as string)
     expect(getData.fullName).toBe('John Doe')
+    expect(getData.timezone).toBe('')
 
     const postResMsg = await ask<HttpRequestMsg, HttpResponseMsg>(
       authRouter,
@@ -411,7 +413,7 @@ describe('auth admin allowlist', () => {
           method: 'POST',
           url: '/auth/profile',
           headers: {},
-          body: JSON.stringify({ fullName: 'Jane Doe', avatar: 'avatar-data' }),
+          body: JSON.stringify({ fullName: 'Jane Doe', avatar: 'avatar-data', timezone: 'America/New_York' }),
         },
         identity,
         replyTo,
@@ -422,6 +424,7 @@ describe('auth admin allowlist', () => {
     expect(postData.ok).toBe(true)
     expect(postData.user.fullName).toBe('Jane Doe')
     expect(postData.user.avatar).toBe('avatar-data')
+    expect(postData.user.timezone).toBe('America/New_York')
 
     await system.shutdown()
   })

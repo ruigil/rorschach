@@ -1,7 +1,7 @@
 import type { ActorDef, ActorContext, ActorResult, Interceptor, ActorRef } from '../actor/types.ts'
 import { onLifecycle } from '../actor/match.ts'
 import { agentLoop, idleLoopState, type LoopState } from './agent-loop.ts'
-import { assembleAgentMessages, assembleUserText, getTodayDateString, type ContextView } from './context-assembly.ts'
+import { assembleAgentMessages, assembleUserText, getTodayDateString, getUserTimeContext, type ContextView } from './context-assembly.ts'
 import { ContextSnapshotTopic, type AgentFactoryOpts, type AgentDescriptor } from '../../types/agents.ts'
 import { ToolRegistrationTopic, type ToolCollection, type ToolFilter, type ToolMsg, type ToolSchema, type Tool } from '../../types/tools.ts'
 import { applyToolFilter } from './tool-utils.ts'
@@ -120,9 +120,12 @@ export const DynamicAgentActor = (
 
   const buildTurnMessages = (state: S, userMsg: ApiMessage): ApiMessage[] => {
     const desc = state.descriptor || initialDescriptor
-    const todayIso = getTodayDateString('iso')
-    const todayLocal = getTodayDateString('local')
-    const identityNote = `Active User: ${userId}\nToday's date is ${todayLocal} (ISO: ${todayIso}).`
+    const timeContext = getUserTimeContext(state.contextView.timezone ?? undefined)
+    const identityNote = [
+      `Active User: ${userId}`,
+      `User Timezone: ${timeContext.timezone} (Offset: UTC${timeContext.offset})`,
+      `Current Time: ${timeContext.dayOfWeek}, ${timeContext.formatted} (ISO: ${timeContext.iso})`
+    ].join('\n')
     const fullPrompt = [desc.systemPrompt, identityNote].filter(Boolean).join('\n\n---\n\n')
 
     return assembleAgentMessages(state.contextView, {

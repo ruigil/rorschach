@@ -74,6 +74,7 @@ export type User = {
   roles:      string[]
   deviceKeys: DeviceKey[]
   avatar?:    string
+  timezone?:  string
 }
 
 export type AuthSession = {
@@ -101,7 +102,7 @@ export type AuthLogoutEvent = { userId: UserId }
 
 export type UserStoreMsg =
   | { type: 'createUser';          fullName: string; phone?: string; roles?: string[]; replyTo: ActorRef<{ ok: User } | { error: string }> }
-  | { type: 'updateUser';          userId: UserId; fullName: string; avatar?: string; replyTo: ActorRef<{ ok: User } | { error: string }> }
+  | { type: 'updateUser';          userId: UserId; fullName: string; avatar?: string; timezone?: string; replyTo: ActorRef<{ ok: User } | { error: string }> }
   | { type: 'getUser';             userId: UserId;       replyTo: ActorRef<User | null> }
   | { type: 'getUserByCredential'; credentialId: string; replyTo: ActorRef<User | null> }
   | { type: 'getUserByPhone';      phone: string;        replyTo: ActorRef<User | null> }
@@ -127,7 +128,7 @@ export type AuthenticatorMsg =
   | { type: 'issueTicket';          token: string;       replyTo: ActorRef<{ ticket: string } | { error: string }> }
   | { type: 'validateTicket';       ticket: string;      replyTo: ActorRef<AuthSession | null> }
   | { type: 'getUserProfile';       userId: UserId;       replyTo: ActorRef<User | null> }
-  | { type: 'updateUserProfile';    userId: UserId;       fullName: string; avatar?: string; replyTo: ActorRef<{ ok: User } | { error: string }> }
+  | { type: 'updateUserProfile';    userId: UserId;       fullName: string; avatar?: string; timezone?: string; replyTo: ActorRef<{ ok: User } | { error: string }> }
   | { type: '_gc' }
   // ─── pipeToSelf completions ───
   | { type: '_regDone';   userId: string; fullName: string; roles: string[]; challengeId: string; replyTo: ActorRef<{ token: string } | { error: string }> }

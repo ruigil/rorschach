@@ -76,7 +76,7 @@ export type InboundMessageEvent = {
 export const InboundMessageTopic = createTopic<InboundMessageEvent>('user.inbound')
 
 export type UserPresenceEvent =
-  | { status: 'present'; userId: string; source: 'http' | 'signal' | 'cli' }
+  | { status: 'present'; userId: string; source: 'http' | 'signal' | 'cli'; timezone?: string }
   | { status: 'absent'; userId: string; source: 'http' | 'signal' | 'cli' }
 
 /** Retained topic describing currently active users across interfaces. */

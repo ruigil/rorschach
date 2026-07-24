@@ -184,6 +184,7 @@ export type CronJob = {
   lastFiredAt: number | null
   nextFireAt: number
   userId: string
+  timezone?: string
 }
 
 export type CronState = {

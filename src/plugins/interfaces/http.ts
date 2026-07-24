@@ -37,7 +37,7 @@ const PUBLIC_DIR = join(process.cwd(), 'src', 'frontend', 'static')
 // ─── Message protocol ───
 
 export type HttpMessage =
-  | { type: 'connected'; clientId: string; userId: string; roles: string[] }
+  | { type: 'connected'; clientId: string; userId: string; roles: string[]; timezone?: string }
   | { type: 'message'; clientId: string; userId: string; text: string; attachments?: MessageAttachment[] }
   | { type: '_wsFrame'; clientId: string; userId: string; roles: string[]; frame: any }
   | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
@@ -141,6 +141,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
             status: 'present',
             userId: message.userId,
             source: 'http',
+            timezone: message.timezone,
           }))
         }
 
@@ -368,7 +369,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
             return schemas;
           },
           onConnect: (client) => {
-            selfRef?.send({ type: 'connected', clientId: client.clientId, userId: client.userId, roles: client.roles })
+            selfRef?.send({ type: 'connected', clientId: client.clientId, userId: client.userId, roles: client.roles, timezone: client.timezone })
           },
           onDisconnect: (clientId) => {
             selfRef?.send({ type: 'closed', clientId })

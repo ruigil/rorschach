@@ -14,6 +14,7 @@ export const cronCreateTool = defineTool('cron_create', 'Schedule a prompt to be
     expression: { type: 'string', description: 'Standard 5-field cron expression (e.g. "0 9 * * 1-5" for weekdays at 9am).' },
     prompt:     { type: 'string', description: 'The prompt delivered when the schedule fires.' },
     run_once:   { type: 'boolean', description: 'If true, the schedule is deleted after firing once. Defaults to false.' },
+    timezone:   { type: 'string', description: 'IANA timezone name (e.g. "America/New_York", "Europe/Paris").' },
   },
   required: ['expression', 'prompt'],
 })
@@ -45,11 +46,41 @@ const persistence = persistencePluginAdapter<CronState>('tools/cron-jobs')
 // setTimeout uses a 32-bit signed integer — cap at ~24.8 days to avoid overflow.
 const MAX_TIMER_MS = 2_147_483_647
 
-const nextFireAt = (expression: string): number =>
-  CronExpressionParser.parse(expression).next().toDate().getTime()
+const nextFireAt = (expression: string, tz?: string): number =>
+  CronExpressionParser.parse(expression, tz ? { tz } : undefined).next().toDate().getTime()
 
-const formatLocalDate = (epochMs: number): string => {
+const formatLocalDate = (epochMs: number, tz?: string): string => {
   const d = new Date(epochMs)
+  if (tz) {
+    try {
+      const year = new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric' }).format(d)
+      const month = new Intl.DateTimeFormat('en-US', { timeZone: tz, month: '2-digit' }).format(d)
+      const day = new Intl.DateTimeFormat('en-US', { timeZone: tz, day: '2-digit' }).format(d)
+      const hour = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', hour12: false }).format(d)
+      const minute = new Intl.DateTimeFormat('en-US', { timeZone: tz, minute: '2-digit' }).format(d)
+      const second = new Intl.DateTimeFormat('en-US', { timeZone: tz, second: '2-digit' }).format(d)
+
+      let cleanHour = hour.trim()
+      if (cleanHour === '24') cleanHour = '00'
+      else if (cleanHour.length === 1) cleanHour = `0${cleanHour}`
+
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'longOffset' }).formatToParts(d)
+      const tzPart = parts.find(p => p.type === 'timeZoneName')?.value
+      let offset = 'Z'
+      if (tzPart) {
+        const match = tzPart.match(/GMT([+-]\d{1,2}):?(\d{2})?/)
+        if (match) {
+          const sign = match[1]!.startsWith('+') ? '+' : '-'
+          const hours = Math.abs(parseInt(match[1]!, 10)).toString().padStart(2, '0')
+          const mins = match[2] || '00'
+          offset = `${sign}${hours}:${mins}`
+        } else if (tzPart === 'GMT') {
+          offset = '+00:00'
+        }
+      }
+      return `${year}-${month}-${day}T${cleanHour}:${minute}:${second}${offset === 'Z' ? '+00:00' : offset}`
+    } catch {}
+  }
   const offset = -d.getTimezoneOffset()
   const sign  = offset >= 0 ? '+' : '-'
   const hh    = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0')
@@ -72,7 +103,7 @@ const publishArmed = (job: CronJob, ctx: ActorContext<ToolMsg>) => {
     toolRef: ctx.self as unknown as ActorRef<ToolMsg>,
     startedAt: Date.now(),
     userId: job.userId,
-    statusText: `Next run: ${formatLocalDate(job.nextFireAt)}`,
+    statusText: `Next run: ${formatLocalDate(job.nextFireAt, job.timezone)}`,
   })
 }
 
@@ -99,19 +130,20 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
       const { toolName, arguments: rawArgs, replyTo } = msg
 
       if (toolName === cronCreateTool.name) {
-        let args: { expression: string; prompt: string; run_once?: boolean }
+        let args: { expression: string; prompt: string; run_once?: boolean; timezone?: string }
         try { args = JSON.parse(rawArgs) } catch {
           replyTo.send({ type: 'toolError', error: 'Invalid JSON arguments' })
           return { state }
         }
 
-        try { CronExpressionParser.parse(args.expression) } catch (e) {
+        const jobTz = args.timezone ?? undefined
+        try { CronExpressionParser.parse(args.expression, jobTz ? { tz: jobTz } : undefined) } catch (e) {
           replyTo.send({ type: 'toolError', error: `Invalid cron expression: ${String(e)}` })
           return { state }
         }
 
         const id = crypto.randomUUID()
-        const fireAt = nextFireAt(args.expression)
+        const fireAt = nextFireAt(args.expression, jobTz)
         const job: CronJob = {
           id,
           expression: args.expression,
@@ -121,6 +153,7 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
           lastFiredAt: null,
           nextFireAt: fireAt,
           userId: msg.userId,
+          timezone: jobTz,
         }
 
         scheduleTimer(job, ctx)
@@ -130,7 +163,7 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
         replyTo.send({
           type: 'toolPending',
           jobId: id,
-          placeholderText: `Scheduled. Schedule id: ${id}. Next run: ${formatLocalDate(fireAt)}.`,
+          placeholderText: `Scheduled. Schedule id: ${id}. Next run: ${formatLocalDate(fireAt, jobTz)}.`,
         })
         return { state: { ...state, jobs: { ...state.jobs, [id]: job } } }
       }
@@ -169,8 +202,8 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
 
         const lines = jobs.map(j => {
           const preview = j.prompt.length > 60 ? `${j.prompt.slice(0, 60)}…` : j.prompt
-          const lastFired = j.lastFiredAt ? formatLocalDate(j.lastFiredAt) : 'never'
-          return `- ${j.id}: "${j.expression}" → ${preview}\n  Next: ${formatLocalDate(j.nextFireAt)}  Last fired: ${lastFired}`
+          const lastFired = j.lastFiredAt ? formatLocalDate(j.lastFiredAt, j.timezone) : 'never'
+          return `- ${j.id}: "${j.expression}" → ${preview}\n  Next: ${formatLocalDate(j.nextFireAt, j.timezone)}  Last fired: ${lastFired}`
         })
         replyTo.send({ type: 'toolResult', result: { text: lines.join('\n') } })
         return { state }
@@ -205,7 +238,7 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
         return { state: { ...state, jobs: remaining } }
       }
 
-      const fireAt = nextFireAt(job.expression)
+      const fireAt = nextFireAt(job.expression, job.timezone)
       const updatedJob: CronJob = {
         ...job,
         lastFiredAt: Date.now(),

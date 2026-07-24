@@ -14,6 +14,7 @@ import {
 export type ContextStoreMsg =
   | AgentContextMsg
   | { type: 'setUserContext'; summary: string | null }
+  | { type: 'setTimezone'; timezone: string | null }
 
 // ─── State ───
 
@@ -36,6 +37,7 @@ export type ContextStoreState = {
   version:            number
   pendingUserText:    string | null    // ephemeral — not persisted
   pendingUserInjected: boolean         // ephemeral — not persisted
+  timezone:           string | null
 }
 
 const initialContextStoreState = (): ContextStoreState => ({
@@ -47,6 +49,7 @@ const initialContextStoreState = (): ContextStoreState => ({
   version:             0,
   pendingUserText:     null,
   pendingUserInjected: false,
+  timezone:            null,
 })
 
 // ─── Options ───
@@ -76,6 +79,7 @@ const createPersistence = (userId: string): PersistenceAdapter<ContextStoreState
         ...state,
         pendingUserText:     null,
         pendingUserInjected: false,
+        timezone:            state.timezone ?? null,
       }
     },
     save: async (state, services) => {
@@ -169,6 +173,7 @@ export const ContextStore = (
       turns:         state.turns,
       userContext:   state.userContext,
       toolSummaries: buildToolSummaries(state.records),
+      timezone:      state.timezone,
     })
   }
 
@@ -259,6 +264,17 @@ export const ContextStore = (
         const next: ContextStoreState = {
           ...state,
           userContext: msg.summary,
+          version:     state.version + 1,
+        }
+        publishSnapshot(next, ctx)
+        return { state: next }
+      },
+
+      setTimezone: (state, msg, ctx) => {
+        if (state.timezone === msg.timezone) return { state }
+        const next: ContextStoreState = {
+          ...state,
+          timezone:    msg.timezone,
           version:     state.version + 1,
         }
         publishSnapshot(next, ctx)

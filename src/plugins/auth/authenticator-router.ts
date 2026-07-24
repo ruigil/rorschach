@@ -153,6 +153,7 @@ export const AuthenticatorRouter = (opts: AuthenticatorRouterOptions): ActorDef<
                 avatar: user.avatar || '',
                 phone: user.phone || '',
                 roles: identity.roles,
+                timezone: user.timezone || '',
               })
             }
           }
@@ -295,6 +296,7 @@ export const AuthenticatorRouter = (opts: AuthenticatorRouterOptions): ActorDef<
             userId: identity.userId,
             fullName: body.fullName,
             avatar: body.avatar,
+            timezone: body.timezone,
             replyTo: {
               name: 'http:profile:update',
               isAlive: () => true,
@@ -307,6 +309,7 @@ export const AuthenticatorRouter = (opts: AuthenticatorRouterOptions): ActorDef<
                     avatar: result.ok.avatar || '',
                     phone: result.ok.phone || '',
                     roles: result.ok.roles,
+                    timezone: result.ok.timezone || '',
                   }
                 })
               }
