@@ -85,7 +85,6 @@ type CallerMsg =
 
 const createCaller = (
   toolRef: ActorRef<ToolMsg>,
-  jobMetadata?: Record<string, unknown>,
 ): ActorDef<CallerMsg, null> => ({
   handler: (state, msg, ctx) => {
     if (msg.type === 'go') {
@@ -95,7 +94,6 @@ const createCaller = (
           ctx,
           toolRef,
           { toolName: 'test-tool', arguments: '{}', userId: 'test-user' },
-          jobMetadata ? { jobMetadata } : undefined,
         ),
         (reply) => ({ type: '_immediate' as const, reply, outerReply: target }),
         (err)   => ({ type: '_immediateErr' as const, error: err, outerReply: target }),
@@ -230,36 +228,6 @@ describe('invokeTool primitive', () => {
     const failed = events.find(e => e.status === 'failed')
     expect(failed).toBeDefined()
     expect((failed as Extract<JobLifecycleEvent, { status: 'failed' }>).error).toBe('something went wrong')
-
-    await system.shutdown()
-  })
-
-  test('toolPending running event includes generic metadata', async () => {
-    const system = await AgentSystem()
-    const events: JobLifecycleEvent[] = []
-    system.subscribe(JobRegistryTopic, (e) => { events.push(e) })
-
-    const mode: ToolMode = {
-      kind: 'pending',
-      eventually: { type: 'toolResult', result: { text: 'finished work' } },
-      delayMs: 40,
-      placeholder: 'WORKING',
-    }
-    const tool = system.spawn('tool-pending-preserved', createTestTool(mode), { state: {
-      mode, jobs: {},
-    } }) as unknown as ActorRef<ToolMsg>
-
-    const caller = system.spawn('caller-preserved', createCaller(tool, { purpose: 'test' }))
-    await tick()
-
-    const immediate: ToolReply[] = []
-    const sink: ActorRef<ToolReply> = { name: 'sink', isAlive: () => true, send: (r) => { immediate.push(r) } }
-    caller.send({ type: 'go', replyTo: sink })
-    await tick(30)
-
-    expect(immediate[0]).toEqual({ type: 'toolPending', jobId: 'job-1', placeholderText: 'WORKING' })
-    const running = events.find(e => e.status === 'running')
-    expect(running).toMatchObject({ jobId: 'job-1', status: 'running', metadata: { purpose: 'test' } })
 
     await system.shutdown()
   })

@@ -11,7 +11,6 @@ export type InvokeToolArgs = {
 
 export type InvokeToolOptions<M = any> = {
   headers?: MessageHeaders
-  jobMetadata?: Record<string, unknown>
 }
 
 /**
@@ -54,7 +53,6 @@ export const invokeTool = async <M = any>(
     toolRef,
     startedAt: Date.now(),
     userId: args.userId,
-    metadata: options?.jobMetadata,
   })
 
   return firstReply

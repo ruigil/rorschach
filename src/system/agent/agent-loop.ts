@@ -153,9 +153,6 @@ export type AgentLoopHooks<S extends WithLoopState, M extends { type: string }> 
 	    ctx: ActorContext<M>,
 	  ) => { state: S }
 
-	  toolInvocation?: {
-	    jobMetadata?: (call: { id: string; name: string; arguments: string }, turn: LoopTurn) => Record<string, unknown>
-	  }
 
   onBatchHistoryReady?: (
     s: S,
@@ -375,7 +372,6 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
             { toolName: call.name, arguments: call.arguments, userId },
             {
               headers: toolSpan ? ctx.trace.injectHeaders(toolSpan) : undefined,
-              jobMetadata: hooks.toolInvocation?.jobMetadata?.(call, turn),
             },
           ),
           (reply) => ({

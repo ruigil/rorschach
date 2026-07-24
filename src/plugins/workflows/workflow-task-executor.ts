@@ -203,13 +203,6 @@ export const WorkflowTaskExecutor = (
     maxToolLoops,
     llmRef: s => s.llmRef,
     tools: state => state.tools,
-    toolInvocation: {
-      jobMetadata: (call, turn) => ({
-        workflowTask: true,
-        userId: turn.userId,
-        toolCallId: call.id,
-      }),
-    },
     onComplete: (state) => {
       if (state.task && !state.terminalSignaled) {
         parentRef.send({

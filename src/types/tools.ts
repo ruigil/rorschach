@@ -70,10 +70,9 @@ export type JobLifecycleEvent =
       userId?: string
       statusText?: string
       progress?: { current: number; total: number }
-      metadata?: Record<string, unknown>
     }
-  | { jobId: string; status: 'completed'; result: ToolResultPayload; statusText?: string; metadata?: Record<string, unknown> }
-  | { jobId: string; status: 'failed';    error: string; metadata?: Record<string, unknown> }
+  | { jobId: string; status: 'completed'; result: ToolResultPayload; statusText?: string }
+  | { jobId: string; status: 'failed';    error: string }
   | { jobId: string; status: 'cleared' }
 
 export const JobRegistryTopic = createTopic<JobLifecycleEvent>('tools.jobs')
