@@ -39,6 +39,7 @@ const defaultConfig: CognitiveConfig = {
   session: {
     defaultMode:        'chatbot',
     contextWindowHours: 4,
+    persistContext:     true,
   },
   userContext: {
     model:      'deepseek/deepseek-v4-flash',
@@ -84,6 +85,7 @@ export default createPluginFactory<CognitiveConfig>({
           agentRegistryRef:   deps.agentRegistry as ActorRef<any>,
           defaultMode:        sessionConfig.defaultMode,
           contextWindowHours: sessionConfig.contextWindowHours,
+          persistContext:     sessionConfig.persistContext ?? true,
         })
       },
       dependsOn: ['llmProvider', 'agentRegistry'],

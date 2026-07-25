@@ -154,6 +154,53 @@ describe('ContextStore context snapshots', () => {
 
     await system.shutdown()
   })
+
+  test('starts and serves conversation without persistence when persistContext is false', async () => {
+    // No MockPersistenceActor — pure memory must not hang on resolvePersistence
+    const system = await AgentSystem()
+    const snapshots: ContextSnapshotEvent[] = []
+    system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
+    const ref = system.spawn('context-store-mem', ContextStore({ userId: 'u-mem', persistContext: false }))
+    await tick()
+
+    expect(snapshots.at(-1)?.recentMessages).toEqual([])
+
+    ref.send({ type: 'append', mode: 'chatbot', messages: [{ role: 'user', content: 'hello memory' }] })
+    await tick()
+    ref.send({ type: 'append', mode: 'chatbot', source: 'assistant', messages: [{ role: 'assistant', content: 'hi memory' }] })
+    await tick()
+
+    const latest = snapshots.at(-1)!
+    expect(latest.recentMessages).toEqual([
+      { role: 'user', content: 'hello memory' },
+      { role: 'assistant', content: 'hi memory' },
+    ])
+    expect(latest.turns).toHaveLength(1)
+
+    await system.shutdown()
+  })
+
+  test('does not restore prior state when persistContext is false even if persistence exists', async () => {
+    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const snapshots: ContextSnapshotEvent[] = []
+    system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
+
+    const persistent = system.spawn('context-store-p', ContextStore({ userId: 'u-shared', persistContext: true }))
+    await tick()
+    persistent.send({ type: 'append', mode: 'chatbot', messages: [{ role: 'user', content: 'persisted fact' }] })
+    await tick()
+    persistent.send({ type: 'append', mode: 'chatbot', source: 'assistant', messages: [{ role: 'assistant', content: 'ok' }] })
+    await tick()
+    system.stop(persistent)
+    await tick()
+
+    const memoryOnly = system.spawn('context-store-m', ContextStore({ userId: 'u-shared', persistContext: false }))
+    await tick()
+
+    expect(snapshots.filter(s => s.userId === 'u-shared').at(-1)?.recentMessages).toEqual([])
+
+    await system.shutdown()
+  })
 })
 
 describe('assembleAgentMessages', () => {

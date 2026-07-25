@@ -57,6 +57,7 @@ const initialContextStoreState = (): ContextStoreState => ({
 export type ContextStoreOptions = {
   userId:              string
   contextWindowHours?: number   // when set, trim context records older than the window on each append
+  persistContext?:     boolean  // false = pure in-memory (no load/save). Default true.
 }
 
 // ─── On-disk format ───
@@ -162,7 +163,7 @@ const buildToolSummaries = (records: ContextRecord[]): ToolSummary[] => {
 export const ContextStore = (
   options: ContextStoreOptions,
 ): ActorDef<ContextStoreMsg, ContextStoreState> => {
-  const { userId, contextWindowHours } = options
+  const { userId, contextWindowHours, persistContext = true } = options
 
   const publishSnapshot = (state: ContextStoreState, ctx: { publishRetained: any }) => {
     const recentMessages = toRecentMessages(state.records)
@@ -179,7 +180,7 @@ export const ContextStore = (
 
   return {
     initialState: initialContextStoreState,
-    persistence: createPersistence(userId),
+    ...(persistContext ? { persistence: createPersistence(userId) } : {}),
 
     lifecycle: onLifecycle({
       start: (state, ctx) => {

@@ -48,6 +48,7 @@ export type SessionManagerOptions = {
   agentRegistryRef:    ActorRef<any>
   defaultMode:         string
   contextWindowHours?: number
+  persistContext?:     boolean
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -98,7 +99,7 @@ const tryDestroySession = (
 export const SessionManager = (
   options: SessionManagerOptions,
 ): ActorDef<SessionManagerMsg, SessionManagerState> => {
-  const { llmRef, agentRegistryRef, defaultMode, contextWindowHours } = options
+  const { llmRef, agentRegistryRef, defaultMode, contextWindowHours, persistContext = true } = options
 
   return {
     initialState: initialSessionManagerState,
@@ -165,7 +166,11 @@ export const SessionManager = (
           }
 
           // First connect for this userId — spawn context store
-          const contextStoreRef = ctx.spawn(`context-store-${userId}`, ContextStore({ userId, contextWindowHours })) as ActorRef<ContextStoreMsg>
+          const contextStoreRef = ctx.spawn(`context-store-${userId}`, ContextStore({
+            userId,
+            contextWindowHours,
+            persistContext,
+          })) as ActorRef<ContextStoreMsg>
           if (event.timezone) {
             contextStoreRef.send({ type: 'setTimezone', timezone: event.timezone })
           }
