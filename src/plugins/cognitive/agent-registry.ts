@@ -50,7 +50,7 @@ const initialAgentRegistryState = (): AgentRegistryState => ({
   activeJobs: {},
 })
 
-const SWITCH_MODE_TOOL_NAME = 'switch_mode'
+const SWITCH_MODE_TOOL_NAME = 'cognitive_switch_mode'
 const CATALOG_KEY = 'global'
 
 // ─── Schema builder ───────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ const ensureAgent = (
 
   // Inject switch_mode directly as an internal tool
   const switchModeTool: Tool = {
-    name: 'switch_mode',
+    name: 'cognitive_switch_mode',
     schema: buildSwitchModeSchema(state.descriptors),
     ref: ctx.self as unknown as ActorRef<any>,
   }
@@ -306,7 +306,7 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
 
         // Propagate updates to running agents, preserving switch_mode injection
         const switchModeTool: Tool = {
-          name: 'switch_mode',
+          name: 'cognitive_switch_mode',
           schema: buildSwitchModeSchema(nextDescriptors),
           ref: ctx.self as unknown as ActorRef<any>,
         }

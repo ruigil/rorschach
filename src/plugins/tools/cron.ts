@@ -8,7 +8,7 @@ import type { CronState, CronJob } from './types.ts'
 
 // ─── Tool names & schemas ───
 
-export const cronCreateTool = defineTool('cron_create', 'Schedule a prompt to be delivered later on a cron schedule. Returns toolPending until the next fire; that completion injects the prompt.', {
+export const cronCreateTool = defineTool('tools_cron_create', 'Schedule a prompt to be delivered later on a cron schedule. Returns toolPending until the next fire; that completion injects the prompt.', {
   type: 'object',
   properties: {
     expression: { type: 'string', description: 'Standard 5-field cron expression (e.g. "0 9 * * 1-5" for weekdays at 9am).' },
@@ -19,7 +19,7 @@ export const cronCreateTool = defineTool('cron_create', 'Schedule a prompt to be
   required: ['expression', 'prompt'],
 })
 
-export const cronDeleteTool = defineTool('cron_delete', 'Delete a scheduled cron job by schedule ID (from cron_list or the create acknowledgment).', {
+export const cronDeleteTool = defineTool('tools_cron_delete', 'Delete a scheduled cron job by schedule ID (from tools_cron_list or the create acknowledgment).', {
   type: 'object',
   properties: {
     jobId: { type: 'string', description: 'The schedule ID.' },
@@ -27,7 +27,7 @@ export const cronDeleteTool = defineTool('cron_delete', 'Delete a scheduled cron
   required: ['jobId'],
 })
 
-export const cronListTool = defineTool('cron_list', 'List all scheduled cron jobs with their IDs, expressions, prompts, and next scheduled run time.', {
+export const cronListTool = defineTool('tools_cron_list', 'List all scheduled cron jobs with their IDs, expressions, prompts, and next scheduled run time.', {
   type: 'object',
   properties: {},
 })

@@ -73,7 +73,7 @@ export {
 const BASH_MAX_OUTPUT_BYTES = 512 * 1024
 
 export const codingBashTool = defineTool(
-  'bash',
+  'coding_shell_exec',
   'Execute a bash command against the mounted filesystems. The project at /rorschach is read-only; /workspace is read-write. Prefer read/grep/glob for inspection and write for workspace files. Large output is truncated.',
   {
     type: 'object',
@@ -91,7 +91,7 @@ export const codingBashTool = defineTool(
 )
 
 export const codingReadTool = defineTool(
-  'read',
+  'coding_file_read',
   'Read a UTF-8 file under /rorschach or /workspace. Returns a line window (default 300 lines) with absolute 1-based LINE| prefixes. Use offset/limit to page through large files. Do not include the LINE| prefixes in str_replace old_string.',
   {
     type: 'object',

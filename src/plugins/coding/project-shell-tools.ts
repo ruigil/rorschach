@@ -25,7 +25,7 @@ export const SKIP_DIR_NAMES = new Set([
 ])
 
 export const codingGrepTool = defineTool(
-  'grep',
+  'coding_file_grep',
   'Search file contents under /rorschach or /workspace with a JS regex. Prefer over bash rg/grep. Supports path, glob filter, and maxMatches.',
   {
     type: 'object',
@@ -57,7 +57,7 @@ export const codingGrepTool = defineTool(
 )
 
 export const codingGlobTool = defineTool(
-  'glob',
+  'coding_file_glob',
   'Find file paths under /rorschach or /workspace matching a glob pattern (* ? **). Prefer over bash find/ls for discovery.',
   {
     type: 'object',
@@ -80,7 +80,7 @@ export const codingGlobTool = defineTool(
 )
 
 export const codingWriteTool = defineTool(
-  'write',
+  'coding_file_write',
   'Write a UTF-8 file under /workspace only (project mount is read-only). Overwrites existing files. Creates parent directories by default.',
   {
     type: 'object',
@@ -103,7 +103,7 @@ export const codingWriteTool = defineTool(
 )
 
 export const codingStrReplaceTool = defineTool(
-  'str_replace',
+  'coding_file_replace_string',
   'Replace an exact UTF-8 substring in an existing file under /workspace only. Prefer over write for small edits. Fails if old_string is missing or not unique (unless replace_all). Never include read-tool line-number prefixes (N|) in old_string/new_string.',
   {
     type: 'object',
@@ -546,7 +546,7 @@ export const assertWorkspaceWritePath = (normalized: string): PathResolveResult 
   return {
     ok: false,
     error:
-      'Refusing write: project is read-only; use /workspace or write_html_page for docs.',
+      'Refusing write: project is read-only; use /workspace or coding_html_write_page for docs.',
   }
 }
 

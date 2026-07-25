@@ -9,7 +9,7 @@ import type { ActorRef } from '../system/index.ts'
 const tick = (ms = 50) => Bun.sleep(ms)
 
 describe('cron job registry integration', () => {
-  test('cron_create returns toolPending; delete clears the schedule job', async () => {
+  test('tools_cron_create returns toolPending; delete clears the schedule job', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const events: JobLifecycleEvent[] = []
     system.subscribe(JobRegistryTopic, e => { events.push(e) })
@@ -21,7 +21,7 @@ describe('cron job registry integration', () => {
       cron,
       replyTo => ({
         type: 'invoke',
-        toolName: 'cron_create',
+        toolName: 'tools_cron_create',
         arguments: JSON.stringify({
           expression: '0 9 * * *',
           prompt: 'daily check-in',
@@ -41,7 +41,7 @@ describe('cron job registry integration', () => {
     system.publishRetained(JobRegistryTopic, reply.jobId, {
       jobId: reply.jobId,
       status: 'running',
-      toolName: 'cron_create',
+      toolName: 'tools_cron_create',
       toolRef: cron,
       startedAt: Date.now(),
       userId: 'u1',
@@ -52,7 +52,7 @@ describe('cron job registry integration', () => {
       cron,
       replyTo => ({
         type: 'invoke',
-        toolName: 'cron_delete',
+        toolName: 'tools_cron_delete',
         arguments: JSON.stringify({ jobId: reply.jobId }),
         userId: 'u1',
         replyTo,
@@ -108,7 +108,7 @@ describe('cron job registry integration', () => {
 
     const running = events[runningIdx]!
     if (running.status === 'running') {
-      expect(running.toolName).toBe('cron_create')
+      expect(running.toolName).toBe('tools_cron_create')
       expect(running.userId).toBe('u-fire')
     }
 
@@ -170,7 +170,7 @@ describe('cron job registry integration', () => {
     await system.shutdown()
   })
 
-  test('cron_create respects explicit timezone arguments', async () => {
+  test('tools_cron_create respects explicit timezone arguments', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const cron = system.spawn('cron-tz', Cron()) as unknown as ActorRef<ToolMsg>
     await tick()
@@ -179,7 +179,7 @@ describe('cron job registry integration', () => {
       cron,
       replyTo => ({
         type: 'invoke',
-        toolName: 'cron_create',
+        toolName: 'tools_cron_create',
         arguments: JSON.stringify({
           expression: '0 9 * * *',
           prompt: 'morning alert',

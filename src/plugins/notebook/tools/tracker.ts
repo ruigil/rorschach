@@ -6,7 +6,7 @@ import type { HabitDef } from '../types.ts'
 import { NotebookChangeTopic } from '../types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../../../types/persistence.ts'
 
-export const trackerLogTool = defineTool('tracker_log', 'Log a numeric value for a tracked habit or any recurring metric (e.g. expenses, weight, steps, mood).', {
+export const trackerLogTool = defineTool('notebook_tracker_log', 'Log a numeric value for a tracked habit or any recurring metric (e.g. expenses, weight, steps, mood).', {
   type: 'object',
   properties: {
     habit:       { type: 'string', description: 'Habit name (must exist in habits.json).' },
@@ -17,7 +17,7 @@ export const trackerLogTool = defineTool('tracker_log', 'Log a numeric value for
   required: ['habit', 'value'],
 })
 
-export const trackerStatsTool = defineTool('tracker_stats', 'Get statistics for a tracked metric: weekly/monthly totals and averages, current streak, and personal best. Works for habits, expenses, or any numeric series.', {
+export const trackerStatsTool = defineTool('notebook_tracker_stats', 'Get statistics for a tracked metric: weekly/monthly totals and averages, current streak, and personal best. Works for habits, expenses, or any numeric series.', {
   type: 'object',
   properties: {
     habit: { type: 'string', description: 'Habit name.' },

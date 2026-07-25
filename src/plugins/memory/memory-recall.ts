@@ -15,7 +15,7 @@ import type {
 } from './types.ts'
 import { recallSynthesisPrompt } from './ontology.ts'
 
-export const memoryRecallTool = defineTool('recall_memory', 'Retrieve relevant memories from concept nodes, navigate the memory graph when useful, hydrate selected source records, and return a sourced answer.', {
+export const memoryRecallTool = defineTool('memory_recall', 'Retrieve relevant memories from concept nodes, navigate the memory graph when useful, hydrate selected source records, and return a sourced answer.', {
   type: 'object',
   properties: {
     query: { type: 'string', description: 'What to look up. Be specific.' },

@@ -46,7 +46,7 @@ mock.module('googleapis', () => {
 })
 
 describe('Drive actor with persistence store', () => {
-  test('drive_download_file exports file and saves to persistence provider using obj.putStream', async () => {
+  test('googleapis_drive_file_download exports file and saves to persistence provider using obj.putStream', async () => {
     const system = await AgentSystem()
     const persistenceRef = system.spawn('mock-persistence', MockPersistenceActor())
 
@@ -71,7 +71,7 @@ describe('Drive actor with persistence store', () => {
       driveRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'drive_download_file',
+        toolName: 'googleapis_drive_file_download',
         arguments: JSON.stringify({ fileId: 'file-123' }),
         replyTo,
         userId: 'user-123',
@@ -101,7 +101,7 @@ describe('Drive actor with persistence store', () => {
     await system.shutdown()
   })
 
-  test('drive_upload_file gets stream from persistence and uploads to Google Drive', async () => {
+  test('googleapis_drive_file_upload gets stream from persistence and uploads to Google Drive', async () => {
     const system = await AgentSystem()
     const persistenceRef = system.spawn('mock-persistence', MockPersistenceActor())
 
@@ -137,7 +137,7 @@ describe('Drive actor with persistence store', () => {
       driveRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'drive_upload_file',
+        toolName: 'googleapis_drive_file_upload',
         arguments: JSON.stringify({
           name: 'uploaded-via-test.txt',
           filePath: 'inbound/upload-test.txt'

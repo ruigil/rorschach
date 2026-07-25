@@ -8,7 +8,7 @@ import type { AudioMsg, AudioState, AudioOptions } from './types.ts'
 
 // ─── Tool schemas ───
 
-export const transcribeAudioTool = defineTool('transcribe_audio', 'Transcribe an audio file to text. Use when the user attaches or references an audio recording.', {
+export const transcribeAudioTool = defineTool('tools_audio_transcribe', 'Transcribe an audio file to text. Use when the user attaches or references an audio recording.', {
   type: 'object',
   properties: {
     audio:  { type: 'string', description: 'File path to the audio file (e.g. from [Audio attached: "]).' },
@@ -17,7 +17,7 @@ export const transcribeAudioTool = defineTool('transcribe_audio', 'Transcribe an
   required: ['audio', 'format'],
 })
 
-export const textToSpeechTool = defineTool('text_to_speech', 'Convert text to speech and save it as an audio file. Use when the user asks to speak, say, or read something aloud.', {
+export const textToSpeechTool = defineTool('tools_audio_text_to_speech', 'Convert text to speech and save it as an audio file. Use when the user asks to speak, say, or read something aloud.', {
   type: 'object',
   properties: {
     text:         { type: 'string', description: 'The text to convert to speech.' },
@@ -197,7 +197,7 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
           }
         }
 
-        // Default: transcribe_audio
+        // Default: tools_audio_transcribe
         let audioPath = ''
         let format = 'wav'
         try {

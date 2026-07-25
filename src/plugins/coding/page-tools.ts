@@ -5,7 +5,7 @@ import type { ToolReply } from '../../types/tools.ts'
 import type { PageToolsState, PageToolsMsg, TocNode } from './types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../../types/persistence.ts'
 
-export const writeHTMLPageTool = defineTool('write_html_page', 'Write an HTML page generated from Markdown into a persistence collection, automatically updating the table of contents.', {
+export const writeHTMLPageTool = defineTool('coding_html_write_page', 'Write an HTML page generated from Markdown into a persistence collection, automatically updating the table of contents.', {
   type: 'object',
   required: ['collection', 'title', 'filename', 'markdown'],
   properties: {

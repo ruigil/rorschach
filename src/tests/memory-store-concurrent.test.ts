@@ -159,7 +159,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
               msg.replyTo.send({
                 type: 'llmToolCalls',
                 requestId: msg.requestId,
-                calls: [{ id: 'read-1', name: 'memory_read', arguments: JSON.stringify({ recordIds }) }],
+                calls: [{ id: 'coding_file_read-1', name: 'memory_read', arguments: JSON.stringify({ recordIds }) }],
                 usage: { promptTokens: 1, completionTokens: 1 },
               })
               return { state }
@@ -232,7 +232,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
       storeRef as unknown as ActorRef<ToolInvokeMsg>,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'recall_memory',
+        toolName: 'memory_recall',
         arguments: JSON.stringify({ query: 'notebook notes storage' }),
         replyTo,
         userId,
@@ -305,7 +305,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
               msg.replyTo.send({
                 type: 'llmToolCalls',
                 requestId: msg.requestId,
-                calls: [{ id: 'read-1', name: 'memory_read', arguments: JSON.stringify({ recordIds }) }],
+                calls: [{ id: 'coding_file_read-1', name: 'memory_read', arguments: JSON.stringify({ recordIds }) }],
                 usage: { promptTokens: 1, completionTokens: 1 },
               })
               return { state }
@@ -379,7 +379,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
       storeRef as unknown as ActorRef<ToolInvokeMsg>,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'store_memory',
+        toolName: 'memory_store',
         arguments: JSON.stringify({ content: markdown, attachments: attachmentsWithData }),
         replyTo,
         userId: 'test-user',
@@ -442,7 +442,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
       storeRef as unknown as ActorRef<ToolInvokeMsg>,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'recall_memory',
+        toolName: 'memory_recall',
         arguments: JSON.stringify({ query: 'Which editor does the user prefer?' }),
         replyTo,
         userId: 'test-user',
@@ -514,7 +514,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
       storeRef as unknown as ActorRef<ToolInvokeMsg>,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'store_memory',
+        toolName: 'memory_store',
         arguments: JSON.stringify({ content: 'I like apples' }),
         replyTo,
         userId: 'test-user',
@@ -525,7 +525,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
       storeRef as unknown as ActorRef<ToolInvokeMsg>,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'store_memory',
+        toolName: 'memory_store',
         arguments: JSON.stringify({ content: 'I like oranges' }),
         replyTo,
         userId: 'test-user',
@@ -569,7 +569,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
       storeRef as unknown as ActorRef<ToolInvokeMsg>,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'store_memory',
+        toolName: 'memory_store',
         arguments: JSON.stringify({ content: 'test' }),
         replyTo,
         userId: 'test-user',

@@ -71,18 +71,18 @@ const sampleRun = (): WorkflowRunState => ({
   },
   activeTasks: {},
   pendingJobs: {
-    'job-1': { taskId: 'build', toolName: 'read', startedAt: '2026-05-16T10:00:04.000Z' },
+    'job-1': { taskId: 'build', toolName: 'coding_file_read', startedAt: '2026-05-16T10:00:04.000Z' },
   },
   events: [{ timestamp: '2026-05-16T10:00:00.000Z', type: 'runStarted', message: 'Run started.' }],
   workflow: sampleWorkflow(),
 })
 
 const FakeRunner = (): ActorDef<WorkflowRunnerMsg, { executionTools: Record<string, any> }> => ({
-  initialState: () => ({ executionTools: { read: { name: 'read', schema: { function: { description: 'Read a file.' } } } } }),
+  initialState: () => ({ executionTools: { coding_file_read: { name: 'coding_file_read', schema: { function: { description: 'Read a file.' } } } } }),
   handler: (state, msg) => {
     if ('replyTo' in msg) {
       const reply: WorkflowRunnerReply = msg.type === 'listExecutionTools'
-        ? { ok: true, executionTools: [{ name: 'read', description: 'Read a file.' }] }
+        ? { ok: true, executionTools: [{ name: 'coding_file_read', description: 'Read a file.' }] }
         : { ok: false, error: 'not implemented' }
       msg.replyTo.send(reply as any)
     }
@@ -156,7 +156,7 @@ describe('workflow store', () => {
       expect(result.data.graph.run?.status).toBe('running')
       expect(result.data.graph.run?.inputs).toEqual({ topic: 'workspace' })
       expect(result.data.graph.run?.activeTaskIds).toEqual(['build'])
-      expect(result.data.graph.run?.pendingJobs['job-1']).toMatchObject({ taskId: 'build', toolName: 'read' })
+      expect(result.data.graph.run?.pendingJobs['job-1']).toMatchObject({ taskId: 'build', toolName: 'coding_file_read' })
       expect(result.data.graph.run?.events[0]).toEqual({ timestamp: '2026-05-16T10:00:00.000Z', type: 'runStarted', message: 'Run started.' })
       expect(result.data.graph.nodes[0]).toMatchObject({
         status: 'completed',
@@ -329,7 +329,7 @@ describe('workflow store', () => {
     await system.shutdown()
   })
 
-  test('list_execution_tools reads execution tools from workflow runner', async () => {
+  test('workflows_execution_tools_list reads execution tools from workflow runner', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const persistenceRef = await getPersistenceRef(system)
     const runner = system.spawn('workflow-runner', FakeRunner())
@@ -342,7 +342,7 @@ describe('workflow store', () => {
     expect(reply.type).toBe('toolResult')
     if (reply.type === 'toolResult') {
       const listed = JSON.parse(reply.result.text) as Array<{ name: string; description: string }>
-      expect(listed).toEqual([{ name: 'read', description: 'Read a file.' }])
+      expect(listed).toEqual([{ name: 'coding_file_read', description: 'Read a file.' }])
     }
 
     await system.shutdown()

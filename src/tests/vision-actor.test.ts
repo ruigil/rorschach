@@ -9,7 +9,7 @@ import { MockPersistenceActor } from './mock-persistence.ts'
 const tick = (ms = 50) => Bun.sleep(ms)
 
 describe('vision actor', () => {
-  test('generate_image streams image via obj.putStream and returns attachment metadata', async () => {
+  test('tools_image_generate streams image via obj.putStream and returns attachment metadata', async () => {
     const system = await AgentSystem()
     const persistenceRef = system.spawn('mock-persistence', MockPersistenceActor())
 
@@ -34,7 +34,7 @@ describe('vision actor', () => {
       visionRef,
       replyTo => ({
         type: 'invoke',
-        toolName: 'generate_image',
+        toolName: 'tools_image_generate',
         arguments: JSON.stringify({ prompt: 'a small blue square' }),
         replyTo,
         userId: 'test-user',
@@ -57,7 +57,7 @@ describe('vision actor', () => {
     await system.shutdown()
   })
 
-  test('analyze_image resolves image from persistence store and sends to LLM', async () => {
+  test('tools_image_analyze resolves image from persistence store and sends to LLM', async () => {
     const system = await AgentSystem()
     const persistenceRef = system.spawn('mock-persistence', MockPersistenceActor())
 
@@ -105,7 +105,7 @@ describe('vision actor', () => {
       visionRef,
       replyTo => ({
         type: 'invoke',
-        toolName: 'analyze_image',
+        toolName: 'tools_image_analyze',
         arguments: JSON.stringify({ image_url: 'test-folder/image.png', prompt: 'Is this an image?' }),
         replyTo,
         userId: 'test-user',

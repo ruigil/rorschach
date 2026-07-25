@@ -109,9 +109,9 @@ describe('coach mode integration tests', () => {
     const dummyToolRef = system.spawn('dummy-tool', DummyToolRef())
 
     const tools = {
-      journal_write: {
-        name: 'journal_write',
-        schema: { type: 'function' as const, function: { name: 'journal_write', description: 'Write journal', parameters: {} } },
+      notebook_journal_write: {
+        name: 'notebook_journal_write',
+        schema: { type: 'function' as const, function: { name: 'notebook_journal_write', description: 'Write journal', parameters: {} } },
         ref: dummyToolRef,
       }
     }
@@ -132,19 +132,19 @@ describe('coach mode integration tests', () => {
 
     // Simulate global tool registrations
     system.publish(ToolRegistrationTopic, {
-      name: 'web_search',
-      schema: { type: 'function' as const, function: { name: 'web_search', description: 'Search the web', parameters: {} } },
+      name: 'tools_web_search',
+      schema: { type: 'function' as const, function: { name: 'tools_web_search', description: 'Search the web', parameters: {} } },
       ref: dummyToolRef,
     })
     system.publish(ToolRegistrationTopic, {
-      name: 'cron_create',
-      schema: { type: 'function' as const, function: { name: 'cron_create', description: 'Create cron job', parameters: {} } },
+      name: 'tools_cron_create',
+      schema: { type: 'function' as const, function: { name: 'tools_cron_create', description: 'Create cron job', parameters: {} } },
       ref: dummyToolRef,
     })
-    // Simulate dynamic registration of a forbidden tool (e.g. bash)
+    // Simulate dynamic registration of a forbidden tool (e.g. coding_shell_exec)
     system.publish(ToolRegistrationTopic, {
-      name: 'bash',
-      schema: { type: 'function' as const, function: { name: 'bash', description: 'Run bash commands', parameters: {} } },
+      name: 'coding_shell_exec',
+      schema: { type: 'function' as const, function: { name: 'coding_shell_exec', description: 'Run coding_shell_exec commands', parameters: {} } },
       ref: dummyToolRef,
     })
     await tick()
@@ -160,12 +160,12 @@ describe('coach mode integration tests', () => {
     const toolNames = receivedTools!.map(t => t.function.name)
 
     // Allowed tools must be present
-    expect(toolNames).toContain('journal_write')
-    expect(toolNames).toContain('web_search')
-    expect(toolNames).toContain('cron_create')
+    expect(toolNames).toContain('notebook_journal_write')
+    expect(toolNames).toContain('tools_web_search')
+    expect(toolNames).toContain('tools_cron_create')
 
     // Disallowed tools must NOT be present
-    expect(toolNames).not.toContain('bash')
+    expect(toolNames).not.toContain('coding_shell_exec')
 
     await system.shutdown()
   })

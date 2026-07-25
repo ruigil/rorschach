@@ -11,7 +11,7 @@ const tick = (ms = 50) => Bun.sleep(ms)
 // JobRegistryTopic when `_finish` is received, simulating the topic-based
 // completion flow.
 //
-// The tool itself no longer needs a `jobStatus` handler — tool_status serves
+// The tool itself no longer needs a `jobStatus` handler — tools_status serves
 // status from its cached topic-derived state.
 
 type FakeToolState = { jobs: Record<string, { result: string }> }
@@ -40,7 +40,7 @@ const createFakeTool = (): ActorDef<FakeMsg, FakeToolState> => ({
   },
 })
 
-describe('tool_status', () => {
+describe('tools_status', () => {
   test('status of running job served from cached topic state', async () => {
     const system = await AgentSystem()
     const fakeTool = system.spawn('fake-tool', createFakeTool(), { state: {
@@ -53,7 +53,7 @@ describe('tool_status', () => {
     ) as unknown as ActorRef<ToolMsg>
     await tick()
 
-    // Register a running job in the JobRegistry — tool_status picks it up via subscription
+    // Register a running job in the JobRegistry — tools_status picks it up via subscription
     system.publishRetained(JobRegistryTopic, 'job-1', {
       jobId: 'job-1',
       status: 'running',

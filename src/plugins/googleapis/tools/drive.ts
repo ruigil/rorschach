@@ -11,7 +11,7 @@ import type { PersistenceMsg, PResult } from '../../../types/persistence.ts'
 
 // ─── Tool names & schemas ───
 
-export const driveListFilesTool = defineTool('drive_list_files', 'List files in Google Drive, optionally filtered to a specific folder.', {
+export const driveListFilesTool = defineTool('googleapis_drive_file_list', 'List files in Google Drive, optionally filtered to a specific folder.', {
   type: 'object',
   properties: {
     maxResults: { type: 'number', description: 'Maximum number of files to return (default 20).' },
@@ -19,7 +19,7 @@ export const driveListFilesTool = defineTool('drive_list_files', 'List files in 
   },
 })
 
-export const driveSearchFilesTool = defineTool('drive_search_files', "Search Google Drive using Drive query syntax (e.g. 'name contains budget' or 'mimeType=application/pdf').", {
+export const driveSearchFilesTool = defineTool('googleapis_drive_file_search', "Search Google Drive using Drive query syntax (e.g. 'name contains budget' or 'mimeType=application/pdf').", {
   type: 'object',
   properties: {
     query:      { type: 'string', description: 'Drive search query string.' },
@@ -28,18 +28,18 @@ export const driveSearchFilesTool = defineTool('drive_search_files', "Search Goo
   required: ['query'],
 })
 
-export const driveGetFileTool = defineTool('drive_get_file', 'Get metadata for a Google Drive file by its id.', {
+export const driveGetFileTool = defineTool('googleapis_drive_file_get', 'Get metadata for a Google Drive file by its id.', {
   type: 'object',
   properties: {
-    fileId: { type: 'string', description: 'File id from drive_list_files or drive_search_files.' },
+    fileId: { type: 'string', description: 'File id from googleapis_drive_file_list or googleapis_drive_file_search.' },
   },
   required: ['fileId'],
 })
 
-export const driveDownloadFileTool = defineTool('drive_download_file', 'Download a Google Drive file to central persistence store (under inbound/) and return its key. Google Docs → text (default) or pdf. Sheets → csv (default) or pdf. Slides → always pdf. Binary files (PDF, images, etc.) are downloaded as-is. Use the returned key with extract_pdf_text or analyze_image.', {
+export const driveDownloadFileTool = defineTool('googleapis_drive_file_download', 'Download a Google Drive file to central persistence store (under inbound/) and return its key. Google Docs → text (default) or pdf. Sheets → csv (default) or pdf. Slides → always pdf. Binary files (PDF, images, etc.) are downloaded as-is. Use the returned key with tools_pdf_extract_text or tools_image_analyze.', {
   type: 'object',
   properties: {
-    fileId: { type: 'string', description: 'File id from drive_list_files or drive_search_files.' },
+    fileId: { type: 'string', description: 'File id from googleapis_drive_file_list or googleapis_drive_file_search.' },
     exportFormat: {
       type: 'string',
       enum: ['text', 'pdf', 'csv'],
@@ -49,7 +49,7 @@ export const driveDownloadFileTool = defineTool('drive_download_file', 'Download
   required: ['fileId'],
 })
 
-export const driveUploadFileTool = defineTool('drive_upload_file', 'Upload a file to Google Drive. Provide either inline text content or the key of a file in persistence (from inbound/ or generated/). MIME type is inferred from file extension.', {
+export const driveUploadFileTool = defineTool('googleapis_drive_file_upload', 'Upload a file to Google Drive. Provide either inline text content or the key of a file in persistence (from inbound/ or generated/). MIME type is inferred from file extension.', {
   type: 'object',
   properties: {
     name:     { type: 'string', description: 'Drive file name. When filePath is given, defaults to the filename.' },

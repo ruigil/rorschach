@@ -8,7 +8,7 @@ import type { GoogleToken, TokenStoreMsg } from '../types.ts'
 
 // ─── Tool names & schemas ───
 
-export const youtubeSearchVideosTool = defineTool('youtube_search_videos', 'Search for YouTube videos by keyword or query.', {
+export const youtubeSearchVideosTool = defineTool('googleapis_youtube_video_search', 'Search for YouTube videos by keyword or query.', {
   type: 'object',
   properties: {
     query:      { type: 'string', description: 'The search term or query.' },
@@ -17,7 +17,7 @@ export const youtubeSearchVideosTool = defineTool('youtube_search_videos', 'Sear
   required: ['query'],
 })
 
-export const youtubeVideoDetailsTool = defineTool('youtube_video_details', 'Get details and statistics for a specific YouTube video.', {
+export const youtubeVideoDetailsTool = defineTool('googleapis_youtube_video_details', 'Get details and statistics for a specific YouTube video.', {
   type: 'object',
   properties: {
     videoId: { type: 'string', description: 'The ID of the YouTube video.' },

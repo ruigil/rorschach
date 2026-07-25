@@ -8,7 +8,7 @@ import type { GoogleToken, TokenStoreMsg } from '../types.ts'
 
 // ─── Tool names & schemas ───
 
-export const gmailListMessagesTool = defineTool('gmail_list_messages', 'List recent Gmail messages. Returns id, subject, sender, date and snippet for each.', {
+export const gmailListMessagesTool = defineTool('googleapis_gmail_message_list', 'List recent Gmail messages. Returns id, subject, sender, date and snippet for each.', {
   type: 'object',
   properties: {
     maxResults: { type: 'number', description: 'Maximum number of messages to return (default 10, max 50).' },
@@ -16,15 +16,15 @@ export const gmailListMessagesTool = defineTool('gmail_list_messages', 'List rec
   },
 })
 
-export const gmailGetMessageTool = defineTool('gmail_get_message', 'Get the full content of a Gmail message by its id.', {
+export const gmailGetMessageTool = defineTool('googleapis_gmail_message_get', 'Get the full content of a Gmail message by its id.', {
   type: 'object',
   properties: {
-    id: { type: 'string', description: 'The message id from gmail_list_messages or gmail_search.' },
+    id: { type: 'string', description: 'The message id from googleapis_gmail_message_list or googleapis_gmail_search.' },
   },
   required: ['id'],
 })
 
-export const gmailSendMessageTool = defineTool('gmail_send_message', 'Send an email via Gmail.', {
+export const gmailSendMessageTool = defineTool('googleapis_gmail_message_send', 'Send an email via Gmail.', {
   type: 'object',
   properties: {
     to:      { type: 'string', description: 'Recipient email address.' },
@@ -35,7 +35,7 @@ export const gmailSendMessageTool = defineTool('gmail_send_message', 'Send an em
   required: ['to', 'subject', 'body'],
 })
 
-export const gmailSearchTool = defineTool('gmail_search', 'Search Gmail messages using Gmail query syntax (e.g. "from:alice subject:report after:2024/01/01").', {
+export const gmailSearchTool = defineTool('googleapis_gmail_search', 'Search Gmail messages using Gmail query syntax (e.g. "from:alice subject:report after:2024/01/01").', {
   type: 'object',
   properties: {
     query:      { type: 'string', description: 'Gmail search query.' },

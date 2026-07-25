@@ -54,7 +54,7 @@ describe('ContextStore context snapshots', () => {
         {
           role: 'assistant',
           content: null,
-          tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'web_search', arguments: '{"query":"cats"}' } }],
+          tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'tools_web_search', arguments: '{"query":"cats"}' } }],
         },
         { role: 'tool', tool_call_id: 'call-1', content: 'A long search result about cats.' },
         { role: 'assistant', content: 'Cats are mammals.' },
@@ -70,7 +70,7 @@ describe('ContextStore context snapshots', () => {
     expect(latest.toolSummaries).toEqual([
       {
         mode: 'chatbot',
-        toolName: 'web_search',
+        toolName: 'tools_web_search',
         summary: 'A long search result about cats.',
         timestamp: expect.any(Number),
       },
@@ -123,7 +123,7 @@ describe('ContextStore context snapshots', () => {
       messages: [{
         role: 'assistant',
         content: null,
-        tool_calls: [{ id: 'c1', type: 'function', function: { name: 'web_search', arguments: '{}' } }],
+        tool_calls: [{ id: 'c1', type: 'function', function: { name: 'tools_web_search', arguments: '{}' } }],
       }],
     })
     await tick()
@@ -167,7 +167,7 @@ describe('assembleAgentMessages', () => {
         { role: 'user', content: 'current' },
       ],
       userContext: 'The user prefers concise answers.',
-      toolSummaries: [{ mode: 'chatbot', toolName: 'web_search', summary: 'Found docs.', timestamp: 1 }],
+      toolSummaries: [{ mode: 'chatbot', toolName: 'tools_web_search', summary: 'Found docs.', timestamp: 1 }],
     }, {
       mode: 'chatbot',
       systemPrompt: 'Base prompt',

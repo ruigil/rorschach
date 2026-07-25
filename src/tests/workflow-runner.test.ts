@@ -25,7 +25,7 @@ const makeDir = async (prefix: string): Promise<string> => {
   return dir
 }
 
-const readTool = defineTool('read', 'Read a file.', {
+const readTool = defineTool('coding_file_read', 'Read a file.', {
   type: 'object',
   properties: {
     path: { type: 'string' },
@@ -94,11 +94,11 @@ const seedRun = async (system: any, run: any) => {
 describe('workflow runner', () => {
   test('hydrates retained execution tools and starts a valid run', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
-    const toolRef = system.spawn('fake-read-tool', FakeTool())
+    const toolRef = system.spawn('fake-coding_file_read-tool', FakeTool())
     system.publishRetained(ToolRegistrationTopic, readTool.name, { ...readTool, ref: toolRef })
 
     const runsDir = await makeDir('rorschach-workflow-runs')
-    const wf = workflow(['read'])
+    const wf = workflow(['coding_file_read'])
     const runner = system.spawn('workflow-runner', WorkflowRunner({ llmRef: null, model: 'test-model', maxToolLoops: 1 }))
 
     const run = initialRunState(wf, 'run-id-1')
@@ -143,7 +143,7 @@ describe('workflow runner', () => {
   })
 
   test('publishes workflow run updates to OutboundUserMessageTopic for the user', async () => {
-    const { system } = await spawnRunner(workflow(['read']))
+    const { system } = await spawnRunner(workflow(['coding_file_read']))
     const outbound: Array<{ userId: string; frame: any }> = []
     system.subscribe(OutboundUserMessageTopic, event => {
       const e = event as { userId: string; text: string }
@@ -167,7 +167,7 @@ describe('workflow runner', () => {
         pendingJobs: {},
         taskStates: {},
         events: [],
-        workflow: workflow(['read']),
+        workflow: workflow(['coding_file_read']),
       },
     })
     await Bun.sleep(30)
@@ -218,7 +218,7 @@ describe('workflow runner', () => {
   })
 
   test('resume returns not found for an unknown run id', async () => {
-    const { system, runner } = await spawnRunner(workflow(['read']))
+    const { system, runner } = await spawnRunner(workflow(['coding_file_read']))
 
     const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
       runner,
@@ -237,11 +237,11 @@ describe('workflow runner', () => {
 
   test('removes terminated workflow run from runner cache and resolves via disk', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
-    const toolRef = system.spawn('fake-read-tool', FakeTool())
+    const toolRef = system.spawn('fake-coding_file_read-tool', FakeTool())
     system.publishRetained(ToolRegistrationTopic, readTool.name, { ...readTool, ref: toolRef })
 
     const runsDir = await makeDir('rorschach-workflow-runs')
-    const wf = workflow(['read'])
+    const wf = workflow(['coding_file_read'])
     const runner = system.spawn('workflow-runner', WorkflowRunner({ llmRef: null, model: 'test-model', maxToolLoops: 1 }))
 
     const run = initialRunState(wf, 'run-id-cleanup')

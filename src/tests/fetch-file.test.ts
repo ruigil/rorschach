@@ -33,7 +33,7 @@ describe('fetch-file actor', () => {
       ref,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'fetch_file',
+        toolName: 'tools_file_fetch',
         arguments: JSON.stringify({ url: 'https://example.com/test.txt' }),
         replyTo,
         userId: 'test-user',
@@ -68,7 +68,7 @@ describe('fetch-file actor', () => {
       ref,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'fetch_file',
+        toolName: 'tools_file_fetch',
         arguments: JSON.stringify({ url: 'https://example.com/' }),
         replyTo,
         userId: 'test-user',
@@ -99,7 +99,7 @@ describe('fetch-file actor', () => {
       ref,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'fetch_file',
+        toolName: 'tools_file_fetch',
         arguments: JSON.stringify({ url: 'https://example.com/missing' }),
         replyTo,
         userId: 'test-user',
@@ -129,7 +129,7 @@ describe('fetch-file actor', () => {
       ref,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'fetch_file',
+        toolName: 'tools_file_fetch',
         arguments: JSON.stringify({ url: 'https://example.com/fail' }),
         replyTo,
         userId: 'test-user',

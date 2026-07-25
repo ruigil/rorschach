@@ -19,7 +19,7 @@ const graph = (status = 'running') => ({
     context: 'Use workflow context in the UI.',
     createdAt: '2026-06-12T10:00:00.000Z',
     taskCount: 1,
-    executionTools: ['read', 'write'],
+    executionTools: ['coding_file_read', 'coding_file_write'],
     inputs: {
       city: { type: 'string', required: true, description: 'City name' },
     },
@@ -32,10 +32,10 @@ const graph = (status = 'running') => ({
     workflowId: 'workflow-1',
     status,
     inputs: { city: 'Rio' },
-    activeTaskIds: status === 'running' ? ['write-report'] : [],
+    activeTaskIds: status === 'running' ? ['coding_file_write-report'] : [],
     activeTasks: {},
     pendingJobs: status === 'running'
-      ? { 'job-1': { taskId: 'write-report', toolName: 'write', startedAt: '2026-06-12T10:01:00.000Z' } }
+      ? { 'job-1': { taskId: 'coding_file_write-report', toolName: 'coding_file_write', startedAt: '2026-06-12T10:01:00.000Z' } }
       : {},
     outputs: {
       report: { type: 'artifact', key: 'workflow-runs/run-1/report.html', mimeType: 'text/html' },
@@ -45,7 +45,7 @@ const graph = (status = 'running') => ({
     ],
   },
   nodes: [{
-    id: 'write-report',
+    id: 'coding_file_write-report',
     label: 'Write report',
     description: 'Write the report.',
     validationCriteria: 'Report exists.',
@@ -127,8 +127,8 @@ describe('r-workflow-workspace', () => {
     expect(workflow?.context).toBe('Use workflow context in the UI.')
     expect(workflow?.inputs?.city?.description).toBe('City name')
     expect(workflow?.outputs?.report?.description).toBe('HTML report')
-    expect(workflow?.executionTools).toContain('read')
-    expect(workflow?.executionTools).toContain('write')
+    expect(workflow?.executionTools).toContain('coding_file_read')
+    expect(workflow?.executionTools).toContain('coding_file_write')
     // The inspector tab label itself is visible in the shadow DOM
     expect(inspector.shadowRoot.textContent).toContain('workflow')
   })
@@ -150,8 +150,8 @@ describe('r-workflow-workspace', () => {
     expect(run?.inputs?.city).toBe('Rio')
     // Pending job tool name and task label are present in graph data
     const job = Object.values(run?.pendingJobs ?? {})[0] as any
-    expect(job?.toolName).toBe('write')
-    expect(job?.taskId).toBe('write-report')
+    expect(job?.toolName).toBe('coding_file_write')
+    expect(job?.taskId).toBe('coding_file_write-report')
     // Artifact href is computed from key
     const output = run?.outputs?.report as any
     expect(output?.type).toBe('artifact')
@@ -192,7 +192,7 @@ describe('r-workflow-workspace', () => {
     ns.set('runs', [graph('running').run])
     await el.updateComplete
 
-    el._selectedTaskId = 'write-report'
+    el._selectedTaskId = 'coding_file_write-report'
     el._inspectorTab = 'run'
 
     reduceFrame({
@@ -211,7 +211,7 @@ describe('r-workflow-workspace', () => {
         activeTasks: {},
         pendingJobs: {},
         taskStates: {
-          'write-report': {
+          'coding_file_write-report': {
             status: 'completed',
             attempts: 2,
             startedAt: '2026-06-12T10:00:00.000Z',
@@ -232,7 +232,7 @@ describe('r-workflow-workspace', () => {
     expect(el._currentGraph.nodes[0].status).toBe('completed')
     expect(el._currentGraph.nodes[0].attempts).toBe(2)
     expect(el._currentGraph.nodes[0].summary).toBe('Report finished.')
-    expect(el._selectedTaskId).toBe('write-report')
+    expect(el._selectedTaskId).toBe('coding_file_write-report')
     expect(el._inspectorTab).toBe('run')
   })
 
@@ -315,7 +315,7 @@ describe('r-workflow-workspace', () => {
     const merged = mergeWorkflowRunIntoGraph(graph('running'), {
       ...graph('completed').run,
       taskStates: {
-        'write-report': {
+        'coding_file_write-report': {
           status: 'failed',
           attempts: 3,
           error: 'Tool failed.',
@@ -359,11 +359,11 @@ describe('r-workflow-workspace', () => {
     const workflowPanel = findPanel('Workflow')
     const graphPanel = findPanel('Graph')
 
-    // Workflow Info panel should read persisted open state (true)
+    // Workflow Info panel should coding_file_read persisted open state (true)
     expect(workflowPanel).not.toBeUndefined()
     expect(workflowPanel.open).toBe(true)
 
-    // Graph panel should read persisted open state (false)
+    // Graph panel should coding_file_read persisted open state (false)
     expect(graphPanel).not.toBeUndefined()
     expect(graphPanel.open).toBe(false)
   })
@@ -415,14 +415,14 @@ describe('r-workflow-workspace', () => {
     const ns = store.namespace<WorkflowsState>('workflows')
     await el.openGraph('workflow-1')
     ns.set('currentGraph', data)
-    el._selectedTaskId = 'write-report'
+    el._selectedTaskId = 'coding_file_write-report'
     await el.updateComplete
 
     const inspector = el.shadowRoot.querySelector('r-workflow-inspector') as any
     expect(inspector).not.toBeNull()
     await inspector.updateComplete
 
-    const taskNode = inspector._taskById('write-report')
+    const taskNode = inspector._taskById('coding_file_write-report')
     expect(taskNode.outputs).toBeDefined()
     expect(taskNode.outputs.report.description).toBe('Generated HTML report')
   })
@@ -432,7 +432,7 @@ describe('r-workflow-workspace', () => {
     const ns = store.namespace<WorkflowsState>('workflows')
     await el.openGraph('workflow-1', 'run-1')
     ns.set('currentGraph', graph('running'))
-    el._selectedTaskId = 'write-report'
+    el._selectedTaskId = 'coding_file_write-report'
     await el.updateComplete
 
     const inspector = el.shadowRoot.querySelector('r-workflow-inspector') as any

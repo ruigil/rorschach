@@ -24,17 +24,17 @@ const valueSpecSchema = {
 }
 
 
-export const listAgentModesTool = defineTool('list_agent_modes', 'List available specialized agent modes that can be configured on workflow tasks.', {
+export const listAgentModesTool = defineTool('workflows_agent_modes_list', 'List available specialized agent modes that can be configured on workflow tasks.', {
   type: 'object',
   properties: {},
 })
 
-export const listExecutionToolsTool = defineTool('list_execution_tools', 'List tools that workflow tasks may use during execution.', {
+export const listExecutionToolsTool = defineTool('workflows_execution_tools_list', 'List tools that workflow tasks may use during execution.', {
   type: 'object',
   properties: {},
 })
 
-export const saveWorkflowTool = defineTool('save_workflow', 'Save an accepted workflow. Requires title, goal, summary, and tasks.', {
+export const saveWorkflowTool = defineTool('workflows_save', 'Save an accepted workflow. Requires title, goal, summary, and tasks.', {
   type: 'object',
   required: ['goal', 'summary', 'tasks'],
   properties: {
@@ -63,7 +63,7 @@ export const saveWorkflowTool = defineTool('save_workflow', 'Save an accepted wo
   },
 })
 
-export const updateWorkflowTool = defineTool('update_workflow', 'Update an existing workflow by id.', {
+export const updateWorkflowTool = defineTool('workflows_update', 'Update an existing workflow by id.', {
   type: 'object',
   required: ['workflowId'],
   properties: {
@@ -77,24 +77,24 @@ export const updateWorkflowTool = defineTool('update_workflow', 'Update an exist
   },
 })
 
-export const deleteWorkflowTool = defineTool('delete_workflow', 'Delete a saved workflow by id.', {
+export const deleteWorkflowTool = defineTool('workflows_delete', 'Delete a saved workflow by id.', {
   type: 'object',
   required: ['workflowId'],
   properties: { workflowId: { type: 'string' } },
 })
 
-export const listWorkflowsTool = defineTool('list_workflows', 'List saved workflows.', {
+export const listWorkflowsTool = defineTool('workflows_list', 'List saved workflows.', {
   type: 'object',
   properties: {},
 })
 
-export const getWorkflowTool = defineTool('get_workflow', 'Read a saved workflow by id.', {
+export const getWorkflowTool = defineTool('workflows_get', 'Read a saved workflow by id.', {
   type: 'object',
   required: ['workflowId'],
   properties: { workflowId: { type: 'string' } },
 })
 
-export const showWorkflowGraphTool = defineTool('show_workflow_graph', 'Open the graphical DAG workspace for a workflow by id.', {
+export const showWorkflowGraphTool = defineTool('workflows_graph_show', 'Open the graphical DAG workspace for a workflow by id.', {
   type: 'object',
   required: ['workflowId'],
   properties: {
@@ -103,7 +103,7 @@ export const showWorkflowGraphTool = defineTool('show_workflow_graph', 'Open the
   },
 })
 
-export const startWorkflowRunTool = defineTool('start_workflow_run', 'Start executing a saved workflow. Returns a background workflow run job when execution starts, or the run state if it blocks immediately.', {
+export const startWorkflowRunTool = defineTool('workflows_run_start', 'Start executing a saved workflow. Returns a background workflow run job when execution starts, or the run state if it blocks immediately.', {
   type: 'object',
   required: ['workflowId'],
   properties: {
@@ -112,18 +112,18 @@ export const startWorkflowRunTool = defineTool('start_workflow_run', 'Start exec
   },
 })
 
-export const listWorkflowRunsTool = defineTool('list_workflow_runs', 'List all workflow run states.', {
+export const listWorkflowRunsTool = defineTool('workflows_run_list', 'List all workflow run states.', {
   type: 'object',
   properties: {},
 })
 
-export const getWorkflowRunTool = defineTool('get_workflow_run', 'Read workflow run state by run id.', {
+export const getWorkflowRunTool = defineTool('workflows_run_get', 'Read workflow run state by run id.', {
   type: 'object',
   required: ['runId'],
   properties: { runId: { type: 'string' } },
 })
 
-export const resumeWorkflowRunTool = defineTool('resume_workflow_run', 'Resume a missing-job-blocked workflow run by run id.', {
+export const resumeWorkflowRunTool = defineTool('workflows_run_resume', 'Resume a missing-job-blocked workflow run by run id.', {
   type: 'object',
   required: ['runId'],
   properties: { runId: { type: 'string' } },

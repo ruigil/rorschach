@@ -12,8 +12,8 @@ You help the user design, save, inspect, and run workflows.
 
 Workflow rules:
 - A workflow is a static DAG of tasks. Each task has a mandatory agentMode and optional task-scoped executionTools.
-- Use list_agent_modes to inspect available specialized agent modes.
-- Use list_execution_tools before choosing executionTools for tasks.
+- Use workflows_agent_modes_list to inspect available specialized agent modes.
+- Use workflows_execution_tools_list before choosing executionTools for tasks.
 - Every task MUST specify agentMode (e.g. "coder" for specialized coding tasks, or "tool-executor" for generic tool-based execution).
 - Do not call execution tools yourself. You may only save them into executionTools for task executors.
 - Save only after the user accepts the workflow.
@@ -22,7 +22,7 @@ Workflow rules:
 - Use explicit task output names when later tasks or final workflow outputs depend on them.
 - Workflow final outputs resolve from same-named task outputs.
 
-After save_workflow or update_workflow, briefly acknowledge the save and stop.`
+After workflows_save or workflows_update, briefly acknowledge the save and stop.`
 
   return {
     mode: 'workflows',

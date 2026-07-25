@@ -65,18 +65,18 @@ describe('connection frame handlers (via actions)', () => {
   })
 
   test('tool_registered adds to tools map', () => {
-    const schema = { type: 'function' as const, function: { name: 'web_search', description: 'Search the web', parameters: {} } }
-    reduceFrame({ type: 'tools.registered', name: 'web_search', schema })
-    expect(store.namespace<ObservabilityState>('observe').get('tools')).toHaveProperty('web_search')
+    const schema = { type: 'function' as const, function: { name: 'tools_web_search', description: 'Search the web', parameters: {} } }
+    reduceFrame({ type: 'tools.registered', name: 'tools_web_search', schema })
+    expect(store.namespace<ObservabilityState>('observe').get('tools')).toHaveProperty('tools_web_search')
   })
 
   test('tool_unregistered removes from tools map', () => {
-    const schema1 = { type: 'function' as const, function: { name: 'web_search', description: '', parameters: {} } }
+    const schema1 = { type: 'function' as const, function: { name: 'tools_web_search', description: '', parameters: {} } }
     const schema2 = { type: 'function' as const, function: { name: 'fetch_page', description: '', parameters: {} } }
-    reduceFrame({ type: 'tools.registered', name: 'web_search', schema: schema1 })
+    reduceFrame({ type: 'tools.registered', name: 'tools_web_search', schema: schema1 })
     reduceFrame({ type: 'tools.registered', name: 'fetch_page', schema: schema2 })
-    reduceFrame({ type: 'tools.unregistered', name: 'web_search' })
-    expect(store.namespace<ObservabilityState>('observe').get('tools')).not.toHaveProperty('web_search')
+    reduceFrame({ type: 'tools.unregistered', name: 'tools_web_search' })
+    expect(store.namespace<ObservabilityState>('observe').get('tools')).not.toHaveProperty('tools_web_search')
     expect(store.namespace<ObservabilityState>('observe').get('tools')).toHaveProperty('fetch_page')
   })
 

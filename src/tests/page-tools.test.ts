@@ -56,7 +56,7 @@ describe('Page Tools Suite', () => {
   })
 
   test('writeHTMLPageTool has correct schema and registration name', () => {
-    expect(writeHTMLPageTool.name).toBe('write_html_page')
+    expect(writeHTMLPageTool.name).toBe('coding_html_write_page')
     expect((writeHTMLPageTool.schema.function.parameters as any).required).toEqual([
       'collection',
       'title',
@@ -65,15 +65,15 @@ describe('Page Tools Suite', () => {
     ])
   })
 
-  test('CodingAgentDescriptor registers coding tools including grep/glob/write/str_replace', () => {
+  test('CodingAgentDescriptor registers coding tools including coding_file_grep/coding_file_glob/coding_file_write/coding_file_replace_string', () => {
     const mockTools = {
-      bash: codingBashTool,
-      read: codingReadTool,
-      grep: codingGrepTool,
-      glob: codingGlobTool,
-      write: codingWriteTool,
-      str_replace: codingStrReplaceTool,
-      write_html_page: writeHTMLPageTool,
+      coding_shell_exec: codingBashTool,
+      coding_file_read: codingReadTool,
+      coding_file_grep: codingGrepTool,
+      coding_file_glob: codingGlobTool,
+      coding_file_write: codingWriteTool,
+      coding_file_replace_string: codingStrReplaceTool,
+      coding_html_write_page: writeHTMLPageTool,
     } as any
 
     const descriptor = CodingAgentDescriptor({
@@ -84,20 +84,20 @@ describe('Page Tools Suite', () => {
 
     expect(descriptor.mode).toBe('coding')
     expect(descriptor.capabilities).toEqual({ userVisible: true })
-    expect(descriptor.systemPrompt).toContain('write_html_page')
-    expect(descriptor.systemPrompt).toContain('grep')
-    expect(descriptor.systemPrompt).toContain('glob')
-    expect(descriptor.systemPrompt).toContain('write:')
-    expect(descriptor.systemPrompt).toContain('str_replace')
+    expect(descriptor.systemPrompt).toContain('coding_html_write_page')
+    expect(descriptor.systemPrompt).toContain('coding_file_grep')
+    expect(descriptor.systemPrompt).toContain('coding_file_glob')
+    expect(descriptor.systemPrompt).toContain('coding_file_write:')
+    expect(descriptor.systemPrompt).toContain('coding_file_replace_string')
     expect(descriptor.systemPrompt).toContain('LINE|')
 
     const toolNames = descriptor.internalTools.map(t => t.name)
-    expect(toolNames).toContain('bash')
-    expect(toolNames).toContain('read')
-    expect(toolNames).toContain('grep')
-    expect(toolNames).toContain('glob')
-    expect(toolNames).toContain('write')
-    expect(toolNames).toContain('str_replace')
-    expect(toolNames).toContain('write_html_page')
+    expect(toolNames).toContain('coding_shell_exec')
+    expect(toolNames).toContain('coding_file_read')
+    expect(toolNames).toContain('coding_file_grep')
+    expect(toolNames).toContain('coding_file_glob')
+    expect(toolNames).toContain('coding_file_write')
+    expect(toolNames).toContain('coding_file_replace_string')
+    expect(toolNames).toContain('coding_html_write_page')
   })
 })

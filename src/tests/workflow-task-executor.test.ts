@@ -28,7 +28,7 @@ const workflow: Workflow = {
 }
 
 const task: WorkflowTask = {
-  id: 'write-report',
+  id: 'coding_file_write-report',
   name: 'Write report',
   description: 'Write the report artifact.',
   validationCriteria: 'The report artifact exists.',
@@ -75,7 +75,7 @@ const startTask = (executor: ActorRef<WorkflowTaskExecutorMsg>): void => {
 }
 
 describe('workflow task executor', () => {
-  test('complete_workflow_task completes the task with validated outputs', async () => {
+  test('workflows_task_complete completes the task with validated outputs', async () => {
     const system = await AgentSystem()
     const events: ParentEvent[] = []
     const parent = system.spawn('parent-complete', ParentRecorder(events))
@@ -107,7 +107,7 @@ describe('workflow task executor', () => {
     expect(events).toHaveLength(1)
     expect(events[0]).toEqual({
       type: 'taskCompleted',
-      taskId: 'write-report',
+      taskId: 'coding_file_write-report',
       summary: 'Wrote the report.',
       outputs: { report: { type: 'artifact', key: 'workflow-runs/run-1/report.html', mimeType: 'text/html' } },
     })
@@ -136,7 +136,7 @@ describe('workflow task executor', () => {
         return
       }
       if (count === 2) {
-        expect(JSON.stringify(msg.messages)).toContain('task write-report output is not declared: extra')
+        expect(JSON.stringify(msg.messages)).toContain('task coding_file_write-report output is not declared: extra')
         msg.replyTo.send({
           type: 'llmToolCalls',
           requestId: msg.requestId,
@@ -179,13 +179,13 @@ describe('workflow task executor', () => {
 
     expect(events).toEqual([{
       type: 'taskFailed',
-      taskId: 'write-report',
-      error: 'Task ended without calling complete_workflow_task or block_workflow_task.',
+      taskId: 'coding_file_write-report',
+      error: 'Task ended without calling workflows_task_complete or workflows_task_block.',
     }])
     await system.shutdown()
   })
 
-  test('block_workflow_task blocks the task', async () => {
+  test('workflows_task_block blocks the task', async () => {
     const system = await AgentSystem()
     const events: ParentEvent[] = []
     const parent = system.spawn('parent-block', ParentRecorder(events))
@@ -213,7 +213,7 @@ describe('workflow task executor', () => {
 
     expect(events).toEqual([{
       type: 'taskBlocked',
-      taskId: 'write-report',
+      taskId: 'coding_file_write-report',
       message: 'Missing source data.',
     }])
     await system.shutdown()
@@ -238,7 +238,7 @@ describe('workflow task executor', () => {
 
     expect(events).toEqual([{
       type: 'taskBlocked',
-      taskId: 'write-report',
+      taskId: 'coding_file_write-report',
       message: "Agent mode 'unknown-mode' is not registered",
     }])
     await system.shutdown()

@@ -9,7 +9,7 @@ import { MockPersistenceActor } from './mock-persistence.ts'
 const tick = (ms = 50) => Bun.sleep(ms)
 
 describe('audio actor', () => {
-  test('text_to_speech saves audio and returns public url', async () => {
+  test('tools_audio_text_to_speech saves audio and returns public url', async () => {
     const system = await AgentSystem()
     
     const persistenceRef = system.spawn('mock-persistence', MockPersistenceActor())
@@ -41,7 +41,7 @@ describe('audio actor', () => {
       audioRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'text_to_speech',
+        toolName: 'tools_audio_text_to_speech',
         arguments: JSON.stringify({ text: 'hello world' }),
         replyTo,
         userId: 'test-user',
@@ -59,7 +59,7 @@ describe('audio actor', () => {
     await system.shutdown()
   })
 
-  test('transcribe_audio transcribes an audio file', async () => {
+  test('tools_audio_transcribe transcribes an audio file', async () => {
     const system = await AgentSystem()
     
     const persistenceRef = system.spawn('mock-persistence', MockPersistenceActor())
@@ -108,7 +108,7 @@ describe('audio actor', () => {
       audioRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'transcribe_audio',
+        toolName: 'tools_audio_transcribe',
         arguments: JSON.stringify({ audio: 'test-transcribe.wav', format: 'wav' }),
         replyTo,
         userId: 'test-user',

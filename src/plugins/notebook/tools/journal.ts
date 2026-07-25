@@ -5,7 +5,7 @@ import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
 import { NotebookChangeTopic } from '../types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PList } from '../../../types/persistence.ts'
 
-export const journalWriteTool = defineTool('journal_write', 'Add an entry to the daily journal.', {
+export const journalWriteTool = defineTool('notebook_journal_write', 'Add an entry to the daily journal.', {
   type: 'object',
   properties: {
     entry: { type: 'string', description: 'The journal entry text (markdown supported).' },
@@ -14,7 +14,7 @@ export const journalWriteTool = defineTool('journal_write', 'Add an entry to the
   required: ['entry'],
 })
 
-export const journalReadTool = defineTool('journal_read', 'Read the journal entry for a specific date.', {
+export const journalReadTool = defineTool('notebook_journal_read', 'Read the journal entry for a specific date.', {
   type: 'object',
   properties: {
     date: { type: 'string', description: 'Date to read in YYYY-MM-DD format.' },
@@ -22,7 +22,7 @@ export const journalReadTool = defineTool('journal_read', 'Read the journal entr
   required: ['date'],
 })
 
-export const journalSearchTool = defineTool('journal_search', 'Search across all journal entries for a given query string.', {
+export const journalSearchTool = defineTool('notebook_journal_search', 'Search across all journal entries for a given query string.', {
   type: 'object',
   properties: {
     query: { type: 'string', description: 'Text to search for (case-insensitive).' },

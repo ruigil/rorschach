@@ -8,7 +8,7 @@ import type { GoogleToken, TokenStoreMsg } from '../types.ts'
 
 // ─── Tool names & schemas ───
 
-export const calendarListEventsTool = defineTool('calendar_list_events', 'List upcoming events from Google Calendar.', {
+export const calendarListEventsTool = defineTool('googleapis_calendar_event_list', 'List upcoming events from Google Calendar.', {
   type: 'object',
   properties: {
     maxResults:  { type: 'number', description: 'Maximum number of events to return (default 10).' },
@@ -18,7 +18,7 @@ export const calendarListEventsTool = defineTool('calendar_list_events', 'List u
   },
 })
 
-export const calendarCreateEventTool = defineTool('calendar_create_event', 'Create a new event in Google Calendar.', {
+export const calendarCreateEventTool = defineTool('googleapis_calendar_event_create', 'Create a new event in Google Calendar.', {
   type: 'object',
   properties: {
     summary:     { type: 'string', description: 'Event title.' },
@@ -31,10 +31,10 @@ export const calendarCreateEventTool = defineTool('calendar_create_event', 'Crea
   required: ['summary', 'start', 'end'],
 })
 
-export const calendarUpdateEventTool = defineTool('calendar_update_event', 'Update an existing Google Calendar event.', {
+export const calendarUpdateEventTool = defineTool('googleapis_calendar_event_update', 'Update an existing Google Calendar event.', {
   type: 'object',
   properties: {
-    eventId:     { type: 'string', description: 'Event id from calendar_list_events.' },
+    eventId:     { type: 'string', description: 'Event id from googleapis_calendar_event_list.' },
     summary:     { type: 'string', description: 'New event title (optional).' },
     start:       { type: 'string', description: 'New start time as a naive local datetime without offset (e.g. "2025-04-30T14:00:00"), optional.' },
     end:         { type: 'string', description: 'New end time as a naive local datetime without offset, optional.' },
@@ -45,10 +45,10 @@ export const calendarUpdateEventTool = defineTool('calendar_update_event', 'Upda
   required: ['eventId'],
 })
 
-export const calendarDeleteEventTool = defineTool('calendar_delete_event', 'Delete an event from Google Calendar.', {
+export const calendarDeleteEventTool = defineTool('googleapis_calendar_event_delete', 'Delete an event from Google Calendar.', {
   type: 'object',
   properties: {
-    eventId:    { type: 'string', description: 'Event id from calendar_list_events.' },
+    eventId:    { type: 'string', description: 'Event id from googleapis_calendar_event_list.' },
     calendarId: { type: 'string', description: 'Calendar the event belongs to (default: "primary").' },
   },
   required: ['eventId'],

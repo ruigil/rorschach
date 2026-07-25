@@ -33,17 +33,17 @@ const workflow: Workflow = {
   createdAt: '2026-06-10T10:00:00.000Z',
   tasks: [
     {
-      id: 'read-task',
+      id: 'coding_file_read-task',
       name: 'Read task',
       description: 'Read a file.',
-      validationCriteria: 'A file has been read.',
+      validationCriteria: 'A file has been coding_file_read.',
       dependencies: [],
       agentMode: 'tool-executor',
     },
   ],
 }
 
-const readTool = defineTool('read', 'Read a file.', {
+const readTool = defineTool('coding_file_read', 'Read a file.', {
   type: 'object',
   properties: {
     path: { type: 'string' },
@@ -83,7 +83,7 @@ describe('workflow run executor', () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const updates: WorkflowRunState[] = []
     system.subscribe(WorkflowEventTopic, event => updates.push(event.run!))
-    const toolRef = system.spawn('fake-read-tool', FakeTool())
+    const toolRef = system.spawn('fake-coding_file_read-tool', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
 
     const run = initialRunState(workflow, 'run-1')
@@ -104,11 +104,11 @@ describe('workflow run executor', () => {
     expect(reply.ok).toBe(true)
     if (reply.ok) {
       expect(reply.run.status).toBe('running')
-      expect(reply.run.taskStates['read-task']?.status).toBe('running')
-      expect(reply.run.taskStates['read-task']?.error).toBeUndefined()
+      expect(reply.run.taskStates['coding_file_read-task']?.status).toBe('running')
+      expect(reply.run.taskStates['coding_file_read-task']?.error).toBeUndefined()
     }
     expect(updates.at(-1)?.status).toBe('running')
-    expect(updates.at(-1)?.taskStates['read-task']?.status).toBe('running')
+    expect(updates.at(-1)?.taskStates['coding_file_read-task']?.status).toBe('running')
 
     await system.shutdown()
   })
@@ -118,20 +118,20 @@ describe('workflow run executor', () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const updates: WorkflowRunState[] = []
     system.subscribe(WorkflowEventTopic, event => updates.push(event.run!))
-    const toolRef = system.spawn('fake-read-tool-complete-update', FakeTool())
+    const toolRef = system.spawn('fake-coding_file_read-tool-complete-update', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
 
     const run: WorkflowRunState = {
       ...initialRunState(workflow, 'run-complete-update'),
-      activeTaskIds: ['read-task'],
+      activeTaskIds: ['coding_file_read-task'],
       activeTasks: {
-        'read-task': {
-          actorName: 'workflow-task-run-complete-update-read-task-1',
+        'coding_file_read-task': {
+          actorName: 'workflow-task-run-complete-update-coding_file_read-task-1',
           startedAt: '2026-06-10T10:00:00.000Z',
         },
       },
       taskStates: {
-        'read-task': {
+        'coding_file_read-task': {
           status: 'running',
           attempts: 1,
           startedAt: '2026-06-10T10:00:00.000Z',
@@ -146,12 +146,12 @@ describe('workflow run executor', () => {
       WorkflowRunExecutor(null, 'test-model', 1, tools, workflow.userId, run.runId),
     )
 
-    executor.send({ type: 'taskCompleted', taskId: 'read-task', summary: 'Read the file.', outputs: {} })
+    executor.send({ type: 'taskCompleted', taskId: 'coding_file_read-task', summary: 'Read the file.', outputs: {} })
     await Bun.sleep(30)
 
     expect(updates.at(-1)?.status).toBe('completed')
-    expect(updates.at(-1)?.taskStates['read-task']?.status).toBe('completed')
-    expect(updates.at(-1)?.taskStates['read-task']?.summary).toBe('Read the file.')
+    expect(updates.at(-1)?.taskStates['coding_file_read-task']?.status).toBe('completed')
+    expect(updates.at(-1)?.taskStates['coding_file_read-task']?.summary).toBe('Read the file.')
 
     await system.shutdown()
   })
@@ -159,13 +159,13 @@ describe('workflow run executor', () => {
   test('resume abandons persisted pending jobs and retries their tasks', async () => {
     const dir = await makeDir()
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
-    const toolRef = system.spawn('fake-read-tool-resume', FakeTool())
+    const toolRef = system.spawn('fake-coding_file_read-tool-resume', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
       ...initialRunState(workflow, 'run-2'),
       status: 'running',
       taskStates: {
-        'read-task': {
+        'coding_file_read-task': {
           status: 'running',
           attempts: 1,
           startedAt: '2026-06-10T10:00:00.000Z',
@@ -173,8 +173,8 @@ describe('workflow run executor', () => {
       },
       pendingJobs: {
         'job-1': {
-          taskId: 'read-task',
-          toolName: 'read',
+          taskId: 'coding_file_read-task',
+          toolName: 'coding_file_read',
           toolCallId: 'call-1',
           startedAt: '2026-06-10T10:00:01.000Z',
         },
@@ -198,8 +198,8 @@ describe('workflow run executor', () => {
     if (reply.ok) {
       expect(reply.run.status).toBe('running')
       expect(reply.run.pendingJobs).toEqual({})
-      expect(reply.run.taskStates['read-task']?.status).toBe('running')
-      expect(reply.run.taskStates['read-task']?.attempts).toBe(2)
+      expect(reply.run.taskStates['coding_file_read-task']?.status).toBe('running')
+      expect(reply.run.taskStates['coding_file_read-task']?.attempts).toBe(2)
     }
 
     await system.shutdown()
@@ -208,13 +208,13 @@ describe('workflow run executor', () => {
   test('resume retries task-blocked tasks', async () => {
     const dir = await makeDir()
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
-    const toolRef = system.spawn('fake-read-tool-task-blocked-resume', FakeTool())
+    const toolRef = system.spawn('fake-coding_file_read-tool-task-blocked-resume', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
       ...initialRunState(workflow, 'run-task-blocked'),
       status: 'blocked',
       taskStates: {
-        'read-task': {
+        'coding_file_read-task': {
           status: 'blocked',
           attempts: 1,
           startedAt: '2026-06-10T10:00:00.000Z',
@@ -240,10 +240,10 @@ describe('workflow run executor', () => {
     expect(reply.ok).toBe(true)
     if (reply.ok) {
       expect(reply.run.status).toBe('running')
-      expect(reply.run.taskStates['read-task']?.status).toBe('running')
-      expect(reply.run.taskStates['read-task']?.attempts).toBe(2)
-      expect(reply.run.taskStates['read-task']?.error).toBeUndefined()
-      expect(reply.run.taskStates['read-task']?.blockedReason).toBeUndefined()
+      expect(reply.run.taskStates['coding_file_read-task']?.status).toBe('running')
+      expect(reply.run.taskStates['coding_file_read-task']?.attempts).toBe(2)
+      expect(reply.run.taskStates['coding_file_read-task']?.error).toBeUndefined()
+      expect(reply.run.taskStates['coding_file_read-task']?.blockedReason).toBeUndefined()
     }
 
     await system.shutdown()
@@ -252,20 +252,20 @@ describe('workflow run executor', () => {
   test('resume retries stale active tasks', async () => {
     const dir = await makeDir()
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
-    const toolRef = system.spawn('fake-read-tool-stale-active-resume', FakeTool())
+    const toolRef = system.spawn('fake-coding_file_read-tool-stale-active-resume', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
       ...initialRunState(workflow, 'run-stale-active'),
       status: 'running',
-      activeTaskIds: ['read-task'],
+      activeTaskIds: ['coding_file_read-task'],
       activeTasks: {
-        'read-task': {
-          actorName: 'workflow-task-run-stale-active-read-task-1',
+        'coding_file_read-task': {
+          actorName: 'workflow-task-run-stale-active-coding_file_read-task-1',
           startedAt: '2026-06-10T10:00:00.000Z',
         },
       },
       taskStates: {
-        'read-task': {
+        'coding_file_read-task': {
           status: 'running',
           attempts: 1,
           startedAt: '2026-06-10T10:00:00.000Z',
@@ -289,9 +289,9 @@ describe('workflow run executor', () => {
     expect(reply.ok).toBe(true)
     if (reply.ok) {
       expect(reply.run.status).toBe('running')
-      expect(reply.run.activeTaskIds).toEqual(['read-task'])
-      expect(reply.run.taskStates['read-task']?.status).toBe('running')
-      expect(reply.run.taskStates['read-task']?.attempts).toBe(2)
+      expect(reply.run.activeTaskIds).toEqual(['coding_file_read-task'])
+      expect(reply.run.taskStates['coding_file_read-task']?.status).toBe('running')
+      expect(reply.run.taskStates['coding_file_read-task']?.attempts).toBe(2)
       expect(reply.run.events.some(event => event.type === 'runResumed')).toBe(true)
     }
 
@@ -301,13 +301,13 @@ describe('workflow run executor', () => {
   test('resume rejects terminal failed runs', async () => {
     const dir = await makeDir()
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
-    const toolRef = system.spawn('fake-read-tool-failed-resume', FakeTool())
+    const toolRef = system.spawn('fake-coding_file_read-tool-failed-resume', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
       ...initialRunState(workflow, 'run-failed'),
       status: 'failed',
       taskStates: {
-        'read-task': {
+        'coding_file_read-task': {
           status: 'failed',
           attempts: 1,
           startedAt: '2026-06-10T10:00:00.000Z',
@@ -341,13 +341,13 @@ describe('workflow run executor', () => {
   test('resume rejects runs with no retryable work', async () => {
     const dir = await makeDir()
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
-    const toolRef = system.spawn('fake-read-tool-noop-resume', FakeTool())
+    const toolRef = system.spawn('fake-coding_file_read-tool-noop-resume', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
       ...initialRunState(workflow, 'run-noop'),
       status: 'running',
       taskStates: {
-        'read-task': {
+        'coding_file_read-task': {
           status: 'completed',
           attempts: 1,
           startedAt: '2026-06-10T10:00:00.000Z',
@@ -383,7 +383,7 @@ describe('workflow run executor', () => {
   test('completed pending jobs retry the task with resume context instead of parsing tool text as JSON', async () => {
     const dir = await makeDir()
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
-    const toolRef = system.spawn('fake-read-tool-pending-complete', FakeTool())
+    const toolRef = system.spawn('fake-coding_file_read-tool-pending-complete', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
     const streams: Array<Extract<LlmProviderMsg, { type: 'stream' }>> = []
     const llmRef = system.spawn('capturing-llm-pending-complete', CapturingLlm(streams))
@@ -391,7 +391,7 @@ describe('workflow run executor', () => {
       ...initialRunState(workflow, 'run-3'),
       status: 'running',
       taskStates: {
-        'read-task': {
+        'coding_file_read-task': {
           status: 'running',
           attempts: 1,
           startedAt: '2026-06-10T10:00:00.000Z',
@@ -399,8 +399,8 @@ describe('workflow run executor', () => {
       },
       pendingJobs: {
         'job-1': {
-          taskId: 'read-task',
-          toolName: 'read',
+          taskId: 'coding_file_read-task',
+          toolName: 'coding_file_read',
           toolCallId: 'call-1',
           startedAt: '2026-06-10T10:00:01.000Z',
         },
@@ -432,8 +432,8 @@ describe('workflow run executor', () => {
     if (reply.ok) {
       expect(reply.run.status).toBe('running')
       expect(reply.run.pendingJobs).toEqual({})
-      expect(reply.run.taskStates['read-task']?.status).toBe('running')
-      expect(reply.run.taskStates['read-task']?.attempts).toBe(2)
+      expect(reply.run.taskStates['coding_file_read-task']?.status).toBe('running')
+      expect(reply.run.taskStates['coding_file_read-task']?.attempts).toBe(2)
     }
     expect(JSON.stringify(streams[0]?.messages ?? [])).toContain('finished work without JSON')
 

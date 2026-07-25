@@ -64,7 +64,7 @@ describe('web-search actor', () => {
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'bun runtime' }), replyTo, userId: 'test-user' }),
+      (replyTo) => ({ type: 'invoke', toolName: 'tools_web_search', arguments: JSON.stringify({ query: 'bun runtime' }), replyTo, userId: 'test-user' }),
       { timeoutMs: 500 },
     )
 
@@ -87,7 +87,7 @@ describe('web-search actor', () => {
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'anything' }), replyTo, userId: 'test-user' }),
+      (replyTo) => ({ type: 'invoke', toolName: 'tools_web_search', arguments: JSON.stringify({ query: 'anything' }), replyTo, userId: 'test-user' }),
       { timeoutMs: 500 },
     )
 
@@ -108,7 +108,7 @@ describe('web-search actor', () => {
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'anything' }), replyTo, userId: 'test-user' }),
+      (replyTo) => ({ type: 'invoke', toolName: 'tools_web_search', arguments: JSON.stringify({ query: 'anything' }), replyTo, userId: 'test-user' }),
       { timeoutMs: 500 },
     )
 
@@ -134,7 +134,7 @@ describe('web-search actor', () => {
 
     await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'test' }), replyTo, userId: 'test-user' }),
+      (replyTo) => ({ type: 'invoke', toolName: 'tools_web_search', arguments: JSON.stringify({ query: 'test' }), replyTo, userId: 'test-user' }),
       { timeoutMs: 500 },
     )
 
@@ -158,7 +158,7 @@ describe('web-search actor', () => {
 
     await ask<ToolInvokeMsg, ToolReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'web_search', arguments: JSON.stringify({ query: 'test' }), replyTo, userId: 'test-user' }),
+      (replyTo) => ({ type: 'invoke', toolName: 'tools_web_search', arguments: JSON.stringify({ query: 'test' }), replyTo, userId: 'test-user' }),
       { timeoutMs: 500 },
     )
 
@@ -197,10 +197,10 @@ describe('tools plugin', () => {
         return { state }
       },
       handler: (state, msg, ctx) => {
-        if (msg.type === 'registered' && msg.event.ref !== null && msg.event.name === 'web_search') {
+        if (msg.type === 'registered' && msg.event.ref !== null && msg.event.name === 'tools_web_search') {
           msg.event.ref.send({
             type: 'invoke',
-            toolName: 'web_search',
+            toolName: 'tools_web_search',
             arguments: JSON.stringify({ query: 'probe' }),
             replyTo: ctx.self as unknown as ActorRef<ToolReply>,
             userId: 'test-user',
@@ -272,11 +272,11 @@ describe('tools plugin', () => {
     })
     await tick()
 
-    // Track web_search registrations to verify config change spawns a new actor
+    // Track tools_web_search registrations to verify config change spawns a new actor
     let webSearchRegistrationCount = 0
     system.subscribe(ToolRegistrationTopic, (event) => {
       const e = event as ToolRegistrationEvent
-      if (e.name === 'web_search' && e.ref !== null) webSearchRegistrationCount++
+      if (e.name === 'tools_web_search' && e.ref !== null) webSearchRegistrationCount++
     })
     // The retained event replays immediately on subscribe (gen-0 actor)
     expect(webSearchRegistrationCount).toBe(1)

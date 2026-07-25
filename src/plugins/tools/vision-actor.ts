@@ -8,7 +8,7 @@ import type { VisionMsg, VisionState, VisionOptions } from './types.ts'
 
 // ─── Tool schemas ───
 
-export const analyzeImageTool = defineTool('analyze_image', 'Analyze and describe the content of an image. Use when the user uploads an image or asks about a visual.', {
+export const analyzeImageTool = defineTool('tools_image_analyze', 'Analyze and describe the content of an image. Use when the user uploads an image or asks about a visual.', {
   type: 'object',
   properties: {
     image_url: { type: 'string', description: 'An object store key (e.g. "inbound/uuid.png" from attachments), a base64 data URL, or an HTTP URL.' },
@@ -17,7 +17,7 @@ export const analyzeImageTool = defineTool('analyze_image', 'Analyze and describ
   required: ['image_url'],
 })
 
-export const generateImageTool = defineTool('generate_image', 'Generate an image from a text description. Use when the user asks to create, draw, or visualize something.', {
+export const generateImageTool = defineTool('tools_image_generate', 'Generate an image from a text description. Use when the user asks to create, draw, or visualize something.', {
   type: 'object',
   properties: {
     prompt: { type: 'string', description: 'Detailed description of the image to generate.' },
@@ -88,7 +88,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
         return { state: { ...state, persistenceRef: msg.ref } }
       },
 
-      // ── analyze_image invoke ──
+      // ── tools_image_analyze invoke ──
       invoke: (state, message, context) => {
         const { toolName, arguments: args, replyTo, userId } = message
 
@@ -156,7 +156,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
           }
         }
 
-        // Default: analyze_image
+        // Default: tools_image_analyze
         let imageUrl = ''
         let prompt = 'Describe this image in detail.'
         try {

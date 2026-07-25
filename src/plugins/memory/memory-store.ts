@@ -20,7 +20,7 @@ import {
 } from './types.ts'
 import { conceptExtractionPrompt } from './ontology.ts'
 
-export const memoryStoreTool = defineTool('store_memory', 'Store a markdown memory record verbatim, then derive concept nodes for semantic recall. Use when the user shares a fact, preference, goal, decision, or note they want remembered.', {
+export const memoryStoreTool = defineTool('memory_store', 'Store a markdown memory record verbatim, then derive concept nodes for semantic recall. Use when the user shares a fact, preference, goal, decision, or note they want remembered.', {
   type: 'object',
   properties: {
     content: { type: 'string', description: 'Markdown content to preserve verbatim as the physical memory record.' },

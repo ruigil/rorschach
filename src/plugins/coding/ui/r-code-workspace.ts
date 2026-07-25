@@ -28,7 +28,7 @@ export class RCodeWorkspace extends RorschachBase {
 
   @property({ type: String }) collection = 'documentation';
 
-  @state() private _activeTab: 'bash' | 'docs' = 'docs';
+  @state() private _activeTab: 'coding_shell_exec' | 'docs' = 'docs';
   @state() private _sidebarCollapsed = false;
   @state() private _treeData: TreeNode[] = [];
   @state() private _selectedPage: string | null = null;
@@ -354,8 +354,8 @@ export class RCodeWorkspace extends RorschachBase {
   }
 
   private _handleTabChange(e: CustomEvent) {
-    this._activeTab = e.detail.tab as 'bash' | 'docs';
-    if (this._activeTab === 'bash') {
+    this._activeTab = e.detail.tab as 'coding_shell_exec' | 'docs';
+    if (this._activeTab === 'coding_shell_exec') {
       this._scrollToBottom();
     }
   }
@@ -460,7 +460,7 @@ export class RCodeWorkspace extends RorschachBase {
               <r-icon name="file-text" size="sm" style="margin-right: 6px;"></r-icon>
               <span>Documentation</span>
             </button>
-            <button ?active=${this._activeTab === 'bash'} data-tab="bash">
+            <button ?active=${this._activeTab === 'coding_shell_exec'} data-tab="coding_shell_exec">
               <r-icon name="terminal" size="sm" style="margin-right: 6px;"></r-icon>
               <span>Bash</span>
             </button>
@@ -479,7 +479,7 @@ export class RCodeWorkspace extends RorschachBase {
         </r-toolbar>
 
         <div class="flex-column flex-grow-1" style="height: 100%; display: flex; flex-direction: column; overflow: hidden;">
-          ${this._activeTab === 'bash' ? html`
+          ${this._activeTab === 'coding_shell_exec' ? html`
             <div class="terminal-container" @click=${() => this._scrollToBottom()}>
               <div class="terminal-output" id="terminal-output">
                 <div class="terminal-welcome">Rorschach Bash Terminal Simulation

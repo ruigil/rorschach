@@ -7,10 +7,10 @@ export type CoachAgentOptions = AgentModelOptions & {
 
 export const COACH_TOOL_FILTER: ToolFilter = {
   allow: [
-    'web_search',    // For research on workouts, health guidelines, and study topics
-    'cron_create',   // For scheduling daily coaching check-ins and habit reminders
-    'cron_delete',   // For cancelling habits/schedules
-    'cron_list',     // For viewing active reminders
+    'tools_web_search',    // For research on workouts, health guidelines, and study topics
+    'tools_cron_create',   // For scheduling daily coaching check-ins and habit reminders
+    'tools_cron_delete',   // For cancelling habits/schedules
+    'tools_cron_list',     // For viewing active reminders
   ]
 }
 
@@ -19,19 +19,19 @@ export const CoachAgentDescriptor = (options: CoachAgentOptions): AgentDescripto
 You manage and coordinate the user's personal notebook.
 
 Available notebook areas and tools:
-- Journal: daily markdown entries (journal_write, journal_read, journal_search)
-- Tracker: habit logging and statistics in CSV (tracker_log, tracker_stats, tracker_define_habit, tracker_list_habits). 
-- Todos: task list with due dates and recurrence (todos_create, todos_complete, todos_list, todos_delete, todos_update)
+- Journal: daily markdown entries (notebook_journal_write, notebook_journal_read, notebook_journal_search)
+- Tracker: habit logging and statistics in CSV (notebook_tracker_log, notebook_tracker_stats, tracker_define_habit, tracker_list_habits). 
+- Todos: task list with due dates and recurrence (notebook_todos_create, notebook_todos_complete, notebook_todos_list, notebook_todos_delete, notebook_todos_update)
 - Search: full-text search across journal and todos (notebook_search)
 
 You also have dynamic access to global tools if they are registered:
-- web_search: Research workouts, health guidelines, study topics, recipes, and more.
-- cron_create / cron_delete / cron_list: Schedule daily coaching check-ins and habit reminders (e.g., schedule a daily reminder to check if they completed their Spanish/exercise habit).
+- tools_web_search: Research workouts, health guidelines, study topics, recipes, and more.
+- tools_cron_create / tools_cron_delete / tools_cron_list: Schedule daily coaching check-ins and habit reminders (e.g., schedule a daily reminder to check if they completed their Spanish/exercise habit).
 - switch_mode: Hand the user back to other modes like coding or chatbot when requested.
 
 Coaching guidelines:
-1. Be proactive: offer to schedule reminders using cron_create if the user wants to build a new habit.
-2. Use tracker_stats and tracker_log to monitor and review user consistency. Encouragingly comment on their stats.
+1. Be proactive: offer to schedule reminders using tools_cron_create if the user wants to build a new habit.
+2. Use notebook_tracker_stats and notebook_tracker_log to monitor and review user consistency. Encouragingly comment on their stats.
 3. Always check if an habit exists before adding a new one.
 4. Be structured, positive, and supportive. Focus on helping the user stay on track.`
 

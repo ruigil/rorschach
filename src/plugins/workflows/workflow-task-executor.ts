@@ -27,8 +27,8 @@ Task Execution Instructions:
 2. Translate task inputs and dependency outputs into accurate parameter arguments for the declared task execution tools.
 3. Invoke the execution tool(s) required to complete the task.
 4. When tool execution settles, inspect the results and format declared task outputs.
-5. Call complete_workflow_task with a summary and structured outputs matching task output specifications.
-6. If a required tool fails or cannot satisfy validation criteria, call block_workflow_task with a clear reason.`,
+5. Call workflows_task_complete with a summary and structured outputs matching task output specifications.
+6. If a required tool fails or cannot satisfy validation criteria, call workflows_task_block with a clear reason.`,
   internalTools: [], // System control tools (complete/block/read/write) are injected by TaskExecutor
   capabilities: { userVisible: false },
   model: 'default',
@@ -67,7 +67,7 @@ const initialState = (tools: ToolCollection, llmRef: ActorRef<LlmProviderMsg> | 
   },
 })
 
-export const completeWorkflowTaskTool = defineTool('complete_workflow_task', 'Complete the current workflow task with validated structured outputs.', {
+export const completeWorkflowTaskTool = defineTool('workflows_task_complete', 'Complete the current workflow task with validated structured outputs.', {
   type: 'object',
   required: ['summary', 'outputs'],
   properties: {
@@ -76,7 +76,7 @@ export const completeWorkflowTaskTool = defineTool('complete_workflow_task', 'Co
   },
 })
 
-export const blockWorkflowTaskTool = defineTool('block_workflow_task', 'Mark the current workflow task blocked with a short reason.', {
+export const blockWorkflowTaskTool = defineTool('workflows_task_block', 'Mark the current workflow task blocked with a short reason.', {
   type: 'object',
   required: ['reason'],
   properties: {
@@ -84,7 +84,7 @@ export const blockWorkflowTaskTool = defineTool('block_workflow_task', 'Mark the
   },
 })
 
-export const readArtifactTool = defineTool('read_artifact', 'Read text content of a workflow run artifact from persistence.', {
+export const readArtifactTool = defineTool('workflows_artifact_read', 'Read text content of a workflow run artifact from persistence.', {
   type: 'object',
   properties: {
     key: { type: 'string', description: 'Canonical key of the artifact file.' },
@@ -93,7 +93,7 @@ export const readArtifactTool = defineTool('read_artifact', 'Read text content o
   },
 })
 
-export const writeArtifactTool = defineTool('write_artifact', 'Write/save text content as a workflow run artifact to persistence.', {
+export const writeArtifactTool = defineTool('workflows_artifact_write', 'Write/save text content as a workflow run artifact to persistence.', {
   type: 'object',
   required: ['path', 'content'],
   properties: {
@@ -114,7 +114,7 @@ export const parseTaskCompletionArgs = (
     if (typeof summary !== 'string' || !summary.trim()) return null
     if (!outputs || typeof outputs !== 'object' || Array.isArray(outputs)) return null
     return { summary: summary.trim(), outputs: outputs as Record<string, unknown> }
-  }, 'complete_workflow_task requires non-empty summary and outputs object')
+  }, 'workflows_task_complete requires non-empty summary and outputs object')
   if (!parsed.ok) return { ok: false, error: parsed.error }
   const validated = validateOutputValues(`task ${task.id}`, task.outputs, parsed.value.outputs)
   if (!validated.ok) return validated
@@ -127,7 +127,7 @@ export const parseTaskBlockArgs = (
   const parsed = parseToolArgs(rawArgs, obj => {
     const reason = obj.reason
     return typeof reason === 'string' && reason.trim() ? { reason: reason.trim() } : null
-  }, 'block_workflow_task requires non-empty reason')
+  }, 'workflows_task_block requires non-empty reason')
   return parsed.ok ? { ok: true, reason: parsed.value.reason } : parsed
 }
 
@@ -147,21 +147,21 @@ You execute exactly one workflow task.
 Complete the task using available tools.
 Do not finish by writing the task result in the assistant message.
 
-When the validation criteria are satisfied, call complete_workflow_task with:
+When the validation criteria are satisfied, call workflows_task_complete with:
 {
   "summary": "short human-readable completion summary",
   "outputs": { The task outputs object must contain only declared task output keys }
 }
 
-When the task cannot be completed, call block_workflow_task with:
+When the task cannot be completed, call workflows_task_block with:
 {
   "reason": "short explanation of what is blocking the task"
 }
 Artifact rules:
-- Reading artifacts: Call read_artifact only if the task description, validation criteria, or dependency outputs require inspecting an artifact stored in persistence. Use the canonical "key" provided in Dependency outputs.
-- Writing artifacts: Call write_artifact only if a declared task output has type "artifact". Do not call write_artifact for standard non-artifact outputs.
-- Custom root: Specify "root" in write_artifact ONLY if the task description or validation criteria explicitly requires a custom root directory (e.g., root: "documentation"). Otherwise, omit "root" so it defaults automatically to the run directory.
-- Output reference: In complete_workflow_task, for declared artifact outputs, return an artifact reference using the canonical key returned by write_artifact, for example { "type": "artifact", "key": "workflow-runs/<runId>/report.html", "mimeType": "text/html" }.
+- Reading artifacts: Call workflows_artifact_read only if the task description, validation criteria, or dependency outputs require inspecting an artifact stored in persistence. Use the canonical "key" provided in Dependency outputs.
+- Writing artifacts: Call workflows_artifact_write only if a declared task output has type "artifact". Do not call workflows_artifact_write for standard non-artifact outputs.
+- Custom root: Specify "root" in workflows_artifact_write ONLY if the task description or validation criteria explicitly requires a custom root directory (e.g., root: "documentation"). Otherwise, omit "root" so it defaults automatically to the run directory.
+- Output reference: In workflows_task_complete, for declared artifact outputs, return an artifact reference using the canonical key returned by workflows_artifact_write, for example { "type": "artifact", "key": "workflow-runs/<runId>/report.html", "mimeType": "text/html" }.
 
 Workflow goal: ${workflow.goal}
 Workflow context: ${workflow.context}
@@ -180,7 +180,7 @@ ${JSON.stringify(dependencyOutputs, null, 2)}${resumeContext ? `\nResume context
   },
   {
     role: 'user',
-    content: `Execute workflow task "${task.name}". When complete, call complete_workflow_task. If blocked, call block_workflow_task.`,
+    content: `Execute workflow task "${task.name}". When complete, call workflows_task_complete. If blocked, call workflows_task_block.`,
   },
 ]
 
@@ -208,7 +208,7 @@ export const WorkflowTaskExecutor = (
         parentRef.send({
           type: 'taskFailed',
           taskId: state.task.id,
-          error: 'Task ended without calling complete_workflow_task or block_workflow_task.',
+          error: 'Task ended without calling workflows_task_complete or workflows_task_block.',
         })
       }
       return { state }

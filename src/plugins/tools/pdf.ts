@@ -9,7 +9,7 @@ import type { PdfState, PdfMsg } from './types.ts'
 
 // ─── Tool schema ───
 
-export const pdfTool = defineTool('extract_pdf_text', 'Extract text content from a PDF file stored in persistence. Provide the object store key of the PDF.', {
+export const pdfTool = defineTool('tools_pdf_extract_text', 'Extract text content from a PDF file stored in persistence. Provide the object store key of the PDF.', {
   type: 'object',
   properties: { key: { type: 'string', description: 'Object store key of the PDF file' } },
   required: ['key'],

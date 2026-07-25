@@ -19,7 +19,7 @@ describe('r-code-workspace', () => {
       const buttons = Array.from(el.shadowRoot!.querySelectorAll('r-tabs button')) as HTMLButtonElement[];
       expect(buttons).toHaveLength(2);
       expect(buttons[0]!.dataset.tab).toBe('docs');
-      expect(buttons[1]!.dataset.tab).toBe('bash');
+      expect(buttons[1]!.dataset.tab).toBe('coding_shell_exec');
     } finally {
       global.fetch = originalFetch;
     }

@@ -165,7 +165,7 @@ describe('agent registry routing & lifecycle', () => {
     system.publishRetained(JobRegistryTopic, 'job-cron-1', {
       jobId: 'job-cron-1',
       status: 'running',
-      toolName: 'cron_create',
+      toolName: 'tools_cron_create',
       toolRef: registryRef as any,
       startedAt: Date.now(),
       userId: 'u1',

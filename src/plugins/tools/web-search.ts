@@ -8,7 +8,7 @@ import type { GroundingItem, SourceInfo, BraveLlmContextResponse, WebSearchMsg, 
 
 // ─── Tool schema ───
 
-export const webSearchTool = defineTool('web_search', 'Search the web for current information. Use when the user asks about recent events, live data, or facts you may not know.', {
+export const webSearchTool = defineTool('tools_web_search', 'Search the web for current information. Use when the user asks about recent events, live data, or facts you may not know.', {
   type: 'object',
   properties: { query: { type: 'string', description: 'The search query' } },
   required: ['query'],

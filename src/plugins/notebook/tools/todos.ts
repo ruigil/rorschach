@@ -7,7 +7,7 @@ import type { Todo } from '../types.ts'
 import { NotebookChangeTopic } from '../types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../../../types/persistence.ts'
 
-export const todosCreateTool = defineTool('todos_create', 'Create a new todo item.', {
+export const todosCreateTool = defineTool('notebook_todos_create', 'Create a new todo item.', {
   type: 'object',
   properties: {
     text:       { type: 'string', description: 'Task description.' },
@@ -18,7 +18,7 @@ export const todosCreateTool = defineTool('todos_create', 'Create a new todo ite
   required: ['text'],
 })
 
-export const todosCompleteTool = defineTool('todos_complete', 'Mark a todo as done. If the todo has a recurrence, a new instance is automatically created for the next occurrence.', {
+export const todosCompleteTool = defineTool('notebook_todos_complete', 'Mark a todo as done. If the todo has a recurrence, a new instance is automatically created for the next occurrence.', {
   type: 'object',
   properties: {
     id: { type: 'string', description: 'Todo id.' },
@@ -26,7 +26,7 @@ export const todosCompleteTool = defineTool('todos_complete', 'Mark a todo as do
   required: ['id'],
 })
 
-export const todosListTool = defineTool('todos_list', 'List todos.', {
+export const todosListTool = defineTool('notebook_todos_list', 'List todos.', {
   type: 'object',
   properties: {
     filter: {
@@ -37,7 +37,7 @@ export const todosListTool = defineTool('todos_list', 'List todos.', {
   },
 })
 
-export const todosDeleteTool = defineTool('todos_delete', 'Delete a todo item permanently.', {
+export const todosDeleteTool = defineTool('notebook_todos_delete', 'Delete a todo item permanently.', {
   type: 'object',
   properties: {
     id: { type: 'string', description: 'Todo id.' },
@@ -45,7 +45,7 @@ export const todosDeleteTool = defineTool('todos_delete', 'Delete a todo item pe
   required: ['id'],
 })
 
-export const todosUpdateTool = defineTool('todos_update', "Update a todo item's text, due date, recurrence, or priority.", {
+export const todosUpdateTool = defineTool('notebook_todos_update', "Update a todo item's text, due date, recurrence, or priority.", {
   type: 'object',
   properties: {
     id:         { type: 'string', description: 'Todo id.' },

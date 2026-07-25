@@ -7,7 +7,7 @@ import type { ToolStatusState, JobInfo } from './types.ts'
 
 // ─── Schema ───
 
-export const toolStatusTool = defineTool('tool_status', 'Check the status of a long-running tool job by jobId, or list all currently active jobs when no jobId is supplied. Use this when the user asks whether a previously started background task is still running, has completed, or to enumerate in-flight jobs.', {
+export const toolStatusTool = defineTool('tools_status', 'Check the status of a long-running tool job by jobId, or list all currently active jobs when no jobId is supplied. Use this when the user asks whether a previously started background task is still running, has completed, or to enumerate in-flight jobs.', {
   type: 'object',
   properties: {
     jobId: {

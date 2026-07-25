@@ -135,7 +135,7 @@ describe('MemoryConsolidation', () => {
     expect(prompts[0]).toContain('October 2026 Brazil Trip')
     expect(systemPrompts[0]).toContain('poorly connected existing Concept nodes')
     expect(systemPrompts[0]).toContain('Do not link weak concepts')
-    expect(systemPrompts[0]).not.toContain('store_memory')
+    expect(systemPrompts[0]).not.toContain('memory_store')
     await waitFor(() => writtenLinks.length === 1)
     expect(writtenLinks[0]).toEqual([{
       from: 'Brazil Lodging Preference',

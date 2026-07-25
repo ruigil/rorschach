@@ -51,7 +51,7 @@ const makeSSEResponse = (payloads: unknown[]): Response => {
 }
 
 const toolCallPayloads = (id: string, query: string) => [
-  { choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name: 'web_search', arguments: '' } }] } }] },
+  { choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name: 'tools_web_search', arguments: '' } }] } }] },
   { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ query }) } }] } }] },
 ]
 

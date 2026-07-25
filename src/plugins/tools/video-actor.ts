@@ -10,7 +10,7 @@ import type { VideoMsg, VideoState, VideoOptions, PendingJob } from './types.ts'
 
 // ─── Tool schema ───
 
-export const generateVideoTool = defineTool('generate_video', 'Generate a video from a text description. Use when the user asks to create, animate, or render video content. This is a long-running operation — it may take several minutes.', {
+export const generateVideoTool = defineTool('tools_video_generate', 'Generate a video from a text description. Use when the user asks to create, animate, or render video content. This is a long-running operation — it may take several minutes.', {
   type: 'object',
   properties: {
     prompt: { type: 'string', description: 'Detailed description of the video to generate.' },

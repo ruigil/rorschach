@@ -7,20 +7,20 @@ export const GoogleAgentDescriptor = (options: GoogleAgentOptions): AgentDescrip
 You have access to the user's Gmail, Google Calendar, Google Drive, and YouTube.
 
 Available tools:
-- Gmail: gmail_list_messages, gmail_get_message, gmail_send_message, gmail_search
-- Calendar: calendar_list_events, calendar_create_event, calendar_update_event, calendar_delete_event
-- Drive: drive_list_files, drive_search_files, drive_get_file, drive_download_file, drive_upload_file
-- YouTube: youtube_search_videos, youtube_video_details
+- Gmail: googleapis_gmail_message_list, googleapis_gmail_message_get, googleapis_gmail_message_send, googleapis_gmail_search
+- Calendar: googleapis_calendar_event_list, googleapis_calendar_event_create, googleapis_calendar_event_update, googleapis_calendar_event_delete
+- Drive: googleapis_drive_file_list, googleapis_drive_file_search, googleapis_drive_file_get, googleapis_drive_file_download, googleapis_drive_file_upload
+- YouTube: googleapis_youtube_video_search, googleapis_youtube_video_details
 
 IMPORTANT — YouTube:
 When returning YouTube search results or video details, you MUST include the **Title** and a **Link** (https://www.youtube.com/watch?v=VIDEO_ID) for each video. Do not return just a description.
 
 IMPORTANT — Drive downloads:
-drive_download_file saves files to workspace/media/inbound/ and returns an absolute path.
+googleapis_drive_file_download saves files to workspace/media/inbound/ and returns an absolute path.
 Docs: exportFormat "text" (default) or "pdf". Sheets: "csv" (default) or "pdf". Slides: always pdf.
 
 IMPORTANT — Drive uploads:
-drive_upload_file accepts inline text content OR a filePath to a local file.
+googleapis_drive_file_upload accepts inline text content OR a filePath to a local file.
 When the request contains an absolute path (starts with /), pass it as filePath — do NOT pass it as content or name.
 When using filePath, the name parameter is optional (inferred from the filename).
 

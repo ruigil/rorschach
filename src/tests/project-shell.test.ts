@@ -155,10 +155,10 @@ describe('ProjectShell actor tools', () => {
 
     const manyLines = Array.from({ length: 50 }, (_, i) => `line-${i + 1}`).join('\n')
     writeFileSync(join(projectRoot, 'sample.ts'), manyLines)
-    writeFileSync(join(projectRoot, 'hello.txt'), 'hello from project\nunique-grep-token-alpha\n')
-    writeFileSync(join(projectRoot, 'nested', 'deep.ts'), 'export const deep = "unique-grep-token-alpha"\n')
+    writeFileSync(join(projectRoot, 'hello.txt'), 'hello from project\nunique-coding_file_grep-token-alpha\n')
+    writeFileSync(join(projectRoot, 'nested', 'deep.ts'), 'export const deep = "unique-coding_file_grep-token-alpha"\n')
     writeFileSync(join(projectRoot, 'nested', 'other.md'), '# docs\n')
-    writeFileSync(join(projectRoot, 'node_modules', 'pkg', 'secret.ts'), 'unique-grep-token-alpha should be skipped\n')
+    writeFileSync(join(projectRoot, 'node_modules', 'pkg', 'secret.ts'), 'unique-coding_file_grep-token-alpha should be skipped\n')
     writeFileSync(join(projectRoot, 'binary.bin'), Buffer.from([0x00, 0x01, 0x02, 0x68, 0x69]))
     writeFileSync(join(workspaceDir, 'note.txt'), 'workspace note\n')
   })
@@ -181,7 +181,7 @@ describe('ProjectShell actor tools', () => {
     return { system, ref }
   }
 
-  test('bash runs with default cwd under project mount', async () => {
+  test('coding_shell_exec runs with default cwd under project mount', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -205,7 +205,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('bash respects explicit cwd under /workspace', async () => {
+  test('coding_shell_exec respects explicit cwd under /workspace', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -229,7 +229,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('bash rejects cwd outside mounts', async () => {
+  test('coding_shell_exec rejects cwd outside mounts', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -252,7 +252,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('agent bash session cwd sticks across calls without explicit cwd', async () => {
+  test('agent coding_shell_exec session cwd sticks across calls without explicit cwd', async () => {
     const { system, ref } = await spawnShell()
 
     const cd = await ask<ToolInvokeMsg, ToolReply>(
@@ -292,7 +292,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('agent bash cwd is independent of UI terminal cwd', async () => {
+  test('agent coding_shell_exec cwd is independent of UI terminal cwd', async () => {
     const { system, ref } = await spawnShell()
     await tick(100)
 
@@ -301,7 +301,7 @@ describe('ProjectShell actor tools', () => {
       outbound.push(event)
     })
 
-    // Move UI session into /workspace via websocket bash frame.
+    // Move UI session into /workspace via websocket coding_shell_exec frame.
     system.publish(HttpWsFrameTopic, {
       clientId: 'c1',
       userId: 'ui-user',
@@ -327,7 +327,7 @@ describe('ProjectShell actor tools', () => {
     expect(uiReply.type).toBe('coding.bash.response')
     expect(uiReply.cwd).toBe('/workspace')
 
-    // Agent bash should still default to project mount, not UI cwd.
+    // Agent coding_shell_exec should still default to project mount, not UI cwd.
     const agent = await ask<ToolInvokeMsg, ToolReply>(
       ref,
       replyTo => ({
@@ -383,7 +383,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('read returns a line window via fs, not full dump by default', async () => {
+  test('coding_file_read returns a line window via fs, not full dump by default', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -412,7 +412,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('read rejects paths outside mounts', async () => {
+  test('coding_file_read rejects paths outside mounts', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -435,7 +435,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('read rejects path traversal out of mounts', async () => {
+  test('coding_file_read rejects path traversal out of mounts', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -455,7 +455,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('project tree is read-only; workspace is writable', async () => {
+  test('project tree is coding_file_read-only; workspace is writable', async () => {
     const { system, ref } = await spawnShell()
 
     const ro = await ask<ToolInvokeMsg, ToolReply>(
@@ -473,9 +473,9 @@ describe('ProjectShell actor tools', () => {
     )
     // OverlayFs may reject via non-zero exit or by throwing into toolError.
     if (ro.type === 'toolResult') {
-      expect(ro.result.text).toMatch(/Exit code:|STDERR:|Read-only|read-only|EROFS|denied|EPERM/i)
+      expect(ro.result.text).toMatch(/Exit code:|STDERR:|Read-only|coding_file_read-only|EROFS|denied|EPERM/i)
     } else if (ro.type === 'toolError') {
-      expect(ro.error).toMatch(/read-only|Read-only|EROFS|EPERM|denied|EACCES|not permitted|writable/i)
+      expect(ro.error).toMatch(/coding_file_read-only|Read-only|EROFS|EPERM|denied|EACCES|not permitted|writable/i)
     } else {
       throw new Error(`unexpected reply type: ${ro.type}`)
     }
@@ -486,7 +486,7 @@ describe('ProjectShell actor tools', () => {
         type: 'invoke',
         toolName: codingBashTool.name,
         arguments: JSON.stringify({
-          command: 'echo ok > /workspace/agent-write.txt && cat /workspace/agent-write.txt',
+          command: 'echo ok > /workspace/agent-coding_file_write.txt && cat /workspace/agent-coding_file_write.txt',
         }),
         replyTo,
         userId: 'test-user',
@@ -502,7 +502,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('agent-facing bash output is truncated past MAX_TOOL_RESULT_CHARS', async () => {
+  test('agent-facing coding_shell_exec output is truncated past MAX_TOOL_RESULT_CHARS', async () => {
     const { system, ref } = await spawnShell()
 
     // Generate more than the agent soft cap via a compact shell loop.
@@ -533,14 +533,14 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('default read limit constant is wired into tool description', () => {
+  test('default coding_file_read limit constant is wired into tool description', () => {
     const params = codingReadTool.schema.function.parameters as {
       properties: { limit: { description: string } }
     }
     expect(params.properties.limit.description).toContain(String(DEFAULT_READ_LINE_LIMIT))
   })
 
-  test('glob finds paths by pattern under project mount', async () => {
+  test('coding_file_glob finds paths by pattern under project mount', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -566,7 +566,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('glob rejects path outside mounts', async () => {
+  test('coding_file_glob rejects path outside mounts', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -586,7 +586,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('glob truncates at maxResults', async () => {
+  test('coding_file_glob truncates at maxResults', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -610,7 +610,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('grep finds content with line numbers', async () => {
+  test('coding_file_grep finds content with line numbers', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -618,7 +618,7 @@ describe('ProjectShell actor tools', () => {
       replyTo => ({
         type: 'invoke',
         toolName: codingGrepTool.name,
-        arguments: JSON.stringify({ pattern: 'unique-grep-token-alpha' }),
+        arguments: JSON.stringify({ pattern: 'unique-coding_file_grep-token-alpha' }),
         replyTo,
         userId: 'test-user',
       }),
@@ -636,7 +636,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('grep respects glob filter', async () => {
+  test('coding_file_grep respects coding_file_glob filter', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -644,7 +644,7 @@ describe('ProjectShell actor tools', () => {
       replyTo => ({
         type: 'invoke',
         toolName: codingGrepTool.name,
-        arguments: JSON.stringify({ pattern: 'unique-grep-token-alpha', glob: '*.ts' }),
+        arguments: JSON.stringify({ pattern: 'unique-coding_file_grep-token-alpha', glob: '*.ts' }),
         replyTo,
         userId: 'test-user',
       }),
@@ -660,7 +660,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('grep rejects invalid regex', async () => {
+  test('coding_file_grep rejects invalid regex', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -683,7 +683,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('grep truncates at maxMatches', async () => {
+  test('coding_file_grep truncates at maxMatches', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -707,7 +707,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('write creates file under workspace and can be read back', async () => {
+  test('coding_file_write creates file under workspace and can be coding_file_read back', async () => {
     const { system, ref } = await spawnShell()
 
     const writeReply = await ask<ToolInvokeMsg, ToolReply>(
@@ -717,7 +717,7 @@ describe('ProjectShell actor tools', () => {
         toolName: codingWriteTool.name,
         arguments: JSON.stringify({
           path: '/workspace/drafts/out.txt',
-          content: 'hello workspace write\n',
+          content: 'hello workspace coding_file_write\n',
         }),
         replyTo,
         userId: 'test-user',
@@ -745,13 +745,13 @@ describe('ProjectShell actor tools', () => {
 
     expect(readReply.type).toBe('toolResult')
     if (readReply.type === 'toolResult') {
-      expect(readReply.result.text).toContain('hello workspace write')
+      expect(readReply.result.text).toContain('hello workspace coding_file_write')
     }
 
     await system.shutdown()
   })
 
-  test('write rejects project mount paths', async () => {
+  test('coding_file_write rejects project mount paths', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -777,7 +777,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('write rejects oversized content', async () => {
+  test('coding_file_write rejects oversized content', async () => {
     const { system, ref } = await spawnShell()
 
     const reply = await ask<ToolInvokeMsg, ToolReply>(
@@ -803,7 +803,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('str_replace unique match updates workspace file and can be read back', async () => {
+  test('coding_file_replace_string unique match updates workspace file and can be coding_file_read back', async () => {
     const { system, ref } = await spawnShell()
 
     await ask<ToolInvokeMsg, ToolReply>(
@@ -864,7 +864,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('str_replace rejects non-unique match unless replace_all', async () => {
+  test('coding_file_replace_string rejects non-unique match unless replace_all', async () => {
     const { system, ref } = await spawnShell()
 
     await ask<ToolInvokeMsg, ToolReply>(
@@ -926,7 +926,7 @@ describe('ProjectShell actor tools', () => {
     await system.shutdown()
   })
 
-  test('str_replace rejects missing file, not found, project path, and identical strings', async () => {
+  test('coding_file_replace_string rejects missing file, not found, project path, and identical strings', async () => {
     const { system, ref } = await spawnShell()
 
     const missing = await ask<ToolInvokeMsg, ToolReply>(

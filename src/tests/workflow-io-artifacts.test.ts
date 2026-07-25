@@ -46,7 +46,7 @@ const workflow = (): Workflow => ({
     report: { type: 'artifact' },
   },
   tasks: [{
-    id: 'write-report',
+    id: 'coding_file_write-report',
     name: 'Write report',
     description: 'Write the report artifact.',
     validationCriteria: 'The report artifact exists.',
@@ -72,7 +72,7 @@ const runState = (): WorkflowRunState => ({
   activeTasks: {},
   pendingJobs: {},
   taskStates: {
-    'write-report': {
+    'coding_file_write-report': {
       status: 'completed',
       attempts: 1,
       summary: 'Wrote the report.',
@@ -114,7 +114,7 @@ describe('workflow IO and artifacts', () => {
         outputs: { report: { type: 'artifact' } },
       },
     ]
-    expect(validateWorkflow(invalid)).toContain('duplicate task output key: report (write-report, duplicate)')
+    expect(validateWorkflow(invalid)).toContain('duplicate task output key: report (coding_file_write-report, duplicate)')
   })
 
   test('parses task completion tool arguments and rejects undeclared outputs', () => {
@@ -130,7 +130,7 @@ describe('workflow IO and artifacts', () => {
     expect(parseTaskCompletionArgs(task, JSON.stringify({
       summary: 'Wrote the report.',
       outputs: { report: { type: 'artifact', key: '../report.html' } },
-    }))).toEqual({ ok: false, error: 'task write-report.report must be an artifact reference with either a safe relative path or a public URL' })
+    }))).toEqual({ ok: false, error: 'task coding_file_write-report.report must be an artifact reference with either a safe relative path or a public URL' })
 
     const urlParsed = parseTaskCompletionArgs(task, JSON.stringify({
       summary: 'Generated the image.',
@@ -142,12 +142,12 @@ describe('workflow IO and artifacts', () => {
     expect(parseTaskCompletionArgs(task, JSON.stringify({
       summary: 'Generated the image.',
       outputs: { report: { type: 'artifact', url: 'javascript:alert(1)' } },
-    }))).toEqual({ ok: false, error: 'task write-report.report must be an artifact reference with either a safe relative path or a public URL' })
+    }))).toEqual({ ok: false, error: 'task coding_file_write-report.report must be an artifact reference with either a safe relative path or a public URL' })
 
     expect(parseTaskCompletionArgs(task, JSON.stringify({
       summary: 'Generated the image.',
       outputs: { report: { type: 'artifact', url: 'generated/%2e%2e/secret.png' } },
-    }))).toEqual({ ok: false, error: 'task write-report.report must be an artifact reference with either a safe relative path or a public URL' })
+    }))).toEqual({ ok: false, error: 'task coding_file_write-report.report must be an artifact reference with either a safe relative path or a public URL' })
 
     expect(parseTaskCompletionArgs(task, JSON.stringify({
       summary: 'Wrote the report.',
@@ -155,10 +155,10 @@ describe('workflow IO and artifacts', () => {
         report: { type: 'artifact', key: 'workflow-runs/run-1/report.html' },
         extra: true,
       },
-    }))).toEqual({ ok: false, error: 'task write-report output is not declared: extra' })
+    }))).toEqual({ ok: false, error: 'task coding_file_write-report output is not declared: extra' })
   })
 
-  test('start_workflow_run passes tool-only inputs to the runner', async () => {
+  test('workflows_run_start passes tool-only inputs to the runner', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const persistenceRef = await getPersistenceRef(system)
     await saveWorkflow(persistenceRef, workflow())
@@ -176,7 +176,7 @@ describe('workflow IO and artifacts', () => {
     await system.shutdown()
   })
 
-  test('start_workflow_run returns immediate run state when start blocks before execution', async () => {
+  test('workflows_run_start returns immediate run state when start blocks before execution', async () => {
     const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
     const persistenceRef = await getPersistenceRef(system)
     await saveWorkflow(persistenceRef, workflow())
@@ -186,11 +186,11 @@ describe('workflow IO and artifacts', () => {
       status: 'blocked',
       outputs: {},
       taskStates: {
-        'write-report': {
+        'coding_file_write-report': {
           status: 'blocked',
           attempts: 0,
-          error: 'Required execution tool is unavailable: write',
-          blockedReason: { type: 'task_blocked', message: 'Required execution tool is unavailable: write' },
+          error: 'Required execution tool is unavailable: coding_file_write',
+          blockedReason: { type: 'task_blocked', message: 'Required execution tool is unavailable: coding_file_write' },
         },
       },
     }))
@@ -322,7 +322,7 @@ const StaticRunRunner = (run: WorkflowRunState): ActorDef<WorkflowRunnerMsg, nul
           runId: 'run-url',
           outputs: { report: { type: 'artifact', url: 'generated/image.png', mimeType: 'image/png' } },
           taskStates: {
-            'write-report': {
+            'coding_file_write-report': {
               status: 'completed',
               attempts: 1,
               outputs: { report: { type: 'artifact', url: 'generated/image.png', mimeType: 'image/png' } },
