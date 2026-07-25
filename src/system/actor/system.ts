@@ -3,6 +3,7 @@ import { createEventStream } from './services.ts'
 import { createMetricsRegistry } from './metrics.ts'
 import { deepMerge } from './config.ts'
 import {
+  LogTopic,
   SystemLifecycleTopic,
   type ActorDef,
   type ActorIdentity,
@@ -28,7 +29,8 @@ export type PluginSystemOptions = {
    * Plugins to load during system startup, in order.
    * Each plugin is fully activated before the next one is loaded,
    * so dependency ordering is respected.
-   * A startup plugin failure throws and prevents the system from being returned.
+   * A startup plugin failure never prevents boot: the plugin is marked
+   * 'failed', a warning is logged, and startup continues.
    */
   plugins?: PluginDef<any, any, any>[]
 
@@ -211,9 +213,22 @@ export const AgentSystem = async (
   }
 
   // ─── Load initial plugins ───
+  // A failed plugin never prevents boot: it stays in the registry with
+  // status 'failed' (visible via listPlugins()/getPluginStatus()), a warning
+  // is logged to the console and the event stream, and startup continues.
   for (const def of initialPlugins ?? []) {
     const result = await use(def)
-    if (!result.ok) throw new Error(`Startup plugin '${def.id}' failed: ${result.error}`)
+    if (!result.ok) {
+      const message = `Startup plugin '${def.id}' failed: ${result.error}`
+      console.warn(`[system] ${message}`)
+      services.eventStream.publish(LogTopic, {
+        level: 'warn',
+        source: 'system',
+        message,
+        timestamp: Date.now(),
+        data: { pluginId: def.id, error: result.error },
+      })
+    }
   }
 
   // ─── Public facade ───
