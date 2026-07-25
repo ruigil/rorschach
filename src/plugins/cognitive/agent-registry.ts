@@ -7,11 +7,11 @@ import {
   AgentRegistrationTopic,
   type AgentDescriptor,
 } from '../../types/agents.ts'
+import { SwitchAgentTopic } from './types.ts'
 import {
-  SwitchAgentTopic,
   SessionLifecycleTopic,
   type SessionLifecycleEvent,
-} from './types.ts'
+} from '../../types/session.ts'
 import {
   OutboundBroadcastTopic,
   OutboundUserMessageTopic,
@@ -380,6 +380,30 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
           const { [event.userId]: ___, ...activeMode } = state.activeMode
           const { [event.userId]: ____, ...permissionContexts } = state.permissionContexts
           return { state: { ...state, sessionAgents, contextStores, activeMode, permissionContexts } }
+        }
+
+        if (event.type === 'sessionInvalidated') {
+          // Stop live agents so the next turn re-spawns under the new grants.
+          // Keep context store / activeMode; rebind permissionContexts immediately.
+          const spawned = state.sessionAgents[event.userId] || {}
+          for (const ref of Object.values(spawned)) {
+            ctx.stop(ref)
+          }
+          const { [event.userId]: _, ...sessionAgents } = state.sessionAgents
+          ctx.log.info('agent-registry: session invalidated — agents stopped', {
+            userId: event.userId,
+            grants: event.permissionContext.grants,
+          })
+          return {
+            state: {
+              ...state,
+              sessionAgents,
+              permissionContexts: {
+                ...state.permissionContexts,
+                [event.userId]: event.permissionContext,
+              },
+            },
+          }
         }
 
         return { state }

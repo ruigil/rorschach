@@ -8,7 +8,7 @@ import {
 } from '../../types/events.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import { ContextStore, type ContextStoreMsg } from './context-store.ts'
-import { SessionLifecycleTopic } from './types.ts'
+import { SessionLifecycleTopic } from '../../types/session.ts'
 import { JobRegistryTopic, type JobLifecycleEvent } from '../../types/tools.ts'
 
 // ─── Message protocol ──────────────────────────────────────────────────────

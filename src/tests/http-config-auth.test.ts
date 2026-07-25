@@ -54,6 +54,15 @@ const fakeUserStore = (users: Record<string, User>): ActorDef<UserStoreMsg, null
         msg.replyTo.send({ error: 'user not found' })
       }
     }
+    if (msg.type === 'setUserPermissions') {
+      const user = users[msg.userId]
+      if (user) {
+        user.permissions = [...msg.permissions]
+        msg.replyTo.send({ ok: user })
+      } else {
+        msg.replyTo.send({ error: 'user not found' })
+      }
+    }
     return { state }
   },
 })

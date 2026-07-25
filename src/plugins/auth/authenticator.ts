@@ -8,6 +8,7 @@ import type {
 } from './types.ts'
 import { AuthLoginTopic, AuthLogoutTopic } from './types.ts'
 import { computePermissionContext } from './permissions.ts'
+import { SessionLifecycleTopic } from '../../types/session.ts'
 
 // ─── Config ───
 
@@ -421,7 +422,7 @@ export const Authenticator = (opts: {
             }
           })(),
           ({ userId, fullName: uname, roles, permissions }): AuthenticatorMsg => ({ type: '_regDone', userId, fullName: uname, roles, permissions, challengeId, replyTo }),
-          (err): AuthenticatorMsg => ({ type: '_regFailed', error: String(err), replyTo }),
+          (err): AuthenticatorMsg => ({ type: '_resultError', error: String(err), replyTo }),
         )
 
         return { state }
@@ -447,11 +448,6 @@ export const Authenticator = (opts: {
           state: { ...state, sessions: { ...state.sessions, [token]: session }, challenges },
           events: [emit(AuthLoginTopic, { userId, fullName, roles })],
         }
-      },
-
-      _regFailed: (state, { error, replyTo }) => {
-        replyTo.send({ error })
-        return { state }
       },
 
       // ─── Authentication ───
@@ -519,7 +515,7 @@ export const Authenticator = (opts: {
           processAuthentication(),
           ({ userId, fullName, roles, permissions, newCounter }): AuthenticatorMsg =>
             ({ type: '_authDone', userId, fullName, roles, permissions, challengeId, credentialId, newCounter, replyTo }),
-          (err): AuthenticatorMsg => ({ type: '_authFailed', error: String(err), replyTo }),
+          (err): AuthenticatorMsg => ({ type: '_resultError', error: String(err), replyTo }),
         )
 
         return { state }
@@ -549,7 +545,14 @@ export const Authenticator = (opts: {
         }
       },
 
-      _authFailed: (state, { error, replyTo }) => {
+      // ─── Generic pipeToSelf reply forwarding ───
+
+      _resultOk: (state, { replyTo, value }) => {
+        replyTo.send(value)
+        return { state }
+      },
+
+      _resultError: (state, { replyTo, error }) => {
         replyTo.send({ error })
         return { state }
       },
@@ -627,7 +630,7 @@ export const Authenticator = (opts: {
 
       // ─── Session / token ───
 
-      validateToken: (state, { token, replyTo }) => {
+      validateToken: (state, { token, replyTo }, ctx) => {
         const session = state.sessions[token]
         if (!session || session.expiresAt < Date.now()) {
           if (session) {
@@ -638,9 +641,12 @@ export const Authenticator = (opts: {
           replyTo.send(null)
           return { state }
         }
-        rehydrateSession(session)
-          .then(nextSession => replyTo.send(nextSession))
-          .catch(() => replyTo.send(session))
+        ctx.pipeToSelf(
+          rehydrateSession(session),
+          (nextSession): AuthenticatorMsg => ({ type: '_resultOk', value: nextSession, replyTo }),
+          // Fall back to the cached session if UserStore rehydrate fails
+          (): AuthenticatorMsg => ({ type: '_resultOk', value: session, replyTo }),
+        )
         return { state }
       },
 
@@ -670,7 +676,7 @@ export const Authenticator = (opts: {
         }
       },
 
-      validateTicket: (state, { ticket, replyTo }) => {
+      validateTicket: (state, { ticket, replyTo }, ctx) => {
         const entry = state.tickets[ticket]
         if (!entry || entry.expiresAt < Date.now()) {
           replyTo.send(null)
@@ -683,32 +689,79 @@ export const Authenticator = (opts: {
           replyTo.send(null)
           return { state: { ...state, tickets } }
         }
-        rehydrateSession(session)
-          .then(nextSession => replyTo.send(nextSession))
-          .catch(() => replyTo.send(session))
+        ctx.pipeToSelf(
+          rehydrateSession(session),
+          (nextSession): AuthenticatorMsg => ({ type: '_resultOk', value: nextSession, replyTo }),
+          // Fall back to the cached session if UserStore rehydrate fails
+          (): AuthenticatorMsg => ({ type: '_resultOk', value: session, replyTo }),
+        )
         return { state: { ...state, tickets } }
       },
 
-      getUserProfile: (state, { userId, replyTo }) => {
-        ask<UserStoreMsg, User | null>(
-          userStore,
-          (r) => ({ type: 'getUser' as const, userId, replyTo: r }),
-          { timeoutMs: 3_000 },
+      getUserProfile: (state, { userId, replyTo }, ctx) => {
+        ctx.pipeToSelf(
+          ask<UserStoreMsg, User | null>(
+            userStore,
+            (r) => ({ type: 'getUser' as const, userId, replyTo: r }),
+            { timeoutMs: 3_000 },
+          ),
+          (user): AuthenticatorMsg => ({ type: '_resultOk', value: user, replyTo }),
+          (): AuthenticatorMsg => ({ type: '_resultOk', value: null, replyTo }),
         )
-          .then(user => replyTo.send(user))
-          .catch(() => replyTo.send(null))
         return { state }
       },
 
-      updateUserProfile: (state, { userId, fullName, avatar, timezone, replyTo }) => {
-        ask<UserStoreMsg, { ok: User } | { error: string }>(
-          userStore,
-          (r) => ({ type: 'updateUser' as const, userId, fullName, avatar, timezone, replyTo: r }),
-          { timeoutMs: 3_000 },
+      updateUserProfile: (state, { userId, fullName, avatar, timezone, replyTo }, ctx) => {
+        ctx.pipeToSelf(
+          ask<UserStoreMsg, { ok: User } | { error: string }>(
+            userStore,
+            (r) => ({ type: 'updateUser' as const, userId, fullName, avatar, timezone, replyTo: r }),
+            { timeoutMs: 3_000 },
+          ),
+          (result): AuthenticatorMsg =>
+            'error' in result
+              ? { type: '_resultError', error: result.error, replyTo }
+              : { type: '_resultOk', value: result, replyTo },
+          (err): AuthenticatorMsg => ({ type: '_resultError', error: String(err), replyTo }),
         )
-          .then(res => replyTo.send(res))
-          .catch(err => replyTo.send({ error: String(err) }))
         return { state }
+      },
+
+      // ─── Permissions (persist via UserStore, then invalidate sessions) ───
+
+      setUserPermissions: (state, { userId, permissions, replyTo }, ctx) => {
+        ctx.pipeToSelf(
+          ask<UserStoreMsg, { ok: User } | { error: string }>(
+            userStore,
+            (r) => ({ type: 'setUserPermissions' as const, userId, permissions, replyTo: r }),
+            { timeoutMs: 3_000 },
+          ),
+          (res): AuthenticatorMsg =>
+            'error' in res
+              ? { type: '_resultError', error: res.error, replyTo }
+              : { type: '_setUserPermissionsDone', user: res.ok, replyTo },
+          (err): AuthenticatorMsg => ({ type: '_resultError', error: String(err), replyTo }),
+        )
+        return { state }
+      },
+
+      _setUserPermissionsDone: (state, { user, replyTo }) => {
+        const roles = rolesForIdentity(config, user)
+        const permissionContext = computePermissionContext(config, {
+          fullName: user.fullName,
+          roles,
+          permissions: user.permissions,
+        })
+        replyTo.send({ ok: user })
+        return {
+          state,
+          events: [emit(SessionLifecycleTopic, {
+            type: 'sessionInvalidated',
+            userId: user.id,
+            permissionContext,
+            timestamp: Date.now(),
+          })],
+        }
       },
 
       // ─── GC ───

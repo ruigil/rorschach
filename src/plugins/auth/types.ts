@@ -106,6 +106,7 @@ export type AuthLogoutEvent = { userId: UserId }
 export type UserStoreMsg =
   | { type: 'createUser';          fullName: string; phone?: string; roles?: string[]; permissions?: string[]; replyTo: ActorRef<{ ok: User } | { error: string }> }
   | { type: 'updateUser';          userId: UserId; fullName: string; avatar?: string; timezone?: string; replyTo: ActorRef<{ ok: User } | { error: string }> }
+  | { type: 'setUserPermissions';  userId: UserId; permissions: string[]; replyTo: ActorRef<{ ok: User } | { error: string }> }
   | { type: 'getUser';             userId: UserId;       replyTo: ActorRef<User | null> }
   | { type: 'getUserByCredential'; credentialId: string; replyTo: ActorRef<User | null> }
   | { type: 'getUserByPhone';      phone: string;        replyTo: ActorRef<User | null> }
@@ -132,12 +133,17 @@ export type AuthenticatorMsg =
   | { type: 'validateTicket';       ticket: string;      replyTo: ActorRef<AuthSession | null> }
   | { type: 'getUserProfile';       userId: UserId;       replyTo: ActorRef<User | null> }
   | { type: 'updateUserProfile';    userId: UserId;       fullName: string; avatar?: string; timezone?: string; replyTo: ActorRef<{ ok: User } | { error: string }> }
+  | { type: 'setUserPermissions';   userId: UserId;       permissions: string[]; replyTo: ActorRef<{ ok: User } | { error: string }> }
   | { type: '_gc' }
   // ─── pipeToSelf completions ───
+  // Generic reply forwarding (no state mutation / side effects)
+  | { type: '_resultOk'; replyTo: ActorRef<any>; value: unknown }
+  | { type: '_resultError'; replyTo: ActorRef<any>; error: string }
+  // Specialized: create session + emit login
   | { type: '_regDone';   userId: string; fullName: string; roles: string[]; permissions?: string[]; challengeId: string; replyTo: ActorRef<{ token: string } | { error: string }> }
-  | { type: '_regFailed'; error: string;  replyTo: ActorRef<{ token: string } | { error: string }> }
   | { type: '_authDone';  userId: string; fullName: string; roles: string[]; permissions?: string[]; challengeId: string; credentialId: string; newCounter: number; replyTo: ActorRef<{ token: string } | { error: string }> }
-  | { type: '_authFailed'; error: string; replyTo: ActorRef<{ token: string } | { error: string }> }
+  // Specialized: persist already done; publish sessionInvalidated
+  | { type: '_setUserPermissionsDone'; user: User; replyTo: ActorRef<{ ok: User } | { error: string }> }
 
 // ─── Topics ───
 //

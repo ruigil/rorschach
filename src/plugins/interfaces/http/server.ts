@@ -22,7 +22,7 @@ export type ServerOptions = {
   getConfigSchemas: () => any[]
   
   // Connection and message callbacks
-  onConnect: (client: WsData) => void
+  onConnect: (client: WsData, ws: ServerWebSocket<WsData>) => void
   onDisconnect: (clientId: string) => void
   onMessage: (clientId: string, userId: string, text: string, attachments?: MessageAttachment[]) => void
   onWsFrame?: (clientId: string, userId: string, roles: string[], frame: any, permission?: PermissionContext) => void
@@ -214,7 +214,7 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
           ws.subscribe(ADMIN_CHANNEL)
         }
         ws.subscribe(`client:${ws.data.clientId}`)
-        onConnect(ws.data)
+        onConnect(ws.data, ws)
       },
       message: (ws: ServerWebSocket<WsData>, message) => {
         const raw = typeof message === 'string' ? message : message.toString()

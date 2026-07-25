@@ -67,6 +67,25 @@ export const UserStore = (): ActorDef<UserStoreMsg, UserStoreState> => ({
       }
     },
 
+    setUserPermissions: (state, { userId, permissions, replyTo }) => {
+      const user = state.users[userId]
+      if (!user) {
+        replyTo.send({ error: 'user not found' })
+        return { state }
+      }
+      const updatedUser: User = {
+        ...user,
+        permissions: [...permissions],
+      }
+      replyTo.send({ ok: updatedUser })
+      return {
+        state: {
+          ...state,
+          users: { ...state.users, [userId]: updatedUser },
+        },
+      }
+    },
+
     getUser: (state, { userId, replyTo }) => {
       replyTo.send(state.users[userId] ?? null)
       return { state }

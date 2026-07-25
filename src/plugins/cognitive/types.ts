@@ -1,7 +1,8 @@
 import type { ActorRef, LoopMsg } from '../../system/index.ts'
-import type { PermissionContext } from '../../system/permissions/types.ts'
 import { createTopic } from '../../system/index.ts'
 import type { PersistenceMsg } from '../../types/persistence.ts'
+// Re-export shared session lifecycle types (also used by auth + http)
+export { SessionLifecycleTopic, type SessionLifecycleEvent } from '../../types/session.ts'
 import type {
   ApiMessage,
   AudioProviderReply,
@@ -137,13 +138,4 @@ export type SwitchAgentEvent = {
 }
 
 export const SwitchAgentTopic = createTopic<SwitchAgentEvent>('agent.switch')
-
-export type SessionLifecycleEvent =
-  | { type: 'sessionStarted';  userId: string; defaultMode: string; contextStoreRef: ActorRef<any>; permissionContext?: PermissionContext; timestamp: number }
-  | { type: 'sessionEnded';    userId: string; reason: 'lastDisconnect' | 'contextStoreCrash'; timestamp: number }
-  | { type: 'modeActivated';   userId: string; mode: string; previousMode: string; source: 'user' | 'llm' | 'programmatic' | 'crashFallback'; timestamp: number }
-  | { type: 'presencePresent'; userId: string; source: 'http' | 'signal' | 'cli'; timestamp: number }
-  | { type: 'presenceAbsent';  userId: string; source: 'http' | 'signal' | 'cli'; timestamp: number }
-
-export const SessionLifecycleTopic = createTopic<SessionLifecycleEvent>('session.lifecycle')
 

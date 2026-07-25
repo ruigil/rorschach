@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import type { Server } from 'bun'
+import type { Server, ServerWebSocket } from 'bun'
 import { emit } from '../../system/index.ts'
 import type { PermissionContext } from '../../system/permissions/types.ts'
 import {
@@ -27,6 +27,7 @@ import type { PersistenceMsg, PResult } from '../../types/persistence.ts'
 
 import { canAccessAdminSurface, authorizeConfigAccess } from './http/security.ts'
 import { startServer, type WsData } from './http/server.ts'
+import { SessionLifecycleTopic } from '../../types/session.ts'
 
 // Re-export helpers imported by other files (e.g. tests)
 export { canAccessAdminSurface, authorizeConfigAccess }
@@ -38,7 +39,7 @@ const PUBLIC_DIR = join(process.cwd(), 'src', 'frontend', 'static')
 // ─── Message protocol ───
 
 export type HttpMessage =
-  | { type: 'connected'; clientId: string; userId: string; roles: string[]; timezone?: string; permission?: PermissionContext }
+  | { type: 'connected'; clientId: string; userId: string; roles: string[]; timezone?: string; permission?: PermissionContext; ws: ServerWebSocket<WsData> }
   | { type: 'message'; clientId: string; userId: string; text: string; attachments?: MessageAttachment[] }
   | { type: '_wsFrame'; clientId: string; userId: string; roles: string[]; frame: any; permission?: PermissionContext }
   | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
@@ -48,6 +49,7 @@ export type HttpMessage =
   | { type: '_configUpdate'; pluginId: string; patch: Record<string, unknown> }
   | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
   | { type: '_routeChanged'; reg: RouteRegistration }
+  | { type: '_sessionInvalidated'; userId: string }
 
 // ─── Actor state ───
 
@@ -57,6 +59,7 @@ export type HttpState = {
   activeSpans:         Record<string, SpanHandle>
   identityProviderRef: ActorRef<IdentityProviderMsg> | null
   userIdsToClientIds:  Record<string, string[]>
+  clientSockets:       Record<string, ServerWebSocket<WsData>> // clientId → live socket
   retainedBroadcasts:  Record<string, { type: string; payload: any }>
 }
 
@@ -123,7 +126,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
   }
 
   return {
-    initialState: { server: null, connections: 0, activeSpans: {}, identityProviderRef: null, userIdsToClientIds: {}, retainedBroadcasts: {} },
+    initialState: { server: null, connections: 0, activeSpans: {}, identityProviderRef: null, userIdsToClientIds: {}, clientSockets: {}, retainedBroadcasts: {} },
     handler: onMessage({
 
       connected: (state, message, context) => {
@@ -134,6 +137,10 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         const userIdsToClientIds = {
           ...state.userIdsToClientIds,
           [message.userId]: [...currentClientIds, message.clientId]
+        }
+        const clientSockets = {
+          ...state.clientSockets,
+          [message.clientId]: message.ws,
         }
 
         const events = []
@@ -151,7 +158,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           publishFrame(state.server, `client:${message.clientId}`, event.type, event.payload)
         }
         return {
-          state: { ...state, connections, userIdsToClientIds },
+          state: { ...state, connections, userIdsToClientIds, clientSockets },
           events,
         }
       },
@@ -238,6 +245,8 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           }
         }
 
+        const { [message.clientId]: _, ...clientSockets } = state.clientSockets
+
         const events = []
         const uClientIds = nextUserIdsToClientIds[userId]
         if (userId && (!uClientIds || uClientIds.length === 0)) {
@@ -255,7 +264,13 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           delete activeSpans[message.clientId]
         }
         return {
-          state: { ...state, connections, activeSpans, userIdsToClientIds: nextUserIdsToClientIds },
+          state: {
+            ...state,
+            connections,
+            activeSpans,
+            userIdsToClientIds: nextUserIdsToClientIds,
+            clientSockets,
+          },
           events,
         }
       },
@@ -304,6 +319,19 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         return { state }
       },
 
+      _sessionInvalidated: (state, message, context) => {
+        context.log.info('session invalidated — closing WebSocket connections', { userId: message.userId })
+        const clientIds = state.userIdsToClientIds[message.userId] ?? []
+        for (const clientId of clientIds) {
+          try {
+            state.clientSockets[clientId]?.close(4001, 'session invalidated')
+          } catch {
+            // Socket may already be closing
+          }
+        }
+        return { state }
+      },
+
     }),
 
     lifecycle: onLifecycle({
@@ -348,6 +376,11 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           reg,
         }))
 
+        context.subscribe(SessionLifecycleTopic, (e) =>
+          e.type === 'sessionInvalidated'
+            ? { type: '_sessionInvalidated' as const, userId: e.userId }
+            : null,
+        )
 
         const server = startServer({
           port,
@@ -371,8 +404,16 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
             }
             return schemas;
           },
-          onConnect: (client) => {
-            selfRef?.send({ type: 'connected', clientId: client.clientId, userId: client.userId, roles: client.roles, timezone: client.timezone, permission: client.permission })
+          onConnect: (client, ws) => {
+            selfRef?.send({
+              type: 'connected',
+              clientId: client.clientId,
+              userId: client.userId,
+              roles: client.roles,
+              timezone: client.timezone,
+              permission: client.permission,
+              ws,
+            })
           },
           onDisconnect: (clientId) => {
             selfRef?.send({ type: 'closed', clientId })
