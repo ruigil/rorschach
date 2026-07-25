@@ -66,7 +66,7 @@ describe('session agents use shared context snapshots', () => {
         maxToolLoops: 3,
         tools: {},
       }),
-      { userId: 'u1', contextStoreRef }
+      { userId: 'u1', contextStoreRef, permissionContext: { grants: ['*'] } }
     ))
     await tick()
 

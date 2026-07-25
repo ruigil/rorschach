@@ -127,6 +127,7 @@ describe('coach mode integration tests', () => {
     const agentRef = system.spawn('coach-agent', DynamicAgentActor(descriptor, {
       userId: 'u1',
       contextStoreRef,
+      permissionContext: { grants: ['*'] },
     }))
     await tick()
 

@@ -1,5 +1,6 @@
 import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { onLifecycle, onMessage, DynamicAgentActor } from '../../system/index.ts'
+import type { PermissionContext } from '../../system/permissions/types.ts'
 import type { LlmTool } from '../../types/llm.ts'
 import type { Tool } from '../../types/tools.ts'
 import {
@@ -39,6 +40,7 @@ type AgentRegistryState = {
   lastUserMessage: Record<string, { text: string; attachments?: MessageAttachment[]; traceId: string; parentSpanId: string }>
   contextStores: Record<string, ActorRef<any>> // userId -> contextStoreRef
   activeJobs: Record<string, { userId: string; toolName: string }> // jobId -> info
+  permissionContexts: Record<string, PermissionContext> // userId -> PermissionContext
 }
 
 const initialAgentRegistryState = (): AgentRegistryState => ({
@@ -48,6 +50,7 @@ const initialAgentRegistryState = (): AgentRegistryState => ({
   lastUserMessage: {},
   contextStores: {},
   activeJobs: {},
+  permissionContexts: {},
 })
 
 const SWITCH_MODE_TOOL_NAME = 'cognitive_switch_mode'
@@ -142,6 +145,8 @@ const ensureAgent = (
     ctx.log.warn('ensureAgent: no context store active for user', { userId })
     return { state, ref: null }
   }
+ 
+  const permissionContext = state.permissionContexts[userId] ?? { grants: ['*'] }
 
   // Inject switch_mode directly as an internal tool
   const switchModeTool: Tool = {
@@ -157,7 +162,7 @@ const ensureAgent = (
     internalTools: [...descriptor.internalTools, switchModeTool],
   }
 
-  const opts = { userId, contextStoreRef }
+  const opts = { userId, contextStoreRef, permissionContext }
   const ref = ctx.spawn(`${mode}-${userId}`, DynamicAgentActor(descriptorWithSwitch, opts))
 
   const userAgents = state.sessionAgents[userId] || {}
@@ -340,7 +345,7 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
           }
         }
 
-        // Clean from sessionAgents
+                // Clean from sessionAgents
         const sessionAgents = { ...state.sessionAgents }
         for (const userId of Object.keys(sessionAgents)) {
           const { [msg.mode]: _, ...remaining } = sessionAgents[userId] || {}
@@ -358,6 +363,7 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
             ...state,
             contextStores: { ...state.contextStores, [event.userId]: event.contextStoreRef },
             activeMode: { ...state.activeMode, [event.userId]: event.defaultMode },
+            permissionContexts: { ...state.permissionContexts, [event.userId]: event.permissionContext ?? { grants: ['*'] } },
           }
           const { state: afterAgent } = ensureAgent(nextState, event.userId, event.defaultMode, ctx)
           publishModeChanged(event.userId, event.defaultMode, afterAgent, ctx)
@@ -372,7 +378,8 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
           const { [event.userId]: _, ...sessionAgents } = state.sessionAgents
           const { [event.userId]: __, ...contextStores } = state.contextStores
           const { [event.userId]: ___, ...activeMode } = state.activeMode
-          return { state: { ...state, sessionAgents, contextStores, activeMode } }
+          const { [event.userId]: ____, ...permissionContexts } = state.permissionContexts
+          return { state: { ...state, sessionAgents, contextStores, activeMode, permissionContexts } }
         }
 
         return { state }

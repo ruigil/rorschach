@@ -179,6 +179,7 @@ export const SessionManager = (
             userId,
             defaultMode,
             contextStoreRef,
+            permissionContext: event.permission ?? { grants: ['*'] },
             timestamp:     ts,
           })
           ctx.publish(SessionLifecycleTopic, {

@@ -115,7 +115,7 @@ const spawnChatbot = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
     'chatbot',
     DynamicAgentActor(
       ChatbotAgentDescriptor({ model: LLM_PROVIDER_ADAPTER_OPTS.model }),
-      { userId, contextStoreRef }
+      { userId, contextStoreRef, permissionContext: { grants: ['*'] } }
     ),
     { state: { ...INITIAL_CHATBOT_STATE } },
   )

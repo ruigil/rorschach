@@ -6,8 +6,9 @@ import type { Identity } from '../../../types/identity.ts'
 import { ask } from '../../../system/index.ts'
 import type { ActorRef } from '../../../system/index.ts'
 import type { HttpRequestMsg, HttpResponseMsg } from '../../../types/routes.ts'
+import type { PermissionContext } from '../../../system/permissions/types.ts'
 
-export type WsData = { clientId: string; userId: string; roles: string[]; timezone?: string }
+export type WsData = { clientId: string; userId: string; roles: string[]; timezone?: string; permission?: PermissionContext }
 
 export type ServerOptions = {
   port: number
@@ -24,7 +25,7 @@ export type ServerOptions = {
   onConnect: (client: WsData) => void
   onDisconnect: (clientId: string) => void
   onMessage: (clientId: string, userId: string, text: string, attachments?: MessageAttachment[]) => void
-  onWsFrame?: (clientId: string, userId: string, roles: string[], frame: any) => void
+  onWsFrame?: (clientId: string, userId: string, roles: string[], frame: any, permission?: PermissionContext) => void
   onConfigUpdate: (pluginId: string, patch: Record<string, unknown>) => void
   uploadMedia: (key: string, stream: ReadableStream<Uint8Array>, contentType: string) => Promise<{ ok: true } | { ok: false; error: string }>
   fetchMedia: (key: string) => Promise<{ stream: ReadableStream<Uint8Array>; mimeType: string } | null>
@@ -62,7 +63,7 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         const session = await resolveIdentity(ticket)
         if (!session) return new Response('Unauthorized', { status: 401 })
         const clientId = crypto.randomUUID()
-        const upgraded = server.upgrade(req, { data: { clientId, userId: session.userId, roles: session.roles, timezone: session.timezone } })
+        const upgraded = server.upgrade(req, { data: { clientId, userId: session.userId, roles: session.roles, timezone: session.timezone, permission: session.permission } })
         if (!upgraded) return new Response('WebSocket upgrade failed', { status: 400 })
         return undefined as unknown as Response
       }
@@ -222,8 +223,8 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         try {
           const parsed = JSON.parse(raw)
           if (typeof parsed.type === 'string') {
-            onWsFrame?.(ws.data.clientId, ws.data.userId, ws.data.roles, parsed)
-            return
+            onWsFrame?.(ws.data.clientId, ws.data.userId, ws.data.roles, parsed, ws.data.permission)
+            return;
           }
           if (typeof parsed.text === 'string') {
             text = parsed.text

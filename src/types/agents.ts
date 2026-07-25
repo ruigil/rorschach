@@ -58,11 +58,14 @@ export type ContextSnapshotEvent = {
 
 export const ContextSnapshotTopic = createTopic<ContextSnapshotEvent>('context.snapshot')
 
+import type { PermissionContext } from '../system/permissions/types.ts'
+
 // ─── Per-(user, mode) agent factory options ───
 
 export type AgentFactoryOpts = {
   userId:          string
   contextStoreRef: ActorRef<AgentContextMsg>
+  permissionContext: PermissionContext
 }
 
 // ─── Agent descriptor ───

@@ -22,7 +22,7 @@ export const UserStore = (): ActorDef<UserStoreMsg, UserStoreState> => ({
   persistence: persistencePluginAdapter<UserStoreState>('auth/users'),
 
   handler: onMessage<UserStoreMsg, UserStoreState>({
-    createUser: (state, { fullName, phone, roles, replyTo }) => {
+    createUser: (state, { fullName, phone, roles, permissions, replyTo }) => {
       if (phone && state.phoneIndex[phone]) {
         replyTo.send({ error: 'phone already registered' })
         return { state }
@@ -33,6 +33,7 @@ export const UserStore = (): ActorDef<UserStoreMsg, UserStoreState> => ({
         phone,
         createdAt:  Date.now(),
         roles:      roles ?? [],
+        permissions: permissions ?? [],
         deviceKeys: [],
       }
       replyTo.send({ ok: user })

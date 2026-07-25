@@ -7,6 +7,7 @@ import type {
   WebAuthnCredential, RegistrationOptions, AuthenticationOptions,
 } from './types.ts'
 import { AuthLoginTopic, AuthLogoutTopic } from './types.ts'
+import { computePermissionContext } from './permissions.ts'
 
 // ─── Config ───
 
@@ -22,6 +23,9 @@ export type AuthConfig = {
     usernames?: string[] | string
     phones?:    string[] | string
     userIds?:   string[] | string
+  }
+  permissions?: {
+    roleDefaults: Record<string, string[]>
   }
 }
 
@@ -330,6 +334,7 @@ export const Authenticator = (opts: {
       ...session,
       fullName: user.fullName,
       roles: rolesForIdentity(config, user),
+      permission: computePermissionContext(config, user),
     }
   }
 
@@ -408,16 +413,21 @@ export const Authenticator = (opts: {
               { timeoutMs: 5_000 },
             )
             if ('error' in addResult) throw new Error(addResult.error)
-            return { userId: createResult.ok.id, fullName: phone, roles: rolesForIdentity(config, createResult.ok) }
+            return {
+              userId: createResult.ok.id,
+              fullName: phone,
+              roles: rolesForIdentity(config, createResult.ok),
+              permissions: createResult.ok.permissions,
+            }
           })(),
-          ({ userId, fullName: uname, roles }): AuthenticatorMsg => ({ type: '_regDone', userId, fullName: uname, roles, challengeId, replyTo }),
+          ({ userId, fullName: uname, roles, permissions }): AuthenticatorMsg => ({ type: '_regDone', userId, fullName: uname, roles, permissions, challengeId, replyTo }),
           (err): AuthenticatorMsg => ({ type: '_regFailed', error: String(err), replyTo }),
         )
 
         return { state }
       },
 
-      _regDone: (state, { userId, fullName, roles, challengeId, replyTo }) => {
+      _regDone: (state, { userId, fullName, roles, permissions, challengeId, replyTo }) => {
         const token: string = generateToken()
         const session: AuthSession = {
           token,
@@ -425,6 +435,7 @@ export const Authenticator = (opts: {
           fullName,
           roles,
           expiresAt: Date.now() + config.sessionTtlMs,
+          permission: computePermissionContext(config, { fullName, roles, permissions }),
         }
         // Store fulfilledToken on challenge so desktop can poll for it
         const challenge = state.challenges[challengeId]
@@ -495,20 +506,26 @@ export const Authenticator = (opts: {
             deviceKey,
             config,
           )
-          return { userId: user.id, fullName: user.fullName, roles: rolesForIdentity(config, user), newCounter }
+          return {
+            userId: user.id,
+            fullName: user.fullName,
+            roles: rolesForIdentity(config, user),
+            permissions: user.permissions,
+            newCounter,
+          }
         }
 
         context.pipeToSelf(
           processAuthentication(),
-          ({ userId, fullName, roles, newCounter }): AuthenticatorMsg =>
-            ({ type: '_authDone', userId, fullName, roles, challengeId, credentialId, newCounter, replyTo }),
+          ({ userId, fullName, roles, permissions, newCounter }): AuthenticatorMsg =>
+            ({ type: '_authDone', userId, fullName, roles, permissions, challengeId, credentialId, newCounter, replyTo }),
           (err): AuthenticatorMsg => ({ type: '_authFailed', error: String(err), replyTo }),
         )
 
         return { state }
       },
 
-      _authDone: (state, { userId, fullName, roles, challengeId, credentialId, newCounter, replyTo }) => {
+      _authDone: (state, { userId, fullName, roles, permissions, challengeId, credentialId, newCounter, replyTo }) => {
         const token: string = generateToken()
         const session: AuthSession = {
           token,
@@ -516,6 +533,7 @@ export const Authenticator = (opts: {
           fullName,
           roles,
           expiresAt: Date.now() + config.sessionTtlMs,
+          permission: computePermissionContext(config, { fullName, roles, permissions }),
         }
         // Update signCount in user store (fire and forget)
         userStore.send({ type: 'updateKeyCounter', credentialId, counter: newCounter })

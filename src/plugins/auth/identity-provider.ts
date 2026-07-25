@@ -21,12 +21,14 @@ const sessionToIdentity = (s: AuthSession): Identity => ({
   userId:   s.userId,
   fullName: s.fullName,
   roles:    s.roles,
+  permission: s.permission,
 })
 
 const userToIdentity = (u: User): Identity => ({
   userId:   u.id,
   fullName: u.fullName,
   roles:    u.roles,
+  permission: { grants: u.permissions ?? [] },
 })
 
 export const IdentityProvider = (opts: {

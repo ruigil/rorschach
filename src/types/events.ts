@@ -1,4 +1,5 @@
 import { createTopic } from '../system/index.ts'
+import type { PermissionContext } from '../system/permissions/types.ts'
 
 // ─── Strongly Typed Domain Frame Names ─────────────────────────────────────
 
@@ -76,7 +77,7 @@ export type InboundMessageEvent = {
 export const InboundMessageTopic = createTopic<InboundMessageEvent>('user.inbound')
 
 export type UserPresenceEvent =
-  | { status: 'present'; userId: string; source: 'http' | 'signal' | 'cli'; timezone?: string }
+  | { status: 'present'; userId: string; source: 'http' | 'signal' | 'cli'; timezone?: string; permission?: PermissionContext }
   | { status: 'absent'; userId: string; source: 'http' | 'signal' | 'cli' }
 
 /** Retained topic describing currently active users across interfaces. */
@@ -109,6 +110,7 @@ export type HttpWsFrameEvent = {
     type: FrameType
     [key: string]: any
   }
+  permission?: PermissionContext
 }
 
 /** Topic published when the HTTP/WS interface receives a custom client WebSocket frame. */

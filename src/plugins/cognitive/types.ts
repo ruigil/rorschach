@@ -1,4 +1,5 @@
 import type { ActorRef, LoopMsg } from '../../system/index.ts'
+import type { PermissionContext } from '../../system/permissions/types.ts'
 import { createTopic } from '../../system/index.ts'
 import type { PersistenceMsg } from '../../types/persistence.ts'
 import type {
@@ -138,7 +139,7 @@ export type SwitchAgentEvent = {
 export const SwitchAgentTopic = createTopic<SwitchAgentEvent>('agent.switch')
 
 export type SessionLifecycleEvent =
-  | { type: 'sessionStarted';  userId: string; defaultMode: string; contextStoreRef: ActorRef<any>; timestamp: number }
+  | { type: 'sessionStarted';  userId: string; defaultMode: string; contextStoreRef: ActorRef<any>; permissionContext?: PermissionContext; timestamp: number }
   | { type: 'sessionEnded';    userId: string; reason: 'lastDisconnect' | 'contextStoreCrash'; timestamp: number }
   | { type: 'modeActivated';   userId: string; mode: string; previousMode: string; source: 'user' | 'llm' | 'programmatic' | 'crashFallback'; timestamp: number }
   | { type: 'presencePresent'; userId: string; source: 'http' | 'signal' | 'cli'; timestamp: number }

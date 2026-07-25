@@ -1,10 +1,12 @@
 import { createTopic, type ActorRef } from '../system/index.ts'
+import type { PermissionContext } from '../system/permissions/types.ts'
 
 export type Identity = {
   userId:   string
   fullName: string
   roles:    string[]
   timezone?: string
+  permission?: PermissionContext
 }
 
 // ─── Provider protocol ───

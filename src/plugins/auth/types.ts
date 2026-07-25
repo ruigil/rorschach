@@ -1,5 +1,6 @@
 import { createTopic } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
+import type { PermissionContext } from '../../system/permissions/types.ts'
 
 // ─── IDs ───
 
@@ -72,6 +73,7 @@ export type User = {
   phone?:     string    // E.164, unverified
   createdAt:  number
   roles:      string[]
+  permissions?: string[]
   deviceKeys: DeviceKey[]
   avatar?:    string
   timezone?:  string
@@ -83,6 +85,7 @@ export type AuthSession = {
   fullName:  string
   roles:     string[]
   expiresAt: number
+  permission?: PermissionContext
 }
 
 export type AuthChallenge = {
@@ -101,7 +104,7 @@ export type AuthLogoutEvent = { userId: UserId }
 // ─── UserStore messages ───
 
 export type UserStoreMsg =
-  | { type: 'createUser';          fullName: string; phone?: string; roles?: string[]; replyTo: ActorRef<{ ok: User } | { error: string }> }
+  | { type: 'createUser';          fullName: string; phone?: string; roles?: string[]; permissions?: string[]; replyTo: ActorRef<{ ok: User } | { error: string }> }
   | { type: 'updateUser';          userId: UserId; fullName: string; avatar?: string; timezone?: string; replyTo: ActorRef<{ ok: User } | { error: string }> }
   | { type: 'getUser';             userId: UserId;       replyTo: ActorRef<User | null> }
   | { type: 'getUserByCredential'; credentialId: string; replyTo: ActorRef<User | null> }
@@ -131,9 +134,9 @@ export type AuthenticatorMsg =
   | { type: 'updateUserProfile';    userId: UserId;       fullName: string; avatar?: string; timezone?: string; replyTo: ActorRef<{ ok: User } | { error: string }> }
   | { type: '_gc' }
   // ─── pipeToSelf completions ───
-  | { type: '_regDone';   userId: string; fullName: string; roles: string[]; challengeId: string; replyTo: ActorRef<{ token: string } | { error: string }> }
+  | { type: '_regDone';   userId: string; fullName: string; roles: string[]; permissions?: string[]; challengeId: string; replyTo: ActorRef<{ token: string } | { error: string }> }
   | { type: '_regFailed'; error: string;  replyTo: ActorRef<{ token: string } | { error: string }> }
-  | { type: '_authDone';  userId: string; fullName: string; roles: string[]; challengeId: string; credentialId: string; newCounter: number; replyTo: ActorRef<{ token: string } | { error: string }> }
+  | { type: '_authDone';  userId: string; fullName: string; roles: string[]; permissions?: string[]; challengeId: string; credentialId: string; newCounter: number; replyTo: ActorRef<{ token: string } | { error: string }> }
   | { type: '_authFailed'; error: string; replyTo: ActorRef<{ token: string } | { error: string }> }
 
 // ─── Topics ───

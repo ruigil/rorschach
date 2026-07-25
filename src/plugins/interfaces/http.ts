@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import type { Server } from 'bun'
 import { emit } from '../../system/index.ts'
+import type { PermissionContext } from '../../system/permissions/types.ts'
 import {
   InboundMessageTopic,
   UserPresenceTopic,
@@ -37,9 +38,9 @@ const PUBLIC_DIR = join(process.cwd(), 'src', 'frontend', 'static')
 // ─── Message protocol ───
 
 export type HttpMessage =
-  | { type: 'connected'; clientId: string; userId: string; roles: string[]; timezone?: string }
+  | { type: 'connected'; clientId: string; userId: string; roles: string[]; timezone?: string; permission?: PermissionContext }
   | { type: 'message'; clientId: string; userId: string; text: string; attachments?: MessageAttachment[] }
-  | { type: '_wsFrame'; clientId: string; userId: string; roles: string[]; frame: any }
+  | { type: '_wsFrame'; clientId: string; userId: string; roles: string[]; frame: any; permission?: PermissionContext }
   | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
   | { type: 'closed'; clientId: string }
   | { type: '_broadcast'; broadType: string; key: string; payload: any; isTombstone?: boolean; isAdmin?: boolean }
@@ -142,6 +143,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
             userId: message.userId,
             source: 'http',
             timezone: message.timezone,
+            permission: message.permission,
           }))
         }
 
@@ -166,6 +168,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
               userId: message.userId,
               roles: message.roles,
               frame: message.frame,
+              permission: message.permission,
             })
           ],
         }
@@ -369,7 +372,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
             return schemas;
           },
           onConnect: (client) => {
-            selfRef?.send({ type: 'connected', clientId: client.clientId, userId: client.userId, roles: client.roles, timezone: client.timezone })
+            selfRef?.send({ type: 'connected', clientId: client.clientId, userId: client.userId, roles: client.roles, timezone: client.timezone, permission: client.permission })
           },
           onDisconnect: (clientId) => {
             selfRef?.send({ type: 'closed', clientId })
@@ -377,8 +380,8 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           onMessage: (clientId, userId, text, attachments) => {
             selfRef?.send({ type: 'message', clientId, userId, text, attachments })
           },
-          onWsFrame: (clientId, userId, roles, frame) => {
-            selfRef?.send({ type: '_wsFrame', clientId, userId, roles, frame })
+          onWsFrame: (clientId, userId, roles, frame, permission) => {
+            selfRef?.send({ type: '_wsFrame', clientId, userId, roles, frame, permission })
           },
           onConfigUpdate: (pluginId, patch) => {
             selfRef?.send({ type: '_configUpdate', pluginId, patch })
