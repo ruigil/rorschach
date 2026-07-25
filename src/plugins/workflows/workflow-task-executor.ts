@@ -2,6 +2,7 @@ import type { ActorContext, ActorDef, ActorRef, ActorResult, Interceptor } from 
 import { agentLoop, defineTool, idleLoopState, parseToolArgs, onLifecycle, ask } from '../../system/index.ts'
 import type { ToolCollection, ToolMsg, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic, type ApiMessage, type LlmProviderMsg } from '../../types/llm.ts'
+import type { PermissionContext } from '../../system/permissions/types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetPayload } from '../../types/persistence.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
 import type {
@@ -48,9 +49,10 @@ type TaskExecutorState = {
   llmRef: ActorRef<LlmProviderMsg> | null
   persistenceRef: ActorRef<any> | null
   descriptors: Record<string, AgentDescriptor>
+  permissionContext: PermissionContext
 }
 
-const initialState = (tools: ToolCollection, llmRef: ActorRef<LlmProviderMsg> | null): TaskExecutorState => ({
+const initialState = (tools: ToolCollection, llmRef: ActorRef<LlmProviderMsg> | null, permissionContext: PermissionContext = { grants: ['*'] }): TaskExecutorState => ({
   loop: idleLoopState(),
   runId: '',
   workflow: null,
@@ -65,6 +67,7 @@ const initialState = (tools: ToolCollection, llmRef: ActorRef<LlmProviderMsg> | 
   descriptors: {
     [TOOL_EXECUTOR_DESCRIPTOR.mode]: TOOL_EXECUTOR_DESCRIPTOR,
   },
+  permissionContext,
 })
 
 export const completeWorkflowTaskTool = defineTool('workflows_task_complete', 'Complete the current workflow task with validated structured outputs.', {
@@ -190,6 +193,7 @@ export const WorkflowTaskExecutor = (
   model: string,
   maxToolLoops: number,
   tools: ToolCollection,
+  permissionContext: PermissionContext = { grants: ['*'] },
 ): ActorDef<WorkflowTaskExecutorMsg, TaskExecutorState> => {
   type M = WorkflowTaskExecutorMsg
   type S = TaskExecutorState
@@ -307,6 +311,7 @@ export const WorkflowTaskExecutor = (
     return loop.startTurn(next, {
       messages,
       userId: msg.userId,
+      permissionContext: state.permissionContext ?? { grants: ['*'] },
     }, ctx)
   }
 
@@ -475,7 +480,7 @@ export const WorkflowTaskExecutor = (
   }
 
   return {
-    initialState: () => initialState(tools, llmRef),
+    initialState: () => initialState(tools, llmRef, permissionContext),
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(LlmProviderTopic, event => ({ type: '_llmProvider' as const, ref: event.ref }))

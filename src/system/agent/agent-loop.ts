@@ -17,6 +17,7 @@ import type {
 	ToolFilter,
 	ToolResultPayload,
 } from '../../types/tools.ts'
+import type { PermissionContext } from '../permissions/types.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
@@ -46,6 +47,7 @@ export type LoopTurn = {
   userId: string
   /** Aggregated usage across this turn (chunks + done + toolCalls). Reset on materialize. */
   pendingUsage: TokenUsage
+  permissionContext?: PermissionContext
 }
 
 const initialLoopTurn = (): LoopTurn => ({
@@ -92,6 +94,7 @@ export type LoopStartTurnParams = {
   messages: ApiMessage[]
   userId: string
   requestSpan?: SpanHandle | null
+  permissionContext: PermissionContext
 }
 
 export type LoopToolResultMsg = {
@@ -256,6 +259,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
       turnMessages: params.messages,
       requestSpan,
       userId: params.userId,
+      permissionContext: params.permissionContext,
     }
     const llmSpan = sendStream(state, requestId, params.messages, requestSpan, ctx)
 
@@ -372,6 +376,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
             { toolName: call.name, arguments: call.arguments, userId },
             {
               headers: toolSpan ? ctx.trace.injectHeaders(toolSpan) : undefined,
+              permission: turn.permissionContext!,
             },
           ),
           (reply) => ({

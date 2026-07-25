@@ -1,5 +1,6 @@
 import { createTopic, type ActorRef } from '../system/index.ts'
 import type { MessageAttachment } from './events.ts'
+import type { PermissionContext } from '../system/permissions/types.ts'
 
 // ─── Schema (what the LLM sees) ───
 
@@ -26,6 +27,7 @@ export type ToolInvokeMsg = {
   arguments: string  // raw JSON string from LLM
   replyTo: ActorRef<ToolReply>
   userId: string
+  permission?: PermissionContext
 }
 
 export type ToolMsg = ToolInvokeMsg

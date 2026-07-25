@@ -210,10 +210,11 @@ export type WorkflowRunnerReply =
   | { ok: false; error: string; status?: number }
 
 import type { HttpRequestMsg } from '../../types/routes.ts'
+import type { PermissionContext } from '../../system/permissions/types.ts'
 
 export type WorkflowRunnerMsg =
   | HttpRequestMsg
-  | { type: 'start'; run: WorkflowRunState; workflow: Workflow; replyTo: ActorRef<WorkflowRunnerReply> }
+  | { type: 'start'; run: WorkflowRunState; workflow: Workflow; replyTo: ActorRef<WorkflowRunnerReply>; permission?: PermissionContext }
   | { type: 'list'; userId: string; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'listExecutionTools'; replyTo: ActorRef<WorkflowRunnerReply> }
   | { type: 'listAgentModes'; replyTo: ActorRef<WorkflowRunnerReply> }

@@ -315,6 +315,7 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
           { role: 'user', content: `Query:\n${parsed.value.query}` },
         ],
         userId: msg.userId,
+        permissionContext: { grants: ['*'] },
       },
       ctx,
     )
@@ -411,6 +412,7 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
             { role: 'user', content: buildUserPrompt(state.currentQuery, m.sources) },
           ],
           userId: m.userId,
+          permissionContext: { grants: ['*'] },
         },
         ctx,
       )

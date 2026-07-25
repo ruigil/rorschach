@@ -97,7 +97,7 @@ export const WorkflowRunner = (config: WorkflowRunnerConfig ): ActorDef<Workflow
 
     const ref = ctx.spawn(
       `workflow-run-${runId}`,
-      WorkflowRunExecutor(state.llmRef, model, maxToolLoops, state.executionTools, msg.run.userId, runId),
+      WorkflowRunExecutor(state.llmRef, model, maxToolLoops, state.executionTools, msg.run.userId, runId, msg.permission),
     ) as ActorRef<WorkflowRunExecutorMsg>
 
     const nextState = { ...state, live: { ...state.live, [runId]: ref } }

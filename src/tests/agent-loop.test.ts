@@ -11,8 +11,13 @@ const tick = (ms = 50) => Bun.sleep(ms)
 // Helpers
 // ═══════════════════════════════════════════════════════════════════
 
+/** Test messages may omit permissionContext; makeAgentDef injects a default. */
+type TestStartParams = Omit<LoopStartTurnParams, 'permissionContext'> & {
+  permissionContext?: LoopStartTurnParams['permissionContext']
+}
+
 type TestExtra =
-  | { type: 'start'; params: LoopStartTurnParams }
+  | { type: 'start'; params: TestStartParams }
   | { type: 'cancel' }
   | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
@@ -100,7 +105,11 @@ const makeAgentDef = <S extends TestState, M extends { type: string }>(
   initialState,
   handler: (state, msg, ctx) => {
     if ((msg as any).type === 'start') {
-      return loop.startTurn(state, (msg as any).params, ctx)
+      const params = {
+        permissionContext: { grants: ['*'] },
+        ...(msg as any).params,
+      }
+      return loop.startTurn(state, params, ctx)
     }
     return loop.idle(state, msg, ctx)
   },
@@ -262,7 +271,11 @@ describe('AgentLoop: startTurn + streaming', () => {
       initialState: { ...emptyState(), llmRef },
       handler: (state, msg, ctx) => {
         if ((msg as any).type === 'start') {
-          return loop.startTurn(state, (msg as any).params, ctx)
+          const params = {
+            permissionContext: { grants: ['*'] },
+            ...(msg as any).params,
+          }
+          return loop.startTurn(state, params, ctx)
         }
         return loop.idle(state, msg, ctx)
       },

@@ -2,6 +2,8 @@ import { ask } from '../actor/ask.ts'
 import type { ActorContext, ActorRef, MessageHeaders } from '../actor/types.ts'
 import { JobRegistryTopic } from '../../types/tools.ts'
 import type { ToolMsg, ToolReply, ToolSchema, ToolFilter } from '../../types/tools.ts'
+import { authorize } from '../permissions/evaluator.ts'
+import { USER_NOT_AUTHORIZED, type PermissionContext } from '../permissions/types.ts'
 
 export type InvokeToolArgs = {
   toolName:  string
@@ -11,6 +13,7 @@ export type InvokeToolArgs = {
 
 export type InvokeToolOptions<M = any> = {
   headers?: MessageHeaders
+  permission: PermissionContext
 }
 
 /**
@@ -25,8 +28,19 @@ export const invokeTool = async <M = any>(
   ctx: ActorContext<M>,
   toolRef: ActorRef<ToolMsg>,
   args: InvokeToolArgs,
-  options?: InvokeToolOptions<M>,
+  options: InvokeToolOptions<M>,
 ): Promise<ToolReply> => {
+  if (!authorize(options.permission, args.toolName)) {
+    ctx.log.warn('tool authorization denied', {
+      event: 'permission_denied',
+      userId: args.userId,
+      toolName: args.toolName,
+      surface: 'agent_loop',
+      reason: 'missing_grant',
+    })
+    return { type: 'toolError', error: USER_NOT_AUTHORIZED }
+  }
+
   const firstReply = await ask<ToolMsg, ToolReply>(
     toolRef,
     (replyTo) => ({
@@ -35,9 +49,10 @@ export const invokeTool = async <M = any>(
       arguments: args.arguments,
       userId: args.userId,
       replyTo,
+      permission: options.permission,
     }),
     undefined,
-    options?.headers,
+    options.headers,
   )
 
   if (firstReply.type === 'toolResult' || firstReply.type === 'toolError') {

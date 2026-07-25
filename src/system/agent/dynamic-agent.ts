@@ -9,6 +9,8 @@ import { OutboundUserMessageTopic } from '../../types/events.ts'
 import { LlmProviderTopic, type ApiMessage, type LlmProviderMsg } from '../../types/llm.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 import type { ContextSnapshotEvent } from '../../types/agents.ts'
+import type { PermissionContext } from '../permissions/types.ts'
+import { authorize } from '../permissions/evaluator.ts'
 
 export type DynamicAgentMsg =
   | { type: 'userMessage'; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
@@ -39,18 +41,23 @@ const emptyContextView = (userId = ''): ContextView => ({
 const computeActiveTools = (
   internalTools: Tool[],
   globalTools: ToolCollection,
+  permissionContext: PermissionContext,
   toolFilter?: ToolFilter
 ): ToolCollection => {
   const tools: ToolCollection = {}
   // 1. Add global tools matching the current descriptor filter
   for (const [name, tool] of Object.entries(globalTools)) {
     if (!toolFilter || applyToolFilter(name, toolFilter)) {
-      tools[name] = tool
+      if (authorize(permissionContext, name)) {
+        tools[name] = tool
+      }
     }
   }
   // 2. Override with internalTools (always prioritized)
   for (const t of internalTools) {
-    tools[t.name] = t
+    if (authorize(permissionContext, t.name)) {
+      tools[t.name] = t
+    }
   }
   return tools
 }
@@ -95,7 +102,7 @@ export const DynamicAgentActor = (
       ...(state.globalTools || {}),
       [msg.name]: { name: msg.name, schema: msg.schema, ref: msg.ref, mayBeLongRunning: msg.mayBeLongRunning },
     }
-    const tools = computeActiveTools(desc.internalTools, globalTools, desc.toolFilter)
+    const tools = computeActiveTools(desc.internalTools, globalTools, opts.permissionContext, desc.toolFilter)
     return {
       state: {
         ...state,
@@ -108,7 +115,7 @@ export const DynamicAgentActor = (
   const handleToolUnregistered = (state: S, msg: any): ActorResult<M, S> => {
     const desc = state.descriptor || initialDescriptor
     const { [msg.name]: _, ...globalTools } = state.globalTools || {}
-    const tools = computeActiveTools(desc.internalTools, globalTools, desc.toolFilter)
+    const tools = computeActiveTools(desc.internalTools, globalTools, opts.permissionContext, desc.toolFilter)
     return {
       state: {
         ...state,
@@ -148,6 +155,7 @@ export const DynamicAgentActor = (
     return loop.startTurn(state, {
       messages: buildTurnMessages(state, userMsg),
       userId,
+      permissionContext: opts.permissionContext,
     }, ctx)
   }
 
@@ -230,7 +238,7 @@ export const DynamicAgentActor = (
 
     if (m.type === '_updateDescriptor') {
       const globalTools = state.globalTools || {}
-      const tools = computeActiveTools(m.descriptor.internalTools, globalTools, m.descriptor.toolFilter)
+      const tools = computeActiveTools(m.descriptor.internalTools, globalTools, opts.permissionContext, m.descriptor.toolFilter)
       return {
         state: {
           ...state,
@@ -249,7 +257,7 @@ export const DynamicAgentActor = (
       contextView: emptyContextView(userId),
       descriptor: initialDescriptor,
       globalTools: {},
-      tools: computeActiveTools(initialDescriptor.internalTools, {}, initialDescriptor.toolFilter),
+      tools: computeActiveTools(initialDescriptor.internalTools, {}, opts.permissionContext, initialDescriptor.toolFilter),
       llmRef: null,
     }),
 

@@ -4,6 +4,7 @@ import type { ActorDef, SpanHandle } from '../../system/index.ts'
 import { defineTool, onMessage, onLifecycle, parseToolArgs } from '../../system/index.ts'
 import type { ProjectShellMsg, ProjectShellState } from './types.ts'
 import { HttpWsFrameTopic, OutboundUserMessageTopic } from '../../types/events.ts'
+import { gateWsFrame } from '../../system/permissions/edge.ts'
 import {
   DEFAULT_READ_LINE_LIMIT,
   MAX_READ_LINE_LIMIT,
@@ -225,6 +226,17 @@ export const ProjectShell = (options: {
         const execCwd = resolved.ok ? resolved.cwd : sessionCwd
 
         if (frame.type === 'coding.bash.command') {
+          if (!gateWsFrame(msg.event, 'coding_shell_exec', ctx.log, 'ws_terminal')) {
+            const reply = {
+              type: 'coding.bash.response',
+              cmdId: frame.cmdId,
+              error: 'user not authorized',
+              exitCode: -1,
+              cwd: state.uiCwd,
+            }
+            ctx.publish(OutboundUserMessageTopic, { userId, text: JSON.stringify(reply) })
+            return { state }
+          }
           ctx.pipeToSelf(
             bash.exec(frame.command, { cwd: execCwd }),
             result => ({ type: '_wsBashDone' as const, result, userId, cmdId: frame.cmdId }),
@@ -234,6 +246,16 @@ export const ProjectShell = (options: {
         }
 
         if (frame.type === 'coding.bash.autocomplete') {
+          if (!gateWsFrame(msg.event, 'coding_shell_exec', ctx.log, 'ws_terminal')) {
+            const reply = {
+              type: 'coding.bash.autocomplete.response',
+              cmdId: frame.cmdId,
+              files: [],
+              error: 'user not authorized',
+            }
+            ctx.publish(OutboundUserMessageTopic, { userId, text: JSON.stringify(reply) })
+            return { state }
+          }
           ctx.pipeToSelf(
             bash.exec(`ls -F ${shellQuote(frame.directory || '.')}`, { cwd: execCwd }),
             result => ({ type: '_wsAutocompleteDone' as const, result, userId, cmdId: frame.cmdId }),

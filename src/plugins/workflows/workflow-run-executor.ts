@@ -18,11 +18,14 @@ import { validateOutputValues } from './validation.ts'
 import { getWorkflowRun, saveWorkflowRun } from './workflow-store.ts'
 import { resolvePersistence } from '../../system/index.ts'
 
+import type { PermissionContext } from '../../system/permissions/types.ts'
+
 type RunExecutorState = {
   run: WorkflowRunState
   workflow: Workflow
   tools: ToolCollection
   llmRef: ActorRef<LlmProviderMsg> | null
+  permissionContext: PermissionContext
 }
 
 const now = (): string => new Date().toISOString()
@@ -117,6 +120,7 @@ export const WorkflowRunExecutor = (
   allTools: ToolCollection,
   userId: string,
   runId: string,
+  permissionContext: PermissionContext = { grants: ['*'] },
 ): ActorDef<WorkflowRunExecutorMsg, RunExecutorState> => {
 
   const runPersistence = (): PersistenceAdapter<RunExecutorState> => ({
@@ -126,7 +130,7 @@ export const WorkflowRunExecutor = (
       if (result.ok) {
         const run = result.data
         const workflow = run.workflow
-        return { run, workflow, tools: allTools, llmRef }
+        return { run, workflow, tools: allTools, llmRef, permissionContext }
       }
       return undefined
     },
@@ -140,7 +144,7 @@ export const WorkflowRunExecutor = (
     let run = state.run
     for (const task of readyTasks(state.workflow, run)) {
       const actorName = `workflow-task-${run.runId}-${task.id}-${(run.taskStates[task.id]?.attempts ?? 0) + 1}`
-      const child = ctx.spawn(actorName, WorkflowTaskExecutor(ctx.self, state.llmRef, model, maxToolLoops, state.tools))
+      const child = ctx.spawn(actorName, WorkflowTaskExecutor(ctx.self, state.llmRef, model, maxToolLoops, state.tools, state.permissionContext))
       child.send({
         type: 'startTask',
         runId: state.run.runId,
@@ -240,7 +244,7 @@ export const WorkflowRunExecutor = (
   }
 
   return {
-    initialState: () => ({ run: null as any, workflow: null as any, tools: {}, llmRef }),
+    initialState: () => ({ run: null as any, workflow: null as any, tools: {}, llmRef, permissionContext }),
     persistence: runPersistence(),
     lifecycle: onLifecycle<WorkflowRunExecutorMsg, RunExecutorState>({
       start: (state, ctx) => {

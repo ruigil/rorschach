@@ -94,6 +94,7 @@ const createCaller = (
           ctx,
           toolRef,
           { toolName: 'test-tool', arguments: '{}', userId: 'test-user' },
+          { permission: { grants: ['*'] } },
         ),
         (reply) => ({ type: '_immediate' as const, reply, outerReply: target }),
         (err)   => ({ type: '_immediateErr' as const, error: err, outerReply: target }),

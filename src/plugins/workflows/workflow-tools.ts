@@ -319,6 +319,7 @@ export const handleWorkflowTool = async (
         run,
         workflow,
         replyTo,
+        permission: msg.permission,
       }),
       { timeoutMs: 10_000 },
     )

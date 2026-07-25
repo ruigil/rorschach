@@ -1,6 +1,7 @@
 import { onLifecycle, onMessage, ask } from '../../system/index.ts'
 import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { OutboundUserMessageTopic, HttpWsFrameTopic, type HttpWsFrameEvent } from '../../types/events.ts'
+import { gateWsFrame } from '../../system/permissions/edge.ts'
 import { NotebookChangeTopic, type NotebookChangeEvent, type Todo } from './types.ts'
 import { readTodos, completeTodo, deleteTodo } from './tools/todos.ts'
 import { readEntry } from './tools/journal.ts'
@@ -156,6 +157,33 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
 
       const sendFrame = (reply: object) => {
         ctx.publish(OutboundUserMessageTopic, { userId, text: JSON.stringify(reply) })
+      }
+
+      let requiredTool = ''
+      switch (frame.type) {
+        case 'notebook.todos.request':
+          requiredTool = 'notebook_todos_list'
+          break
+        case 'notebook.todos.complete':
+          requiredTool = 'notebook_todos_complete'
+          break
+        case 'notebook.todos.delete':
+          requiredTool = 'notebook_todos_delete'
+          break
+        case 'notebook.journal.months.request':
+        case 'notebook.journal.entry.request':
+          requiredTool = 'notebook_journal_read'
+          break
+        case 'notebook.tracker.habits.request':
+        case 'notebook.tracker.entries.request':
+        case 'notebook.tracker.stats.request':
+          requiredTool = 'notebook_tracker_log'
+          break
+      }
+
+      if (requiredTool && !gateWsFrame(msg.event, requiredTool, ctx.log, 'ws_notebook')) {
+        sendFrame({ type: 'notebook.error', message: 'user not authorized' })
+        return { state }
       }
 
       if (!state.persistenceRef) {
