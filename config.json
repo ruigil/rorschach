@@ -73,7 +73,8 @@
         "model": "nvidia-nemotron-3-ultra-550b-a55b"
       },
       "session": {
-        "contextWindowHours": 2
+        "contextWindowHours": 2,
+        "persistContext": true
       },
       "userContext": {
         "model": "deepseek-v4-flash",

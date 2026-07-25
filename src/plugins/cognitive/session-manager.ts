@@ -99,7 +99,7 @@ const tryDestroySession = (
 export const SessionManager = (
   options: SessionManagerOptions,
 ): ActorDef<SessionManagerMsg, SessionManagerState> => {
-  const { llmRef, agentRegistryRef, defaultMode, contextWindowHours, persistContext = true } = options
+  const { llmRef, agentRegistryRef, defaultMode, contextWindowHours, persistContext = false } = options
 
   return {
     initialState: initialSessionManagerState,

@@ -31,7 +31,7 @@ export const sessionSchema: ConfigSchemaSection = {
       contextWindowHours: { type: 'number', default: 4, minimum: 1, description: 'Maximum hours of context records kept in short-term memory' },
       persistContext: {
         type: 'boolean',
-        default: true,
+        default: false,
         description: 'Persist short-term conversation context across restarts. When false, ContextStore is pure in-memory.',
         'x-ui': { widget: 'toggle', label: 'Persist context' },
       },

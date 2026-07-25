@@ -29,7 +29,7 @@ import type { ToolSchema, ToolMsg } from '../../types/tools.ts'
 export type SessionConfig = {
   defaultMode:        string   // mode for first-connect, cron routing, crash fallback. Defaults to 'chatbot'.
   contextWindowHours: number   // trim ContextStore records older than this on every append.
-  persistContext:     boolean  // true = KV-backed ContextStore; false = pure in-memory (sticky per spawn)
+  persistContext:     boolean  // true = KV-backed ContextStore; false = pure in-memory (default; sticky per spawn)
 }
 
 // ─── LLM provider adapter contracts ───
