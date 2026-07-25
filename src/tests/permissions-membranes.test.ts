@@ -92,12 +92,12 @@ describe('Permission Membranes (1 & 2)', () => {
     const dummyToolRef = system.spawn('dummy-tool-2', DummyToolRef())
 
     // Create a mock ActorContext
-    let loggedWarning = false
+    let denialLog: { msg: string; meta: Record<string, unknown> } | null = null
     const mockCtx: any = {
       log: {
         warn: (msg: string, meta?: any) => {
           if (msg === 'tool authorization denied' && meta?.event === 'permission_denied') {
-            loggedWarning = true
+            denialLog = { msg, meta }
           }
         }
       },
@@ -115,7 +115,14 @@ describe('Permission Membranes (1 & 2)', () => {
     expect(reply.type).toBe('toolError')
     if (reply.type !== 'toolError') throw new Error('expected toolError')
     expect(reply.error).toBe(USER_NOT_AUTHORIZED)
-    expect(loggedWarning).toBe(true)
+    expect(denialLog).not.toBeNull()
+    expect(denialLog!.meta).toEqual({
+      event: 'permission_denied',
+      userId: 'u1',
+      toolName: 'coding_shell_exec',
+      surface: 'agent_loop',
+      reason: 'missing_grant',
+    })
 
     // Call invokeTool with authorized permission context
     const allowedReply = await invokeTool(

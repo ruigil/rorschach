@@ -6,6 +6,7 @@ import { OutboundUserMessageTopic, HttpWsFrameTopic } from '../types/events.ts'
 import { NotebookManager } from '../plugins/notebook/notebook-manager.ts'
 import { ProjectShell } from '../plugins/coding/project-shell.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
+import { gateWsFrame } from '../system/permissions/edge.ts'
 
 describe('Edge Gating (Membrane 3)', () => {
   const root = join(process.cwd(), 'scratch', 'permissions-edge-gating-test')
@@ -20,6 +21,32 @@ describe('Edge Gating (Membrane 3)', () => {
 
   afterAll(() => {
     rmSync(root, { recursive: true, force: true })
+  })
+
+  test('writes structured permission_denied audit log on denial', () => {
+    let denialLog: { msg: string; meta: Record<string, unknown> } | null = null
+    const logger = {
+      warn: (msg: string, meta?: any) => {
+        if (meta?.event === 'permission_denied') denialLog = { msg, meta }
+      },
+    }
+
+    const allowed = gateWsFrame(
+      { userId: 'u1', permission: { grants: [] } },
+      'coding_shell_exec',
+      logger,
+      'ws_terminal',
+    )
+
+    expect(allowed).toBe(false)
+    expect(denialLog).not.toBeNull()
+    expect(denialLog!.meta).toEqual({
+      event: 'permission_denied',
+      userId: 'u1',
+      toolName: 'coding_shell_exec',
+      surface: 'ws_terminal',
+      reason: 'missing_grant',
+    })
   })
 
   test('blocks unauthorized notebook/todo mutations and terminal commands', async () => {
