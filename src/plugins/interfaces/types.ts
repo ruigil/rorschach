@@ -50,6 +50,6 @@ export type ConfigUpdateRequest = {
   patch: Record<string, unknown>
 }
 
-export const ConfigUpdateRequestTopic = createTopic<ConfigUpdateRequest>('config.update.request')
+export const ConfigUpdateRequestTopic = createTopic<ConfigUpdateRequest>('system.config.update')
 
 
