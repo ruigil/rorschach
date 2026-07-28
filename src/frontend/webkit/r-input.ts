@@ -44,6 +44,7 @@ export class RInput extends RorschachBase {
       font-weight: 300;
     }
     input, textarea {
+      box-sizing: border-box;
       width: 100%;
       padding: 0.65rem 0.9rem;
       background: var(--surface-2);
@@ -100,6 +101,7 @@ export class RInput extends RorschachBase {
             placeholder=${this.placeholder}
             ?disabled=${this.disabled}
             @input=${this._onInput}
+            @change=${(e: Event) => e.stopPropagation()}
           ></textarea>`
         : html`<input
             type=${this.type}
@@ -110,6 +112,7 @@ export class RInput extends RorschachBase {
             .min=${this.min}
             .max=${this.max}
             @input=${this._onInput}
+            @change=${(e: Event) => e.stopPropagation()}
           />`}
       ${this.hint ? html`<span class="hint">${this.hint}</span>` : nothing}
     `;
