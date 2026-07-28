@@ -9,7 +9,6 @@ export const codingProjectSchema: ConfigSchemaSection = {
   subtitle: 'coding · project and artifact paths',
   tab: 'coding',
   configKey: '',
-  routeId: 'config.coding',
   schema: {
     type: 'object',
     required: ['projectRoot', 'projectMount'],
@@ -27,7 +26,6 @@ export const codingAgentSchema: ConfigSchemaSection = {
   subtitle: 'coding · user-facing project assistant',
   tab: 'coding',
   configKey: 'coding',
-  routeId: 'config.coding',
   schema: {
     type: 'object',
     required: ['model', 'maxToolLoops'],

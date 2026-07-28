@@ -12,7 +12,6 @@ export const graphSchema: ConfigSchemaSection = {
   subtitle: 'memory · graph database and embeddings',
   tab: 'memory',
   configKey: 'kgraph',
-  routeId: 'config.memory',
   schema: {
     type: 'object',
     properties: {
@@ -30,7 +29,6 @@ export const memorySystemSchema: ConfigSchemaSection = {
   subtitle: 'memory · background memory processing',
   tab: 'memory',
   configKey: 'system',
-  routeId: 'config.memory',
   schema: {
     type: 'object',
     properties: {

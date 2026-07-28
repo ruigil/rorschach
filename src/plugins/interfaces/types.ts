@@ -44,12 +44,4 @@ export const resolveCookieIdentity = async (
 ): Promise<Identity | null> =>
   resolveIdentity(ref, r => ({ type: 'resolveCookie', cookie: parseSessionCookie(req), replyTo: r }))
 
-// ─── Interfaces Config Update ───
-export type ConfigUpdateRequest = {
-  pluginId: string
-  patch: Record<string, unknown>
-}
-
-export const ConfigUpdateRequestTopic = createTopic<ConfigUpdateRequest>('system.config.update')
-
 

@@ -8,7 +8,6 @@ export const httpSchema: ConfigSchemaSection = {
   subtitle: 'interfaces · HTTP server and WebSocket',
   tab: 'interfaces',
   configKey: 'http',
-  routeId: 'config.interfaces',
   schema: {
     type: 'object',
     properties: {
@@ -23,7 +22,6 @@ export const signalSchema: ConfigSchemaSection = {
   subtitle: 'interfaces · TCP socket interface',
   tab: 'interfaces',
   configKey: 'signal',
-  routeId: 'config.interfaces',
   schema: {
     type: 'object',
     properties: {

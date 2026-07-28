@@ -39,7 +39,6 @@ export const notebookSchema: ConfigSchemaSection = {
   subtitle: 'notebook · journal, todos, and tracker',
   tab: 'notebook',
   configKey: '',
-  routeId: 'config.notebook',
   schema: {
     type: 'object',
     properties: {

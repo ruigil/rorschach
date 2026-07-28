@@ -8,7 +8,6 @@ export const chatbotSchema: ConfigSchemaSection = {
   subtitle: 'cognitive · language model and reasoning',
   tab: 'cognitive',
   configKey: 'chatbot',
-  routeId: 'config.cognitive',
   schema: {
     type: 'object',
     properties: {
@@ -24,7 +23,6 @@ export const sessionSchema: ConfigSchemaSection = {
   subtitle: 'cognitive · conversation context',
   tab: 'cognitive',
   configKey: 'session',
-  routeId: 'config.cognitive',
   schema: {
     type: 'object',
     properties: {
@@ -45,7 +43,6 @@ export const llmSchema: ConfigSchemaSection = {
   subtitle: 'cognitive · LLM provider settings',
   tab: 'cognitive',
   configKey: 'llmProvider',
-  routeId: 'config.cognitive',
   schema: {
     type: 'object',
     properties: {
@@ -69,7 +66,6 @@ export const userContextSchema: ConfigSchemaSection = {
   subtitle: 'cognitive · periodic context summary',
   tab: 'cognitive',
   configKey: 'userContext',
-  routeId: 'config.cognitive',
   schema: {
     type: 'object',
     properties: {

@@ -282,7 +282,7 @@ export type WalkFile = {
 /**
  * Depth-first walk of files under root. Skips heavy directories and caps file count.
  */
-export async function* walkFiles(
+export const walkFiles = async function* (
   fs: IFileSystem,
   root: string,
   options?: {

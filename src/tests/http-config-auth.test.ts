@@ -3,6 +3,7 @@ import { AgentSystem } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import { ask } from '../system/index.ts'
 import { authorizeConfigAccess, canAccessAdminSurface } from '../plugins/interfaces/http.ts'
+import { startServer } from '../plugins/interfaces/http/server.ts'
 import { Authenticator, rolesForIdentity, type AuthConfig } from '../plugins/auth/authenticator.ts'
 import { AuthenticatorRouter } from '../plugins/auth/authenticator-router.ts'
 import { buildAuthRoutes } from '../plugins/auth/routes.ts'
@@ -193,6 +194,75 @@ describe('HTTP config update authorization', () => {
     expect(denied).toBeNull()
 
     await shutdown()
+  })
+})
+
+describe('HTTP server /config authorization gate (C-1 regression)', () => {
+  // A non-null identity provider ref simulates "auth plugin loaded" —
+  // canAccessAdminSurface then requires the admin role.
+  const loadedProviderRef = { name: 'fake-provider', isAlive: () => true, send: () => {} } as ActorRef<IdentityProviderMsg>
+
+  const startTestServer = (identity: Identity | null) =>
+    startServer({
+      port: 0,
+      PUBLIC_DIR: '/tmp/rorschach-test-public-does-not-exist',
+      MEDIA_DIR: '',
+      checkAdmin: () => false,
+      resolveIdentity: async () => null,
+      resolveCookieIdentity: async () => identity,
+      authorizeConfigAccess: (req, url, id, opts) => authorizeConfigAccess(loadedProviderRef, req, url, id, opts),
+      resolveRegisteredRoute: () => undefined,
+      onConnect: () => {},
+      onDisconnect: () => {},
+      onMessage: () => {},
+      uploadMedia: async () => ({ ok: false as const, error: 'n/a' }),
+      fetchMedia: async () => null,
+    })
+
+  test('rejects unauthenticated GET /config with 401', async () => {
+    const server = startTestServer(null)
+    try {
+      const res = await fetch(`http://localhost:${server.port}/config`)
+      expect(res.status).toBe(401)
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('rejects authenticated non-admin GET /config with 403', async () => {
+    const server = startTestServer({ userId: 'u1', fullName: 'user', roles: [] })
+    try {
+      const res = await fetch(`http://localhost:${server.port}/config`)
+      expect(res.status).toBe(403)
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('lets authenticated admin GET /config past the gate', async () => {
+    const server = startTestServer({ userId: 'u-admin', fullName: 'admin', roles: ['admin'] })
+    try {
+      // No route is registered in this bare server — passing the gate falls
+      // through to 404. The C-1 bug let unauthenticated traffic reach this
+      // point; the gate must be what stops it, not route resolution.
+      const res = await fetch(`http://localhost:${server.port}/config`)
+      expect(res.status).toBe(404)
+
+      const nested = await fetch(`http://localhost:${server.port}/config/values/tools`)
+      expect(nested.status).toBe(404)
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('does not gate lookalike paths outside /config', async () => {
+    const server = startTestServer(null)
+    try {
+      const res = await fetch(`http://localhost:${server.port}/configurations`)
+      expect(res.status).toBe(404)
+    } finally {
+      server.stop(true)
+    }
   })
 })
 

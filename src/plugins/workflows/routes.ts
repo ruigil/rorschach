@@ -9,7 +9,6 @@ export const workflowsStorageSchema: ConfigSchemaSection = {
   subtitle: 'workflow storage and agent',
   tab: 'workflows',
   configKey: '',
-  routeId: 'config.workflows',
   schema: {
     type: 'object',
     required: ['agent'],

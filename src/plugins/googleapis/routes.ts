@@ -12,7 +12,6 @@ export const googleapisSchema: ConfigSchemaSection = {
   subtitle: 'googleapis · Gmail, Calendar, Drive, and YouTube',
   tab: 'googleapis',
   configKey: '',
-  routeId: 'config.googleapis',
   schema: {
     type: 'object',
     properties: {

@@ -10,7 +10,6 @@ export const authSchema: ConfigSchemaSection = {
   subtitle: 'auth · WebAuthn and session settings',
   tab: 'auth',
   configKey: '',
-  routeId: 'config.auth',
   schema: {
     type: 'object',
     properties: {
@@ -28,7 +27,6 @@ export const authAdminsSchema: ConfigSchemaSection = {
   subtitle: 'auth · privileged runtime configuration access',
   tab: 'auth',
   configKey: 'admins',
-  routeId: 'config.auth',
   schema: {
     type: 'object',
     properties: {

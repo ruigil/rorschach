@@ -9,7 +9,6 @@ export const persistenceSchema: ConfigSchemaSection = {
   subtitle: 'persistence · Centralized multi-model data storage and persistence engine',
   tab: 'persistence',
   configKey: '',
-  routeId: 'config.persistence',
   schema: {
     type: 'object',
     properties: {

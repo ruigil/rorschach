@@ -8,7 +8,6 @@ export const loggingSchema: ConfigSchemaSection = {
   subtitle: 'observability · log output and level settings',
   tab: 'observability',
   configKey: 'jsonlLogger',
-  routeId: 'config.observability',
   schema: {
     type: 'object',
     properties: {
@@ -24,7 +23,6 @@ export const metricsSchema: ConfigSchemaSection = {
   subtitle: 'observability · actor telemetry collection',
   tab: 'observability',
   configKey: 'metrics',
-  routeId: 'config.observability',
   schema: {
     type: 'object',
     properties: {
@@ -39,7 +37,6 @@ export const tracesSchema: ConfigSchemaSection = {
   subtitle: 'observability · distributed trace recording',
   tab: 'observability',
   configKey: 'traceRecorder',
-  routeId: 'config.observability',
   schema: {
     type: 'object',
     properties: {
@@ -54,7 +51,6 @@ export const costsSchema: ConfigSchemaSection = {
   subtitle: 'observability · LLM cost tracking',
   tab: 'observability',
   configKey: 'costTracker',
-  routeId: 'config.observability',
   schema: {
     type: 'object',
     properties: {

@@ -15,9 +15,8 @@ import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { RouteRegistration, HttpRequestMsg } from '../../types/routes.ts'
-import type { ConfigSchemaSection } from '../../types/config.ts'
 import { IdentityProviderTopic } from '../../types/identity.ts'
-import { resolveIdentity, resolveCookieIdentity, ConfigUpdateRequestTopic } from './types.ts'
+import { resolveIdentity, resolveCookieIdentity } from './types.ts'
 import type { IdentityProviderMsg } from '../../types/identity.ts'
 
 
@@ -46,7 +45,6 @@ export type HttpMessage =
   | { type: 'closed'; clientId: string }
   | { type: '_broadcast'; broadType: string; key: string; payload: any; isTombstone?: boolean; isAdmin?: boolean }
   | { type: 'send'; userId: string; text: string }
-  | { type: '_configUpdate'; pluginId: string; patch: Record<string, unknown> }
   | { type: '_identityProviderChanged'; ref: ActorRef<IdentityProviderMsg> | null }
   | { type: '_routeChanged'; reg: RouteRegistration }
   | { type: '_sessionInvalidated'; userId: string }
@@ -87,7 +85,6 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
   let selfRef:             ActorRef<HttpMessage>         | null = null
   let identityProviderRef: ActorRef<IdentityProviderMsg> | null = null
   let persistenceRef:      ActorRef<PersistenceMsg>      | null = null
-  const retainedAdminBroadcastsMap = new Map<string, { type: string; payload: any }>()
   type RouteMatch = NonNullable<RouteRegistration['match']>
   type RouteRecord = { method: string; path: string; match: RouteMatch; target: ActorRef<HttpRequestMsg> }
 
@@ -186,26 +183,17 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         publishFrame(state.server, channel, message.broadType, message.payload)
 
         const isCacheable = message.broadType === 'ui.surface' || message.broadType === 'config.schema' || message.broadType === 'agents'
-        if (!isCacheable) {
+        if (!isCacheable || message.isAdmin) {
           return { state }
         }
 
-        if (message.isAdmin) {
-          if (message.isTombstone) {
-            retainedAdminBroadcastsMap.delete(message.key)
-          } else {
-            retainedAdminBroadcastsMap.set(message.key, { type: message.broadType, payload: message.payload })
-          }
-          return { state }
+        const nextRetained = { ...state.retainedBroadcasts }
+        if (message.isTombstone) {
+          delete nextRetained[message.key]
         } else {
-          const nextRetained = { ...state.retainedBroadcasts }
-          if (message.isTombstone) {
-            delete nextRetained[message.key]
-          } else {
-            nextRetained[message.key] = { type: message.broadType, payload: message.payload }
-          }
-          return { state: { ...state, retainedBroadcasts: nextRetained } }
+          nextRetained[message.key] = { type: message.broadType, payload: message.payload }
         }
+        return { state: { ...state, retainedBroadcasts: nextRetained } }
       },
 
       _persistenceRef: (state, message) => {
@@ -296,14 +284,6 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         return changed ? { state: { ...state, activeSpans } } : { state }
       },
 
-      _configUpdate: (state, message, context) => {
-        context.publish(ConfigUpdateRequestTopic, {
-          pluginId: message.pluginId,
-          patch: message.patch,
-        })
-        return { state }
-      },
-
       _identityProviderChanged: (state, message) => {
         identityProviderRef = message.ref
         return { state: { ...state, identityProviderRef: message.ref } }
@@ -391,19 +371,6 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           resolveCookieIdentity: (req) => resolveCookieIdentity(identityProviderRef, req),
           authorizeConfigAccess: (req, url, identity, opts) => authorizeConfigAccess(identityProviderRef, req, url, identity, opts),
           resolveRegisteredRoute: (method, pathname) => resolveRegisteredRoute(method, pathname),
-          getConfigSchemas: () => {
-            const schemas: ConfigSchemaSection[] = [];
-            for (const event of retainedAdminBroadcastsMap.values()) {
-              if (event.type === 'config.schema') {
-                const payload = event.payload;
-                const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
-                if (parsed?.section) {
-                  schemas.push(parsed.section);
-                }
-              }
-            }
-            return schemas;
-          },
           onConnect: (client, ws) => {
             selfRef?.send({
               type: 'connected',
@@ -423,9 +390,6 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           },
           onWsFrame: (clientId, userId, roles, frame, permission) => {
             selfRef?.send({ type: '_wsFrame', clientId, userId, roles, frame, permission })
-          },
-          onConfigUpdate: (pluginId, patch) => {
-            selfRef?.send({ type: '_configUpdate', pluginId, patch })
           },
           uploadMedia: async (key, stream, contentType) => {
             if (!persistenceRef) {

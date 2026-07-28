@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { AgentSystem, ask } from '../system/index.ts'
+import { AgentSystem } from '../system/index.ts'
 import workflowsPlugin  from '../plugins/workflows/workflows.plugin.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../types/agents.ts'
-import { RouteRegistrationTopic, type RouteRegistration } from '../types/routes.ts'
 import type { WorkflowsConfig } from '../plugins/workflows/types.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 
@@ -26,14 +25,10 @@ const loadWorkflows = async (workflows: WorkflowsConfig): Promise<AgentDescripto
 describe('workflows config', () => {
   test('uses default workflow config when agent is configured', async () => {
     const registrations: AgentDescriptor[] = []
-    const routes: RouteRegistration[] = []
     const system = await AgentSystem({ plugins: [MockPersistenceActor()], config: { workflows: { agent: { model: 'z-ai/glm-5.1', maxToolLoops: 10 } } } })
     
     system.subscribe(AgentRegistrationTopic, (event) => {
       if (event.type === 'register') registrations.push(event.descriptor)
-    })
-    system.subscribe(RouteRegistrationTopic, (event) => {
-      if (event.id === 'config.workflows') routes.push(event)
     })
 
     const result = await system.use(workflowsPlugin)
@@ -42,28 +37,10 @@ describe('workflows config', () => {
 
     expect(registrations.map(d => d.mode)).toEqual(['workflows'])
 
-    const route = routes.find(r => r.id === 'config.workflows')
-    expect(route?.target).not.toBeNull()
-    if (!route || route.target === null) throw new Error('expected workflows config route target')
-    
-    const responseMsg = await ask<any, any>(
-      route.target,
-      replyTo => ({
-        type: 'http.request',
-        request: {
-          method: 'GET',
-          url: '/config/workflows',
-          headers: {},
-          body: null,
-        },
-        identity: null,
-        replyTo,
-      })
-    )
-    expect(responseMsg.response.status).toBe(200)
-    expect(JSON.parse(responseMsg.response.body as string)).toMatchObject({
-      agent: { model: 'z-ai/glm-5.1', maxToolLoops: 10 },
-    })
+    const desc = registrations.find(d => d.mode === 'workflows')
+    expect(desc).toBeDefined()
+    expect(desc?.model).toBe('z-ai/glm-5.1')
+    expect(desc?.maxToolLoops).toBe(10)
 
     await system.shutdown()
   })

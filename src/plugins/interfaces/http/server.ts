@@ -19,14 +19,12 @@ export type ServerOptions = {
   resolveCookieIdentity: (req: Request) => Promise<Identity | null>
   authorizeConfigAccess: (req: Request, url: URL, identity: Identity | null, options?: { requireSameOrigin?: boolean }) => Promise<Response | null>
   resolveRegisteredRoute: (method: string, pathname: string) => ActorRef<HttpRequestMsg> | undefined
-  getConfigSchemas: () => any[]
-  
+
   // Connection and message callbacks
   onConnect: (client: WsData, ws: ServerWebSocket<WsData>) => void
   onDisconnect: (clientId: string) => void
   onMessage: (clientId: string, userId: string, text: string, attachments?: MessageAttachment[]) => void
   onWsFrame?: (clientId: string, userId: string, roles: string[], frame: any, permission?: PermissionContext) => void
-  onConfigUpdate: (pluginId: string, patch: Record<string, unknown>) => void
   uploadMedia: (key: string, stream: ReadableStream<Uint8Array>, contentType: string) => Promise<{ ok: true } | { ok: false; error: string }>
   fetchMedia: (key: string) => Promise<{ stream: ReadableStream<Uint8Array>; mimeType: string } | null>
 };
@@ -40,12 +38,10 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
     resolveCookieIdentity,
     authorizeConfigAccess,
     resolveRegisteredRoute,
-    getConfigSchemas,
     onConnect,
     onDisconnect,
     onMessage,
     onWsFrame,
-    onConfigUpdate,
   } = options
 
   const CHANNEL = 'broadcast'
@@ -68,8 +64,10 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         return undefined as unknown as Response
       }
 
-      // 2. Authorization for configuration / knowledge graph APIs
-      const isConfig = url.pathname === '/config/schema' || url.pathname.startsWith('/config/')
+      // 2. Authorization gate for configuration APIs — covers the exact
+      //    `/config` route and everything below it. (`/plugins*` routes no
+      //    longer exist; plugin management lives under `/config/plugins*`.)
+      const isConfig = url.pathname === '/config' || url.pathname.startsWith('/config/')
       if (isConfig) {
         const identity = await resolveCookieIdentity(req)
         const denied = await authorizeConfigAccess(req, url, identity, {
@@ -78,7 +76,7 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         if (denied) return denied
       }
 
-      // 3. Plugin-registered routes (auth, etc.) win over inline handlers.
+      // 3. Plugin-registered routes (auth, config, etc.) — dispatched to their target actors.
       const targetActor = resolveRegisteredRoute(req.method, url.pathname)
       if (targetActor) {
         const identity = await resolveCookieIdentity(req)
@@ -128,28 +126,7 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         return new Response(JSON.stringify({ userId: identity?.userId ?? null, roles: identity?.roles ?? [] }), { headers: { 'Content-Type': 'application/json' } })
       }
 
-      // 6. Config schema API (authorized above)
-      if (req.method === 'GET' && url.pathname === '/config/schema') {
-        return new Response(JSON.stringify(getConfigSchemas()), {
-          headers: { 'Content-Type': 'application/json' },
-        })
-      }
-
-      // 7. Per-plugin config update (authorized above)
-      if (req.method === 'POST' && url.pathname.startsWith('/config/')) {
-        const pluginId = url.pathname.slice('/config/'.length)
-        if (pluginId && !pluginId.includes('/')) {
-          try {
-            const patch = await req.json()
-            onConfigUpdate(pluginId, patch)
-            return new Response(null, { status: 204 })
-          } catch {
-            return new Response('Invalid JSON', { status: 400 })
-          }
-        }
-      }
-
-      // Stream Upload Endpoint
+      // 5. Stream Upload Endpoint
       if (req.method === 'POST' && url.pathname.startsWith('/upload/media/')) {
         const identity = await resolveCookieIdentity(req)
         if (!identity) {
@@ -176,7 +153,7 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         }
       }
 
-      // 8. Serving media from Object Store or static files
+      // 6. Serving media from Object Store or static files
       const isMedia = url.pathname.startsWith('/inbound/') || url.pathname.startsWith('/generated/')
       if (isMedia) {
         const key = url.pathname.slice(1) // e.g. "inbound/rorschach-XYZ..."
@@ -189,7 +166,7 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         return new Response('Not Found', { status: 404 })
       }
 
-      // 9. Static file serving (excluding media files)
+      // 7. Static file serving (excluding media files)
       const filePath = url.pathname === '/'
         ? join(PUBLIC_DIR, 'index.html')
         : safeJoinUrlPath(PUBLIC_DIR, url.pathname)

@@ -8,7 +8,6 @@ export const webSearchSchema: ConfigSchemaSection = {
   subtitle: 'tools · Brave search',
   tab: 'tools',
   configKey: 'webSearch',
-  routeId: 'config.tools',
   schema: {
     type: 'object',
     properties: {
@@ -23,7 +22,6 @@ export const visionSchema: ConfigSchemaSection = {
   subtitle: 'tools · image analysis and generation',
   tab: 'tools',
   configKey: 'vision',
-  routeId: 'config.tools',
   schema: {
     type: 'object',
     properties: {
@@ -39,7 +37,6 @@ export const audioSchema: ConfigSchemaSection = {
   subtitle: 'tools · speech-to-text and text-to-speech',
   tab: 'tools',
   configKey: 'audio',
-  routeId: 'config.tools',
   schema: {
     type: 'object',
     properties: {
@@ -56,7 +53,6 @@ export const videoSchema: ConfigSchemaSection = {
   subtitle: 'tools · video generation',
   tab: 'tools',
   configKey: 'video',
-  routeId: 'config.tools',
   schema: {
     type: 'object',
     properties: {
