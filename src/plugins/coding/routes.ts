@@ -45,5 +45,6 @@ export const buildCodingRoutes = (pageToolsRef: ActorRef<HttpRequestMsg>): Route
     path: '/documentation/',
     match: 'prefix',
     target: pageToolsRef,
+    auth: 'session',
   },
 ]

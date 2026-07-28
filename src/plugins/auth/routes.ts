@@ -68,6 +68,7 @@ export const buildAuthRoutes = (authenticator: ActorRef<HttpRequestMsg>): RouteR
     method: 'GET',
     path: '/auth/register/options',
     target: authenticator,
+    // public — WebAuthn registration flow
   },
   {
     id: 'auth.register.status',
@@ -116,24 +117,28 @@ export const buildAuthRoutes = (authenticator: ActorRef<HttpRequestMsg>): RouteR
     method: 'POST',
     path: '/auth/ticket',
     target: authenticator,
+    auth: 'session',
   },
   {
     id: 'auth.logout',
     method: 'POST',
     path: '/auth/logout',
     target: authenticator,
+    auth: 'session',
   },
   {
     id: 'auth.profile.get',
     method: 'GET',
     path: '/auth/profile',
     target: authenticator,
+    auth: 'session',
   },
   {
     id: 'auth.profile.update',
     method: 'POST',
     path: '/auth/profile',
     target: authenticator,
+    auth: 'session',
   },
   {
     id: 'auth.static',
@@ -141,6 +146,7 @@ export const buildAuthRoutes = (authenticator: ActorRef<HttpRequestMsg>): RouteR
     path: '/auth/',
     match: 'prefix',
     target: authenticator,
+    // public — login/register UI
   },
 ]
 

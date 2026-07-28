@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import { ask } from '../system/index.ts'
-import { authorizeConfigAccess, canAccessAdminSurface } from '../plugins/interfaces/http.ts'
-import { startServer } from '../plugins/interfaces/http/server.ts'
+import { authorizeRouteAccess, canAccessAdminSurface } from '../plugins/interfaces/http.ts'
+import { startServer, type ResolvedRoute } from '../plugins/interfaces/http/server.ts'
 import { Authenticator, rolesForIdentity, type AuthConfig } from '../plugins/auth/authenticator.ts'
 import { AuthenticatorRouter } from '../plugins/auth/authenticator-router.ts'
 import { buildAuthRoutes } from '../plugins/auth/routes.ts'
@@ -16,6 +16,9 @@ import type { HttpRequestMsg, HttpResponseMsg } from '../types/routes.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
+/** Policy declared on config routes (buildConfigRoutes). */
+const configPolicy = { auth: 'admin' as const, sameOrigin: 'non-GET' as const }
+
 const configUrl = 'http://127.0.0.1:3000/config/tools'
 
 const configRequest = (init?: RequestInit): Request =>
@@ -25,6 +28,13 @@ const configRequest = (init?: RequestInit): Request =>
     body: JSON.stringify({ webSearch: { count: 3 } }),
     ...init,
   })
+
+const authorizeConfig = (
+  provider: ActorRef<IdentityProviderMsg> | null,
+  req: Request,
+  url: URL,
+  identity: Identity | null,
+) => authorizeRouteAccess(provider, req, url, identity, configPolicy)
 
 const fakeIdentityProvider = (sessions: Record<string, Identity>): ActorDef<IdentityProviderMsg, null> => ({
   initialState: null,
@@ -78,15 +88,15 @@ const startIdentityProvider = async (
 }
 
 describe('HTTP config update authorization', () => {
-  test('allows anonymous config access when no auth provider is loaded', async () => {
-    const denied = await authorizeConfigAccess(null, configRequest(), new URL(configUrl), ANONYMOUS_IDENTITY, { requireSameOrigin: true })
+  test('allows anonymous config access when no auth provider is loaded', () => {
+    const denied = authorizeConfig(null, configRequest(), new URL(configUrl), ANONYMOUS_IDENTITY)
     expect(denied).toBeNull()
   })
 
   test('rejects config writes without a valid session when auth is loaded', async () => {
     const { ref, shutdown } = await startIdentityProvider(fakeIdentityProvider({}))
 
-    const denied = await authorizeConfigAccess(ref, configRequest(), new URL(configUrl), null, { requireSameOrigin: true })
+    const denied = authorizeConfig(ref, configRequest(), new URL(configUrl), null)
 
     expect(denied?.status).toBe(401)
 
@@ -99,9 +109,9 @@ describe('HTTP config update authorization', () => {
       plain: identity,
     }))
 
-    const denied = await authorizeConfigAccess(ref, configRequest({
+    const denied = authorizeConfig(ref, configRequest({
       headers: { Cookie: 'session=plain' },
-    }), new URL(configUrl), identity, { requireSameOrigin: true })
+    }), new URL(configUrl), identity)
 
     expect(denied?.status).toBe(403)
 
@@ -114,9 +124,9 @@ describe('HTTP config update authorization', () => {
       privileged: identity,
     }))
 
-    const denied = await authorizeConfigAccess(ref, configRequest({
+    const denied = authorizeConfig(ref, configRequest({
       headers: { Cookie: 'session=privileged' },
-    }), new URL(configUrl), identity, { requireSameOrigin: true })
+    }), new URL(configUrl), identity)
 
     expect(denied).toBeNull()
 
@@ -129,9 +139,9 @@ describe('HTTP config update authorization', () => {
       privileged: identity,
     }))
 
-    const denied = await authorizeConfigAccess(ref, configRequest({
+    const denied = authorizeConfig(ref, configRequest({
       headers: { Cookie: 'session=privileged', Origin: 'http://evil.example' },
-    }), new URL(configUrl), identity, { requireSameOrigin: true })
+    }), new URL(configUrl), identity)
 
     expect(denied?.status).toBe(403)
 
@@ -144,14 +154,14 @@ describe('HTTP config update authorization', () => {
       privileged: identity,
     }))
 
-    const denied = await authorizeConfigAccess(ref, configRequest({
+    const denied = authorizeConfig(ref, configRequest({
       headers: {
         Cookie: 'session=privileged',
         Origin: 'https://rorschach.example',
         'X-Forwarded-Host': 'rorschach.example',
         'X-Forwarded-Proto': 'https',
       },
-    }), new URL(configUrl), identity, { requireSameOrigin: true })
+    }), new URL(configUrl), identity)
 
     expect(denied).toBeNull()
 
@@ -164,13 +174,13 @@ describe('HTTP config update authorization', () => {
       privileged: identity,
     }))
 
-    const denied = await authorizeConfigAccess(ref, configRequest({
+    const denied = authorizeConfig(ref, configRequest({
       headers: {
         Cookie: 'session=privileged',
         Host: 'rorschach.example',
         Origin: 'https://rorschach.example',
       },
-    }), new URL('http://rorschach.example/config/tools'), identity, { requireSameOrigin: true })
+    }), new URL('http://rorschach.example/config/tools'), identity)
 
     expect(denied).toBeNull()
 
@@ -183,13 +193,13 @@ describe('HTTP config update authorization', () => {
       privileged: identity,
     }))
 
-    const denied = await authorizeConfigAccess(ref, configRequest({
+    const denied = authorizeConfig(ref, configRequest({
       headers: {
         Cookie: 'session=privileged',
         Origin: 'https://rorschach.example',
         Forwarded: 'for=192.0.2.1;proto=https;host=rorschach.example',
       },
-    }), new URL(configUrl), identity, { requireSameOrigin: true })
+    }), new URL(configUrl), identity)
 
     expect(denied).toBeNull()
 
@@ -197,12 +207,23 @@ describe('HTTP config update authorization', () => {
   })
 })
 
-describe('HTTP server /config authorization gate (C-1 regression)', () => {
+describe('HTTP server route authorization gate (C-1 regression)', () => {
   // A non-null identity provider ref simulates "auth plugin loaded" —
   // canAccessAdminSurface then requires the admin role.
   const loadedProviderRef = { name: 'fake-provider', isAlive: () => true, send: () => {} } as ActorRef<IdentityProviderMsg>
 
-  const startTestServer = (identity: Identity | null) =>
+  // Admin route metadata as declared by buildConfigRoutes — no path hardcoding in the gateway.
+  const adminRoute: ResolvedRoute = {
+    target: { name: 'fake-target', isAlive: () => true, send: () => {} } as ActorRef<HttpRequestMsg>,
+    auth: 'admin',
+    sameOrigin: 'non-GET',
+  }
+
+  const startTestServer = (
+    identity: Identity | null,
+    resolveRoute: (method: string, pathname: string) => ResolvedRoute | undefined = (method, pathname) =>
+      (pathname === '/config' || pathname.startsWith('/config/')) ? adminRoute : undefined,
+  ) =>
     startServer({
       port: 0,
       PUBLIC_DIR: '/tmp/rorschach-test-public-does-not-exist',
@@ -210,8 +231,8 @@ describe('HTTP server /config authorization gate (C-1 regression)', () => {
       checkAdmin: () => false,
       resolveIdentity: async () => null,
       resolveCookieIdentity: async () => identity,
-      authorizeConfigAccess: (req, url, id, opts) => authorizeConfigAccess(loadedProviderRef, req, url, id, opts),
-      resolveRegisteredRoute: () => undefined,
+      authorizeRoute: (req, url, id, policy) => authorizeRouteAccess(loadedProviderRef, req, url, id, policy),
+      resolveRegisteredRoute: resolveRoute,
       onConnect: () => {},
       onDisconnect: () => {},
       onMessage: () => {},
@@ -219,7 +240,7 @@ describe('HTTP server /config authorization gate (C-1 regression)', () => {
       fetchMedia: async () => null,
     })
 
-  test('rejects unauthenticated GET /config with 401', async () => {
+  test('rejects unauthenticated GET on admin route with 401', async () => {
     const server = startTestServer(null)
     try {
       const res = await fetch(`http://localhost:${server.port}/config`)
@@ -229,7 +250,7 @@ describe('HTTP server /config authorization gate (C-1 regression)', () => {
     }
   })
 
-  test('rejects authenticated non-admin GET /config with 403', async () => {
+  test('rejects authenticated non-admin GET on admin route with 403', async () => {
     const server = startTestServer({ userId: 'u1', fullName: 'user', roles: [] })
     try {
       const res = await fetch(`http://localhost:${server.port}/config`)
@@ -239,23 +260,45 @@ describe('HTTP server /config authorization gate (C-1 regression)', () => {
     }
   })
 
-  test('lets authenticated admin GET /config past the gate', async () => {
-    const server = startTestServer({ userId: 'u-admin', fullName: 'admin', roles: ['admin'] })
-    try {
-      // No route is registered in this bare server — passing the gate falls
-      // through to 404. The C-1 bug let unauthenticated traffic reach this
-      // point; the gate must be what stops it, not route resolution.
-      const res = await fetch(`http://localhost:${server.port}/config`)
-      expect(res.status).toBe(404)
+  test('lets authenticated admin past the gate and dispatches to target', async () => {
+    // Target answers so we observe dispatch (not 404) after the auth gate.
+    let dispatched = false
+    const target = {
+      name: 'config-target',
+      isAlive: () => true,
+      send: (msg: any) => {
+        if (msg.type === 'http.request') {
+          dispatched = true
+          msg.replyTo.send({
+            type: 'http.response',
+            response: { status: 200, headers: { 'Content-Type': 'application/json' }, body: '{}' },
+          })
+        }
+      },
+    } as ActorRef<HttpRequestMsg>
 
+    const server = startTestServer(
+      { userId: 'u-admin', fullName: 'admin', roles: ['admin'] },
+      (method, pathname) =>
+        (pathname === '/config' || pathname.startsWith('/config/'))
+          ? { target, auth: 'admin', sameOrigin: 'non-GET' }
+          : undefined,
+    )
+    try {
+      const res = await fetch(`http://localhost:${server.port}/config`)
+      expect(res.status).toBe(200)
+      expect(dispatched).toBe(true)
+
+      dispatched = false
       const nested = await fetch(`http://localhost:${server.port}/config/values/tools`)
-      expect(nested.status).toBe(404)
+      expect(nested.status).toBe(200)
+      expect(dispatched).toBe(true)
     } finally {
       server.stop(true)
     }
   })
 
-  test('does not gate lookalike paths outside /config', async () => {
+  test('does not apply admin policy to unregistered lookalike paths', async () => {
     const server = startTestServer(null)
     try {
       const res = await fetch(`http://localhost:${server.port}/configurations`)
@@ -263,6 +306,87 @@ describe('HTTP server /config authorization gate (C-1 regression)', () => {
     } finally {
       server.stop(true)
     }
+  })
+
+  test('rejects session-protected route without identity with 401', async () => {
+    const sessionRoute: ResolvedRoute = {
+      target: { name: 'session-target', isAlive: () => true, send: () => {} } as ActorRef<HttpRequestMsg>,
+      auth: 'session',
+    }
+    const server = startTestServer(null, (method, pathname) =>
+      pathname === '/artifact' ? sessionRoute : undefined,
+    )
+    try {
+      const res = await fetch(`http://localhost:${server.port}/artifact`)
+      expect(res.status).toBe(401)
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('allows public route without identity', async () => {
+    let dispatched = false
+    const publicRoute: ResolvedRoute = {
+      target: {
+        name: 'public-target',
+        isAlive: () => true,
+        send: (msg: any) => {
+          if (msg.type === 'http.request') {
+            dispatched = true
+            msg.replyTo.send({
+              type: 'http.response',
+              response: { status: 200, headers: {}, body: 'ok' },
+            })
+          }
+        },
+      } as ActorRef<HttpRequestMsg>,
+      auth: 'public',
+    }
+    const server = startTestServer(null, (method, pathname) =>
+      pathname === '/auth/login/begin' ? publicRoute : undefined,
+    )
+    try {
+      const res = await fetch(`http://localhost:${server.port}/auth/login/begin`, { method: 'POST' })
+      expect(res.status).toBe(200)
+      expect(dispatched).toBe(true)
+    } finally {
+      server.stop(true)
+    }
+  })
+})
+
+describe('route registration auth metadata', () => {
+  test('config routes declare admin + non-GET sameOrigin', async () => {
+    const { buildConfigRoutes } = await import('../plugins/config/routes.ts')
+    const fakeTarget = { name: 'cfg', isAlive: () => true, send: () => {} } as ActorRef<HttpRequestMsg>
+    const routes = buildConfigRoutes(fakeTarget)
+    expect(routes.length).toBeGreaterThan(0)
+    for (const route of routes) {
+      if (route.target === null) continue
+      expect(route.auth).toBe('admin')
+      expect(route.sameOrigin).toBe('non-GET')
+    }
+  })
+
+  test('session routes declare session auth', async () => {
+    const { buildCodingRoutes } = await import('../plugins/coding/routes.ts')
+    const { buildWorkflowsRoutes } = await import('../plugins/workflows/routes.ts')
+    const { buildGoogleOAuthRoutes } = await import('../plugins/googleapis/routes.ts')
+    const { buildAuthRoutes } = await import('../plugins/auth/routes.ts')
+    const fakeTarget = { name: 't', isAlive: () => true, send: () => {} } as ActorRef<HttpRequestMsg>
+
+    expect(buildCodingRoutes(fakeTarget)[0]?.auth).toBe('session')
+    expect(buildWorkflowsRoutes(fakeTarget)[0]?.auth).toBe('session')
+
+    const google = buildGoogleOAuthRoutes(fakeTarget)
+    expect(google.find(r => r.id === 'googleapis.auth.start' && r.target)?.auth).toBe('session')
+    expect(google.find(r => r.id === 'googleapis.auth.callback' && r.target)?.auth).toBeUndefined()
+
+    const auth = buildAuthRoutes(fakeTarget)
+    expect(auth.find(r => r.id === 'auth.profile.get' && r.target)?.auth).toBe('session')
+    expect(auth.find(r => r.id === 'auth.ticket' && r.target)?.auth).toBe('session')
+    expect(auth.find(r => r.id === 'auth.logout' && r.target)?.auth).toBe('session')
+    expect(auth.find(r => r.id === 'auth.login.begin' && r.target)?.auth).toBeUndefined()
   })
 })
 
@@ -292,12 +416,13 @@ describe('admin surface access', () => {
       user:  userIdentity,
     }))
 
-    const adminDenied = await authorizeConfigAccess(ref, new Request(observeUrl, {
+    // GETs with sameOrigin: 'non-GET' skip the Origin check; only admin role applies.
+    const adminDenied = authorizeRouteAccess(ref, new Request(observeUrl, {
       headers: { Cookie: 'session=admin' },
-    }), new URL(observeUrl), adminIdentity)
-    const userDenied = await authorizeConfigAccess(ref, new Request(observeUrl, {
+    }), new URL(observeUrl), adminIdentity, configPolicy)
+    const userDenied = authorizeRouteAccess(ref, new Request(observeUrl, {
       headers: { Cookie: 'session=user' },
-    }), new URL(observeUrl), userIdentity)
+    }), new URL(observeUrl), userIdentity, configPolicy)
 
     expect(adminDenied).toBeNull()
     expect(userDenied?.status).toBe(403)

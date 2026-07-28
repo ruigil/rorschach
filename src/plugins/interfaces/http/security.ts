@@ -1,5 +1,6 @@
 import type { ActorRef } from '../../../system/index.ts'
 import type { IdentityProviderMsg, Identity } from '../../../types/identity.ts'
+import type { RouteAuth, RouteSameOrigin } from '../../../types/routes.ts'
 
 const hasAdminRole = (roles: readonly string[]): boolean =>
   roles.includes('admin')
@@ -52,18 +53,40 @@ export const isSameOriginRequest = (req: Request, url: URL): boolean => {
   }
 }
 
-export const authorizeConfigAccess = async (
+export type RouteAuthPolicy = {
+  auth?: RouteAuth
+  sameOrigin?: RouteSameOrigin
+}
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+
+/** Returns a deny Response, or null if allowed. Path-agnostic route policy evaluation. */
+export const authorizeRouteAccess = (
   identityProviderRef: ActorRef<IdentityProviderMsg> | null,
   req: Request,
   url: URL,
   identity: Identity | null,
-  options?: { requireSameOrigin?: boolean },
-): Promise<Response | null> => {
-  if (options?.requireSameOrigin && !isSameOriginRequest(req, url)) {
+  policy: RouteAuthPolicy,
+): Response | null => {
+  const auth = policy.auth ?? 'public'
+  const sameOrigin = policy.sameOrigin ?? false
+
+  const needsOrigin =
+    sameOrigin === true ||
+    (sameOrigin === 'non-GET' && !SAFE_METHODS.has(req.method.toUpperCase()))
+
+  if (needsOrigin && !isSameOriginRequest(req, url)) {
     return new Response('Forbidden', { status: 403 })
   }
 
+  if (auth === 'public') return null
+
   if (!identity) return new Response('Unauthorized', { status: 401 })
-  if (!canAccessAdminSurface(identityProviderRef, identity.roles)) return new Response('Forbidden', { status: 403 })
+
+  if (auth === 'admin' && !canAccessAdminSurface(identityProviderRef, identity.roles)) {
+    return new Response('Forbidden', { status: 403 })
+  }
+
+  // auth === 'session' (and admin with identity that passed role check)
   return null
 }

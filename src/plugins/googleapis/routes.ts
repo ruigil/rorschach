@@ -1,8 +1,6 @@
-import { google } from 'googleapis'
-import type { RouteRegistration } from '../../types/routes.ts'
+import type { RouteRegistration, HttpRequestMsg } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
-import { ask } from '../../system/index.ts'
-import type { GoogleToken, GoogleOAuthRouteOpts, OAuthStateMsg } from './types.ts'
+import type { ActorRef } from '../../system/index.ts'
 
 // ─── Config Schema Sections ──────────────────────────────────────────────────
 
@@ -24,46 +22,33 @@ export const googleapisSchema: ConfigSchemaSection = {
 
 export const googleapisSchemas = [googleapisSchema]
 
-const SCOPES = [
-  'https://www.googleapis.com/auth/gmail.modify',
-  'https://www.googleapis.com/auth/calendar',
-  'https://www.googleapis.com/auth/drive',
-  'https://www.googleapis.com/auth/youtube.readonly',
-]
-
-const closeWindowHtml = (message: string): Response =>
-  new Response(
-    `<!DOCTYPE html><html><body><p>${message}</p>` +
-    `<script>window.close()</script></body></html>`,
-    { headers: { 'Content-Type': 'text/html' } },
-  )
-
-import type { ActorRef } from '../../system/index.ts'
-import type { HttpRequestMsg } from '../../types/routes.ts'
-
 export const buildGoogleOAuthRoutes = (oauthRouterRef: ActorRef<HttpRequestMsg>): RouteRegistration[] => [
   {
     id:     'googleapis.auth.start',
     method: 'GET',
     path:   '/googleapis/auth/start',
     target: oauthRouterRef,
+    auth:   'session',
   },
   {
     id:     'googleapis.auth.callback',
     method: 'GET',
     path:   '/googleapis/auth/callback',
     target: oauthRouterRef,
+    // public — OAuth redirect; state token binds the user
   },
   {
     id:     'googleapis.auth.status',
     method: 'GET',
     path:   '/googleapis/auth/status',
     target: oauthRouterRef,
+    auth:   'session',
   },
   {
     id:     'googleapis.auth.revoke',
     method: 'POST',
     path:   '/googleapis/auth/revoke',
     target: oauthRouterRef,
+    auth:   'session',
   },
 ]

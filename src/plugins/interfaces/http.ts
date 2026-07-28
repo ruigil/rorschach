@@ -24,12 +24,13 @@ import { ask } from '../../system/index.ts'
 import { PersistenceProviderTopic } from '../../types/persistence.ts'
 import type { PersistenceMsg, PResult } from '../../types/persistence.ts'
 
-import { canAccessAdminSurface, authorizeConfigAccess } from './http/security.ts'
-import { startServer, type WsData } from './http/server.ts'
+import { canAccessAdminSurface, authorizeRouteAccess } from './http/security.ts'
+import { startServer, type WsData, type ResolvedRoute } from './http/server.ts'
 import { SessionLifecycleTopic } from '../../types/session.ts'
+import type { RouteAuth, RouteSameOrigin } from '../../types/routes.ts'
 
 // Re-export helpers imported by other files (e.g. tests)
-export { canAccessAdminSurface, authorizeConfigAccess }
+export { canAccessAdminSurface, authorizeRouteAccess }
 
 // ─── Public directory (build output served by the HTTP handler) ───
 const PUBLIC_DIR = join(process.cwd(), 'src', 'frontend', 'static')
@@ -86,7 +87,14 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
   let identityProviderRef: ActorRef<IdentityProviderMsg> | null = null
   let persistenceRef:      ActorRef<PersistenceMsg>      | null = null
   type RouteMatch = NonNullable<RouteRegistration['match']>
-  type RouteRecord = { method: string; path: string; match: RouteMatch; target: ActorRef<HttpRequestMsg> }
+  type RouteRecord = {
+    method: string
+    path: string
+    match: RouteMatch
+    target: ActorRef<HttpRequestMsg>
+    auth?: RouteAuth
+    sameOrigin?: RouteSameOrigin
+  }
 
   const routes = new Map<string, RouteRecord>()
   const routeKey = (method: string, path: string, match: RouteMatch = 'exact') => `${method.toUpperCase()} ${match} ${path}`
@@ -108,10 +116,16 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
     }
   }
 
-  const resolveRegisteredRoute = (method: string, pathname: string): ActorRef<HttpRequestMsg> | undefined => {
+  const toResolved = (route: RouteRecord): ResolvedRoute => ({
+    target: route.target,
+    auth: route.auth,
+    sameOrigin: route.sameOrigin,
+  })
+
+  const resolveRegisteredRoute = (method: string, pathname: string): ResolvedRoute | undefined => {
     const upperMethod = method.toUpperCase()
     const exact = routes.get(routeKey(upperMethod, pathname, 'exact'))
-    if (exact) return exact.target
+    if (exact) return toResolved(exact)
 
     let best: RouteRecord | undefined
     for (const route of routes.values()) {
@@ -119,7 +133,7 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
       if (!pathname.startsWith(route.path)) continue
       if (!best || route.path.length > best.path.length) best = route
     }
-    return best?.target
+    return best ? toResolved(best) : undefined
   }
 
   return {
@@ -295,7 +309,16 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
         const method = reg.method.toUpperCase()
         const key = routeKey(method, reg.path, match)
         if (reg.target === null) routes.delete(key)
-        else routes.set(key, { method, path: reg.path, match, target: reg.target })
+        else {
+          routes.set(key, {
+            method,
+            path: reg.path,
+            match,
+            target: reg.target,
+            auth: reg.auth,
+            sameOrigin: reg.sameOrigin,
+          })
+        }
         return { state }
       },
 
@@ -369,7 +392,8 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           checkAdmin: (roles) => canAccessAdminSurface(identityProviderRef, roles),
           resolveIdentity: (ticket) => resolveIdentity(identityProviderRef, r => ({ type: 'resolveTicket', ticket, replyTo: r })),
           resolveCookieIdentity: (req) => resolveCookieIdentity(identityProviderRef, req),
-          authorizeConfigAccess: (req, url, identity, opts) => authorizeConfigAccess(identityProviderRef, req, url, identity, opts),
+          authorizeRoute: (req, url, identity, policy) =>
+            authorizeRouteAccess(identityProviderRef, req, url, identity, policy),
           resolveRegisteredRoute: (method, pathname) => resolveRegisteredRoute(method, pathname),
           onConnect: (client, ws) => {
             selfRef?.send({

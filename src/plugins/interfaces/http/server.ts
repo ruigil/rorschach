@@ -5,10 +5,16 @@ import type { MessageAttachment } from '../../../types/events.ts'
 import type { Identity } from '../../../types/identity.ts'
 import { ask } from '../../../system/index.ts'
 import type { ActorRef } from '../../../system/index.ts'
-import type { HttpRequestMsg, HttpResponseMsg } from '../../../types/routes.ts'
+import type { HttpRequestMsg, HttpResponseMsg, RouteAuth, RouteSameOrigin } from '../../../types/routes.ts'
 import type { PermissionContext } from '../../../system/permissions/types.ts'
 
 export type WsData = { clientId: string; userId: string; roles: string[]; timezone?: string; permission?: PermissionContext }
+
+export type ResolvedRoute = {
+  target: ActorRef<HttpRequestMsg>
+  auth?: RouteAuth
+  sameOrigin?: RouteSameOrigin
+}
 
 export type ServerOptions = {
   port: number
@@ -17,8 +23,8 @@ export type ServerOptions = {
   checkAdmin: (roles: readonly string[]) => boolean
   resolveIdentity: (ticket: string) => Promise<Identity | null>
   resolveCookieIdentity: (req: Request) => Promise<Identity | null>
-  authorizeConfigAccess: (req: Request, url: URL, identity: Identity | null, options?: { requireSameOrigin?: boolean }) => Promise<Response | null>
-  resolveRegisteredRoute: (method: string, pathname: string) => ActorRef<HttpRequestMsg> | undefined
+  authorizeRoute: (req: Request, url: URL, identity: Identity | null, policy: { auth?: RouteAuth; sameOrigin?: RouteSameOrigin }) => Response | null
+  resolveRegisteredRoute: (method: string, pathname: string) => ResolvedRoute | undefined
 
   // Connection and message callbacks
   onConnect: (client: WsData, ws: ServerWebSocket<WsData>) => void
@@ -36,7 +42,7 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
     MEDIA_DIR,
     resolveIdentity,
     resolveCookieIdentity,
-    authorizeConfigAccess,
+    authorizeRoute,
     resolveRegisteredRoute,
     onConnect,
     onDisconnect,
@@ -64,23 +70,17 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         return undefined as unknown as Response
       }
 
-      // 2. Authorization gate for configuration APIs — covers the exact
-      //    `/config` route and everything below it. (`/plugins*` routes no
-      //    longer exist; plugin management lives under `/config/plugins*`.)
-      const isConfig = url.pathname === '/config' || url.pathname.startsWith('/config/')
-      if (isConfig) {
+      // 2. Plugin-registered routes — auth policy comes from the registration,
+      //    not from path hardcoding in this gateway.
+      const resolved = resolveRegisteredRoute(req.method, url.pathname)
+      if (resolved) {
         const identity = await resolveCookieIdentity(req)
-        const denied = await authorizeConfigAccess(req, url, identity, {
-          requireSameOrigin: req.method !== 'GET',
+        const denied = authorizeRoute(req, url, identity, {
+          auth: resolved.auth,
+          sameOrigin: resolved.sameOrigin,
         })
         if (denied) return denied
-      }
 
-      // 3. Plugin-registered routes (auth, config, etc.) — dispatched to their target actors.
-      const targetActor = resolveRegisteredRoute(req.method, url.pathname)
-      if (targetActor) {
-        const identity = await resolveCookieIdentity(req)
-        
         const headers: Record<string, string> = {}
         req.headers.forEach((value, key) => {
           headers[key] = value
@@ -93,7 +93,7 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
 
         try {
           const resMsg = await ask<HttpRequestMsg, HttpResponseMsg>(
-            targetActor,
+            resolved.target,
             replyTo => ({
               type: 'http.request',
               request: {
@@ -120,13 +120,13 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         }
       }
 
-      // 4. Current user identity
+      // 3. Current user identity
       if (req.method === 'GET' && url.pathname === '/me') {
         const identity = await resolveCookieIdentity(req)
         return new Response(JSON.stringify({ userId: identity?.userId ?? null, roles: identity?.roles ?? [] }), { headers: { 'Content-Type': 'application/json' } })
       }
 
-      // 5. Stream Upload Endpoint
+      // 4. Stream Upload Endpoint
       if (req.method === 'POST' && url.pathname.startsWith('/upload/media/')) {
         const identity = await resolveCookieIdentity(req)
         if (!identity) {
@@ -153,7 +153,7 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         }
       }
 
-      // 6. Serving media from Object Store or static files
+      // 5. Serving media from Object Store or static files
       const isMedia = url.pathname.startsWith('/inbound/') || url.pathname.startsWith('/generated/')
       if (isMedia) {
         const key = url.pathname.slice(1) // e.g. "inbound/rorschach-XYZ..."
@@ -166,7 +166,7 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         return new Response('Not Found', { status: 404 })
       }
 
-      // 7. Static file serving (excluding media files)
+      // 6. Static file serving (excluding media files)
       const filePath = url.pathname === '/'
         ? join(PUBLIC_DIR, 'index.html')
         : safeJoinUrlPath(PUBLIC_DIR, url.pathname)

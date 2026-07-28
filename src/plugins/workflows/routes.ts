@@ -1,7 +1,6 @@
 import type { ActorRef } from '../../system/index.ts'
-import type { RouteRegistration } from '../../types/routes.ts'
+import type { RouteRegistration, HttpRequestMsg } from '../../types/routes.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
-import type { Identity } from '../../types/identity.ts'
 
 export const workflowsStorageSchema: ConfigSchemaSection = {
   id: 'workflows.storage',
@@ -44,27 +43,6 @@ export const workflowsStorageSchema: ConfigSchemaSection = {
 
 export const workflowsSchemas = [workflowsStorageSchema]
 
-const json = (body: unknown, status = 200): Response =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
-
-const requireSession = (identity: Identity | null): Identity | Response =>
-  identity ?? json({ error: 'Unauthorized' }, 401)
-
-const runIdFromPath = (pathname: string, suffix = ''): string | null => {
-  if (!pathname.startsWith('/workflow-runs/')) return null
-  if (suffix && !pathname.endsWith(suffix)) return null
-  const end = suffix ? pathname.length - suffix.length : pathname.length
-  const raw = pathname.slice('/workflow-runs/'.length, end)
-  if (!raw || raw.includes('/')) return null
-  try {
-    return decodeURIComponent(raw)
-  } catch {
-    return null
-  }
-}
-
-import type { HttpRequestMsg } from '../../types/routes.ts'
-
 export const buildWorkflowsRoutes = (
   workflowRunnerRef: ActorRef<HttpRequestMsg> | null,
 ): RouteRegistration[] => {
@@ -76,6 +54,7 @@ export const buildWorkflowsRoutes = (
       path: '/artifact',
       match: 'exact',
       target: workflowRunnerRef,
+      auth: 'session',
     },
   ]
 }

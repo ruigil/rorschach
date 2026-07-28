@@ -62,8 +62,9 @@ const endRequest = (
 // Pure gateway for the unified config plugin: translates HTTP requests and
 // tool invocations into SystemConfigUpdateTopic commands (handled by
 // wireConfigManager in the composition root) and serves the aggregated config
-// schema registry. Authorization is enforced upstream in the HTTP gateway
-// (server.ts); the tool path is gated by the tool-permissions system.
+// schema registry. Authorization is declared on route registration
+// (auth: 'admin', sameOrigin: 'non-GET') and enforced by the HTTP gateway;
+// the tool path is gated by the tool-permissions system.
 //
 export const ConfigActor = (): ActorDef<ConfigMsg, ConfigState> => {
   return {
