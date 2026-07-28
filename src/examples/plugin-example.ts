@@ -97,7 +97,7 @@ await Bun.sleep(2_000)
 console.log('\n── Loading greeter plugin from file ──')
 const greeterPath = import.meta.dir + '/plugins/greeter.plugin.ts'
 const { default: createGreeterPlugin } = await import(greeterPath)
-const result = await system.use(createGreeterPlugin({ name: 'Rorschach', intervalMs: 1_500 }))
+const result = await system.use(createGreeterPlugin({ name: 'Rorschach', intervalMs: 1_500 }), { modulePath: greeterPath })
 console.log('Load result:', result)
 console.log('Active plugins:', system.listPlugins().map(p => `${p.id}@${p.version}`))
 
@@ -122,7 +122,7 @@ console.log('Reload result:', reloadResult)
 await Bun.sleep(2_000)
 
 console.log('\n── Hot reloading greeter plugin from disk ──')
-const hotResult = await system.hotReloadPlugin('greeter', greeterPath)
+const hotResult = await system.hotReloadPlugin('greeter')
 console.log('Hot reload result:', hotResult)
 
 // ─── Final state ──────────────────────────────────────────────────────────────

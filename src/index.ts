@@ -1,6 +1,6 @@
 import { AgentSystem, SystemLifecycleTopic, type LifecycleEvent } from './system/index.ts'
-import { type ConfigUpdateRequest, ConfigUpdateRequestTopic } from './plugins/interfaces/types.ts'
-import { loadConfig, saveConfig } from './config.ts'
+import { loadConfig } from './config.ts'
+import { wireConfigManager } from './config-set.ts'
 
 // ─── Load config and plugins from config.json ───
 
@@ -10,12 +10,8 @@ const { plugins, config, configPath } = await loadConfig()
 
 const system = await AgentSystem({ plugins, config })
 
-// ─── Apply config changes from the web UI ───
+wireConfigManager(system, configPath)
 
-system.subscribe(ConfigUpdateRequestTopic, async ({ pluginId, patch }: ConfigUpdateRequest) => {
-  system.updateConfig({ [pluginId]: patch })
-  await saveConfig(configPath, { [pluginId]: patch })
-})
 
 // ─── Log actor lifecycle events to console ───
 

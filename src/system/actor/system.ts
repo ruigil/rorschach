@@ -2,17 +2,23 @@ import { createActor } from './actor.ts'
 import { createEventStream } from './services.ts'
 import { createMetricsRegistry } from './metrics.ts'
 import { deepMerge } from './config.ts'
+import { onMessage } from './match.ts'
+import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
 import {
   LogTopic,
   SystemLifecycleTopic,
+  type ActorContext,
   type ActorDef,
   type ActorIdentity,
   type ActorRef,
   type ActorServices,
   type EventTopic,
+  type LifecycleEvent,
   type LoadedPlugin,
+  type LoadOptions,
   type LoadResult,
   type PluginDef,
+  type PluginHealthMsg,
   type PluginSystem,
   type UnloadResult,
 } from './types.ts'
@@ -32,7 +38,7 @@ export type PluginSystemOptions = {
    * A startup plugin failure never prevents boot: the plugin is marked
    * 'failed', a warning is logged, and startup continues.
    */
-  plugins?: PluginDef<any, any, any>[]
+  plugins?: (PluginDef<any, any, any> | { def: PluginDef<any, any, any>; modulePath: string })[]
 
   /**
    * Initial configuration tree. Values are keyed by plugin id (or the plugin's
@@ -70,9 +76,28 @@ export const AgentSystem = async (
     metricsRegistry,
   }
 
-  const rootDef: ActorDef<never, null> = {
-    handler: (state) => ({ state }),
+  // ─── Plugin management state ───
+  const plugins = new Map<string, LoadedPlugin>()
+
+  const rootDef: ActorDef<PluginHealthMsg | any, null> = {
     initialState: null,
+
+    handler: onMessage<any, null>({
+      'plugin.health.changed': (state, msg: PluginHealthMsg) => {
+        const plugin = plugins.get(msg.id)
+        if (plugin) {
+          const nextPlugin = { ...plugin, health: msg.health }
+          plugins.set(msg.id, nextPlugin)
+
+          services.eventStream.publish(OutboundAdminBroadcastTopic, {
+            type: 'plugin.health.changed',
+            key: msg.id,
+            payload: { id: msg.id, health: msg.health },
+          })
+        }
+        return { state }
+      },
+    }),
 
     lifecycle: (state, event) => {
       if (event.type === 'terminated') {
@@ -88,10 +113,7 @@ export const AgentSystem = async (
 
   const { handle: rootHandle, context: ctx } = createActor('system', rootDef, services)
 
-  // ─── Plugin management state ───
-  const plugins = new Map<string, LoadedPlugin>()
-
-  const use = (def: PluginDef<any, any, any>): Promise<LoadResult> => {
+  const use = (def: PluginDef<any, any, any>, opts?: LoadOptions): Promise<LoadResult> => {
     if (shuttingDown) return Promise.resolve({ ok: false, error: 'system is shutting down' })
 
     if (plugins.has(def.id)) return Promise.resolve({ ok: false, error: `plugin '${def.id}' already loaded` })
@@ -112,17 +134,28 @@ export const AgentSystem = async (
       def,
       status: 'loading',
       loadedAt: Date.now(),
+      modulePath: opts?.modulePath,
     })
 
     return new Promise<LoadResult>((resolve) => {
       const orig = def.lifecycle
+      const invokeOrig = async (state: any, event: LifecycleEvent, actorCtx: ActorContext<any>) => {
+        if (typeof orig === 'function') return orig(state, event, actorCtx)
+        if (orig && typeof (orig as any)[event.type] === 'function') {
+          return (orig as any)[event.type](state, actorCtx)
+        }
+        return { state }
+      }
+
       const wrappedDef: ActorDef<any, unknown> = {
         ...def,
         lifecycle: async (state, event, actorCtx) => {
           if (event.type === 'start') {
             try {
-              const result = await orig?.(state, event, actorCtx) ?? { state }
-              plugins.set(def.id, { ...plugins.get(def.id)!, status: 'active' })
+              const result = await invokeOrig(state, event, actorCtx)
+              const currentPlugin = plugins.get(def.id)!
+              const health = currentPlugin.health ?? { status: 'ok', updatedAt: Date.now() }
+              plugins.set(def.id, { ...currentPlugin, status: 'active', health })
               resolve({ ok: true, id: def.id })
               return result
             } catch (e) {
@@ -131,7 +164,7 @@ export const AgentSystem = async (
               throw e
             }
           }
-          return orig?.(state, event, actorCtx) ?? { state }
+          return invokeOrig(state, event, actorCtx)
         },
       }
       const ref = ctx.spawn(`${def.id}`, wrappedDef, { config: configSlice })
@@ -160,48 +193,72 @@ export const AgentSystem = async (
     }
   }
 
+  const getConfigSlice = (pluginId?: string): unknown => {
+    const slice = pluginId === undefined ? globalConfig : globalConfig[pluginId]
+    if (slice === undefined) return {}
+    return structuredClone(slice)
+  }
+
+  const pendingUnloads = new Map<string, Promise<UnloadResult>>()
+
   const unloadPlugin = async (id: string): Promise<UnloadResult> => {
+    const existing = pendingUnloads.get(id)
+    if (existing) return existing
+
     const plugin = plugins.get(id)
     if (!plugin) return { ok: false, error: `plugin '${id}' not found` }
 
+    const rootName = `system/${id}`
+
+    if (plugin.status !== 'active' && plugin.status !== 'failed' && plugin.status !== 'deactivating') {
+      return { ok: false, error: `plugin '${id}' is not active (status: ${plugin.status})` }
+    }
+
+    // Fast path for failed plugins: their actor already ran its shutdown
+    // sequence when start() threw (the 'terminated' event fired then), so
+    // waiting for a fresh 'terminated' after stop() would hang forever.
     if (plugin.status === 'failed') {
-      const rootName = `system/${id}`
       ctx.stop({ name: rootName })
       plugins.delete(id)
       return { ok: true }
     }
 
-    if (plugin.status !== 'active')
-      return { ok: false, error: `plugin '${id}' is not active (status: ${plugin.status})` }
-
-    return new Promise<UnloadResult>((resolve) => {
-      const rootName = `system/${id}`
+    const promise = new Promise<UnloadResult>((resolve) => {
       const watcherName = `$unload-${id}`
       services.eventStream.subscribe(watcherName, SystemLifecycleTopic, (event) => {
         if (event.type === 'terminated' && event.ref.name === rootName) {
           services.eventStream.unsubscribe(watcherName, SystemLifecycleTopic)
           plugins.delete(id)
+          pendingUnloads.delete(id)
           resolve({ ok: true })
         }
       })
       plugins.set(id, { ...plugin, status: 'deactivating' })
       ctx.stop({ name: rootName })
     })
+
+    pendingUnloads.set(id, promise)
+    return promise
   }
 
   const reloadPlugin = async (id: string): Promise<LoadResult> => {
     const plugin = plugins.get(id)
     if (!plugin) return { ok: false, error: `plugin '${id}' not found` }
+    const modulePath = plugin.modulePath
     const result = await unloadPlugin(id)
     if (!result.ok) return result
-    return use(plugin.def)
+    return use(plugin.def, { modulePath })
   }
 
-  const hotReloadPlugin = async (id: string, path: string): Promise<LoadResult> => {
+  const hotReloadPlugin = async (id: string): Promise<LoadResult> => {
     const oldPlugin = plugins.get(id)
+    if (!oldPlugin) return { ok: false, error: `plugin '${id}' not found` }
+    const modulePath = oldPlugin.modulePath
+    if (!modulePath) return { ok: false, error: `modulePath for plugin '${id}' not found` }
+
     const result = await unloadPlugin(id)
     if (!result.ok) return result
-    const { default: imported } = await import(`${path}?t=${Date.now()}`)
+    const { default: imported } = await import(`${modulePath}?t=${Date.now()}`)
     
     let def = imported
     if (typeof imported === 'function') {
@@ -209,15 +266,17 @@ export const AgentSystem = async (
       const configSlice = globalConfig[configKey]
       def = imported(configSlice)
     }
-    return use(def)
+    return use(def, { modulePath })
   }
 
   // ─── Load initial plugins ───
   // A failed plugin never prevents boot: it stays in the registry with
   // status 'failed' (visible via listPlugins()/getPluginStatus()), a warning
   // is logged to the console and the event stream, and startup continues.
-  for (const def of initialPlugins ?? []) {
-    const result = await use(def)
+  for (const item of initialPlugins ?? []) {
+    const def = 'def' in item ? item.def : item
+    const modulePath = 'modulePath' in item ? item.modulePath : undefined
+    const result = await use(def, { modulePath })
     if (!result.ok) {
       const message = `Startup plugin '${def.id}' failed: ${result.error}`
       console.warn(`[system] ${message}`)
@@ -272,6 +331,7 @@ export const AgentSystem = async (
   return {
     spawn, stop, shutdown, publish, publishRetained, deleteRetained, subscribe,
     updateConfig,
+    getConfigSlice,
     use,
     unloadPlugin,
     reloadPlugin,

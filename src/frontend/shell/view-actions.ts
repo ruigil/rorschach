@@ -113,6 +113,39 @@ export const openView = (id: string) => {
   persistViewState(id, viewState)
 }
 
+/**
+ * Open a view, tolerating late surface registration: if the view is not
+ * registered yet (e.g. a `#/config` deep-link on a cold load, before the
+ * plugin surface arrives over WS), wait for it to appear and open it then.
+ * Returns a cancel function for the pending wait (no-op if opened immediately).
+ */
+export const openViewWhenReady = (id: string): (() => void) => {
+  const ns = shell()
+  const isRegistered = (): boolean => {
+    const views = ns.get('views')
+    return Boolean(views && views[id])
+  }
+
+  if (isRegistered()) {
+    openView(id)
+    return () => {}
+  }
+
+  let cancelled = false
+  const unsub = ns.subscribe('views', () => {
+    if (cancelled || !isRegistered()) return
+    // Unsubscribe BEFORE openView: openView sets `views`, which would
+    // re-fire this listener synchronously and recurse.
+    cancelled = true
+    unsub()
+    openView(id)
+  })
+  return () => {
+    cancelled = true
+    unsub()
+  }
+}
+
 export const closeView = (id: string, persist = true) => {
   const views = { ...shell().get('views') }
   const viewState = views[id]

@@ -1,5 +1,6 @@
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import type { TraceSpan } from '../../types/events.ts'
+import type { PluginHealthReport } from '../../types/health.ts'
 export type { TraceSpan }
 
 
@@ -282,6 +283,7 @@ export type LifecycleResult<S> = { state: S }
 // ─── Actor Context (available to handlers) ───
 export type ActorContext<M> = {
   readonly self: ActorRef<M>
+  readonly parent?: ActorRef<any>
   readonly timers: Timers<M>
   /** Returns the headers attached to the message currently being processed. Empty object when not set. */
   readonly messageHeaders: () => MessageHeaders
@@ -589,13 +591,22 @@ export type LoadedPlugin = {
   readonly status: 'loading' | 'active' | 'deactivating' | 'failed'
   readonly error?: unknown
   readonly loadedAt: number
+  readonly modulePath?: string
   /** Live ref to the plugin actor. Used by updateConfig() to deliver config-change messages. */
   readonly ref?: ActorRef<any>
+  readonly health?: PluginHealthReport
+}
+
+export type PluginHealthMsg = {
+  type: 'plugin.health.changed'
+  id: string
+  health: PluginHealthReport
 }
 
 // ─── Load / Unload Results ───
 export type LoadResult = { ok: true; id: string } | { ok: false; error: string }
 export type UnloadResult = { ok: true } | { ok: false; error: string }
+export type LoadOptions = { readonly modulePath?: string }
 
 // ─── Plugin System (ActorSystem merged with plugin management) ───
 export type PluginSystem = {
@@ -621,11 +632,18 @@ export type PluginSystem = {
    */
   readonly updateConfig: (patch: Record<string, unknown>) => void
 
+  /**
+   * Returns a deep copy of the live config tree — env-interpolated at boot and
+   * merged with plugin defaults — or a single plugin's slice when `pluginId`
+   * is given. Unknown ids yield `{}`.
+   */
+  readonly getConfigSlice: (pluginId?: string) => unknown
+
   // ─── Plugin management ───
-  readonly use: (def: PluginDef<any, any, any>) => Promise<LoadResult>
+  readonly use: (def: PluginDef<any, any, any>, opts?: LoadOptions) => Promise<LoadResult>
   readonly unloadPlugin: (id: string) => Promise<UnloadResult>
   readonly reloadPlugin: (id: string) => Promise<LoadResult>
-  readonly hotReloadPlugin: (id: string, path: string) => Promise<LoadResult>
+  readonly hotReloadPlugin: (id: string) => Promise<LoadResult>
   readonly listPlugins: () => LoadedPlugin[]
   readonly getPluginStatus: (id: string) => LoadedPlugin | undefined
 }

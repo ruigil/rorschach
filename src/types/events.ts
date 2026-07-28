@@ -127,3 +127,12 @@ export type TraceSpan = {
   durationMs?: number    // elapsed — only set on 'done' and 'error'
   data?: Record<string, unknown>
 }
+
+export {
+  ConfigSchemaTopic,
+  type ConfigSchemaEvent,
+  SystemConfigUpdateTopic,
+  type SystemConfigUpdateRequest,
+  type SystemConfigUpdateResult,
+} from './config.ts'
+

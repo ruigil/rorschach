@@ -2,37 +2,22 @@ import { describe, test, expect } from 'bun:test'
 import {
   AgentSystem,
   defineConfig,
-  buildConfigRoute,
   publishConfigSurface,
   deleteConfigSurface,
   deepMerge,
 } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
-import { type ConfigSchemaSection } from '../types/config.ts'
-import { RouteRegistrationTopic, type RouteRegistration } from '../types/routes.ts'
-import { OutboundAdminBroadcastTopic } from '../types/events.ts'
+import { type ConfigSchemaSection, ConfigSchemaTopic } from '../types/config.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
 describe('plugin config surface helpers', () => {
-  test('buildConfigRoute derives the standard route id and path', async () => {
-    const descriptor = defineConfig('sample', { enabled: true })
-    const mockRef = { name: 'mock-actor', send: () => {}, isAlive: () => true } as unknown as ActorRef<any>
-    const [route] = buildConfigRoute(descriptor, mockRef)
-
-    expect(route?.id).toBe('config.sample')
-    expect(route?.method).toBe('GET')
-    expect(route?.path).toBe('/config/sample')
-    expect(route?.target).toBe(mockRef)
-  })
-
-  test('publishConfigSurface and deleteConfigSurface publish retained schemas and route tombstones', async () => {
+  test('publishConfigSurface and deleteConfigSurface publish retained schemas', async () => {
     const schema: ConfigSchemaSection = {
       id: 'sample.config',
       title: 'Sample',
       tab: 'sample',
       configKey: '',
-      routeId: 'config.sample',
       schema: {
         type: 'object',
         properties: {
@@ -62,25 +47,20 @@ describe('plugin config surface helpers', () => {
     await tick()
 
     const schemas: ConfigSchemaSection[] = []
-    const routes: RouteRegistration[] = []
-    system.subscribe(OutboundAdminBroadcastTopic, (event) => {
+    system.subscribe(ConfigSchemaTopic, (event) => {
       if (event.type === 'config.schema') {
         const parsed = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload
         schemas.push(parsed.section)
       }
     })
-    system.subscribe(RouteRegistrationTopic, (event) => routes.push(event))
     await tick()
 
     expect(schemas.at(-1)).toEqual(schema)
-    expect(routes.at(-1)).toMatchObject({ id: 'config.sample', method: 'GET', path: '/config/sample' })
-    expect(routes.at(-1)!.target).toBe(ref as any)
 
     system.stop(ref)
     await tick()
 
     expect(schemas.at(-1)).toEqual({ ...schema, schema: null })
-    expect(routes.at(-1)).toMatchObject({ id: 'config.sample', method: 'GET', path: '/config/sample', target: null })
 
     await system.shutdown()
   })

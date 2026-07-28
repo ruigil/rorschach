@@ -64,6 +64,37 @@ describe('Plugin loading system tests', () => {
     await system.shutdown()
   })
 
+  test('unloading a failed plugin after its terminated event already fired resolves immediately', async () => {
+    const system = await AgentSystem()
+
+    const plugin: PluginDef<any, any> = {
+      id: 'late-failing-plugin',
+      version: '1.0.0',
+      initialState: null,
+      lifecycle: onLifecycle({
+        start() {
+          throw new Error('intentional startup failure')
+        },
+      }),
+      handler: (state) => ({ state }),
+    }
+
+    const loadResult = await system.use(plugin)
+    expect(loadResult.ok).toBe(false)
+    expect(system.getPluginStatus('late-failing-plugin')?.status).toBe('failed')
+
+    // Let the 'terminated' lifecycle event fully propagate. Waiting for a
+    // FRESH terminated event after stop() here would hang forever — the
+    // failed actor already ran its shutdown sequence.
+    await tick(100)
+
+    const unloadResult = await system.unloadPlugin('late-failing-plugin')
+    expect(unloadResult.ok).toBe(true)
+    expect(system.getPluginStatus('late-failing-plugin')).toBeUndefined()
+
+    await system.shutdown()
+  })
+
   test('deepMerge correctly handles null overrides', async () => {
     const system = await AgentSystem({
       config: {
@@ -123,14 +154,14 @@ describe('Plugin loading system tests', () => {
       handler: (state) => ({ state }),
     })
 
+    const greeterPath = import.meta.dir + '/../examples/plugins/greeter.plugin.ts'
     const initialPlugin = createMockPlugin({ name: 'initial-setup' })
-    const loadResult = await system.use(initialPlugin)
+    const loadResult = await system.use(initialPlugin, { modulePath: greeterPath })
     expect(loadResult.ok).toBe(true)
 
     // Create a temporary mock file or simulate the module import
     // Since we import dynamic file in hotReloadPlugin, let's use the actual file path of greeter plugin!
-    const greeterPath = import.meta.dir + '/../examples/plugins/greeter.plugin.ts'
-    const hotResult = await system.hotReloadPlugin('factory-plugin', greeterPath)
+    const hotResult = await system.hotReloadPlugin('factory-plugin')
     
     // Wait, since we hot reloaded from factory-plugin to greeter plugin (which is another factory plugin)
     // The hotReloadPlugin should successfully load greeter plugin under factory-plugin id or greeter id?

@@ -69,4 +69,3 @@ export class RConfigGoogleAccount extends RorschachBase {
       </div>`;
   }
 }
-

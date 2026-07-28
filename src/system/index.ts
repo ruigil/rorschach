@@ -9,7 +9,6 @@ export { resolvePersistence, persistencePluginAdapter  } from './persistence.ts'
 // ─── Config utilities ───
 export {
   defineConfig,
-  buildConfigRoute,
   publishConfigSurface,
   deleteConfigSurface,
   deepMerge,
@@ -74,5 +73,13 @@ export type {
   MetricsEvent,
   PluginDef,
   PluginSystem,
+  LoadedPlugin,
+  PluginHealthMsg,
 } from './actor/types.ts'
+
+export type {
+  PluginHealthStatus,
+  PluginHealthReport,
+  PluginHealthUpdateMsg,
+} from '../types/health.ts'
 

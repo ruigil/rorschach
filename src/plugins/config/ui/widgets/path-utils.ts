@@ -1,9 +1,4 @@
-// Shared helpers for resolving nested config-key paths.
-//
-// Config schemas use dotted paths (e.g. "memory.graph") to address nested
-// objects. These helpers read, write, and resolve values at those paths
-// within a plugin's value tree, replacing the duplicated path-string logic
-// that was inlined in the original r-config-form.ts.
+// Shared helpers for resolving nested config-key paths within the config plugin.
 
 export type ConfigValues = Record<string, any>
 

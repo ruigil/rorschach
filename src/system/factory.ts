@@ -6,7 +6,8 @@ import { RouteRegistrationTopic, type RouteRegistration } from '../types/routes.
 import { type UiSurfaceRegistration } from '../types/ui-surface.ts';
 import { AgentRegistrationTopic, type AgentDescriptor } from '../types/agents.ts';
 import { ToolRegistrationTopic, type ToolSchema } from '../types/tools.ts';
-import { OutboundBroadcastTopic } from '../types/events.ts';
+import { OutboundBroadcastTopic, OutboundAdminBroadcastTopic } from '../types/events.ts';
+import type { PluginHealthReport, PluginHealthUpdateMsg } from '../types/health.ts';
 
 /**
  * Declaration for a sub-actor slot managed by the factory.
@@ -73,6 +74,7 @@ type PluginFactoryState = {
   activeUiSurface: UiSurfaceRegistration | null;
   activeAgents: string[];
   activeTools: string[];
+  health: PluginHealthReport;
 };
 
 /**
@@ -174,6 +176,7 @@ export const createPluginFactory = <
       activeUiSurface: null,
       activeAgents: [],
       activeTools: [],
+      health: { status: 'ok', updatedAt: Date.now() },
     }),
 
     maskState: (state: PluginFactoryState) => {
@@ -298,6 +301,17 @@ export const createPluginFactory = <
 
         ctx.log.info(`${blueprint.id} plugin activated via factory`);
 
+        const missingSlots = Object.keys(activeSlots).filter(k => !activeSlots[k]?.ref);
+        const health: PluginHealthReport = missingSlots.length > 0
+          ? { status: 'degraded', detail: `${missingSlots.join(', ')} slot(s) inactive`, updatedAt: Date.now() }
+          : { status: 'ok', updatedAt: Date.now() };
+
+        ctx.parent?.send({
+          type: 'plugin.health.changed',
+          id: blueprint.id,
+          health,
+        });
+
         return {
           state: {
             config: initialConfig,
@@ -307,6 +321,7 @@ export const createPluginFactory = <
             activeUiSurface,
             activeAgents,
             activeTools,
+            health,
           },
         };
       },
@@ -372,26 +387,25 @@ export const createPluginFactory = <
     }),
 
     handler: onMessage<any, PluginFactoryState>({
-      'http.request': (state, message, ctx) => {
-        const { request, replyTo } = message;
-        const url = new URL(request.url, 'http://localhost');
-        const path = url.pathname;
-        if (request.method === 'GET' && path === `/config/${blueprint.id}`) {
-          replyTo.send({
-            type: 'http.response',
-            response: {
-              status: 200,
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(state.config ?? {}),
-            },
-          });
-        } else {
-          replyTo.send({
-            type: 'http.response',
-            response: { status: 404, headers: {}, body: 'Not Found' }
-          });
-        }
-        return { state };
+      healthStatus: (state, msg: PluginHealthUpdateMsg, ctx) => {
+        const nextHealth: PluginHealthReport = {
+          status: msg.status,
+          detail: msg.detail,
+          updatedAt: Date.now(),
+        };
+
+        ctx.parent?.send({
+          type: 'plugin.health.changed',
+          id: blueprint.id,
+          health: nextHealth,
+        });
+
+        return {
+          state: {
+            ...state,
+            health: nextHealth,
+          },
+        };
       },
 
       config: (state, msg, ctx) => {
@@ -613,6 +627,19 @@ export const createPluginFactory = <
           });
         }
 
+        const missingSlots = Object.keys(activeSlots).filter(k => !activeSlots[k]?.ref);
+        const health: PluginHealthReport = missingSlots.length > 0
+          ? { status: 'degraded', detail: `${missingSlots.join(', ')} slot(s) inactive`, updatedAt: Date.now() }
+          : { status: 'ok', updatedAt: Date.now() };
+
+        if (state.health.status !== health.status || state.health.detail !== health.detail) {
+          ctx.parent?.send({
+            type: 'plugin.health.changed',
+            id: blueprint.id,
+            health,
+          });
+        }
+
         return {
           state: {
             config: newConfig,
@@ -622,6 +649,7 @@ export const createPluginFactory = <
             activeUiSurface: nextUiSurface,
             activeAgents,
             activeTools,
+            health,
           },
         };
       },

@@ -35,8 +35,8 @@ export class RConfigVoiceSelect extends RorschachBase {
     const selectedTtsModel = target.ttsModel || target.model || '';
 
     let modelVoices: string[] = [];
-    if (selectedTtsModel) {
-      const entry = this.models.find(m => m.startsWith(selectedTtsModel + '|'));
+    if (selectedTtsModel && Array.isArray(this.models)) {
+      const entry = this.models.find(m => typeof m === 'string' && m.startsWith(selectedTtsModel + '|'));
       if (entry) {
         const parts = entry.split('|');
         if (parts[2]) modelVoices = parts[2].split(',').filter(Boolean);

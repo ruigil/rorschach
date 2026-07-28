@@ -13,6 +13,7 @@ import { dispatchFrame } from './dispatcher.js';
 import { logout, switchMode } from './actions.js';
 import {
   openView,
+  openViewWhenReady,
   closeView,
   setActiveWorkspaceTab,
   reorderWorkspaceTabs,
@@ -45,29 +46,38 @@ export class RShell extends RorschachBase {
   @state() private _dropTargetId: string | null = null;
   @state() private _dropPlace: 'before' | 'after' = 'before';
   private _didDrag = false;
+  private _resizeListener = () => this._handleTabsScroll();
 
   override createRenderRoot() {
     return this; // Light DOM to integrate globally
   }
 
+  private _cancelPendingHashOpen: (() => void) | null = null;
+
+  /** Open the view for a URL hash, waiting for late surface registration
+   *  (cold-load deep-links race against surfaces arriving over WS). Only one
+   *  pending hash wait is kept at a time. */
+  private _openHashView(id: string) {
+    this._cancelPendingHashOpen?.();
+    this._cancelPendingHashOpen = openViewWhenReady(id);
+  }
+
   override connectedCallback() {
     super.connectedCallback();
     this._bootstrap();
+    window.addEventListener('resize', this._resizeListener);
 
     // 1. Initial hydration: Sync URL hash to store state on load
     const initialHash = window.location.hash.replace(/^#\/?/, '');
     if (initialHash) {
-      const availableViews = this._views.value;
-      if (initialHash === 'config' || (availableViews && availableViews[initialHash])) {
-        setActiveWorkspaceTab(initialHash);
-      }
+      this._openHashView(initialHash);
     }
 
     // 2. React to Browser Back/Forward buttons (History navigation)
     window.addEventListener('hashchange', () => {
       const currentHash = window.location.hash.replace(/^#\/?/, '');
       if (currentHash && currentHash !== this._activeWorkspaceTab.value) {
-        setActiveWorkspaceTab(currentHash);
+        this._openHashView(currentHash);
       }
     });
 
@@ -88,6 +98,13 @@ export class RShell extends RorschachBase {
       if (action === 'openView') openView(id);
       else if (action === 'closeView') closeView(id);
     });
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener('resize', this._resizeListener);
+    this._cancelPendingHashOpen?.();
+    this._cancelPendingHashOpen = null;
   }
 
   private _switchModeForTab(tabId: string | undefined) {
@@ -231,6 +248,36 @@ export class RShell extends RorschachBase {
     setActiveWorkspaceTab(id);
   }
 
+  private _handleTabsWheel(e: WheelEvent) {
+    const bar = this.querySelector('.workspace-tabs-bar');
+    if (!bar) return;
+    if (e.deltaY !== 0) {
+      e.preventDefault();
+      bar.scrollLeft += e.deltaY;
+    }
+  }
+
+  private _handleTabsScroll() {
+    const bar = this.querySelector('.workspace-tabs-bar') as HTMLElement;
+    const indicator = this.querySelector('.tabs-scroll-indicator') as HTMLElement;
+    if (!bar || !indicator) return;
+
+    const scrollWidth = bar.scrollWidth;
+    const clientWidth = bar.clientWidth;
+    const scrollLeft = bar.scrollLeft;
+
+    if (scrollWidth <= clientWidth) {
+      indicator.style.width = '0px';
+      return;
+    }
+
+    const width = (clientWidth / scrollWidth) * clientWidth;
+    const left = (scrollLeft / scrollWidth) * clientWidth;
+
+    indicator.style.width = `${width}px`;
+    indicator.style.transform = `translateX(${left}px)`;
+  }
+
   private _handleSidebarResize(e: PointerEvent) {
     e.preventDefault();
     const startX = e.clientX;
@@ -265,6 +312,14 @@ export class RShell extends RorschachBase {
     }
     this._prevWaiting = isWaiting;
 
+    const activeTabEl = this.querySelector('.workspace-tab.active');
+    if (activeTabEl) {
+      activeTabEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    }
+
+    requestAnimationFrame(() => {
+      this._handleTabsScroll();
+    });
   }
 
   override render() {
@@ -330,39 +385,42 @@ export class RShell extends RorschachBase {
           <r-corona aria-hidden="true"></r-corona>
           ${this._isAnyWorkspaceOpen() ? html`
             <div class="workspace-container flex-grow-1 flex-column min-height-0">
-              <div class="workspace-tabs-bar">
-                <div class="tabs-list">
-                  ${this._getActiveWorkspaces().map(id => {
-                    const cfg = pluginHost().getViewConfig(id);
-                    const isDragging = this._draggingTabId === id;
-                    const isDropTarget = this._dropTargetId === id && this._draggingTabId && this._draggingTabId !== id;
-                    const dropClass = isDropTarget
-                      ? (this._dropPlace === 'before' ? 'drop-before' : 'drop-after')
-                      : '';
-                    return html`
-                      <button
-                        class="workspace-tab ${this._activeWorkspaceTab.value === id ? 'active' : ''} ${isDragging ? 'dragging' : ''} ${dropClass}"
-                        draggable="true"
-                        aria-grabbed=${isDragging ? 'true' : 'false'}
-                        @click=${() => this._onTabClick(id)}
-                        @dragstart=${(e: DragEvent) => this._onTabDragStart(e, id)}
-                        @dragover=${(e: DragEvent) => this._onTabDragOver(e, id)}
-                        @dragleave=${(e: DragEvent) => this._onTabDragLeave(e, id)}
-                        @drop=${(e: DragEvent) => this._onTabDrop(e, id)}
-                        @dragend=${() => this._onTabDragEnd()}>
-                        <r-icon name=${(cfg?.icon ?? 'file') as any} size="sm"></r-icon>
-                        <span>${cfg?.title ?? id}</span>
-                        <span class="tab-close"
-                          draggable="false"
-                          @click=${(e: Event) => {
-                            e.stopPropagation();
-                            closeView(id);
-                          }}
-                          @dragstart=${(e: Event) => e.stopPropagation()}>×</span>
-                      </button>
-                    `;
-                  })}
+              <div class="workspace-tabs-wrapper">
+                <div class="workspace-tabs-bar" @wheel=${this._handleTabsWheel} @scroll=${this._handleTabsScroll}>
+                  <div class="tabs-list">
+                    ${this._getActiveWorkspaces().map(id => {
+                      const cfg = pluginHost().getViewConfig(id);
+                      const isDragging = this._draggingTabId === id;
+                      const isDropTarget = this._dropTargetId === id && this._draggingTabId && this._draggingTabId !== id;
+                      const dropClass = isDropTarget
+                        ? (this._dropPlace === 'before' ? 'drop-before' : 'drop-after')
+                        : '';
+                      return html`
+                        <button
+                          class="workspace-tab ${this._activeWorkspaceTab.value === id ? 'active' : ''} ${isDragging ? 'dragging' : ''} ${dropClass}"
+                          draggable="true"
+                          aria-grabbed=${isDragging ? 'true' : 'false'}
+                          @click=${() => this._onTabClick(id)}
+                          @dragstart=${(e: DragEvent) => this._onTabDragStart(e, id)}
+                          @dragover=${(e: DragEvent) => this._onTabDragOver(e, id)}
+                          @dragleave=${(e: DragEvent) => this._onTabDragLeave(e, id)}
+                          @drop=${(e: DragEvent) => this._onTabDrop(e, id)}
+                          @dragend=${() => this._onTabDragEnd()}>
+                          <r-icon name=${(cfg?.icon ?? 'file') as any} size="sm"></r-icon>
+                          <span>${cfg?.title ?? id}</span>
+                          <span class="tab-close"
+                            draggable="false"
+                            @click=${(e: Event) => {
+                              e.stopPropagation();
+                              closeView(id);
+                            }}
+                            @dragstart=${(e: Event) => e.stopPropagation()}>×</span>
+                        </button>
+                      `;
+                    })}
+                  </div>
                 </div>
+                <div class="tabs-scroll-indicator"></div>
               </div>
               <div class="workspace-active-body flex-grow-1 min-height-0">
                 <r-view .viewId=${this._activeWorkspaceTab.value as string}></r-view>

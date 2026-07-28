@@ -68,17 +68,47 @@ r-view > * {
   display: flex;
 }
 
+/* Tabs Bar Wrapper */
+.workspace-tabs-wrapper {
+  position: relative;
+  flex-shrink: 0;
+  width: 100%;
+}
+
 /* Tabs Bar */
 .workspace-tabs-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
   padding: 0;
   height: 46px;
   box-sizing: border-box;
-  flex-shrink: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none; /* Hide scrollbar completely for Firefox */
+}
+
+.workspace-tabs-bar::-webkit-scrollbar {
+  display: none; /* Hide scrollbar completely for Chrome/Webkit */
+}
+
+/* Floating custom scroll indicator */
+.tabs-scroll-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--scrollbar-thumb, var(--border-mid));
+  opacity: 0;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+  pointer-events: none; /* Let clicks pass through */
+  z-index: 10;
+  will-change: transform, width;
+}
+
+.workspace-tabs-wrapper:hover .tabs-scroll-indicator {
+  opacity: 1; /* Appears on hover */
 }
 
 .tabs-list {
@@ -86,6 +116,7 @@ r-view > * {
   align-items: center;
   gap: 0;
   height: 100%;
+  flex-shrink: 0;
 }
 
 .workspace-tab {
@@ -104,6 +135,7 @@ r-view > * {
   height: 100%;
   position: relative;
   user-select: none;
+  flex-shrink: 0;
 }
 
 .workspace-tab:active {

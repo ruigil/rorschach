@@ -83,4 +83,3 @@ export class RConfigToolFilter extends RorschachBase {
     `;
   }
 }
-

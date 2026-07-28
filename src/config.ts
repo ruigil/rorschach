@@ -41,7 +41,11 @@ const interpolate = (value: unknown): unknown => {
 //
 export const loadConfig = async (
   override?: string,
-): Promise<{ plugins: PluginDef<any, any, any>[]; config: Record<string, unknown>; configPath: string }> => {
+): Promise<{
+  plugins: { def: PluginDef<any, any, any>; modulePath: string }[]
+  config: Record<string, unknown>
+  configPath: string
+}> => {
   const argIdx = process.argv.indexOf('--config')
   const path = resolve(
     override ??
@@ -76,7 +80,7 @@ export const loadConfig = async (
     throw new Error('Config "config" must be a plain object')
 
   const configDir = dirname(path)
-  const plugins: PluginDef<any, any, any>[] = []
+  const plugins: { def: PluginDef<any, any, any>; modulePath: string }[] = []
 
   for (const rel of obj.plugins as string[]) {
     const absPath = resolve(configDir, rel)
@@ -89,7 +93,7 @@ export const loadConfig = async (
     const def = (mod as Record<string, unknown>).default
     if (!def || typeof def !== 'object' || typeof (def as Record<string, unknown>).id !== 'string')
       throw new Error(`Plugin at ${absPath} must export a PluginDef with an "id" field as default`)
-    plugins.push(def as PluginDef<any, any, any>)
+    plugins.push({ def: def as PluginDef<any, any, any>, modulePath: absPath })
   }
 
   const config = interpolate(obj.config ?? {}) as Record<string, unknown>
@@ -97,12 +101,55 @@ export const loadConfig = async (
   return { plugins, config, configPath: path }
 }
 
-export const saveConfig = async (
-  configPath: string,
-  patch: Record<string, unknown>,
-): Promise<void> => {
-  const raw = await Bun.file(configPath).text()
-  const obj = JSON.parse(raw) as Record<string, unknown>
-  const merged = deepMerge(obj.config ?? {}, patch)
-  await Bun.write(configPath, JSON.stringify({ ...obj, config: merged }, null, 2) + '\n')
+let configSaveQueue: Promise<void> = Promise.resolve()
+
+export type FullConfigData = {
+  plugins: string[]
+  config: Record<string, unknown>
 }
+
+export const saveConfigUnified = (
+  configPath: string,
+  updater: (current: FullConfigData) => Partial<FullConfigData> | Promise<Partial<FullConfigData>>,
+): Promise<void> => {
+  const currentLink = configSaveQueue
+  const next = currentLink.then(async () => {
+    let raw = ''
+    try {
+      raw = await Bun.file(configPath).text()
+    } catch {
+      raw = '{}'
+    }
+
+    let obj: Record<string, unknown>
+    try {
+      obj = (JSON.parse(raw) ?? {}) as Record<string, unknown>
+    } catch {
+      obj = {}
+    }
+
+    const currentPlugins = Array.isArray(obj.plugins) ? (obj.plugins as string[]) : []
+    const currentConfig =
+      obj.config !== null && typeof obj.config === 'object' && !Array.isArray(obj.config)
+        ? (obj.config as Record<string, unknown>)
+        : {}
+
+    const update = await updater({ plugins: currentPlugins, config: currentConfig })
+
+    const nextPlugins = update.plugins !== undefined ? update.plugins : currentPlugins
+    const nextConfig = update.config !== undefined ? deepMerge(currentConfig, update.config) : currentConfig
+
+    const nextObj = {
+      ...obj,
+      plugins: nextPlugins,
+      config: nextConfig,
+    }
+
+    await Bun.write(configPath, JSON.stringify(nextObj, null, 2) + '\n')
+  })
+  configSaveQueue = next.catch(() => {})
+  return next
+}
+
+
+

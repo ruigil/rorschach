@@ -9,6 +9,8 @@ import {
   updateViewState,
   closeView,
   openView,
+  openViewWhenReady,
+  ensureView,
   moveTabInOrder,
   reorderWorkspaceTabs,
   reconcileWorkspaceTabOrder,
@@ -304,5 +306,42 @@ describe('workspace tab reorder', () => {
     reconcileWorkspaceTabOrder()
 
     expect(store.namespace<ShellState>('shell').get('workspaceTabOrder')).toEqual(['a', 'asyncPlugin', 'c'])
+  })
+})
+
+describe('openViewWhenReady (cold-load deep link)', () => {
+  test('opens immediately when the view is already registered', () => {
+    ensureView('config', { id: 'config', title: 'Configuration', icon: 'settings', contentTag: 'r-config-panel' } as any)
+
+    const cancel = openViewWhenReady('config')
+
+    expect(store.namespace<ShellState>('shell').get('views')?.config?.isOpen).toBe(true)
+    expect(store.namespace<ShellState>('shell').get('activeWorkspaceTab')).toBe('config')
+    cancel()
+  })
+
+  test('waits and opens once the surface registers (deep-link #/config on cold load)', async () => {
+    // View not registered yet — simulates cold load before the WS surface arrives
+    const cancel = openViewWhenReady('config')
+    expect(store.namespace<ShellState>('shell').get('activeWorkspaceTab')).toBe('none')
+
+    // Surface registers later → ensureView populates the store → pending open fires
+    ensureView('config', { id: 'config', title: 'Configuration', icon: 'settings', contentTag: 'r-config-panel' } as any)
+    await Bun.sleep(10)
+
+    expect(store.namespace<ShellState>('shell').get('views')?.config?.isOpen).toBe(true)
+    expect(store.namespace<ShellState>('shell').get('activeWorkspaceTab')).toBe('config')
+    cancel()
+  })
+
+  test('cancel stops the pending open', async () => {
+    const cancel = openViewWhenReady('config')
+    cancel()
+
+    ensureView('config', { id: 'config', title: 'Configuration', icon: 'settings', contentTag: 'r-config-panel' } as any)
+    await Bun.sleep(10)
+
+    expect(store.namespace<ShellState>('shell').get('views')?.config?.isOpen).toBe(false)
+    expect(store.namespace<ShellState>('shell').get('activeWorkspaceTab')).toBe('none')
   })
 })

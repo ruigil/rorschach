@@ -2,7 +2,8 @@
 // ─── Config Schema Section ───────────────────────────────────────────────────
 //
 // Each plugin publishes one or more sections describing its configurable fields.
-// The HTTP actor aggregates them and serves GET /config/schema.
+// The ConfigActor (config plugin manager slot) aggregates them, serves
+// GET /config/schema, and republishes changes to the admin WS channel.
 // The web UI renders dynamic forms from the JSON Schema.
 //
 // `schema` is a standard JSON Schema object. Plugins annotate fields with
@@ -23,7 +24,31 @@ export type ConfigSchemaSection = {
   tab: string
   configKey: string
   schema: Record<string, unknown> | null
-  routeId: string
 }
 
+import { createTopic, type ActorRef } from '../system/index.ts'
 
+export { CORE_PLUGIN_IDS } from './core-plugins.ts'
+
+export type ConfigSchemaEvent = {
+  type: 'config.schema'
+  key: string
+  payload: { section: ConfigSchemaSection }
+  isTombstone?: boolean
+}
+
+export const ConfigSchemaTopic = createTopic<ConfigSchemaEvent>('system.config.schema')
+
+export type SystemConfigUpdateRequest =
+  | { action: 'set_value'; pluginId: string; patch: Record<string, unknown>; replyTo?: ActorRef<any> }
+  | { action: 'add_plugin'; specifier: string; replyTo?: ActorRef<any> }
+  | { action: 'remove_plugin'; pluginId: string; replyTo?: ActorRef<any> }
+  | { action: 'reload_plugin'; pluginId: string; replyTo?: ActorRef<any> }
+  | { action: 'get_values'; pluginId?: string; replyTo?: ActorRef<any> }
+  | { action: 'list_plugins'; replyTo?: ActorRef<any> }
+
+export type SystemConfigUpdateResult =
+  | { success: true; message?: string; details?: unknown }
+  | { success: false; error: string }
+
+export const SystemConfigUpdateTopic = createTopic<SystemConfigUpdateRequest>('system.config.update')

@@ -1,6 +1,5 @@
 import type { ActorContext, ActorDef, ActorRef } from './types.ts'
-import { type ConfigSchemaSection } from '../../types/config.ts'
-import { RouteRegistrationTopic, type RouteRegistration } from '../../types/routes.ts'
+import { type ConfigSchemaSection, ConfigSchemaTopic } from '../../types/config.ts'
 import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
 
 // ─── Config Descriptor ──────────────────────────────────────────────────────
@@ -35,29 +34,16 @@ export const defineConfig = <C>(
   onConfigChange: (config: C) => ({ type: 'config' as const, slice: config }),
 })
 
-export const buildConfigRoute = <C>(
-  descriptor: ConfigDescriptor<C>,
-  pluginRef: ActorRef<any>,
-): RouteRegistration[] => [{
-  id: `config.${descriptor.key}`,
-  method: 'GET',
-  path: `/config/${descriptor.key}`,
-  target: pluginRef as ActorRef<any>,
-}]
-
 export const publishConfigSurface = <C>(
   ctx: ActorContext<any>,
   descriptor: ConfigDescriptor<C>,
 ): void => {
   for (const section of descriptor.schemas ?? []) {
-    ctx.publishRetained(OutboundAdminBroadcastTopic, section.id, {
+    ctx.publishRetained(ConfigSchemaTopic, section.id, {
       type: 'config.schema',
       key: section.id,
       payload: { section },
     })
-  }
-  for (const reg of buildConfigRoute(descriptor, ctx.self)) {
-    ctx.publishRetained(RouteRegistrationTopic, reg.id, reg)
   }
 }
 
@@ -66,20 +52,11 @@ export const deleteConfigSurface = <C>(
   descriptor: ConfigDescriptor<C>,
 ): void => {
   for (const section of descriptor.schemas ?? []) {
-    ctx.deleteRetained(OutboundAdminBroadcastTopic, section.id, {
+    ctx.deleteRetained(ConfigSchemaTopic, section.id, {
       type: 'config.schema',
       key: section.id,
       payload: { section: { ...section, schema: null } },
       isTombstone: true,
-    })
-  }
-  for (const reg of buildConfigRoute(descriptor, ctx.self)) {
-    ctx.deleteRetained(RouteRegistrationTopic, reg.id, {
-      id: reg.id,
-      method: reg.method,
-      path: reg.path,
-      ...(reg.match !== undefined ? { match: reg.match } : {}),
-      target: null,
     })
   }
 }

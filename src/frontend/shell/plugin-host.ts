@@ -31,15 +31,6 @@ const createPluginHost = (): PluginHostInstance => {
   const surfaceReducers = new Map<string, (frame: Record<string, any>, host: PluginHostActions) => void>()
 
   const init = () => {
-    const configCfg: ViewConfig = {
-      id: 'config',
-      title: 'Configuration',
-      icon: 'settings',
-      contentTag: 'r-config-form',
-    }
-    viewRegistry.set('config', configCfg)
-    ensureView('config', configCfg)
-
     startModeWatcher()
   };
 
@@ -64,7 +55,7 @@ const createPluginHost = (): PluginHostInstance => {
         const mod = await import(reg.moduleUrl)
         surfaceReducers.set(reg.id, mod.reduceFrame ?? (() => {}))
       } catch (err) {
-        //console.error(`plugin-host: failed to load surface module ${reg.moduleUrl}:`, err)
+        console.error(`plugin-host: failed to load surface module ${reg.moduleUrl}:`, err)
         if (reg.view) {
           viewRegistry.set(reg.id, { ...reg.view, id: reg.id, contentTag: 'r-surface-error' })
         }

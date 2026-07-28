@@ -1,7 +1,6 @@
 import {
   customElement,
   html,
-  nothing,
   property,
   RorschachBase,
   type RInputType,

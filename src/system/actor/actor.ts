@@ -151,6 +151,7 @@ const createInternalLog = (source: string, eventStream: EventStream): InternalLo
 type ActorInternals<M> = {
   readonly name: string
   readonly ref: ActorRef<M>
+  readonly parentRef?: ActorRef<any>
   readonly timers: ReturnType<typeof createTimers<M>>
   readonly children: Map<string, InternalActorHandle>
   readonly mailbox: Mailbox<Envelope<M>>
@@ -170,7 +171,7 @@ type ActorInternals<M> = {
  * context interface. No mutable state of its own.
  */
 const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> => {
-  const { name, ref, timers, children, mailbox, services,
+  const { name, ref, parentRef, timers, children, mailbox, services,
           enqueueLifecycle, log, isStopped, getHeaders, configRef, stopSelf } = internals
 
   // ─── Tracing ───
@@ -230,6 +231,7 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
 
   return {
     self: ref,
+    parent: parentRef,
     timers,
     messageHeaders: () => getHeaders(),
     initialConfig: () => { return configRef?.value },
@@ -246,7 +248,7 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       }
 
       const childConfigRef = options?.config !== undefined ? { value: options.config } : undefined
-      const { handle: childHandle } = createActor(fullName, childDef, services, childConfigRef, options?.state)
+      const { handle: childHandle } = createActor(fullName, childDef, services, childConfigRef, options?.state, ref)
       children.set(fullName, childHandle as InternalActorHandle)
 
       // Parent implicitly watches its children
@@ -395,6 +397,7 @@ export const createActor = <M, S>(
   services: ActorServices,
   configRef?: { value: unknown },
   stateOverride?: S,
+  parentRef?: ActorRef<any>,
 ): ActorCreationResult<M> => {
   const resolveInitialState = (): S => {
     if (stateOverride !== undefined) return stateOverride
@@ -475,7 +478,7 @@ export const createActor = <M, S>(
 
   // ─── Build the context (extracted — pure wiring) ───
   const context = createActorContext<M>({
-    name, ref, timers, children, mailbox, services,
+    name, ref, parentRef, timers, children, mailbox, services,
     enqueueLifecycle, log, isStopped: () => stopped, getHeaders: () => currentHeaders,
     configRef,
     stopSelf: () => {
