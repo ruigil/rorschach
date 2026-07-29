@@ -1,6 +1,7 @@
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import type { TraceSpan } from '../../types/events.ts'
-import type { PluginHealthReport } from '../../types/health.ts'
+import type { ActorHealth, WatchStatus } from '../../types/health.ts'
+export type { WatchStatus } from '../../types/health.ts'
 export type { TraceSpan }
 
 
@@ -93,11 +94,24 @@ export type SupervisionStrategy =
     }
 
 // ─── Lifecycle Events ───
+
+/** The single watched-actor fact: current status of an actor you watch. */
+export type WatchStatusEvent = {
+  type: 'watchStatus'
+  ref: ActorIdentity
+  status: WatchStatus
+  /** Present on alive statuses. */
+  detail?: string
+  /** Present only when status === 'terminated'. */
+  reason?: 'stopped' | 'failed'
+  error?: unknown
+}
+
 export type LifecycleEvent =
   | { type: 'start' }
   | { type: 'stopping' }
   | { type: 'stopped' }
-  | { type: 'terminated'; ref: ActorIdentity; reason: 'stopped' | 'failed'; error?: unknown }
+  | WatchStatusEvent
 
 // ─── Tracing ───
 
@@ -283,8 +297,14 @@ export type LifecycleResult<S> = { state: S }
 // ─── Actor Context (available to handlers) ───
 export type ActorContext<M> = {
   readonly self: ActorRef<M>
-  readonly parent?: ActorRef<any>
   readonly timers: Timers<M>
+  /**
+   * Publish this actor's current status as a retained watchStatus event
+   * on its own watch topic. Deduped: no-op if status+detail equal the
+   * last report. Parents (implicit) and watchers receive it via their
+   * lifecycle hook. Alive statuses only — termination is runtime-owned.
+   */
+  readonly reportStatus: (report: ActorHealth) => void
   /** Returns the headers attached to the message currently being processed. Empty object when not set. */
   readonly messageHeaders: () => MessageHeaders
   /**
@@ -299,10 +319,10 @@ export type ActorContext<M> = {
     options?: { state?: CS; config?: unknown },
   ) => ActorRef<CM>
   readonly stop: (child: ActorIdentity) => void
-  /** Register interest in another actor's termination. Delivers a `terminated` lifecycle event when the target dies. */
-  readonly watch: (target: ActorRef<unknown>) => void
+  /** Register interest in another actor's status (including termination). Delivers `watchStatus` lifecycle events. */
+  readonly watch: (target: ActorRef<any>) => void
   /** Remove a previously registered watch. */
-  readonly unwatch: (target: ActorRef<unknown>) => void
+  readonly unwatch: (target: ActorRef<any>) => void
   // ─── Event Stream (pub-sub) ───
 
   /** Publish a typed event to the system event bus under the given topic. */
@@ -400,7 +420,7 @@ export type ActorDef<M, S> = {
    */
   initialState?: S | (() => S)
 
-  /** Reacts to lifecycle events (stopping, stopped, terminated). */
+  /** Reacts to lifecycle events (start, stopping, stopped, watchStatus). */
   lifecycle?: (
     state: S,
     event: LifecycleEvent,
@@ -511,6 +531,8 @@ export type ActorSnapshot = {
   readonly processingTime: ProcessingTime
   readonly children: string[]
   readonly state?: unknown
+  /** Last status reported via ctx.reportStatus while alive; cleared after death. */
+  readonly health?: ActorHealth
 }
 
 /** Hierarchical tree node for actor tree introspection. */
@@ -594,13 +616,7 @@ export type LoadedPlugin = {
   readonly modulePath?: string
   /** Live ref to the plugin actor. Used by updateConfig() to deliver config-change messages. */
   readonly ref?: ActorRef<any>
-  readonly health?: PluginHealthReport
-}
-
-export type PluginHealthMsg = {
-  type: 'plugin.health.changed'
-  id: string
-  health: PluginHealthReport
+  readonly health?: ActorHealth
 }
 
 // ─── Load / Unload Results ───

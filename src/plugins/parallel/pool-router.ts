@@ -85,7 +85,8 @@ export const PoolRouter = <WM, WS>(
         return { state: { workers, index: 0, workerSeq: poolSize } }
       },
 
-      terminated: (state, event, ctx) => {
+      watchStatus: (state, event, ctx) => {
+        if (event.status !== 'terminated') return { state }
         // Only react to unexpected failures — graceful stops (shutdown, ctx.stop)
         // are expected and should not trigger the failure strategy.
         if (event.reason !== 'failed') return { state }

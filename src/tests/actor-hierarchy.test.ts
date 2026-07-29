@@ -120,9 +120,9 @@ describe('Actor: parent-child hierarchy', () => {
     ref.send('stop-child')
     await tick(100)
 
-    const terminated = parentEvents.filter((e) => e.type === 'terminated')
+    const terminated = parentEvents.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
     expect(terminated.length).toBe(1)
-    if (terminated[0]!.type === 'terminated') {
+    if (terminated[0]!.type === 'watchStatus' && terminated[0]!.status === 'terminated') {
       expect(terminated[0]!.ref.name).toBe('system/parent/kid')
       expect(terminated[0]!.reason).toBe('stopped')
     }
@@ -239,9 +239,9 @@ describe('Watch: cross-hierarchy observation', () => {
     system.stop({ name: 'system/target' })
     await tick(100)
 
-    const terminated = watcherEvents.filter((e) => e.type === 'terminated')
+    const terminated = watcherEvents.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
     expect(terminated.length).toBe(1)
-    if (terminated[0]!.type === 'terminated') {
+    if (terminated[0]!.type === 'watchStatus' && terminated[0]!.status === 'terminated') {
       expect(terminated[0]!.ref.name).toBe('system/target')
       expect(terminated[0]!.reason).toBe('stopped')
     }
@@ -283,9 +283,9 @@ describe('Watch: cross-hierarchy observation', () => {
     watcher.send(targetRef as ActorRef<unknown>)
     await tick()
 
-    const terminated = watcherEvents.filter((e) => e.type === 'terminated')
+    const terminated = watcherEvents.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
     expect(terminated.length).toBe(1)
-    if (terminated[0]!.type === 'terminated') {
+    if (terminated[0]!.type === 'watchStatus' && terminated[0]!.status === 'terminated') {
       expect(terminated[0]!.ref.name).toBe('system/target')
       expect(terminated[0]!.reason).toBe('stopped')
     }
@@ -328,7 +328,7 @@ describe('Watch: cross-hierarchy observation', () => {
     system.stop({ name: 'system/target' })
     await tick(100)
 
-    const terminated = watcherEvents.filter((e) => e.type === 'terminated')
+    const terminated = watcherEvents.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
     expect(terminated.length).toBe(0)
 
     await system.shutdown()
@@ -365,7 +365,7 @@ describe('Watch: cross-hierarchy observation', () => {
     system.stop({ name: 'system/target' })
     await tick(100)
 
-    const terminated = watcherEvents.filter((e) => e.type === 'terminated')
+    const terminated = watcherEvents.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
     expect(terminated.length).toBe(1)
 
     await system.shutdown()
@@ -436,8 +436,8 @@ describe('Watch: cross-hierarchy observation', () => {
     system.stop({ name: 'system/target' })
     await tick(100)
 
-    const terminatedA = eventsA.filter((e) => e.type === 'terminated')
-    const terminatedB = eventsB.filter((e) => e.type === 'terminated')
+    const terminatedA = eventsA.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
+    const terminatedB = eventsB.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
     expect(terminatedA.length).toBe(1)
     expect(terminatedB.length).toBe(1)
 

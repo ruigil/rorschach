@@ -324,7 +324,7 @@ describe('Actor: lifecycle state evolution', () => {
     await tick(100)
 
     expect(snapshots.length).toBe(1)
-    expect(snapshots[0]).toContain('terminated')
+    expect(snapshots[0]).toContain('watchStatus')
 
     await system.shutdown()
   })
@@ -353,7 +353,7 @@ describe('Actor: self-termination', () => {
 
     // Watch for termination
     system.subscribe(watchTopic(ref.name), (event: LifecycleEvent) => {
-      if (event.type === 'terminated') {
+      if (event.type === 'watchStatus' && event.status === 'terminated') {
         terminated = true
       }
     })

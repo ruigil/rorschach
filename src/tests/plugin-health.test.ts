@@ -1,7 +1,9 @@
 import { describe, test, expect } from 'bun:test'
-import { AgentSystem, onMessage, ask } from '../system/index.ts'
-import { createPluginFactory } from '../system/index.ts'
+import { AgentSystem, onMessage, onLifecycle, ask, createPluginFactory } from '../system/index.ts'
+import type { ActorDef } from '../system/index.ts'
 import { OutboundAdminBroadcastTopic } from '../types/events.ts'
+
+const tick = (ms = 50) => Bun.sleep(ms)
 
 describe('Plugin Health Reporting', () => {
   test('derives baseline health status correctly', async () => {
@@ -25,15 +27,12 @@ describe('Plugin Health Reporting', () => {
 
     const system = await AgentSystem({ plugins: [mockPlugin], config: {} })
 
-    // Verify baseline health is degraded
     const status = system.getPluginStatus('mock-health-degraded')
     expect(status).toBeDefined()
-    // Verify native LoadedPlugin.health is populated directly
     expect(status?.health).toBeDefined()
     expect(status?.health?.status).toBe('degraded')
     expect(status?.health?.detail).toContain('optionalSlot slot(s) inactive')
 
-    // Inspect the root actor's state via a spy actor
     const rootName = 'system/mock-health-degraded'
     const spy = system.spawn('test-spy', {
       initialState: null,
@@ -48,26 +47,47 @@ describe('Plugin Health Reporting', () => {
     const snapshots = await ask<any, any>(spy, (replyTo) => ({ type: 'getSnapshots', replyTo }))
     const snapshotObj = snapshots.find((s: any) => s.name === rootName)
     expect(snapshotObj).toBeDefined()
-    const rootState = snapshotObj?.state as any
-    expect(rootState?.health).toBeDefined()
-    expect(rootState?.health.status).toBe('degraded')
-    expect(rootState?.health.detail).toContain('optionalSlot slot(s) inactive')
+    expect(snapshotObj?.health).toBeDefined()
+    expect(snapshotObj?.health.status).toBe('degraded')
+    expect(snapshotObj?.health.detail).toContain('optionalSlot slot(s) inactive')
+    // Health is on snapshot, not factory state
+    expect((snapshotObj?.state as any)?.health).toBeUndefined()
 
     await system.shutdown()
   })
 
-  test('handles dynamic health updates and broadcasts', async () => {
-    const mockPlugin2 = createPluginFactory({
+  test('slot child reportStatus worsens plugin health and fires admin frame', async () => {
+    type ChildMsg = { type: 'go' }
+    let childRef: { send: (m: ChildMsg) => void } | null = null
+
+    const mockPlugin = createPluginFactory({
       id: 'mock-health-dynamic',
       version: '1.0.0',
       description: 'health dynamic',
       configDescriptor: { key: 'mock-health-dynamic', defaults: {} } as any,
-      slots: {},
+      slots: {
+        db: {
+          factory: () => ({
+            initialState: null,
+            lifecycle: onLifecycle({
+              start(state, ctx) {
+                childRef = ctx.self as any
+                return { state }
+              },
+            }),
+            handler: (state: null, msg: ChildMsg, ctx) => {
+              if (msg.type === 'go') {
+                ctx.reportStatus({ status: 'unavailable', detail: 'Database connection failed' })
+              }
+              return { state }
+            },
+          } as ActorDef<ChildMsg, null>),
+        },
+      },
     })
 
-    const system = await AgentSystem({ plugins: [mockPlugin2], config: {} })
+    const system = await AgentSystem({ plugins: [mockPlugin], config: {} })
 
-    // Listen to OutboundAdminBroadcastTopic for health changes
     const healthEvents: any[] = []
     system.subscribe(OutboundAdminBroadcastTopic, (event) => {
       if (event.type === 'plugin.health.changed') {
@@ -75,25 +95,15 @@ describe('Plugin Health Reporting', () => {
       }
     })
 
-    // Send a healthStatus message to the plugin root actor
-    const rootActorRef = system.getPluginStatus('mock-health-dynamic')?.ref
-    expect(rootActorRef).toBeDefined()
+    await tick(50)
+    expect(childRef).not.toBeNull()
+    childRef!.send({ type: 'go' })
+    await tick(100)
 
-    rootActorRef?.send({
-      type: 'healthStatus',
-      status: 'unavailable',
-      detail: 'Database connection failed',
-    })
-
-    // Wait for actor mailbox processing
-    await Bun.sleep(50)
-
-    // Verify system.getPluginStatus() natively returns the updated health
     const updatedStatus = system.getPluginStatus('mock-health-dynamic')
     expect(updatedStatus?.health?.status).toBe('unavailable')
-    expect(updatedStatus?.health?.detail).toBe('Database connection failed')
+    expect(updatedStatus?.health?.detail).toContain('Database connection failed')
 
-    // Verify health report updated via spy actor
     const rootName = 'system/mock-health-dynamic'
     const spy = system.spawn('test-spy-2', {
       initialState: null,
@@ -104,18 +114,46 @@ describe('Plugin Health Reporting', () => {
         },
       }),
     })
-    
+
     const snapshots = await ask<any, any>(spy, (replyTo) => ({ type: 'getSnapshots', replyTo }))
     const snapObj = snapshots.find((s: any) => s.name === rootName)
-    const rootState = snapObj?.state as any
-    expect(rootState?.health.status).toBe('unavailable')
-    expect(rootState?.health.detail).toBe('Database connection failed')
+    expect(snapObj?.health?.status).toBe('unavailable')
+    expect(snapObj?.health?.detail).toContain('Database connection failed')
 
-    // Verify event was broadcasted
-    expect(healthEvents.length).toBe(1)
-    expect(healthEvents[0].key).toBe('mock-health-dynamic')
-    expect(healthEvents[0].payload.health.status).toBe('unavailable')
-    expect(healthEvents[0].payload.health.detail).toBe('Database connection failed')
+    const unavailable = healthEvents.filter((e) => e.payload?.health?.status === 'unavailable')
+    expect(unavailable.length).toBeGreaterThanOrEqual(1)
+    expect(unavailable[0].key).toBe('mock-health-dynamic')
+    expect(unavailable[0].payload.health.detail).toContain('Database connection failed')
+    expect(unavailable[0].payload.health.updatedAt).toBeUndefined()
+
+    await system.shutdown()
+  })
+
+  test('child ok does not clear missing-slot degraded baseline', async () => {
+    const mockPlugin = createPluginFactory({
+      id: 'mock-health-worsen',
+      version: '1.0.0',
+      description: 'children only worsen',
+      configDescriptor: { key: 'mock-health-worsen', defaults: {} } as any,
+      slots: {
+        present: {
+          factory: () => ({
+            initialState: null,
+            handler: (s) => ({ state: s }),
+          }),
+        },
+        missing: {
+          factory: () => null,
+        },
+      },
+    })
+
+    const system = await AgentSystem({ plugins: [mockPlugin], config: {} })
+    await tick(50)
+
+    const status = system.getPluginStatus('mock-health-worsen')
+    expect(status?.health?.status).toBe('degraded')
+    expect(status?.health?.detail).toContain('missing slot(s) inactive')
 
     await system.shutdown()
   })

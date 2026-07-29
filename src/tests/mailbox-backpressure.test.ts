@@ -394,7 +394,7 @@ describe('Actor: bounded mailbox integration', () => {
     await tick(200)
 
     // The terminated event should have been received via enqueueSystem
-    const terminated = lifecycleEvents.filter((e) => e.type === 'terminated')
+    const terminated = lifecycleEvents.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
     expect(terminated.length).toBe(1)
 
     await system.shutdown()

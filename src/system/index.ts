@@ -67,6 +67,7 @@ export type {
   DeadLetter,
   EventTopic,
   LifecycleEvent,
+  WatchStatusEvent,
   LogEvent,
   MessageHandler,
   PersistenceAdapter,
@@ -74,12 +75,11 @@ export type {
   PluginDef,
   PluginSystem,
   LoadedPlugin,
-  PluginHealthMsg,
 } from './actor/types.ts'
 
 export type {
-  PluginHealthStatus,
-  PluginHealthReport,
-  PluginHealthUpdateMsg,
+  HealthStatus,
+  ActorHealth,
+  WatchStatus,
 } from '../types/health.ts'
 

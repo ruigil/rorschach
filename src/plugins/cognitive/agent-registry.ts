@@ -270,7 +270,8 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
         })
         return { state }
       },
-      terminated: (state, event, ctx) => {
+      watchStatus: (state, event, ctx) => {
+        if (event.status !== 'terminated') return { state }
         const deadName = event.ref.name
         for (const [userId, agents] of Object.entries(state.sessionAgents)) {
           for (const [mode, ref] of Object.entries(agents)) {

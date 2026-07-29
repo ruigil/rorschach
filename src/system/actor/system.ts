@@ -2,8 +2,8 @@ import { createActor } from './actor.ts'
 import { createEventStream } from './services.ts'
 import { createMetricsRegistry } from './metrics.ts'
 import { deepMerge } from './config.ts'
-import { onMessage } from './match.ts'
 import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
+import type { ActorHealth } from '../../types/health.ts'
 import {
   LogTopic,
   SystemLifecycleTopic,
@@ -18,10 +18,15 @@ import {
   type LoadOptions,
   type LoadResult,
   type PluginDef,
-  type PluginHealthMsg,
   type PluginSystem,
   type UnloadResult,
 } from './types.ts'
+
+/** Map direct plugin root actor names (`system/<id>`) to plugin id; ignore deeper paths. */
+const directChildPluginId = (actorName: string): string | undefined => {
+  const m = /^system\/([^/]+)$/.exec(actorName)
+  return m?.[1]
+}
 
 export type PluginSystemOptions = {
   /**
@@ -79,29 +84,42 @@ export const AgentSystem = async (
   // ─── Plugin management state ───
   const plugins = new Map<string, LoadedPlugin>()
 
-  const rootDef: ActorDef<PluginHealthMsg | any, null> = {
+  const rootDef: ActorDef<any, null> = {
     initialState: null,
 
-    handler: onMessage<any, null>({
-      'plugin.health.changed': (state, msg: PluginHealthMsg) => {
-        const plugin = plugins.get(msg.id)
-        if (plugin) {
-          const nextPlugin = { ...plugin, health: msg.health }
-          plugins.set(msg.id, nextPlugin)
-
-          services.eventStream.publish(OutboundAdminBroadcastTopic, {
-            type: 'plugin.health.changed',
-            key: msg.id,
-            payload: { id: msg.id, health: msg.health },
-          })
-        }
-        return { state }
-      },
-    }),
+    // No domain message handler — health arrives only via the watch channel
+    handler: () => ({ state: null }),
 
     lifecycle: (state, event) => {
-      if (event.type === 'terminated') {
+      if (event.type !== 'watchStatus') return { state }
+
+      if (event.status === 'terminated') {
         services.eventStream.publish(SystemLifecycleTopic, event)
+        // Clear plugin health when a plugin root dies
+        const pluginId = directChildPluginId(event.ref.name)
+        if (pluginId && plugins.has(pluginId)) {
+          const plugin = plugins.get(pluginId)!
+          if (plugin.health !== undefined) {
+            const { health: _h, ...rest } = plugin
+            plugins.set(pluginId, rest as LoadedPlugin)
+          }
+        }
+        return { state }
+      }
+
+      const pluginId = directChildPluginId(event.ref.name)
+      const plugin = pluginId ? plugins.get(pluginId) : undefined
+      if (plugin) {
+        const health: ActorHealth = {
+          status: event.status,
+          ...(event.detail !== undefined ? { detail: event.detail } : {}),
+        }
+        plugins.set(pluginId!, { ...plugin, health })
+        services.eventStream.publish(OutboundAdminBroadcastTopic, {
+          type: 'plugin.health.changed',
+          key: pluginId!,
+          payload: { id: pluginId!, health },
+        })
       }
       return { state }
     },
@@ -154,7 +172,8 @@ export const AgentSystem = async (
             try {
               const result = await invokeOrig(state, event, actorCtx)
               const currentPlugin = plugins.get(def.id)!
-              const health = currentPlugin.health ?? { status: 'ok', updatedAt: Date.now() }
+              // Health arrives via watchStatus after the plugin reports; default ok until then
+              const health = currentPlugin.health ?? { status: 'ok' as const }
               plugins.set(def.id, { ...currentPlugin, status: 'active', health })
               resolve({ ok: true, id: def.id })
               return result
@@ -215,8 +234,8 @@ export const AgentSystem = async (
     }
 
     // Fast path for failed plugins: their actor already ran its shutdown
-    // sequence when start() threw (the 'terminated' event fired then), so
-    // waiting for a fresh 'terminated' after stop() would hang forever.
+    // sequence when start() threw (watchStatus terminated fired then), so
+    // waiting for a fresh terminated after stop() would hang forever.
     if (plugin.status === 'failed') {
       ctx.stop({ name: rootName })
       plugins.delete(id)
@@ -226,7 +245,11 @@ export const AgentSystem = async (
     const promise = new Promise<UnloadResult>((resolve) => {
       const watcherName = `$unload-${id}`
       services.eventStream.subscribe(watcherName, SystemLifecycleTopic, (event) => {
-        if (event.type === 'terminated' && event.ref.name === rootName) {
+        if (
+          event.type === 'watchStatus' &&
+          event.status === 'terminated' &&
+          event.ref.name === rootName
+        ) {
           services.eventStream.unsubscribe(watcherName, SystemLifecycleTopic)
           plugins.delete(id)
           pendingUnloads.delete(id)

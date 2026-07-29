@@ -35,14 +35,14 @@ const mockPlugins = [
     version: '1.0.0',
     status: 'active',
     modulePath: './src/plugins/config/config.plugin.ts',
-    health: { status: 'ok', updatedAt: Date.now() },
+    health: { status: 'ok' },
   },
   {
     id: 'cognitive',
     version: '1.0.0',
     status: 'active',
     modulePath: './src/plugins/cognitive/cognitive.plugin.ts',
-    health: { status: 'ok', updatedAt: Date.now() },
+    health: { status: 'ok' },
   },
 ]
 

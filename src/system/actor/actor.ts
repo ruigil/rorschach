@@ -1,3 +1,4 @@
+import type { ActorHealth } from '../../types/health.ts'
 import { createMailbox } from './mailbox.ts'
 import { createTimers } from './timers.ts'
 import { createActorMetrics } from './metrics.ts'
@@ -151,7 +152,6 @@ const createInternalLog = (source: string, eventStream: EventStream): InternalLo
 type ActorInternals<M> = {
   readonly name: string
   readonly ref: ActorRef<M>
-  readonly parentRef?: ActorRef<any>
   readonly timers: ReturnType<typeof createTimers<M>>
   readonly children: Map<string, InternalActorHandle>
   readonly mailbox: Mailbox<Envelope<M>>
@@ -162,6 +162,7 @@ type ActorInternals<M> = {
   readonly getHeaders: () => MessageHeaders
   readonly configRef: { value: unknown } | undefined
   readonly stopSelf: () => void
+  readonly reportStatus: (report: ActorHealth) => void
 }
 
 /**
@@ -171,8 +172,8 @@ type ActorInternals<M> = {
  * context interface. No mutable state of its own.
  */
 const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> => {
-  const { name, ref, parentRef, timers, children, mailbox, services,
-          enqueueLifecycle, log, isStopped, getHeaders, configRef, stopSelf } = internals
+  const { name, ref, timers, children, mailbox, services,
+          enqueueLifecycle, log, isStopped, getHeaders, configRef, stopSelf, reportStatus } = internals
 
   // ─── Tracing ───
 
@@ -231,8 +232,8 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
 
   return {
     self: ref,
-    parent: parentRef,
     timers,
+    reportStatus,
     messageHeaders: () => getHeaders(),
     initialConfig: () => { return configRef?.value },
 
@@ -248,7 +249,7 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       }
 
       const childConfigRef = options?.config !== undefined ? { value: options.config } : undefined
-      const { handle: childHandle } = createActor(fullName, childDef, services, childConfigRef, options?.state, ref)
+      const { handle: childHandle } = createActor(fullName, childDef, services, childConfigRef, options?.state)
       children.set(fullName, childHandle as InternalActorHandle)
 
       // Parent implicitly watches its children
@@ -271,7 +272,7 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
 
     watch: (target: ActorRef<unknown>) => {
       if (!target.isAlive()) {
-        enqueueLifecycle({ type: 'terminated', ref: target, reason: 'stopped' })
+        enqueueLifecycle({ type: 'watchStatus', ref: target, status: 'terminated', reason: 'stopped' })
         return
       }
       services.eventStream.subscribe(name, watchTopic(target.name), enqueueLifecycle)
@@ -397,7 +398,6 @@ export const createActor = <M, S>(
   services: ActorServices,
   configRef?: { value: unknown },
   stateOverride?: S,
-  parentRef?: ActorRef<any>,
 ): ActorCreationResult<M> => {
   const resolveInitialState = (): S => {
     if (stateOverride !== undefined) return stateOverride
@@ -476,11 +476,26 @@ export const createActor = <M, S>(
     children.clear()
   }
 
+  // ─── Status reporting (alive health via the watch channel) ───
+  let lastReported: ActorHealth | undefined
+
+  const reportStatus = (report: ActorHealth): void => {
+    if (lastReported?.status === report.status && lastReported?.detail === report.detail) return
+    lastReported = report
+    services.eventStream.publishRetained(watchTopic(name), name, {
+      type: 'watchStatus',
+      ref: { name },
+      status: report.status,
+      ...(report.detail !== undefined ? { detail: report.detail } : {}),
+    })
+  }
+
   // ─── Build the context (extracted — pure wiring) ───
   const context = createActorContext<M>({
-    name, ref, parentRef, timers, children, mailbox, services,
+    name, ref, timers, children, mailbox, services,
     enqueueLifecycle, log, isStopped: () => stopped, getHeaders: () => currentHeaders,
     configRef,
+    reportStatus,
     stopSelf: () => {
       if (!stopped) {
         stopped = true
@@ -498,6 +513,9 @@ export const createActor = <M, S>(
 
   // ─── Stopping phase ───
   const runShutdownSequence = async (state: S) => {
+    // Clear health first so snapshots never show stale green after death
+    lastReported = undefined
+
     // Update metrics status (preserve 'failed' if already set)
     if (stopReason !== 'failed') {
       metrics.setStatus('stopping')
@@ -506,19 +524,20 @@ export const createActor = <M, S>(
     // 1. Cancel all timers
     timers.cancelAll()
 
-    // 2. Unsubscribe from child watch topics — terminated events will be
+    // 2. Unsubscribe from child watch topics — watchStatus terminated events will be
     //    delivered directly below via the StopResult returned by child.stop().
     for (const [childName] of children) {
       services.eventStream.unsubscribe(name, watchTopic(childName))
     }
 
-    // 3. Stop each child and deliver its terminated event directly
+    // 3. Stop each child and deliver its watchStatus terminated event directly
     for (const [childName, child] of children) {
       const { reason, error } = await child.stop()
       if (def.lifecycle) {
         const event: LifecycleEvent = {
-          type: 'terminated',
+          type: 'watchStatus',
           ref: { name: childName },
+          status: 'terminated',
           reason,
           ...(error !== undefined ? { error } : {}),
         }
@@ -534,16 +553,17 @@ export const createActor = <M, S>(
       state = result.state
     }
 
-    // 5. Notify watchers
+    // 5. Notify watchers (non-retained terminal edge)
     const terminatedEvent: LifecycleEvent = {
-      type: 'terminated',
+      type: 'watchStatus',
       ref: { name },
+      status: 'terminated',
       reason: stopReason,
       ...(stopError !== undefined ? { error: stopError } : {}),
     }
     services.eventStream.publish(watchTopic(name), terminatedEvent)
 
-    // 6. Clean up subscriptions (both domain and watch) + watch topic forward entry
+    // 6. Clean up subscriptions (both domain and watch) + watch topic (clears retained)
     services.eventStream.cleanup(name)
     services.eventStream.deleteTopic(watchTopic(name))
     log.info('stopped')
@@ -568,6 +588,7 @@ export const createActor = <M, S>(
     childCount: () => children.size,
     children: () => Array.from(children.keys()),
     getState: () => def.maskState ? def.maskState(currentStateSnapshot as S) : currentStateSnapshot,
+    getHealth: () => lastReported,
   })
 
   // ─── Stash capacity ───
@@ -608,6 +629,10 @@ export const createActor = <M, S>(
         const result = await def.lifecycle(state, { type: 'start' }, context)
         state = result.state
         currentStateSnapshot = state
+      }
+      // Auto-ok: parents are never blind to simple children that omit reportStatus
+      if (lastReported === undefined) {
+        reportStatus({ status: 'ok' })
       }
       log.info('started')
     } catch (startupError: unknown) {
@@ -683,7 +708,7 @@ export const createActor = <M, S>(
           }
         } else if (envelope.tag === 'lifecycle') {
           // Auto-remove terminated children from the children map
-          if (envelope.event.type === 'terminated') {
+          if (envelope.event.type === 'watchStatus' && envelope.event.status === 'terminated') {
             children.delete(envelope.event.ref.name)
           }
 
@@ -709,6 +734,8 @@ export const createActor = <M, S>(
           currentHandler = buildPipeline(def.handler, def.interceptors)
           drainStashToDeadLetters(stashedMessages)
           currentStashSize = 0
+          // Clear prior health so auto-ok / re-report can fire after re-start
+          lastReported = undefined
 
           try {
             if (delayMs > 0) {
@@ -725,6 +752,9 @@ export const createActor = <M, S>(
               const result = await def.lifecycle(state, { type: 'start' }, context)
               state = result.state
               currentStateSnapshot = state
+            }
+            if (lastReported === undefined) {
+              reportStatus({ status: 'ok' })
             }
           } catch (restartError: unknown) {
             log.error('failed — start lifecycle threw during restart', { error: restartError })

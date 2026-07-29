@@ -21,7 +21,7 @@ describe('Config Actor & Routes & Tools', () => {
               version: '1.0.0',
               status: 'active',
               modulePath: './mock.ts',
-              health: { status: 'degraded', detail: 'Mock degraded', updatedAt: Date.now() },
+              health: { status: 'degraded', detail: 'Mock degraded' },
             },
           ],
         })
@@ -30,7 +30,7 @@ describe('Config Actor & Routes & Tools', () => {
 
     system.spawn('mock-plugin', {
       initialState: () => ({
-        health: { status: 'degraded', detail: 'Mock degraded', updatedAt: Date.now() },
+        health: { status: 'degraded', detail: 'Mock degraded' },
       }),
       handler: (state) => ({ state }),
     })

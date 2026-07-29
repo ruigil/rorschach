@@ -54,9 +54,9 @@ describe('Supervision: stop strategy (default)', () => {
     await tick(200)
 
     // The actor should have terminated — we expect a terminated event with reason 'failed'
-    const terminated = events.filter((e) => e.type === 'terminated')
+    const terminated = events.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
     expect(terminated.length).toBe(1)
-    if (terminated[0]!.type === 'terminated') {
+    if (terminated[0]!.type === 'watchStatus' && terminated[0]!.status === 'terminated') {
       expect(terminated[0]!.ref.name).toBe('system/stopper')
       expect(terminated[0]!.reason).toBe('failed')
       expect(terminated[0]!.error).toBeInstanceOf(Error)
@@ -229,7 +229,7 @@ describe('Supervision: restart with maxRetries', () => {
 
     // Should have terminated event with reason 'failed'
     const failedEvents = events.filter(
-      (e) => e.type === 'terminated' && e.reason === 'failed',
+      (e) => e.type === 'watchStatus' && e.status === 'terminated' && e.reason === 'failed',
     )
     expect(failedEvents.length).toBe(1)
 
@@ -317,9 +317,9 @@ describe('Supervision: child actor failure propagation via watch', () => {
     parent.send({ type: 'fail-child' })
     await tick(200)
 
-    const terminated = parentEvents.filter((e) => e.type === 'terminated')
+    const terminated = parentEvents.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
     expect(terminated.length).toBe(1)
-    if (terminated[0]!.type === 'terminated') {
+    if (terminated[0]!.type === 'watchStatus' && terminated[0]!.status === 'terminated') {
       expect(terminated[0]!.ref.name).toBe('system/parent/fragile')
       expect(terminated[0]!.reason).toBe('failed')
       expect(terminated[0]!.error).toBeInstanceOf(Error)
@@ -361,9 +361,9 @@ describe('Supervision: child actor failure propagation via watch', () => {
     ref.send('stop-child')
     await tick(100)
 
-    const terminated = parentEvents.filter((e) => e.type === 'terminated')
+    const terminated = parentEvents.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
     expect(terminated.length).toBe(1)
-    if (terminated[0]!.type === 'terminated') {
+    if (terminated[0]!.type === 'watchStatus' && terminated[0]!.status === 'terminated') {
       expect(terminated[0]!.ref.name).toBe('system/parent/kid')
       expect(terminated[0]!.reason).toBe('stopped')
     }
@@ -415,9 +415,9 @@ describe('Supervision: normal operation unaffected', () => {
 
     await system.shutdown()
 
-    const terminated = events.filter((e) => e.type === 'terminated')
+    const terminated = events.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
     expect(terminated.length).toBe(1)
-    if (terminated[0]!.type === 'terminated') {
+    if (terminated[0]!.type === 'watchStatus' && terminated[0]!.status === 'terminated') {
       expect(terminated[0]!.reason).toBe('stopped')
     }
   })
@@ -462,9 +462,9 @@ describe('Supervision: start lifecycle failure during restart', () => {
     await tick(300)
 
     // 1. terminated event with reason 'failed'
-    const terminated = lifecycleEvents.filter((e) => e.type === 'terminated')
+    const terminated = lifecycleEvents.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
     expect(terminated.length).toBe(1)
-    if (terminated[0]!.type === 'terminated') {
+    if (terminated[0]!.type === 'watchStatus' && terminated[0]!.status === 'terminated') {
       expect(terminated[0]!.ref.name).toBe('system/start-fail-restart')
       expect(terminated[0]!.reason).toBe('failed')
     }

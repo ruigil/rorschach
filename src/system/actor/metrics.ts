@@ -1,3 +1,4 @@
+import type { ActorHealth } from '../../types/health.ts'
 import type { ActorMetrics, ActorSnapshot, ActorStatus, ActorTreeNode, MetricsRegistry, ProcessingTime } from './types.ts'
 
 /**
@@ -18,6 +19,7 @@ export const createActorMetrics = (
     readonly childCount: () => number
     readonly children: () => string[]
     readonly getState: () => unknown
+    readonly getHealth: () => ActorHealth | undefined
   },
 ): ActorMetrics => {
   let status: ActorStatus = 'running'
@@ -66,6 +68,8 @@ export const createActorMetrics = (
       ? { count: ptCount, sum: ptSum, min: ptMin, max: ptMax, avg: ptSum / ptCount }
       : { count: 0, sum: 0, min: 0, max: 0, avg: 0 }
 
+    const health = status === 'running' ? gauges.getHealth() : undefined
+
     return {
       name,
       status,
@@ -81,6 +85,7 @@ export const createActorMetrics = (
       processingTime,
       children: gauges.children(),
       state: gauges.getState(),
+      ...(health !== undefined ? { health } : {}),
     }
   }
 

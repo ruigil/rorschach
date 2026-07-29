@@ -112,7 +112,8 @@ export const SessionManager = (
         return { state: { ...state, agentRegistryRef: state.agentRegistryRef ?? agentRegistryRef, llmRef: state.llmRef ?? llmRef } }
       },
 
-      terminated: (state, event, ctx) => {
+      watchStatus: (state, event, ctx) => {
+        if (event.status !== 'terminated') return { state }
         const deadName = event.ref.name
         // Context-store death cascades into a full session drop.
         for (const [userId, session] of Object.entries(state.sessions)) {

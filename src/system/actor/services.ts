@@ -131,6 +131,7 @@ export const createEventStream = (): EventStream => {
 
   const deleteTopic = (topic: EventTopic): void => {
     forward.delete(topic)
+    retained.delete(topic)
   }
 
   const getRetainedValue = <T>(topic: EventTopic<T>, key: string): T | undefined => {

@@ -37,7 +37,7 @@ system.subscribe(LogTopic, (event) => {
 // ─── Observe actor lifecycle events ───
 system.subscribe(SystemLifecycleTopic, (event) => {
   const e = event as LifecycleEvent
-  if (e.type === 'terminated') {
+  if (e.type === 'watchStatus' && e.status === 'terminated') {
     console.log(`[system] actor ${e.ref.name} terminated (${e.reason})`)
   }
 })

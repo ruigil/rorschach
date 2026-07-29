@@ -666,7 +666,6 @@ export class RConfigPanel extends RorschachBase {
       if (p.health.detail) {
         items.push({ key: 'healthDetail', label: 'Health Detail', value: p.health.detail });
       }
-      items.push({ key: 'healthUpdated', label: 'Last Health Check', value: new Date(p.health.updatedAt).toLocaleString() });
     }
     return items;
   }

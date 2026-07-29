@@ -186,7 +186,8 @@ export const WorkflowRunner = (config: WorkflowRunnerConfig ): ActorDef<Workflow
         ctx.subscribe(AgentRegistrationTopic, event => ({ type: '_agentRegistration' as const, event }))
         return { state }
       },
-      terminated: (state, event, ctx) => {
+      watchStatus: (state, event, ctx) => {
+        if (event.status !== 'terminated') return { state }
         const parts = event.ref.name.split('/')
         const childName = parts[parts.length - 1] || ''
         const match = childName.match(/^workflow-run-(.+)$/)

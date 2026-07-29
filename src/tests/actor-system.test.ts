@@ -30,9 +30,9 @@ describe('Actor: lifecycle events', () => {
     system.stop({ name: 'system/stopper' })
     await tick()
 
-    const terminated = events.filter((e) => e.type === 'terminated')
+    const terminated = events.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
     expect(terminated.length).toBe(1)
-    if (terminated[0]!.type === 'terminated') {
+    if (terminated[0]!.type === 'watchStatus' && terminated[0]!.status === 'terminated') {
       expect(terminated[0]!.ref.name).toBe('system/stopper')
       expect(terminated[0]!.reason).toBe('stopped')
     }
@@ -74,7 +74,7 @@ describe('Actor: lifecycle events', () => {
     await tick()
     await system.shutdown()
 
-    expect(eventTypes).toEqual(['terminated'])
+    expect(eventTypes).toEqual(['watchStatus'])
   })
 })
 

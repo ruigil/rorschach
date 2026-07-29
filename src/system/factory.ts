@@ -7,7 +7,7 @@ import { type UiSurfaceRegistration } from '../types/ui-surface.ts';
 import { AgentRegistrationTopic, type AgentDescriptor } from '../types/agents.ts';
 import { ToolRegistrationTopic, type ToolSchema } from '../types/tools.ts';
 import { OutboundBroadcastTopic, OutboundAdminBroadcastTopic } from '../types/events.ts';
-import type { PluginHealthReport, PluginHealthUpdateMsg } from '../types/health.ts';
+import type { ActorHealth, HealthStatus } from '../types/health.ts';
 
 /**
  * Declaration for a sub-actor slot managed by the factory.
@@ -74,7 +74,55 @@ type PluginFactoryState = {
   activeUiSurface: UiSurfaceRegistration | null;
   activeAgents: string[];
   activeTools: string[];
-  health: PluginHealthReport;
+  /** Child alive health by full actor name; terminated children are removed. */
+  childStatus: Record<string, ActorHealth>;
+};
+
+const severity: Record<HealthStatus, number> = {
+  ok: 0,
+  degraded: 1,
+  unavailable: 2,
+};
+
+/**
+ * Slot baseline from missing/inactive slots; children may only worsen severity.
+ */
+const deriveHealth = (
+  activeSlots: Record<string, ActorSlotState>,
+  childStatus: Record<string, ActorHealth>,
+): ActorHealth => {
+  const missingSlots = Object.keys(activeSlots).filter(k => !activeSlots[k]?.ref);
+  const slotBaseline: ActorHealth = missingSlots.length > 0
+    ? { status: 'degraded', detail: `${missingSlots.join(', ')} slot(s) inactive` }
+    : { status: 'ok' };
+
+  let status: HealthStatus = slotBaseline.status;
+  const detailParts: string[] = [];
+  if (slotBaseline.detail) detailParts.push(slotBaseline.detail);
+
+  for (const [name, h] of Object.entries(childStatus)) {
+    if (severity[h.status] > severity[status]) {
+      status = h.status;
+    }
+    if (h.status !== 'ok' && h.detail) {
+      const short = name.includes('/') ? name.slice(name.lastIndexOf('/') + 1) : name;
+      detailParts.push(`${short}: ${h.detail}`);
+    } else if (h.status !== 'ok') {
+      const short = name.includes('/') ? name.slice(name.lastIndexOf('/') + 1) : name;
+      detailParts.push(`${short}: ${h.status}`);
+    }
+  }
+
+  // Children only worsen: never report better than slot baseline severity
+  if (severity[status] < severity[slotBaseline.status]) {
+    status = slotBaseline.status;
+  }
+
+  if (status === 'ok') return { status: 'ok' };
+  return {
+    status,
+    detail: detailParts.length > 0 ? detailParts.join('; ') : undefined,
+  };
 };
 
 /**
@@ -176,7 +224,7 @@ export const createPluginFactory = <
       activeUiSurface: null,
       activeAgents: [],
       activeTools: [],
-      health: { status: 'ok', updatedAt: Date.now() },
+      childStatus: {},
     }),
 
     maskState: (state: PluginFactoryState) => {
@@ -301,16 +349,8 @@ export const createPluginFactory = <
 
         ctx.log.info(`${blueprint.id} plugin activated via factory`);
 
-        const missingSlots = Object.keys(activeSlots).filter(k => !activeSlots[k]?.ref);
-        const health: PluginHealthReport = missingSlots.length > 0
-          ? { status: 'degraded', detail: `${missingSlots.join(', ')} slot(s) inactive`, updatedAt: Date.now() }
-          : { status: 'ok', updatedAt: Date.now() };
-
-        ctx.parent?.send({
-          type: 'plugin.health.changed',
-          id: blueprint.id,
-          health,
-        });
+        const childStatus: Record<string, ActorHealth> = {};
+        ctx.reportStatus(deriveHealth(activeSlots, childStatus));
 
         return {
           state: {
@@ -321,9 +361,23 @@ export const createPluginFactory = <
             activeUiSurface,
             activeAgents,
             activeTools,
-            health,
+            childStatus,
           },
         };
+      },
+
+      watchStatus: (state, event, ctx) => {
+        const childStatus = { ...state.childStatus };
+        if (event.status === 'terminated') {
+          delete childStatus[event.ref.name];
+        } else {
+          childStatus[event.ref.name] = {
+            status: event.status,
+            ...(event.detail !== undefined ? { detail: event.detail } : {}),
+          };
+        }
+        ctx.reportStatus(deriveHealth(state.activeSlots, childStatus));
+        return { state: { ...state, childStatus } };
       },
 
       stopped: (state, ctx) => {
@@ -387,27 +441,6 @@ export const createPluginFactory = <
     }),
 
     handler: onMessage<any, PluginFactoryState>({
-      healthStatus: (state, msg: PluginHealthUpdateMsg, ctx) => {
-        const nextHealth: PluginHealthReport = {
-          status: msg.status,
-          detail: msg.detail,
-          updatedAt: Date.now(),
-        };
-
-        ctx.parent?.send({
-          type: 'plugin.health.changed',
-          id: blueprint.id,
-          health: nextHealth,
-        });
-
-        return {
-          state: {
-            ...state,
-            health: nextHealth,
-          },
-        };
-      },
-
       config: (state, msg, ctx) => {
         const newConfig = msg.slice;
         const gen = state.generation + 1;
@@ -627,18 +660,14 @@ export const createPluginFactory = <
           });
         }
 
-        const missingSlots = Object.keys(activeSlots).filter(k => !activeSlots[k]?.ref);
-        const health: PluginHealthReport = missingSlots.length > 0
-          ? { status: 'degraded', detail: `${missingSlots.join(', ')} slot(s) inactive`, updatedAt: Date.now() }
-          : { status: 'ok', updatedAt: Date.now() };
-
-        if (state.health.status !== health.status || state.health.detail !== health.detail) {
-          ctx.parent?.send({
-            type: 'plugin.health.changed',
-            id: blueprint.id,
-            health,
-          });
+        // Drop childStatus entries for slots that no longer have refs
+        const childStatus = { ...state.childStatus };
+        for (const name of Object.keys(childStatus)) {
+          const stillActive = Object.values(activeSlots).some(s => s.ref?.name === name);
+          if (!stillActive) delete childStatus[name];
         }
+
+        ctx.reportStatus(deriveHealth(activeSlots, childStatus));
 
         return {
           state: {
@@ -649,7 +678,7 @@ export const createPluginFactory = <
             activeUiSurface: nextUiSurface,
             activeAgents,
             activeTools,
-            health,
+            childStatus,
           },
         };
       },

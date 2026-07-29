@@ -496,9 +496,9 @@ describe('Interceptors: error propagation', () => {
     ref.send('boom')
     await tick(200)
 
-    const terminated = events.filter((e) => e.type === 'terminated')
+    const terminated = events.filter((e) => e.type === 'watchStatus' && e.status === 'terminated')
     expect(terminated.length).toBe(1)
-    if (terminated[0]!.type === 'terminated') {
+    if (terminated[0]!.type === 'watchStatus' && terminated[0]!.status === 'terminated') {
       expect(terminated[0]!.reason).toBe('failed')
     }
     await system.shutdown()

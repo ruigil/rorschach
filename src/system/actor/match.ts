@@ -9,25 +9,28 @@ import type {
 // ─── onLifecycle ─────────────────────────────────────────────────────────────
 //
 // Replaces if-chains on event.type with a typed cases object.
-// Each case receives the minimal signature for that event — terminated
-// receives the full event (ref, reason, error); all others receive (state, ctx).
-// Omitted cases default to `{ state }` (no change).
+// Each case receives the minimal signature for that event — watchStatus
+// receives the full event (ref, status, reason, error, detail); all others
+// receive (state, ctx). Omitted cases default to `{ state }` (no change).
 //
 // Usage:
 //   lifecycle: onLifecycle({
 //     start(state, ctx)      { ... return { state } },
 //     stopped(state, ctx)    { ... return { state } },
-//     terminated(state, e, ctx) { ... return { state } },
+//     watchStatus(state, e, ctx) {
+//       if (e.status !== 'terminated') return { state }
+//       ...
+//     },
 //   })
 //
 
-type TerminatedEvent = Extract<LifecycleEvent, { type: 'terminated' }>
+type WatchStatusEvent = Extract<LifecycleEvent, { type: 'watchStatus' }>
 
 type LifecycleCases<M, S> = {
-  start?:      (state: S, ctx: ActorContext<M>) => LifecycleResult<S> | Promise<LifecycleResult<S>>
-  stopping?:   (state: S, ctx: ActorContext<M>) => LifecycleResult<S> | Promise<LifecycleResult<S>>
-  stopped?:    (state: S, ctx: ActorContext<M>) => LifecycleResult<S> | Promise<LifecycleResult<S>>
-  terminated?: (state: S, event: TerminatedEvent, ctx: ActorContext<M>) => LifecycleResult<S> | Promise<LifecycleResult<S>>
+  start?:       (state: S, ctx: ActorContext<M>) => LifecycleResult<S> | Promise<LifecycleResult<S>>
+  stopping?:    (state: S, ctx: ActorContext<M>) => LifecycleResult<S> | Promise<LifecycleResult<S>>
+  stopped?:     (state: S, ctx: ActorContext<M>) => LifecycleResult<S> | Promise<LifecycleResult<S>>
+  watchStatus?: (state: S, event: WatchStatusEvent, ctx: ActorContext<M>) => LifecycleResult<S> | Promise<LifecycleResult<S>>
 }
 
 export const onLifecycle = <M, S>(
@@ -35,10 +38,10 @@ export const onLifecycle = <M, S>(
 ): (state: S, event: LifecycleEvent, ctx: ActorContext<M>) => LifecycleResult<S> | Promise<LifecycleResult<S>> =>
   (state, event, ctx) => {
     switch (event.type) {
-      case 'start':      return cases.start?.(state, ctx)             ?? { state }
-      case 'stopping':   return cases.stopping?.(state, ctx)          ?? { state }
-      case 'stopped':    return cases.stopped?.(state, ctx)           ?? { state }
-      case 'terminated': return cases.terminated?.(state, event, ctx) ?? { state }
+      case 'start':       return cases.start?.(state, ctx)              ?? { state }
+      case 'stopping':    return cases.stopping?.(state, ctx)           ?? { state }
+      case 'stopped':     return cases.stopped?.(state, ctx)            ?? { state }
+      case 'watchStatus': return cases.watchStatus?.(state, event, ctx) ?? { state }
     }
   }
 

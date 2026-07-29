@@ -371,8 +371,8 @@ describe("PoolRouter: onWorkerFailure 'escalate'", () => {
     await tick(200)
 
     const terminated = events.filter(
-      (e): e is Extract<LifecycleEvent, { type: 'terminated' }> =>
-        e.type === 'terminated' && (e as Extract<LifecycleEvent, { type: 'terminated' }>).ref.name === 'system/pool',
+      (e): e is Extract<LifecycleEvent, { type: 'watchStatus' }> =>
+        e.type === 'watchStatus' && e.status === 'terminated' && (e as Extract<LifecycleEvent, { type: 'watchStatus' }>).ref.name === 'system/pool',
     )
     expect(terminated).toHaveLength(1)
     expect(terminated[0]?.reason).toBe('failed')
@@ -412,7 +412,7 @@ describe('PoolRouter: shutdown', () => {
     const { system, events } = await withMetrics()
     const terminated: string[] = []
     system.subscribe(SystemLifecycleTopic, (e) => {
-      if (e.type === 'terminated') terminated.push(e.ref.name)
+      if (e.type === 'watchStatus' && e.status === 'terminated') terminated.push(e.ref.name)
     })
 
     const router = PoolRouter({

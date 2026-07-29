@@ -349,7 +349,7 @@ describe('Graceful shutdown: system-level options', () => {
     await tick()
 
     // Should have received terminated event for the child
-    expect(events.some((e) => e.type === 'terminated')).toBe(true)
+    expect(events.some((e) => e.type === 'watchStatus' && e.status === 'terminated')).toBe(true)
   })
 
   test('PluginSystem with shutdownTimeoutMs enables root drain', async () => {

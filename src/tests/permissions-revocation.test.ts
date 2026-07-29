@@ -178,7 +178,7 @@ describe('Permissions Revocation', () => {
     const agentName = `${registryRef.name}/chatbot-${userId}`
     let agentTerminated = false
     system.subscribe(watchTopic(agentName), (event: LifecycleEvent) => {
-      if (event.type === 'terminated') agentTerminated = true
+      if (event.type === 'watchStatus' && event.status === 'terminated') agentTerminated = true
     })
 
     const newPermission = { grants: ['tools_web_search', '!coding_*'] }
