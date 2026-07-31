@@ -605,7 +605,7 @@ export const createActor = <M, S>(
   }
 
   // ─── The async processing loop ───
-  const runningPromise = (async () => {
+  const runActorLoop = async () => {
     let state = initialState
 
     // ─── Behavior switching: current handler (starts as def.handler, wrapped with interceptors) ───
@@ -781,7 +781,8 @@ export const createActor = <M, S>(
     drainStashToDeadLetters(stashedMessages)
 
     await runShutdownSequence(state)
-  })()
+  }
+  const runningPromise = runActorLoop()
 
   return {
     handle: {
