@@ -44,7 +44,7 @@ const parseRecord = (raw: string, fallbackRecordId: string): MemoryRecord => {
       return found
     }
   }
-  const attachments = (() => {
+  const parseAttachments = (): MessageAttachment[] | undefined => {
     const found = getRaw('attachments')
     if (!found) return undefined
     try {
@@ -53,7 +53,8 @@ const parseRecord = (raw: string, fallbackRecordId: string): MemoryRecord => {
     } catch {
       return undefined
     }
-  })()
+  }
+  const attachments = parseAttachments()
 
   return {
     recordId: get('recordId') ?? fallbackRecordId,
