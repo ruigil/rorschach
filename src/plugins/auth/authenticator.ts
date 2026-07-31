@@ -387,40 +387,42 @@ export const Authenticator = (opts: {
         }
         const phone = challenge.fullName!  // phone is stored as fullName initially
 
+        const performRegistration = async () => {
+          const { credentialId, publicKey, counter } = await verifyRegistration(
+            challenge.value,
+            credential as Extract<typeof credential, { type: 'registration' }>,
+            config,
+          )
+          const roles = rolesForIdentity(config, { fullName: phone, phone })
+          const createResult = await ask<UserStoreMsg, { ok: User } | { error: string }>(
+            userStore,
+            (r) => ({ type: 'createUser' as const, fullName: phone, phone, roles, replyTo: r }),
+            { timeoutMs: 5_000 },
+          )
+          if ('error' in createResult) throw new Error(createResult.error)
+          const deviceKey: DeviceKey = {
+            id:           credentialId,
+            publicKey,
+            counter,
+            deviceName:   'passkey',
+            registeredAt: Date.now(),
+          }
+          const addResult = await ask<UserStoreMsg, { ok: true } | { error: string }>(
+            userStore,
+            (r) => ({ type: 'addDeviceKey' as const, userId: createResult.ok.id, key: deviceKey, replyTo: r }),
+            { timeoutMs: 5_000 },
+          )
+          if ('error' in addResult) throw new Error(addResult.error)
+          return {
+            userId: createResult.ok.id,
+            fullName: phone,
+            roles: rolesForIdentity(config, createResult.ok),
+            permissions: createResult.ok.permissions,
+          }
+        }
+
         context.pipeToSelf(
-          (async () => {
-            const { credentialId, publicKey, counter } = await verifyRegistration(
-              challenge.value,
-              credential as Extract<typeof credential, { type: 'registration' }>,
-              config,
-            )
-            const roles = rolesForIdentity(config, { fullName: phone, phone })
-            const createResult = await ask<UserStoreMsg, { ok: User } | { error: string }>(
-              userStore,
-              (r) => ({ type: 'createUser' as const, fullName: phone, phone, roles, replyTo: r }),
-              { timeoutMs: 5_000 },
-            )
-            if ('error' in createResult) throw new Error(createResult.error)
-            const deviceKey: DeviceKey = {
-              id:           credentialId,
-              publicKey,
-              counter,
-              deviceName:   'passkey',
-              registeredAt: Date.now(),
-            }
-            const addResult = await ask<UserStoreMsg, { ok: true } | { error: string }>(
-              userStore,
-              (r) => ({ type: 'addDeviceKey' as const, userId: createResult.ok.id, key: deviceKey, replyTo: r }),
-              { timeoutMs: 5_000 },
-            )
-            if ('error' in addResult) throw new Error(addResult.error)
-            return {
-              userId: createResult.ok.id,
-              fullName: phone,
-              roles: rolesForIdentity(config, createResult.ok),
-              permissions: createResult.ok.permissions,
-            }
-          })(),
+          performRegistration(),
           ({ userId, fullName: uname, roles, permissions }): AuthenticatorMsg => ({ type: '_regDone', userId, fullName: uname, roles, permissions, challengeId, replyTo }),
           (err): AuthenticatorMsg => ({ type: '_resultError', error: String(err), replyTo }),
         )
