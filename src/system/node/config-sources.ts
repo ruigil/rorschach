@@ -73,7 +73,7 @@ export const configRevisionOf = (config: Record<string, unknown>): string => {
 
 // ─── StaticSource (from static-source) ──────────────────────────────────────
 
-export type StaticSourceInput = {
+type StaticSourceInput = {
   plugins?: (PluginEntry | PluginDef<any, any, any>)[]
   config?: Record<string, unknown>
 }

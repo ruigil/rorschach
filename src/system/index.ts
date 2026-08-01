@@ -86,10 +86,6 @@ export {
   fileSource,
   resolveConfigPath,
   staticSource,
-  type StaticSourceInput,
-  applyDesiredPatch,
-  revisionOf,
-  configRevisionOf,
 } from './node/config-sources.ts'
 export {
   type ConfigSource,
@@ -99,11 +95,6 @@ export {
   type ObservedState,
   type ObservedPlugin,
 } from './node/types.ts'
-export {
-  identityOf,
-  type PluginIdentity,
-} from './node/converge.ts'
-
 
 export type {
   HealthStatus,
