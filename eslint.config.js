@@ -14,6 +14,17 @@ export default [
       '@typescript-eslint/consistent-type-definitions': ['error', 'type'],
       'prefer-arrow-callback': 'error',
       'func-style': ['error', 'expression'],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.type='FunctionExpression']",
+          message: "Avoid IIFEs.",
+        },
+        {
+          selector: "CallExpression[callee.type='ArrowFunctionExpression']",
+          message: "Avoid IIFEs.",
+        },
+      ],
     },
   },
 ]

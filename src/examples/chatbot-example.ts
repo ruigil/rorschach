@@ -1,4 +1,4 @@
-import { AgentSystem, LogTopic, SystemLifecycleTopic } from '../system/index.ts'
+import { AgentSystem, LogTopic, SystemLifecycleTopic, staticSource} from '../system/index.ts'
 import interfacesPlugin from '../plugins/interfaces/interfaces.plugin.ts'
 import cognitivePlugin from '../plugins/cognitive/cognitive.plugin.ts'
 import type { LifecycleEvent, LogEvent } from '../system/index.ts'
@@ -10,8 +10,10 @@ if (!apiKey) {
 }
 
 // ─── Create the actor system with unified config ───
-const system = await AgentSystem({
-  config: {
+const system = await AgentSystem({ source: staticSource({ plugins: [
+    interfacesPlugin,
+    cognitivePlugin,
+  ], config: {
     interfaces: { http: { port: 3000 } },
     cognitive: {
       chatbot: {
@@ -20,12 +22,7 @@ const system = await AgentSystem({
         systemPrompt: process.env.CHATBOT_SYSTEM_PROMPT,
       },
     },
-  },
-  plugins: [
-    interfacesPlugin,
-    cognitivePlugin,
-  ],
-})
+  } }) })
 
 // ─── Subscribe to system logs ───
 system.subscribe(LogTopic, (event) => {

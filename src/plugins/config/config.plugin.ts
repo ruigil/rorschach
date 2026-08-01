@@ -3,8 +3,11 @@ import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import { buildConfigRoutes } from './routes.ts'
 import { configGetTool, configSetTool, pluginsLoadTool, pluginsUnloadTool, pluginsReloadTool } from './tools.ts'
 import { ConfigActor } from './manager.ts'
+import type { ConfigPluginConfig } from './types.ts'
 
-const config = defineConfig<Record<string, never>>('config', {})
+const config = defineConfig<ConfigPluginConfig>('config', {
+  configPath: '',
+})
 
 const configSurfaceRegistration: UiSurfaceRegistration = {
   id: 'config',
@@ -18,7 +21,7 @@ const configSurfaceRegistration: UiSurfaceRegistration = {
   frameTypes: ['config.schema', 'config.updated', 'plugins.updated', 'plugin.health.changed'],
 }
 
-export default createPluginFactory<Record<string, never>>({
+export default createPluginFactory<ConfigPluginConfig>({
   id: 'config',
   version: '1.0.0',
   description: 'Unified Configuration & Plugin Management',
@@ -26,7 +29,16 @@ export default createPluginFactory<Record<string, never>>({
   uiSurface: configSurfaceRegistration,
   slots: {
     manager: {
-      factory: () => ConfigActor(),
+      // Only the path field is the slot's config — other desired keys must not
+      // restart the manager (which holds FileSource + schema registry).
+      // configPath is a boot-mirrored absolute path (CLI/env authorship); see ensureAdminConfigPath.
+      factory: (cfg: ConfigPluginConfig | string | undefined) =>
+        ConfigActor({
+          configPath:
+            typeof cfg === 'string' ? cfg : (cfg?.configPath ?? ''),
+        }),
+      configPath: 'configPath',
+      surviveConfigChange: true,
     },
   },
   routes: (_cfg, deps) => buildConfigRoutes(deps.manager as any),

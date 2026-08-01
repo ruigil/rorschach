@@ -75,11 +75,38 @@ export type {
   PluginDef,
   PluginSystem,
   LoadedPlugin,
+  SystemControl,
+  ActualSnapshot,
+  Op,
+  OpResult,
 } from './actor/types.ts'
+
+// ─── Node control / config source ───
+export {
+  fileSource,
+  resolveConfigPath,
+  staticSource,
+  type StaticSourceInput,
+  applyDesiredPatch,
+  revisionOf,
+  configRevisionOf,
+} from './node/config-sources.ts'
+export {
+  type ConfigSource,
+  type DesiredState,
+  type DesiredStatePatch,
+  type PluginEntry,
+  type ObservedState,
+  type ObservedPlugin,
+} from './node/types.ts'
+export {
+  identityOf,
+  type PluginIdentity,
+} from './node/converge.ts'
+
 
 export type {
   HealthStatus,
   ActorHealth,
   WatchStatus,
 } from '../types/health.ts'
-

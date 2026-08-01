@@ -1,28 +1,31 @@
-import { AgentSystem, SystemLifecycleTopic, type LifecycleEvent } from './system/index.ts'
-import { loadConfig } from './config.ts'
-import { wireConfigManager } from './config-set.ts'
+import {
+  AgentSystem,
+  SystemLifecycleTopic,
+  type LifecycleEvent,
+  fileSource,
+  resolveConfigPath,
+} from './system/index.ts'
 
-// ─── Load config and plugins from config.json ───
+// ─── Desired store + boot via first convergence ───
+// Single operator path knob: --config / CONFIG_PATH / default config.json.
 
-const { plugins, config, configPath } = await loadConfig()
-
-// ─── Create the actor system (plugins loaded in topo-sorted order) ───
-
-const system = await AgentSystem({ plugins, config })
-
-wireConfigManager(system, configPath)
-
+const configPath = resolveConfigPath()
+const source = fileSource(configPath)
+const system = await AgentSystem({ source })
 
 // ─── Log actor lifecycle events to console ───
 
 system.subscribe(SystemLifecycleTopic, (event) => {
   const e = event as LifecycleEvent
+  if (e.type === 'watchStatus' && e.status === 'ok') {
+    console.log(`[system] actor ${e.ref.name} started successfully`)
+  }
   if (e.type === 'watchStatus' && e.status === 'terminated') {
     console.log(`[system] actor ${e.ref.name} terminated (${e.reason})`)
   }
 })
 
-console.log(`\n🚀 Rorschach running`)
+console.log(`\n🚀 Rorschach running (config: ${configPath})`)
 
 // ─── Graceful shutdown on Ctrl+C ───
 
@@ -31,4 +34,3 @@ process.on('SIGINT', async () => {
   await system.shutdown()
   process.exit(0)
 })
-

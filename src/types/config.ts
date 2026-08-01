@@ -26,9 +26,8 @@ export type ConfigSchemaSection = {
   schema: Record<string, unknown> | null
 }
 
-import { createTopic, type ActorRef } from '../system/index.ts'
-
-export { CORE_PLUGIN_IDS } from './core-plugins.ts'
+import { createTopic } from '../system/actor/types.ts'
+import type { ObservedState } from '../system/node/types.ts'
 
 export type ConfigSchemaEvent = {
   type: 'config.schema'
@@ -39,16 +38,11 @@ export type ConfigSchemaEvent = {
 
 export const ConfigSchemaTopic = createTopic<ConfigSchemaEvent>('system.config.schema')
 
-export type SystemConfigUpdateRequest =
-  | { action: 'set_value'; pluginId: string; patch: Record<string, unknown>; replyTo?: ActorRef<any> }
-  | { action: 'add_plugin'; specifier: string; replyTo?: ActorRef<any> }
-  | { action: 'remove_plugin'; pluginId: string; replyTo?: ActorRef<any> }
-  | { action: 'reload_plugin'; pluginId: string; replyTo?: ActorRef<any> }
-  | { action: 'get_values'; pluginId?: string; replyTo?: ActorRef<any> }
-  | { action: 'list_plugins'; replyTo?: ActorRef<any> }
+// ─── Observed plane (node-control sole writer; retained; key = systemId) ─────
+//
+// Phase 3: revision / appliedRevision + plugins. No live config tree (secrets).
+// revision !== appliedRevision ⇒ converging or degraded.
 
-export type SystemConfigUpdateResult =
-  | { success: true; message?: string; details?: unknown }
-  | { success: false; error: string }
+export type SystemObservedEvent = ObservedState
 
-export const SystemConfigUpdateTopic = createTopic<SystemConfigUpdateRequest>('system.config.update')
+export const SystemObservedTopic = createTopic<SystemObservedEvent>('system.observed')

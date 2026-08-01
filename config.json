@@ -1,17 +1,16 @@
 {
   "plugins": [
-    "./src/plugins/auth/auth.plugin.ts",
-    "./src/plugins/persistence/persistence.plugin.ts",
-    "./src/plugins/interfaces/interfaces.plugin.ts",
-    "./src/plugins/tools/tools.plugin.ts",
-    "./src/plugins/memory/memory.plugin.ts",
-    "./src/plugins/cognitive/cognitive.plugin.ts",
-    "./src/plugins/workflows/workflows.plugin.ts",
-    "./src/plugins/observability/observability.plugin.ts",
-    "./src/plugins/notebook/notebook.plugin.ts",
-    "./src/plugins/googleapis/googleapis.plugin.ts",
-    "./src/plugins/coding/coding.plugin.ts",
-    "./src/plugins/config/config.plugin.ts"
+    { "modulePath": "${CONFIG_DIR}/src/plugins/persistence/persistence.plugin.ts" },
+    { "modulePath": "${CONFIG_DIR}/src/plugins/interfaces/interfaces.plugin.ts" },
+    { "modulePath": "${CONFIG_DIR}/src/plugins/tools/tools.plugin.ts" },
+    { "modulePath": "${CONFIG_DIR}/src/plugins/memory/memory.plugin.ts" },
+    { "modulePath": "${CONFIG_DIR}/src/plugins/cognitive/cognitive.plugin.ts" },
+    { "modulePath": "${CONFIG_DIR}/src/plugins/workflows/workflows.plugin.ts" },
+    { "modulePath": "${CONFIG_DIR}/src/plugins/observability/observability.plugin.ts" },
+    { "modulePath": "${CONFIG_DIR}/src/plugins/notebook/notebook.plugin.ts" },
+    { "modulePath": "${CONFIG_DIR}/src/plugins/googleapis/googleapis.plugin.ts" },
+    { "modulePath": "${CONFIG_DIR}/src/plugins/coding/coding.plugin.ts" },
+    { "modulePath": "${CONFIG_DIR}/src/plugins/config/config.plugin.ts" }
   ],
   "config": {
     "persistence": {
@@ -140,6 +139,9 @@
         "model": "deepseek-v4-pro",
         "maxToolLoops": 30
       }
+    },
+    "config": {
+      "configPath": "config.json"
     }
   }
 }

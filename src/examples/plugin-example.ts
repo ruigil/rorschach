@@ -1,6 +1,5 @@
-import { AgentSystem, LogTopic, onLifecycle } from '../system/index.ts'
-import type { ActorDef, ActorContext, ActorRef, LogEvent, PluginDef } from '../system/index.ts'
-
+import { AgentSystem, LogTopic, onLifecycle, staticSource } from '../system/index.ts'
+import type { ActorDef, ActorContext, ActorRef, LogEvent, PluginDef, PluginSystem } from '../system/index.ts'
 
 // ─── Inline plugin definition ─────────────────────────────────────────────────
 
@@ -74,62 +73,77 @@ const createCounterPlugin = (config: CounterConfig): PluginDef<CounterPluginMsg,
   }),
 })
 
-// ─── Create system with counter loaded at startup ─────────────────────────────
+const pluginIds = (system: PluginSystem) =>
+  (system.control().snapshotActual().plugins ?? []).map(
+    (p) => `${p.id}@${p.version}`,
+  )
 
-const system = await AgentSystem({
-  plugins: [createCounterPlugin({ startAt: 0, tickMs: 1_000 })],
-})
+const waitFor = async (pred: () => boolean, timeoutMs = 5000) => {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    if (pred()) return
+    await Bun.sleep(50)
+  }
+  throw new Error('waitFor timeout')
+}
 
-// Print all log events to the console
-system.subscribe( LogTopic, (e) => {
-  const { level, source, message } = e as LogEvent
+// ─── Boot via staticSource (first converge) ───────────────────────────────────
+
+const counter = createCounterPlugin({ startAt: 0, tickMs: 1_000 })
+const source = staticSource({ plugins: [counter] })
+const system = await AgentSystem({ source })
+
+system.subscribe(LogTopic, (e) => {
+  const { level, source: src, message } = e as LogEvent
   const ts = new Date().toISOString().slice(11, 23)
-  console.log(`[${ts}] ${level.toUpperCase().padEnd(5)} [${source}] ${message}`)
+  console.log(`[${ts}] ${level.toUpperCase().padEnd(5)} [${src}] ${message}`)
 })
 
 console.log('\n── Startup plugins loaded ──')
-console.log('Active plugins:', system.listPlugins().map(p => `${p.id}@${p.version}`))
+console.log('Active plugins:', pluginIds(system))
 
-// ─── Dynamically load a plugin from a file at runtime ────────────────────────
+// ─── Dynamically load greeter via desired-state write ─────────────────────────
 
 await Bun.sleep(2_000)
 
-console.log('\n── Loading greeter plugin from file ──')
+console.log('\n── Loading greeter plugin from file (desired write) ──')
 const greeterPath = import.meta.dir + '/plugins/greeter.plugin.ts'
 const { default: createGreeterPlugin } = await import(greeterPath)
-const result = await system.use(createGreeterPlugin({ name: 'Rorschach', intervalMs: 1_500 }), { modulePath: greeterPath })
-console.log('Load result:', result)
-console.log('Active plugins:', system.listPlugins().map(p => `${p.id}@${p.version}`))
+const greeter = createGreeterPlugin({ name: 'Rorschach', intervalMs: 1_500 })
 
-// ─── Unload the inline plugin ─────────────────────────────────────────────────
+await source.write(() => ({
+  plugins: [counter, { def: greeter, modulePath: greeterPath }],
+}))
+await waitFor(() => pluginIds(system).some((id) => id.startsWith('greeter@')))
+console.log('Active plugins:', pluginIds(system))
+
+// ─── Unload counter via desired write ─────────────────────────────────────────
 
 await Bun.sleep(3_000)
 
-console.log('\n── Unloading counter plugin ──')
-const unloadResult = await system.unloadPlugin('counter')
-console.log('Unload result:', unloadResult)
+console.log('\n── Unloading counter plugin (desired write) ──')
+await source.write(() => ({
+  plugins: [{ def: greeter, modulePath: greeterPath }],
+}))
+await waitFor(() => !pluginIds(system).some((id) => id.startsWith('counter@')))
+console.log('Active plugins:', pluginIds(system))
 
-// ─── Reload the greeter plugin (same def, restarts the actor subtree) ─────────
-
-await Bun.sleep(2_000)
-
-console.log('\n── Reloading greeter plugin ──')
-const reloadResult = await system.reloadPlugin('greeter')
-console.log('Reload result:', reloadResult)
-
-// ─── Hot reload from disk (re-imports the module, picks up code changes) ──────
+// ─── Reload greeter via reloadNonce ───────────────────────────────────────────
 
 await Bun.sleep(2_000)
 
-console.log('\n── Hot reloading greeter plugin from disk ──')
-const hotResult = await system.hotReloadPlugin('greeter')
-console.log('Hot reload result:', hotResult)
+console.log('\n── Reloading greeter plugin (desired rewrite) ──')
+await source.write(() => ({
+  plugins: [{ def: createGreeterPlugin({ name: 'Rorschach', intervalMs: 1_500 }), modulePath: greeterPath }],
+}))
+await waitFor(() => pluginIds(system).some((id) => id.startsWith('greeter@')))
+console.log('Reload complete')
 
 // ─── Final state ──────────────────────────────────────────────────────────────
 
 await Bun.sleep(2_000)
 
 console.log('\n── Active plugins at shutdown ──')
-console.log(system.listPlugins().map(p => `${p.id}@${p.version} [${p.status}]`))
+console.log(pluginIds(system))
 
 await system.shutdown()

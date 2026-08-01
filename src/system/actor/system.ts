@@ -4,22 +4,23 @@ import { createMetricsRegistry } from './metrics.ts'
 import { deepMerge } from './config.ts'
 import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
 import type { ActorHealth } from '../../types/health.ts'
+import type { ConfigSource, PluginEntry } from '../node/types.ts'
+import { createNodeControlDef } from '../node/control.ts'
+import { interpolate } from '../node/utils.ts'
 import {
-  LogTopic,
   SystemLifecycleTopic,
   type ActorContext,
   type ActorDef,
   type ActorIdentity,
   type ActorRef,
   type ActorServices,
+  type ActualSnapshot,
   type EventTopic,
   type LifecycleEvent,
   type LoadedPlugin,
-  type LoadOptions,
-  type LoadResult,
-  type PluginDef,
+  type OpResult,
   type PluginSystem,
-  type UnloadResult,
+  type SystemControl,
 } from './types.ts'
 
 /** Map direct plugin root actor names (`system/<id>`) to plugin id; ignore deeper paths. */
@@ -37,42 +38,39 @@ export type PluginSystemOptions = {
   shutdownTimeoutMs?: number
 
   /**
-   * Plugins to load during system startup, in order.
-   * Each plugin is fully activated before the next one is loaded,
-   * so dependency ordering is respected.
-   * A startup plugin failure never prevents boot: the plugin is marked
-   * 'failed', a warning is logged, and startup continues.
+   * Desired-state store. When provided, the kernel spawns the node-control
+   * actor (system/node-control) and awaits its first converge pass.
+   * First-pass source.read failures are soft-fail (constructor still resolves;
+   * control retries with backoff). Plugin load failures mark `'failed'` and continue.
+   * Omit for a bare kernel (no plugins).
    */
-  plugins?: (PluginDef<any, any, any> | { def: PluginDef<any, any, any>; modulePath: string })[]
+  source?: ConfigSource
 
   /**
-   * Initial configuration tree. Values are keyed by plugin id (or the plugin's
-   * configDescriptor.key) and override plugin defaults. Deep-merged on top of
-   * each plugin's configDescriptor.defaults at load time.
+   * Identity key for retained observed state (default `'local'`).
    */
-  config?: Record<string, unknown>
+  systemId?: string
 }
+
 
 // ─── AgentSystem ──────────────────────────────────────────────────────
 //
 // Creates the root actor system with integrated plugin management.
 //
-// The system IS the plugin manager — plugin state lives in this closure
-// alongside the actor infrastructure. Plugin root actors are spawned as
-// direct children of the root actor at `system/<id>`.
+// Boot is the first node-control convergence when `source` is set.
+// Bare kernel when source is omitted.
 //
-// Returns a Promise because initial plugins (from options.plugins) must be
-// fully activated before the system is usable.
-//
-export const AgentSystem = async (
-  options?: PluginSystemOptions,
-): Promise<PluginSystem> => {
-  const { shutdownTimeoutMs, plugins: initialPlugins, config: initialConfig } = options ?? {}
+export const AgentSystem = async (options?: PluginSystemOptions ): Promise<PluginSystem> => {
+  const {
+    shutdownTimeoutMs,
+    source,
+    systemId = 'local',
+  } = options ?? {}
   let shuttingDown = false
-  let sub = 0;
+  let sub = 0
 
   // ─── Global config tree (keyed by plugin id / configDescriptor.key) ───
-  const globalConfig: Record<string, unknown> = { ...(initialConfig ?? {}) }
+  const globalConfig: Record<string, unknown> = {}
 
   // ─── Shared infrastructure ───
   const metricsRegistry = createMetricsRegistry()
@@ -93,10 +91,10 @@ export const AgentSystem = async (
     lifecycle: (state, event) => {
       if (event.type !== 'watchStatus') return { state }
 
+      const pluginId = directChildPluginId(event.ref.name)
       if (event.status === 'terminated') {
         services.eventStream.publish(SystemLifecycleTopic, event)
         // Clear plugin health when a plugin root dies
-        const pluginId = directChildPluginId(event.ref.name)
         if (pluginId && plugins.has(pluginId)) {
           const plugin = plugins.get(pluginId)!
           if (plugin.health !== undefined) {
@@ -107,7 +105,6 @@ export const AgentSystem = async (
         return { state }
       }
 
-      const pluginId = directChildPluginId(event.ref.name)
       const plugin = pluginId ? plugins.get(pluginId) : undefined
       if (plugin) {
         const health: ActorHealth = {
@@ -131,118 +128,28 @@ export const AgentSystem = async (
 
   const { handle: rootHandle, context: ctx } = createActor('system', rootDef, services)
 
-  const use = (def: PluginDef<any, any, any>, opts?: LoadOptions): Promise<LoadResult> => {
-    if (shuttingDown) return Promise.resolve({ ok: false, error: 'system is shutting down' })
+  const pendingUnloads = new Map<string, Promise<OpResult>>()
 
-    if (plugins.has(def.id)) return Promise.resolve({ ok: false, error: `plugin '${def.id}' already loaded` })
+  const unloadPlugin = async (id: string): Promise<OpResult> => {
+    if (!plugins.has(id)) return { ok: true }
 
-    // ─── Compute config slice for this plugin ───
-    const configKey = def.configDescriptor?.key ?? def.id
-    const defaults = def.configDescriptor?.defaults
-    const userOverride = globalConfig[configKey]
-    const configSlice = defaults !== undefined
-      ? deepMerge(defaults, userOverride)
-      : userOverride
-    // Keep global config up to date with merged slice
-    if (configSlice !== undefined) globalConfig[configKey] = configSlice
-
-    plugins.set(def.id, {
-      id: def.id,
-      version: def.version,
-      def,
-      status: 'loading',
-      loadedAt: Date.now(),
-      modulePath: opts?.modulePath,
-    })
-
-    return new Promise<LoadResult>((resolve) => {
-      const orig = def.lifecycle
-      const invokeOrig = async (state: any, event: LifecycleEvent, actorCtx: ActorContext<any>) => {
-        if (typeof orig === 'function') return orig(state, event, actorCtx)
-        if (orig && typeof (orig as any)[event.type] === 'function') {
-          return (orig as any)[event.type](state, actorCtx)
-        }
-        return { state }
-      }
-
-      const wrappedDef: ActorDef<any, unknown> = {
-        ...def,
-        lifecycle: async (state, event, actorCtx) => {
-          if (event.type === 'start') {
-            try {
-              const result = await invokeOrig(state, event, actorCtx)
-              const currentPlugin = plugins.get(def.id)!
-              // Health arrives via watchStatus after the plugin reports; default ok until then
-              const health = currentPlugin.health ?? { status: 'ok' as const }
-              plugins.set(def.id, { ...currentPlugin, status: 'active', health })
-              resolve({ ok: true, id: def.id })
-              return result
-            } catch (e) {
-              plugins.set(def.id, { ...plugins.get(def.id)!, status: 'failed', error: e })
-              resolve({ ok: false, error: String(e) })
-              throw e
-            }
-          }
-          return invokeOrig(state, event, actorCtx)
-        },
-      }
-      const ref = ctx.spawn(`${def.id}`, wrappedDef, { config: configSlice })
-      // Store ref so updateConfig() can deliver config-change messages
-      plugins.set(def.id, { ...plugins.get(def.id)!, ref })
-    })
-  }
-
-  const updateConfig = (patch: Record<string, unknown>): void => {
-    for (const [key, val] of Object.entries(patch)) {
-      const prev = globalConfig[key]
-      const next = deepMerge(prev, val)
-      if (JSON.stringify(prev) === JSON.stringify(next)) continue
-      globalConfig[key] = next
-
-      // Notify affected plugins
-      for (const plugin of plugins.values()) {
-        if (plugin.status !== 'active' || !plugin.ref) continue
-        const pluginKey = plugin.def.configDescriptor?.key ?? plugin.def.id
-        if (pluginKey !== key) continue
-        const onConfigChange = plugin.def.configDescriptor?.onConfigChange
-        if (onConfigChange) {
-          plugin.ref.send(onConfigChange(next))
-        }
-      }
-    }
-  }
-
-  const getConfigSlice = (pluginId?: string): unknown => {
-    const slice = pluginId === undefined ? globalConfig : globalConfig[pluginId]
-    if (slice === undefined) return {}
-    return structuredClone(slice)
-  }
-
-  const pendingUnloads = new Map<string, Promise<UnloadResult>>()
-
-  const unloadPlugin = async (id: string): Promise<UnloadResult> => {
     const existing = pendingUnloads.get(id)
     if (existing) return existing
 
-    const plugin = plugins.get(id)
-    if (!plugin) return { ok: false, error: `plugin '${id}' not found` }
+    const plugin = plugins.get(id)!
 
     const rootName = `system/${id}`
 
     if (plugin.status !== 'active' && plugin.status !== 'failed' && plugin.status !== 'deactivating') {
       return { ok: false, error: `plugin '${id}' is not active (status: ${plugin.status})` }
     }
-
-    // Fast path for failed plugins: their actor already ran its shutdown
-    // sequence when start() threw (watchStatus terminated fired then), so
-    // waiting for a fresh terminated after stop() would hang forever.
     if (plugin.status === 'failed') {
       ctx.stop({ name: rootName })
       plugins.delete(id)
       return { ok: true }
     }
 
-    const promise = new Promise<UnloadResult>((resolve) => {
+    const promise = new Promise<OpResult>((resolve) => {
       const watcherName = `$unload-${id}`
       services.eventStream.subscribe(watcherName, SystemLifecycleTopic, (event) => {
         if (
@@ -264,53 +171,192 @@ export const AgentSystem = async (
     return promise
   }
 
-  const reloadPlugin = async (id: string): Promise<LoadResult> => {
-    const plugin = plugins.get(id)
-    if (!plugin) return { ok: false, error: `plugin '${id}' not found` }
-    const modulePath = plugin.modulePath
-    const result = await unloadPlugin(id)
-    if (!result.ok) return result
-    return use(plugin.def, { modulePath })
-  }
+  // ─── SystemControl ───
+  const snapshotActual = (): ActualSnapshot => ({
+    plugins: [...plugins.values()].map((p) => ({
+      id: p.id,
+      version: p.version,
+      status: p.status,
+      modulePath: p.modulePath,
+      error: p.error,
+      health: p.health,
+      reloadNonce: p.reloadNonce,
+    })),
+    config: structuredClone(globalConfig),
+  })
 
-  const hotReloadPlugin = async (id: string): Promise<LoadResult> => {
-    const oldPlugin = plugins.get(id)
-    if (!oldPlugin) return { ok: false, error: `plugin '${id}' not found` }
-    const modulePath = oldPlugin.modulePath
-    if (!modulePath) return { ok: false, error: `modulePath for plugin '${id}' not found` }
+  const loadPlugin = async (entry: PluginEntry): Promise<OpResult> => {
+    if (shuttingDown) return { ok: false, error: 'system is shutting down' }
 
-    const result = await unloadPlugin(id)
-    if (!result.ok) return result
-    const { default: imported } = await import(`${modulePath}?t=${Date.now()}`)
-    
-    let def = imported
-    if (typeof imported === 'function') {
-      const configKey = oldPlugin?.def.configDescriptor?.key ?? id
-      const configSlice = globalConfig[configKey]
-      def = imported(configSlice)
-    }
-    return use(def, { modulePath })
-  }
+    try {
+      let def = entry.def
+      let resolved = entry.modulePath
 
-  // ─── Load initial plugins ───
-  // A failed plugin never prevents boot: it stays in the registry with
-  // status 'failed' (visible via listPlugins()/getPluginStatus()), a warning
-  // is logged to the console and the event stream, and startup continues.
-  for (const item of initialPlugins ?? []) {
-    const def = 'def' in item ? item.def : item
-    const modulePath = 'modulePath' in item ? item.modulePath : undefined
-    const result = await use(def, { modulePath })
-    if (!result.ok) {
-      const message = `Startup plugin '${def.id}' failed: ${result.error}`
-      console.warn(`[system] ${message}`)
-      services.eventStream.publish(LogTopic, {
-        level: 'warn',
-        source: 'system',
-        message,
-        timestamp: Date.now(),
-        data: { pluginId: def.id, error: result.error },
+      if (!def && resolved) {
+        const importUrl =
+          entry.reloadNonce !== undefined ? `${resolved}?reload=${entry.reloadNonce}` : resolved
+        const { default: imported } = await import(importUrl)
+        def = typeof imported === 'function' ? imported() : imported
+      }
+
+      if (!def || typeof def !== 'object' || typeof def.id !== 'string') {
+        return {
+          ok: false,
+          error: resolved
+            ? `Plugin at ${resolved} must export a PluginDef with an "id" field as default`
+            : 'Invalid plugin definition',
+        }
+      }
+
+      const existing = plugins.get(def.id)
+      const reloadNonce = entry.reloadNonce
+      if (existing?.status === 'active') {
+        const curPath = existing.modulePath
+        if (
+          resolved !== undefined &&
+          curPath !== undefined &&
+          resolved !== curPath
+        ) {
+          return {
+            ok: false,
+            error:
+              `plugin '${def.id}' is active at ${curPath ?? '(unknown)'}; ` +
+              `converge must Unload first before loading ${resolved}`,
+            id: def.id,
+          }
+        }
+        // Equivalent present: save reloadNonce directly.
+        plugins.set(def.id, { ...existing, reloadNonce })
+        return { ok: true, id: def.id }
+      }
+
+      if (existing?.status === 'failed') {
+        // Failed repair: unload then load (effector local, not identity-change sequencing).
+        await unloadPlugin(def.id)
+      }
+
+      if (plugins.has(def.id)) {
+        return { ok: false, error: `plugin '${def.id}' already loaded` }
+      }
+
+      // ─── Compute config slice for this plugin ───
+      const configKey = def.configDescriptor?.key ?? def.id
+      const defaults = def.configDescriptor?.defaults
+      const userOverride = globalConfig[configKey]
+      const configSlice = defaults !== undefined
+        ? deepMerge(defaults, userOverride)
+        : userOverride
+      // Keep global config up to date with merged slice
+      if (configSlice !== undefined) globalConfig[configKey] = configSlice
+
+      plugins.set(def.id, {
+        id: def.id,
+        version: def.version,
+        def,
+        status: 'loading',
+        loadedAt: Date.now(),
+        modulePath: resolved,
+        reloadNonce,
       })
+
+      return new Promise<OpResult>((resolve) => {
+        const orig = def!.lifecycle
+        const invokeOrig = async (state: any, event: LifecycleEvent, actorCtx: ActorContext<any>) => {
+          if (typeof orig === 'function') return orig(state, event, actorCtx)
+          if (orig && typeof (orig as any)[event.type] === 'function') {
+            return (orig as any)[event.type](state, actorCtx)
+          }
+          return { state }
+        }
+
+        const wrappedDef: ActorDef<any, unknown> = {
+          ...def!,
+          lifecycle: async (state, event, actorCtx) => {
+            if (event.type === 'start') {
+              try {
+                const result = await invokeOrig(state, event, actorCtx)
+                const currentPlugin = plugins.get(def!.id)!
+                // Health arrives via watchStatus after the plugin reports; default ok until then
+                const health = currentPlugin.health ?? { status: 'ok' as const }
+                plugins.set(def!.id, { ...currentPlugin, status: 'active', health })
+                resolve({ ok: true, id: def!.id })
+                return result
+              } catch (e) {
+                plugins.set(def!.id, { ...plugins.get(def!.id)!, status: 'failed', error: e })
+                resolve({ ok: false, error: String(e), id: plugins.has(def!.id) ? def!.id : undefined })
+                throw e
+              }
+            }
+            return invokeOrig(state, event, actorCtx)
+          },
+        }
+        const ref = ctx.spawn(`${def!.id}`, wrappedDef, { config: configSlice })
+        // Store ref so applyConfig can deliver config-change messages
+        plugins.set(def!.id, { ...plugins.get(def!.id)!, ref })
+      })
+    } catch (e) {
+      return { ok: false, error: String(e) }
     }
+  }
+
+  /**
+   * Apply a target config tree: replace the live tree with the
+   * interpolated desired document. Keys absent from `tree` are deleted.
+   * Per-slice values replace (not deep-merge) so nested omissions are deletions.
+   */
+  const applyConfig = async (tree: Record<string, unknown>): Promise<OpResult> => {
+    try {
+      const nextTree: Record<string, unknown> = {}
+      for (const [key, val] of Object.entries(tree)) {
+        nextTree[key] = interpolate(val)
+      }
+
+      const keys = new Set([...Object.keys(globalConfig), ...Object.keys(nextTree)])
+      for (const key of keys) {
+        const hasNext = Object.prototype.hasOwnProperty.call(nextTree, key)
+        const next = hasNext ? nextTree[key] : undefined
+        const prev = globalConfig[key]
+        if (JSON.stringify(prev) === JSON.stringify(next)) continue
+
+        if (hasNext) globalConfig[key] = next
+        else delete globalConfig[key]
+
+        for (const plugin of plugins.values()) {
+          if (plugin.status !== 'active' || !plugin.ref) continue
+          const pluginKey = plugin.def.configDescriptor?.key ?? plugin.def.id
+          if (pluginKey !== key) continue
+          const onConfigChange = plugin.def.configDescriptor?.onConfigChange
+          if (onConfigChange) {
+            plugin.ref.send(onConfigChange((hasNext ? next : {}) as never))
+          }
+        }
+      }
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  }
+
+  const systemControl: SystemControl = {
+    snapshotActual,
+    loadPlugin,
+    unloadPlugin,
+    applyConfig,
+  }
+
+  // ─── Node control: first converge is boot ───
+  if (source) {
+    await new Promise<void>((resolve) => {
+      ctx.spawn(
+        'node-control',
+        createNodeControlDef({
+          control: systemControl,
+          source,
+          systemId,
+          onFirstConvergeDone: resolve,
+        }),
+      )
+    })
   }
 
   // ─── Public facade ───
@@ -352,14 +398,14 @@ export const AgentSystem = async (
   }
 
   return {
-    spawn, stop, shutdown, publish, publishRetained, deleteRetained, subscribe,
-    updateConfig,
-    getConfigSlice,
-    use,
-    unloadPlugin,
-    reloadPlugin,
-    hotReloadPlugin,
-    listPlugins: () => [...plugins.values()],
-    getPluginStatus: (id) => plugins.get(id),
+    control: () => systemControl,
+    spawn,
+    stop,
+    shutdown,
+    publish,
+    publishRetained,
+    deleteRetained,
+    subscribe,
   }
+
 }

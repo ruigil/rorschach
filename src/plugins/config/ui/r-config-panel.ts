@@ -14,8 +14,14 @@ import {
 } from '@rorschach/webkit';
 
 import type { ConfigUIState } from './index.js';
-import { normalizeArray, refreshConfigPlugins, refreshConfigSchemas, syncMissingValues } from './index.js';
-import { CORE_PLUGIN_IDS } from '../../../types/core-plugins.js';
+import {
+  isConfigConverging,
+  normalizeArray,
+  noteAcceptedRevision,
+  refreshConfigPlugins,
+  refreshConfigSchemas,
+  syncMissingValues,
+} from './index.js';
 import {
   buildConfigTree,
   filterConfigTree,
@@ -25,6 +31,9 @@ import {
 } from './widgets/path-utils.js';
 import type { ConfigFieldChangeEvent } from './widgets/r-config-field.js';
 import './widgets/r-config-field.js';
+
+/** UI-only soft-warn list — kernel does not block unload of these. */
+const CORE_PLUGIN_IDS = ['interfaces', 'config'] as const;
 
 type ConfigSchema = {
   id: string;
@@ -56,6 +65,9 @@ export class RConfigPanel extends RorschachBase {
   private _errorStore = new StoreController(this, ['config', 'error']);
   private _addInputPathStore = new StoreController(this, ['config', 'addInputPath']);
   private _isSubmittingStore = new StoreController(this, ['config', 'isSubmitting']);
+  private _pendingRevisionStore = new StoreController(this, ['config', 'pendingRevision']);
+  private _observedRevisionStore = new StoreController(this, ['config', 'observedRevision']);
+  private _appliedRevisionStore = new StoreController(this, ['config', 'appliedRevision']);
 
   @state() private models: string[] = [];
   @state() private selectedNodeId: string = 'load-plugin';
@@ -142,6 +154,36 @@ export class RConfigPanel extends RorschachBase {
         opacity: 0.45;
         cursor: default;
         pointer-events: none;
+      }
+
+      .converge-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        font-family: var(--font-ui);
+        font-size: 0.65rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--accent-bright, #00c4d4);
+        background: color-mix(in srgb, var(--accent, #00c4d4) 15%, transparent);
+        border: 1px solid color-mix(in srgb, var(--accent, #00c4d4) 35%, transparent);
+      }
+
+      .converge-badge::before {
+        content: '';
+        width: 0.4rem;
+        height: 0.4rem;
+        border-radius: 50%;
+        background: currentColor;
+        animation: converge-pulse 1.2s ease-in-out infinite;
+      }
+
+      @keyframes converge-pulse {
+        0%, 100% { opacity: 0.35; }
+        50% { opacity: 1; }
       }
 
       .config-search-box {
@@ -452,13 +494,18 @@ export class RConfigPanel extends RorschachBase {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       });
-      if (!res.ok) throw new Error(`server error ${res.status}`);
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(body?.error ?? `server error ${res.status}`);
+      }
+      // Accepted-vs-applied: track revision until observed catches up.
+      noteAcceptedRevision(body);
     } catch (err: any) {
       this._flashError(`Failed to save ${pluginId}: ${err.message}`);
       return;
     }
 
-    // Re-baseline: the saved values become the new initial state.
+    // Re-baseline display from the desired values we just wrote (raw placeholders).
     const current = { ...ns.get('currentValues') };
     ns.set('initialValues', { ...ns.get('initialValues'), [pluginId]: structuredClone(current[pluginId] ?? {}) });
     const nextDirty = { ...ns.get('dirtyFields') };
@@ -591,21 +638,20 @@ export class RConfigPanel extends RorschachBase {
       const res = await fetch('/config/plugins/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ specifier: path }),
+        body: JSON.stringify({ modulePath: path }),
       });
+      const data = await res.json().catch(() => null);
       if (res.ok) {
-        const data = await res.json().catch(() => null);
+        noteAcceptedRevision(data);
         ns.set('addInputPath', '');
         await refreshConfigPlugins();
-        // The add response carries the loaded plugin id — select it directly
-        // (the raw user-typed specifier never equals the resolved modulePath).
+        // Optional id once applied; until then list may lag observed.
         const newId = data?.details?.id;
         if (newId) {
           this.selectedNodeId = `plugin-${newId}`;
         }
       } else {
-        const text = await res.text();
-        ns.set('error', `Failed to load plugin: ${res.status} ${text}`);
+        ns.set('error', `Failed to load plugin: ${res.status} ${data?.error ?? JSON.stringify(data)}`);
       }
     } catch (err) {
       ns.set('error', String(err));
@@ -623,11 +669,12 @@ export class RConfigPanel extends RorschachBase {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pluginId: id }),
       });
+      const data = await res.json().catch(() => null);
       if (res.ok) {
+        noteAcceptedRevision(data);
         await refreshConfigPlugins();
       } else {
-        const text = await res.text();
-        ns.set('error', `Failed to unload plugin: ${res.status} ${text}`);
+        ns.set('error', `Failed to unload plugin: ${res.status} ${data?.error ?? ''}`);
       }
     } catch (err) {
       ns.set('error', String(err));
@@ -643,11 +690,12 @@ export class RConfigPanel extends RorschachBase {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pluginId: id }),
       });
+      const data = await res.json().catch(() => null);
       if (res.ok) {
+        noteAcceptedRevision(data);
         await refreshConfigPlugins();
       } else {
-        const text = await res.text();
-        ns.set('error', `Failed to reload plugin: ${res.status} ${text}`);
+        ns.set('error', `Failed to reload plugin: ${res.status} ${data?.error ?? ''}`);
       }
     } catch (err) {
       ns.set('error', String(err));
@@ -677,6 +725,11 @@ export class RConfigPanel extends RorschachBase {
     const error = this._errorStore.value as string | null;
     const addInputPath = (this._addInputPathStore.value as string) || '';
     const isSubmitting = this._isSubmittingStore.value as boolean;
+    const converging = isConfigConverging({
+      pendingRevision: this._pendingRevisionStore.value as string | null,
+      observedRevision: this._observedRevisionStore.value as string | null,
+      appliedRevision: this._appliedRevisionStore.value as string | null,
+    });
 
     let selectedPlugin = plugins.find(p => p && `plugin-${p.id}` === this.selectedNodeId);
 
@@ -703,10 +756,11 @@ export class RConfigPanel extends RorschachBase {
             ` : nothing}
           </div>
           <div slot="actions" class="config-actions">
+            ${converging ? html`<span class="converge-badge" title="Desired accepted; waiting for node-control to apply">Applying…</span>` : nothing}
             <r-flash-message id="flash-msg"></r-flash-message>
             ${isSectionSelected ? html`
-              <button type="button" class="btn-reset" ?disabled=${!hasDirtyFields} @click=${this.reset}>Reset</button>
-              <button type="button" class="btn-save" ?disabled=${!hasDirtyFields} @click=${this.save}>Save</button>
+              <button type="button" class="btn-reset" ?disabled=${!hasDirtyFields || converging} @click=${this.reset}>Reset</button>
+              <button type="button" class="btn-save" ?disabled=${!hasDirtyFields || converging} @click=${this.save}>Save</button>
             ` : html`
               <r-button
                 variant="ghost"
@@ -845,8 +899,19 @@ export class RConfigPanel extends RorschachBase {
           </r-button>
           <r-button
             variant="danger"
-            ?disabled=${CORE_PLUGIN_IDS.includes(selectedPlugin.id) || loading}
-            @click=${() => this._onUnload(selectedPlugin.id)}
+            ?disabled=${loading}
+            title=${CORE_PLUGIN_IDS.includes(selectedPlugin.id)
+              ? 'Warning: unloading a core plugin may break admin/UI until restored in desired config'
+              : ''}
+            @click=${() => {
+              if (CORE_PLUGIN_IDS.includes(selectedPlugin.id)) {
+                const ok = confirm(
+                  `Unload core plugin "${selectedPlugin.id}"? This may break admin/UI until the desired config is restored.`,
+                )
+                if (!ok) return
+              }
+              this._onUnload(selectedPlugin.id)
+            }}
           >
             Unload Plugin
           </r-button>

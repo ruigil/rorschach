@@ -1,4 +1,4 @@
-import { AgentSystem, LogTopic, MetricsTopic } from '../src/system/index.ts'
+import { AgentSystem, LogTopic, MetricsTopic, staticSource } from '../src/system/index.ts'
 import interfacesPlugin from '../src/plugins/interfaces/interfaces.plugin.ts'
 import cognitivePlugin from '../src/plugins/cognitive/cognitive.plugin.ts'
 import memoryPlugin from '../src/plugins/memory/memory.plugin.ts'
@@ -60,8 +60,10 @@ function computeStats(values: number[]) {
 // ─── Setup ───
 
 const system = await AgentSystem({
-  config: benchmarkConfig.config,
-  plugins: [interfacesPlugin, cognitivePlugin, memoryPlugin, observabilityPlugin],
+  source: staticSource({
+    config: benchmarkConfig.config,
+    plugins: [interfacesPlugin, cognitivePlugin, memoryPlugin, observabilityPlugin],
+  }),
 })
 
 let llmRef: ActorRef<LlmProviderMsg> | null = null

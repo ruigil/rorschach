@@ -1,16 +1,27 @@
-import type { ActorContext, ActorDef, ActorRef } from '../../system/index.ts'
+import type { ActorDef } from '../../system/index.ts'
 import { onMessage, onLifecycle } from '../../system/index.ts'
-import type { ConfigSchemaSection } from '../../types/config.ts'
-import { ConfigSchemaTopic, SystemConfigUpdateTopic } from '../../types/config.ts'
+import { ConfigSchemaTopic, SystemObservedTopic } from '../../types/config.ts'
 import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
-import type { ConfigMsg, ConfigState, PendingRequest } from './types.ts'
-
-const REQUEST_TIMEOUT_MS = 30_000
+import { fileSource } from '../../system/node/config-sources.ts'
+import type { ConfigSource, PluginEntry } from '../../system/node/types.ts'
+import { framesFromObservedDiff } from './observed-frames.ts'
+import type { ConfigMsg, ConfigPluginConfig, ConfigState, PluginSummary } from './types.ts'
 
 const getBodyText = (body: string | Uint8Array | null | undefined): string => {
   if (!body) return '{}'
   if (typeof body === 'string') return body
   return new TextDecoder().decode(body)
+}
+
+const parseHttpBody = (body: unknown): Record<string, unknown> => {
+  try {
+    const parsed = JSON.parse(getBodyText(body as string | Uint8Array | null | undefined))
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {}
+  } catch {
+    return {}
+  }
 }
 
 const jsonResponse = (status: number, body: unknown) => ({
@@ -22,59 +33,115 @@ const jsonResponse = (status: number, body: unknown) => ({
   },
 })
 
-/** Synthetic reply ref routing a topic reply back into this actor as `_updateReply`. */
-const selfReplyRef = (ctx: ActorContext<ConfigMsg>, requestId: string): ActorRef<any> => ({
-  name: `reply:${requestId}`,
-  isAlive: () => true,
-  send: (res: any) => ctx.self.send({ type: '_updateReply', requestId, result: res }),
-})
-
-/** Registers a pending request, arms its timeout, and allocates the request id
- *  (via the nextRequestId bump). Returns the next state. */
-const beginRequest = (
-  state: ConfigState,
-  ctx: ActorContext<ConfigMsg>,
-  requestId: string,
-  pending: PendingRequest,
-): ConfigState => {
-  const pendingRequests = new Map(state.pendingRequests)
-  pendingRequests.set(requestId, pending)
-  ctx.timers.startSingleTimer(requestId, { type: '_requestTimeout', requestId }, REQUEST_TIMEOUT_MS)
-  return { ...state, nextRequestId: state.nextRequestId + 1, pendingRequests }
+// Helper for matching dynamic plugins by ID or modulePath
+const isPluginMatch = (
+  p: PluginEntry,
+  pluginId: string,
+  modulePath?: string,
+): boolean => {
+  if (p.def) {
+    return p.def.id === pluginId
+  }
+  return Boolean(p.modulePath && modulePath && p.modulePath === modulePath)
 }
 
-/** Removes a pending request and disarms its timeout. */
-const endRequest = (
-  state: ConfigState,
-  ctx: ActorContext<ConfigMsg>,
-  requestId: string,
-): { state: ConfigState; pending: PendingRequest | undefined } => {
-  const pending = state.pendingRequests.get(requestId)
-  if (!pending) return { state, pending: undefined }
-  ctx.timers.cancel(requestId)
-  const pendingRequests = new Map(state.pendingRequests)
-  pendingRequests.delete(requestId)
-  return { state: { ...state, pendingRequests }, pending }
+// ─── Direct Config plane mutators and readers ───────────────────────────────
+
+export const getConfig = async (source: ConfigSource, pluginId?: string) => {
+  const { state } = await source.read()
+  return pluginId === undefined ? state.config : (state.config[pluginId] ?? {})
+}
+
+export const setConfig = async (
+  source: ConfigSource,
+  pluginId: string,
+  patch: Record<string, unknown>,
+) => {
+  return await source.write(() => ({ config: { [pluginId]: patch } }))
+}
+
+export const addPlugin = async (source: ConfigSource, modulePath: string) => {
+  return await source.write((curr) => {
+    const plugins = curr.plugins ?? []
+    if (plugins.some((p) => p.modulePath === modulePath)) return { plugins }
+    return { plugins: [...plugins, { modulePath }] }
+  })
+}
+
+export const removePlugin = async (
+  source: ConfigSource,
+  pluginId: string,
+  observedPlugins: PluginSummary[],
+) => {
+  const modulePath = observedPlugins.find((p) => p.id === pluginId)?.modulePath
+  return await source.write((curr) => {
+    const next = (curr.plugins ?? []).filter((p) => !isPluginMatch(p, pluginId, modulePath))
+    return { plugins: next }
+  })
+}
+
+export const reloadPlugin = async (
+  source: ConfigSource,
+  pluginId: string,
+  observedPlugins: PluginSummary[],
+): Promise<{ revision: string; found: boolean }> => {
+  const modulePath = observedPlugins.find((p) => p.id === pluginId)?.modulePath
+  let found = false
+  const { revision } = await source.write((curr) => {
+    const next = (curr.plugins ?? []).map((p) => {
+      if (!isPluginMatch(p, pluginId, modulePath)) return p
+      found = true
+      if (p.def) return p
+      const prev = p.reloadNonce ?? 0
+      return { ...p, reloadNonce: prev + 1 }
+    })
+    return found ? { plugins: next } : {}
+  })
+  return { revision, found }
 }
 
 // ─── Config Actor ────────────────────────────────────────────────────────────
-//
-// Pure gateway for the unified config plugin: translates HTTP requests and
-// tool invocations into SystemConfigUpdateTopic commands (handled by
-// wireConfigManager in the composition root) and serves the aggregated config
-// schema registry. Authorization is declared on route registration
-// (auth: 'admin', sameOrigin: 'non-GET') and enforced by the HTTP gateway;
-// the tool path is gated by the tool-permissions system.
-//
-export const ConfigActor = (): ActorDef<ConfigMsg, ConfigState> => {
+
+export const ConfigActor = (
+  initial?: ConfigPluginConfig,
+): ActorDef<ConfigMsg, ConfigState> => {
   return {
-    initialState: () => ({
-      schemas: new Map<string, ConfigSchemaSection>(),
-      pendingRequests: new Map(),
-      nextRequestId: 0,
-    }),
+    initialState: () => {
+      const configPath = initial?.configPath ?? ''
+      const source: ConfigSource | null = configPath ? fileSource(configPath) : null
+      return {
+        schemas: new Map(),
+        source,
+        configPath,
+        observed: null,
+      }
+    },
 
     handler: onMessage<ConfigMsg, ConfigState>({
+      'config': (state, { slice }) => {
+        const configPath = slice.configPath ?? state.configPath
+        if (!configPath) {
+          return { state: { ...state, configPath: '', source: null } }
+        }
+        if (configPath === state.configPath && state.source) {
+          return { state: { ...state, configPath } }
+        }
+        return {
+          state: {
+            ...state,
+            configPath,
+            source: fileSource(configPath),
+          },
+        }
+      },
+
+      '_observed': (state, { observed }, ctx) => {
+        for (const frame of framesFromObservedDiff(state.observed, observed)) {
+          ctx.publish(OutboundAdminBroadcastTopic, frame)
+        }
+        return { state: { ...state, observed } }
+      },
+
       '_configSchemaChanged': (state, { event }, ctx) => {
         if (!event.payload?.section) return { state }
         const schemas = new Map(state.schemas)
@@ -83,8 +150,6 @@ export const ConfigActor = (): ActorDef<ConfigMsg, ConfigState> => {
         } else {
           schemas.set(event.key, event.payload.section)
         }
-        // Republish schema changes to the admin WS channel so open config
-        // panels observe new/removed parameter sections without a refresh.
         ctx.publish(OutboundAdminBroadcastTopic, {
           type: 'config.schema',
           key: event.key,
@@ -94,179 +159,225 @@ export const ConfigActor = (): ActorDef<ConfigMsg, ConfigState> => {
         return { state: { ...state, schemas } }
       },
 
-      'http.request': (state, message, ctx) => {
-        const { request, replyTo } = message
+      'http.request': (state, { request, replyTo }) => {
+        if (!state.source) {
+          replyTo.send(jsonResponse(500, { accepted: false, error: 'configPath not configured' }))
+          return { state }
+        }
+        const source = state.source
+        const observedPlugins = state.observed?.plugins ?? []
         const url = new URL(request.url, 'http://localhost')
         const path = url.pathname
 
-        // Schemas are served straight from local state — no topic round-trip.
         if (request.method === 'GET' && path === '/config/schema') {
           replyTo.send(jsonResponse(200, Array.from(state.schemas.values())))
           return { state }
         }
 
-        const requestId = `cfg-req-${state.nextRequestId}`
-        const replyRef = selfReplyRef(ctx, requestId)
-        const dispatch = (pending: PendingRequest): ConfigState =>
-          beginRequest(state, ctx, requestId, pending)
-
-        if (request.method === 'GET' && (path === '/config' || path === '/config/plugins' || path.startsWith('/config/values/'))) {
-          if (path === '/config/plugins') {
-            const nextState = dispatch({ type: 'http', replyTo, extra: { action: 'list' } })
-            ctx.publish(SystemConfigUpdateTopic, { action: 'list_plugins', replyTo: replyRef })
-            return { state: nextState }
-          }
-
-          const pluginId = path.match(/^\/config\/values\/(.+)$/)?.[1]
-          const nextState = dispatch({ type: 'http', replyTo, extra: { action: 'get', pluginId } })
-          ctx.publish(SystemConfigUpdateTopic, { action: 'get_values', pluginId, replyTo: replyRef })
-          return { state: nextState }
-        }
-
-        if (request.method === 'PATCH' && path.startsWith('/config/values/')) {
-          const pluginId = path.match(/^\/config\/values\/(.+)$/)?.[1]
-          if (!pluginId) {
-            replyTo.send(jsonResponse(400, { ok: false, error: 'pluginId is required' }))
-            return { state }
-          }
-          let patch: Record<string, unknown> = {}
+        const handleHttpRequest = async () => {
           try {
-            patch = JSON.parse(getBodyText(request.body))
-          } catch {}
+            if (request.method === 'GET') {
+              if (path === '/config/plugins') {
+                replyTo.send(jsonResponse(200, observedPlugins))
+                return
+              }
+              if (path === '/config') {
+                const data = await getConfig(source)
+                replyTo.send(jsonResponse(200, data))
+                return
+              }
+              if (path.startsWith('/config/values/')) {
+                const pluginId = path.match(/^\/config\/values\/(.+)$/)?.[1]
+                if (!pluginId) {
+                  replyTo.send(jsonResponse(400, { accepted: false, error: 'pluginId is required' }))
+                  return
+                }
+                const data = await getConfig(source, pluginId)
+                replyTo.send(jsonResponse(200, data))
+                return
+              }
+            }
 
-          const nextState = dispatch({ type: 'http', replyTo })
-          ctx.publish(SystemConfigUpdateTopic, { action: 'set_value', pluginId, patch, replyTo: replyRef })
-          return { state: nextState }
-        }
+            if (request.method === 'PATCH' && path.startsWith('/config/values/')) {
+              const pluginId = path.match(/^\/config\/values\/(.+)$/)?.[1]
+              if (!pluginId) {
+                replyTo.send(jsonResponse(400, { accepted: false, error: 'pluginId is required' }))
+                return
+              }
+              const patch = parseHttpBody(request.body)
+              const { revision } = await setConfig(source, pluginId, patch)
+              replyTo.send(jsonResponse(200, { accepted: true, revision }))
+              return
+            }
 
-        if (request.method === 'POST' && (path === '/config/plugins/add' || path === '/config/plugins/remove' || path === '/config/plugins/reload')) {
-          let bodyData: any = {}
-          try {
-            bodyData = JSON.parse(getBodyText(request.body))
-          } catch {}
+            if (request.method === 'POST') {
+              if (path === '/config/plugins/add') {
+                const body = parseHttpBody(request.body)
+                const modulePath = String(body.modulePath ?? body.specifier ?? '')
+                if (!modulePath) {
+                  replyTo.send(jsonResponse(400, { accepted: false, error: 'modulePath is required' }))
+                  return
+                }
+                const { revision } = await addPlugin(source, modulePath)
+                replyTo.send(jsonResponse(200, { accepted: true, revision, details: { modulePath } }))
+                return
+              }
 
-          const nextState = dispatch({ type: 'http', replyTo })
-          if (path.endsWith('/add')) {
-            ctx.publish(SystemConfigUpdateTopic, { action: 'add_plugin', specifier: bodyData.path ?? bodyData.specifier ?? '', replyTo: replyRef })
-          } else if (path.endsWith('/remove')) {
-            ctx.publish(SystemConfigUpdateTopic, { action: 'remove_plugin', pluginId: bodyData.id ?? bodyData.pluginId ?? '', replyTo: replyRef })
-          } else {
-            ctx.publish(SystemConfigUpdateTopic, { action: 'reload_plugin', pluginId: bodyData.id ?? bodyData.pluginId ?? '', replyTo: replyRef })
+              if (path === '/config/plugins/remove') {
+                const body = parseHttpBody(request.body)
+                const pluginId = String(body.pluginId ?? '')
+                if (!pluginId) {
+                  replyTo.send(jsonResponse(400, { accepted: false, error: 'pluginId is required' }))
+                  return
+                }
+                const { revision } = await removePlugin(source, pluginId, observedPlugins)
+                replyTo.send(jsonResponse(200, { accepted: true, revision, details: { id: pluginId } }))
+                return
+              }
+
+              if (path === '/config/plugins/reload') {
+                const body = parseHttpBody(request.body)
+                const pluginId = String(body.pluginId ?? '')
+                if (!pluginId) {
+                  replyTo.send(jsonResponse(400, { accepted: false, error: 'pluginId is required' }))
+                  return
+                }
+                const { revision, found } = await reloadPlugin(source, pluginId, observedPlugins)
+                if (!found) {
+                  replyTo.send(
+                    jsonResponse(400, {
+                      accepted: false,
+                      error: `Plugin '${pluginId}' not found in desired state`,
+                    }),
+                  )
+                  return
+                }
+                replyTo.send(jsonResponse(200, { accepted: true, revision, details: { id: pluginId } }))
+                return
+              }
+            }
+
+            replyTo.send(jsonResponse(404, { error: 'Route not found' }))
+          } catch (err) {
+            replyTo.send(jsonResponse(500, { accepted: false, error: String(err) }))
           }
-          return { state: nextState }
         }
+        void handleHttpRequest()
 
-        replyTo.send(jsonResponse(404, { error: 'Route not found' }))
         return { state }
       },
 
-      'tool.invoke': (state, message, ctx) => {
-        const { toolName, args, replyTo } = message
-        const requestId = `cfg-tool-${state.nextRequestId}`
-        const replyRef = selfReplyRef(ctx, requestId)
-        const dispatch = (): ConfigState =>
-          beginRequest(state, ctx, requestId, { type: 'tool', replyTo })
+      'tool.invoke': (state, { toolName, args, replyTo }) => {
+        if (!state.source) {
+          replyTo.send({ type: 'toolError', error: 'configPath not configured' })
+          return { state }
+        }
+        const source = state.source
+        const observedPlugins = state.observed?.plugins ?? []
 
-        if (toolName === 'config_set') {
-          const { pluginId, patch } = args as { pluginId: string; patch: Record<string, unknown> }
-          if (!pluginId) {
-            replyTo.send({ type: 'toolError', error: 'pluginId is required' })
-            return { state }
+        const handleToolInvoke = async () => {
+          try {
+            const params = args ?? {}
+
+            switch (toolName) {
+              case 'config_get': {
+                const pluginId = typeof params.pluginId === 'string' ? params.pluginId : undefined
+                const data = await getConfig(source, pluginId)
+                replyTo.send({ type: 'toolResult', result: JSON.stringify(data, null, 2) })
+                return
+              }
+
+              case 'config_set': {
+                const pluginId = String(params.pluginId ?? '')
+                if (!pluginId) {
+                  replyTo.send({ type: 'toolError', error: 'pluginId is required' })
+                  return
+                }
+                const patch = (params.patch as Record<string, unknown>) ?? {}
+                const { revision } = await setConfig(source, pluginId, patch)
+                replyTo.send({
+                  type: 'toolResult',
+                  result: JSON.stringify({ accepted: true, revision }),
+                })
+                return
+              }
+
+              case 'plugins_load': {
+                const modulePath = String(params.modulePath ?? params.specifier ?? '')
+                if (!modulePath) {
+                  replyTo.send({ type: 'toolError', error: 'modulePath is required' })
+                  return
+                }
+                const { revision } = await addPlugin(source, modulePath)
+                replyTo.send({
+                  type: 'toolResult',
+                  result: JSON.stringify({ accepted: true, revision, details: { modulePath } }),
+                })
+                return
+              }
+
+              case 'plugins_unload': {
+                const pluginId = String(params.pluginId ?? '')
+                if (!pluginId) {
+                  replyTo.send({ type: 'toolError', error: 'pluginId is required' })
+                  return
+                }
+                const { revision } = await removePlugin(source, pluginId, observedPlugins)
+                replyTo.send({
+                  type: 'toolResult',
+                  result: JSON.stringify({ accepted: true, revision, details: { id: pluginId } }),
+                })
+                return
+              }
+
+              case 'plugins_reload': {
+                const pluginId = String(params.pluginId ?? '')
+                if (!pluginId) {
+                  replyTo.send({ type: 'toolError', error: 'pluginId is required' })
+                  return
+                }
+                const { revision, found } = await reloadPlugin(source, pluginId, observedPlugins)
+                if (!found) {
+                  replyTo.send({
+                    type: 'toolError',
+                    error: `Plugin '${pluginId}' not found in desired state`,
+                  })
+                  return
+                }
+                replyTo.send({
+                  type: 'toolResult',
+                  result: JSON.stringify({ accepted: true, revision, details: { id: pluginId } }),
+                })
+                return
+              }
+
+              default:
+                replyTo.send({ type: 'toolError', error: `Unknown tool: ${toolName}` })
+            }
+          } catch (err) {
+            replyTo.send({ type: 'toolError', error: String(err) })
           }
-          const nextState = dispatch()
-          ctx.publish(SystemConfigUpdateTopic, { action: 'set_value', pluginId, patch: patch ?? {}, replyTo: replyRef })
-          return { state: nextState }
         }
+        void handleToolInvoke()
 
-        if (toolName === 'plugins_load') {
-          const { specifier } = args as { specifier: string }
-          if (!specifier) {
-            replyTo.send({ type: 'toolError', error: 'specifier is required' })
-            return { state }
-          }
-          const nextState = dispatch()
-          ctx.publish(SystemConfigUpdateTopic, { action: 'add_plugin', specifier, replyTo: replyRef })
-          return { state: nextState }
-        }
-
-        if (toolName === 'plugins_unload' || toolName === 'plugins_reload') {
-          const { pluginId } = args as { pluginId: string }
-          if (!pluginId) {
-            replyTo.send({ type: 'toolError', error: 'pluginId is required' })
-            return { state }
-          }
-          const nextState = dispatch()
-          ctx.publish(SystemConfigUpdateTopic, {
-            action: toolName === 'plugins_unload' ? 'remove_plugin' : 'reload_plugin',
-            pluginId,
-            replyTo: replyRef,
-          })
-          return { state: nextState }
-        }
-
-        if (toolName === 'config_get') {
-          const { pluginId } = args as { pluginId?: string }
-          const nextState = dispatch()
-          ctx.publish(SystemConfigUpdateTopic, { action: 'get_values', pluginId, replyTo: replyRef })
-          return { state: nextState }
-        }
-
-        replyTo.send({ type: 'toolError', error: `Unknown tool: ${toolName}` })
         return { state }
-      },
-
-      '_updateReply': (state, { requestId, result }, ctx) => {
-        const { state: nextState, pending } = endRequest(state, ctx, requestId)
-        if (!pending) return { state }
-
-        if (pending.type === 'http') {
-          if (result.success) {
-            const bodyContent =
-              pending.extra?.action === 'list' || pending.extra?.action === 'get'
-                ? JSON.stringify(result.details)
-                : JSON.stringify({ ok: true, message: result.message, details: result.details })
-            pending.replyTo.send({
-              type: 'http.response',
-              response: {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' },
-                body: bodyContent,
-              },
-            })
-          } else {
-            pending.replyTo.send(jsonResponse(400, { ok: false, error: result.error }))
-          }
-        } else if (result.success) {
-          const resultText = result.details !== undefined
-            ? JSON.stringify(result.details, null, 2)
-            : (result.message || 'Config operation completed successfully.')
-          pending.replyTo.send({ type: 'toolResult', result: resultText })
-        } else {
-          pending.replyTo.send({ type: 'toolError', error: result.error })
-        }
-        return { state: nextState }
-      },
-
-      '_requestTimeout': (state, { requestId }) => {
-        const pending = state.pendingRequests.get(requestId)
-        if (!pending) return { state }
-        const pendingRequests = new Map(state.pendingRequests)
-        pendingRequests.delete(requestId)
-
-        if (pending.type === 'http') {
-          pending.replyTo.send(jsonResponse(504, { ok: false, error: 'Config request timed out' }))
-        } else {
-          pending.replyTo.send({ type: 'toolError', error: 'Config operation timed out' })
-        }
-        return { state: { ...state, pendingRequests } }
       },
     }),
 
     lifecycle: onLifecycle({
       start: (state, ctx) => {
+        if (!state.configPath) {
+          console.warn(
+            '[config] configPath is empty — desired-plane mutations will fail until configured',
+          )
+        }
         ctx.subscribe(ConfigSchemaTopic, (e) => ({
           type: '_configSchemaChanged' as const,
           event: e,
+        }))
+        ctx.subscribe(SystemObservedTopic, (e) => ({
+          type: '_observed' as const,
+          observed: e,
         }))
         return { state }
       },

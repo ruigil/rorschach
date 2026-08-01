@@ -1,6 +1,7 @@
 import type { ConfigSchemaSection } from '../../types/config.ts'
 import type { TraceSpan } from '../../types/events.ts'
 import type { ActorHealth, WatchStatus } from '../../types/health.ts'
+import type { PluginEntry } from '../node/types.ts'
 export type { WatchStatus } from '../../types/health.ts'
 export type { TraceSpan }
 
@@ -598,7 +599,7 @@ export type PluginDef<M, S = unknown, C = unknown> = ActorDef<M, S> & {
     readonly schemas?: readonly ConfigSchemaSection[]
     /**
      * Maps an updated config slice to a plugin message, enabling reactive config updates.
-     * Called by `system.updateConfig()` when the plugin's config slice changes.
+     * Called by `applyConfig` (SystemControl) when the plugin's config slice changes.
      * The returned message is sent to the plugin actor.
      */
     readonly onConfigChange?: (config: C) => M
@@ -614,18 +615,66 @@ export type LoadedPlugin = {
   readonly error?: unknown
   readonly loadedAt: number
   readonly modulePath?: string
-  /** Live ref to the plugin actor. Used by updateConfig() to deliver config-change messages. */
+  readonly reloadNonce?: number
+  /** Live ref to the plugin actor. Used by applyConfig to deliver config-change messages. */
   readonly ref?: ActorRef<any>
   readonly health?: ActorHealth
 }
 
-// ─── Load / Unload Results ───
-export type LoadResult = { ok: true; id: string } | { ok: false; error: string }
-export type UnloadResult = { ok: true } | { ok: false; error: string }
-export type LoadOptions = { readonly modulePath?: string }
+// ─── Load Options ───
+export type LoadOptions = { readonly modulePath?: string; readonly reloadNonce?: number }
+
+// ─── Node control surface (D11) — actual-plane effectors ─────────────────────
+//
+// Op set ≡ control surface: each Op maps 1:1 to a SystemControl method.
+// Identity-change reloads expand to Unload + Load in converge (not a fourth verb).
+// Built inside the AgentSystem closure and injected only into node-control.
+
+export type Op =
+  | { type: 'Load'; entry: PluginEntry }
+  | { type: 'Unload'; id: string }
+  | { type: 'ApplyConfig'; tree: Record<string, unknown> }
+
+export type OpResult = { ok: true, id?: string } | { ok: false;  error: string, id?: string }
+
+export type ActualSnapshot = {
+  plugins: Array<{
+    id: string
+    version: string
+    status: LoadedPlugin['status']
+    modulePath?: string
+    error?: unknown
+    health?: ActorHealth
+    reloadNonce?: number
+  }>
+  /** Live tree (interpolated). */
+  config: Record<string, unknown>
+}
+
+export type SystemControl = {
+  snapshotActual(): ActualSnapshot
+  /**
+   * Idempotent effector (not a mini-converge): load or no-op when equivalent is present.
+   * Path / identity-change unload sequencing is owned by converge (Unload then Load).
+   * Active plugin with a different module path → hard error (“converge must Unload first”).
+   * Keeps: same-path no-op, failed→repair, plain load.
+   */
+  loadPlugin(entry: PluginEntry): Promise<OpResult>
+  unloadPlugin(id: string): Promise<OpResult>
+  /** Full target-tree replace after interpolation; absent keys are deleted. */
+  applyConfig(tree: Record<string, unknown>): Promise<OpResult>
+}
 
 // ─── Plugin System (ActorSystem merged with plugin management) ───
+//
+// Facade exposes only actor + event surfaces. Plugin load/unload/config is
+// driven solely by node-control via SystemControl (desired → converge).
+// Actual-plane reads: snapshotActual (tests/management via system.control()) or
+// the observed plane. Desired mutations: ConfigSource.write (admin surface).
 export type PluginSystem = {
+  // ─── Control surface ───
+  readonly control: () => SystemControl
+
   // ─── Actor management ───
   readonly spawn: <M, S>(name: string, def: ActorDef<M, S>, options?: { state?: S }) => ActorRef<M>
   readonly stop: (child: ActorIdentity) => void
@@ -639,27 +688,4 @@ export type PluginSystem = {
     topic: EventTopic<T>,
     callback: (event: T) => void,
   ) => () => void
-
-  // ─── Config management ───
-  /**
-   * Deep-merges the provided patch into the global config tree.
-   * For each loaded plugin whose config slice changed, delivers a config-change
-   * message via the plugin's `configDescriptor.onConfigChange` factory (if defined).
-   */
-  readonly updateConfig: (patch: Record<string, unknown>) => void
-
-  /**
-   * Returns a deep copy of the live config tree — env-interpolated at boot and
-   * merged with plugin defaults — or a single plugin's slice when `pluginId`
-   * is given. Unknown ids yield `{}`.
-   */
-  readonly getConfigSlice: (pluginId?: string) => unknown
-
-  // ─── Plugin management ───
-  readonly use: (def: PluginDef<any, any, any>, opts?: LoadOptions) => Promise<LoadResult>
-  readonly unloadPlugin: (id: string) => Promise<UnloadResult>
-  readonly reloadPlugin: (id: string) => Promise<LoadResult>
-  readonly hotReloadPlugin: (id: string) => Promise<LoadResult>
-  readonly listPlugins: () => LoadedPlugin[]
-  readonly getPluginStatus: (id: string) => LoadedPlugin | undefined
 }

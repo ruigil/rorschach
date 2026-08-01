@@ -9,7 +9,7 @@ export type ConfigUIState = {
   plugins: PluginSummary[]
   schemas: ConfigSchemaSection[]
   currentValues: Record<string, any>
-  /** Last known server-side values per plugin — the baseline for dirty tracking. */
+  /** Last known server-side desired values per plugin — baseline for dirty tracking. */
   initialValues: Record<string, any>
   /** Pending local edits: pluginId → { dottedConfigPath: value }. */
   dirtyFields: Record<string, Record<string, unknown>>
@@ -17,6 +17,12 @@ export type ConfigUIState = {
   error: string | null
   addInputPath: string
   isSubmitting: boolean
+  /** Desired revision last accepted by a mutation (content hash). */
+  pendingRevision: string | null
+  /** Last observed desired revision from node-control. */
+  observedRevision: string | null
+  /** Last fully applied revision from node-control. */
+  appliedRevision: string | null
 }
 
 store.namespace<ConfigUIState>('config').init({
@@ -29,12 +35,51 @@ store.namespace<ConfigUIState>('config').init({
   error: null,
   addInputPath: '',
   isSubmitting: false,
+  pendingRevision: null,
+  observedRevision: null,
+  appliedRevision: null,
 })
 
 /** Normalize the various list response envelopes ({ details }, { plugins },
  *  { schemas }, or a bare array) to a plain array. */
 export const normalizeArray = (data: any): any[] =>
   Array.isArray(data) ? data : (data?.details ?? data?.plugins ?? data?.schemas ?? [])
+
+/**
+ * Single converging rule (PR-8):
+ * - If a write is pending, wait until appliedRevision matches that accepted revision.
+ * - Otherwise, mid-converge when observed desired revision lags applied (soft-fail / lag).
+ */
+export const isConfigConverging = (
+  s: Pick<ConfigUIState, 'pendingRevision' | 'observedRevision' | 'appliedRevision'>,
+): boolean => {
+  if (s.pendingRevision != null) {
+    return s.pendingRevision !== s.appliedRevision
+  }
+  const observed = s.observedRevision
+  const applied = s.appliedRevision
+  if (observed == null || applied == null || observed === '' || applied === '') {
+    return false
+  }
+  return observed !== applied
+}
+
+const markAccepted = (revision: string | undefined | null) => {
+  if (!revision) return
+  const ns = store.namespace<ConfigUIState>('config')
+  ns.set('pendingRevision', revision)
+}
+
+const markApplied = (revision?: string | null, appliedRevision?: string | null) => {
+  const ns = store.namespace<ConfigUIState>('config')
+  if (revision != null && revision !== '') ns.set('observedRevision', revision)
+  if (appliedRevision != null && appliedRevision !== '') ns.set('appliedRevision', appliedRevision)
+  const pending = ns.get('pendingRevision')
+  const applied = ns.get('appliedRevision')
+  if (pending && applied && pending === applied) {
+    ns.set('pendingRevision', null)
+  }
+}
 
 export const refreshConfigPlugins = async () => {
   const ns = store.namespace<ConfigUIState>('config')
@@ -77,6 +122,7 @@ export const syncMissingValues = async (): Promise<void> => {
     try {
       const res = await fetch(`/config/values/${pid}`)
       if (!res.ok) continue
+      // Desired raw — `${VAR}` placeholders, never live secrets.
       const data = await res.json()
       ns.set('currentValues', { ...ns.get('currentValues'), [pid]: data })
       ns.set('initialValues', { ...ns.get('initialValues'), [pid]: structuredClone(data) })
@@ -84,10 +130,8 @@ export const syncMissingValues = async (): Promise<void> => {
   }
 }
 
-/** Refetch one plugin's values after a config.updated frame. The change may
- *  have come from another writer (e.g. a config_set tool call), so the
- *  plugin is re-baselined: pending local edits on it are discarded (last
- *  writer wins). */
+/** Refetch one plugin's desired values after a remote change. Pending local
+ *  edits on that plugin are discarded (last writer wins). */
 export const refreshConfigValues = async (pluginId: string): Promise<void> => {
   const ns = store.namespace<ConfigUIState>('config')
   try {
@@ -104,6 +148,27 @@ export const refreshConfigValues = async (pluginId: string): Promise<void> => {
   } catch { /* value refresh is best-effort */ }
 }
 
+/** Refetch desired values for every schema plugin that has no local dirty fields. */
+export const refreshAllCleanValues = async (): Promise<void> => {
+  const ns = store.namespace<ConfigUIState>('config')
+  const schemas = ns.get('schemas') ?? []
+  const dirty = ns.get('dirtyFields') ?? {}
+  const pluginIds = [...new Set(schemas.map(s => s.id.split('.')[0]))].filter((id): id is string => Boolean(id))
+  await Promise.all(
+    pluginIds
+      .filter((pid) => !dirty[pid] || Object.keys(dirty[pid]!).length === 0)
+      .map((pid) => refreshConfigValues(pid)),
+  )
+}
+
+/**
+ * Apply an accepted mutation response: track pending revision until observed catches up.
+ * Call after successful PATCH/POST with `{ accepted, revision }`.
+ */
+export const noteAcceptedRevision = (body: { accepted?: boolean; revision?: string } | null | undefined) => {
+  if (body?.accepted && body.revision) markAccepted(body.revision)
+}
+
 export const reduceFrame = (frame: any) => {
   switch (frame?.type) {
     case 'config.schema':
@@ -111,9 +176,17 @@ export const reduceFrame = (frame: any) => {
       // any newly appeared plugin sections.
       refreshConfigSchemas().then(syncMissingValues)
       break
-    case 'config.updated':
-      if (frame.pluginId) refreshConfigValues(frame.pluginId)
+    case 'config.updated': {
+      // Frames derived from observed diffs (config plugin adapter; PR-8).
+      // WS flattens payload → frame.revision / frame.appliedRevision.
+      markApplied(frame.revision, frame.appliedRevision ?? frame.revision)
+      if (frame.pluginId) {
+        void refreshConfigValues(frame.pluginId)
+      } else {
+        void refreshAllCleanValues()
+      }
       break
+    }
     case 'plugins.updated':
       refreshConfigPlugins()
       refreshConfigSchemas().then(syncMissingValues)

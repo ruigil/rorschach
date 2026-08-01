@@ -177,15 +177,26 @@ export class RConfigField extends RorschachBase {
       fieldContent = html`<r-config-google-account></r-config-google-account>`;
     } else {
       const secret = this.schema['x-ui']?.secret ?? false;
-      const inputType = secret ? 'password' : widget === 'number' ? 'number' : 'text';
+      // Desired-plane: whole-string env placeholders stay as text (never live secrets).
+      const isEnvPlaceholder =
+        typeof resolvedValue === 'string' && /^\$\{[^}:-]+(?::-.*)?\}$/.test(resolvedValue);
+      const inputType = secret && !isEnvPlaceholder
+        ? 'password'
+        : widget === 'number'
+          ? 'number'
+          : 'text';
+      const placeholder =
+        isEnvPlaceholder
+          ? String(resolvedValue)
+          : String(this.schema.default ?? (secret ? '••••••••' : ''));
       fieldContent = html`
         <r-input
           type=${inputType as RInputType}
           .value=${resolvedValue}
           .label=${label}
-          .hint=${hint}
+          .hint=${hint ?? (isEnvPlaceholder ? 'Env placeholder from desired config (not a live secret)' : undefined)}
           .name=${this.key}
-          .placeholder=${String(this.schema.default ?? '')}
+          .placeholder=${placeholder}
           .min=${this.schema.minimum}
           .max=${this.schema.maximum}
           @change=${(e: CustomEvent<{ value: string | number }>) => this._emit(e.detail.value)}

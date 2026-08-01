@@ -131,8 +131,7 @@ export type TraceSpan = {
 export {
   ConfigSchemaTopic,
   type ConfigSchemaEvent,
-  SystemConfigUpdateTopic,
-  type SystemConfigUpdateRequest,
-  type SystemConfigUpdateResult,
+  SystemObservedTopic,
+  type SystemObservedEvent,
 } from './config.ts'
 
