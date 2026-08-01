@@ -1,41 +1,48 @@
 import { describe, test, expect } from 'bun:test'
-import { AgentSystem } from '../system/index.ts'
-import { ConfigActor } from '../plugins/config/manager.ts'
-import { SystemConfigUpdateTopic } from '../types/config.ts'
-import { ask } from '../system/index.ts'
+import { AgentSystem, ask, fileSource } from '../system/index.ts'
+import { RouteRegistrationTopic } from '../types/routes.ts'
+import { unlinkSync } from 'node:fs'
+import { resolve } from 'node:path'
 
-describe('Config Actor & Routes & Tools', () => {
-  test('GET /config/plugins yields correct plugin list joined with health', async () => {
-    const system = await AgentSystem()
+const tick = (ms = 50) => Bun.sleep(ms)
 
-    const managerRef = system.spawn('manager', ConfigActor())
+const configPluginPath = resolve('src/plugins/config/config.plugin.ts')
 
-    system.subscribe(SystemConfigUpdateTopic, (msg) => {
-      if (msg.replyTo) {
-        msg.replyTo.send({
-          success: true,
-          message: 'OK',
-          details: [
-            {
-              id: 'mock-plugin',
-              version: '1.0.0',
-              status: 'active',
-              modulePath: './mock.ts',
-              health: { status: 'degraded', detail: 'Mock degraded' },
-            },
-          ],
-        })
-      }
-    })
+/** Boot from file, then reload config plugin so late RouteRegistration subscribers catch the manager. */
+const bootConfigManager = async (tempPath: string) => {
+  await Bun.write(
+    tempPath,
+    JSON.stringify(
+      {
+        plugins: [configPluginPath],
+        config: { config: { configPath: tempPath } },
+      },
+      null,
+      2,
+    ) + '\n',
+  )
 
-    system.spawn('mock-plugin', {
-      initialState: () => ({
-        health: { status: 'degraded', detail: 'Mock degraded' },
-      }),
-      handler: (state) => ({ state }),
-    })
+  const source = fileSource(tempPath)
+  const system = await AgentSystem({ source })
 
-    await Bun.sleep(20)
+  let managerRef: any
+  system.subscribe(RouteRegistrationTopic, (event: any) => {
+    if (event.path === '/config' && event.target) managerRef = event.target
+  })
+
+  await source.write(() => ({
+    plugins: [{ modulePath: configPluginPath, reloadNonce: 1 }],
+  }))
+  await tick(400)
+  // Latest non-null registration after reload cycle
+  expect(managerRef).toBeDefined()
+  return { system, source, managerRef }
+}
+
+describe('Config Actor & Routes & Tools (desired plane)', () => {
+  test('GET /config/plugins yields observed plugin list', async () => {
+    const tempPath = resolve('src/tests/temp-plugins-test-config.json')
+    const { system, managerRef } = await bootConfigManager(tempPath)
 
     const res = await ask<any, any>(managerRef, (replyTo) => ({
       type: 'http.request',
@@ -51,46 +58,47 @@ describe('Config Actor & Routes & Tools', () => {
 
     expect(res.type).toBe('http.response')
     expect(res.response.status).toBe(200)
-
     const body = JSON.parse(res.response.body)
     expect(Array.isArray(body)).toBe(true)
-    expect(body[0].id).toBe('mock-plugin')
+    const cfg = body.find((p: any) => p.id === 'config')
+    expect(cfg).toBeDefined()
+    expect(cfg.status).toBe('active')
 
     await system.shutdown()
+    try {
+      unlinkSync(tempPath)
+    } catch {
+      /* ignore */
+    }
   })
 
-  test('handles agent tools', async () => {
-    const system = await AgentSystem()
-
-    const managerRef = system.spawn('manager', ConfigActor())
-
-    system.subscribe(SystemConfigUpdateTopic, (msg) => {
-      if (msg.action === 'add_plugin') {
-        msg.replyTo?.send({ success: true, message: 'Plugin analytics added', details: { id: 'analytics' } })
-      }
-    })
-
-    await Bun.sleep(20)
+  test('plugins_load tool writes desired state', async () => {
+    const tempPath = resolve('src/tests/temp-plugins-tool-config.json')
+    const { system, managerRef } = await bootConfigManager(tempPath)
 
     const reply = await ask<any, any>(managerRef, (replyTo) => ({
       type: 'tool.invoke',
       toolCallId: 'call-1',
       toolName: 'plugins_load',
-      args: { specifier: './analytics.ts' },
+      args: { modulePath: './analytics.ts' },
       replyTo,
     }))
     expect(reply.type).toBe('toolResult')
     expect(reply.result).toContain('analytics')
 
+    const raw = await Bun.file(tempPath).text()
+    const parsed = JSON.parse(raw)
+    expect(
+      parsed.plugins.some(
+        (p: any) => p === './analytics.ts' || p?.modulePath === './analytics.ts',
+      ),
+    ).toBe(true)
+
     await system.shutdown()
-  })
-
-  test('handles request timeouts when subscriber does not reply', async () => {
-    const system = await AgentSystem()
-    const managerRef = system.spawn('manager', ConfigActor())
-
-    managerRef.send({ type: '_requestTimeout', requestId: 'non-existent' })
-
-    await system.shutdown()
+    try {
+      unlinkSync(tempPath)
+    } catch {
+      /* ignore */
+    }
   })
 })

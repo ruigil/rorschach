@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { MockPersistenceActor } from './mock-persistence.ts'
-import { AgentSystem, MetricsTopic } from '../system/index.ts';
+import { AgentSystem, MetricsTopic, staticSource } from '../system/index.ts';
 import type { ActorDef, MetricsEvent } from '../system/index.ts';
 import observabilityPlugin from '../plugins/observability/observability.plugin.ts';
 import {
@@ -68,26 +68,11 @@ describe('Plugin Factory (createPluginFactory)', () => {
 
   test('initializes slots in topological order and registers routes/UI/tools/agents', async () => {
     const events: MetricsEvent[] = [];
-    const system = await AgentSystem({
-      config: { observability: { metrics: { intervalMs: 50 } } },
-      plugins: [MockPersistenceActor(), observabilityPlugin],
-    });
-    system.subscribe(MetricsTopic, (e) => events.push(e));
 
     const registeredAgents: any[] = [];
     const registeredTools: any[] = [];
     const registeredRoutes: any[] = [];
     const registeredUi: any[] = [];
-
-    system.subscribe(AgentRegistrationTopic, (e) => registeredAgents.push(e));
-    system.subscribe(ToolRegistrationTopic, (e) => registeredTools.push(e));
-    system.subscribe(RouteRegistrationTopic, (e) => registeredRoutes.push(e));
-    system.subscribe(OutboundBroadcastTopic, (e) => {
-      if (e.type === 'ui.surface') {
-        const parsed = typeof e.payload === 'string' ? JSON.parse(e.payload) : e.payload;
-        registeredUi.push(parsed.reg);
-      }
-    });
 
     // Setup mock schemas
     const toolSchema = {
@@ -153,13 +138,31 @@ describe('Plugin Factory (createPluginFactory)', () => {
       }),
     });
 
-    // 1. Load the factory-created plugin
-    const loadResult = await system.use(blueprint);
-    expect(loadResult.ok).toBe(true);
+    const basePlugins = [MockPersistenceActor(), observabilityPlugin];
+    const source = staticSource({
+      plugins: basePlugins,
+      config: { observability: { metrics: { intervalMs: 50 } } },
+    });
+    const system = await AgentSystem({ source });
+    system.subscribe(MetricsTopic, (e) => events.push(e));
+    system.subscribe(AgentRegistrationTopic, (e) => registeredAgents.push(e));
+    system.subscribe(ToolRegistrationTopic, (e) => registeredTools.push(e));
+    system.subscribe(RouteRegistrationTopic, (e) => registeredRoutes.push(e));
+    system.subscribe(OutboundBroadcastTopic, (e) => {
+      if (e.type === 'ui.surface') {
+        const parsed = typeof e.payload === 'string' ? JSON.parse(e.payload) : e.payload;
+        registeredUi.push(parsed.reg);
+      }
+    });
+
+    // Load factory plugin via desired write so registrations are observed.
+    await source.write(() => ({ plugins: [...basePlugins, blueprint] }));
     await tick(150);
 
     // Verify actor creation and references
-    const pluginStatus = system.getPluginStatus('mock-plugin');
+    const pluginStatus = system.control()
+      .snapshotActual()
+      .plugins.find((p) => p.id === 'mock-plugin');
     expect(pluginStatus).toBeDefined();
     expect(pluginStatus?.status).toBe('active');
 
@@ -180,9 +183,10 @@ describe('Plugin Factory (createPluginFactory)', () => {
     const stateObj = snap!.state as any;
     expect(stateObj.config.apiKey).toBe('[redacted]');
 
-    // 2. Unload the plugin and verify tombstones
-    const unloadResult = await system.unloadPlugin('mock-plugin');
-    expect(unloadResult.ok).toBe(true);
+    // 2. Unload the plugin via desired-state write and verify tombstones
+    await source.write(() => ({
+      plugins: [MockPersistenceActor(), observabilityPlugin],
+    }));
     await tick(150);
 
     // Verify tombstones published
@@ -201,11 +205,6 @@ describe('Plugin Factory (createPluginFactory)', () => {
 
   test('handles differential reconfigurations and survives stateful slots', async () => {
     const events: MetricsEvent[] = [];
-    const system = await AgentSystem({
-      config: { observability: { metrics: { intervalMs: 50 } } },
-      plugins: [MockPersistenceActor(), observabilityPlugin],
-    });
-    system.subscribe(MetricsTopic, (e) => events.push(e));
 
     const blueprint = createPluginFactory({
       id: 'stateful-plugin',
@@ -232,8 +231,18 @@ describe('Plugin Factory (createPluginFactory)', () => {
       },
     });
 
-    const loadResult = await system.use(blueprint);
-    expect(loadResult.ok).toBe(true);
+    const source = staticSource({
+      plugins: [MockPersistenceActor(), observabilityPlugin, blueprint],
+      config: {
+        observability: { metrics: { intervalMs: 50 } },
+        'stateful-plugin': {
+          storePath: 'workspace/db.json',
+          workerThreads: 4,
+        },
+      },
+    });
+    const system = await AgentSystem({ source });
+    system.subscribe(MetricsTopic, (e) => events.push(e));
     await tick(150);
 
     const snap1 = getSnap(events, 'system/stateful-plugin');
@@ -241,13 +250,16 @@ describe('Plugin Factory (createPluginFactory)', () => {
     expect(snap1!.children).toContain('system/stateful-plugin/store-0');
     expect(snap1!.children).toContain('system/stateful-plugin/transientWorker-0');
 
-    // Update config: only workerThreads changes, storePath remains identical!
-    system.updateConfig({
-      'stateful-plugin': {
-        storePath: 'workspace/db.json',
-        workerThreads: 8,
+    // Update config via desired state: only workerThreads changes, storePath remains identical
+    await source.write((curr) => ({
+      config: {
+        ...curr.config,
+        'stateful-plugin': {
+          storePath: 'workspace/db.json',
+          workerThreads: 8,
+        },
       },
-    });
+    }));
     await tick(150);
 
     // After reconfig:
@@ -260,12 +272,15 @@ describe('Plugin Factory (createPluginFactory)', () => {
     expect(snap2!.children).not.toContain('system/stateful-plugin/transientWorker-0');
 
     // Update config: storePath changes! (surviveConfigChange: true but its sliceConfig changed, so it must restart)
-    system.updateConfig({
-      'stateful-plugin': {
-        storePath: 'workspace/new-db.json',
-        workerThreads: 8,
+    await source.write((curr) => ({
+      config: {
+        ...curr.config,
+        'stateful-plugin': {
+          storePath: 'workspace/new-db.json',
+          workerThreads: 8,
+        },
       },
-    });
+    }));
     await tick(150);
 
     // Both should restart: store-1 and transientWorker-2

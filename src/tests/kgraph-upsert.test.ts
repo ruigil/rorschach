@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { AgentSystem, ask } from '../system/index.ts'
+import { AgentSystem, ask, staticSource} from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { Kgraph } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
@@ -75,14 +75,11 @@ const conceptSearch = (
 describe('kgraph concept upsert', () => {
   test('creates a concept and returns its nodeId', async () => {
     const storagePath = tmpDb()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: storagePath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
@@ -103,14 +100,11 @@ describe('kgraph concept upsert', () => {
 
   test('same concept name updates the existing node and appends recordIds', async () => {
     const storagePath = tmpDb()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: storagePath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
@@ -143,14 +137,11 @@ describe('kgraph concept upsert', () => {
 
   test('multiple distinct concepts produce separate nodes', async () => {
     const storagePath = tmpDb()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: storagePath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
@@ -177,14 +168,11 @@ describe('kgraph concept upsert', () => {
 
   test('fails gracefully when no LLM provider is available', async () => {
     const storagePath = tmpDb()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: storagePath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
 
     const kgraphRef = system.spawn(
       'kgraph',

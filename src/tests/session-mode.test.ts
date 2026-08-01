@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { AgentSystem } from '../system/index.ts'
+import { AgentSystem, staticSource} from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../types/llm.ts'
 import { UserPresenceTopic, InboundMessageTopic, OutboundUserMessageTopic } from '../types/events.ts'
@@ -61,7 +61,7 @@ const parseModeFrames = (frames: string[]) =>
 
 describe('session manager mode UI events', () => {
   test('sends current mode on connect and broadcasts switches to user clients', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const llmRef = system.spawn('null-llm', NullLlm())
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
     const registryRef = system.spawn('agent-registry', AgentRegistry())
@@ -114,7 +114,7 @@ describe('session manager mode UI events', () => {
   })
 
   test('rebuilds active interfaces when session manager restarts before agent registration', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const llmRef = system.spawn('null-llm', NullLlm())
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
     const userFrames: Record<string, string[]> = { u1: [] }
@@ -155,7 +155,7 @@ describe('session manager mode UI events', () => {
   })
 
   test('does not destroy session on disconnect if active jobs are running, and destroys it once jobs complete', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const llmRef = system.spawn('null-llm', NullLlm())
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
     const toolRef = system.spawn('null-tool', NullTool())

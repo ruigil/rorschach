@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { mkdir } from 'node:fs/promises'
-import { AgentSystem, ask } from '../system/index.ts'
+import { AgentSystem, ask, staticSource} from '../system/index.ts'
 import {
   MemorySupervisor,
 } from '../plugins/memory/memory-supervisor.ts'
@@ -40,14 +40,11 @@ const spawnMemoryDeps = (system: Awaited<ReturnType<typeof AgentSystem>>) => {
 describe('Memory Records', () => {
   test('stores attachment metadata in frontmatter and preserves markdown body bytes', async () => {
     const workPath = tmpMemory()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: workPath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
     const userId = 'test-user'
     const content = '# Field Note\n\nBody stays exactly as typed.\n'
     const attachments: MessageAttachment[] = [{
@@ -80,14 +77,11 @@ describe('Memory Records', () => {
 
   test('reads old records without attachment frontmatter', async () => {
     const workPath = tmpMemory()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: workPath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
     const userId = 'test-user'
     const recordId = 'old-record'
     const content = 'An old body without attachment metadata.\n'
@@ -113,14 +107,11 @@ describe('Memory Records', () => {
 describe('Memory Store Actor (Supervisor/Worker)', () => {
   test('recall can expand a concept nodeId before reading records', async () => {
     const workPath = tmpMemory()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: workPath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
     const userId = 'test-user'
     let expanded = false
 
@@ -250,14 +241,11 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
 
   test('stores markdown verbatim and indexes derived concept nodes with recordIds', async () => {
     const workPath = tmpMemory()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: workPath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
     const userId = 'test-user'
     const markdown = '# Neovim Preference\n\nThe user prefers Neovim for code editing.\n'
     const storedAttachmentUrl = '/home/rigel/rorschach/workspace/media/inbound/neovim.png'
@@ -466,14 +454,11 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
   })
 
   test('handles multiple concurrent invoke requests by spawning workers', async () => {
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: tmpMemory(),
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
 
     // 1. Mock LLM Provider
     const mockLlmDef = {
@@ -548,14 +533,11 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
   })
 
   test('reports error when LLM provider is missing', async () => {
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: tmpMemory(),
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
 
     const { recordsRef, kgraphRef } = spawnMemoryDeps(system)
     const storeRef = system.spawn(

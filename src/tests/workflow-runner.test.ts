@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentSystem, ask, defineTool, type ActorDef, type ActorRef } from '../system/index.ts'
+import { AgentSystem, ask, defineTool, type ActorDef, type ActorRef, staticSource} from '../system/index.ts'
 import { WorkflowRunner } from '../plugins/workflows/workflow-runner.ts'
 import { WorkflowEventTopic, type Workflow, type WorkflowRunnerMsg, type WorkflowRunnerReply, type WorkflowRunState } from '../plugins/workflows/types.ts'
 import { startWorkflowRunTool } from '../plugins/workflows/workflow-tools.ts'
@@ -72,7 +72,7 @@ const workflow = (executionTools?: string[], agentMode = 'tool-executor'): Workf
 
 const spawnRunner = async (runWorkflow: Workflow) => {
   const runsDir = await makeDir('rorschach-workflow-runs')
-  const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+  const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
   const runner = system.spawn('workflow-runner', WorkflowRunner({ llmRef: null, model: 'test-model', maxToolLoops: 1 }))
   return { system, runner, runsDir }
 }
@@ -93,7 +93,7 @@ const seedRun = async (system: any, run: any) => {
 
 describe('workflow runner', () => {
   test('hydrates retained execution tools and starts a valid run', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-coding_file_read-tool', FakeTool())
     system.publishRetained(ToolRegistrationTopic, readTool.name, { ...readTool, ref: toolRef })
 
@@ -180,7 +180,7 @@ describe('workflow runner', () => {
   })
 
   test('allows workflow control tools and switch_mode as execution tools', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-control-tool', FakeTool())
     system.publishRetained(ToolRegistrationTopic, startWorkflowRunTool.name, { ...startWorkflowRunTool, ref: toolRef })
     system.publishRetained(ToolRegistrationTopic, switchModeTool.name, { ...switchModeTool, ref: toolRef })
@@ -236,7 +236,7 @@ describe('workflow runner', () => {
   })
 
   test('removes terminated workflow run from runner cache and resolves via disk', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-coding_file_read-tool', FakeTool())
     system.publishRetained(ToolRegistrationTopic, readTool.name, { ...readTool, ref: toolRef })
 

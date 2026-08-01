@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentSystem, ask, defineTool, type ActorDef, type ActorRef } from '../system/index.ts'
+import { AgentSystem, ask, defineTool, type ActorDef, type ActorRef, staticSource} from '../system/index.ts'
 import { WorkflowRunExecutor } from '../plugins/workflows/workflow-run-executor.ts'
 import { WorkflowEventTopic, type Workflow, type WorkflowRunExecutorMsg, type WorkflowRunExecutorReply, type WorkflowRunState } from '../plugins/workflows/types.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
@@ -80,7 +80,7 @@ const getPersistenceRef = async (system: any): Promise<ActorRef<any>> => {
 describe('workflow run executor', () => {
   test('schedules tasks with constructor-provided execution tools', async () => {
     const dir = await makeDir()
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const updates: WorkflowRunState[] = []
     system.subscribe(WorkflowEventTopic, event => updates.push(event.run!))
     const toolRef = system.spawn('fake-coding_file_read-tool', FakeTool())
@@ -115,7 +115,7 @@ describe('workflow run executor', () => {
 
   test('publishes run update after task completion final snapshot', async () => {
     const dir = await makeDir()
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const updates: WorkflowRunState[] = []
     system.subscribe(WorkflowEventTopic, event => updates.push(event.run!))
     const toolRef = system.spawn('fake-coding_file_read-tool-complete-update', FakeTool())
@@ -158,7 +158,7 @@ describe('workflow run executor', () => {
 
   test('resume abandons persisted pending jobs and retries their tasks', async () => {
     const dir = await makeDir()
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-coding_file_read-tool-resume', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
@@ -207,7 +207,7 @@ describe('workflow run executor', () => {
 
   test('resume retries task-blocked tasks', async () => {
     const dir = await makeDir()
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-coding_file_read-tool-task-blocked-resume', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
@@ -251,7 +251,7 @@ describe('workflow run executor', () => {
 
   test('resume retries stale active tasks', async () => {
     const dir = await makeDir()
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-coding_file_read-tool-stale-active-resume', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
@@ -300,7 +300,7 @@ describe('workflow run executor', () => {
 
   test('resume rejects terminal failed runs', async () => {
     const dir = await makeDir()
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-coding_file_read-tool-failed-resume', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
@@ -340,7 +340,7 @@ describe('workflow run executor', () => {
 
   test('resume rejects runs with no retryable work', async () => {
     const dir = await makeDir()
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-coding_file_read-tool-noop-resume', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
@@ -382,7 +382,7 @@ describe('workflow run executor', () => {
 
   test('completed pending jobs retry the task with resume context instead of parsing tool text as JSON', async () => {
     const dir = await makeDir()
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-coding_file_read-tool-pending-complete', FakeTool())
     const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
     const streams: Array<Extract<LlmProviderMsg, { type: 'stream' }>> = []

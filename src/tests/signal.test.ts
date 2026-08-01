@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs'
-import { AgentSystem, ask } from '../system/index.ts'
+import { AgentSystem, ask, staticSource} from '../system/index.ts'
 import { Signal, renderForSignal } from '../plugins/interfaces/signal.ts'
 import { UserPresenceTopic, InboundMessageTopic, OutboundUserMessageTopic } from '../types/events.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
@@ -138,7 +138,7 @@ describe('signal actor: TCP socket', () => {
   test('splits message when sending both text and attachments (attachments first)', async () => {
     daemon = startMockSignalDaemon(17596)
 
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
 
     let persistenceRef: any = null
     system.subscribe(PersistenceProviderTopic, e => { persistenceRef = e.ref })
@@ -194,7 +194,7 @@ describe('signal actor: TCP socket', () => {
     daemon = startMockSignalDaemon(17595)
     
     // Provide MockPersistenceActor so the Signal actor can resolve PersistenceProviderTopic
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     
     let persistenceRef: any = null
     system.subscribe(PersistenceProviderTopic, e => { persistenceRef = e.ref })

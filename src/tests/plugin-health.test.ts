@@ -1,9 +1,18 @@
 import { describe, test, expect } from 'bun:test'
-import { AgentSystem, onMessage, onLifecycle, ask, createPluginFactory } from '../system/index.ts'
+import {
+  AgentSystem,
+  onMessage,
+  onLifecycle,
+  ask,
+  createPluginFactory,
+  staticSource} from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import { OutboundAdminBroadcastTopic } from '../types/events.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
+
+const statusOf = (system: any, id: string) =>
+  system.control().snapshotActual().plugins.find((p: any) => p.id === id)
 
 describe('Plugin Health Reporting', () => {
   test('derives baseline health status correctly', async () => {
@@ -25,9 +34,9 @@ describe('Plugin Health Reporting', () => {
       },
     })
 
-    const system = await AgentSystem({ plugins: [mockPlugin], config: {} })
+    const system = await AgentSystem({ source: staticSource({ plugins: [mockPlugin], config: {} }) })
 
-    const status = system.getPluginStatus('mock-health-degraded')
+    const status = statusOf(system, 'mock-health-degraded')
     expect(status).toBeDefined()
     expect(status?.health).toBeDefined()
     expect(status?.health?.status).toBe('degraded')
@@ -86,7 +95,7 @@ describe('Plugin Health Reporting', () => {
       },
     })
 
-    const system = await AgentSystem({ plugins: [mockPlugin], config: {} })
+    const system = await AgentSystem({ source: staticSource({ plugins: [mockPlugin], config: {} }) })
 
     const healthEvents: any[] = []
     system.subscribe(OutboundAdminBroadcastTopic, (event) => {
@@ -100,7 +109,7 @@ describe('Plugin Health Reporting', () => {
     childRef!.send({ type: 'go' })
     await tick(100)
 
-    const updatedStatus = system.getPluginStatus('mock-health-dynamic')
+    const updatedStatus = statusOf(system, 'mock-health-dynamic')
     expect(updatedStatus?.health?.status).toBe('unavailable')
     expect(updatedStatus?.health?.detail).toContain('Database connection failed')
 
@@ -148,10 +157,10 @@ describe('Plugin Health Reporting', () => {
       },
     })
 
-    const system = await AgentSystem({ plugins: [mockPlugin], config: {} })
+    const system = await AgentSystem({ source: staticSource({ plugins: [mockPlugin], config: {} }) })
     await tick(50)
 
-    const status = system.getPluginStatus('mock-health-worsen')
+    const status = statusOf(system, 'mock-health-worsen')
     expect(status?.health?.status).toBe('degraded')
     expect(status?.health?.detail).toContain('missing slot(s) inactive')
 

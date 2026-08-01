@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentSystem, ask, type ActorDef, type ActorRef } from '../system/index.ts'
+import { AgentSystem, ask, type ActorDef, type ActorRef, staticSource} from '../system/index.ts'
 import { listWorkflows, getWorkflowGraph, saveWorkflow } from '../plugins/workflows/workflow-store.ts'
 import { handleWorkflowTool, listExecutionToolsTool, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool, startWorkflowRunTool, updateWorkflowTool } from '../plugins/workflows/workflow-tools.ts'
 import { WorkflowEventTopic } from '../plugins/workflows/types.ts'
@@ -102,7 +102,7 @@ const getPersistenceRef = async (system: any): Promise<ActorRef<any>> => {
 
 describe('workflow store', () => {
   test('lists valid workflows for the user and ignores malformed or other-user files', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const persistenceRef = await getPersistenceRef(system)
 
     // doc.put sample workflow
@@ -137,7 +137,7 @@ describe('workflow store', () => {
   })
 
   test('returns graph edges from prerequisite to dependent task', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const persistenceRef = await getPersistenceRef(system)
 
     await saveWorkflow(persistenceRef, sampleWorkflow())
@@ -170,7 +170,7 @@ describe('workflow store', () => {
   })
 
   test('routes return summaries and graph JSON', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const persistenceRef = await getPersistenceRef(system)
     await saveWorkflow(persistenceRef, sampleWorkflow('u1'))
 
@@ -230,7 +230,7 @@ describe('workflow store', () => {
   })
 
   test('control tools list workflows and publish workflow graph UI events', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const persistenceRef = await getPersistenceRef(system)
     await saveWorkflow(persistenceRef, sampleWorkflow())
 
@@ -265,7 +265,7 @@ describe('workflow store', () => {
   })
 
   test('control tools can save workflow with executionTools', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const persistenceRef = await getPersistenceRef(system)
     const runner = system.spawn('workflow-runner', FakeRunner())
 
@@ -295,7 +295,7 @@ describe('workflow store', () => {
   })
 
   test('control tools can update workflow and publish workflow event', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const persistenceRef = await getPersistenceRef(system)
 
     const initialWorkflow = sampleWorkflow('u1')
@@ -330,7 +330,7 @@ describe('workflow store', () => {
   })
 
   test('workflows_execution_tools_list reads execution tools from workflow runner', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const persistenceRef = await getPersistenceRef(system)
     const runner = system.spawn('workflow-runner', FakeRunner())
 
@@ -349,7 +349,7 @@ describe('workflow store', () => {
   })
 
   test('saveWorkflow persists workflow document with a .json extension', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const persistenceRef = await getPersistenceRef(system)
 
     const wf = sampleWorkflow()

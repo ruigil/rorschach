@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { AgentSystem, LogTopic, MetricsTopic } from '../system/index.ts'
+import { AgentSystem, LogTopic, MetricsTopic, staticSource} from '../system/index.ts'
 import type { ActorDef, PersistenceAdapter, LogEvent, MetricsEvent, ActorServices } from '../system/index.ts'
 import observabilityPlugin from '../plugins/observability/observability.plugin.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
@@ -34,7 +34,7 @@ const counterDef: ActorDef<string, Counter> = {
 describe('Persistence: load on start', () => {
   test('actor starts from loaded state when adapter returns a snapshot', async () => {
     const adapter = memAdapter<Counter>({ count: 42 })
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
 
     const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { state: { count: 0 } })
 
@@ -49,7 +49,7 @@ describe('Persistence: load on start', () => {
 
   test('actor starts from initialState when load returns undefined', async () => {
     const adapter = memAdapter<Counter>(undefined)
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
 
     const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { state: { count: 0 } })
 
@@ -65,7 +65,7 @@ describe('Persistence: load on start', () => {
   test('start lifecycle receives loaded state, not initialState', async () => {
     const startStates: Counter[] = []
     const adapter = memAdapter<Counter>({ count: 99 })
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
 
     system.spawn('counter', {
       ...counterDef,
@@ -92,7 +92,7 @@ describe('Persistence: save after message', () => {
       load: async (_services) => undefined,
       save: async (state, _services) => { saves.push(state) },
     }
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
 
     const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { state: { count: 0 } })
 
@@ -120,10 +120,7 @@ describe('Persistence: save after message', () => {
       },
     }
     const events: MetricsEvent[] = []
-    const system = await AgentSystem({
-      config: { observability: { metrics: { intervalMs: 50 } } },
-      plugins: [MockPersistenceActor(), observabilityPlugin],
-    })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor(), observabilityPlugin], config: { observability: { metrics: { intervalMs: 50 } } } }) })
     system.subscribe(MetricsTopic, (e) => events.push(e))
 
     const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { state: { count: 0 } })
@@ -148,7 +145,7 @@ describe('Persistence: save after message', () => {
       load: async (_services) => undefined,
       save: async (_state, _services) => { throw new Error('storage unavailable') },
     }
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     system.subscribe(LogTopic, (e) => logs.push(e))
 
     const ref = system.spawn('counter', { ...counterDef, persistence: adapter }, { state: { count: 0 } })
@@ -168,7 +165,7 @@ describe('Persistence: load on restart', () => {
   test('restarted actor recovers from last snapshot, not initialState', async () => {
     const adapter = memAdapter<Counter>({ count: 10 })
     const setupStates: Counter[] = []
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
 
     const ref = system.spawn('counter', {
       ...counterDef,
@@ -211,7 +208,7 @@ describe('Persistence: load on restart', () => {
       save: async (_state, _services) => {},
     }
     const setupStates: Counter[] = []
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
 
     const ref = system.spawn('counter', {
       ...counterDef,
@@ -237,10 +234,7 @@ describe('Persistence: load on restart', () => {
 describe('Persistence: no adapter configured', () => {
   test('actor without persistence works identically to before', async () => {
     const events: MetricsEvent[] = []
-    const system = await AgentSystem({
-      config: { observability: { metrics: { intervalMs: 50 } } },
-      plugins: [MockPersistenceActor(), observabilityPlugin],
-    })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor(), observabilityPlugin], config: { observability: { metrics: { intervalMs: 50 } } } }) })
     system.subscribe(MetricsTopic, (e) => events.push(e))
     const ref = system.spawn('counter', counterDef, { state: { count: 0 } })
 

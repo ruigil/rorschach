@@ -1,6 +1,6 @@
 import { describe, expect, test, afterAll } from 'bun:test'
 import { mkdir, rm } from 'node:fs/promises'
-import { AgentSystem } from '../system/index.ts'
+import { AgentSystem, staticSource} from '../system/index.ts'
 import { assembleAgentMessages } from '../system/index.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
 import { ContextSnapshotTopic, type ContextSnapshotEvent } from '../types/agents.ts'
@@ -27,7 +27,7 @@ afterAll(async () => {
 
 describe('ContextStore context snapshots', () => {
   test('starts empty for a fresh context store', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
     system.spawn('context-store-u1', ContextStore({ userId: 'u1' }))
@@ -40,7 +40,7 @@ describe('ContextStore context snapshots', () => {
   })
 
   test('publishes conversation messages and compact tool summaries', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
     const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1' }))
@@ -80,7 +80,7 @@ describe('ContextStore context snapshots', () => {
   })
 
   test('adds a snapshot turn when user + assistant turn completes', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
     const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1' }))
@@ -106,7 +106,7 @@ describe('ContextStore context snapshots', () => {
   })
 
   test('does not add a snapshot turn for tool-call assistant messages', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
     const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1' }))
@@ -139,7 +139,7 @@ describe('ContextStore context snapshots', () => {
   })
 
   test('filters injected turns at the context snapshot source', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
     const ref = system.spawn('context-store-u1', ContextStore({ userId: 'u1' }))
@@ -181,7 +181,7 @@ describe('ContextStore context snapshots', () => {
   })
 
   test('does not restore prior state when persistContext is false even if persistence exists', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const snapshots: ContextSnapshotEvent[] = []
     system.subscribe(ContextSnapshotTopic, event => snapshots.push(event))
 

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { AgentSystem, ask, type ActorDef, type ActorRef } from '../system/index.ts'
+import { AgentSystem, ask, type ActorDef, type ActorRef, staticSource} from '../system/index.ts'
 import { buildWorkflowsRoutes } from '../plugins/workflows/routes.ts'
 import { handleWorkflowTool, startWorkflowRunTool } from '../plugins/workflows/workflow-tools.ts'
 import { parseTaskCompletionArgs } from '../plugins/workflows/workflow-task-executor.ts'
@@ -159,7 +159,7 @@ describe('workflow IO and artifacts', () => {
   })
 
   test('workflows_run_start passes tool-only inputs to the runner', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const persistenceRef = await getPersistenceRef(system)
     await saveWorkflow(persistenceRef, workflow())
 
@@ -177,7 +177,7 @@ describe('workflow IO and artifacts', () => {
   })
 
   test('workflows_run_start returns immediate run state when start blocks before execution', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const persistenceRef = await getPersistenceRef(system)
     await saveWorkflow(persistenceRef, workflow())
 

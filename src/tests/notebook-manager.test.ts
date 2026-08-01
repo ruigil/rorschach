@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { AgentSystem, ask, type ActorRef } from '../system/index.ts'
+import { AgentSystem, ask, type ActorRef, staticSource} from '../system/index.ts'
 import { OutboundUserMessageTopic, HttpWsFrameTopic } from '../types/events.ts'
 import { NotebookChangeTopic } from '../plugins/notebook/types.ts'
 import { NotebookManager, sortTodos } from '../plugins/notebook/notebook-manager.ts'
@@ -10,7 +10,7 @@ describe('NotebookManager WebSocket integration', () => {
   test('handles todos requests, journal requests, tracker requests, and change events', async () => {
 
     // 1. Initialize Agent System with MockPersistenceActor
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const messages: Array<{ userId: string; text: string }> = []
     system.subscribe(OutboundUserMessageTopic, event => {
       const e = event as { userId: string; text: string }

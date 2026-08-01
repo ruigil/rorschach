@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { AgentSystem } from '../system/index.ts'
-import workflowsPlugin  from '../plugins/workflows/workflows.plugin.ts'
+import { AgentSystem, staticSource } from '../system/index.ts'
+import workflowsPlugin from '../plugins/workflows/workflows.plugin.ts'
 import { AgentRegistrationTopic, type AgentDescriptor } from '../types/agents.ts'
 import type { WorkflowsConfig } from '../plugins/workflows/types.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
@@ -9,35 +9,40 @@ const tick = (ms = 50) => Bun.sleep(ms)
 
 const loadWorkflows = async (workflows: WorkflowsConfig): Promise<AgentDescriptor[]> => {
   const registrations: AgentDescriptor[] = []
-  const system = await AgentSystem({ plugins: [MockPersistenceActor()], config: { workflows } })
+  const system = await AgentSystem({
+    source: staticSource({
+      plugins: [MockPersistenceActor(), workflowsPlugin],
+      config: { workflows },
+    }),
+  })
   system.subscribe(AgentRegistrationTopic, (event) => {
     if (event.type === 'register') registrations.push(event.descriptor)
   })
-
-  const result = await system.use(workflowsPlugin)
-  expect(result.ok).toBe(true)
   await tick()
   await system.shutdown()
-
   return registrations
 }
 
 describe('workflows config', () => {
   test('uses default workflow config when agent is configured', async () => {
     const registrations: AgentDescriptor[] = []
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()], config: { workflows: { agent: { model: 'z-ai/glm-5.1', maxToolLoops: 10 } } } })
-    
+    const system = await AgentSystem({
+      source: staticSource({
+        plugins: [MockPersistenceActor(), workflowsPlugin],
+        config: {
+          workflows: { agent: { model: 'z-ai/glm-5.1', maxToolLoops: 10 } },
+        },
+      }),
+    })
+
     system.subscribe(AgentRegistrationTopic, (event) => {
       if (event.type === 'register') registrations.push(event.descriptor)
     })
-
-    const result = await system.use(workflowsPlugin)
-    expect(result.ok).toBe(true)
     await tick()
 
-    expect(registrations.map(d => d.mode)).toEqual(['workflows'])
+    expect(registrations.map((d) => d.mode)).toEqual(['workflows'])
 
-    const desc = registrations.find(d => d.mode === 'workflows')
+    const desc = registrations.find((d) => d.mode === 'workflows')
     expect(desc).toBeDefined()
     expect(desc?.model).toBe('z-ai/glm-5.1')
     expect(desc?.maxToolLoops).toBe(10)
@@ -53,6 +58,6 @@ describe('workflows config', () => {
       },
     })
 
-    expect(registrations.map(d => d.mode)).toEqual(['workflows'])
+    expect(registrations.map((d) => d.mode)).toEqual(['workflows'])
   })
 })

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { AgentSystem, ask } from '../system/index.ts'
+import { AgentSystem, ask, staticSource} from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { Kgraph } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
@@ -124,14 +124,11 @@ const CONCEPTS: MemoryConcept[] = [
 describe('kgraph concept search', () => {
   test('returns nearest neighbour first when querying with a full sentence', async () => {
     const storagePath = tmpDb()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: storagePath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
     const llmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
 
@@ -160,14 +157,11 @@ describe('kgraph concept search', () => {
 
   test('respects topN limit with sentence queries', async () => {
     const storagePath = tmpDb()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: storagePath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
     const llmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
 
@@ -194,14 +188,11 @@ describe('kgraph concept search', () => {
 
   test('results carry name and description stored at index time', async () => {
     const storagePath = tmpDb()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: storagePath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
     const llmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
 
@@ -230,14 +221,11 @@ describe('kgraph concept search', () => {
 
   test('isolates results by userId', async () => {
     const storagePath = tmpDb()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: storagePath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
     const llmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
 
@@ -272,14 +260,11 @@ describe('kgraph concept search', () => {
 
   test('returns poorly linked concepts with semantically related anchors', async () => {
     const storagePath = tmpDb()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: storagePath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
     const llmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: llmRef })
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { AgentSystem, ask, watchTopic } from '../system/index.ts'
+import { AgentSystem, ask, watchTopic, staticSource} from '../system/index.ts'
 import type { ActorDef, ActorRef, LifecycleEvent } from '../system/index.ts'
 import { Authenticator, type AuthConfig } from '../plugins/auth/authenticator.ts'
 import { UserStore } from '../plugins/auth/user-store.ts'
@@ -43,7 +43,7 @@ const NullLlm = (): ActorDef<LlmProviderMsg, null> => ({
 
 describe('Permissions Revocation', () => {
   test('UserStore setUserPermissions replaces permissions array', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const store = system.spawn('users', UserStore()) as ActorRef<UserStoreMsg>
 
     const created = await ask<UserStoreMsg, { ok: User } | { error: string }>(
@@ -77,7 +77,7 @@ describe('Permissions Revocation', () => {
   })
 
   test('Authenticator setUserPermissions persists and publishes sessionInvalidated', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const store = system.spawn('users', UserStore()) as ActorRef<UserStoreMsg>
     const auth = system.spawn('auth', Authenticator({
       userStore: store,
@@ -138,7 +138,7 @@ describe('Permissions Revocation', () => {
   })
 
   test('AgentRegistry stops agents and rebinds permissionContexts on sessionInvalidated', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const llmRef = system.spawn('null-llm', NullLlm())
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
 
@@ -196,7 +196,7 @@ describe('Permissions Revocation', () => {
   })
 
   test('Authenticator returns error when user is missing', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const store = system.spawn('users', UserStore()) as ActorRef<UserStoreMsg>
     const auth = system.spawn('auth', Authenticator({
       userStore: store,

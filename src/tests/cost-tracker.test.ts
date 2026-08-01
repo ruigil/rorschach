@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { AgentSystem } from '../system/index.ts'
+import { AgentSystem, staticSource} from '../system/index.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 import { CostTopic } from '../types/llm.ts'
 import { OutboundAdminBroadcastTopic } from '../types/events.ts'
@@ -10,16 +10,13 @@ const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms))
 describe('Cost Tracker', () => {
   test('broadcasts cost event as usage frame to admin WS clients', async () => {
     const broadcasts: any[] = []
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor(), observabilityPlugin], config: {
         observability: {
           costTracker: {
             flushIntervalMs: 0, // unbuffered
           },
         },
-      },
-      plugins: [MockPersistenceActor(), observabilityPlugin],
-    })
+      } }) })
 
     system.subscribe(OutboundAdminBroadcastTopic, (e) => {
       broadcasts.push(e)

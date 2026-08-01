@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { AgentSystem, type ActorRef } from '../system/index.ts'
+import { AgentSystem, type ActorRef, staticSource} from '../system/index.ts'
 import { OutboundUserMessageTopic, HttpWsFrameTopic } from '../types/events.ts'
 import { NotebookManager } from '../plugins/notebook/notebook-manager.ts'
 import { ProjectShell } from '../plugins/coding/project-shell.ts'
@@ -50,7 +50,7 @@ describe('Edge Gating (Membrane 3)', () => {
   })
 
   test('blocks unauthorized notebook/todo mutations and terminal commands', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const messages: Array<{ userId: string; text: string }> = []
     system.subscribe(OutboundUserMessageTopic, event => {
       messages.push(event as { userId: string; text: string })

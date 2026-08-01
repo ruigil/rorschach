@@ -118,7 +118,10 @@ describe('r-config-panel', () => {
         const body = JSON.parse(init.body)
         expect(body.chatbot.model).toBe('nvidia-nemotron-5')
         patchCalled = true
-        return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } })
+        return new Response(
+          JSON.stringify({ accepted: true, revision: 'abc123rev' }),
+          { headers: { 'Content-Type': 'application/json' } },
+        )
       }
       return new Response(JSON.stringify({}))
     }) as unknown as typeof fetch
@@ -181,7 +184,10 @@ describe('r-config-panel', () => {
       const urlStr = url.toString()
       if (urlStr.includes('config/values/cognitive') && init?.method === 'PATCH') {
         patchBody = JSON.parse(init.body)
-        return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } })
+        return new Response(
+          JSON.stringify({ accepted: true, revision: 'def456rev' }),
+          { headers: { 'Content-Type': 'application/json' } },
+        )
       }
       return new Response(JSON.stringify({}), { headers: { 'Content-Type': 'application/json' } })
     }) as unknown as typeof fetch
@@ -189,7 +195,8 @@ describe('r-config-panel', () => {
     await el.save()
     expect(patchBody).toEqual({ chatbot: { model: 'nvidia-nemotron-5' } })
 
-    // After save the panel is clean again → Save disabled
+    // After save the panel is clean again → Save disabled (dirty cleared;
+    // converging badge may disable save while pendingRevision is set)
     await el.updateComplete
     saveBtn = root.querySelector('.btn-save') as HTMLButtonElement
     expect(saveBtn.disabled).toBe(true)

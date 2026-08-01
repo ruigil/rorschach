@@ -1,6 +1,6 @@
 import { describe, expect, test, afterAll } from 'bun:test'
 import { mkdir, rm } from 'node:fs/promises'
-import { AgentSystem, DynamicAgentActor } from '../system/index.ts'
+import { AgentSystem, DynamicAgentActor, staticSource} from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../types/llm.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
@@ -42,7 +42,7 @@ const NullRunner = (): ActorDef<WorkflowRunnerMsg, null> => ({
 
 describe('session agents use shared context snapshots', () => {
   test('workflows agent builds its prompt from ContextStore context', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const streams: Array<Extract<LlmProviderMsg, { type: 'stream' }>> = []
     const llmRef = system.spawn('llm', CapturingLlm(streams))
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })

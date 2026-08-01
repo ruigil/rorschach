@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { AgentSystem, ask } from '../system/index.ts'
+import { AgentSystem, ask, staticSource} from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { Kgraph } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
@@ -66,14 +66,11 @@ const conceptSearch = (
 describe('kgraph concept search with reranker', () => {
   test('reranker reorders concept search results', async () => {
     const storagePath = tmpDb()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: storagePath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
     const mockLlmRef = spawnMockLlm(system)
     system.publishRetained(LlmProviderTopic, 'ref', { ref: mockLlmRef })
 
@@ -106,14 +103,11 @@ describe('kgraph concept search with reranker', () => {
 
   test('falls back to vector scores when reranker returns error', async () => {
     const storagePath = tmpDb()
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: storagePath,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
     const errorDef: ActorDef<LlmProviderMsg, null> = {
       handler: (state, msg) => {
         if (msg.type === 'embed') {

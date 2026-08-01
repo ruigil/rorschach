@@ -1,7 +1,7 @@
 import { describe, test, expect, afterEach, afterAll } from 'bun:test'
 import { mkdirSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { AgentSystem, TraceTopic, type TraceSpan, DynamicAgentActor } from '../system/index.ts'
+import { AgentSystem, TraceTopic, type TraceSpan, DynamicAgentActor, staticSource} from '../system/index.ts'
 import type { MessageHeaders, ActorRef } from '../system/index.ts'
 import { ChatbotAgentDescriptor, type ChatbotState } from '../plugins/cognitive/chatbot-agent.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
@@ -129,7 +129,7 @@ describe('distributed tracing', () => {
   test('emits chatbot and llm-call spans with correct traceId and parent chain for a direct response', async () => {
     globalThis.fetch = (async () => makeSSEResponse(contentPayloads('Hello!'))) as unknown as typeof fetch
 
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const spans = collectSpans(system)
     const react = spawnChatbot(system)
 
@@ -179,10 +179,7 @@ describe('distributed tracing', () => {
       () => new Response(JSON.stringify(emptyBraveResponse), { status: 200 }),
     )
 
-    const system = await AgentSystem({
-      config: { tools: { webSearch: { apiKey: 'test-key' } } },
-      plugins: [MockPersistenceActor(), toolsPlugin],
-    })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor(), toolsPlugin], config: { tools: { webSearch: { apiKey: 'test-key' } } } }) })
     const spans = collectSpans(system)
     const react = spawnChatbot(system)
 
@@ -222,7 +219,7 @@ describe('distributed tracing', () => {
   test('closes chatbot and llm-call spans with error status when the LLM call fails', async () => {
     globalThis.fetch = (async () => new Response('Internal Server Error', { status: 500 })) as unknown as typeof fetch
 
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const spans = collectSpans(system)
     const react = spawnChatbot(system)
 
@@ -268,7 +265,7 @@ describe('distributed tracing', () => {
       ],
     )
 
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const spans = collectSpans(system)
     // Retain the tool before spawning chatbot — replayed on subscribe during chatbot's start lifecycle
     system.publishRetained(ToolRegistrationTopic, webSearchTool.name, { ...webSearchTool, ref: fakeToolRef })

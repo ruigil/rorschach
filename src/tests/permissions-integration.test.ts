@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { AgentSystem } from '../system/index.ts'
+import { AgentSystem, staticSource} from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../types/llm.ts'
 import { UserPresenceTopic } from '../types/events.ts'
@@ -24,7 +24,7 @@ const NullLlm = (): ActorDef<LlmProviderMsg, null> => ({
 
 describe('Permissions Integration', () => {
   test('threads permissions on session start', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const llmRef = system.spawn('null-llm', NullLlm())
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
     

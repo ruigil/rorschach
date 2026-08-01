@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { AgentSystem } from '../system/index.ts'
+import { AgentSystem, staticSource} from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../types/llm.ts'
 import {
@@ -40,7 +40,7 @@ const descriptor = (mode: string, displayName: string): AgentDescriptor => ({
 
 describe('agent registry routing & lifecycle', () => {
   test('spawns dynamic agents with switch_mode tool injected', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const llmRef = system.spawn('null-llm', NullLlm())
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
 
@@ -82,7 +82,7 @@ describe('agent registry routing & lifecycle', () => {
   })
 
   test('delegates WebSocket frames (list, cancel, switch) through AgentRegistry', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const llmRef = system.spawn('null-llm', NullLlm())
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
 
@@ -137,7 +137,7 @@ describe('agent registry routing & lifecycle', () => {
   })
 
   test('injects job completions into the active mode agent', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const llmRef = system.spawn('null-llm', NullLlm())
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
 
@@ -185,7 +185,7 @@ describe('agent registry routing & lifecycle', () => {
   })
 
   test('injects unified mode routing instructions into agent system prompt', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     let lastStreamMessages: any[] | null = null
 
     const testLlm = (): ActorDef<LlmProviderMsg, null> => ({
@@ -250,7 +250,7 @@ describe('agent registry routing & lifecycle', () => {
   })
 
   test('replays retained agent registrations when registry starts late', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const llmRef = system.spawn('null-llm', NullLlm())
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
 
@@ -299,7 +299,7 @@ describe('agent registry routing & lifecycle', () => {
   })
 
   test('deleteRetained unregister removes mode from late subscribers', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
 
     system.publishRetained(AgentRegistrationTopic, 'chatbot', {
       type: 'register',

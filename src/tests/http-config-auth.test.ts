@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { AgentSystem } from '../system/index.ts'
+import { AgentSystem, staticSource} from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import { ask } from '../system/index.ts'
 import { authorizeRouteAccess, canAccessAdminSurface } from '../plugins/interfaces/http.ts'
@@ -81,7 +81,7 @@ const fakeUserStore = (users: Record<string, User>): ActorDef<UserStoreMsg, null
 const startIdentityProvider = async (
   identityProvider: ActorDef<IdentityProviderMsg, null>,
 ): Promise<{ ref: ActorRef<IdentityProviderMsg>; shutdown: () => Promise<void> }> => {
-  const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+  const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
   const ref = system.spawn('identity', identityProvider)
   await tick()
   return { ref, shutdown: () => system.shutdown() }
@@ -467,7 +467,7 @@ describe('auth admin allowlist', () => {
   })
 
   test('rehydrates admin roles when validating an existing session token', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const user: User = {
       id: 'u-admin',
       fullName: 'alice',
@@ -503,7 +503,7 @@ describe('auth admin allowlist', () => {
   })
 
   test('rehydrates admin roles when validating a websocket ticket', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const user: User = {
       id: 'u-admin',
       fullName: 'alice',
@@ -539,7 +539,7 @@ describe('auth admin allowlist', () => {
   })
 
   test('getUserProfile and updateUserProfile handlers', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const user: User = {
       id: 'u-user',
       fullName: 'John Doe',
@@ -569,7 +569,7 @@ describe('auth admin allowlist', () => {
   })
 
   test('serves GET and POST /auth/profile routes', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const user: User = {
       id: 'u-user',
       fullName: 'John Doe',
@@ -634,7 +634,7 @@ describe('auth admin allowlist', () => {
   })
 
   test('serves auth static files via prefix dynamic route', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const user: User = {
       id: 'u-user',
       fullName: 'John Doe',

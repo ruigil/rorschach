@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { MockPersistenceActor } from './mock-persistence.ts'
-import { AgentSystem, DynamicAgentActor } from '../system/index.ts'
+import { AgentSystem, DynamicAgentActor, staticSource} from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { UserPresenceTopic, OutboundUserMessageTopic } from '../types/events.ts'
 import { SwitchAgentTopic } from '../plugins/cognitive/types.ts'
@@ -41,7 +41,9 @@ const MockContextStore = (): ActorDef<any, null> => ({
 
 describe('coach mode integration tests', () => {
   test('dynamic mode switching to/from coach', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({
+      source: staticSource({ plugins: [MockPersistenceActor(), notebookPlugin] }),
+    })
     const llmRef = system.spawn('null-llm', NullLlm())
     const registryRef = system.spawn('agent-registry', AgentRegistry())
     system.spawn('session-manager', SessionManager({
@@ -58,9 +60,6 @@ describe('coach mode integration tests', () => {
       userFrames[e.userId]!.push(e.text)
     })
 
-    // Register notebook plugin (which registers the coach agent descriptor)
-    const result = await system.use(notebookPlugin)
-    expect(result.ok).toBe(true)
     await tick()
 
     // Trigger user presence
@@ -91,7 +90,7 @@ describe('coach mode integration tests', () => {
   })
 
   test('access to allowed tools and prevention of unauthorized tools in coach mode', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     let receivedTools: LlmTool[] | undefined = undefined
 
     // Spawn a mock LLM that captures tools parameter

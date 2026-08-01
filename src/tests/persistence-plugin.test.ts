@@ -1,5 +1,5 @@
 import { describe, test, expect, afterAll } from 'bun:test'
-import { AgentSystem } from '../system/index.ts'
+import { AgentSystem, staticSource} from '../system/index.ts'
 import { PersistenceProviderTopic, type PersistenceMsg } from '../types/persistence.ts'
 import persistencePlugin from '../plugins/persistence/persistence.plugin.ts'
 import { ask, type ActorRef } from '../system/index.ts'
@@ -20,14 +20,11 @@ describe('Persistence Plugin Engine', () => {
   })
 
   test('KV Store: CRUD and list operations', async () => {
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: TEST_STORAGE_ROOT,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
 
     let persistenceRef: ActorRef<PersistenceMsg> | null = null
     system.subscribe(PersistenceProviderTopic, (event: any) => {
@@ -81,14 +78,11 @@ describe('Persistence Plugin Engine', () => {
   })
 
   test('Document Store: CRUD, Append, Head and List operations', async () => {
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: TEST_STORAGE_ROOT,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
 
     let persistenceRef: ActorRef<PersistenceMsg> | null = null
     system.subscribe(PersistenceProviderTopic, (event: any) => {
@@ -154,14 +148,11 @@ describe('Persistence Plugin Engine', () => {
   })
 
   test('Object Store: Binary CRUD and Streaming', async () => {
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: TEST_STORAGE_ROOT,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
 
     let persistenceRef: ActorRef<PersistenceMsg> | null = null
     system.subscribe(PersistenceProviderTopic, (event: any) => {
@@ -264,14 +255,11 @@ describe('Persistence Plugin Engine', () => {
   })
 
   test('Graph Store: Upsert, Similarity search and Cypher query', async () => {
-    const system = await AgentSystem({
-      config: {
+    const system = await AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
         persistence: {
           storageRoot: TEST_STORAGE_ROOT,
         },
-      },
-      plugins: [persistencePlugin],
-    })
+      } }) })
 
     let persistenceRef: ActorRef<PersistenceMsg> | null = null
     system.subscribe(PersistenceProviderTopic, (event: any) => {

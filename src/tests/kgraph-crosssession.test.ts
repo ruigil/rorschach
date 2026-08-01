@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { rm, mkdir } from 'node:fs/promises'
 import { GrafeoDB } from '@grafeo-db/js'
-import { AgentSystem, ask } from '../system/index.ts'
+import { AgentSystem, ask, staticSource} from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { Kgraph } from '../plugins/memory/kgraph.ts'
 import type { KgraphMsg } from '../plugins/memory/kgraph.ts'
@@ -24,14 +24,11 @@ const embeddingFor = (text: string): number[] => {
 }
 
 const spawnSystem = () => {
-  return AgentSystem({
-    config: {
+  return AgentSystem({ source: staticSource({ plugins: [persistencePlugin], config: {
       persistence: {
         storageRoot: TEST_DB,
       },
-    },
-    plugins: [persistencePlugin],
-  })
+    } }) })
 }
 
 const spawnLlm = (system: Awaited<ReturnType<typeof AgentSystem>>): ActorRef<LlmProviderMsg> => {

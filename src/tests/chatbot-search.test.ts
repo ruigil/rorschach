@@ -1,7 +1,7 @@
 import { describe, test, expect, afterEach, afterAll } from 'bun:test'
 import { mkdirSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { AgentSystem, DynamicAgentActor } from '../system/index.ts'
+import { AgentSystem, DynamicAgentActor, staticSource} from '../system/index.ts'
 import { OutboundUserMessageTopic } from '../types/events.ts'
 import { ChatbotAgentDescriptor, type ChatbotState } from '../plugins/cognitive/chatbot-agent.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
@@ -149,10 +149,7 @@ describe('chatbot search integration', () => {
       () => new Response(JSON.stringify(mockBraveResponse), { status: 200 }),
     )
 
-    const system = await AgentSystem({
-      config: { tools: { webSearch: { apiKey: 'brave-key' } } },
-      plugins: [MockPersistenceActor(), toolsPlugin],
-    })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor(), toolsPlugin], config: { tools: { webSearch: { apiKey: 'brave-key' } } } }) })
     const events = collectEvents(system)
     const react = spawnChatbot(system)
 
@@ -179,10 +176,7 @@ describe('chatbot search integration', () => {
       () => new Response(JSON.stringify(mockBraveResponse), { status: 200 }),
     )
 
-    const system = await AgentSystem({
-      config: { tools: { webSearch: { apiKey: 'brave-key' } } },
-      plugins: [MockPersistenceActor(), toolsPlugin],
-    })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor(), toolsPlugin], config: { tools: { webSearch: { apiKey: 'brave-key' } } } }) })
     const events = collectEvents(system)
     const react = spawnChatbot(system)
 
@@ -214,7 +208,7 @@ describe('chatbot search integration', () => {
     }) as unknown as typeof fetch
 
     // No tools plugin — chatbot actor has no registered tools, LLM call uses empty tool list
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const events = collectEvents(system)
     const react = spawnChatbot(system)
 
@@ -237,10 +231,7 @@ describe('chatbot search integration', () => {
       () => new Response('Rate limited', { status: 429 }),
     )
 
-    const system = await AgentSystem({
-      config: { tools: { webSearch: { apiKey: 'brave-key' } } },
-      plugins: [MockPersistenceActor(), toolsPlugin],
-    })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor(), toolsPlugin], config: { tools: { webSearch: { apiKey: 'brave-key' } } } }) })
     const events = collectEvents(system)
     const react = spawnChatbot(system)
 
@@ -267,10 +258,7 @@ describe('chatbot search integration', () => {
       return makeSSEResponse(contentPayloads('No tool call needed.'))
     }) as unknown as typeof fetch
 
-    const system = await AgentSystem({
-      config: { tools: { webSearch: { apiKey: 'brave-key' } } },
-      plugins: [MockPersistenceActor(), toolsPlugin],
-    })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor(), toolsPlugin], config: { tools: { webSearch: { apiKey: 'brave-key' } } } }) })
     const react = spawnChatbot(system)
 
     await tick()

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { AgentSystem, ask } from '../system/index.ts'
+import { AgentSystem, ask, staticSource} from '../system/index.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../types/persistence.ts'
 import { JobRegistryTopic, type JobLifecycleEvent, type ToolMsg, type ToolReply } from '../types/tools.ts'
 import { Cron } from '../plugins/tools/cron.ts'
@@ -10,7 +10,7 @@ const tick = (ms = 50) => Bun.sleep(ms)
 
 describe('cron job registry integration', () => {
   test('tools_cron_create returns toolPending; delete clears the schedule job', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const events: JobLifecycleEvent[] = []
     system.subscribe(JobRegistryTopic, e => { events.push(e) })
 
@@ -67,7 +67,7 @@ describe('cron job registry integration', () => {
   })
 
   test('restore arms with running; due fire publishes completed only', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     let persist: ActorRef<PersistenceMsg> | null = null
     system.subscribe(PersistenceProviderTopic, e => { persist = e.ref })
     await tick()
@@ -125,7 +125,7 @@ describe('cron job registry integration', () => {
   })
 
   test('recurring fire re-arms same id with running after completed', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     let persist: ActorRef<PersistenceMsg> | null = null
     system.subscribe(PersistenceProviderTopic, e => { persist = e.ref })
     await tick()
@@ -171,7 +171,7 @@ describe('cron job registry integration', () => {
   })
 
   test('tools_cron_create respects explicit timezone arguments', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const cron = system.spawn('cron-tz', Cron()) as unknown as ActorRef<ToolMsg>
     await tick()
 

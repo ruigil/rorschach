@@ -3,8 +3,7 @@ import {
   MetricsTopic,
   type ActorDef,
   type MetricsEvent,
-  type PluginSystem,
-} from '../system/index.ts'
+  type PluginSystem, staticSource} from '../system/index.ts'
 import observabilityPlugin from '../plugins/observability/observability.plugin.ts'
 import { AgentSystem } from '../system/index.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
@@ -20,10 +19,7 @@ const getSnap = (events: MetricsEvent[], name: string) =>
 /** Create a system with the metrics actor loaded and a pre-wired event collector. */
 const withMetrics = async (intervalMs = 50): Promise<{ system: PluginSystem; events: MetricsEvent[] }> => {
   const events: MetricsEvent[] = []
-  const system = await AgentSystem({
-    config: { observability: { metrics: { intervalMs } } },
-    plugins: [MockPersistenceActor(), observabilityPlugin],
-  })
+  const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor(), observabilityPlugin], config: { observability: { metrics: { intervalMs } } } }) })
   system.subscribe(MetricsTopic, (e) => events.push(e))
   return { system, events }
 }
@@ -335,7 +331,7 @@ describe('Metrics: push-based MetricsTopic', () => {
   })
 
   test('MetricsTopic is not published when observability plugin is not loaded', async () => {
-    const system = await AgentSystem({ plugins: [MockPersistenceActor()] })
+    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     system.spawn('counter', counterDef, { state: 0 })
 
     const events: unknown[] = []
