@@ -27,7 +27,7 @@ After workflows_save or workflows_update, briefly acknowledge the save and stop.
   return {
     mode: 'workflows',
     role: 'reasoning',
-    displayName: 'Plans & Workflows',
+    displayName: 'Workflow Graphs',
     shortDesc: 'Design plans, save, inspect, and execute structured workflow DAGs (directed acyclic graphs of tasks).',
     systemPrompt,
     internalTools: Object.values(options.tools || {}),

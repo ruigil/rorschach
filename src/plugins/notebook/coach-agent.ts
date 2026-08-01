@@ -38,7 +38,7 @@ Coaching guidelines:
   return {
     mode: 'coach',
     role: 'reasoning',
-    displayName: 'Life Coach',
+    displayName: 'Personal Notebook',
     shortDesc: 'Personal life coach for habits, fitness/learning routines, journaling, and task/todo list management in the personal notebook.',
     systemPrompt,
     internalTools: Object.values(options.tools || {}),

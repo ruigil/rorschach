@@ -83,7 +83,7 @@ describe('coach mode integration tests', () => {
     // Verify switched to coach mode successfully
     expect(parseModeFrames(userFrames.u1!).at(-1)).toMatchObject({
       mode:        'coach',
-      displayName: 'Life Coach',
+      displayName: 'Personal Notebook',
     })
 
     await system.shutdown()

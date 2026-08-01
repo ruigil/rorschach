@@ -29,7 +29,7 @@ Behavior:
   return {
     mode: 'coding',
     role: 'coding',
-    displayName: 'Coding & Docs',
+    displayName: 'Plugin Coding',
     shortDesc: 'Inspect codebase files coding_file_write code and documentation pages.',
     systemPrompt,
     internalTools: Object.values(options.tools || {}),
