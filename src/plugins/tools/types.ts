@@ -5,27 +5,7 @@ import type { PersistenceMsg } from '../../types/persistence.ts'
 
 // ─── Tools Plugin Config ───
 
-export type ToolsConfig = {
-  webSearch?: WebSearchActorOptions
-
-  vision?: {
-    model: string
-    analysisModel?: string
-  }
-  audio?: {
-    ttsModel: string
-    sttModel: string
-    voice?: string
-  }
-  video?: {
-    model: string
-    aspectRatio?: string
-    duration?: number
-    resolution?: string
-    pollIntervalMs?: number
-    pollTimeoutMs?: number
-  }
-}
+export type { ToolsConfig } from './tools.config.ts'
 
 // ─── Web Search Actor Types ───
 

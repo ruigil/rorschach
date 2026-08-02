@@ -1,8 +1,34 @@
+import { defineConfig } from '../../system/index.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
+import type { WebSearchActorOptions } from './types.ts'
 
-// ─── Config Schema Sections ──────────────────────────────────────────────────
+// ─── Config type ────────────────────────────────────────────────────────────
 
-export const webSearchSchema: ConfigSchemaSection = {
+export type ToolsConfig = {
+  webSearch?: WebSearchActorOptions
+
+  vision?: {
+    model: string
+    analysisModel?: string
+  }
+  audio?: {
+    ttsModel: string
+    sttModel: string
+    voice?: string
+  }
+  video?: {
+    model: string
+    aspectRatio?: string
+    duration?: number
+    resolution?: string
+    pollIntervalMs?: number
+    pollTimeoutMs?: number
+  }
+}
+
+// ─── Schema sections ────────────────────────────────────────────────────────
+
+const webSearchSchema: ConfigSchemaSection = {
   id: 'tools.webSearch',
   title: 'Web Search',
   subtitle: 'tools · Brave search',
@@ -16,7 +42,7 @@ export const webSearchSchema: ConfigSchemaSection = {
   },
 }
 
-export const visionSchema: ConfigSchemaSection = {
+const visionSchema: ConfigSchemaSection = {
   id: 'tools.vision',
   title: 'Vision',
   subtitle: 'tools · image analysis and generation',
@@ -31,7 +57,7 @@ export const visionSchema: ConfigSchemaSection = {
   },
 }
 
-export const audioSchema: ConfigSchemaSection = {
+const audioSchema: ConfigSchemaSection = {
   id: 'tools.audio',
   title: 'Audio',
   subtitle: 'tools · speech-to-text and text-to-speech',
@@ -47,7 +73,7 @@ export const audioSchema: ConfigSchemaSection = {
   },
 }
 
-export const videoSchema: ConfigSchemaSection = {
+const videoSchema: ConfigSchemaSection = {
   id: 'tools.video',
   title: 'Video',
   subtitle: 'tools · video generation',
@@ -61,4 +87,15 @@ export const videoSchema: ConfigSchemaSection = {
   },
 }
 
-export const toolsSchemas = [webSearchSchema, visionSchema, audioSchema, videoSchema]
+const toolsSchemas: ConfigSchemaSection[] = [webSearchSchema, visionSchema, audioSchema, videoSchema]
+
+// ─── Defaults + descriptor ──────────────────────────────────────────────────
+
+export const config = defineConfig<ToolsConfig>('tools', {
+  webSearch: {
+    apiKey: process.env.BRAVESEARCH_API_KEY ?? '',
+    count: 20,
+  },
+}, {
+  schemas: toolsSchemas,
+})

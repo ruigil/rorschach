@@ -7,18 +7,7 @@ import { Video, generateVideoTool } from './video-actor.ts'
 import { PDF, pdfTool } from './pdf.ts'
 import { FetchFile, fetchFileTool } from './fetch-file.ts'
 import { ToolStatus, toolStatusTool } from './tool-status.ts'
-import { defineConfig } from '../../system/index.ts'
-import { toolsSchemas } from './routes.ts'
-import type { ToolsConfig } from './types.ts'
-
-const config = defineConfig<ToolsConfig>('tools', {
-  webSearch: {
-    apiKey: process.env.BRAVESEARCH_API_KEY ?? '',
-    count: 20,
-  },
-}, {
-  schemas: toolsSchemas,
-})
+import { config, type ToolsConfig } from './tools.config.ts'
 
 export default createPluginFactory<ToolsConfig>({
   id: 'tools',
