@@ -1,19 +1,8 @@
 import { createPluginFactory } from '../../system/index.ts'
-import { HTTP, type HTTPOptions } from './http.ts'
+import { HTTP } from './http.ts'
 import { CLI } from './cli.ts'
-import { Signal, type SignalOptions } from './signal.ts'
-import { defineConfig } from '../../system/index.ts'
-import { interfacesSchemas } from './routes.ts'
-
-export type InterfacesConfig = {
-  http?:   HTTPOptions
-  cli?:    Record<string, never>
-  signal?: SignalOptions
-}
-
-const config = defineConfig<InterfacesConfig>('interfaces', {}, {
-  schemas: interfacesSchemas,
-})
+import { Signal } from './signal.ts'
+import { config, type InterfacesConfig } from './interfaces.config.ts'
 
 export default createPluginFactory<InterfacesConfig>({
   id: 'interfaces',
