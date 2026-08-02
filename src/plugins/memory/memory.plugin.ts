@@ -1,33 +1,10 @@
-import { createPluginFactory, defineConfig } from '../../system/index.ts'
+import { createPluginFactory } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
 import { Kgraph } from './kgraph.ts'
 import { MemoryConsolidation } from './memory-consolidation.ts'
 import { MemorySupervisor } from './memory-supervisor.ts'
 import { MemoryRecords } from './memory-records.ts'
-import { buildMemoryRoutes, memorySchemas } from './routes.ts'
-import type { KgraphMsg } from './types.ts'
-
-// ─── Config ───
-
-export type MemoryActorConfig = {
-  model:                   string
-  consolidationIntervalMs: number
-}
-
-export type MemoryConfig = {
-  kgraph?: {
-    embeddingModel?:            string
-    embeddingDimensions?:       number
-    cosineSimilarityThreshold?: number
-    rerankerModel?:             string
-    rerankerTopK?:              number
-  }
-  system?: MemoryActorConfig
-}
-
-const config = defineConfig<MemoryConfig>('memory', {}, {
-  schemas: memorySchemas,
-})
+import { config, type MemoryConfig } from './memory.config.ts'
 
 export default createPluginFactory<MemoryConfig>({
   id: 'memory',
@@ -74,8 +51,5 @@ export default createPluginFactory<MemoryConfig>({
       },
       dependsOn: ['kgraph'],
     },
-  },
-  routes: (cfg, deps) => {
-    return buildMemoryRoutes(deps.kgraph as ActorRef<KgraphMsg> | null)
   },
 })
