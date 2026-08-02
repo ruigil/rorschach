@@ -22,9 +22,7 @@ export type Todo = {
   priority?:   'low' | 'medium' | 'high'
 }
 
-export type NotebookConfig = {
-  agent?:        AgentModelOptions
-}
+export type { NotebookConfig } from './notebook.config.ts'
 
 import type { ContextSnapshotEvent, AgentModelOptions } from '../../types/agents.ts'
 

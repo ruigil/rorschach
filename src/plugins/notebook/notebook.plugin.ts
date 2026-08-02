@@ -1,7 +1,7 @@
-import { createPluginFactory, defineConfig } from '../../system/index.ts'
+import { createPluginFactory } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
-import type { NotebookConfig } from './types.ts'
+import { config, type NotebookConfig } from './notebook.config.ts'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 
 const notebookSurfaceRegistration: UiSurfaceRegistration = {
@@ -31,38 +31,6 @@ import { Todos, todosCreateTool, todosCompleteTool, todosListTool, todosDeleteTo
 import { Search, notebookSearchTool } from './tools/search.ts'
 import { CoachAgentDescriptor } from './coach-agent.ts'
 import { NotebookManager } from './notebook-manager.ts'
-import type { ConfigSchemaSection } from '../../types/config.ts'
-
-export const notebookSchema: ConfigSchemaSection = {
-  id: 'notebook.config',
-  title: 'Notebook',
-  subtitle: 'notebook · journal, todos, and tracker',
-  tab: 'notebook',
-  configKey: '',
-  schema: {
-    type: 'object',
-    properties: {
-      agent: {
-        type: 'object',
-        properties: {
-          model: { type: 'string', 'x-ui': { widget: 'model-select', label: 'Agent model' } },
-          maxToolLoops: { type: 'number', default: 10, minimum: 1, maximum: 50 },
-        },
-      },
-    },
-  },
-}
-
-const notebookSchemas = [notebookSchema]
-
-const config = defineConfig<NotebookConfig>('notebook', {
-  agent: {
-    model: 'google/gemini-3.1-pro-preview',
-    maxToolLoops: 10,
-  },
-}, {
-  schemas: notebookSchemas,
-})
 
 // ─── Tool collection builder ───
 
