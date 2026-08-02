@@ -223,7 +223,13 @@ export const fileSource = (configPath: string): ConfigSource => {
       }
 
       await Bun.write(path, JSON.stringify(nextObj, null, 2) + '\n')
-      return { revision: revisionOf(nextState) }
+      // Hash the same interpolated representation read() uses, so a just-written
+      // document reports the identical revision node-control will observe.
+      const interpolated = {
+        ...nextState,
+        plugins: interpolate(nextState.plugins) as PluginEntry[],
+      }
+      return { revision: revisionOf(interpolated) }
     })
 
   const watch = (onChange: () => void): (() => void) => {

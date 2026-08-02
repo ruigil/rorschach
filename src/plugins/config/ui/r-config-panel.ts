@@ -70,7 +70,7 @@ export class RConfigPanel extends RorschachBase {
   private _appliedRevisionStore = new StoreController(this, ['config', 'appliedRevision']);
 
   @state() private models: string[] = [];
-  @state() private selectedNodeId: string = 'load-plugin';
+  @state() private selectedNodeId: string | null = null;
   @state() private activeSectionId: string | null = null;
   @state() private searchQuery: string = '';
 
@@ -141,6 +141,9 @@ export class RConfigPanel extends RorschachBase {
         letter-spacing: 0.08em;
         text-transform: uppercase;
         cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
         transition: border-color 0.15s, color 0.15s;
       }
 
@@ -452,7 +455,7 @@ export class RConfigPanel extends RorschachBase {
   async loadSchemas() {
     await refreshConfigSchemas();
     if (this.schemas.length === 0) return;
-    if (!this.activeSectionId && this.selectedNodeId.startsWith('sec-')) {
+    if (!this.activeSectionId && this.selectedNodeId?.startsWith('sec-')) {
       this.activeSectionId = this.selectedNodeId.slice(4);
     }
     await Promise.all([syncMissingValues(), this._fetchModels()]);
@@ -537,72 +540,55 @@ export class RConfigPanel extends RorschachBase {
     this._flashMsg?.error(msg);
   }
 
+  private _statusFor(p: any): string | undefined {
+    let statusStr = 'idle';
+    if (p.status === 'active' && p.health?.status === 'ok') {
+      statusStr = 'running';
+    } else if (p.status === 'failed' || p.health?.status === 'unavailable') {
+      statusStr = 'failed';
+    } else {
+      statusStr = 'warn';
+    }
+    return statusStr;
+  }
+
   private get _treeData(): TreeNode[] {
     const plugins: any[] = normalizeArray(this._pluginsStore.value);
 
-    const actionsNode: TreeNode = {
-      id: 'actions-root',
-      label: 'Actions',
-      icon: 'settings' as const,
-      children: [
-        {
-          id: 'load-plugin',
-          label: 'Load Plugin',
-          icon: 'play' as const,
-        },
-      ],
-    };
+    const rawSchemaTree = buildConfigTree(this.schemas);
+    const { filteredNodes } = filterConfigTree(rawSchemaTree, this.searchQuery);
+
+    const pagesByPlugin = new Map<string, TreeNode[]>();
+    for (const group of filteredNodes) {
+      for (const child of group.children ?? []) {
+        const pluginId = pluginIdFromSection(child.id);
+        const pages = pagesByPlugin.get(pluginId) ?? [];
+        pages.push({
+          id: `sec-${child.id}`,
+          label: child.label,
+          icon: 'settings' as const,
+          data: child.section ? { section: child.section } : undefined,
+        });
+        pagesByPlugin.set(pluginId, pages);
+      }
+    }
 
     const loadedPluginsNode: TreeNode = {
       id: 'plugins-root',
       label: 'Loaded Plugins',
       icon: 'wrench' as const,
       badge: plugins.length,
-      children: plugins.map(p => {
-        let statusStr = 'idle';
-        if (p.status === 'active' && p.health?.status === 'ok') {
-          statusStr = 'running';
-        } else if (p.status === 'failed' || p.health?.status === 'unavailable') {
-          statusStr = 'failed';
-        } else {
-          statusStr = 'warn';
-        }
-        return {
-          id: `plugin-${p.id}`,
-          label: p.id,
-          icon: 'file-text' as const,
-          status: statusStr,
-          data: p,
-        };
-      }),
+      children: plugins.map(p => ({
+        id: `plugin-${p.id}`,
+        label: p.id,
+        icon: 'file-text' as const,
+        status: this._statusFor(p),
+        data: p,
+        children: pagesByPlugin.get(p.id),
+      })),
     };
 
-    const schemas = this.schemas;
-    const rawSchemaTree = buildConfigTree(schemas);
-    const { filteredNodes } = filterConfigTree(rawSchemaTree, this.searchQuery);
-
-    const schemaGroupNodes: TreeNode[] = filteredNodes.map(group => {
-      return {
-        id: group.id,
-        label: group.label,
-        icon: 'folder' as const,
-        children: group.children?.map(child => ({
-          id: `sec-${child.id}`,
-          label: child.label,
-          icon: 'settings' as const,
-          data: child.section ? { section: child.section } : undefined,
-        })),
-      };
-    });
-
-    const configRootNode: TreeNode = {
-      id: 'config-root',
-      label: 'Parameters',
-      icon: 'settings' as const,
-      children: schemaGroupNodes,
-    };
-
-    return [actionsNode, loadedPluginsNode, configRootNode];
+    return [loadedPluginsNode];
   }
 
   private _onNodeSelect(e: CustomEvent) {
@@ -733,7 +719,7 @@ export class RConfigPanel extends RorschachBase {
 
     let selectedPlugin = plugins.find(p => p && `plugin-${p.id}` === this.selectedNodeId);
 
-    const isSectionSelected = this.selectedNodeId.startsWith('sec-');
+    const isSectionSelected = !!this.selectedNodeId && this.selectedNodeId.startsWith('sec-');
     const isLoadSelected = this.selectedNodeId === 'load-plugin';
 
     const activeSection = schemas.find(s => s && s.id === this.activeSectionId);
@@ -762,15 +748,10 @@ export class RConfigPanel extends RorschachBase {
               <button type="button" class="btn-reset" ?disabled=${!hasDirtyFields || converging} @click=${this.reset}>Reset</button>
               <button type="button" class="btn-save" ?disabled=${!hasDirtyFields || converging} @click=${this.save}>Save</button>
             ` : html`
-              <r-button
-                variant="ghost"
-                size="sm"
-                ?disabled=${loading}
-                @click=${() => refreshConfigPlugins()}
-                title="Refresh Configuration"
-              >
-                <r-icon name="settings" size="sm" class="${loading ? 'toolbar-spinning' : ''}"></r-icon>
-              </r-button>
+              <button type="button" class="btn-reset" ?disabled=${loading} @click=${() => (this.selectedNodeId = 'load-plugin')} title="Load a new plugin">
+                <r-icon name="plus" size="sm"></r-icon>
+                Load New Plugin
+              </button>
             `}
           </div>
         </r-toolbar>

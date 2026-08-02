@@ -1,0 +1,12 @@
+{
+  "plugins": [
+    {
+      "modulePath": "${CONFIG_DIR}/src/plugins/config/config.plugin.ts"
+    }
+  ],
+  "config": {
+    "config": {
+      "configPath": "/home/rigel/rorschach/src/tests/temp-config-revision.json"
+    }
+  }
+}

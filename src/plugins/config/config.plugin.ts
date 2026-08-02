@@ -4,9 +4,32 @@ import { buildConfigRoutes } from './routes.ts'
 import { configGetTool, configSetTool, pluginsLoadTool, pluginsUnloadTool, pluginsReloadTool } from './tools.ts'
 import { ConfigActor } from './manager.ts'
 import type { ConfigPluginConfig } from './types.ts'
+import type { ConfigSchemaSection } from '../../types/config.ts'
+
+const configSchemas: ConfigSchemaSection[] = [
+  {
+    id: 'config.general',
+    title: 'Configuration',
+    subtitle: 'config · desired-plane file access',
+    tab: 'config',
+    configKey: '',
+    schema: {
+      type: 'object',
+      properties: {
+        configPath: {
+          type: 'string',
+          default: '',
+          'x-ui': { label: 'Config file path' },
+        },
+      },
+    },
+  },
+]
 
 const config = defineConfig<ConfigPluginConfig>('config', {
   configPath: '',
+}, {
+  schemas: configSchemas,
 })
 
 const configSurfaceRegistration: UiSurfaceRegistration = {

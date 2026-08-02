@@ -83,12 +83,26 @@ describe('r-config-panel', () => {
     // Check tree component is mounted
     const tree = root.querySelector('r-tree') as any
     expect(tree).toBeTruthy()
-    expect(tree.data.length).toBe(3) // Actions, Loaded Plugins, Parameters
+    expect(tree.data.length).toBe(1) // single "Loaded Plugins" root
+    const rootNode = tree.data[0]
+    expect(rootNode.id).toBe('plugins-root')
+    expect(rootNode.label).toBe('Loaded Plugins')
+    expect(rootNode.children?.length).toBe(2) // config + cognitive
 
-    // Check initial state defaults to load-plugin view
+    // Config pages are children of their owning plugin
+    const cognitive = rootNode.children.find((c: any) => c.id === 'plugin-cognitive')
+    expect(cognitive?.children).toEqual([
+      expect.objectContaining({ id: 'sec-cognitive.chatbot', label: 'Cognitive Chatbot' }),
+    ])
+
+    // Initial state defaults to overview (no tree node selected)
     const loadTitle = root.querySelector('.add-form-title')
-    expect(loadTitle).toBeTruthy()
-    expect(loadTitle.textContent).toContain('Load Runtime Plugin')
+    expect(loadTitle).toBeFalsy()
+
+    // Loading a plugin is reachable via the toolbar button
+    el.selectedNodeId = 'load-plugin'
+    await el.updateComplete
+    expect(root.querySelector('.add-form-title')?.textContent).toContain('Load Runtime Plugin')
 
     // 1. Simulate selecting a configuration section node in the sidebar tree
     tree.dispatchEvent(new CustomEvent('node-select', {

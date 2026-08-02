@@ -302,4 +302,30 @@ describe('node-control converge (level-triggered)', () => {
       return cfg?.queue_ok?.n === 1 && cfg?.queue_after?.n === 2
     })
   })
+
+  // ─── PR: write revision must match subsequent read revision ────────────────
+  //
+  // fileSource.read() hashes the interpolated document (module paths resolved),
+  // and the config-converging badge compares the write's accepted revision
+  // against node-control's observed appliedRevision. If write() hashed the raw
+  // ${CONFIG_DIR} placeholders instead, the two would differ forever and the
+  // "Applying…" badge would never clear.
+
+  test('write revision equals read revision for a doc with interpolated paths', async () => {
+    const path = tempTestPath('temp-config-revision.json')
+    const pluginPath = `\${CONFIG_DIR}/src/plugins/config/config.plugin.ts`
+    await Bun.write(
+      path,
+      JSON.stringify({ plugins: [{ modulePath: pluginPath }], config: {} }, null, 2) + '\n',
+    )
+
+    const src = fileSource(path)
+    const { revision: writeRev } = await src.write(() => ({
+      config: { config: { configPath: path } },
+    }))
+    const { revision: readRev } = await src.read()
+
+    expect(writeRev).toBe(readRev)
+    unlinkQuiet(path)
+  })
 })
