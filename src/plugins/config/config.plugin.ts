@@ -29,14 +29,8 @@ export default createPluginFactory<ConfigPluginConfig>({
   uiSurface: configSurfaceRegistration,
   slots: {
     manager: {
-      // Only the path field is the slot's config — other desired keys must not
-      // restart the manager (which holds FileSource + schema registry).
-      // configPath is a boot-mirrored absolute path (CLI/env authorship); see ensureAdminConfigPath.
-      factory: (cfg: ConfigPluginConfig | string | undefined) =>
-        ConfigActor({
-          configPath:
-            typeof cfg === 'string' ? cfg : (cfg?.configPath ?? ''),
-        }),
+      factory: (cfg: ConfigPluginConfig) =>
+        ConfigActor(cfg) ,
       configPath: 'configPath',
       surviveConfigChange: true,
     },

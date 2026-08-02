@@ -6,7 +6,7 @@ import { RouteRegistrationTopic, type RouteRegistration } from '../types/routes.
 import { type UiSurfaceRegistration } from '../types/ui-surface.ts';
 import { AgentRegistrationTopic, type AgentDescriptor } from '../types/agents.ts';
 import { ToolRegistrationTopic, type ToolSchema } from '../types/tools.ts';
-import { OutboundBroadcastTopic, OutboundAdminBroadcastTopic } from '../types/events.ts';
+import { OutboundBroadcastTopic } from '../types/events.ts';
 import type { ActorHealth, HealthStatus } from '../types/health.ts';
 
 /**
@@ -15,7 +15,6 @@ import type { ActorHealth, HealthStatus } from '../types/health.ts';
 export type SlotDeclaration<C = unknown, SubConfig = any> = {
   factory: (config: SubConfig, dependencies: Record<string, ActorRef<unknown>>) => ActorDef<any, any> | null;
   configPath?: string;
-  args?: SubConfig;
   surviveConfigChange?: boolean;
   dependsOn?: string[];
 };
@@ -255,9 +254,7 @@ export const createPluginFactory = <
 
           // Resolve slot configuration
           let slotConfig: any;
-          if (slotDecl.args !== undefined) {
-            slotConfig = slotDecl.args;
-          } else if (slotDecl.configPath) {
+          if (slotDecl.configPath) {
             slotConfig = getByPath(initialConfig, slotDecl.configPath);
           } else {
             slotConfig = initialConfig;
@@ -469,9 +466,7 @@ export const createPluginFactory = <
 
           // Resolve new config
           let slotConfig: any;
-          if (slotDecl.args !== undefined) {
-            slotConfig = slotDecl.args;
-          } else if (slotDecl.configPath) {
+          if (slotDecl.configPath) {
             slotConfig = getByPath(newConfig, slotDecl.configPath);
           } else {
             slotConfig = newConfig;
@@ -566,9 +561,7 @@ export const createPluginFactory = <
 
           // Resolve slot config
           let slotConfig: any;
-          if (slotDecl.args !== undefined) {
-            slotConfig = slotDecl.args;
-          } else if (slotDecl.configPath) {
+          if (slotDecl.configPath) {
             slotConfig = getByPath(newConfig, slotDecl.configPath);
           } else {
             slotConfig = newConfig;

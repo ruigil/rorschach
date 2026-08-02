@@ -118,23 +118,6 @@ export const ConfigActor = (
     },
 
     handler: onMessage<ConfigMsg, ConfigState>({
-      config: (state, { slice }) => {
-        const configPath = slice.configPath ?? state.configPath
-        if (!configPath) {
-          return { state: { ...state, configPath: '', source: null } }
-        }
-        if (configPath === state.configPath && state.source) {
-          return { state: { ...state, configPath } }
-        }
-        return {
-          state: {
-            ...state,
-            configPath,
-            source: fileSource(configPath),
-          },
-        }
-      },
-
       _observed: (state, { observed }, ctx) => {
         for (const frame of framesFromObservedDiff(state.observed, observed)) {
           ctx.publish(OutboundAdminBroadcastTopic, frame)
@@ -363,8 +346,8 @@ export const ConfigActor = (
             replyTo.send({ type: 'toolError', error: String(err) })
           }
         }
-        void handleToolInvoke()
-
+        
+        handleToolInvoke()
         return { state }
       },
     }),

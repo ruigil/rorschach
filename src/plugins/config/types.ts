@@ -17,7 +17,6 @@ export type ConfigMsg =
   | ToolInvokeMsg
   | { type: '_configSchemaChanged'; event: ConfigSchemaEvent }
   | { type: '_observed'; observed: ObservedState }
-  | { type: 'config'; slice: ConfigPluginConfig }
 
 export type ConfigState = {
   schemas: Map<string, ConfigSchemaSection>
