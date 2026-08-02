@@ -6,12 +6,7 @@ import type { ToolCollection, ToolInvokeMsg, ToolMsg, ToolReply, ToolSchema } fr
 import type { ContextView, LoopMsg, LoopState, SpanHandle } from '../../system/index.ts'
 import type { HttpRequestMsg } from '../../types/routes.ts'
 
-export type CodingConfig = {
-  projectRoot: string
-  projectMount: string
-  workspaceDir?: string
-  coding: AgentModelOptions
-}
+export type { CodingConfig } from './coding.config.ts'
 
 export type CodingAgentExtra =
   | { type: 'userMessage'; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }

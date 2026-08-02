@@ -1,4 +1,4 @@
-import { createPluginFactory, defineConfig } from '../../system/index.ts'
+import { createPluginFactory } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { PageTools, writeHTMLPageTool } from './page-tools.ts'
@@ -12,23 +12,10 @@ import {
   codingStrReplaceTool,
   codingWriteTool,
 } from './project-shell.ts'
-import { buildCodingRoutes, codingSchemas } from './routes.ts'
-import type { PageToolsMsg, CodingConfig, ProjectShellMsg } from './types.ts'
+import { buildCodingRoutes } from './coding.routes.ts'
+import { config, defaultConfig, type CodingConfig } from './coding.config.ts'
+import type { PageToolsMsg, ProjectShellMsg } from './types.ts'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
-
-const defaultConfig: CodingConfig = {
-  projectRoot: '/home/rigel/rorschach/src',
-  projectMount: '/rorschach',
-  workspaceDir: '/home/rigel/rorschach/workspace',
-  coding: {
-    model: 'google/gemini-3.5-flash',
-    maxToolLoops: 25,
-  },
-}
-
-const config = defineConfig<CodingConfig>('coding', defaultConfig, {
-  schemas: codingSchemas,
-})
 
 const mergeConfig = (slice: CodingConfig | undefined): CodingConfig => ({
   ...defaultConfig,
