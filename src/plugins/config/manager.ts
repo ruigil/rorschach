@@ -113,16 +113,17 @@ export const ConfigActor = (
         schemas: new Map(),
         source,
         configPath,
-        observed: null,
+        observed: {},
       }
     },
 
     handler: onMessage<ConfigMsg, ConfigState>({
-      _observed: (state, { observed }, ctx) => {
-        for (const frame of framesFromObservedDiff(state.observed, observed)) {
+      _observed: (state, { systemId, observed }, ctx) => {
+        const prev = state.observed[systemId] ?? null
+        for (const frame of framesFromObservedDiff(prev, observed)) {
           ctx.publish(OutboundAdminBroadcastTopic, frame)
         }
-        return { state: { ...state, observed } }
+        return { state: { ...state, observed: { ...state.observed, [systemId]: observed } } }
       },
 
       _configSchemaChanged: (state, { event }, ctx) => {
@@ -148,9 +149,12 @@ export const ConfigActor = (
           return { state }
         }
         const source = state.source
-        const observedPlugins = state.observed?.plugins ?? []
         const url = new URL(request.url, 'http://localhost')
         const path = url.pathname
+        // Single-source today: default to 'local'. Multi-system admin targets
+        // a system via ?systemId= (observed stays keyed per system regardless).
+        const systemId = url.searchParams.get('systemId') ?? 'local'
+        const observedPlugins = state.observed[systemId]?.plugins ?? []
 
         if (request.method === 'GET' && path === '/config/schema') {
           replyTo.send(jsonResponse(200, Array.from(state.schemas.values())))
@@ -160,6 +164,20 @@ export const ConfigActor = (
         const handleHttpRequest = async () => {
           try {
             if (request.method === 'GET') {
+              if (path === '/config/systems') {
+                replyTo.send(
+                  jsonResponse(
+                    200,
+                    Object.values(state.observed).map((o) => ({
+                      systemId: o.systemId,
+                      plugins: o.plugins,
+                      revision: o.revision,
+                      appliedRevision: o.appliedRevision,
+                    })),
+                  ),
+                )
+                return
+              }
               if (path === '/config/plugins') {
                 replyTo.send(jsonResponse(200, observedPlugins))
                 return
@@ -256,7 +274,7 @@ export const ConfigActor = (
           return { state }
         }
         const source = state.source
-        const observedPlugins = state.observed?.plugins ?? []
+        const observedPlugins = state.observed['local']?.plugins ?? []
 
         const handleToolInvoke = async () => {
           try {
@@ -365,6 +383,7 @@ export const ConfigActor = (
         }))
         ctx.subscribe(SystemConfigObservedTopic, (e) => ({
           type: '_observed' as const,
+          systemId: e.systemId,
           observed: e,
         }))
         return { state }

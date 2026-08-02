@@ -3,6 +3,7 @@ import { framesFromObservedDiff } from '../plugins/config/observed-frames.ts'
 import type { ObservedState } from '../system/node/types.ts'
 
 const base = (over: Partial<ObservedState> & Pick<ObservedState, 'plugins'>): ObservedState => ({
+  systemId: 'local',
   revision: 'rev-a',
   appliedRevision: 'rev-a',
   updatedAt: 1,
@@ -19,13 +20,13 @@ describe('framesFromObservedDiff (PR-8)', () => {
     })
     const frames = framesFromObservedDiff(null, next)
     expect(frames.filter((f) => f.type === 'plugins.updated')).toEqual([
-      { type: 'plugins.updated', key: 'system', payload: { action: 'add', id: 'config' } },
-      { type: 'plugins.updated', key: 'system', payload: { action: 'add', id: 'cognitive' } },
+      { type: 'plugins.updated', key: 'local', payload: { action: 'add', id: 'config' } },
+      { type: 'plugins.updated', key: 'local', payload: { action: 'add', id: 'cognitive' } },
     ])
     expect(frames.filter((f) => f.type === 'config.updated')).toEqual([
       {
         type: 'config.updated',
-        key: 'system',
+        key: 'local',
         payload: { revision: 'rev-a', appliedRevision: 'rev-a' },
       },
     ])
@@ -43,12 +44,12 @@ describe('framesFromObservedDiff (PR-8)', () => {
     })
     const frames = framesFromObservedDiff(prev, next)
     expect(frames).toEqual([
-      { type: 'plugins.updated', key: 'system', payload: { action: 'add', id: 'b' } },
+      { type: 'plugins.updated', key: 'local', payload: { action: 'add', id: 'b' } },
     ])
 
     const removed = framesFromObservedDiff(next, prev)
     expect(removed).toEqual([
-      { type: 'plugins.updated', key: 'system', payload: { action: 'remove', id: 'b' } },
+      { type: 'plugins.updated', key: 'local', payload: { action: 'remove', id: 'b' } },
     ])
   })
 
@@ -66,7 +67,7 @@ describe('framesFromObservedDiff (PR-8)', () => {
     expect(framesFromObservedDiff(prev, next)).toEqual([
       {
         type: 'config.updated',
-        key: 'system',
+        key: 'local',
         payload: { revision: 'r2', appliedRevision: 'r1' },
       },
     ])

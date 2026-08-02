@@ -11,7 +11,8 @@ export type ConfigAdminFrame = {
 }
 
 /**
- * Diff previous vs next observed snapshot → admin WS frames.
+ * Diff previous vs next observed snapshot → admin WS frames, keyed by the
+ * snapshot's systemId.
  *
  * Sole home for `plugins.updated` / `config.updated` derivation (PR-8).
  * Node-control writes only `system.config.observed`; this adapter is the view.
@@ -25,6 +26,7 @@ export const framesFromObservedDiff = (
   prev: ObservedState | null,
   next: ObservedState,
 ): ConfigAdminFrame[] => {
+  const systemKey = next.systemId
   const frames: ConfigAdminFrame[] = []
   const prevPlugins = prev?.plugins ?? []
   const prevIds = new Set(prevPlugins.map((p) => p.id))
@@ -34,7 +36,7 @@ export const framesFromObservedDiff = (
     if (!prevIds.has(p.id)) {
       frames.push({
         type: 'plugins.updated',
-        key: 'system',
+        key: systemKey,
         payload: { action: 'add', id: p.id },
       })
     }
@@ -43,7 +45,7 @@ export const framesFromObservedDiff = (
     if (!nextIds.has(p.id)) {
       frames.push({
         type: 'plugins.updated',
-        key: 'system',
+        key: systemKey,
         payload: { action: 'remove', id: p.id },
       })
     }
@@ -56,7 +58,7 @@ export const framesFromObservedDiff = (
   ) {
     frames.push({
       type: 'config.updated',
-      key: 'system',
+      key: systemKey,
       payload: {
         revision: next.revision,
         appliedRevision: next.appliedRevision,

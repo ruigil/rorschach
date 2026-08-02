@@ -50,6 +50,8 @@ export type ObservedPlugin = {
  * Intentionally omits live config values so interpolated secrets never leave the machine.
  */
 export type ObservedState = {
+  /** Identity of the node/system this snapshot describes. */
+  systemId: string
   /** Desired hash last seen by node-control. */
   revision: string
   /** Desired hash fully converged (equals revision after a successful pass). */

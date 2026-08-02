@@ -16,16 +16,17 @@ export type ConfigMsg =
   | { type: 'http.request'; request: any; identity?: Identity | null; replyTo: ActorRef<any> }
   | ToolInvokeMsg
   | { type: '_configSchemaChanged'; event: ConfigSchemaEvent }
-  | { type: '_observed'; observed: ObservedState }
+  | { type: '_observed'; systemId: string; observed: ObservedState }
 
 export type ConfigState = {
   schemas: Map<string, ConfigSchemaSection>
   source: ConfigSource | null
   configPath: string
   /**
-   * Sole observed snapshot from system.config.observed (null until first retain).
-   * Plugin list + revision lag live here — no parallel observed* fields.
+   * Observed snapshots keyed by systemId, from system.config.observed.
+   * Base for multi-system: node-control publishes one retained value per system.
+   * No parallel observed* fields — plugin list + revision lag live here.
    */
-  observed: ObservedState | null
+  observed: Record<string, ObservedState>
 }
 

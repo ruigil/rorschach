@@ -121,6 +121,7 @@ const publishObserved = (
   },
 ): void => {
   const observed: ObservedState = {
+    systemId,
     revision: state.revision,
     appliedRevision: state.appliedRevision,
     plugins: state.plugins,

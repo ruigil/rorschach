@@ -6,6 +6,10 @@ import type { ConfigSchemaSection } from '../../../types/config.ts';
 export { RConfigPanel }
 
 export type ConfigUIState = {
+  /** System currently being edited/viewed (single source today → 'local'). */
+  activeSystemId: string
+  /** Observed systems, each with its plugins + revision lag (tree roots). */
+  systems: SystemSummary[]
   plugins: PluginSummary[]
   schemas: ConfigSchemaSection[]
   currentValues: Record<string, any>
@@ -26,6 +30,8 @@ export type ConfigUIState = {
 }
 
 store.namespace<ConfigUIState>('config').init({
+  activeSystemId: 'local',
+  systems: [],
   plugins: [],
   schemas: [],
   currentValues: {},
@@ -62,6 +68,14 @@ export const isConfigConverging = (
     return false
   }
   return observed !== applied
+}
+
+/** Observed system snapshot (tree root) served by GET /config/systems. */
+export type SystemSummary = {
+  systemId: string
+  plugins: PluginSummary[]
+  revision: string
+  appliedRevision: string
 }
 
 export type ConfigSyncStatus = 'synced' | 'applying' | 'degraded'
@@ -112,6 +126,20 @@ const markApplied = (revision?: string | null, appliedRevision?: string | null) 
   if (pending && applied && pending === applied) {
     ns.set('pendingRevision', null)
   }
+}
+
+export const refreshConfigSystems = async () => {
+  const ns = store.namespace<ConfigUIState>('config')
+  try {
+    const res = await fetch('/config/systems')
+    if (!res.ok) return
+    const systems = normalizeArray(await res.json()) as SystemSummary[]
+    ns.set('systems', systems)
+    const active = ns.get('activeSystemId')
+    if (!systems.some(s => s.systemId === active)) {
+      ns.set('activeSystemId', systems[0]?.systemId ?? 'local')
+    }
+  } catch { /* best-effort */ }
 }
 
 export const refreshConfigPlugins = async () => {
@@ -213,6 +241,8 @@ export const reduceFrame = (frame: any) => {
       // Frames derived from observed diffs (config plugin adapter; PR-8).
       // WS flattens payload → frame.revision / frame.appliedRevision.
       markApplied(frame.revision, frame.appliedRevision ?? frame.revision)
+      // Keep the per-system tree in sync with observed.
+      void refreshConfigSystems()
       if (frame.pluginId) {
         void refreshConfigValues(frame.pluginId)
       } else {
@@ -221,10 +251,12 @@ export const reduceFrame = (frame: any) => {
       break
     }
     case 'plugins.updated':
+      void refreshConfigSystems()
       refreshConfigPlugins()
       refreshConfigSchemas().then(syncMissingValues)
       break
     case 'plugin.health.changed':
+      void refreshConfigSystems()
       refreshConfigPlugins()
       break
   }

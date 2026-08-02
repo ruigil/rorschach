@@ -22,7 +22,9 @@ import {
   pluginSyncStatus,
   refreshConfigPlugins,
   refreshConfigSchemas,
+  refreshConfigSystems,
   syncMissingValues,
+  type SystemSummary,
 } from './index.js';
 import {
   buildConfigTree,
@@ -59,6 +61,8 @@ const setAtDotPath = (root: Record<string, any>, dotPath: string, value: unknown
 
 @customElement('r-config-panel')
 export class RConfigPanel extends RorschachBase {
+  private _activeSystemIdStore = new StoreController(this, ['config', 'activeSystemId']);
+  private _systemsStore = new StoreController(this, ['config', 'systems']);
   private _pluginsStore = new StoreController(this, ['config', 'plugins']);
   private _schemasStore = new StoreController(this, ['config', 'schemas']);
   private _currentValuesStore = new StoreController(this, ['config', 'currentValues']);
@@ -83,6 +87,21 @@ export class RConfigPanel extends RorschachBase {
 
   private get schemas(): ConfigSchema[] {
     return normalizeArray(this._schemasStore.value);
+  }
+
+  private get systems(): SystemSummary[] {
+    return (normalizeArray(this._systemsStore.value) as SystemSummary[]);
+  }
+
+  private get activeSystemId(): string {
+    return (this._activeSystemIdStore.value as string) || 'local';
+  }
+
+  /** The system currently selected/edited (falls back to the first observed). */
+  private get activeSystem(): SystemSummary | null {
+    return this.systems.find(s => s.systemId === this.activeSystemId)
+      ?? this.systems[0]
+      ?? null;
   }
 
   private get currentValues(): Record<string, any> {
@@ -431,6 +450,7 @@ export class RConfigPanel extends RorschachBase {
 
   override firstUpdated() {
     refreshConfigPlugins();
+    refreshConfigSystems();
   }
 
   override updated() {
@@ -571,11 +591,11 @@ export class RConfigPanel extends RorschachBase {
   }
 
   private get _treeData(): TreeNode[] {
-    const plugins: any[] = normalizeArray(this._pluginsStore.value);
-
     const rawSchemaTree = buildConfigTree(this.schemas);
     const { filteredNodes } = filterConfigTree(rawSchemaTree, this.searchQuery);
 
+    // Schema pages are shared across systems (single schema surface); they get
+    // stamped with the owning systemId when nested under a system's plugin.
     const pagesByPlugin = new Map<string, TreeNode[]>();
     for (const group of filteredNodes) {
       for (const child of group.children ?? []) {
@@ -584,41 +604,52 @@ export class RConfigPanel extends RorschachBase {
         pages.push({
           id: `sec-${child.id}`,
           label: child.label,
-          icon: 'settings' as const,
+          icon: 'wrench' as const,
           data: child.section ? { section: child.section } : undefined,
         });
         pagesByPlugin.set(pluginId, pages);
       }
     }
 
-    const loadedPluginsNode: TreeNode = {
-      id: 'plugins-root',
-      label: 'Loaded Plugins',
-      icon: 'wrench' as const,
-      badge: plugins.length,
-      children: plugins.map(p => ({
-        id: `plugin-${p.id}`,
-        label: p.id,
-        icon: 'file-text' as const,
-        status: this._statusFor(p),
-        badge:
-          pluginSyncStatus(p) === 'synced'
-            ? undefined
-            : pluginSyncStatus(p) === 'degraded'
-            ? 'degraded'
-            : 'pending',
-        data: p,
-        children: pagesByPlugin.get(p.id),
-      })),
-    };
-
-    return [loadedPluginsNode];
+    // Tree roots at each observed systemId; plugins + pages nest beneath.
+    return this.systems.map(sys => {
+      const systemId = sys.systemId;
+      const plugins: any[] = sys.plugins ?? [];
+      return {
+        id: `system-${systemId}`,
+        label: systemId,
+        icon: 'settings' as const,
+        badge: plugins.length,
+        data: { systemId },
+        children: plugins.map(p => ({
+          id: `plugin-${p.id}`,
+          label: p.id,
+          icon: 'file-text' as const,
+          status: this._statusFor(p),
+          badge:
+            pluginSyncStatus(p) === 'synced'
+              ? undefined
+              : pluginSyncStatus(p) === 'degraded'
+              ? 'degraded'
+              : 'pending',
+          data: { systemId, plugin: p },
+          children: (pagesByPlugin.get(p.id) ?? []).map(page => ({
+            ...page,
+            data: { systemId, ...(page.data ?? {}) },
+          })),
+        })),
+      };
+    });
   }
 
   private _onNodeSelect(e: CustomEvent) {
     const node = e.detail.node;
     if (node && node.id) {
       this.selectedNodeId = node.id;
+      const systemId = node.data?.systemId;
+      if (systemId) {
+        store.namespace<ConfigUIState>('config').set('activeSystemId', systemId);
+      }
       if (node.id.startsWith('sec-')) {
         this.activeSectionId = node.id.slice(4);
       }
@@ -645,7 +676,7 @@ export class RConfigPanel extends RorschachBase {
     ns.set('error', null);
 
     try {
-      const res = await fetch('/config/plugins/add', {
+      const res = await fetch(`/config/plugins/add?systemId=${encodeURIComponent(this.activeSystemId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modulePath: path }),
@@ -674,7 +705,7 @@ export class RConfigPanel extends RorschachBase {
     const ns = store.namespace<ConfigUIState>('config');
     ns.set('error', null);
     try {
-      const res = await fetch('/config/plugins/remove', {
+      const res = await fetch(`/config/plugins/remove?systemId=${encodeURIComponent(this.activeSystemId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pluginId: id }),
@@ -695,7 +726,7 @@ export class RConfigPanel extends RorschachBase {
     const ns = store.namespace<ConfigUIState>('config');
     ns.set('error', null);
     try {
-      const res = await fetch('/config/plugins/reload', {
+      const res = await fetch(`/config/plugins/reload?systemId=${encodeURIComponent(this.activeSystemId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pluginId: id }),
@@ -729,7 +760,7 @@ export class RConfigPanel extends RorschachBase {
   }
 
   override render() {
-    const plugins: any[] = normalizeArray(this._pluginsStore.value);
+    const plugins: any[] = this.activeSystem?.plugins ?? normalizeArray(this._pluginsStore.value);
     const schemas = this.schemas;
     const loading = this._loadingStore.value as boolean;
     const error = this._errorStore.value as string | null;

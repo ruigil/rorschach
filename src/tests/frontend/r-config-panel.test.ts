@@ -56,6 +56,9 @@ describe('r-config-panel', () => {
       if (urlStr.includes('config/plugins') || urlStr.includes('/plugins')) {
         return new Response(JSON.stringify(mockPlugins), { headers: { 'Content-Type': 'application/json' } })
       }
+      if (urlStr.includes('config/systems')) {
+        return new Response(JSON.stringify([{ systemId: 'local', plugins: mockPlugins, revision: 'r', appliedRevision: 'r' }]), { headers: { 'Content-Type': 'application/json' } })
+      }
       if (urlStr.includes('config/values/cognitive') || urlStr.includes('config/cognitive')) {
         return new Response(JSON.stringify(mockValues), { headers: { 'Content-Type': 'application/json' } })
       }
@@ -83,10 +86,10 @@ describe('r-config-panel', () => {
     // Check tree component is mounted
     const tree = root.querySelector('r-tree') as any
     expect(tree).toBeTruthy()
-    expect(tree.data.length).toBe(1) // single "Loaded Plugins" root
+    expect(tree.data.length).toBe(1) // single observed system "local"
     const rootNode = tree.data[0]
-    expect(rootNode.id).toBe('plugins-root')
-    expect(rootNode.label).toBe('Loaded Plugins')
+    expect(rootNode.id).toBe('system-local')
+    expect(rootNode.label).toBe('local')
     expect(rootNode.children?.length).toBe(2) // config + cognitive
 
     // Config pages are children of their owning plugin
@@ -152,6 +155,9 @@ describe('r-config-panel', () => {
       }
       if (urlStr.includes('config/values/cognitive')) {
         return new Response(JSON.stringify(mockValues), { headers: { 'Content-Type': 'application/json' } })
+      }
+      if (urlStr.includes('config/systems')) {
+        return new Response(JSON.stringify([{ systemId: 'local', plugins: mockPlugins, revision: 'r', appliedRevision: 'r' }]), { headers: { 'Content-Type': 'application/json' } })
       }
       if (urlStr.includes('models')) {
         return new Response(JSON.stringify([]), { headers: { 'Content-Type': 'application/json' } })
