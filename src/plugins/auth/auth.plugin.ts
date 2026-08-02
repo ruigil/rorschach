@@ -1,26 +1,14 @@
-import { createPluginFactory, defineConfig } from '../../system/index.ts'
+import { createPluginFactory } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
 import { UserStore } from './user-store.ts'
-import { Authenticator, type AuthConfig } from './authenticator.ts'
+import { Authenticator } from './authenticator.ts'
 import { AuthenticatorRouter } from './authenticator-router.ts'
 import { IdentityProvider } from './identity-provider.ts'
-import { buildAuthRoutes, authSchemas } from './routes.ts'
+import { buildAuthRoutes } from './auth.routes.ts'
+import { config, type AuthConfig } from './auth.config.ts'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import type { AuthenticatorMsg, UserStoreMsg } from './types.ts'
 import type { HttpRequestMsg } from '../../types/routes.ts'
-
-const config = defineConfig<AuthConfig>('auth', {
-  rpId:           'localhost',
-  rpName:         'Rorschach',
-  origin:         'http://localhost:3000',
-  baseUrl:        'http://localhost:3000',
-  sessionTtlMs:   7 * 24 * 60 * 60 * 1000,
-  challengeTtlMs: 5 * 60 * 1000,
-  ticketTtlMs:    30 * 1000,
-  admins:         {},
-}, {
-  schemas: authSchemas,
-})
 
 const authSurfaceRegistration: UiSurfaceRegistration = {
   id: 'auth.profile',

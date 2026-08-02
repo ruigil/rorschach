@@ -12,23 +12,11 @@ import { SessionLifecycleTopic } from '../../types/session.ts'
 
 // ─── Config ───
 
-export type AuthConfig = {
-  rpId:           string
-  rpName:         string
-  origin:         string
-  baseUrl:        string
-  sessionTtlMs:   number
-  challengeTtlMs: number
-  ticketTtlMs:    number
-  admins?: {
-    usernames?: string[] | string
-    phones?:    string[] | string
-    userIds?:   string[] | string
-  }
-  permissions?: {
-    roleDefaults: Record<string, string[]>
-  }
-}
+// Re-exported from the co-located config module so internal modules and tests
+// that imported the type here keep working untouched.
+import type { AuthConfig } from './auth.config.ts'
+export type { AuthConfig }
+export { config as authConfig } from './auth.config.ts'
 
 // ─── State ───
 
