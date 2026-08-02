@@ -14,7 +14,7 @@ export type ConfigAdminFrame = {
  * Diff previous vs next observed snapshot → admin WS frames.
  *
  * Sole home for `plugins.updated` / `config.updated` derivation (PR-8).
- * Node-control writes only `system.observed`; this adapter is the view.
+ * Node-control writes only `system.config.observed`; this adapter is the view.
  *
  * Rules:
  * - plugin id appear → plugins.updated { action: 'add' }

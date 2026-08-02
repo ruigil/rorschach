@@ -1,6 +1,6 @@
 import type { ActorContext, ActorDef, ActorResult, Op, SystemControl, ActualSnapshot } from '../actor/types.ts'
 import { onLifecycle, onMessage } from '../actor/match.ts'
-import { SystemObservedTopic } from '../../types/config.ts'
+import { SystemConfigObservedTopic } from '../../types/config.ts'
 import type {
   ConfigSource,
   DesiredState,
@@ -25,7 +25,7 @@ import { configRevisionOf } from './config-sources.ts'
 // Active plugin identity (path + reloadNonce) lives on ActualSnapshot.plugins[].
 // Control does not keep a parallel Map.
 //
-// Post-converge external write: system.observed only (PR-8). Admin WS frames
+// Post-converge external write: system.config.observed only (PR-8). Admin WS frames
 // (plugins.updated / config.updated) are derived by the config plugin from
 // observed diffs — control does not publish OutboundAdminBroadcast.
 
@@ -126,7 +126,7 @@ const publishObserved = (
     plugins: state.plugins,
     updatedAt: Date.now(),
   }
-  ctx.publishRetained(SystemObservedTopic, systemId, observed)
+  ctx.publishRetained(SystemConfigObservedTopic, systemId, observed)
 }
 
 /**

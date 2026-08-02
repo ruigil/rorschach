@@ -128,10 +128,3 @@ export type TraceSpan = {
   data?: Record<string, unknown>
 }
 
-export {
-  ConfigSchemaTopic,
-  type ConfigSchemaEvent,
-  SystemObservedTopic,
-  type SystemObservedEvent,
-} from './config.ts'
-

@@ -1,16 +1,38 @@
 {
   "plugins": [
-    { "modulePath": "${CONFIG_DIR}/src/plugins/persistence/persistence.plugin.ts" },
-    { "modulePath": "${CONFIG_DIR}/src/plugins/interfaces/interfaces.plugin.ts" },
-    { "modulePath": "${CONFIG_DIR}/src/plugins/tools/tools.plugin.ts" },
-    { "modulePath": "${CONFIG_DIR}/src/plugins/memory/memory.plugin.ts" },
-    { "modulePath": "${CONFIG_DIR}/src/plugins/cognitive/cognitive.plugin.ts" },
-    { "modulePath": "${CONFIG_DIR}/src/plugins/workflows/workflows.plugin.ts" },
-    { "modulePath": "${CONFIG_DIR}/src/plugins/observability/observability.plugin.ts" },
-    { "modulePath": "${CONFIG_DIR}/src/plugins/notebook/notebook.plugin.ts" },
-    { "modulePath": "${CONFIG_DIR}/src/plugins/googleapis/googleapis.plugin.ts" },
-    { "modulePath": "${CONFIG_DIR}/src/plugins/coding/coding.plugin.ts" },
-    { "modulePath": "${CONFIG_DIR}/src/plugins/config/config.plugin.ts" }
+    {
+      "modulePath": "${CONFIG_DIR}/src/plugins/persistence/persistence.plugin.ts"
+    },
+    {
+      "modulePath": "${CONFIG_DIR}/src/plugins/interfaces/interfaces.plugin.ts"
+    },
+    {
+      "modulePath": "${CONFIG_DIR}/src/plugins/tools/tools.plugin.ts"
+    },
+    {
+      "modulePath": "${CONFIG_DIR}/src/plugins/memory/memory.plugin.ts"
+    },
+    {
+      "modulePath": "${CONFIG_DIR}/src/plugins/cognitive/cognitive.plugin.ts"
+    },
+    {
+      "modulePath": "${CONFIG_DIR}/src/plugins/workflows/workflows.plugin.ts"
+    },
+    {
+      "modulePath": "${CONFIG_DIR}/src/plugins/observability/observability.plugin.ts"
+    },
+    {
+      "modulePath": "${CONFIG_DIR}/src/plugins/notebook/notebook.plugin.ts"
+    },
+    {
+      "modulePath": "${CONFIG_DIR}/src/plugins/googleapis/googleapis.plugin.ts"
+    },
+    {
+      "modulePath": "${CONFIG_DIR}/src/plugins/coding/coding.plugin.ts"
+    },
+    {
+      "modulePath": "${CONFIG_DIR}/src/plugins/config/config.plugin.ts"
+    }
   ],
   "config": {
     "persistence": {
@@ -73,7 +95,7 @@
         "model": "nvidia-nemotron-3-ultra-550b-a55b"
       },
       "session": {
-        "contextWindowHours": 2,
+        "contextWindowHours": 4,
         "persistContext": true
       },
       "userContext": {

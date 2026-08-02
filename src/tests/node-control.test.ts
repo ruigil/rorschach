@@ -4,7 +4,7 @@ import {
   fileSource,
   type PluginSystem,
 } from '../system/index.ts'
-import { SystemObservedTopic } from '../types/config.ts'
+import { SystemConfigObservedTopic } from '../types/config.ts'
 import type { ObservedState } from '../system/node/types.ts'
 import {
   waitFor,
@@ -37,7 +37,7 @@ describe('node-control converge (level-triggered)', () => {
       systemId: 'test-node',
     })
 
-    system.subscribe(SystemObservedTopic, (e) => {
+    system.subscribe(SystemConfigObservedTopic, (e) => {
       lastObserved = e
     })
 
@@ -265,7 +265,7 @@ describe('node-control converge (level-triggered)', () => {
 
   test('systemId is retained key (late subscribe gets replay)', async () => {
     let replayed: ObservedState | undefined
-    const unsub = system.subscribe(SystemObservedTopic, (e) => {
+    const unsub = system.subscribe(SystemConfigObservedTopic, (e) => {
       replayed = e
     })
     await waitFor(() => replayed !== undefined)

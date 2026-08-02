@@ -64,6 +64,39 @@ export const isConfigConverging = (
   return observed !== applied
 }
 
+export type ConfigSyncStatus = 'synced' | 'applying' | 'degraded'
+
+/**
+ * Aggregate desired↔observed convergence status (PR-8 view over the
+ * observed snapshot). `synced` when no write is pending and the desired
+ * revision equals the applied revision; `degraded` when a stuck/failed
+ * plugin is blocking convergence; otherwise `applying`.
+ */
+export const configSyncStatus = (
+  s: Pick<ConfigUIState, 'pendingRevision' | 'observedRevision' | 'appliedRevision'>,
+  plugins: PluginSummary[],
+): { status: ConfigSyncStatus; label: string } => {
+  if (!isConfigConverging(s)) return { status: 'synced', label: 'Synchronized' }
+  const degraded = plugins.some(
+    (p) =>
+      p.status === 'failed' ||
+      p.health?.status === 'unavailable' ||
+      p.health?.status === 'degraded',
+  )
+  return degraded
+    ? { status: 'degraded', label: 'Degraded' }
+    : { status: 'applying', label: 'Applying…' }
+}
+
+/** Per-plugin convergence state from the observed snapshot. */
+export const pluginSyncStatus = (p: PluginSummary): ConfigSyncStatus => {
+  if (p.status === 'active' && p.health?.status === 'ok') return 'synced'
+  if (p.status === 'failed' || p.health?.status === 'unavailable' || p.health?.status === 'degraded') {
+    return 'degraded'
+  }
+  return 'applying'
+}
+
 const markAccepted = (revision: string | undefined | null) => {
   if (!revision) return
   const ns = store.namespace<ConfigUIState>('config')

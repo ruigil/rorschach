@@ -23,7 +23,7 @@ export type ConfigState = {
   source: ConfigSource | null
   configPath: string
   /**
-   * Sole observed snapshot from system.observed (null until first retain).
+   * Sole observed snapshot from system.config.observed (null until first retain).
    * Plugin list + revision lag live here — no parallel observed* fields.
    */
   observed: ObservedState | null

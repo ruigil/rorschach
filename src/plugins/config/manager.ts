@@ -1,6 +1,6 @@
 import type { ActorDef } from '../../system/index.ts'
 import { onMessage, onLifecycle, parseToolArgs } from '../../system/index.ts'
-import { ConfigSchemaTopic, SystemObservedTopic } from '../../types/config.ts'
+import { ConfigSchemaTopic, SystemConfigObservedTopic } from '../../types/config.ts'
 import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
 import { fileSource } from '../../system/index.ts'
 import type { ConfigSource, PluginEntry } from '../../system/index.ts'
@@ -363,7 +363,7 @@ export const ConfigActor = (
           type: '_configSchemaChanged' as const,
           event: e,
         }))
-        ctx.subscribe(SystemObservedTopic, (e) => ({
+        ctx.subscribe(SystemConfigObservedTopic, (e) => ({
           type: '_observed' as const,
           observed: e,
         }))

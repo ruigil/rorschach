@@ -5,7 +5,7 @@ import {
   type PluginSystem,
   ask,
 } from '../system/index.ts'
-import { SystemObservedTopic } from '../types/config.ts'
+import { SystemConfigObservedTopic } from '../types/config.ts'
 import { OutboundAdminBroadcastTopic } from '../types/events.ts'
 import { RouteRegistrationTopic } from '../types/routes.ts'
 import type { ObservedState } from '../system/node/types.ts'
@@ -50,7 +50,7 @@ describe('secrets audit (phase 3)', () => {
       source,
     })
 
-    system.subscribe(SystemObservedTopic, (e) => {
+    system.subscribe(SystemConfigObservedTopic, (e) => {
       lastObserved = e
     })
     system.subscribe(OutboundAdminBroadcastTopic, (e) => {

@@ -16,8 +16,10 @@ import {
 import type { ConfigUIState } from './index.js';
 import {
   isConfigConverging,
+  configSyncStatus,
   normalizeArray,
   noteAcceptedRevision,
+  pluginSyncStatus,
   refreshConfigPlugins,
   refreshConfigSchemas,
   syncMissingValues,
@@ -182,6 +184,22 @@ export class RConfigPanel extends RorschachBase {
         border-radius: 50%;
         background: currentColor;
         animation: converge-pulse 1.2s ease-in-out infinite;
+      }
+
+      .converge-badge.synced {
+        color: var(--ok, #46d17b);
+        background: color-mix(in srgb, var(--ok, #46d17b) 15%, transparent);
+        border: 1px solid color-mix(in srgb, var(--ok, #46d17b) 35%, transparent);
+      }
+
+      .converge-badge.synced::before {
+        animation: none;
+      }
+
+      .converge-badge.degraded {
+        color: var(--error, #e5484d);
+        background: color-mix(in srgb, var(--error, #e5484d) 15%, transparent);
+        border: 1px solid color-mix(in srgb, var(--error, #e5484d) 35%, transparent);
       }
 
       @keyframes converge-pulse {
@@ -583,6 +601,12 @@ export class RConfigPanel extends RorschachBase {
         label: p.id,
         icon: 'file-text' as const,
         status: this._statusFor(p),
+        badge:
+          pluginSyncStatus(p) === 'synced'
+            ? undefined
+            : pluginSyncStatus(p) === 'degraded'
+            ? 'degraded'
+            : 'pending',
         data: p,
         children: pagesByPlugin.get(p.id),
       })),
@@ -716,6 +740,11 @@ export class RConfigPanel extends RorschachBase {
       observedRevision: this._observedRevisionStore.value as string | null,
       appliedRevision: this._appliedRevisionStore.value as string | null,
     });
+    const sync = configSyncStatus({
+      pendingRevision: this._pendingRevisionStore.value as string | null,
+      observedRevision: this._observedRevisionStore.value as string | null,
+      appliedRevision: this._appliedRevisionStore.value as string | null,
+    }, plugins);
 
     let selectedPlugin = plugins.find(p => p && `plugin-${p.id}` === this.selectedNodeId);
 
@@ -742,7 +771,13 @@ export class RConfigPanel extends RorschachBase {
             ` : nothing}
           </div>
           <div slot="actions" class="config-actions">
-            ${converging ? html`<span class="converge-badge" title="Desired accepted; waiting for node-control to apply">Applying…</span>` : nothing}
+            ${sync.status === 'synced'
+              ? html`<span class="converge-badge synced" title="Desired revision matches applied revision">Synced</span>`
+              : html`<span
+                    class="converge-badge ${sync.status}"
+                    title="${sync.status === 'degraded'
+                      ? 'A plugin failed or is unavailable, blocking convergence'
+                      : 'Desired accepted; waiting for node-control to apply'}">${sync.label}</span>`}
             <r-flash-message id="flash-msg"></r-flash-message>
             ${isSectionSelected ? html`
               <button type="button" class="btn-reset" ?disabled=${!hasDirtyFields || converging} @click=${this.reset}>Reset</button>

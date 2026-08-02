@@ -36,13 +36,13 @@ export type ConfigSchemaEvent = {
   isTombstone?: boolean
 }
 
-export const ConfigSchemaTopic = createTopic<ConfigSchemaEvent>('system.config.schema')
+export const ConfigSchemaTopic = createTopic<ConfigSchemaEvent>('config.schema')
 
 // ─── Observed plane (node-control sole writer; retained; key = systemId) ─────
 //
 // Phase 3: revision / appliedRevision + plugins. No live config tree (secrets).
 // revision !== appliedRevision ⇒ converging or degraded.
 
-export type SystemObservedEvent = ObservedState
+export type SystemConfigObservedEvent = ObservedState
 
-export const SystemObservedTopic = createTopic<SystemObservedEvent>('system.observed')
+export const SystemConfigObservedTopic = createTopic<SystemConfigObservedEvent>('system.config.observed')
