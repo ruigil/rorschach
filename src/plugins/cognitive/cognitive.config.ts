@@ -1,8 +1,32 @@
+import { defineConfig } from '../../system/index.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
+import type { SessionConfig } from './types.ts'
+import type { ChatbotAgentOptions } from './chatbot-agent.ts'
 
-// ─── Config Schema Sections ──────────────────────────────────────────────────
+// ─── Config type ────────────────────────────────────────────────────────────
 
-export const chatbotSchema: ConfigSchemaSection = {
+type LlmProviderConfig = {
+  provider?: 'openrouter' | 'venice'
+  apiKey: string
+  baseUrl?: string
+  reasoning?: { enabled?: boolean; effort?: 'high' | 'medium' | 'low' | 'minimal' }
+}
+
+export type UserContextConfig = {
+  model:      string
+  intervalMs: number
+}
+
+export type CognitiveConfig = {
+  llmProvider?: LlmProviderConfig
+  chatbot?:     ChatbotAgentOptions
+  session?:     SessionConfig
+  userContext?: UserContextConfig
+}
+
+// ─── Schema sections ────────────────────────────────────────────────────────
+
+const chatbotSchema: ConfigSchemaSection = {
   id: 'cognitive.chatbot',
   title: 'Chat',
   subtitle: 'cognitive · language model and reasoning',
@@ -17,7 +41,7 @@ export const chatbotSchema: ConfigSchemaSection = {
   },
 }
 
-export const sessionSchema: ConfigSchemaSection = {
+const sessionSchema: ConfigSchemaSection = {
   id: 'cognitive.session',
   title: 'Session',
   subtitle: 'cognitive · conversation context',
@@ -37,7 +61,7 @@ export const sessionSchema: ConfigSchemaSection = {
   },
 }
 
-export const llmSchema: ConfigSchemaSection = {
+const llmSchema: ConfigSchemaSection = {
   id: 'cognitive.llm',
   title: 'LLM Provider',
   subtitle: 'cognitive · LLM provider settings',
@@ -60,7 +84,7 @@ export const llmSchema: ConfigSchemaSection = {
   },
 }
 
-export const userContextSchema: ConfigSchemaSection = {
+const userContextSchema: ConfigSchemaSection = {
   id: 'cognitive.userContext',
   title: 'User Context',
   subtitle: 'cognitive · periodic context summary',
@@ -75,20 +99,25 @@ export const userContextSchema: ConfigSchemaSection = {
   },
 }
 
-export const cognitiveSchemas = [chatbotSchema, sessionSchema, llmSchema, userContextSchema]
+const cognitiveSchemas: ConfigSchemaSection[] = [chatbotSchema, sessionSchema, llmSchema, userContextSchema]
 
-import type { ActorRef } from '../../system/index.ts'
-import type { RouteRegistration, HttpRequestMsg } from '../../types/routes.ts'
+// ─── Defaults + descriptor ──────────────────────────────────────────────────
 
-export const buildCognitiveRoutes = (llmProviderRef?: ActorRef<HttpRequestMsg>): RouteRegistration[] => {
-  if (!llmProviderRef) return []
-  return [
-    {
-      id: 'cognitive.models',
-      method: 'GET',
-      path: '/models',
-      target: llmProviderRef,
-    }
-  ]
+export const defaultConfig: CognitiveConfig = {
+  chatbot: {
+    model: 'deepseek/deepseek-v4-flash',
+  },
+  session: {
+    defaultMode:        'chatbot',
+    contextWindowHours: 4,
+    persistContext:     false,
+  },
+  userContext: {
+    model:      'deepseek/deepseek-v4-flash',
+    intervalMs: 60_000,
+  },
 }
 
+export const config = defineConfig<CognitiveConfig>('cognitive', defaultConfig, {
+  schemas: cognitiveSchemas,
+})

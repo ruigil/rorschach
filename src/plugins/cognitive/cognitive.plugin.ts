@@ -1,4 +1,4 @@
-import { createPluginFactory, defineConfig } from '../../system/index.ts'
+import { createPluginFactory } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
 import { SessionManager } from './session-manager.ts'
 import { LlmProvider } from './llm-provider.ts'
@@ -8,48 +8,13 @@ import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { SessionConfig, UserContextMsg } from './types.ts'
 import { UserContext } from './user-context.ts'
 import { AgentRegistry } from './agent-registry.ts'
-import { ChatbotAgentDescriptor, type ChatbotAgentOptions } from './chatbot-agent.ts'
-import { buildCognitiveRoutes, cognitiveSchemas } from './routes.ts'
+import { ChatbotAgentDescriptor } from './chatbot-agent.ts'
+import { buildCognitiveRoutes } from './cognitive.routes.ts'
+import { config, defaultConfig, type CognitiveConfig } from './cognitive.config.ts'
 
 // ─── Config types ───
 
-type LlmProviderConfig = {
-  provider?: 'openrouter' | 'venice'
-  apiKey: string
-  baseUrl?: string
-  reasoning?: { enabled?: boolean; effort?: 'high' | 'medium' | 'low' | 'minimal' }
-}
-
-export type UserContextConfig = {
-  model:      string
-  intervalMs: number
-}
-
-export type CognitiveConfig = {
-  llmProvider?: LlmProviderConfig
-  chatbot?:     ChatbotAgentOptions
-  session?:     SessionConfig
-  userContext?: UserContextConfig
-}
-
-const defaultConfig: CognitiveConfig = {
-  chatbot: {
-    model: 'deepseek/deepseek-v4-flash',
-  },
-  session: {
-    defaultMode:        'chatbot',
-    contextWindowHours: 4,
-    persistContext:     false,
-  },
-  userContext: {
-    model:      'deepseek/deepseek-v4-flash',
-    intervalMs: 60_000,
-  },
-}
-
-const config = defineConfig<CognitiveConfig>('cognitive', defaultConfig, {
-  schemas: cognitiveSchemas,
-})
+type LlmProviderConfig = NonNullable<CognitiveConfig['llmProvider']>
 
 export default createPluginFactory<CognitiveConfig>({
   id: 'cognitive',
