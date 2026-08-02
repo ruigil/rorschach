@@ -7,10 +7,7 @@ import type { ConfigSource, ObservedPlugin, ObservedState } from '../../system/i
 /** Plugin list entry served by GET /config/plugins. */
 export type PluginSummary = ObservedPlugin
 
-export type ConfigPluginConfig = {
-  /** Absolute or resolved path to config.json — required for desired-plane access. */
-  configPath: string
-}
+export type { ConfigPluginConfig } from './config.config.ts'
 
 export type ConfigMsg =
   | { type: 'http.request'; request: any; identity?: Identity | null; replyTo: ActorRef<any> }

@@ -1,36 +1,9 @@
-import { createPluginFactory, defineConfig } from '../../system/index.ts'
+import { createPluginFactory } from '../../system/index.ts'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
-import { buildConfigRoutes } from './routes.ts'
+import { buildConfigRoutes } from './config.routes.ts'
 import { configGetTool, configSetTool, pluginsLoadTool, pluginsUnloadTool, pluginsReloadTool } from './tools.ts'
 import { ConfigActor } from './manager.ts'
-import type { ConfigPluginConfig } from './types.ts'
-import type { ConfigSchemaSection } from '../../types/config.ts'
-
-const configSchemas: ConfigSchemaSection[] = [
-  {
-    id: 'config.general',
-    title: 'Configuration',
-    subtitle: 'config · desired-plane file access',
-    tab: 'config',
-    configKey: '',
-    schema: {
-      type: 'object',
-      properties: {
-        configPath: {
-          type: 'string',
-          default: '',
-          'x-ui': { label: 'Config file path' },
-        },
-      },
-    },
-  },
-]
-
-const config = defineConfig<ConfigPluginConfig>('config', {
-  configPath: '',
-}, {
-  schemas: configSchemas,
-})
+import { config, type ConfigPluginConfig } from './config.config.ts'
 
 const configSurfaceRegistration: UiSurfaceRegistration = {
   id: 'config',
