@@ -107,6 +107,7 @@ export const ConfigActor = (
 ): ActorDef<ConfigMsg, ConfigState> => {
   return {
     initialState: () => {
+      console.log('[config] initializing ConfigActor with configPath:', initial?.configPath)
       const configPath = initial?.configPath ?? ''
       const source: ConfigSource | null = configPath ? fileSource(configPath) : null
       return {

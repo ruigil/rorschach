@@ -29,9 +29,7 @@ export default createPluginFactory<ConfigPluginConfig>({
   uiSurface: configSurfaceRegistration,
   slots: {
     manager: {
-      factory: (cfg: ConfigPluginConfig) =>
-        ConfigActor(cfg) ,
-      configPath: 'configPath',
+      factory: (cfg: ConfigPluginConfig) => ConfigActor(cfg),
       surviveConfigChange: true,
     },
   },
