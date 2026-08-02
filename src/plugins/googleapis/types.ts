@@ -13,13 +13,8 @@ export type GoogleToken = {
   token_type:    string
 }
 
-export type GoogleApisConfig = {
-  clientId?:     string
-  clientSecret?: string
-  baseUrl?:      string
-  agentModel?:   string
-  maxToolLoops?: number
-}
+import type { GoogleApisConfig } from './googleapis.config.ts'
+export type { GoogleApisConfig }
 
 // ─── Actor message protocols ───
 

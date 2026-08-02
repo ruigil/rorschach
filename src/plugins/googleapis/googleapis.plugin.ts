@@ -1,4 +1,4 @@
-import { createPluginFactory, defineConfig } from '../../system/index.ts'
+import { createPluginFactory } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
@@ -7,7 +7,8 @@ import type { GoogleApisConfig, TokenStoreMsg, OAuthStateMsg } from './types.ts'
 import { TokenStore } from './token-store.ts'
 import { OAuthState } from './oauth-state.ts'
 import { OAuthRouter, type OAuthRouterMsg } from './oauth-router.ts'
-import { buildGoogleOAuthRoutes, googleapisSchemas } from './routes.ts'
+import { buildGoogleOAuthRoutes } from './googleapis.routes.ts'
+import { config } from './googleapis.config.ts'
 import { GoogleAgentDescriptor } from './google-agent.ts'
 
 import {
@@ -26,16 +27,6 @@ import {
   Youtube,
   youtubeSearchVideosTool, youtubeVideoDetailsTool,
 } from './tools/youtube.ts'
-
-const config = defineConfig<GoogleApisConfig>('googleapis', {
-  clientId:     '',
-  clientSecret: '',
-  baseUrl:      '',
-  agentModel:   'google/gemini-2.5-flash',
-  maxToolLoops: 10,
-}, {
-  schemas: googleapisSchemas,
-})
 
 const buildGoogleTools = (
   gmailRef:    ActorRef<ToolMsg> | null,
@@ -75,6 +66,7 @@ export default createPluginFactory<GoogleApisConfig>({
   version:     '1.0.0',
   description: 'Google Workspace integration: Gmail, Calendar, Drive, and YouTube as a user-facing agent.',
   configDescriptor: config,
+  maskKeys: ['clientSecret'],
   slots: {
     tokenStore: {
       factory: () => TokenStore(),
