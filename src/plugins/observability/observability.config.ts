@@ -1,8 +1,24 @@
+import { defineConfig } from '../../system/index.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
+import type {
+  JsonlLoggerOptions,
+  MetricsActorOptions,
+  TraceRecorderOptions,
+  CostTrackerOptions,
+} from './types.ts'
 
-// ─── Config Schema Sections ──────────────────────────────────────────────────
+// ─── Config type ────────────────────────────────────────────────────────────
 
-export const loggingSchema: ConfigSchemaSection = {
+export type ObservabilityConfig = {
+  jsonlLogger?:   JsonlLoggerOptions
+  metrics?:       MetricsActorOptions
+  traceRecorder?: TraceRecorderOptions
+  costTracker?:   CostTrackerOptions
+}
+
+// ─── Schema sections ────────────────────────────────────────────────────────
+
+const loggingSchema: ConfigSchemaSection = {
   id: 'observability.logging',
   title: 'Logging',
   subtitle: 'observability · log output and level settings',
@@ -17,7 +33,7 @@ export const loggingSchema: ConfigSchemaSection = {
   },
 }
 
-export const metricsSchema: ConfigSchemaSection = {
+const metricsSchema: ConfigSchemaSection = {
   id: 'observability.metrics',
   title: 'Metrics',
   subtitle: 'observability · actor telemetry collection',
@@ -31,7 +47,7 @@ export const metricsSchema: ConfigSchemaSection = {
   },
 }
 
-export const tracesSchema: ConfigSchemaSection = {
+const tracesSchema: ConfigSchemaSection = {
   id: 'observability.traces',
   title: 'Traces',
   subtitle: 'observability · distributed trace recording',
@@ -45,7 +61,7 @@ export const tracesSchema: ConfigSchemaSection = {
   },
 }
 
-export const costsSchema: ConfigSchemaSection = {
+const costsSchema: ConfigSchemaSection = {
   id: 'observability.costs',
   title: 'Costs',
   subtitle: 'observability · LLM cost tracking',
@@ -59,4 +75,10 @@ export const costsSchema: ConfigSchemaSection = {
   },
 }
 
-export const observabilitySchemas = [loggingSchema, metricsSchema, tracesSchema, costsSchema]
+const observabilitySchemas: ConfigSchemaSection[] = [loggingSchema, metricsSchema, tracesSchema, costsSchema]
+
+// ─── Defaults + descriptor ──────────────────────────────────────────────────
+
+export const config = defineConfig<ObservabilityConfig>('observability', {}, {
+  schemas: observabilitySchemas,
+})

@@ -3,15 +3,9 @@ import { JsonlLogger } from './jsonl-logger.ts'
 import { Metrics } from './metrics.ts'
 import { TraceRecorder } from './trace-recorder.ts'
 import { CostTracker } from './cost-tracker.ts'
-import { defineConfig } from '../../system/index.ts'
-import { observabilitySchemas } from './routes.ts'
+import { config, type ObservabilityConfig } from './observability.config.ts'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import { GlobalTools } from './global-tools.ts'
-import type { ObservabilityConfig, JsonlLoggerOptions, MetricsActorOptions, TraceRecorderOptions, CostTrackerOptions } from './types.ts'
-
-const config = defineConfig<ObservabilityConfig>('observability', {}, {
-  schemas: observabilitySchemas,
-})
 
 const observabilitySurfaceRegistration: UiSurfaceRegistration = {
   id: 'observe',

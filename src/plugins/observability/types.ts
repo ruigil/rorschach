@@ -139,11 +139,6 @@ export type MetricsActorOptions = {
 
 // ─── Observability Plugin Config ───
 
-export type ObservabilityConfig = {
-  jsonlLogger?: JsonlLoggerOptions
-  metrics?: MetricsActorOptions
-  traceRecorder?: TraceRecorderOptions
-  costTracker?: CostTrackerOptions
-}
+export type { ObservabilityConfig } from './observability.config.ts'
 
 
