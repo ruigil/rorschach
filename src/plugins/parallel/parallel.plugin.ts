@@ -1,25 +1,9 @@
-import { createPluginFactory, defineConfig, onLifecycle } from '../../system/index.ts'
+import { createPluginFactory, onLifecycle } from '../../system/index.ts'
 import type { ActorRef, ActorDef } from '../../system/index.ts'
 import { PoolRouter, type PoolRouterOptions } from './pool-router.ts'
 import { GenericWorkerBridge } from './worker-bridge.ts'
 import type { WorkerBridgeOptions } from './types.ts'
-
-export type PoolRouterEntry = {
-  name: string
-  options: PoolRouterOptions<any, any>
-}
-
-export type WorkerBridgeEntry = {
-  name: string
-  options: WorkerBridgeOptions
-}
-
-export type ParallelConfig = {
-  poolRouters?: PoolRouterEntry[]
-  workerBridges?: WorkerBridgeEntry[]
-}
-
-const config = defineConfig<ParallelConfig>('parallel', {})
+import { config, type ParallelConfig } from './parallel.config.ts'
 
 type ManagerState = {
   routerRefs: ActorRef<unknown>[]
