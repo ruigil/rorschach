@@ -1,7 +1,1 @@
-export type PersistenceConfig = {
-  storageRoot?: string
-  kvDir?: string
-  docDir?: string
-  objDir?: string
-  graphDir?: string
-}
+export type { PersistenceConfig } from './persistence.config.ts'
