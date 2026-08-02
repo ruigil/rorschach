@@ -77,14 +77,14 @@ describe('Config Actor & Routes & Tools (desired plane)', () => {
     const { system, managerRef } = await bootConfigManager(tempPath)
 
     const reply = await ask<any, any>(managerRef, (replyTo) => ({
-      type: 'tool.invoke',
-      toolCallId: 'call-1',
+      type: 'invoke',
       toolName: 'plugins_load',
-      args: { modulePath: './analytics.ts' },
+      arguments: JSON.stringify({ modulePath: './analytics.ts' }),
+      userId: 'test',
       replyTo,
     }))
     expect(reply.type).toBe('toolResult')
-    expect(reply.result).toContain('analytics')
+    expect(reply.result.text).toContain('analytics')
 
     const raw = await Bun.file(tempPath).text()
     const parsed = JSON.parse(raw)

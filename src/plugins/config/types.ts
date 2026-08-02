@@ -1,7 +1,8 @@
 import type { ActorRef } from '../../system/index.ts'
 import type { Identity } from '../../types/identity.ts'
+import type { ToolInvokeMsg } from '../../types/tools.ts'
 import type { ConfigSchemaEvent, ConfigSchemaSection } from '../../types/config.ts'
-import type { ConfigSource, ObservedPlugin, ObservedState } from '../../system/node/types.ts'
+import type { ConfigSource, ObservedPlugin, ObservedState } from '../../system/index.ts'
 
 /** Plugin list entry served by GET /config/plugins. */
 export type PluginSummary = ObservedPlugin
@@ -13,7 +14,7 @@ export type ConfigPluginConfig = {
 
 export type ConfigMsg =
   | { type: 'http.request'; request: any; identity?: Identity | null; replyTo: ActorRef<any> }
-  | { type: 'tool.invoke'; toolCallId: string; toolName: string; args: Record<string, unknown>; replyTo: ActorRef<any> }
+  | ToolInvokeMsg
   | { type: '_configSchemaChanged'; event: ConfigSchemaEvent }
   | { type: '_observed'; observed: ObservedState }
   | { type: 'config'; slice: ConfigPluginConfig }
@@ -29,8 +30,3 @@ export type ConfigState = {
   observed: ObservedState | null
 }
 
-export type ConfigGetArgs = { pluginId?: string }
-export type ConfigSetArgs = { pluginId: string; patch: Record<string, unknown> }
-export type PluginsLoadArgs = { modulePath: string }
-export type PluginsUnloadArgs = { pluginId: string }
-export type PluginsReloadArgs = { pluginId: string }

@@ -1,9 +1,9 @@
 import type { ActorDef } from '../../system/index.ts'
-import { onMessage, onLifecycle } from '../../system/index.ts'
+import { onMessage, onLifecycle, parseToolArgs } from '../../system/index.ts'
 import { ConfigSchemaTopic, SystemObservedTopic } from '../../types/config.ts'
 import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
-import { fileSource } from '../../system/node/config-sources.ts'
-import type { ConfigSource, PluginEntry } from '../../system/node/types.ts'
+import { fileSource } from '../../system/index.ts'
+import type { ConfigSource, PluginEntry } from '../../system/index.ts'
 import { framesFromObservedDiff } from './observed-frames.ts'
 import type { ConfigMsg, ConfigPluginConfig, ConfigState, PluginSummary } from './types.ts'
 
@@ -118,7 +118,7 @@ export const ConfigActor = (
     },
 
     handler: onMessage<ConfigMsg, ConfigState>({
-      'config': (state, { slice }) => {
+      config: (state, { slice }) => {
         const configPath = slice.configPath ?? state.configPath
         if (!configPath) {
           return { state: { ...state, configPath: '', source: null } }
@@ -135,14 +135,14 @@ export const ConfigActor = (
         }
       },
 
-      '_observed': (state, { observed }, ctx) => {
+      _observed: (state, { observed }, ctx) => {
         for (const frame of framesFromObservedDiff(state.observed, observed)) {
           ctx.publish(OutboundAdminBroadcastTopic, frame)
         }
         return { state: { ...state, observed } }
       },
 
-      '_configSchemaChanged': (state, { event }, ctx) => {
+      _configSchemaChanged: (state, { event }, ctx) => {
         if (!event.payload?.section) return { state }
         const schemas = new Map(state.schemas)
         if (event.isTombstone) {
@@ -262,12 +262,12 @@ export const ConfigActor = (
             replyTo.send(jsonResponse(500, { accepted: false, error: String(err) }))
           }
         }
-        void handleHttpRequest()
-
+        
+        handleHttpRequest()
         return { state }
       },
 
-      'tool.invoke': (state, { toolName, args, replyTo }) => {
+      invoke: (state, { toolName, arguments: rawArgs, replyTo }) => {
         if (!state.source) {
           replyTo.send({ type: 'toolError', error: 'configPath not configured' })
           return { state }
@@ -277,13 +277,18 @@ export const ConfigActor = (
 
         const handleToolInvoke = async () => {
           try {
-            const params = args ?? {}
+            const parsed = parseToolArgs(rawArgs, (obj) => obj)
+            if (!parsed.ok) {
+              replyTo.send({ type: 'toolError', error: parsed.error })
+              return
+            }
+            const params = parsed.value
 
             switch (toolName) {
               case 'config_get': {
                 const pluginId = typeof params.pluginId === 'string' ? params.pluginId : undefined
                 const data = await getConfig(source, pluginId)
-                replyTo.send({ type: 'toolResult', result: JSON.stringify(data, null, 2) })
+                replyTo.send({ type: 'toolResult', result: { text: JSON.stringify(data, null, 2) } })
                 return
               }
 
@@ -297,13 +302,13 @@ export const ConfigActor = (
                 const { revision } = await setConfig(source, pluginId, patch)
                 replyTo.send({
                   type: 'toolResult',
-                  result: JSON.stringify({ accepted: true, revision }),
+                  result: { text: JSON.stringify({ accepted: true, revision }) },
                 })
                 return
               }
 
               case 'plugins_load': {
-                const modulePath = String(params.modulePath ?? params.specifier ?? '')
+                const modulePath = String(params.modulePath ?? '')
                 if (!modulePath) {
                   replyTo.send({ type: 'toolError', error: 'modulePath is required' })
                   return
@@ -311,7 +316,7 @@ export const ConfigActor = (
                 const { revision } = await addPlugin(source, modulePath)
                 replyTo.send({
                   type: 'toolResult',
-                  result: JSON.stringify({ accepted: true, revision, details: { modulePath } }),
+                  result: { text: JSON.stringify({ accepted: true, revision, details: { modulePath } }) },
                 })
                 return
               }
@@ -325,7 +330,7 @@ export const ConfigActor = (
                 const { revision } = await removePlugin(source, pluginId, observedPlugins)
                 replyTo.send({
                   type: 'toolResult',
-                  result: JSON.stringify({ accepted: true, revision, details: { id: pluginId } }),
+                  result: { text: JSON.stringify({ accepted: true, revision, details: { id: pluginId } }) },
                 })
                 return
               }
@@ -346,7 +351,7 @@ export const ConfigActor = (
                 }
                 replyTo.send({
                   type: 'toolResult',
-                  result: JSON.stringify({ accepted: true, revision, details: { id: pluginId } }),
+                  result: { text: JSON.stringify({ accepted: true, revision, details: { id: pluginId } }) },
                 })
                 return
               }

@@ -161,10 +161,10 @@ describe('Unified Config System End-to-End Integration', () => {
 
   test('config_set tool with empty pluginId returns toolError', async () => {
     const res = await ask<any, any>(managerRef, (replyTo) => ({
-      type: 'tool.invoke',
-      toolCallId: 'tc-empty-1',
+      type: 'invoke',
       toolName: 'config_set',
-      args: { pluginId: '', patch: { foo: 'bar' } },
+      arguments: JSON.stringify({ pluginId: '', patch: { foo: 'bar' } }),
+      userId: 'test',
       replyTo,
     }))
 
