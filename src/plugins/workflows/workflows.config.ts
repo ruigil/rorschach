@@ -1,8 +1,16 @@
-import type { ActorRef } from '../../system/index.ts'
-import type { RouteRegistration, HttpRequestMsg } from '../../types/routes.ts'
+import { defineConfig } from '../../system/index.ts'
 import type { ConfigSchemaSection } from '../../types/config.ts'
+import type { AgentModelOptions } from '../../types/agents.ts'
 
-export const workflowsStorageSchema: ConfigSchemaSection = {
+// ─── Config type ────────────────────────────────────────────────────────────
+
+export type WorkflowsConfig = {
+  agent: AgentModelOptions
+}
+
+// ─── Schema sections ────────────────────────────────────────────────────────
+
+const workflowsStorageSchema: ConfigSchemaSection = {
   id: 'workflows.storage',
   title: 'Workflows',
   subtitle: 'workflow storage and agent',
@@ -41,20 +49,17 @@ export const workflowsStorageSchema: ConfigSchemaSection = {
   },
 }
 
-export const workflowsSchemas = [workflowsStorageSchema]
+const workflowsSchemas: ConfigSchemaSection[] = [workflowsStorageSchema]
 
-export const buildWorkflowsRoutes = (
-  workflowRunnerRef: ActorRef<HttpRequestMsg> | null,
-): RouteRegistration[] => {
-  if (!workflowRunnerRef) return []
-  return [
-    {
-      id: 'workflow-runs.artifact',
-      method: 'GET',
-      path: '/artifact',
-      match: 'exact',
-      target: workflowRunnerRef,
-      auth: 'session',
-    },
-  ]
+// ─── Defaults + descriptor ──────────────────────────────────────────────────
+
+export const defaultConfig: WorkflowsConfig = {
+  agent: {
+    model: 'z-ai/glm-5.1',
+    maxToolLoops: 10,
+  },
 }
+
+export const config = defineConfig<WorkflowsConfig>('workflows', defaultConfig, {
+  schemas: workflowsSchemas,
+})

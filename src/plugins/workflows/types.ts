@@ -3,7 +3,7 @@ import type { ToolInvokeMsg, ToolMsg, ToolSchema, Tool, JobLifecycleEvent } from
 import type { LlmProviderMsg, ApiMessage } from '../../types/llm.ts'
 import type { LoopMsg } from '../../system/index.ts'
 import type { MessageAttachment, HttpWsFrameEvent } from '../../types/events.ts'
-import type { ContextSnapshotEvent, AgentModelOptions, AgentRegistrationEvent } from '../../types/agents.ts'
+import type { ContextSnapshotEvent, AgentRegistrationEvent } from '../../types/agents.ts'
 
 export type WorkflowTask = {
   id: string
@@ -60,9 +60,7 @@ export type WorkflowDependencyOutput = {
   outputs?: Record<string, WorkflowOutputValue>
 }
 
-export type WorkflowsConfig = {
-  agent: AgentModelOptions
-}
+export type { WorkflowsConfig } from './workflows.config.ts'
 
 export type WorkflowRunnerConfig = {
   llmRef: ActorRef<LlmProviderMsg> | null

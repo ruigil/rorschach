@@ -1,4 +1,4 @@
-import { createPluginFactory, defineConfig } from '../../system/index.ts'
+import { createPluginFactory } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { type UiSurfaceRegistration } from '../../types/ui-surface.ts'
@@ -6,19 +6,9 @@ import type { ToolMsg, ToolCollection } from '../../types/tools.ts'
 import { WorkflowRunner } from './workflow-runner.ts'
 import { WorkflowsAgentDescriptor } from './workflows-agent.ts'
 import { WorkflowToolsActor, workflowControlTools } from './workflow-tools.ts'
-import { buildWorkflowsRoutes, workflowsSchemas } from './routes.ts'
-import type { WorkflowsConfig, WorkflowRunnerMsg } from './types.ts'
-
-const defaultConfig: WorkflowsConfig = {
-  agent: {
-    model: 'z-ai/glm-5.1',
-    maxToolLoops: 10,
-  },
-}
-
-const config = defineConfig<WorkflowsConfig>('workflows', defaultConfig, {
-  schemas: workflowsSchemas,
-})
+import { buildWorkflowsRoutes } from './workflows.routes.ts'
+import { config, defaultConfig, type WorkflowsConfig } from './workflows.config.ts'
+import type { WorkflowRunnerMsg } from './types.ts'
 
 const buildWorkflowsTools = (toolsRef: ActorRef<ToolMsg>): ToolCollection => {
   const tools: ToolCollection = {}
