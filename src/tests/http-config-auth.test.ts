@@ -6,7 +6,7 @@ import { authorizeRouteAccess, canAccessAdminSurface } from '../plugins/interfac
 import { startServer, type ResolvedRoute } from '../plugins/interfaces/http/server.ts'
 import { Authenticator, rolesForIdentity, type AuthConfig } from '../plugins/auth/authenticator.ts'
 import { AuthenticatorRouter } from '../plugins/auth/authenticator-router.ts'
-import { buildAuthRoutes } from '../plugins/auth/routes.ts'
+import { buildAuthRoutes } from '../plugins/auth/auth.routes.ts'
 import type { ActorRef } from '../system/index.ts'
 import type { Identity, IdentityProviderMsg } from '../types/identity.ts'
 import { ANONYMOUS_IDENTITY } from '../plugins/interfaces/types.ts'
@@ -357,7 +357,7 @@ describe('HTTP server route authorization gate (C-1 regression)', () => {
 
 describe('route registration auth metadata', () => {
   test('config routes declare admin + non-GET sameOrigin', async () => {
-    const { buildConfigRoutes } = await import('../plugins/config/routes.ts')
+    const { buildConfigRoutes } = await import('../plugins/config/config.routes.ts')
     const fakeTarget = { name: 'cfg', isAlive: () => true, send: () => {} } as ActorRef<HttpRequestMsg>
     const routes = buildConfigRoutes(fakeTarget)
     expect(routes.length).toBeGreaterThan(0)
@@ -369,10 +369,10 @@ describe('route registration auth metadata', () => {
   })
 
   test('session routes declare session auth', async () => {
-    const { buildCodingRoutes } = await import('../plugins/coding/routes.ts')
-    const { buildWorkflowsRoutes } = await import('../plugins/workflows/routes.ts')
-    const { buildGoogleOAuthRoutes } = await import('../plugins/googleapis/routes.ts')
-    const { buildAuthRoutes } = await import('../plugins/auth/routes.ts')
+    const { buildCodingRoutes } = await import('../plugins/coding/coding.routes.ts')
+    const { buildWorkflowsRoutes } = await import('../plugins/workflows/workflows.routes.ts')
+    const { buildGoogleOAuthRoutes } = await import('../plugins/googleapis/googleapis.routes.ts')
+    const { buildAuthRoutes } = await import('../plugins/auth/auth.routes.ts')
     const fakeTarget = { name: 't', isAlive: () => true, send: () => {} } as ActorRef<HttpRequestMsg>
 
     expect(buildCodingRoutes(fakeTarget)[0]?.auth).toBe('session')
