@@ -142,6 +142,7 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
           return { state }
         }
 
+        const userId = ctx.request.userId
         const id = crypto.randomUUID()
         const fireAt = nextFireAt(args.expression, jobTz)
         const job: CronJob = {
@@ -152,7 +153,7 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
           createdAt: Date.now(),
           lastFiredAt: null,
           nextFireAt: fireAt,
-          userId: msg.userId,
+          userId,
           timezone: jobTz,
         }
 

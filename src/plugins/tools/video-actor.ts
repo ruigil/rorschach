@@ -60,7 +60,7 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
       },
 
       invoke: (state, message, context) => {
-        const { toolName, arguments: args, replyTo, userId } = message
+        const { toolName, arguments: args, replyTo } = message
 
         if (toolName !== generateVideoTool.name) {
           replyTo.send({ type: 'toolError', error: `Unknown tool: ${toolName}` })
@@ -82,7 +82,8 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
           replyTo.send({ type: 'toolError', error: 'Video model provider not ready.' })
           return { state }
         }
-        state.llmRef.send({
+        const resolvedUserId = context.request.userId
+        context.send(state.llmRef, {
           type: 'submitVideo',
           requestId,
           model,
@@ -91,13 +92,12 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
           duration,
           resolution,
           role: videoPollRole,
-          userId: userId,
           replyTo: context.self as unknown as ActorRef<VideoSubmitReply>,
         })
         return {
           state: {
             ...state,
-            pending: { ...state.pending, [requestId]: { requestId, jobId: '', pollingUrl: '', replyTo, userId, deadline: 0 } },
+            pending: { ...state.pending, [requestId]: { requestId, jobId: '', pollingUrl: '', replyTo, userId: resolvedUserId, deadline: 0 } },
           },
         }
       },
@@ -115,12 +115,11 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
           req.replyTo.send({ type: 'toolError', error: 'Video model provider not ready.' })
           return { state }
         }
-        state.llmRef.send({
+        context.send(state.llmRef, {
           type: 'pollVideo',
           requestId,
           pollingUrl,
           role: videoPollRole,
-          userId: req.userId,
           replyTo: context.self as unknown as ActorRef<VideoPollReply>,
         })
         return {
@@ -170,14 +169,13 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
             const { [requestId]: _, ...rest } = state.pending
             return { state: { ...state, pending: rest } }
           }
-          state.llmRef.send({
+          context.send(state.llmRef, {
             type: 'downloadVideos',
             requestId,
             downloads,
             bucket: 'media',
             persistenceRef: state.persistenceRef,
             role: videoPollRole,
-            userId: req.userId,
             replyTo: context.self as unknown as ActorRef<VideoDownloadReply>,
           })
           return { state }
@@ -223,12 +221,11 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
           const { [requestId]: _, ...rest } = state.pending
           return { state: { ...state, pending: rest } }
         }
-        state.llmRef.send({
+        context.send(state.llmRef, {
           type: 'pollVideo',
           requestId,
           pollingUrl: req.pollingUrl,
           role: videoPollRole,
-          userId: req.userId,
           replyTo: context.self as unknown as ActorRef<VideoPollReply>,
         })
         return { state }

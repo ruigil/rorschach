@@ -134,10 +134,7 @@ export const FetchFile = (): ActorDef<FetchFileMsg, FetchFileState> => ({
         return { state }
       }
 
-      const parent = ctx.trace.fromHeaders()
-      const span: SpanHandle | null = parent
-        ? ctx.trace.child(parent.traceId, parent.spanId, 'fetch-file', { url: args.url })
-        : null
+      const span = ctx.trace.span('fetch-file', { url: args.url })
 
       ctx.pipeToSelf(
         downloadAndStreamToPersist(args, state.persistenceRef),

@@ -119,7 +119,8 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
       },
 
       invoke: (state, message, context) => {
-        const { toolName, arguments: args, replyTo, userId } = message
+        const { toolName, arguments: args, replyTo } = message
+        const userId = context.request.userId
 
         if (toolName === textToSpeechTool.name) {
           let text = ''
@@ -174,7 +175,7 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
             (error): AudioMsg => ({ type: '_audioSaveError', requestId, error: String(error), replyTo })
           )
 
-          state.llmRef.send({
+          context.send(state.llmRef, {
             type: 'speak',
             requestId,
             model: ttsModel,
@@ -183,7 +184,6 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
             instructions: instructions || undefined,
             format: ttsFormat,
             role: 'audio',
-            userId: userId,
             replyTo: context.self as unknown as ActorRef<SpeechProviderReply>,
           })
           return {
@@ -234,13 +234,12 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
           req.replyTo.send({ type: 'toolError', error: 'Audio model provider not ready.' })
           return { state }
         }
-        state.llmRef.send({
+        context.send(state.llmRef, {
           type: 'transcribe',
           requestId,
           model: sttModel,
           audio: { data, format },
           role: 'audio',
-          userId: req.userId,
           replyTo: context.self as unknown as ActorRef<TranscriptionProviderReply>,
         })
         return { state }

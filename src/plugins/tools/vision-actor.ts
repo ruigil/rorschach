@@ -90,7 +90,8 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
 
       // ── tools_image_analyze invoke ──
       invoke: (state, message, context) => {
-        const { toolName, arguments: args, replyTo, userId } = message
+        const { toolName, arguments: args, replyTo } = message
+        const userId = context.request.userId
 
         if (toolName === generateImageTool.name) {
           let prompt = ''
@@ -135,13 +136,12 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
             (error) => ({ type: '_saveError' as const, requestId, error: String(error) })
           )
 
-          state.llmRef.send({
+          context.send(state.llmRef, {
             type: 'streamImage',
             requestId,
             model,
             messages: [{ role: 'user', content: prompt }],
             role: 'vision',
-            userId: userId,
             replyTo: context.self as unknown as ActorRef<VisionProviderReply>,
           })
 
@@ -191,7 +191,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
           req?.replyTo.send({ type: 'toolError', error: 'Vision model provider not ready.' })
           return { state }
         }
-        state.llmRef.send({
+        context.send(state.llmRef, {
           type: 'stream',
           requestId,
           model: analysisModel || model,
@@ -205,7 +205,6 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
             },
           ],
           role: 'vision',
-          userId: req?.userId,
           replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
         })
         return { state }

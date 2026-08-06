@@ -72,10 +72,7 @@ export const WebSearch = (options: WebSearchActorOptions): ActorDef<WebSearchMsg
         let query = ''
         try { query = (JSON.parse(args) as { query: string }).query } catch { query = args }
 
-        const parent = ctx.trace.fromHeaders()
-        const span: SpanHandle | null = parent
-          ? ctx.trace.child(parent.traceId, parent.spanId, 'brave-search', { query })
-          : null
+        const span = ctx.trace.span('brave-search', { query })
 
         ctx.pipeToSelf(
           fetchWebSearch(apiKey, query, count),

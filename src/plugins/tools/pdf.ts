@@ -66,10 +66,7 @@ export const PDF = (): ActorDef<PdfMsg, PdfState> => ({
         return { state }
       }
 
-      const parent = ctx.trace.fromHeaders()
-      const span: SpanHandle | null = parent
-        ? ctx.trace.child(parent.traceId, parent.spanId, 'pdf-extract', { key })
-        : null
+      const span = ctx.trace.span('pdf-extract', { key })
 
       ctx.pipeToSelf(
         extractPdfTextFromPersistence(key, state.persistenceRef),
