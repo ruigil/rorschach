@@ -1,4 +1,6 @@
 import type { ActorHealth } from '../../types/health.ts'
+import type { MessageRequest } from '../context/request.ts'
+import { createMessageRequest } from '../context/request.ts'
 import { createMailbox } from './mailbox.ts'
 import { createTimers } from './timers.ts'
 import { createActorMetrics } from './metrics.ts'
@@ -20,7 +22,6 @@ import {
   type LogEvent,
   type LogLevel,
   type Mailbox,
-  type MessageHeaders,
   type MessageHandler,
   type SpanHandle,
   type StopResult,
@@ -36,11 +37,11 @@ const newTraceId = (): string => `${Date.now().toString(36)}${(++traceSeq).toStr
 
 // ─── Internal envelope: unifies user messages and lifecycle events ───
 type Envelope<M> =
-  | { tag: 'message'; payload: M; headers: MessageHeaders }
+  | { tag: 'message'; payload: M; request: MessageRequest }
   | { tag: 'lifecycle'; event: LifecycleEvent }
 
-// ─── Stashed envelope: preserves headers alongside the deferred message ───
-type StashedEnvelope<M> = { payload: M; headers: MessageHeaders }
+// ─── Stashed envelope: preserves request context alongside the deferred message ───
+type StashedEnvelope<M> = { payload: M; request: MessageRequest }
 
 // ─── Internal logger type ───
 type InternalLog = {
@@ -159,7 +160,7 @@ type ActorInternals<M> = {
   readonly enqueueLifecycle: (event: LifecycleEvent) => void
   readonly log: InternalLog
   readonly isStopped: () => boolean
-  readonly getHeaders: () => MessageHeaders
+  readonly getRequest: () => MessageRequest
   readonly configRef: { value: unknown } | undefined
   readonly stopSelf: () => void
   readonly reportStatus: (report: ActorHealth) => void
@@ -173,7 +174,7 @@ type ActorInternals<M> = {
  */
 const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> => {
   const { name, ref, timers, children, mailbox, services,
-          enqueueLifecycle, log, isStopped, getHeaders, configRef, stopSelf, reportStatus } = internals
+          enqueueLifecycle, log, isStopped, getRequest, configRef, stopSelf, reportStatus } = internals
 
   // ─── Tracing ───
 
@@ -218,23 +219,32 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
   const traceCtx: TraceContext = {
     start: (operation, data) => makeSpan(newTraceId(), newTraceId(), undefined, operation, data),
     child: (traceId, parentSpanId, operation, data) => makeSpan(traceId, newTraceId(), parentSpanId, operation, data),
-    fromHeaders: () => {
-      const traceparent = getHeaders()['traceparent']
-      if (!traceparent) return null
-      const parts = traceparent.split('-')
-      if (parts.length < 4) return null
-      return { traceId: parts[1]!, spanId: parts[2]! }
+    span: (operation, data) => {
+      const currentReq = getRequest()
+      if (currentReq.traceId) {
+        return traceCtx.child(currentReq.traceId, currentReq.spanId || '0000000000000000', operation, data)
+      }
+      return traceCtx.start(operation, data)
     },
-    injectHeaders: (span) => ({
-      traceparent: `00-${span.traceId}-${span.spanId}-01`,
-    }),
   }
 
   return {
     self: ref,
     timers,
     reportStatus,
-    messageHeaders: () => getHeaders(),
+    get request() {
+      return getRequest()
+    },
+    send: <TM>(target: ActorRef<TM>, message: TM, requestOverride?: Partial<MessageRequest>) => {
+      const currentReq = getRequest()
+      const nextReq = {
+        ...currentReq,
+        ...requestOverride,
+        parentSpanId: currentReq.spanId,
+        spanId: newTraceId().slice(0, 16),
+      }
+      target.send(message, nextReq)
+    },
     initialConfig: () => { return configRef?.value },
 
     spawn: <CM, CS>(
@@ -301,7 +311,12 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       services.eventStream.subscribe(subName, topic, (event: T) => {
         if (!isStopped()) {
           const msg = adapter(event)
-          if (msg !== null) mailbox.enqueue({ tag: 'message', payload: msg, headers: {} })
+          if (msg !== null) {
+            const request = (event && typeof event === 'object' && 'request' in event && (event as any).request)
+              ? (event as any).request
+              : createMessageRequest()
+            mailbox.enqueue({ tag: 'message', payload: msg, request })
+          }
         }
       })
     },
@@ -322,16 +337,16 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       onSuccess: (value: T) => M,
       onFailure: (error: unknown) => M,
     ): void => {
-      const capturedHeaders = getHeaders()
+      const capturedRequest = getRequest()
       future.then(
         (value) => {
           if (!isStopped()) {
-            mailbox.enqueueSystem({ tag: 'message', payload: onSuccess(value), headers: capturedHeaders })
+            mailbox.enqueueSystem({ tag: 'message', payload: onSuccess(value), request: capturedRequest })
           }
         },
         (error) => {
           if (!isStopped()) {
-            mailbox.enqueueSystem({ tag: 'message', payload: onFailure(error), headers: capturedHeaders })
+            mailbox.enqueueSystem({ tag: 'message', payload: onFailure(error), request: capturedRequest })
           }
         },
       )
@@ -435,15 +450,15 @@ export const createActor = <M, S>(
   )
   const children = new Map<string, InternalActorHandle>()
   let stopped = false
-  let currentHeaders: MessageHeaders = {}
+  let currentRequest: MessageRequest = createMessageRequest()
 
   // ─── Build the public ActorRef ───
   const ref: ActorRef<M> = {
     name,
-    send: (message: M, headers: MessageHeaders = {}) => {
+    send: (message: M, request?: Partial<MessageRequest>) => {
       if (!stopped) {
         metrics.recordMessageReceived()
-        mailbox.enqueue({ tag: 'message', payload: message, headers })
+        mailbox.enqueue({ tag: 'message', payload: message, request: createMessageRequest(request) })
       } else {
         services.eventStream.publish(DeadLetterTopic, {
           recipient: name, message, timestamp: Date.now(),
@@ -465,7 +480,7 @@ export const createActor = <M, S>(
   // Timer messages bypass capacity limits — the actor explicitly scheduled them.
   const timers = createTimers<M>((message) => {
     if (!stopped) {
-      mailbox.enqueueSystem({ tag: 'message', payload: message, headers: {} })
+      mailbox.enqueueSystem({ tag: 'message', payload: message, request: createMessageRequest() })
     }
   })
 
@@ -493,7 +508,7 @@ export const createActor = <M, S>(
   // ─── Build the context (extracted — pure wiring) ───
   const context = createActorContext<M>({
     name, ref, timers, children, mailbox, services,
-    enqueueLifecycle, log, isStopped: () => stopped, getHeaders: () => currentHeaders,
+    enqueueLifecycle, log, isStopped: () => stopped, getRequest: () => currentRequest,
     configRef,
     reportStatus,
     stopSelf: () => {
@@ -654,7 +669,7 @@ export const createActor = <M, S>(
 
       try {
         if (envelope.tag === 'message') {
-          currentHeaders = envelope.headers
+          currentRequest = envelope.request
           const startTime = performance.now()
           const result = currentHandler(state, envelope.payload, context)
           metrics.recordMessageProcessed(performance.now() - startTime)
@@ -680,12 +695,12 @@ export const createActor = <M, S>(
                 stashCapacity,
               })
             }
-            stashedMessages.push({ payload: envelope.payload, headers: envelope.headers })
+            stashedMessages.push({ payload: envelope.payload, request: envelope.request })
           }
 
           if (result.unstashAll && stashedMessages.length > 0) {
-            for (const { payload, headers } of stashedMessages.splice(0)) {
-              mailbox.enqueueSystem({ tag: 'message', payload, headers })
+            for (const { payload, request } of stashedMessages.splice(0)) {
+              mailbox.enqueueSystem({ tag: 'message', payload, request })
             }
           }
 

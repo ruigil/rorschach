@@ -2,21 +2,15 @@ import type { ConfigSchemaSection } from '../../types/config.ts'
 import type { TraceSpan } from '../../types/events.ts'
 import type { ActorHealth, WatchStatus } from '../../types/health.ts'
 import type { PluginEntry } from '../node/types.ts'
+import type { MessageRequest } from '../context/request.ts'
 export type { WatchStatus } from '../../types/health.ts'
 export type { TraceSpan }
-
 
 // ─── Sentinel for mailbox close ───
 export const STOP = Symbol('STOP')
 export type Stop = typeof STOP
 
-// ─── Message Headers (envelope metadata for cross-actor propagation) ───
-//
-// Plain string map — compatible with W3C traceparent/tracestate/baggage and
-// any other propagation format. The library threads headers through envelopes,
-// pipeToSelf, and stash/unstash without interpreting their contents.
-//
-export type MessageHeaders = Record<string, string>
+
 
 // ─── Timer Key ───
 export type TimerKey = string | symbol
@@ -67,7 +61,7 @@ export type Mailbox<T> = {
 // ─── Actor Reference (opaque handle) ───
 export type ActorRef<M> = {
   readonly name: string
-  readonly send: (message: M, headers?: MessageHeaders) => void
+  readonly send: (message: M, request?: Partial<MessageRequest>) => void
   readonly isAlive: () => boolean
 }
 
@@ -130,11 +124,10 @@ export type TraceContext = {
   start(operation: string, data?: Record<string, unknown>): SpanHandle
   /** Start a child span under an existing trace. */
   child(traceId: string, parentSpanId: string, operation: string, data?: Record<string, unknown>): SpanHandle
-  /** Parse W3C traceparent from the current message's headers. Returns null if absent. */
-  fromHeaders(): { traceId: string; spanId: string } | null
-  /** Produce W3C traceparent headers to propagate to downstream send()/ask() calls. */
-  injectHeaders(span: SpanHandle): MessageHeaders
+  /** Unified span construction — automatically derives parent trace context from current ctx.request. */
+  span(operation: string, data?: Record<string, unknown>): SpanHandle
 }
+
 
 // ─── Trace Topic ───
 export const TraceTopic: EventTopic<TraceSpan> = 'system.trace' as EventTopic<TraceSpan>
@@ -306,8 +299,16 @@ export type ActorContext<M> = {
    * lifecycle hook. Alive statuses only — termination is runtime-owned.
    */
   readonly reportStatus: (report: ActorHealth) => void
-  /** Returns the headers attached to the message currently being processed. Empty object when not set. */
-  readonly messageHeaders: () => MessageHeaders
+  /**
+   * The ambient request metadata for the message currently being processed.
+   * Access identity, permissions, and trace correlation via `ctx.request`.
+   */
+  readonly request: MessageRequest
+  /**
+   * Send a message to another actor, automatically propagating/chaining the current
+   * MessageRequest (or an explicit override).
+   */
+  readonly send: <TM>(target: ActorRef<TM>, message: TM, requestOverride?: Partial<MessageRequest>) => void
   /**
    * Config slice injected at spawn time by the plugin system.
    * Cast to your plugin's config type: `ctx.initialConfig as MyPluginConfig`.

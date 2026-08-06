@@ -1,4 +1,5 @@
-import type { ActorRef, MessageHeaders } from './types.ts'
+import type { ActorRef } from './types.ts'
+import type { MessageRequest } from '../context/request.ts'
 
 /**
  * Ask pattern: sends a message to a target actor and awaits a single response.
@@ -15,7 +16,7 @@ export const ask = <Request, Response>(
   target: ActorRef<Request>,
   messageFactory: (replyTo: ActorRef<Response>) => Request,
   options?: { timeoutMs?: number },
-  headers?: MessageHeaders,
+  request?: Partial<MessageRequest>,
 ): Promise<Response> => {
   const timeoutMs = options?.timeoutMs !== undefined ? options.timeoutMs : 60_000
 
@@ -44,6 +45,6 @@ export const ask = <Request, Response>(
       }, timeoutMs)
     }
 
-    target.send(messageFactory(replyTo), headers)
+    target.send(messageFactory(replyTo), request)
   })
 }

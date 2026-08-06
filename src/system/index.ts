@@ -6,6 +6,14 @@ export { onLifecycle, onMessage } from './actor/match.ts'
 export { watchTopic } from './actor/services.ts'
 export { createPluginFactory } from './factory.ts'
 export { resolvePersistence, persistencePluginAdapter  } from './persistence.ts'
+export {
+  type MessageRequest,
+  createMessageRequest,
+  encodeMessageRequest,
+  decodeMessageRequest,
+  isMessageRequest,
+} from './context/request.ts'
+
 // ─── Config utilities ───
 export {
   defineConfig,
@@ -58,7 +66,6 @@ export {
 export type {
   ActorRef,
   ActorServices,
-  MessageHeaders,
   ActorDef,
   ActorContext,
   ActorIdentity,
