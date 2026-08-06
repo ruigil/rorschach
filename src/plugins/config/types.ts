@@ -1,5 +1,4 @@
 import type { ActorRef } from '../../system/index.ts'
-import type { Identity } from '../../types/identity.ts'
 import type { ToolInvokeMsg } from '../../types/tools.ts'
 import type { ConfigSchemaEvent, ConfigSchemaSection } from '../../types/config.ts'
 import type { ConfigSource, ObservedPlugin, ObservedState } from '../../system/index.ts'
@@ -10,7 +9,7 @@ export type PluginSummary = ObservedPlugin
 export type { ConfigPluginConfig } from './config.config.ts'
 
 export type ConfigMsg =
-  | { type: 'http.request'; request: any; identity?: Identity | null; replyTo: ActorRef<any> }
+  | { type: 'http.request'; request: any; replyTo: ActorRef<any> }
   | ToolInvokeMsg
   | { type: '_configSchemaChanged'; event: ConfigSchemaEvent }
   | { type: '_observed'; systemId: string; observed: ObservedState }
