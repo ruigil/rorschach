@@ -136,7 +136,7 @@ export const AuthenticatorRouter = (opts: AuthenticatorRouterOptions): ActorDef<
         })
       },
       '/auth/profile': ({ identity, replyTo, jsonResponse }) => {
-        if (!identity || identity.userId === 'anonymous') {
+        if (identity.userId === 'anonymous') {
           replyTo.send({ type: 'http.response', response: { status: 401, headers: {}, body: 'Unauthorized' } })
           return
         }
@@ -245,11 +245,7 @@ export const AuthenticatorRouter = (opts: AuthenticatorRouterOptions): ActorDef<
           replyTo.send({ type: 'http.response', response: { status: 400, headers: {}, body: 'Bad request' } })
         }
       },
-      '/auth/ticket': ({ request, identity, replyTo, jsonResponse }) => {
-        if (!identity) {
-          replyTo.send({ type: 'http.response', response: { status: 401, headers: {}, body: 'Unauthorized' } })
-          return
-        }
+      '/auth/ticket': ({ request, replyTo, jsonResponse }) => {
         const token = getCookieToken(request)
         if (!token) {
           replyTo.send({ type: 'http.response', response: { status: 401, headers: {}, body: 'Unauthorized' } })
@@ -281,7 +277,7 @@ export const AuthenticatorRouter = (opts: AuthenticatorRouterOptions): ActorDef<
         })
       },
       '/auth/profile': ({ request, identity, replyTo, jsonResponse }) => {
-        if (!identity || identity.userId === 'anonymous') {
+        if (identity.userId === 'anonymous') {
           replyTo.send({ type: 'http.response', response: { status: 401, headers: {}, body: 'Unauthorized' } })
           return
         }
@@ -356,7 +352,14 @@ export const AuthenticatorRouter = (opts: AuthenticatorRouterOptions): ActorDef<
     initialState: null,
     handler: onMessage<HttpRequestMsg, null>({
       'http.request': (state, message, ctx) => {
-        const { request, identity, replyTo } = message
+        const { request, replyTo } = message
+        const identity = {
+          userId: ctx.request.userId,
+          fullName: ctx.request.userId,
+          roles: ctx.request.roles || [],
+          timezone: ctx.request.timezone,
+          permission: ctx.request.permission,
+        }
         const url = new URL(request.url, 'http://localhost')
         const path = url.pathname
 
