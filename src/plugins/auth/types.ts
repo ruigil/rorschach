@@ -131,8 +131,8 @@ export type AuthenticatorMsg =
   | { type: 'revokeToken';          token: string }
   | { type: 'issueTicket';          token: string;       replyTo: ActorRef<{ ticket: string } | { error: string }> }
   | { type: 'validateTicket';       ticket: string;      replyTo: ActorRef<AuthSession | null> }
-  | { type: 'getUserProfile';       userId: UserId;       replyTo: ActorRef<User | null> }
-  | { type: 'updateUserProfile';    userId: UserId;       fullName: string; avatar?: string; timezone?: string; replyTo: ActorRef<{ ok: User } | { error: string }> }
+  | { type: 'getUserProfile';       replyTo: ActorRef<User | null> }
+  | { type: 'updateUserProfile';    fullName: string; avatar?: string; timezone?: string; replyTo: ActorRef<{ ok: User } | { error: string }> }
   | { type: 'setUserPermissions';   userId: UserId;       permissions: string[]; replyTo: ActorRef<{ ok: User } | { error: string }> }
   | { type: '_gc' }
   // ─── pipeToSelf completions ───

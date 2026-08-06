@@ -1,6 +1,5 @@
 import type { PermissionContext } from '../../system/permissions/types.ts'
-import type { AuthConfig } from './authenticator.ts'
-import { rolesForIdentity } from './authenticator.ts'
+import type { AuthConfig } from './auth.config.ts'
 
 export const DEFAULT_ROLE_GRANTS: Record<string, string[]> = {
   admin:     ["*"],
@@ -8,6 +7,29 @@ export const DEFAULT_ROLE_GRANTS: Record<string, string[]> = {
   developer: ["coding_*"],
   guest:     ["tools_web_search"],
   anonymous: []
+}
+
+const uniqueRoles = (roles: readonly string[]): string[] => [...new Set(roles)]
+
+const adminList = (value: string[] | string | undefined): string[] => {
+  if (Array.isArray(value)) return value
+  if (typeof value !== 'string') return []
+  return value.split(/[\n,]/).map(item => item.trim()).filter(Boolean)
+}
+
+export const rolesForIdentity = (
+  config: AuthConfig,
+  identity: { userId?: string; fullName: string; phone?: string; roles?: readonly string[] },
+): string[] => {
+  const roles = [...(identity.roles ?? [])]
+  const admins = config.admins
+  const matched =
+    adminList(admins?.usernames).includes(identity.fullName) ||
+    (identity.phone ? adminList(admins?.phones).includes(identity.phone) : false) ||
+    (identity.userId ? adminList(admins?.userIds).includes(identity.userId) : false)
+
+  if (matched) roles.push('admin')
+  return uniqueRoles(roles)
 }
 
 export const computePermissionContext = (
