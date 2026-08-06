@@ -247,22 +247,24 @@ export const MemoryStoreWorker = (parent: ActorRef<MemorySupervisorMsg>, options
           return { state }
         }
 
+        const userId = ctx.request.userId
+
         ctx.pipeToSelf(
           ask<MemoryRecordsMsg, MemoryRecord | { error: string }>(
             state.recordsRef,
-            (replyTo) => ({ type: 'create', content: parsed.value.content, attachments: parsed.value.attachments, userId: msg.userId, replyTo }),
+            (replyTo) => ({ type: 'create', content: parsed.value.content, attachments: parsed.value.attachments, userId, replyTo }),
           ),
           (record) => 'error' in record
             ? ({ type: '_recordStoreErr' as const, replyTo: msg.replyTo, error: record.error })
-            : ({ type: '_recordStored' as const, replyTo: msg.replyTo, record, topic: parsed.value.topic, userId: msg.userId }),
+            : ({ type: '_recordStored' as const, replyTo: msg.replyTo, record, topic: parsed.value.topic, userId }),
           (error) => ({ type: '_recordStoreErr' as const, replyTo: msg.replyTo, error: String(error) }),
         )
-        return { state: { ...state, userId: msg.userId } }
+        return { state: { ...state, userId } }
       },
 
       _recordStored: (state, msg, ctx) => {
         const requestId = crypto.randomUUID()
-        options.llmRef.send({
+        ctx.send(options.llmRef, {
           type: 'stream',
           requestId,
           model: options.model,
@@ -271,7 +273,6 @@ export const MemoryStoreWorker = (parent: ActorRef<MemorySupervisorMsg>, options
             { role: 'user', content: msg.record.content },
           ],
           role: 'memory-store',
-          userId: msg.userId,
           replyTo: ctx.self as unknown as ActorRef<LlmProviderReply>,
         })
 

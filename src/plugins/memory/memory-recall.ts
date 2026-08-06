@@ -292,6 +292,7 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
   })
 
   const handleInvoke = (state: MemoryRecallWorkerState, msg: Extract<MemoryRecallMsg, { type: 'invoke' }>, ctx: ActorContext<MemoryRecallMsg>): ActorResult<MemoryRecallMsg, MemoryRecallWorkerState> => {
+    const userId = ctx.request.userId
     const parsed = parseToolArgs<{ query: string }>(msg.arguments, (p) => {
       const query = typeof p.query === 'string' ? p.query : ''
       return query ? { query } : null
@@ -311,21 +312,20 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
       resetForQuery(state, parsed.value.query, msg.replyTo, ctx.self),
       {
         messages: [
-          { role: 'system', content: recallSynthesisPrompt(msg.userId) },
+          { role: 'system', content: recallSynthesisPrompt(userId) },
           { role: 'user', content: `Query:\n${parsed.value.query}` },
         ],
-        userId: msg.userId,
-        permissionContext: { grants: ['*'] },
       },
       ctx,
     )
   }
 
   const handleLocalTool = (state: MemoryRecallWorkerState, msg: Extract<MemoryRecallMsg, { type: 'invoke' }>, ctx: ActorContext<MemoryRecallMsg>): ActorResult<MemoryRecallMsg, MemoryRecallWorkerState> => {
+    const userId = ctx.request.userId
     const run =
-      msg.toolName === memorySearchTool.name ? runMemorySearch(state, msg.userId, msg.arguments, ctx)
-      : msg.toolName === memoryExpandTool.name ? runMemoryExpand(state, msg.userId, msg.arguments, ctx)
-      : runMemoryRead(state, msg.userId, msg.arguments)
+      msg.toolName === memorySearchTool.name ? runMemorySearch(state, userId, msg.arguments, ctx)
+      : msg.toolName === memoryExpandTool.name ? runMemoryExpand(state, userId, msg.arguments, ctx)
+      : runMemoryRead(state, userId, msg.arguments)
     ctx.pipeToSelf(
       run,
       (text) => ({ type: '_localToolDone' as const, replyTo: msg.replyTo, text }),
@@ -345,12 +345,13 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
 
     onComplete: (state, finalText, _usage, ctx) => {
       if (state.sources.length === 0 && state.seedRecordIds.length > 0 && !state.fallbackUsed) {
+        const userId = ctx.request.userId
         ctx.pipeToSelf(
           ask<MemoryRecordsMsg, MemoryRecord[]>(
             state.recordsRef,
-            (replyTo) => ({ type: 'readMany', recordIds: state.seedRecordIds, userId: state.loop.turn.userId, replyTo }),
+            (replyTo) => ({ type: 'readMany', recordIds: state.seedRecordIds, userId, replyTo }),
           ),
-          (sources) => ({ type: '_fallbackSources' as const, sources, userId: state.loop.turn.userId }),
+          (sources) => ({ type: '_fallbackSources' as const, sources, userId }),
           (error) => ({ type: '_fallbackErr' as const, error: String(error) }),
         )
         return { state: { ...state, fallbackUsed: true } }
@@ -411,8 +412,6 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
             { role: 'system', content: recallSynthesisPrompt(m.userId) },
             { role: 'user', content: buildUserPrompt(state.currentQuery, m.sources) },
           ],
-          userId: m.userId,
-          permissionContext: { grants: ['*'] },
         },
         ctx,
       )

@@ -91,7 +91,7 @@ export const MemorySupervisor = (
             `memory-recall-worker-${nextSeq}`,
             MemoryRecallWorker(self, opts),
           )
-          worker.send(msg, context.messageHeaders())
+          worker.send(msg, context.request)
           return { state: { ...state, workerIdSeq: nextSeq } }
         }
 
@@ -101,7 +101,7 @@ export const MemorySupervisor = (
             `memory-store-worker-${nextSeq}`,
             MemoryStoreWorker(self, opts),
           )
-          worker.send(msg, context.messageHeaders())
+          worker.send(msg, context.request)
           return { state: { ...state, workerIdSeq: nextSeq } }
         }
 

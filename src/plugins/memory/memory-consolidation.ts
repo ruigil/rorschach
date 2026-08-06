@@ -174,13 +174,12 @@ export const MemoryConsolidation = (options: MemoryConsolidationOptions): ActorD
     context: ActorContext<MemoryConsolidationMsg>,
   ): ConsolidationState => {
     const requestId = crypto.randomUUID()
-    llmRef.send({
+    context.send(llmRef, {
       type: 'stream',
       requestId,
       model,
       messages: buildMessages(userId, turns, candidates),
       role: 'memory-consolidation',
-      userId,
       replyTo: context.self as unknown as ActorRef<LlmProviderReply>,
     })
     context.log.info('memory consolidation started', { userId, candidates: candidates.length, turns: turns.length })
