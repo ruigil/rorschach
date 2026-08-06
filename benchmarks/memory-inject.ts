@@ -1,4 +1,4 @@
-import { AgentSystem, LogTopic, MetricsTopic, staticSource } from '../src/system/index.ts'
+import { AgentSystem, LogTopic, MetricsTopic, staticSource, createMessageRequest } from '../src/system/index.ts'
 import interfacesPlugin from '../src/plugins/interfaces/interfaces.plugin.ts'
 import cognitivePlugin from '../src/plugins/cognitive/cognitive.plugin.ts'
 import memoryPlugin from '../src/plugins/memory/memory.plugin.ts'
@@ -185,7 +185,7 @@ const sendTurn = async (text: string, traceId: string): Promise<{ reply: string;
       } catch { }
     })
 
-    system.publish(InboundMessageTopic, { userId: USER_ID, text, traceId, parentSpanId: spanId })
+    system.publish(InboundMessageTopic, { text, request: createMessageRequest({ userId: USER_ID, traceId, parentSpanId: spanId }) } as any)
   })
 }
 
