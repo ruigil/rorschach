@@ -71,13 +71,12 @@ export const UserContext = (options: UserContextOptions): ActorDef<UserContextMs
     const requestId = crypto.randomUUID()
     const currentContext = state.userContexts[userId] ?? ''
 
-    llmRef.send({
+    ctx.send(llmRef, {
       type: 'stream',
       requestId,
       model,
       messages: buildMessages(userId, currentContext, turns),
       role: 'user-context',
-      userId,
       replyTo: ctx.self as unknown as ActorRef<LlmProviderReply>,
     })
 

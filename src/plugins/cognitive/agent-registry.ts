@@ -1,11 +1,12 @@
-import type { ActorDef, ActorRef } from '../../system/index.ts'
+import type { ActorContext, ActorDef, ActorRef } from '../../system/index.ts'
 import { onLifecycle, onMessage, DynamicAgentActor } from '../../system/index.ts'
-import type { PermissionContext } from '../../system/permissions/types.ts'
 import type { LlmTool } from '../../types/llm.ts'
 import type { Tool } from '../../types/tools.ts'
 import {
   AgentRegistrationTopic,
   type AgentDescriptor,
+  type AgentFactoryOpts,
+  type AgentContextMsg,
 } from '../../types/agents.ts'
 import { SwitchAgentTopic } from './types.ts'
 import {
@@ -23,24 +24,23 @@ import { JobRegistryTopic, type JobLifecycleEvent, type ToolInvokeMsg } from '..
 
 // ─── Message protocol ─────────────────────────────────────────────────────
 
-type AgentRegistryMsg =
+export type AgentRegistryMsg =
   | { type: '_register';   descriptor: AgentDescriptor }
   | { type: '_unregister'; mode:       string }
   | { type: '_sessionLifecycle'; event: SessionLifecycleEvent }
   | { type: '_switchAgent'; userId: string; mode: string; source: 'user' | 'llm' | 'programmatic'; reason?: string }
   | { type: '_jobRegistry'; event: JobLifecycleEvent }
   | { type: '_wsFrame'; event: HttpWsFrameEvent }
-  | { type: 'routeMessage'; userId: string; text: string; attachments?: MessageAttachment[]; traceId: string; parentSpanId: string }
+  | { type: 'routeMessage'; text: string; attachments?: MessageAttachment[] }
   | ToolInvokeMsg
 
 type AgentRegistryState = {
   descriptors: Record<string, AgentDescriptor>
   sessionAgents: Record<string, Record<string, ActorRef<any>>> // userId -> mode -> agentRef
   activeMode: Record<string, string> // userId -> current active mode
-  lastUserMessage: Record<string, { text: string; attachments?: MessageAttachment[]; traceId: string; parentSpanId: string }>
+  lastUserMessage: Record<string, { text: string; attachments?: MessageAttachment[] }>
   contextStores: Record<string, ActorRef<any>> // userId -> contextStoreRef
   activeJobs: Record<string, { userId: string; toolName: string }> // jobId -> info
-  permissionContexts: Record<string, PermissionContext> // userId -> PermissionContext
 }
 
 const initialAgentRegistryState = (): AgentRegistryState => ({
@@ -50,7 +50,6 @@ const initialAgentRegistryState = (): AgentRegistryState => ({
   lastUserMessage: {},
   contextStores: {},
   activeJobs: {},
-  permissionContexts: {},
 })
 
 const SWITCH_MODE_TOOL_NAME = 'cognitive_switch_mode'
@@ -115,7 +114,7 @@ const publishModeChanged = (
   userId: string,
   mode: string,
   state: AgentRegistryState,
-  ctx: any,
+  ctx: ActorContext<AgentRegistryMsg>,
 ) => {
   const descriptor = state.descriptors[mode]
   const displayName = descriptor?.displayName ?? mode
@@ -129,7 +128,7 @@ const ensureAgent = (
   state: AgentRegistryState,
   userId: string,
   mode: string,
-  ctx: any,
+  ctx: ActorContext<AgentRegistryMsg>,
 ): { state: AgentRegistryState; ref: ActorRef<any> | null } => {
   const existing = state.sessionAgents[userId]?.[mode]
   if (existing) return { state, ref: existing }
@@ -146,7 +145,7 @@ const ensureAgent = (
     return { state, ref: null }
   }
  
-  const permissionContext = state.permissionContexts[userId] ?? { grants: ['*'] }
+  const permissionContext = ctx.request.permission ?? { grants: ['*'] }
 
   // Inject switch_mode directly as an internal tool
   const switchModeTool: Tool = {
@@ -162,7 +161,7 @@ const ensureAgent = (
     internalTools: [...descriptor.internalTools, switchModeTool],
   }
 
-  const opts = { userId, contextStoreRef, permissionContext }
+  const opts: AgentFactoryOpts = { userId, contextStoreRef: contextStoreRef as ActorRef<AgentContextMsg>, permissionContext }
   const ref = ctx.spawn(`${mode}-${userId}`, DynamicAgentActor(descriptorWithSwitch, opts))
 
   const userAgents = state.sessionAgents[userId] || {}
@@ -183,7 +182,7 @@ const switchAgentInternal = (
   targetMode: string,
   ctx: any,
   source: 'user' | 'llm' | 'programmatic' | 'crashFallback',
-  lastMsgToReplay?: { text: string; attachments?: MessageAttachment[]; traceId: string; parentSpanId: string },
+  lastMsgToReplay?: { text: string; attachments?: MessageAttachment[] },
 ): AgentRegistryState => {
   const currentMode = state.activeMode[userId] || 'chatbot'
   const descriptor = state.descriptors[targetMode]
@@ -221,10 +220,7 @@ const switchAgentInternal = (
 
   // 5. Send the replayed message if present
   if (lastMsgToReplay && targetRef) {
-    const headers = lastMsgToReplay.traceId && lastMsgToReplay.parentSpanId
-      ? { traceparent: `00-${lastMsgToReplay.traceId}-${lastMsgToReplay.parentSpanId}-01` }
-      : undefined
-    targetRef.send({ type: 'userMessage', text: lastMsgToReplay.text, attachments: lastMsgToReplay.attachments }, headers)
+    ctx.send(targetRef, { type: 'userMessage', text: lastMsgToReplay.text, attachments: lastMsgToReplay.attachments })
   }
 
   return updatedState
@@ -364,7 +360,6 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
             ...state,
             contextStores: { ...state.contextStores, [event.userId]: event.contextStoreRef },
             activeMode: { ...state.activeMode, [event.userId]: event.defaultMode },
-            permissionContexts: { ...state.permissionContexts, [event.userId]: event.permissionContext ?? { grants: ['*'] } },
           }
           const { state: afterAgent } = ensureAgent(nextState, event.userId, event.defaultMode, ctx)
           publishModeChanged(event.userId, event.defaultMode, afterAgent, ctx)
@@ -379,8 +374,7 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
           const { [event.userId]: _, ...sessionAgents } = state.sessionAgents
           const { [event.userId]: __, ...contextStores } = state.contextStores
           const { [event.userId]: ___, ...activeMode } = state.activeMode
-          const { [event.userId]: ____, ...permissionContexts } = state.permissionContexts
-          return { state: { ...state, sessionAgents, contextStores, activeMode, permissionContexts } }
+          return { state: { ...state, sessionAgents, contextStores, activeMode } }
         }
 
         if (event.type === 'sessionInvalidated') {
@@ -399,10 +393,6 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
             state: {
               ...state,
               sessionAgents,
-              permissionContexts: {
-                ...state.permissionContexts,
-                [event.userId]: event.permissionContext,
-              },
             },
           }
         }
@@ -469,7 +459,7 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
           const { state: afterAgent, ref } = ensureAgent(state, userId, activeMode, ctx)
 
           if (ref) {
-            ref.send({ type: 'userMessage', text: userText, isInjected: true })
+            ref.send({ type: 'userMessage', text: userText, isInjected: true }, { userId })
           } else {
             ctx.log.warn('job completion but no agent found to inject into', { userId, activeMode, jobId: event.jobId })
           }
@@ -521,20 +511,19 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
       },
 
       routeMessage: (state, msg, ctx) => {
+        const userId = ctx.request.userId
+        if (!userId) return { state }
         const lastUserMessage = {
           ...state.lastUserMessage,
-          [msg.userId]: { text: msg.text, attachments: msg.attachments, traceId: msg.traceId, parentSpanId: msg.parentSpanId },
+          [userId]: { text: msg.text, attachments: msg.attachments },
         }
         const nextState = { ...state, lastUserMessage }
 
-        const activeMode = nextState.activeMode[msg.userId] || 'chatbot'
-        const { state: afterAgent, ref } = ensureAgent(nextState, msg.userId, activeMode, ctx)
+        const activeMode = nextState.activeMode[userId] || 'chatbot'
+        const { state: afterAgent, ref } = ensureAgent(nextState, userId, activeMode, ctx)
 
         if (ref) {
-          const headers = msg.traceId && msg.parentSpanId
-            ? { traceparent: `00-${msg.traceId}-${msg.parentSpanId}-01` }
-            : undefined
-          ref.send({ type: 'userMessage', text: msg.text, attachments: msg.attachments }, headers)
+          ctx.send(ref, { type: 'userMessage', text: msg.text, attachments: msg.attachments })
         }
         return { state: afterAgent }
       },
@@ -559,8 +548,9 @@ export const AgentRegistry = (): ActorDef<AgentRegistryMsg, AgentRegistryState> 
           return { state }
         }
 
-        const lastMsg = state.lastUserMessage[msg.userId]
-        const nextState = switchAgentInternal(state, msg.userId, mode, ctx, 'llm', lastMsg)
+        const userId = ctx.request.userId
+        const lastMsg = state.lastUserMessage[userId]
+        const nextState = switchAgentInternal(state, userId, mode, ctx, 'llm', lastMsg)
 
         msg.replyTo.send({
           type: 'toolResult',

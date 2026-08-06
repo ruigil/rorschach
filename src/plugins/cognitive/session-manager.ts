@@ -10,12 +10,13 @@ import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import { ContextStore, type ContextStoreMsg } from './context-store.ts'
 import { SessionLifecycleTopic } from '../../types/session.ts'
 import { JobRegistryTopic, type JobLifecycleEvent } from '../../types/tools.ts'
+import type { AgentRegistryMsg } from './agent-registry.ts'
 
 // ─── Message protocol ──────────────────────────────────────────────────────
 
 type SessionManagerMsg =
   | { type: '_userPresence';     event: UserPresenceEvent }
-  | { type: '_message';          userId: string; text: string; attachments?: MessageAttachment[]; traceId: string; parentSpanId: string }
+  | { type: '_message';          text: string; attachments?: MessageAttachment[] }
   | { type: '_jobRegistry';      event: JobLifecycleEvent }
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
 
@@ -29,7 +30,7 @@ type SessionManagerState = {
   sessions:         Record<string, Session>         // userId → Session
   activeInterfaces: Record<string, Set<'http' | 'signal' | 'cli'>> // userId → Set of active interfaces
   activeJobs:       Record<string, { userId: string }> // jobId → info (to track when it is safe to tear down session)
-  agentRegistryRef: ActorRef<any> | null
+  agentRegistryRef: ActorRef<AgentRegistryMsg> | null
   llmRef:           ActorRef<LlmProviderMsg> | null
 }
 
@@ -45,7 +46,7 @@ const initialSessionManagerState = (): SessionManagerState => ({
 
 export type SessionManagerOptions = {
   llmRef:              ActorRef<LlmProviderMsg>
-  agentRegistryRef:    ActorRef<any>
+  agentRegistryRef:    ActorRef<AgentRegistryMsg>
   defaultMode:         string
   contextWindowHours?: number
   persistContext?:     boolean
@@ -106,7 +107,7 @@ export const SessionManager = (
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(UserPresenceTopic, e => ({ type: '_userPresence' as const, event: e }))
-        ctx.subscribe(InboundMessageTopic,   e => ({ type: '_message'      as const, userId: e.userId, text: e.text, attachments: e.attachments, traceId: e.traceId, parentSpanId: e.parentSpanId }))
+        ctx.subscribe(InboundMessageTopic,   e => ({ type: '_message'      as const, text: e.text, attachments: e.attachments }))
         ctx.subscribe(JobRegistryTopic,      e => ({ type: '_jobRegistry'  as const, event: e }))
         ctx.subscribe(LlmProviderTopic,      event => ({ type: '_llmProvider' as const, ref: event.ref }))
         return { state: { ...state, agentRegistryRef: state.agentRegistryRef ?? agentRegistryRef, llmRef: state.llmRef ?? llmRef } }
@@ -219,18 +220,15 @@ export const SessionManager = (
         }
       },
 
-      _message: (state, msg) => {
-        const { userId, text, attachments, traceId, parentSpanId } = msg
+      _message: (state, msg, ctx) => {
+        const userId = ctx.request.userId
         const session = state.sessions[userId]
-        if (!session) return { state }
+        if (!session || !state.agentRegistryRef) return { state }
 
-        state.agentRegistryRef?.send({
+        ctx.send(state.agentRegistryRef, {
           type: 'routeMessage',
-          userId,
-          text,
-          attachments,
-          traceId,
-          parentSpanId,
+          text: msg.text,
+          attachments: msg.attachments,
         })
         return { state }
       },
