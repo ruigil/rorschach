@@ -3,7 +3,7 @@ import type { Server, ServerWebSocket } from 'bun'
 import { mimeType, safeJoinUrlPath } from './media.ts'
 import type { MessageAttachment } from '../../../types/events.ts'
 import type { Identity } from '../../../types/identity.ts'
-import { ask } from '../../../system/index.ts'
+import { ask, encodeMessageRequest } from '../../../system/index.ts'
 import type { ActorRef } from '../../../system/index.ts'
 import type { HttpRequestMsg, HttpResponseMsg, RouteAuth, RouteSameOrigin } from '../../../types/routes.ts'
 import type { PermissionContext } from '../../../system/permissions/types.ts'
@@ -92,6 +92,19 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
         }
 
         try {
+          const clientTraceparent = headers['traceparent']
+          const traceId = clientTraceparent ? clientTraceparent.split('-')[1] : undefined
+          const parentSpanId = clientTraceparent ? clientTraceparent.split('-')[2] : undefined
+
+          const requestMetadata = {
+            userId: identity?.userId ?? 'anonymous',
+            roles: identity?.roles,
+            timezone: identity?.timezone,
+            permission: identity?.permission,
+            source: 'http' as const,
+            ...(traceId ? { traceId, parentSpanId } : {}),
+          }
+
           const resMsg = await ask<HttpRequestMsg, HttpResponseMsg>(
             resolved.target,
             replyTo => ({
@@ -102,10 +115,10 @@ export const startServer = (options: ServerOptions): Server<WsData> => {
                 headers,
                 body,
               },
-              identity,
               replyTo,
             }),
-            { timeoutMs: 30_000 }
+            { timeoutMs: 30_000 },
+            requestMetadata
           )
 
           return new Response(resMsg.response.body as any, {

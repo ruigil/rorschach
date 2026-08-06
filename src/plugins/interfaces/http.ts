@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import type { Server, ServerWebSocket } from 'bun'
-import { emit } from '../../system/index.ts'
+import { emit, createMessageRequest } from '../../system/index.ts'
 import type { PermissionContext } from '../../system/permissions/types.ts'
 import {
   InboundMessageTopic,
@@ -218,15 +218,20 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
       message: (state, message, context) => {
         context.log.debug(`[${message.clientId}] ${message.text}`)
         const span = context.trace.start('request', { clientId: message.clientId })
+        const req = createMessageRequest({
+          traceId: span.traceId,
+          spanId: span.spanId,
+          userId: message.userId,
+          clientId: message.clientId,
+          source: 'http',
+        })
         
         return {
           state: { ...state, activeSpans: { ...state.activeSpans, [message.clientId]: span } },
           events: [emit(InboundMessageTopic, {
-            userId: message.userId,
             text: message.text,
             attachments: message.attachments,
-            traceId: span.traceId,
-            parentSpanId: span.spanId,
+            request: req,
           })],
         }
       },

@@ -3,7 +3,7 @@ import type { Socket } from 'node:net'
 import { copyFile, mkdir, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
-import { emit } from '../../system/index.ts'
+import { emit, createMessageRequest } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { join } from 'node:path'
 import { ask } from '../../system/index.ts'
@@ -305,14 +305,20 @@ export const Signal = (
         }
       }
 
+      const req = createMessageRequest({
+        traceId: span.traceId,
+        spanId: span.spanId,
+        userId,
+        clientId: phone,
+        source: 'signal',
+      })
+
       return {
         state: { ...state, activeSpans },
         events: [emit(InboundMessageTopic, {
-          userId,
           text,
           attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
-          traceId:      span.traceId,
-          parentSpanId: span.spanId,
+          request: req,
         })],
       }
     }
@@ -672,12 +678,17 @@ export const Signal = (
         for (const buf of buffered) {
           const span = ctx.trace.start('request', { clientId: phone })
           activeSpans = { ...activeSpans, [phone]: span }
-          events.push(emit(InboundMessageTopic, {
+          const req = createMessageRequest({
+            traceId: span.traceId,
+            spanId: span.spanId,
             userId,
+            clientId: phone,
+            source: 'signal',
+          })
+          events.push(emit(InboundMessageTopic, {
             text:         buf.text,
             attachments:  buf.attachments,
-            traceId:      span.traceId,
-            parentSpanId: span.spanId,
+            request:      req,
           }))
         }
         return { state: { ...state, seenIds, pendingConnect, activeSpans, userIdToPhones }, events }

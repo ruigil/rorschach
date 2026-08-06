@@ -1,5 +1,5 @@
 import type { ActorDef, SpanHandle } from '../../system/index.ts'
-import { onLifecycle, onMessage } from '../../system/index.ts'
+import { onLifecycle, onMessage, createMessageRequest } from '../../system/index.ts'
 import {
   UserPresenceTopic,
   InboundMessageTopic,
@@ -334,13 +334,18 @@ export const CLI = (): ActorDef<CliMsg, CliState> => {
 
         const span = ctx.trace.start('request', { clientId: CLI_CLIENT_ID })
         const activeSpans = { ...state.activeSpans, [CLI_CLIENT_ID]: span }
+        const req = createMessageRequest({
+          traceId: span.traceId,
+          spanId: span.spanId,
+          userId: ANONYMOUS_USER_ID,
+          clientId: CLI_CLIENT_ID,
+          source: 'cli',
+        })
 
         ctx.publish(InboundMessageTopic, {
-          userId: ANONYMOUS_USER_ID,
-          text:     message.text,
-          traceId:  span.traceId,
-          parentSpanId: span.spanId,
-        })
+          text: message.text,
+          request: req,
+        } as any)
 
         // Show user message (reversed bg) then thinking indicator in scroll area
         appendScroll([
