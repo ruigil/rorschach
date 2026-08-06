@@ -1,4 +1,4 @@
-import { createTopic } from '../system/index.ts'
+import { createTopic, type MessageRequest } from '../system/index.ts'
 import type { PermissionContext } from '../system/permissions/types.ts'
 
 // ─── Strongly Typed Domain Frame Names ─────────────────────────────────────
@@ -19,6 +19,17 @@ export type ToolsFrameType =
   | 'tools.registered'
   | 'tools.unregistered'
 
+export type WorkflowsFrameType =
+  | 'workflow.list.request'
+  | 'workflow.list.updated'
+  | 'workflow.run.start'
+  | 'workflow.run.cancel'
+  | 'workflow.run.updated'
+  | 'workflow.inspect.request'
+  | 'workflow.inspect.response'
+  | 'workflow.delete.request'
+  | 'workflow.delete.response'
+
 export type ObservabilityFrameType =
   | 'observability.log.entry'
   | 'observability.metrics.updated'
@@ -26,25 +37,22 @@ export type ObservabilityFrameType =
   | 'observability.usage.entry'
 
 export type NotebookFrameType =
-  | 'notebook.todos.request'
-  | 'notebook.todos.list'
-  | 'notebook.todos.complete'
-  | 'notebook.todos.delete'
-  | 'notebook.journal.months.request'
-  | 'notebook.journal.months'
+  | 'notebook.journals.request'
+  | 'notebook.journals.updated'
   | 'notebook.journal.entry.request'
-  | 'notebook.journal.entry'
+  | 'notebook.journal.entry.response'
+  | 'notebook.todos.request'
+  | 'notebook.todos.updated'
   | 'notebook.tracker.habits.request'
-  | 'notebook.tracker.habits'
-  | 'notebook.tracker.entries.request'
-  | 'notebook.tracker.entries'
-  | 'notebook.tracker.stats.request'
-  | 'notebook.tracker.stats'
+  | 'notebook.tracker.habits.updated'
+  | 'notebook.tracker.habit.entry.request'
+  | 'notebook.tracker.habit.entry.response'
 
 export type SystemFrameType =
   | CognitiveFrameType
   | MemoryFrameType
   | ToolsFrameType
+  | WorkflowsFrameType
   | ObservabilityFrameType
   | NotebookFrameType
 
@@ -66,11 +74,9 @@ export type MessageAttachment = {
 // ─── Domain event: published when a client sends a message (any interface) ───
 
 export type InboundMessageEvent = {
-  userId:        string
   text:          string
   attachments?:  MessageAttachment[]
-  traceId:       string
-  parentSpanId:  string
+  request?: MessageRequest
 }
 
 /** Topic published when any interface (HTTP/WS, Signal, CLI) receives a message from a client. */

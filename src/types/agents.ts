@@ -30,11 +30,6 @@ export type ContextTurn = {
   timestamp:     number
 }
 
-export type ContextView = Pick<
-  ContextSnapshotEvent,
-  'userId' | 'version' | 'recentMessages' | 'userContext' | 'toolSummaries' | 'timezone'
->
-
 
 export type AgentContextMsg =
   | {

@@ -1,6 +1,5 @@
 import { createTopic } from '../system/index.ts'
 import type { ActorRef } from '../system/index.ts'
-import type { Identity } from './identity.ts'
 
 // ─── HTTP route registration ───
 //
@@ -48,7 +47,6 @@ export type SerializedResponse = {
 export type HttpRequestMsg = {
   type: 'http.request'
   request: SerializedRequest
-  identity: Identity | null
   replyTo: ActorRef<HttpResponseMsg>
 }
 
