@@ -72,7 +72,7 @@ export const PoolRouter = <WM, WS>(
         return { state }
       }
 
-      state.workers[state.index % state.workers.length]!.send(message, ctx.messageHeaders())
+      state.workers[state.index % state.workers.length]!.send(message, ctx.request)
       return { state: { ...state, index: state.index + 1 } }
     },
 
