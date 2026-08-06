@@ -77,7 +77,6 @@ describe('Unified Config System End-to-End Integration', () => {
         headers: {},
         body: null,
       },
-      identity: null,
       replyTo,
     }))
 
@@ -103,7 +102,6 @@ describe('Unified Config System End-to-End Integration', () => {
         headers: {},
         body: null,
       },
-      identity: null,
       replyTo,
     }))
 
@@ -126,7 +124,6 @@ describe('Unified Config System End-to-End Integration', () => {
         headers: {},
         body: null,
       },
-      identity: null,
       replyTo,
     }))
 
@@ -147,7 +144,6 @@ describe('Unified Config System End-to-End Integration', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: 'pollution-attempt' }),
       },
-      identity: null,
       replyTo,
     }))
 
@@ -184,7 +180,6 @@ describe('Unified Config System End-to-End Integration', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: 'gemini-exp-1206', temperature: 0.7 }),
       },
-      identity: null,
       replyTo,
     }))
 
@@ -209,7 +204,6 @@ describe('Unified Config System End-to-End Integration', () => {
         headers: {},
         body: null,
       },
-      identity: null,
       replyTo,
     }))
     const activeValues = JSON.parse(queryRes.response.body)

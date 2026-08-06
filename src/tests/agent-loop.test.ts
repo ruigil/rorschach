@@ -11,10 +11,7 @@ const tick = (ms = 50) => Bun.sleep(ms)
 // Helpers
 // ═══════════════════════════════════════════════════════════════════
 
-/** Test messages may omit permissionContext; makeAgentDef injects a default. */
-type TestStartParams = Omit<LoopStartTurnParams, 'permissionContext'> & {
-  permissionContext?: LoopStartTurnParams['permissionContext']
-}
+type TestStartParams = LoopStartTurnParams
 
 type TestExtra =
   | { type: 'start'; params: TestStartParams }
@@ -105,11 +102,7 @@ const makeAgentDef = <S extends TestState, M extends { type: string }>(
   initialState,
   handler: (state, msg, ctx) => {
     if ((msg as any).type === 'start') {
-      const params = {
-        permissionContext: { grants: ['*'] },
-        ...(msg as any).params,
-      }
-      return loop.startTurn(state, params, ctx)
+      return loop.startTurn(state, (msg as any).params, ctx)
     }
     return loop.idle(state, msg, ctx)
   },
@@ -156,9 +149,8 @@ describe('AgentLoop: startTurn + streaming', () => {
       type: 'start',
       params: {
         messages: [{ role: 'user', content: 'hello' }],
-        userId: 'u1',
       },
-    })
+    }, { userId: 'u1' })
     await tick()
 
     expect(streams.length).toBe(1)
@@ -208,15 +200,15 @@ describe('AgentLoop: startTurn + streaming', () => {
 
     agentRef.send({
       type: 'start',
-      params: { messages: [{ role: 'user', content: 'hi' }], userId: 'u1' },
-    })
+      params: { messages: [{ role: 'user', content: 'hi' }] },
+    }, { userId: 'u1' })
     await tick()
 
     expect(streams.length).toBe(1)
     const { msg } = streams[0]!
-    msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'hello ' })
-    msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'world' })
-    msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 2 } })
+    msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'hello ' }, { userId: 'u1' })
+    msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'world' }, { userId: 'u1' })
+    msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 2 } }, { userId: 'u1' })
     await tick(100)
 
     expect(completions.length).toBe(1)
@@ -271,11 +263,7 @@ describe('AgentLoop: startTurn + streaming', () => {
       initialState: { ...emptyState(), llmRef },
       handler: (state, msg, ctx) => {
         if ((msg as any).type === 'start') {
-          const params = {
-            permissionContext: { grants: ['*'] },
-            ...(msg as any).params,
-          }
-          return loop.startTurn(state, params, ctx)
+          return loop.startTurn(state, (msg as any).params, ctx)
         }
         return loop.idle(state, msg, ctx)
       },
@@ -296,15 +284,15 @@ describe('AgentLoop: startTurn + streaming', () => {
     // Start turn
     agentRef.send({
       type: 'start',
-      params: { messages: [{ role: 'user', content: 'hello' }], userId: 'u1' },
-    })
+      params: { messages: [{ role: 'user', content: 'hello' }] },
+    }, { userId: 'u1' })
     await tick()
 
     expect(streams.length).toBe(1)
     expect(uiEventsList).toContainEqual({ userId: 'u1', text: JSON.stringify({ type: 'start' }) })
 
     // Cancel turn
-    agentRef.send({ type: 'cancel' })
+    agentRef.send({ type: 'cancel' }, { userId: 'u1' })
     await tick()
 
     // Verify done event was emitted
@@ -312,8 +300,8 @@ describe('AgentLoop: startTurn + streaming', () => {
 
     // If we send late LLM messages, they should be ignored
     const msg = streams[0]!
-    msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'hello ' })
-    msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+    msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'hello ' }, { userId: 'u1' })
+    msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } }, { userId: 'u1' })
     await tick(100)
 
     // onComplete should NOT have been called because loop was cancelled
@@ -360,8 +348,8 @@ describe('AgentLoop: full integration', () => {
 
     agentRef.send({
       type: 'start',
-      params: { messages: [{ role: 'user', content: 'hello' }], userId: 'u1' },
-    })
+      params: { messages: [{ role: 'user', content: 'hello' }] },
+    }, { userId: 'u1' })
     await tick()
 
     const { msg } = streams[0]!
@@ -421,8 +409,8 @@ describe('AgentLoop: full integration', () => {
 
     agentRef.send({
       type: 'start',
-      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
-    })
+      params: { messages: [{ role: 'user', content: 'q' }] },
+    }, { userId: 'u1' })
     await tick()
 
     // First turn: tool calls
@@ -501,8 +489,8 @@ describe('AgentLoop: full integration', () => {
 
     agentRef.send({
       type: 'start',
-      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
-    })
+      params: { messages: [{ role: 'user', content: 'q' }] },
+    }, { userId: 'u1' })
     await tick()
 
     const msg1 = streams[0]!.msg
@@ -571,8 +559,8 @@ describe('AgentLoop: full integration', () => {
 
 	    agentRef.send({
 	      type: 'start',
-	      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
-	    })
+	      params: { messages: [{ role: 'user', content: 'q' }] },
+	    }, { userId: 'u1' })
 	    await tick()
 
 	    const msg1 = streams[0]!.msg
@@ -581,7 +569,7 @@ describe('AgentLoop: full integration', () => {
 	      requestId: msg1.requestId,
 	      calls: [{ id: 'c1', name: 'search', arguments: '{}' }],
 	      usage: { promptTokens: 2, completionTokens: 3 },
-	    })
+	    }, { userId: 'u1' })
 	    await tick(150)
 
 	    expect(pendingEvents).toEqual([{ toolName: 'search', toolCallId: 'c1', jobId: 'job-1', placeholderText: 'Search started.' }])
@@ -627,8 +615,8 @@ describe('AgentLoop: full integration', () => {
 
     agentRef.send({
       type: 'start',
-      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
-    })
+      params: { messages: [{ role: 'user', content: 'q' }] },
+    }, { userId: 'u1' })
     await tick()
 
     const msg1 = streams[0]!.msg
@@ -637,7 +625,7 @@ describe('AgentLoop: full integration', () => {
       requestId: msg1.requestId,
       calls: [{ id: 'c1', name: 'missing_tool', arguments: '{}' }],
       usage: { promptTokens: 1, completionTokens: 1 },
-    })
+    }, { userId: 'u1' })
     await tick(150)
 
     // Synthetic error causes immediate next turn (no real tool to wait for)
@@ -700,8 +688,8 @@ describe('AgentLoop: full integration', () => {
 
     agentRef.send({
       type: 'start',
-      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
-    })
+      params: { messages: [{ role: 'user', content: 'q' }] },
+    }, { userId: 'u1' })
     await tick()
 
     const msg1 = streams[0]!.msg
@@ -710,7 +698,7 @@ describe('AgentLoop: full integration', () => {
       requestId: msg1.requestId,
       calls: [{ id: 'c1', name: 'search', arguments: '{}' }],
       usage: { promptTokens: 1, completionTokens: 1 },
-    })
+    }, { userId: 'u1' })
     await tick(150)
 
     expect(limits.length).toBe(1)
@@ -766,8 +754,8 @@ describe('AgentLoop: full integration', () => {
     // Now use it in a turn
     agentRef.send({
       type: 'start',
-      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
-    })
+      params: { messages: [{ role: 'user', content: 'q' }] },
+    }, { userId: 'u1' })
     await tick()
 
     const msg1 = streams[0]!.msg
@@ -776,7 +764,7 @@ describe('AgentLoop: full integration', () => {
       requestId: msg1.requestId,
       calls: [{ id: 'c1', name: 'newTool', arguments: '{}' }],
       usage: { promptTokens: 1, completionTokens: 1 },
-    })
+    }, { userId: 'u1' })
     await tick(150)
 
     // Tool was dispatched and replied, causing startNextTurn
@@ -824,12 +812,12 @@ describe('AgentLoop: full integration', () => {
 
     agentRef.send({
       type: 'start',
-      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
-    })
+      params: { messages: [{ role: 'user', content: 'q' }] },
+    }, { userId: 'u1' })
     await tick()
 
     const { msg } = streams[0]!
-    msg.replyTo.send({ type: 'llmError', requestId: msg.requestId, error: 'boom' })
+    msg.replyTo.send({ type: 'llmError', requestId: msg.requestId, error: 'boom' }, { userId: 'u1' })
     await tick(100)
 
     expect(errors.length).toBe(1)
@@ -874,14 +862,14 @@ describe('AgentLoop: full integration', () => {
 
     agentRef.send({
       type: 'start',
-      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
-    })
+      params: { messages: [{ role: 'user', content: 'q' }] },
+    }, { userId: 'u1' })
     await tick()
 
     const { msg } = streams[0]!
     // Send chunk with WRONG requestId, then done with correct one
-    msg.replyTo.send({ type: 'llmChunk', requestId: 'wrong-id', text: 'x' })
-    msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+    msg.replyTo.send({ type: 'llmChunk', requestId: 'wrong-id', text: 'x' }, { userId: 'u1' })
+    msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } }, { userId: 'u1' })
     await tick(100)
 
     expect(completions.length).toBe(1)
@@ -928,13 +916,13 @@ describe('AgentLoop: full integration', () => {
 
     agentRef.send({
       type: 'start',
-      params: { messages: [{ role: 'user', content: 'q' }], userId: 'u1' },
-    })
+      params: { messages: [{ role: 'user', content: 'q' }] },
+    }, { userId: 'u1' })
     await tick()
 
     const { msg } = streams[0]!
-    msg.replyTo.send({ type: 'llmReasoningChunk', requestId: msg.requestId, text: 'thinking' })
-    msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+    msg.replyTo.send({ type: 'llmReasoningChunk', requestId: msg.requestId, text: 'thinking' }, { userId: 'u1' })
+    msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } }, { userId: 'u1' })
     await tick(100)
 
     expect(events.length).toBe(0)

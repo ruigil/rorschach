@@ -215,7 +215,7 @@ describe('signal actor: TCP socket', () => {
     await tick(200)
 
     expect(messageEvents).toHaveLength(1)
-    expect(messageEvents[0]!.userId).toBe('anonymous')
+    expect((messageEvents[0]! as any).request?.userId).toBe('anonymous')
     expect(messageEvents[0]!.text).toBe('check this out')
     expect(messageEvents[0]!.attachments).toHaveLength(1)
     

@@ -116,8 +116,9 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     let expanded = false
 
     const mockLlmDef = {
-      handler: (state: any, msg: LlmProviderMsg) => {
+      handler: (state: any, msg: LlmProviderMsg, ctx: any) => {
         if (msg.type === 'stream') {
+          const request = { userId: ctx.request.userId }
           const systemPrompt = msg.messages[0]?.content
           if (typeof systemPrompt === 'string' && systemPrompt.includes('memory recall agent')) {
             const toolMessages = msg.messages.filter((m: any) => m.role === 'tool')
@@ -127,7 +128,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
                 requestId: msg.requestId,
                 calls: [{ id: 'search-1', name: 'memory_search', arguments: JSON.stringify({ query: 'notebook notes storage' }) }],
                 usage: { promptTokens: 1, completionTokens: 1 },
-              })
+              }, request)
               return { state }
             }
 
@@ -141,7 +142,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
                 requestId: msg.requestId,
                 calls: [{ id: 'expand-1', name: 'memory_expand', arguments: JSON.stringify({ nodeId }) }],
                 usage: { promptTokens: 1, completionTokens: 1 },
-              })
+              }, request)
               return { state }
             }
 
@@ -152,12 +153,12 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
                 requestId: msg.requestId,
                 calls: [{ id: 'coding_file_read-1', name: 'memory_read', arguments: JSON.stringify({ recordIds }) }],
                 usage: { promptTokens: 1, completionTokens: 1 },
-              })
+              }, request)
               return { state }
             }
 
-            msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'Notebook notes are stored through memory-backed note flows.' })
-            msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+            msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'Notebook notes are stored through memory-backed note flows.' }, request)
+            msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } }, request)
           }
           return { state }
         }
@@ -226,9 +227,9 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
         toolName: 'memory_recall',
         arguments: JSON.stringify({ query: 'notebook notes storage' }),
         replyTo,
-        userId,
       }),
       { timeoutMs: 5_000 },
+      { userId },
     )
 
     expect(recallReply.type).toBe('toolResult')
@@ -268,8 +269,9 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     const readPayloads: Array<{ records?: Array<{ recordId: string; attachments?: MessageAttachment[] }> }> = []
 
     const mockLlmDef = {
-      handler: (state: any, msg: LlmProviderMsg) => {
+      handler: (state: any, msg: LlmProviderMsg, ctx: any) => {
         if (msg.type === 'stream') {
+          const request = { userId: ctx.request.userId }
           const systemPrompt = msg.messages[0]?.content
           if (typeof systemPrompt === 'string' && systemPrompt.includes('memory recall agent')) {
             const toolMessages = msg.messages.filter((m: any) => m.role === 'tool')
@@ -279,7 +281,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
                 requestId: msg.requestId,
                 calls: [{ id: 'search-1', name: 'memory_search', arguments: JSON.stringify({ query: 'Which editor does the user prefer?' }) }],
                 usage: { promptTokens: 1, completionTokens: 1 },
-              })
+              }, request)
               return { state }
             }
 
@@ -295,15 +297,15 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
                 requestId: msg.requestId,
                 calls: [{ id: 'coding_file_read-1', name: 'memory_read', arguments: JSON.stringify({ recordIds }) }],
                 usage: { promptTokens: 1, completionTokens: 1 },
-              })
+              }, request)
               return { state }
             }
 
             if (toolName === 'memory_read') {
               const payload = JSON.parse((toolMessages.at(-1) as { content: string }).content) as any
               readPayloads.push(payload)
-              msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'The user prefers Neovim editor for coding.' })
-              msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+              msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'The user prefers Neovim editor for coding.' }, request)
+              msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } }, request)
               return { state }
             }
           }
@@ -336,8 +338,8 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
                 confidence: 0.8,
               }],
             })
-            msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text })
-            msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+            msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text }, request)
+            msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } }, request)
           }
           return { state }
         }
@@ -370,9 +372,9 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
         toolName: 'memory_store',
         arguments: JSON.stringify({ content: markdown, attachments: attachmentsWithData }),
         replyTo,
-        userId: 'test-user',
       }),
       { timeoutMs: 5_000 },
+      { userId: 'test-user' },
     )
 
     expect(reply.type).toBe('toolResult')
@@ -433,9 +435,9 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
         toolName: 'memory_recall',
         arguments: JSON.stringify({ query: 'Which editor does the user prefer?' }),
         replyTo,
-        userId: 'test-user',
       }),
       { timeoutMs: 5_000 },
+      { userId: 'test-user' },
     )
     expect(recallReply.type).toBe('toolResult')
     const toolResult = recallReply as { type: 'toolResult'; result: { text: string; attachments?: MessageAttachment[] } }
@@ -502,8 +504,9 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
         toolName: 'memory_store',
         arguments: JSON.stringify({ content: 'I like apples' }),
         replyTo,
-        userId: 'test-user',
-      })
+      }),
+      undefined,
+      { userId: 'test-user' }
     )
 
     const promise2 = ask<ToolInvokeMsg, ToolReply>(
@@ -513,8 +516,9 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
         toolName: 'memory_store',
         arguments: JSON.stringify({ content: 'I like oranges' }),
         replyTo,
-        userId: 'test-user',
-      })
+      }),
+      undefined,
+      { userId: 'test-user' }
     )
 
     const [reply1, reply2] = await Promise.all([promise1, promise2])
@@ -554,8 +558,9 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
         toolName: 'memory_store',
         arguments: JSON.stringify({ content: 'test' }),
         replyTo,
-        userId: 'test-user',
-      })
+      }),
+      undefined,
+      { userId: 'test-user' }
     )
 
     expect(reply.type).toBe('toolError')

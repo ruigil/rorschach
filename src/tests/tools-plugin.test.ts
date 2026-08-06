@@ -202,8 +202,7 @@ describe('tools plugin', () => {
             toolName: 'tools_web_search',
             arguments: JSON.stringify({ query: 'probe' }),
             replyTo: ctx.self as unknown as ActorRef<ToolReply>,
-            userId: 'test-user',
-          })
+          }, { userId: 'test-user' })
         }
         if (msg.type === 'toolResult' || msg.type === 'toolError') {
           replies.push(msg)

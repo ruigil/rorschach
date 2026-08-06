@@ -600,9 +600,10 @@ describe('auth admin allowlist', () => {
           headers: {},
           body: null,
         },
-        identity,
         replyTo,
-      })
+      }),
+      undefined,
+      { userId: identity.userId, roles: identity.roles }
     )
     expect(getResMsg.response.status).toBe(200)
     const getData = JSON.parse(getResMsg.response.body as string)
@@ -619,9 +620,10 @@ describe('auth admin allowlist', () => {
           headers: {},
           body: JSON.stringify({ fullName: 'Jane Doe', avatar: 'avatar-data', timezone: 'America/New_York' }),
         },
-        identity,
         replyTo,
-      })
+      }),
+      undefined,
+      { userId: identity.userId, roles: identity.roles }
     )
     expect(postResMsg.response.status).toBe(200)
     const postData = JSON.parse(postResMsg.response.body as string)
@@ -666,7 +668,6 @@ describe('auth admin allowlist', () => {
           headers: {},
           body: null,
         },
-        identity: null,
         replyTo,
       })
     )
@@ -685,7 +686,6 @@ describe('auth admin allowlist', () => {
           headers: {},
           body: null,
         },
-        identity: null,
         replyTo,
       })
     )
@@ -704,7 +704,6 @@ describe('auth admin allowlist', () => {
           headers: {},
           body: null,
         },
-        identity: null,
         replyTo,
       })
     )
@@ -721,7 +720,6 @@ describe('auth admin allowlist', () => {
           headers: {},
           body: null,
         },
-        identity: null,
         replyTo,
       })
     )

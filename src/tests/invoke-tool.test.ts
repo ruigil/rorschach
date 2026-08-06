@@ -89,12 +89,19 @@ const createCaller = (
   handler: (state, msg, ctx) => {
     if (msg.type === 'go') {
       const target = msg.replyTo
+      const subCtx = {
+        ...ctx,
+        request: {
+          ...ctx.request,
+          userId: 'test-user',
+          permission: { grants: ['*'] },
+        }
+      }
       ctx.pipeToSelf(
         invokeTool(
-          ctx,
+          subCtx,
           toolRef,
-          { toolName: 'test-tool', arguments: '{}', userId: 'test-user' },
-          { permission: { grants: ['*'] } },
+          { toolName: 'test-tool', arguments: '{}' },
         ),
         (reply) => ({ type: '_immediate' as const, reply, outerReply: target }),
         (err)   => ({ type: '_immediateErr' as const, error: err, outerReply: target }),

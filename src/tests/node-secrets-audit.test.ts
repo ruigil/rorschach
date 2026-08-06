@@ -92,7 +92,6 @@ describe('secrets audit (phase 3)', () => {
         headers: {},
         body: null,
       },
-      identity: null,
       replyTo,
     }))
     expect(res.response.status).toBe(200)

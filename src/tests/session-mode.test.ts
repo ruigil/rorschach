@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { AgentSystem, staticSource} from '../system/index.ts'
+import { AgentSystem, staticSource, createMessageRequest } from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../types/llm.ts'
 import { UserPresenceTopic, InboundMessageTopic, OutboundUserMessageTopic } from '../types/events.ts'
@@ -14,10 +14,10 @@ const tick = (ms = 50) => Bun.sleep(ms)
 
 const NullLlm = (): ActorDef<LlmProviderMsg, null> => ({
   initialState: null,
-  handler: (state, msg) => {
+  handler: (state, msg, ctx) => {
     if (msg && typeof msg === 'object' && msg.type === 'stream') {
-      msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'agent-ready' })
-      msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+      ctx.send(msg.replyTo, { type: 'llmChunk', requestId: msg.requestId, text: 'agent-ready' })
+      ctx.send(msg.replyTo, { type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
     }
     return { state }
   },
@@ -142,11 +142,9 @@ describe('session manager mode UI events', () => {
     system.publishRetained(AgentRegistrationTopic, 'chatbot', { type: 'register', descriptor: echoDescriptor('chatbot', 'Chatbot') })
     await tick()
     system.publish(InboundMessageTopic, {
-      userId:       'u1',
       text:         'hello',
-      traceId:      '00000000000000000000000000000001',
-      parentSpanId: '0000000000000001',
-    })
+      request:      createMessageRequest({ userId: 'u1', traceId: '00000000000000000000000000000001', spanId: '0000000000000001' }),
+    } as any)
     await tick(200)
 
     expect(userFrames.u1!.some(f => f.includes('agent-ready'))).toBe(true)

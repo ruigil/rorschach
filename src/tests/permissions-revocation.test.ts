@@ -32,10 +32,10 @@ const baseConfig: AuthConfig = {
 
 const NullLlm = (): ActorDef<LlmProviderMsg, null> => ({
   initialState: null,
-  handler: (state, msg) => {
+  handler: (state, msg, ctx) => {
     if (msg && typeof msg === 'object' && msg.type === 'stream') {
-      msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: 'agent-ready' })
-      msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
+      ctx.send(msg.replyTo, { type: 'llmChunk', requestId: msg.requestId, text: 'agent-ready' })
+      ctx.send(msg.replyTo, { type: 'llmDone', requestId: msg.requestId, usage: { promptTokens: 1, completionTokens: 1 } })
     }
     return { state }
   },

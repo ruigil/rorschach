@@ -52,7 +52,6 @@ describe('Config Actor & Routes & Tools (desired plane)', () => {
         headers: {},
         body: null,
       },
-      identity: null,
       replyTo,
     }))
 

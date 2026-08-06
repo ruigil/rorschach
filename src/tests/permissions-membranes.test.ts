@@ -106,10 +106,9 @@ describe('Permission Membranes (1 & 2)', () => {
 
     // Call invokeTool with unauthorized permission context
     const reply = await invokeTool(
-      mockCtx,
+      { ...mockCtx, request: { userId: 'u1', permission: { grants: ['notebook_*'] } } } as any,
       dummyToolRef,
-      { toolName: 'coding_shell_exec', arguments: '{}', userId: 'u1' },
-      { permission: { grants: ['notebook_*'] } } // Restricted permission
+      { toolName: 'coding_shell_exec', arguments: '{}' }
     )
 
     expect(reply.type).toBe('toolError')
@@ -126,10 +125,9 @@ describe('Permission Membranes (1 & 2)', () => {
 
     // Call invokeTool with authorized permission context
     const allowedReply = await invokeTool(
-      mockCtx,
+      { ...mockCtx, request: { userId: 'u1', permission: { grants: ['notebook_*'] } } } as any,
       dummyToolRef,
-      { toolName: 'notebook_todos_list', arguments: '{}', userId: 'u1' },
-      { permission: { grants: ['notebook_*'] } } // Permitted permission
+      { toolName: 'notebook_todos_list', arguments: '{}' }
     )
     expect(allowedReply.type).toBe('toolResult')
 

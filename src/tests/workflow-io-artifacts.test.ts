@@ -167,8 +167,8 @@ describe('workflow IO and artifacts', () => {
     const runner = system.spawn('capturing-workflow-runner', CapturingRunner(inputs => { capturedInputs = inputs }))
 
     const reply = await handleWorkflowTool(
-      { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1', inputs: { city: 'Paris' } }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'anonymous' },
-      { persistenceRef, workflowRunnerRef: runner, ctx: { publish: () => {} } },
+      { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1', inputs: { city: 'Paris' } }), replyTo: null as unknown as ActorRef<ToolReply> },
+      { persistenceRef, workflowRunnerRef: runner, ctx: { publish: () => {}, request: { userId: 'anonymous' } } },
     )
 
     expect(reply.type).toBe('toolPending')
@@ -196,8 +196,8 @@ describe('workflow IO and artifacts', () => {
     }))
 
     const reply = await handleWorkflowTool(
-      { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1', inputs: { city: 'Paris' } }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'anonymous' },
-      { persistenceRef, workflowRunnerRef: runner, ctx: { publish: () => {} } },
+      { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1', inputs: { city: 'Paris' } }), replyTo: null as unknown as ActorRef<ToolReply> },
+      { persistenceRef, workflowRunnerRef: runner, ctx: { publish: () => {}, request: { userId: 'anonymous' } } },
     )
 
     expect(reply.type).toBe('toolResult')
@@ -226,9 +226,10 @@ describe('workflow IO and artifacts', () => {
           headers: {},
           body: null,
         },
-        identity: { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
         replyTo,
-      })
+      }),
+      undefined,
+      { userId: 'anonymous', roles: [] }
     )
     expect(resMsg.response.status).toBe(200)
     const text = await new Response(resMsg.response.body as ReadableStream).text()
@@ -245,9 +246,10 @@ describe('workflow IO and artifacts', () => {
           headers: {},
           body: null,
         },
-        identity: { userId: 'anonymous', fullName: 'Anonymous', roles: [] },
         replyTo,
-      })
+      }),
+      undefined,
+      { userId: 'anonymous', roles: [] }
     )
     expect(missingMsg.response.status).toBe(400)
     await system.shutdown()
@@ -281,14 +283,9 @@ const StaticRunRunner = (run: WorkflowRunState): ActorDef<WorkflowRunnerMsg, nul
   initialState: null,
   handler: (state, msg) => {
     if (msg.type === 'http.request') {
-      const { request, identity, replyTo } = msg
+      const { request, replyTo } = msg
       const url = new URL(request.url, 'http://localhost')
       const pathname = url.pathname
-
-      if (!identity) {
-        replyTo.send({ type: 'http.response', response: { status: 401, headers: {}, body: 'Unauthorized' } })
-        return { state }
-      }
 
       if (request.method === 'GET' && pathname === '/artifact') {
         const artifactPath = url.searchParams.get('key') ?? url.searchParams.get('path')

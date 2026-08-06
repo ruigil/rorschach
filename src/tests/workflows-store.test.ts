@@ -237,6 +237,7 @@ describe('workflow store', () => {
     const events: Array<{ userId: string; text: string }> = []
     const runner = system.spawn('workflow-runner', FakeRunner())
     const ctx = {
+      request: { userId: 'u1' },
       publish: (topic: any, event: any) => {
         if (topic === WorkflowEventTopic) {
           events.push({
@@ -248,14 +249,14 @@ describe('workflow store', () => {
     }
 
     const listReply = await handleWorkflowTool(
-      { type: 'invoke', toolName: listWorkflowsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
+      { type: 'invoke', toolName: listWorkflowsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply> },
       { persistenceRef, workflowRunnerRef: runner, ctx },
     )
     expect(listReply.type).toBe('toolResult')
     if (listReply.type === 'toolResult') expect(listReply.result.text).toContain('Ship Workflow Workspace')
 
     const graphReply = await handleWorkflowTool(
-      { type: 'invoke', toolName: showWorkflowGraphTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1' }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
+      { type: 'invoke', toolName: showWorkflowGraphTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1' }), replyTo: null as unknown as ActorRef<ToolReply> },
       { persistenceRef, workflowRunnerRef: runner, ctx },
     )
     expect(graphReply.type).toBe('toolResult')
@@ -281,8 +282,8 @@ describe('workflow store', () => {
           dependencies: [],
           agentMode: 'tool-executor',
         }],
-      }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { persistenceRef, workflowRunnerRef: runner, ctx: { publish: () => {} } },
+      }), replyTo: null as unknown as ActorRef<ToolReply> },
+      { persistenceRef, workflowRunnerRef: runner, ctx: { request: { userId: 'u1' }, publish: () => {} } },
     )
 
     expect(reply.type).toBe('toolResult')
@@ -305,6 +306,7 @@ describe('workflow store', () => {
     const runner = system.spawn('workflow-runner', FakeRunner())
     const events: any[] = []
     const ctx = {
+      request: { userId: 'u1' },
       publish: (topic: any, event: any) => {
         if (topic === WorkflowEventTopic) {
           events.push(event)
@@ -316,7 +318,7 @@ describe('workflow store', () => {
       { type: 'invoke', toolName: updateWorkflowTool.name, arguments: JSON.stringify({
         workflowId: initialWorkflow.id,
         goal: 'Updated Goal',
-      }), replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
+      }), replyTo: null as unknown as ActorRef<ToolReply> },
       { persistenceRef, workflowRunnerRef: runner, ctx },
     )
 
@@ -335,8 +337,8 @@ describe('workflow store', () => {
     const runner = system.spawn('workflow-runner', FakeRunner())
 
     const reply = await handleWorkflowTool(
-      { type: 'invoke', toolName: listExecutionToolsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply>, userId: 'u1' },
-      { persistenceRef, workflowRunnerRef: runner, ctx: { publish: () => {} } },
+      { type: 'invoke', toolName: listExecutionToolsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply> },
+      { persistenceRef, workflowRunnerRef: runner, ctx: { request: { userId: 'u1' }, publish: () => {} } },
     )
 
     expect(reply.type).toBe('toolResult')

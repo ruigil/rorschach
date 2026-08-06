@@ -2,7 +2,7 @@ import { describe, test, expect, afterEach, afterAll } from 'bun:test'
 import { mkdirSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { AgentSystem, TraceTopic, type TraceSpan, DynamicAgentActor, staticSource} from '../system/index.ts'
-import type { MessageHeaders, ActorRef } from '../system/index.ts'
+import type { ActorRef, MessageRequest } from '../system/index.ts'
 import { ChatbotAgentDescriptor, type ChatbotState } from '../plugins/cognitive/chatbot-agent.ts'
 import { ContextStore } from '../plugins/cognitive/context-store.ts'
 import { LlmProvider } from '../plugins/cognitive/llm-provider.ts'
@@ -134,7 +134,7 @@ describe('distributed tracing', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', text: 'hi' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
+    react.send({ type: 'userMessage', text: 'hi' }, { traceId: TRACE_ID, spanId: PARENT_SPAN_ID })
     await tick(300)
 
     const reactStart  = spanFor(spans, 'chatbot-agent',  'started')
@@ -184,7 +184,7 @@ describe('distributed tracing', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', text: 'search for ai news' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
+    react.send({ type: 'userMessage', text: 'search for ai news' }, { traceId: TRACE_ID, spanId: PARENT_SPAN_ID })
     await tick(400)
 
     const reactStart       = spanFor(spans, 'chatbot-agent',      'started')
@@ -224,7 +224,7 @@ describe('distributed tracing', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', text: 'hi' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
+    react.send({ type: 'userMessage', text: 'hi' }, { traceId: TRACE_ID, spanId: PARENT_SPAN_ID })
     await tick(300)
 
     const reactError = spanFor(spans, 'chatbot-agent',  'error')
@@ -244,14 +244,14 @@ describe('distributed tracing', () => {
   })
 
   test('injects traceparent header into tool invocation, propagating the traceId across the actor boundary', async () => {
-    let capturedHeaders: MessageHeaders | undefined
+    let capturedRequest: Partial<MessageRequest> | undefined
 
-    // A fake tool actor ref that captures message headers and replies immediately
+    // A fake tool actor ref that captures message request context and replies immediately
     const fakeToolRef: ActorRef<ToolMsg> = {
       name:    'fake-tool',
       isAlive: () => true,
-      send:    (msg: ToolMsg, headers?: MessageHeaders) => {
-        capturedHeaders = headers
+      send:    (msg: ToolMsg, request?: Partial<MessageRequest>) => {
+        capturedRequest = request
         if (msg.type === 'invoke') {
           msg.replyTo.send({ type: 'toolResult', result: { text: 'fake result' } })
         }
@@ -272,21 +272,16 @@ describe('distributed tracing', () => {
     const react = spawnChatbot(system)
 
     await tick()
-    react.send({ type: 'userMessage', text: 'search test' }, { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` })
+    react.send({ type: 'userMessage', text: 'search test' }, { traceId: TRACE_ID, spanId: PARENT_SPAN_ID })
     await tick(400)
 
-    // The traceparent header must be present and well-formed (W3C trace context format)
-    expect(capturedHeaders?.['traceparent']).toBeDefined()
-    const parts = (capturedHeaders!['traceparent'] as string).split('-')
-    expect(parts).toHaveLength(4)
-    expect(parts[0]).toBe('00')       // version
-    expect(parts[1]).toBe(TRACE_ID)   // traceId propagated unchanged
-    expect(parts[3]).toBe('01')       // flags
+    // The trace context must be present and match trace ID propagated unchanged
+    expect(capturedRequest?.traceId).toBe(TRACE_ID)
 
-    // The span ID in the header must match the tool-invoke span emitted to TraceTopic
+    // The span ID in the request must match the tool-invoke span emitted to TraceTopic
     const toolInvokeSpan = spanFor(spans, 'tool-invoke', 'started')
     expect(toolInvokeSpan).toBeDefined()
-    expect(parts[2]).toBe(toolInvokeSpan!.spanId)
+    expect(capturedRequest?.spanId).toBe(toolInvokeSpan!.spanId)
 
     await system.shutdown()
   })
