@@ -16,16 +16,21 @@ export const TokenStore = (): ActorDef<TokenStoreMsg, TokenStoreState> => ({
   persistence: persistencePluginAdapter<TokenStoreState>('googleapis/tokens'),
 
   handler: onMessage<TokenStoreMsg, TokenStoreState>({
-    getToken: (state, { userId, replyTo }) => {
-      replyTo.send(state.tokens[userId] ?? null)
+    getToken: (state, msg, ctx) => {
+      const userId = ctx.request.userId
+      msg.replyTo.send(state.tokens[userId] ?? null)
       return { state }
     },
 
-    setToken: (state, { userId, token }) => ({
-      state: { tokens: { ...state.tokens, [userId]: token } },
-    }),
+    setToken: (state, msg, ctx) => {
+      const userId = msg.userId
+      return {
+        state: { tokens: { ...state.tokens, [userId]: msg.token } },
+      }
+    },
 
-    deleteToken: (state, { userId }) => {
+    deleteToken: (state, msg, ctx) => {
+      const userId = ctx.request.userId
       const { [userId]: _removed, ...rest } = state.tokens
       return { state: { tokens: rest } }
     },

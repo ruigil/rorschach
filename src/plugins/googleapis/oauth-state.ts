@@ -21,7 +21,8 @@ export const OAuthState = (): ActorDef<OAuthStateMsg, OAuthStateState> => ({
       const token = crypto.randomUUID()
       ctx.timers.startSingleTimer(`expire-${token}`, { type: '_expire', state: token }, STATE_TTL_MS)
       msg.replyTo.send(token)
-      return { state: { mapping: { ...state.mapping, [token]: msg.userId } } }
+      const userId = ctx.request.userId
+      return { state: { mapping: { ...state.mapping, [token]: userId } } }
     },
 
     resolveState: (state, msg) => {

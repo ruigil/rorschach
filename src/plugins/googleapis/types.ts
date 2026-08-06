@@ -19,12 +19,12 @@ export type { GoogleApisConfig }
 // ─── Actor message protocols ───
 
 export type TokenStoreMsg =
-  | { type: 'getToken';    userId: string; replyTo: ActorRef<GoogleToken | null> }
+  | { type: 'getToken';    replyTo: ActorRef<GoogleToken | null> }
   | { type: 'setToken';    userId: string; token: GoogleToken }
-  | { type: 'deleteToken'; userId: string }
+  | { type: 'deleteToken' }
 
 export type OAuthStateMsg =
-  | { type: 'createState';  userId: string; replyTo: ActorRef<string> }
+  | { type: 'createState';  replyTo: ActorRef<string> }
   | { type: 'resolveState'; state: string;  replyTo: ActorRef<string | null> }
   | { type: '_expire';      state: string }
 

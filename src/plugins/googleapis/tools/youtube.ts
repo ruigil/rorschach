@@ -44,14 +44,14 @@ export const Youtube = (
     handler: onMessage<YoutubeMsg, null>({
       invoke: (state, msg, ctx) => {
         const executeYoutubeTool = async () => {
-          const token = await ask<TokenStoreMsg, GoogleToken | null>(tokenStoreRef, r => ({ type: 'getToken' as const, userId: msg.userId, replyTo: r }))
+          const token = await ask<TokenStoreMsg, GoogleToken | null>(tokenStoreRef, r => ({ type: 'getToken' as const, replyTo: r }), undefined, ctx.request)
           if (!token) throw new Error('Not authenticated. Connect your Google account via Config > googleapis.')
 
           const auth = new google.auth.OAuth2(clientId, clientSecret)
           auth.setCredentials(token)
           if (token.expiry_date - Date.now() < 5 * 60 * 1000) {
             const { credentials } = await auth.refreshAccessToken()
-            tokenStoreRef.send({ type: 'setToken', userId: msg.userId, token: credentials as GoogleToken })
+            tokenStoreRef.send({ type: 'setToken' as const, userId: ctx.request.userId, token: credentials as GoogleToken })
             auth.setCredentials(credentials)
           }
 

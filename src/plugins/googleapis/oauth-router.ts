@@ -34,7 +34,6 @@ export const OAuthRouter = (opts: OAuthRouterOptions): ActorDef<OAuthRouterMsg, 
   type RequestContext = {
     url: URL
     request: any
-    identity: any
     replyTo: any
     ctx: ActorContext<OAuthRouterMsg>
     jsonResponse: (body: any, status?: number) => void
@@ -42,11 +41,7 @@ export const OAuthRouter = (opts: OAuthRouterOptions): ActorDef<OAuthRouterMsg, 
 
   const handlers: Record<string, Record<string, (rc: RequestContext) => void>> = {
     GET: {
-      '/googleapis/auth/start': ({ identity, replyTo, ctx }) => {
-        if (!identity) {
-          replyTo.send({ type: 'http.response', response: { status: 401, headers: {}, body: 'Unauthorized' } })
-          return
-        }
+      '/googleapis/auth/start': ({ replyTo, ctx }) => {
         if (!clientId || !clientSecret) {
           replyTo.send({ type: 'http.response', response: { status: 503, headers: {}, body: 'Google APIs not configured' } })
           return
@@ -55,9 +50,8 @@ export const OAuthRouter = (opts: OAuthRouterOptions): ActorDef<OAuthRouterMsg, 
         const generateAuthUrl = async () => {
           const stateToken = await ask<OAuthStateMsg, string>(oauthState, r => ({
             type: 'createState' as const,
-            userId: identity.userId,
             replyTo: r,
-          }))
+          }), undefined, ctx.request)
           const redirectUri = baseUrl.replace(/\/$/, '') + '/googleapis/auth/callback'
           const oauth2      = new google.auth.OAuth2(clientId, clientSecret, redirectUri)
           const authUrl     = oauth2.generateAuthUrl({ access_type: 'offline', scope: SCOPES, state: stateToken, prompt: 'consent' })
@@ -128,18 +122,12 @@ export const OAuthRouter = (opts: OAuthRouterOptions): ActorDef<OAuthRouterMsg, 
         )
       },
 
-      '/googleapis/auth/status': ({ identity, replyTo, ctx, jsonResponse }) => {
-        if (!identity) {
-          replyTo.send({ type: 'http.response', response: { status: 401, headers: {}, body: 'Unauthorized' } })
-          return
-        }
-
+      '/googleapis/auth/status': ({ replyTo, ctx, jsonResponse }) => {
         const checkAuthStatus = async () => {
           const token = await ask(tokenStore, r => ({
             type: 'getToken' as const,
-            userId: identity.userId,
             replyTo: r,
-          }))
+          }), undefined, ctx.request)
           return token !== null
         }
 
@@ -157,13 +145,8 @@ export const OAuthRouter = (opts: OAuthRouterOptions): ActorDef<OAuthRouterMsg, 
       }
     },
     POST: {
-      '/googleapis/auth/revoke': ({ identity, replyTo }) => {
-        if (!identity) {
-          replyTo.send({ type: 'http.response', response: { status: 401, headers: {}, body: 'Unauthorized' } })
-          return
-        }
-
-        tokenStore.send({ type: 'deleteToken' as const, userId: identity.userId })
+      '/googleapis/auth/revoke': ({ replyTo, ctx }) => {
+        tokenStore.send({ type: 'deleteToken' as const }, ctx.request)
         replyTo.send({
           type: 'http.response',
           response: {
@@ -180,7 +163,7 @@ export const OAuthRouter = (opts: OAuthRouterOptions): ActorDef<OAuthRouterMsg, 
     initialState: null,
     handler: onMessage<OAuthRouterMsg, null>({
       'http.request': (state, message, ctx) => {
-        const { request, identity, replyTo } = message
+        const { request, replyTo } = message
         const url = new URL(request.url, 'http://localhost')
         const path = url.pathname
 
@@ -197,7 +180,7 @@ export const OAuthRouter = (opts: OAuthRouterOptions): ActorDef<OAuthRouterMsg, 
 
         const handler = handlers[request.method]?.[path]
         if (handler) {
-          handler({ url, request, identity, replyTo, ctx, jsonResponse })
+          handler({ url, request, replyTo, ctx, jsonResponse })
           return { state }
         }
 
