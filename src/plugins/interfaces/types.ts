@@ -1,4 +1,4 @@
-import { type ActorRef, ask, createTopic } from '../../system/index.ts'
+import { type ActorRef, ask } from '../../system/index.ts'
 import type { Identity, IdentityProviderMsg } from '../../types/identity.ts'
 
 // ─── Anonymous identity ───
