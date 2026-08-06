@@ -44,10 +44,8 @@ export type LoopTurn = {
   toolLoopCount: number
   requestSpan: SpanHandle | null
   llmSpan: SpanHandle | null
-  userId: string
   /** Aggregated usage across this turn (chunks + done + toolCalls). Reset on materialize. */
   pendingUsage: TokenUsage
-  permissionContext?: PermissionContext
 }
 
 const initialLoopTurn = (): LoopTurn => ({
@@ -58,7 +56,6 @@ const initialLoopTurn = (): LoopTurn => ({
   toolLoopCount: 0,
   requestSpan: null,
   llmSpan: null,
-  userId: '',
   pendingUsage: { promptTokens: 0, completionTokens: 0 },
 })
 
@@ -92,9 +89,7 @@ export type WithLoopState = { loop: LoopState }
 
 export type LoopStartTurnParams = {
   messages: ApiMessage[]
-  userId: string
   requestSpan?: SpanHandle | null
-  permissionContext: PermissionContext
 }
 
 export type LoopToolResultMsg = {
@@ -202,9 +197,10 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
     unstashAll: true,
   })
 
-  const emitUi = (userId: string, payload: unknown, ctx: ActorContext<M>) => {
-    if (hooks.uiEvents && userId) {
-      ctx.publish(hooks.uiEvents, { userId, text: JSON.stringify(payload) })
+  const emitUi = (payload: unknown, ctx: ActorContext<M>) => {
+    const targetUserId = ctx.request.userId
+    if (hooks.uiEvents && targetUserId) {
+      ctx.publish(hooks.uiEvents, { userId: targetUserId, text: JSON.stringify(payload) })
     }
   }
 
@@ -217,18 +213,19 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
     ctx: ActorContext<M>,
   ): SpanHandle | null => {
     const model = resolveModel(state)
-    const llmSpan = requestSpan ? ctx.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model }) : null
+    const llmSpan = requestSpan
+      ? ctx.trace.child(requestSpan.traceId, requestSpan.spanId, 'llm-call', { model })
+      : ctx.trace.span('llm-call', { model })
     const schemas = resolveSchemas(state)
     const llmRef = hooks.llmRef(state)
     if (!llmRef) throw new Error(`${log}: llmRef is null`)
-    llmRef.send({
+    ctx.send(llmRef, {
       type: 'stream',
       requestId,
       model,
       messages,
       tools: schemas.length > 0 ? schemas : undefined,
       role: hooks.role,
-      userId: state.loop.turn.userId,
       replyTo: ctx.self as unknown as ActorRef<LlmProviderReply>,
     })
     return llmSpan
@@ -242,13 +239,14 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
       return { state }
     }
 
-    emitUi(params.userId, { type: 'start' }, ctx)
+    emitUi({ type: 'start' }, ctx)
 
     let requestSpan: SpanHandle | null = params.requestSpan ?? null
     if (!requestSpan) {
-      const parent = ctx.trace.fromHeaders()
-      if (parent) {
-        requestSpan = ctx.trace.child(parent.traceId, parent.spanId, hooks.spanName, {})
+      if (ctx.request.traceId && ctx.request.spanId) {
+        requestSpan = ctx.trace.child(ctx.request.traceId, ctx.request.spanId, hooks.spanName, {})
+      } else {
+        requestSpan = ctx.trace.span(hooks.spanName)
       }
     }
 
@@ -258,8 +256,6 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
       requestId,
       turnMessages: params.messages,
       requestSpan,
-      userId: params.userId,
-      permissionContext: params.permissionContext,
     }
     const llmSpan = sendStream(state, requestId, params.messages, requestSpan, ctx)
 
@@ -285,7 +281,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
 
     ctx.log.info(`${log}: loop cancelled by user`)
 
-    emitUi(turn.userId, { type: 'done' }, ctx)
+    emitUi({ type: 'done' }, ctx)
 
     return materialize(state)
   }
@@ -307,7 +303,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
         const r = hooks.onStream(nextState, { kind: 'text', text: chunk.text }, ctx)
         nextState = r.state
       }
-      emitUi(turn.userId, { type: 'chunk', text: chunk.text }, ctx)
+      emitUi({ type: 'chunk', text: chunk.text }, ctx)
       return { state: nextState }
     },
 
@@ -316,11 +312,11 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
       const turn = state.loop.turn
       if (chunk.requestId !== turn.requestId) return { state }
       if (!hooks.onStream) {
-        emitUi(turn.userId, { type: 'reasoningChunk', text: chunk.text }, ctx)
+        emitUi({ type: 'reasoningChunk', text: chunk.text }, ctx)
         return { state }
       }
       const r = hooks.onStream(state, { kind: 'reasoning', text: chunk.text }, ctx)
-      emitUi(turn.userId, { type: 'reasoningChunk', text: chunk.text }, ctx)
+      emitUi({ type: 'reasoningChunk', text: chunk.text }, ctx)
       return { state: r.state }
     },
 
@@ -333,7 +329,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
       ctx.log.info(`${log}: tool calls`, { tools: tc.calls.map(c => c.name) })
 
       const accumulatedUsage = addUsage(turn.pendingUsage, tc.usage)
-      emitUi(turn.userId, { type: 'tooling', tools: tc.calls.map(c => ({ name: c.name, arguments: c.arguments })) }, ctx)
+      emitUi({ type: 'tooling', tools: tc.calls.map(c => ({ name: c.name, arguments: c.arguments })) }, ctx)
 
       const tools = resolveTools(state)
       const knownCalls: typeof tc.calls = []
@@ -356,6 +352,11 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
             'tool-invoke',
             { toolName: call.name, arguments: call.arguments },
           ))
+        } else {
+          spans.set(call.id, ctx.trace.span(
+            'tool-invoke',
+            { toolName: call.name, arguments: call.arguments },
+          ))
         }
       }
 
@@ -366,19 +367,24 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
         calls: tc.calls,
       }
 
-      const userId = turn.userId
+      const userId = ctx.request.userId
+      const permission = ctx.request.permission || { grants: ['*'] }
 
       for (const call of knownCalls) {
         const entry = tools[call.name]!
         const toolSpan = spans.get(call.id)
+        const subCtx = {
+          ...ctx,
+          request: {
+            ...ctx.request,
+            userId,
+            permission,
+            traceId: toolSpan?.traceId ?? ctx.request.traceId,
+            spanId: toolSpan?.spanId ?? ctx.request.spanId,
+          }
+        }
         ctx.pipeToSelf(
-          invokeTool(ctx, entry.ref,
-            { toolName: call.name, arguments: call.arguments, userId },
-            {
-              headers: toolSpan ? ctx.trace.injectHeaders(toolSpan) : undefined,
-              permission: turn.permissionContext!,
-            },
-          ),
+          invokeTool(subCtx, entry.ref, { toolName: call.name, arguments: call.arguments }),
           (reply) => ({
             type: '_toolResult',
             toolName: call.name,
@@ -401,7 +407,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
           toolCallId: call.id,
           reply: { type: 'toolError', error: `Tool not available: ${call.name}` },
         } as unknown as M
-        ctx.self.send(synthetic)
+        ctx.send(ctx.self, synthetic)
       }
 
       const nextState = {
@@ -425,7 +431,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
       const usage = addUsage(turn.pendingUsage, done.usage)
       const nextState = { ...state, loop: { ...state.loop, turn: { ...turn, pendingUsage: usage } } } as S
       const r = hooks.onComplete(nextState, turn.pending, usage, ctx)
-      emitUi(turn.userId, { type: 'done' }, ctx)
+      emitUi({ type: 'done' }, ctx)
       return materialize(r.state)
     },
 
@@ -437,7 +443,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
       turn.requestSpan?.error(err.error)
       ctx.log.error(`${log}: LLM error`, { error: String(err.error) })
       const r = hooks.onError(state, { kind: 'llm', error: err.error }, ctx)
-      emitUi(turn.userId, { type: 'error', text: hooks.errorMessages?.llm ?? 'Something went wrong. Please try again.' }, ctx)
+      emitUi({ type: 'error', text: hooks.errorMessages?.llm ?? 'Something went wrong. Please try again.' }, ctx)
       return materialize(r.state)
     },
   })
@@ -454,8 +460,8 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
         span?.done({ jobId: m.reply.jobId, pending: true })
         turn.requestSpan?.done({ pendingJobId: m.reply.jobId, toolName: m.toolName })
         ctx.log.info(`${log}: tool pending`, { tool: m.toolName, jobId: m.reply.jobId })
-        emitUi(turn.userId, { type: 'chunk', text: pendingText }, ctx)
-        emitUi(turn.userId, { type: 'done' }, ctx)
+        emitUi({ type: 'chunk', text: pendingText }, ctx)
+        emitUi({ type: 'done' }, ctx)
         const r = hooks.onToolPending
           ? hooks.onToolPending(state, {
             toolName: m.toolName,
@@ -486,10 +492,10 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
       // Auto-emit sources/attachments
       if (m.reply.type === 'toolResult') {
         if (m.reply.result.sources?.length) {
-          emitUi(turn.userId, { type: 'sources', sources: m.reply.result.sources }, ctx)
+          emitUi({ type: 'sources', sources: m.reply.result.sources }, ctx)
         }
         if (m.reply.result.attachments?.length) {
-          emitUi(turn.userId, { type: 'attachments', attachments: m.reply.result.attachments }, ctx)
+          emitUi({ type: 'attachments', attachments: m.reply.result.attachments }, ctx)
         }
       }
 
@@ -527,7 +533,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
         ctx.log.warn(`${log}: tool loop limit reached`, { limit: maxToolLoops })
         turn.requestSpan?.error('Tool loop limit reached')
         const r = hooks.onError(withBatchState, { kind: 'loopLimit', limit: maxToolLoops, finalText: turn.pending }, ctx)
-        emitUi(turn.userId, { type: 'error', text: hooks.errorMessages?.loopLimit ?? 'Tool loop limit reached. Please try again.' }, ctx)
+        emitUi({ type: 'error', text: hooks.errorMessages?.loopLimit ?? 'Tool loop limit reached. Please try again.' }, ctx)
         return materialize(r.state)
       }
 

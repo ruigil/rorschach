@@ -145,7 +145,7 @@ export const DynamicAgentActor = (
   const handleUserMessage = (state: S, msg: any, ctx: Ctx): ActorResult<M, S> => {
     const userText = assembleUserText(msg.text, msg.attachments)
     const userMsg: ApiMessage = { role: 'user', content: userText }
-    contextStoreRef.send({
+    ctx.send(contextStoreRef, {
       type: 'append',
       mode,
       source: 'user',
@@ -154,8 +154,6 @@ export const DynamicAgentActor = (
     })
     return loop.startTurn(state, {
       messages: buildTurnMessages(state, userMsg),
-      userId,
-      permissionContext: opts.permissionContext,
     }, ctx)
   }
 
@@ -170,9 +168,9 @@ export const DynamicAgentActor = (
     uiEvents: OutboundUserMessageTopic,
     errorMessages,
 
-    onComplete: (state, finalText) => {
+    onComplete: (state, finalText, usage, ctx) => {
       if (finalText) {
-        contextStoreRef.send({
+        ctx.send(contextStoreRef, {
           type: 'append',
           mode,
           source: 'assistant',
@@ -189,14 +187,14 @@ export const DynamicAgentActor = (
       return { state }
     },
 
-    onBatchHistoryReady: (state, messages) => {
-      contextStoreRef.send({ type: 'append', mode, messages })
+    onBatchHistoryReady: (state, messages, ctx) => {
+      ctx.send(contextStoreRef, { type: 'append', mode, messages })
       return { state }
     },
 
-    onToolPending: (state, pending) => {
+    onToolPending: (state, pending, ctx) => {
       const text = pending.placeholderText ?? `Background job started for ${pending.toolName} (jobId=${pending.jobId}).`
-      contextStoreRef.send({
+      ctx.send(contextStoreRef, {
         type: 'append',
         mode,
         source: 'assistant',

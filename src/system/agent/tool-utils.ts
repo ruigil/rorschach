@@ -1,19 +1,14 @@
 import { ask } from '../actor/ask.ts'
-import type { ActorContext, ActorRef, MessageHeaders } from '../actor/types.ts'
+import type { ActorContext, ActorRef } from '../actor/types.ts'
 import { JobRegistryTopic } from '../../types/tools.ts'
 import type { ToolMsg, ToolReply, ToolSchema, ToolFilter } from '../../types/tools.ts'
 import { authorize } from '../permissions/evaluator.ts'
 import { USER_NOT_AUTHORIZED, type PermissionContext } from '../permissions/types.ts'
+import { encodeMessageRequest } from '../context/request.ts'
 
 export type InvokeToolArgs = {
   toolName:  string
   arguments: string
-  userId:    string
-}
-
-export type InvokeToolOptions<M = any> = {
-  headers?: MessageHeaders
-  permission: PermissionContext
 }
 
 /**
@@ -28,12 +23,12 @@ export const invokeTool = async <M = any>(
   ctx: ActorContext<M>,
   toolRef: ActorRef<ToolMsg>,
   args: InvokeToolArgs,
-  options: InvokeToolOptions<M>,
 ): Promise<ToolReply> => {
-  if (!authorize(options.permission, args.toolName)) {
+  const perm = ctx.request.permission
+  if (perm && !authorize(perm, args.toolName)) {
     ctx.log.warn('tool authorization denied', {
       event: 'permission_denied',
-      userId: args.userId,
+      userId: ctx.request.userId,
       toolName: args.toolName,
       surface: 'agent_loop',
       reason: 'missing_grant',
@@ -47,12 +42,10 @@ export const invokeTool = async <M = any>(
       type: 'invoke',
       toolName: args.toolName,
       arguments: args.arguments,
-      userId: args.userId,
       replyTo,
-      permission: options.permission,
     }),
     undefined,
-    options.headers,
+    ctx.request,
   )
 
   if (firstReply.type === 'toolResult' || firstReply.type === 'toolError') {
@@ -67,7 +60,7 @@ export const invokeTool = async <M = any>(
     toolName: args.toolName,
     toolRef,
     startedAt: Date.now(),
-    userId: args.userId,
+    userId: ctx.request.userId,
   })
 
   return firstReply
