@@ -2,7 +2,7 @@ import { join, resolve, sep } from 'node:path'
 import { type ActorDef, type ActorRef, onMessage, type ActorContext } from '../../system/index.ts'
 import type { HttpRequestMsg, HttpResponseMsg, SerializedRequest } from '../../types/routes.ts'
 import type { AuthenticatorMsg } from './types.ts'
-import type { AuthConfig } from './authenticator.ts'
+import type { AuthConfig } from './auth.config.ts'
 
 export type AuthenticatorRouterOptions = {
   authenticator: ActorRef<AuthenticatorMsg>
@@ -135,14 +135,13 @@ export const AuthenticatorRouter = (opts: AuthenticatorRouterOptions): ActorDef<
           }
         })
       },
-      '/auth/profile': ({ identity, replyTo, jsonResponse }) => {
+      '/auth/profile': ({ identity, replyTo, jsonResponse, ctx }) => {
         if (identity.userId === 'anonymous') {
           replyTo.send({ type: 'http.response', response: { status: 401, headers: {}, body: 'Unauthorized' } })
           return
         }
-        authenticator.send({
+        ctx.send(authenticator, {
           type: 'getUserProfile',
-          userId: identity.userId,
           replyTo: {
             name: 'http:profile:get',
             isAlive: () => true,
@@ -276,7 +275,7 @@ export const AuthenticatorRouter = (opts: AuthenticatorRouterOptions): ActorDef<
           }
         })
       },
-      '/auth/profile': ({ request, identity, replyTo, jsonResponse }) => {
+      '/auth/profile': ({ request, identity, replyTo, jsonResponse, ctx }) => {
         if (identity.userId === 'anonymous') {
           replyTo.send({ type: 'http.response', response: { status: 401, headers: {}, body: 'Unauthorized' } })
           return
@@ -287,9 +286,8 @@ export const AuthenticatorRouter = (opts: AuthenticatorRouterOptions): ActorDef<
             replyTo.send({ type: 'http.response', response: { status: 400, headers: {}, body: 'fullName required' } })
             return
           }
-          authenticator.send({
+          ctx.send(authenticator, {
             type: 'updateUserProfile',
-            userId: identity.userId,
             fullName: body.fullName,
             avatar: body.avatar,
             timezone: body.timezone,
