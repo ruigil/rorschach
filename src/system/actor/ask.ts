@@ -1,5 +1,5 @@
 import type { ActorRef } from './types.ts'
-import type { MessageRequest } from '../context/request.ts'
+import { type MessageRequest, requestStorage } from '../context/request.ts'
 
 /**
  * Ask pattern: sends a message to a target actor and awaits a single response.
@@ -45,6 +45,8 @@ export const ask = <Request, Response>(
       }, timeoutMs)
     }
 
-    target.send(messageFactory(replyTo), request)
+    const ambient = requestStorage.getStore()
+    const mergedRequest = request !== undefined ? request : ambient
+    target.send(messageFactory(replyTo), mergedRequest)
   })
 }

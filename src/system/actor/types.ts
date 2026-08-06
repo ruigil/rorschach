@@ -310,6 +310,16 @@ export type ActorContext<M> = {
    */
   readonly send: <TM>(target: ActorRef<TM>, message: TM, requestOverride?: Partial<MessageRequest>) => void
   /**
+   * Send a message to another actor and await a response, automatically propagating/chaining
+   * the current MessageRequest (or an explicit override).
+   */
+  readonly ask: <TM, TR>(
+    target: ActorRef<TM>,
+    messageFactory: (replyTo: ActorRef<TR>) => TM,
+    options?: { timeoutMs?: number },
+    requestOverride?: Partial<MessageRequest>,
+  ) => Promise<TR>
+  /**
    * Config slice injected at spawn time by the plugin system.
    * Cast to your plugin's config type: `ctx.initialConfig as MyPluginConfig`.
    * Reflects the value provided at spawn time — use inside `lifecycle.start` to initialize state.

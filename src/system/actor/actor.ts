@@ -1,6 +1,7 @@
 import type { ActorHealth } from '../../types/health.ts'
 import type { MessageRequest } from '../context/request.ts'
-import { createMessageRequest } from '../context/request.ts'
+import { createMessageRequest, requestStorage } from '../context/request.ts'
+import { ask } from './ask.ts'
 import { createMailbox } from './mailbox.ts'
 import { createTimers } from './timers.ts'
 import { createActorMetrics } from './metrics.ts'
@@ -245,6 +246,21 @@ const createActorContext = <M>(internals: ActorInternals<M>): ActorContext<M> =>
       }
       target.send(message, nextReq)
     },
+    ask: <TM, TR>(
+      target: ActorRef<TM>,
+      messageFactory: (replyTo: ActorRef<TR>) => TM,
+      options?: { timeoutMs?: number },
+      requestOverride?: Partial<MessageRequest>,
+    ): Promise<TR> => {
+      const currentReq = getRequest()
+      const nextReq = {
+        ...currentReq,
+        ...requestOverride,
+        parentSpanId: currentReq.spanId,
+        spanId: newTraceId().slice(0, 16),
+      }
+      return ask(target, messageFactory, options, nextReq)
+    },
     initialConfig: () => { return configRef?.value },
 
     spawn: <CM, CS>(
@@ -458,7 +474,16 @@ export const createActor = <M, S>(
     send: (message: M, request?: Partial<MessageRequest>) => {
       if (!stopped) {
         metrics.recordMessageReceived()
-        mailbox.enqueue({ tag: 'message', payload: message, request: createMessageRequest(request) })
+        const ambient = requestStorage.getStore()
+        const nextReq = ambient
+          ? {
+              ...ambient,
+              ...request,
+              parentSpanId: ambient.spanId,
+              spanId: newTraceId().slice(0, 16),
+            }
+          : request
+        mailbox.enqueue({ tag: 'message', payload: message, request: createMessageRequest(nextReq) })
       } else {
         services.eventStream.publish(DeadLetterTopic, {
           recipient: name, message, timestamp: Date.now(),
@@ -671,7 +696,9 @@ export const createActor = <M, S>(
         if (envelope.tag === 'message') {
           currentRequest = envelope.request
           const startTime = performance.now()
-          const result = currentHandler(state, envelope.payload, context)
+          const result = requestStorage.run(currentRequest, () =>
+            currentHandler(state, envelope.payload, context)
+          )
           metrics.recordMessageProcessed(performance.now() - startTime)
           policy.onSuccess()
           state = result.state

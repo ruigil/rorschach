@@ -1,6 +1,8 @@
-// src/system/context/request.ts
-
+import { AsyncLocalStorage } from 'node:async_hooks'
 import type { PermissionContext } from '../permissions/types.ts'
+
+export const requestStorage = new AsyncLocalStorage<MessageRequest>()
+
 
 export type MessageRequest = {
   /** Distributed tracing & correlation ids */
