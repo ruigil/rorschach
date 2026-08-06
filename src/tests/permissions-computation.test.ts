@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { computePermissionContext } from '../plugins/auth/permissions.ts'
-import type { AuthConfig } from '../plugins/auth/authenticator.ts'
+import type { AuthConfig } from '../plugins/auth/auth.config.ts'
 
 describe('Permissions Computation', () => {
   const baseConfig: AuthConfig = {

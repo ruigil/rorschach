@@ -4,7 +4,9 @@ import type { ActorDef } from '../system/index.ts'
 import { ask } from '../system/index.ts'
 import { authorizeRouteAccess, canAccessAdminSurface } from '../plugins/interfaces/http.ts'
 import { startServer, type ResolvedRoute } from '../plugins/interfaces/http/server.ts'
-import { Authenticator, rolesForIdentity, type AuthConfig } from '../plugins/auth/authenticator.ts'
+import { Authenticator } from '../plugins/auth/authenticator.ts'
+import { rolesForIdentity } from '../plugins/auth/permissions.ts'
+import type { AuthConfig } from '../plugins/auth/auth.config.ts'
 import { AuthenticatorRouter } from '../plugins/auth/authenticator-router.ts'
 import { buildAuthRoutes } from '../plugins/auth/auth.routes.ts'
 import type { ActorRef } from '../system/index.ts'
@@ -552,14 +554,18 @@ describe('auth admin allowlist', () => {
 
     const profile = await ask<AuthenticatorMsg, User | null>(
       auth,
-      replyTo => ({ type: 'getUserProfile', userId: 'u-user', replyTo }),
+      replyTo => ({ type: 'getUserProfile', replyTo }),
+      undefined,
+      { userId: 'u-user' }
     )
     expect(profile).toBeDefined()
     expect(profile?.fullName).toBe('John Doe')
 
     const updateRes = await ask<AuthenticatorMsg, { ok: User } | { error: string }>(
       auth,
-      replyTo => ({ type: 'updateUserProfile', userId: 'u-user', fullName: 'Jane Doe', avatar: 'data:image/png;base64,...', replyTo }),
+      replyTo => ({ type: 'updateUserProfile', fullName: 'Jane Doe', avatar: 'data:image/png;base64,...', replyTo }),
+      undefined,
+      { userId: 'u-user' }
     )
     expect(updateRes).toBeDefined()
     expect('ok' in updateRes ? updateRes.ok.fullName : '').toBe('Jane Doe')

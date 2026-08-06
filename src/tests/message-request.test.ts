@@ -5,6 +5,7 @@ import {
   encodeMessageRequest,
   decodeMessageRequest,
   onMessage,
+  ask,
   type MessageRequest,
   type ActorRef,
 } from '../system/index.ts'
@@ -154,4 +155,163 @@ describe('Unified MessageRequest & Context Propagation', () => {
 
     system.shutdown()
   })
+
+  test('ctx.ask automatically propagates and chains request context between actors', async () => {
+    const system = await AgentSystem()
+    let downstreamRequest: MessageRequest | undefined
+
+    type BMsg = { type: 'helloB'; replyTo: ActorRef<any> }
+    const actorBDef = {
+      initialState: () => ({}),
+      handler: onMessage<BMsg, {}>({
+        helloB: (state: {}, msg: BMsg, ctx: any) => {
+          downstreamRequest = ctx.request
+          msg.replyTo.send('response-from-B')
+          return { state }
+        },
+      }),
+    }
+
+    type AMsg = { type: 'forward'; target: ActorRef<BMsg> }
+    const actorADef = {
+      initialState: () => ({}),
+      handler: onMessage<AMsg, {}>({
+        forward: (state: {}, msg: AMsg, ctx: any) => {
+          ctx.pipeToSelf(
+            ctx.ask(msg.target, (replyTo: any) => ({ type: 'helloB', replyTo })),
+            () => ({ type: 'noop' }),
+            () => ({ type: 'noop' }),
+          )
+          return { state }
+        },
+      }),
+      noop: (state: {}) => ({ state }),
+    }
+
+    const refA = system.spawn('actorA', actorADef)
+    const refB = system.spawn('actorB', actorBDef)
+
+    const initialReq = createMessageRequest({
+      traceId: 'trace_ask_123',
+      spanId: 'span_ask_parent',
+      userId: 'usr_ask_charlie',
+      source: 'cli',
+    })
+
+    refA.send({ type: 'forward', target: refB }, initialReq)
+    await new Promise(r => setTimeout(r, 20))
+
+    expect(downstreamRequest).toBeDefined()
+    expect(downstreamRequest?.traceId).toBe('trace_ask_123')
+    expect(downstreamRequest?.parentSpanId).toBe('span_ask_parent')
+    expect(downstreamRequest?.userId).toBe('usr_ask_charlie')
+    expect(downstreamRequest?.source).toBe('cli')
+
+    system.shutdown()
+  })
+
+  test('ref.send automatically propagates request context implicitly when running inside an actor handler', async () => {
+    const system = await AgentSystem()
+    let downstreamRequest: MessageRequest | undefined
+
+    type BMsg = { type: 'helloB' }
+    const actorBDef = {
+      initialState: () => ({}),
+      handler: onMessage<BMsg, {}>({
+        helloB: (state: {}, _msg: BMsg, ctx: any) => {
+          downstreamRequest = ctx.request
+          return { state }
+        },
+      }),
+    }
+
+    type AMsg = { type: 'forward'; target: ActorRef<BMsg> }
+    const actorADef = {
+      initialState: () => ({}),
+      handler: onMessage<AMsg, {}>({
+        forward: (state: {}, msg: AMsg, ctx: any) => {
+          // Calling direct target.send WITHOUT ctx.send or passing context explicitly
+          msg.target.send({ type: 'helloB' })
+          return { state }
+        },
+      }),
+    }
+
+    const refA = system.spawn('actorA', actorADef)
+    const refB = system.spawn('actorB', actorBDef)
+
+    const initialReq = createMessageRequest({
+      traceId: 'trace_implicit_123',
+      spanId: 'span_implicit_parent',
+      userId: 'usr_implicit_charlie',
+      source: 'http',
+    })
+
+    refA.send({ type: 'forward', target: refB }, initialReq)
+    await new Promise(r => setTimeout(r, 20))
+
+    expect(downstreamRequest).toBeDefined()
+    expect(downstreamRequest?.traceId).toBe('trace_implicit_123')
+    expect(downstreamRequest?.parentSpanId).toBe('span_implicit_parent')
+    expect(downstreamRequest?.userId).toBe('usr_implicit_charlie')
+    expect(downstreamRequest?.source).toBe('http')
+
+    system.shutdown()
+  })
+
+  test('standalone ask automatically propagates request context implicitly when running inside an actor handler', async () => {
+    const system = await AgentSystem()
+    let downstreamRequest: MessageRequest | undefined
+
+    type BMsg = { type: 'helloB'; replyTo: ActorRef<any> }
+    const actorBDef = {
+      initialState: () => ({}),
+      handler: onMessage<BMsg, {}>({
+        helloB: (state: {}, msg: BMsg, ctx: any) => {
+          downstreamRequest = ctx.request
+          msg.replyTo.send('response-from-B')
+          return { state }
+        },
+      }),
+    }
+
+    type AMsg = { type: 'forward'; target: ActorRef<BMsg> }
+    const actorADef = {
+      initialState: () => ({}),
+      handler: onMessage<AMsg, {}>({
+        forward: (state: {}, msg: AMsg, ctx: any) => {
+          // Standalone ask WITHOUT explicit request passed
+          ctx.pipeToSelf(
+            ask(msg.target, (replyTo: any) => ({ type: 'helloB' as const, replyTo })),
+            () => ({ type: 'noop' }),
+            () => ({ type: 'noop' }),
+          )
+          return { state }
+        },
+      }),
+      noop: (state: {}) => ({ state }),
+    }
+
+    const refA = system.spawn('actorA', actorADef)
+    const refB = system.spawn('actorB', actorBDef)
+
+    const initialReq = createMessageRequest({
+      traceId: 'trace_ask_implicit_123',
+      spanId: 'span_ask_implicit_parent',
+      userId: 'usr_ask_implicit_charlie',
+      source: 'websocket',
+    })
+
+    refA.send({ type: 'forward', target: refB }, initialReq)
+    await new Promise(r => setTimeout(r, 20))
+
+    expect(downstreamRequest).toBeDefined()
+    expect(downstreamRequest?.traceId).toBe('trace_ask_implicit_123')
+    expect(downstreamRequest?.parentSpanId).toBe('span_ask_implicit_parent')
+    expect(downstreamRequest?.userId).toBe('usr_ask_implicit_charlie')
+    expect(downstreamRequest?.source).toBe('websocket')
+
+    system.shutdown()
+  })
 })
+
