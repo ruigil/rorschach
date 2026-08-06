@@ -23,7 +23,7 @@ export const TokenStore = (): ActorDef<TokenStoreMsg, TokenStoreState> => ({
     },
 
     setToken: (state, msg, ctx) => {
-      const userId = msg.userId
+      const userId = ctx.request.userId
       return {
         state: { tokens: { ...state.tokens, [userId]: msg.token } },
       }

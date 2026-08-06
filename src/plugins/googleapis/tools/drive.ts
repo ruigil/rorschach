@@ -158,7 +158,7 @@ export const Drive = (
         auth.setCredentials(token)
         if (token.expiry_date - Date.now() < 5 * 60 * 1000) {
           const { credentials } = await auth.refreshAccessToken()
-          tokenStoreRef.send({ type: 'setToken' as const, userId: ctx.request.userId, token: credentials as GoogleToken })
+          ctx.send(tokenStoreRef, { type: 'setToken' as const, token: credentials as GoogleToken })
           auth.setCredentials(credentials)
         }
 

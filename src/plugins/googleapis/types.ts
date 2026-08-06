@@ -20,7 +20,7 @@ export type { GoogleApisConfig }
 
 export type TokenStoreMsg =
   | { type: 'getToken';    replyTo: ActorRef<GoogleToken | null> }
-  | { type: 'setToken';    userId: string; token: GoogleToken }
+  | { type: 'setToken';    token: GoogleToken }
   | { type: 'deleteToken' }
 
 export type OAuthStateMsg =

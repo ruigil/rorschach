@@ -105,7 +105,7 @@ export const OAuthRouter = (opts: OAuthRouterOptions): ActorDef<OAuthRouterMsg, 
           const redirectUri = baseUrl.replace(/\/$/, '') + '/googleapis/auth/callback'
           const oauth2      = new google.auth.OAuth2(clientId, clientSecret, redirectUri)
           const { tokens }  = await oauth2.getToken(code)
-          tokenStore.send({ type: 'setToken' as const, userId, token: tokens as GoogleToken })
+          ctx.send(tokenStore, { type: 'setToken' as const, token: tokens as GoogleToken }, { userId })
           return 'Connected! You can close this window.'
         }
 
@@ -124,7 +124,7 @@ export const OAuthRouter = (opts: OAuthRouterOptions): ActorDef<OAuthRouterMsg, 
 
       '/googleapis/auth/status': ({ replyTo, ctx, jsonResponse }) => {
         const checkAuthStatus = async () => {
-          const token = await ask(tokenStore, r => ({
+          const token = await ask<TokenStoreMsg, GoogleToken | null>(tokenStore, r => ({
             type: 'getToken' as const,
             replyTo: r,
           }), undefined, ctx.request)
