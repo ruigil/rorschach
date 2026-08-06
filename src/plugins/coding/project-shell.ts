@@ -318,10 +318,7 @@ export const ProjectShell = (options: {
       },
 
       invoke: (state, msg, ctx) => {
-        const parent = ctx.trace.fromHeaders()
-        const span: SpanHandle | null = parent
-          ? ctx.trace.child(parent.traceId, parent.spanId, msg.toolName, { toolName: msg.toolName })
-          : null
+        const span = ctx.trace.span(msg.toolName, { toolName: msg.toolName })
 
         if (msg.toolName === codingBashTool.name) {
           const args = parseBashArgs(msg.arguments)

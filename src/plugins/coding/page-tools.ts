@@ -1,7 +1,6 @@
 import { marked } from 'marked'
-import type { ActorDef, ActorRef, MessageHandler, SpanHandle } from '../../system/index.ts'
+import type { ActorDef, MessageHandler, SpanHandle } from '../../system/index.ts'
 import { defineTool, onMessage, parseToolArgs, onLifecycle, ask } from '../../system/index.ts'
-import type { ToolReply } from '../../types/tools.ts'
 import type { PageToolsState, PageToolsMsg, TocNode } from './types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../../types/persistence.ts'
 
@@ -521,22 +520,9 @@ export const PageTools = (): ActorDef<PageToolsMsg, PageToolsState> => {
     _done: (state) => ({ state }),
 
     'http.request': (state, message, ctx) => {
-      const { request, identity, replyTo } = message
+      const { request, replyTo } = message
       const url = new URL(request.url, 'http://localhost')
       const path = url.pathname
-
-      // Check session
-      if (!identity) {
-        replyTo.send({
-          type: 'http.response',
-          response: {
-            status: 401,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ error: 'Unauthorized' }),
-          }
-        })
-        return { state }
-      }
 
       // /documentation/* prefix routing
       if (request.method === 'GET' && path.startsWith('/documentation/')) {
@@ -652,10 +638,7 @@ export const PageTools = (): ActorDef<PageToolsMsg, PageToolsState> => {
         return { state }
       }
 
-      const parent = ctx.trace.fromHeaders()
-      const span: SpanHandle | null = parent
-        ? ctx.trace.child(parent.traceId, parent.spanId, msg.toolName, { toolName: msg.toolName })
-        : null
+      const span = ctx.trace.span(msg.toolName, { toolName: msg.toolName })
 
       const dl = state.persistenceRef
 
