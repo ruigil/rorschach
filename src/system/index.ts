@@ -12,6 +12,7 @@ export {
   encodeMessageRequest,
   decodeMessageRequest,
   isMessageRequest,
+  requestStorage,
 } from './context/request.ts'
 
 // ─── Config utilities ───
