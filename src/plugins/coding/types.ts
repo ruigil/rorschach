@@ -5,6 +5,7 @@ import type { MessageAttachment, HttpWsFrameEvent } from '../../types/events.ts'
 import type { ToolCollection, ToolInvokeMsg, ToolMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
 import type { ContextView, LoopMsg, LoopState, SpanHandle } from '../../system/index.ts'
 import type { HttpRequestMsg } from '../../types/routes.ts'
+import type { PersistenceMsg } from '../../types/persistence.ts'
 
 export type { CodingConfig } from './coding.config.ts'
 
@@ -60,7 +61,7 @@ export type PageToolsMsg =
   | { type: '_writeDone'; replyTo: ActorRef<ToolReply>; text: string; span: SpanHandle | null }
   | { type: '_writeErr'; replyTo: ActorRef<ToolReply>; error: string; span: SpanHandle | null }
   | { type: 'getDoc'; filename: string; replyTo: ActorRef<{ ok: true; content: string } | { ok: false; error: string }> }
-  | { type: '_persistenceRef'; ref: ActorRef<any> | null }
+  | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
 
 export type CodingAgentOptions = AgentModelOptions & {
   projectMount: string
