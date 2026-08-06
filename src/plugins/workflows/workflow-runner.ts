@@ -204,14 +204,9 @@ export const WorkflowRunner = (config: WorkflowRunnerConfig ): ActorDef<Workflow
     }),
     handler: onMessage<WorkflowRunnerMsg, RunnerState>({
       'http.request': (state, message, ctx) => {
-        const { request, identity, replyTo } = message
+        const { request, replyTo } = message
         const url = new URL(request.url, 'http://localhost')
         const pathname = url.pathname
-
-        if (!identity) {
-          replyTo.send({ type: 'http.response', response: { status: 401, headers: {}, body: 'Unauthorized' } })
-          return { state }
-        }
 
         if (request.method === 'GET' && pathname === '/artifact') {
           const artifactKey = url.searchParams.get('key')
@@ -222,7 +217,7 @@ export const WorkflowRunner = (config: WorkflowRunnerConfig ): ActorDef<Workflow
 
           ctx.self.send({
             type: 'getArtifact',
-            userId: identity.userId,
+            userId: ctx.request.userId,
             key: artifactKey,
             replyTo: {
               name: 'http:workflow-runs:getArtifact',

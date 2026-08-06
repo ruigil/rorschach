@@ -310,8 +310,6 @@ export const WorkflowTaskExecutor = (
     const messages = msg.history ?? buildMessages(descriptor, msg.workflow, msg.task, msg.inputs, msg.dependencyOutputs)
     return loop.startTurn(next, {
       messages,
-      userId: msg.userId,
-      permissionContext: state.permissionContext ?? { grants: ['*'] },
     }, ctx)
   }
 
