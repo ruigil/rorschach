@@ -262,36 +262,34 @@ export const Todos = (): ActorDef<TodosMsg, TodosState> => ({
         return { state }
       }
       const dl = state.persistenceRef
+      const userId = ctx.request.userId
       let promise: Promise<string>
       try {
         if (msg.toolName === todosCreateTool.name) {
           const args = JSON.parse(msg.arguments) as { text: string; dueDate?: string; recurrence?: string; priority?: 'low' | 'medium' | 'high' }
-          promise = createTodo(dl, msg.userId, args.text, args.dueDate, args.recurrence, args.priority)
+          promise = createTodo(dl, userId, args.text, args.dueDate, args.recurrence, args.priority)
         } else if (msg.toolName === todosCompleteTool.name) {
           const args = JSON.parse(msg.arguments) as { id: string }
-          promise = completeTodo(dl, msg.userId, args.id)
+          promise = completeTodo(dl, userId, args.id)
         } else if (msg.toolName === todosListTool.name) {
           const args = JSON.parse(msg.arguments) as { filter?: string }
-          promise = listTodos(dl, msg.userId, args.filter ?? 'pending')
+          promise = listTodos(dl, userId, args.filter ?? 'pending')
         } else if (msg.toolName === todosDeleteTool.name) {
           const args = JSON.parse(msg.arguments) as { id: string }
-          promise = deleteTodo(dl, msg.userId, args.id)
+          promise = deleteTodo(dl, userId, args.id)
         } else if (msg.toolName === todosUpdateTool.name) {
           const args = JSON.parse(msg.arguments) as { id: string; text?: string; dueDate?: string; recurrence?: string; priority?: 'low' | 'medium' | 'high' | '' }
-          promise = updateTodo(dl, msg.userId, args.id, args.text, args.dueDate, args.recurrence, args.priority)
+          promise = updateTodo(dl, userId, args.id, args.text, args.dueDate, args.recurrence, args.priority)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }
       } catch (e) {
         promise = Promise.reject(e)
       }
-      const parent = ctx.trace.fromHeaders()
-      const span: SpanHandle | null = parent
-        ? ctx.trace.child(parent.traceId, parent.spanId, msg.toolName, { toolName: msg.toolName })
-        : null
+      const span = ctx.trace.span(msg.toolName, { toolName: msg.toolName })
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span, userId: msg.userId }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span, userId }),
         (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error), span }),
       )
       return { state }

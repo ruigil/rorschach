@@ -107,21 +107,19 @@ export const Search = (): ActorDef<SearchMsg, SearchState> => ({
         msg.replyTo.send({ type: 'toolError', error: 'Persistence not ready' })
         return { state }
       }
+      const userId = ctx.request.userId
       let promise: Promise<string>
       try {
         if (msg.toolName === notebookSearchTool.name) {
           const args = JSON.parse(msg.arguments) as { query: string }
-          promise = searchAll(state.persistenceRef, msg.userId, args.query)
+          promise = searchAll(state.persistenceRef, userId, args.query)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }
       } catch (e) {
         promise = Promise.reject(e)
       }
-      const parent = ctx.trace.fromHeaders()
-      const span: SpanHandle | null = parent
-        ? ctx.trace.child(parent.traceId, parent.spanId, msg.toolName, { toolName: msg.toolName })
-        : null
+      const span = ctx.trace.span(msg.toolName, { toolName: msg.toolName })
       ctx.pipeToSelf(
         promise,
         (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span }),

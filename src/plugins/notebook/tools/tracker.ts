@@ -291,35 +291,33 @@ export const Tracker = (): ActorDef<TrackerMsg, TrackerState> => ({
         return { state }
       }
       const dl = state.persistenceRef
+      const userId = ctx.request.userId
       let promise: Promise<string>
       let habit: string | undefined
       try {
         if (msg.toolName === trackerLogTool.name) {
           const args = JSON.parse(msg.arguments) as { habit: string; value: number; date?: string; description?: string }
           habit = args.habit
-          promise = logHabit(dl, msg.userId, args.habit, args.value, args.date ?? todayISO(), args.description)
+          promise = logHabit(dl, userId, args.habit, args.value, args.date ?? todayISO(), args.description)
         } else if (msg.toolName === trackerStatsTool.name) {
           const args = JSON.parse(msg.arguments) as { habit: string }
-          promise = computeStats(dl, msg.userId, args.habit)
+          promise = computeStats(dl, userId, args.habit)
         } else if (msg.toolName === trackerDefineHabitTool.name) {
           const args = JSON.parse(msg.arguments) as { name: string; unit: string; dailyTarget?: number }
           habit = args.name
-          promise = defineHabit(dl, msg.userId, args.name, args.unit, args.dailyTarget)
+          promise = defineHabit(dl, userId, args.name, args.unit, args.dailyTarget)
         } else if (msg.toolName === trackerListHabitsTool.name) {
-          promise = listHabits(dl, msg.userId)
+          promise = listHabits(dl, userId)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }
       } catch (e) {
         promise = Promise.reject(e)
       }
-      const parent = ctx.trace.fromHeaders()
-      const span: SpanHandle | null = parent
-        ? ctx.trace.child(parent.traceId, parent.spanId, msg.toolName, { toolName: msg.toolName })
-        : null
+      const span = ctx.trace.span(msg.toolName, { toolName: msg.toolName })
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span, userId: msg.userId, habit }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span, userId, habit }),
         (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error), span }),
       )
       return { state }

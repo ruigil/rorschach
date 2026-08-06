@@ -129,32 +129,30 @@ export const Journal = (): ActorDef<JournalMsg, JournalState> => ({
         return { state }
       }
       const dl = state.persistenceRef
+      const userId = ctx.request.userId
       let promise: Promise<string>
       let date: string | undefined
       try {
         if (msg.toolName === journalWriteTool.name) {
           const args = JSON.parse(msg.arguments) as { entry: string; date?: string }
           date = args.date ?? todayISO()
-          promise = writeEntry(dl, msg.userId, args.entry, date)
+          promise = writeEntry(dl, userId, args.entry, date)
         } else if (msg.toolName === journalReadTool.name) {
           const args = JSON.parse(msg.arguments) as { date: string }
-          promise = readEntry(dl, msg.userId, args.date)
+          promise = readEntry(dl, userId, args.date)
         } else if (msg.toolName === journalSearchTool.name) {
           const args = JSON.parse(msg.arguments) as { query: string }
-          promise = searchJournal(dl, msg.userId, args.query)
+          promise = searchJournal(dl, userId, args.query)
         } else {
           promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
         }
       } catch (e) {
         promise = Promise.reject(e)
       }
-      const parent = ctx.trace.fromHeaders()
-      const span: SpanHandle | null = parent
-        ? ctx.trace.child(parent.traceId, parent.spanId, msg.toolName, { toolName: msg.toolName })
-        : null
+      const span = ctx.trace.span(msg.toolName, { toolName: msg.toolName })
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span, userId: msg.userId, date }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span, userId, date }),
         (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error), span }),
       )
       return { state }
