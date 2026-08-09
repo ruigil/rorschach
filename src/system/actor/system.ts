@@ -1,8 +1,12 @@
 import { createActor } from './actor.ts'
 import { createEventStream } from './services.ts'
+import { ResolutionCache } from '../scr/cache.ts'
 import { createMetricsRegistry } from './metrics.ts'
 import { deepMerge } from './config.ts'
 import { OutboundAdminBroadcastTopic } from '../../types/events.ts'
+import { ToolRegistrationTopic } from '../../types/tools.ts'
+import { AgentRegistrationTopic } from '../../types/agents.ts'
+import { SCRRegistrationTopic } from '../../types/scr.ts'
 import type { ActorHealth } from '../../types/health.ts'
 import type { ConfigSource, PluginEntry } from '../node/types.ts'
 import { createNodeControlDef } from '../node/control.ts'
@@ -78,6 +82,56 @@ export const AgentSystem = async (options?: PluginSystemOptions ): Promise<Plugi
     eventStream: createEventStream(),
     metricsRegistry,
   }
+
+  ResolutionCache.clear()
+  ResolutionCache.initialize({
+    subscribe: <T>(topic: any, callback: (event: T) => void) => {
+      const subscriberName = `system-cache-${sub++}`
+      services.eventStream.subscribe(subscriberName, topic, callback)
+      return () => services.eventStream.unsubscribe(subscriberName, topic)
+    }
+  })
+
+  // ⚠️ DEPRECATED compatibility bridge: maps SCR registration events back to
+  // legacy Tool/Agent topics to support transition phases.
+  // TODO: Decommission this entire block and associated topics in Phase 5.
+  const bridgeSubId = 'system-legacy-bridge'
+  services.eventStream.subscribe(bridgeSubId, SCRRegistrationTopic, (event: any) => {
+    if (event.type === 'register') {
+      if (event.descriptor.kind === 'leaf') {
+        const normalizedToolName = event.descriptor.urn.replace('scr:leaf:', '').replace(/\./g, '_')
+        if (event.descriptor.meta?.schema) {
+          services.eventStream.publishRetained(ToolRegistrationTopic, normalizedToolName, {
+            name: normalizedToolName,
+            schema: event.descriptor.meta.schema,
+            ref: event.descriptor.target,
+            mayBeLongRunning: event.descriptor.yieldsPending || false,
+          })
+        }
+      } else if (event.descriptor.kind === 'reasoner') {
+        if (event.descriptor.meta?.agentDescriptor) {
+          services.eventStream.publishRetained(AgentRegistrationTopic, event.descriptor.meta.agentDescriptor.mode, {
+            type: 'register',
+            descriptor: event.descriptor.meta.agentDescriptor,
+          })
+        }
+      }
+    } else {
+      if (event.urn.startsWith('scr:leaf:')) {
+        const normalizedToolName = event.urn.replace('scr:leaf:', '').replace(/\./g, '_')
+        services.eventStream.deleteRetained(ToolRegistrationTopic, normalizedToolName, {
+          name: normalizedToolName,
+          ref: null,
+        })
+      } else if (event.urn.startsWith('scr:reasoner:')) {
+        const mode = event.urn.replace(/^scr:reasoner:[^.]+\./, '')
+        services.eventStream.deleteRetained(AgentRegistrationTopic, mode, {
+          type: 'unregister',
+          mode,
+        })
+      }
+    }
+  })
 
   // ─── Plugin management state ───
   const plugins = new Map<string, LoadedPlugin>()
@@ -373,6 +427,7 @@ export const AgentSystem = async (options?: PluginSystemOptions ): Promise<Plugi
   const shutdown = async (): Promise<void> => {
     if (shuttingDown) return
     shuttingDown = true
+    services.eventStream.unsubscribe(bridgeSubId, SCRRegistrationTopic)
     await rootHandle.stop()
   }
 

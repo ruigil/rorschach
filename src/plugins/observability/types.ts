@@ -141,4 +141,12 @@ export type MetricsActorOptions = {
 
 export type { ObservabilityConfig } from './observability.config.ts'
 
+// ─── Scramblers Actor Types ───
 
+export type ScramblersMsg =
+  | { type: '_scrReg'; event: any }
+  | { type: '_wsFrame'; event: any }
+
+export type ScramblersState = {
+  scramblers: Record<string, any>
+}

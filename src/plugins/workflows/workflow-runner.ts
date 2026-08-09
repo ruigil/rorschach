@@ -16,7 +16,7 @@ import type {
   WorkflowRunnerConfig,
 } from './types.ts'
 import { WorkflowRunExecutor } from './workflow-run-executor.ts'
-import { getWorkflowRun, listWorkflowRuns, listWorkflows, getWorkflowGraph, createWorkflowRun, deleteWorkflow, deleteWorkflowRun } from './workflow-store.ts'
+import { getWorkflowRun, listWorkflowRuns, listWorkflows, getWorkflowGraph, createWorkflowRun, deleteWorkflow, deleteWorkflowRun, scanAndRegisterWorkflows } from './workflow-store.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetStreamPayload } from '../../types/persistence.ts'
 import { validArtifactPath } from './validation.ts'
 
@@ -249,7 +249,10 @@ export const WorkflowRunner = (config: WorkflowRunnerConfig ): ActorDef<Workflow
         return { state }
       },
 
-      _persistenceRef: (state, msg) => {
+      _persistenceRef: (state, msg, ctx) => {
+        if (msg.ref) {
+          scanAndRegisterWorkflows(msg.ref, ctx)
+        }
         return { state: { ...state, persistenceRef: msg.ref } }
       },
 

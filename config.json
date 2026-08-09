@@ -1,6 +1,9 @@
 {
   "plugins": [
     {
+      "modulePath": "${CONFIG_DIR}/src/plugins/registry/registry.plugin.ts"
+    },
+    {
       "modulePath": "${CONFIG_DIR}/src/plugins/persistence/persistence.plugin.ts"
     },
     {

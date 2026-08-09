@@ -1,7 +1,5 @@
 import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
-import type { ToolMsg } from '../../types/tools.ts'
-import { ToolRegistrationTopic } from '../../types/tools.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import { LlmProviderTopic } from '../../types/llm.ts'
 import type { MemorySupervisorMsg } from './types.ts'
@@ -50,27 +48,6 @@ export const MemorySupervisor = (
     lifecycle: onLifecycle({
       start: (state, context) => {
         context.subscribe(LlmProviderTopic, (e) => ({ type: '_llmProvider' as const, ref: e.ref }))
-        const selfAsTool = context.self as unknown as ActorRef<ToolMsg>
-        context.publishRetained(ToolRegistrationTopic, memoryRecallTool.name, {
-          ...memoryRecallTool,
-          ref: selfAsTool,
-        })
-        context.publishRetained(ToolRegistrationTopic, memoryStoreTool.name, {
-          ...memoryStoreTool,
-          ref: selfAsTool,
-        })
-        return { state }
-      },
-
-      stopped: (state, context) => {
-        context.deleteRetained(ToolRegistrationTopic, memoryRecallTool.name, {
-          name: memoryRecallTool.name,
-          ref:  null,
-        })
-        context.deleteRetained(ToolRegistrationTopic, memoryStoreTool.name, {
-          name: memoryStoreTool.name,
-          ref:  null,
-        })
         return { state }
       },
     }),

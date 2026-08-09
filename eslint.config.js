@@ -27,4 +27,29 @@ export default [
       ],
     },
   },
+  {
+    files: ['src/system/**/*.ts', 'src/plugins/**/*.ts'],
+    ignores: ['src/plugins/*/ui/**/*.ts'],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.type='FunctionExpression']",
+          message: "Avoid IIFEs.",
+        },
+        {
+          selector: "CallExpression[callee.type='ArrowFunctionExpression']",
+          message: "Avoid IIFEs.",
+        },
+        {
+          selector: "ClassDeclaration",
+          message: "Prefer closures or plain objects instead of classes in system and plugin modules."
+        },
+        {
+          selector: "ClassExpression",
+          message: "Prefer closures or plain objects instead of classes in system and plugin modules."
+        }
+      ]
+    }
+  }
 ]

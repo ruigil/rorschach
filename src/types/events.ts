@@ -19,6 +19,11 @@ export type ToolsFrameType =
   | 'tools.registered'
   | 'tools.unregistered'
 
+export type ScramblersFrameType =
+  | 'scramblers.list.request'
+  | 'scramblers.registered'
+  | 'scramblers.unregistered'
+
 export type WorkflowsFrameType =
   | 'workflow.list.request'
   | 'workflow.list.updated'
@@ -52,9 +57,11 @@ export type SystemFrameType =
   | CognitiveFrameType
   | MemoryFrameType
   | ToolsFrameType
+  | ScramblersFrameType
   | WorkflowsFrameType
   | ObservabilityFrameType
   | NotebookFrameType
+
 
 /** Strongly-typed frame type with autocomplete for known domain frames and string fallback for dynamic plugin frames. */
 export type FrameType = SystemFrameType | (string & {})

@@ -24,6 +24,7 @@ describe('r-observe-panel', () => {
   test('populates tree badges reactively from store state', async () => {
     store.namespace('observe').set('actors', [{ name: 'actor-1' }, { name: 'actor-2' }] as any)
     store.namespace('observe').set('logs', [{ message: 'log-1' }] as any)
+    store.namespace('observe').set('scramblers', { 'scr:leaf:foo': {}, 'scr:reasoner:bar': {} } as any)
 
     const el = await mountClass(RObservePanel) as any
     await el.updateComplete
@@ -40,6 +41,11 @@ describe('r-observe-panel', () => {
 
     expect(metricsNode.badge).toBe(2)
     expect(logsNode.badge).toBe(1)
+
+    const componentsCat = tree.data.find((node: any) => node.id === 'cat-components')
+    expect(componentsCat).toBeTruthy()
+    const scramblersNode = componentsCat.children.find((c: any) => c.id === 'scramblers')
+    expect(scramblersNode.badge).toBe(2)
   })
 
   test('switches active subpanel when a valid tree node is selected', async () => {

@@ -71,9 +71,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 1.1: Create Registry Configuration & Types
 * **Description:** Setup baseline configuration keys and types for the registry plugin.
 * **Acceptance criteria:**
-  - [ ] Config schema and types defined in `src/plugins/registry/registry.config.ts` and `src/plugins/registry/types.ts` compile.
+  - [x] Config schema and types defined in `src/plugins/registry/registry.config.ts` and `src/plugins/registry/types.ts` compile.
 * **Verification:**
-  - [ ] Run `bun run typecheck` check.
+  - [x] Run `bun run typecheck` check.
 * **Dependencies:** Task 0.2
 * **Files likely touched:**
   - `src/plugins/registry/registry.config.ts` (New file)
@@ -83,9 +83,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 1.2: Implement `SCRRegistry` Actor
 * **Description:** Build the central `SCRRegistry` actor to receive registration events on `SCRRegistrationTopic` and maintain the master in-memory directory of URNs and target spawner/actor refs.
 * **Acceptance criteria:**
-  - [ ] `SCRRegistry` processes registry messages and maintains URN descriptors.
+  - [x] `SCRRegistry` processes registry messages and maintains URN descriptors.
 * **Verification:**
-  - [ ] Run local mock test sending registrations and confirming actor directory state matches.
+  - [x] Run local mock test sending registrations and confirming actor directory state matches.
 * **Dependencies:** Task 1.1
 * **Files likely touched:**
   - `src/plugins/registry/registry-actor.ts` (New file)
@@ -94,9 +94,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 1.3: Implement Node-Local `ResolutionCache`
 * **Description:** Implement `ResolutionCache` subscribing to the retained `SCRRegistrationTopic` and `UserBudgetTopic` to keep hot maps of active URN descriptors and user budget states in memory.
 * **Acceptance criteria:**
-  - [ ] Exposes synchronous lookup for descriptors and budget records without mailbox overhead.
+  - [x] Exposes synchronous lookup for descriptors and budget records without mailbox overhead.
 * **Verification:**
-  - [ ] Test local cache updates immediately when a registration message is published.
+  - [x] Test local cache updates immediately when a registration message is published.
 * **Dependencies:** Task 1.2
 * **Files likely touched:**
   - `src/system/scr/cache.ts` (New file)
@@ -105,9 +105,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 1.4: Implement Stateless `invokeSCR` Engine
 * **Description:** Create the `invokeSCR` library function which synchronously checks permissions, budget, recursion depth limits, and routes the invocation to the resolved `ActorRef`.
 * **Acceptance criteria:**
-  - [ ] `invokeSCR` evaluates local cache data, validates budget/recursion, updates enqueued context, and forwards `SCRInvokeMsg`.
+  - [x] `invokeSCR` evaluates local cache data, validates budget/recursion, updates enqueued context, and forwards `SCRInvokeMsg`.
 * **Verification:**
-  - [ ] Unit tests checking recursion detection (rejection at `depth > maxDepth`) and budget overflow rejection.
+  - [x] Unit tests checking recursion detection (rejection at `depth > maxDepth`) and budget overflow rejection.
 * **Dependencies:** Task 1.3
 * **Files likely touched:**
   - `src/system/scr/invoker.ts` (New file)
@@ -116,9 +116,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 1.5: Implement Discovery Meta-Tools
 * **Description:** Create standard lookup tools `scr:tool:registry.search` and `scr:tool:registry.get` to query registry data.
 * **Acceptance criteria:**
-  - [ ] Both discovery tools are functional and return structured descriptors.
+  - [x] Both discovery tools are functional and return structured descriptors.
 * **Verification:**
-  - [ ] Verify executing search/get tools returns expected capability descriptions.
+  - [x] Verify executing search/get tools returns expected capability descriptions.
 * **Dependencies:** Task 1.4
 * **Files likely touched:**
   - `src/plugins/registry/meta-tools.ts` (New file)
@@ -127,9 +127,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 1.6: Build Registry Plugin Bootstrapper
 * **Description:** Build `registry.plugin.ts` to instantiate the registry actor and register the meta-tools on startup.
 * **Acceptance criteria:**
-  - [ ] The registry plugin registers itself in the factory and starts during boot.
+  - [x] The registry plugin registers itself in the factory and starts during boot.
 * **Verification:**
-  - [ ] System starts up, spawning `SCRRegistry`.
+  - [x] System starts up, spawning `SCRRegistry`.
 * **Dependencies:** Task 1.5
 * **Files likely touched:**
   - `src/plugins/registry/registry.plugin.ts` (New file)
@@ -138,9 +138,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 1.7: Refactor `createPluginFactory` for SCR registrations
 * **Description:** Modify `factory.ts` to publish tools, agents, and workflows to the unified `SCRRegistrationTopic` pointing to spawner or direct actor references. Remove legacy registration publishing.
 * **Acceptance criteria:**
-  - [ ] `factory.ts` has zero references to `ToolRegistrationTopic` or legacy `AgentRegistrationTopic`.
+  - [x] `factory.ts` has zero references to `ToolRegistrationTopic` or legacy `AgentRegistrationTopic`.
 * **Verification:**
-  - [ ] Ensure system boot logs confirm registration events published on startup.
+  - [x] Ensure system boot logs confirm registration events published on startup.
 * **Dependencies:** Task 1.6
 * **Files likely touched:**
   - `src/system/factory.ts`
@@ -149,9 +149,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 1.8: Workflows Startup Scanning Hook
 * **Description:** Add startup scanning inside the workflows plugin to read stored files from database and register current workflow URN descriptors.
 * **Acceptance criteria:**
-  - [ ] Scans files and publishes active workflow descriptors to `SCRRegistrationTopic`.
+  - [x] Scans files and publishes active workflow descriptors to `SCRRegistrationTopic`.
 * **Verification:**
-  - [ ] Verify startup triggers registration updates for existing workflows.
+  - [x] Verify startup triggers registration updates for existing workflows.
 * **Dependencies:** Task 1.7
 * **Files likely touched:**
   - `src/plugins/workflows/workflows.plugin.ts`
@@ -161,9 +161,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 1.9: Implement `UserBudgetActor`
 * **Description:** Build the persistent `UserBudgetActor` to load/save user budget totals and broadcast them to the retained topic `UserBudgetTopic`. No passivation of idle budget actors is required.
 * **Acceptance criteria:**
-  - [ ] Accumulates usage updates, uses `persistencePluginAdapter`, and updates retained records.
+  - [x] Accumulates usage updates, uses `persistencePluginAdapter`, and updates retained records.
 * **Verification:**
-  - [ ] Verify state is saved to the database and re-loaded upon actor boot.
+  - [x] Verify state is saved to the database and re-loaded upon actor boot.
 * **Dependencies:** Task 1.3
 * **Files likely touched:**
   - `src/plugins/observability/user-budget.ts` (New file)
@@ -172,9 +172,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 1.10: Implement `UserBudgetSupervisor`
 * **Description:** Create the budget supervisor actor inside the observability plugin to subscribe to `UsageUpdateTopic` deltas and spawn `UserBudgetActor` child actors on-demand.
 * **Acceptance criteria:**
-  - [ ] Supervisor instantiates on startup and manages child lifecycles.
+  - [x] Supervisor instantiates on startup and manages child lifecycles.
 * **Verification:**
-  - [ ] Sending usage updates dynamically spawns the corresponding user budget actor.
+  - [x] Sending usage updates dynamically spawns the corresponding user budget actor.
 * **Dependencies:** Task 1.9
 * **Files likely touched:**
   - `src/plugins/observability/user-budget.ts`
@@ -184,9 +184,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 1.11: Implement `SCRGCSweeper` GC Task
 * **Description:** Create a sweep task to run hourly and clean up orphaned dynamic keys `scr.run.*` of finished/dead runners.
 * **Acceptance criteria:**
-  - [ ] Scanning sweeps database and deletes matching stale KV keys.
+  - [x] Scanning sweeps database and deletes matching stale KV keys.
 * **Verification:**
-  - [ ] Trigger GC sweep manually and confirm dead runner keys are deleted.
+  - [x] Trigger GC sweep manually and confirm dead runner keys are deleted.
 * **Dependencies:** Task 1.4
 * **Files likely touched:**
   - `src/system/scr/gc-sweeper.ts` (New file)
@@ -195,10 +195,10 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 ---
 
 ### Checkpoint: Registry & Discovery
-- [ ] Code builds without errors.
-- [ ] Registered tools/agents/workflows publish to `SCRRegistrationTopic` on start.
-- [ ] Local cache matches published registrations dynamically.
-- [ ] UserBudgetSupervisor and GC Sweeper initialize successfully.
+- [x] Code builds without errors.
+- [x] Registered tools/agents/workflows publish to `SCRRegistrationTopic` on start.
+- [x] Local cache matches published registrations dynamically.
+- [x] UserBudgetSupervisor and GC Sweeper initialize successfully.
 
 ---
 

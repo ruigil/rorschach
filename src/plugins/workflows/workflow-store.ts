@@ -1,4 +1,5 @@
 import { ask, type ActorRef } from '../../system/index.ts'
+import { SCRRegistrationTopic } from '../../types/scr.ts'
 import type {
   Workflow,
   WorkflowGraph,
@@ -369,3 +370,52 @@ export const createWorkflowRun = async (
 
   return { ok: true, data: { run, workflow: workflowResult.data.workflow } }
 }
+
+export const scanAndRegisterWorkflows = async (
+  persistenceRef: ActorRef<any>,
+  ctx: { publish: <T>(topic: any, event: T) => void; self: ActorRef<any>; log: any }
+): Promise<void> => {
+  try {
+    const listRes = await ask<PersistenceMsg, PList>(persistenceRef, (replyTo) => ({
+      type: 'doc.list',
+      collection: 'workflows',
+      replyTo,
+    }))
+    if (!listRes.ok || !listRes.keys) return
+
+    for (const docId of listRes.keys) {
+      const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+        type: 'doc.get',
+        collection: 'workflows',
+        docId,
+        replyTo,
+      }))
+      if (getRes.ok && getRes.data) {
+        try {
+          const parsed = JSON.parse(getRes.data)
+          if (parsed && typeof parsed.id === 'string') {
+            const urn = `scr:graph:workflows.${parsed.id}`
+            ctx.publish(SCRRegistrationTopic, {
+              type: 'register',
+              descriptor: {
+                urn,
+                kind: 'graph',
+                description: parsed.goal || parsed.title || '',
+                schema: {
+                  inputSchema: parsed.inputs || {},
+                  outputSchema: parsed.outputs || {},
+                },
+                target: ctx.self,
+              },
+            })
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    }
+  } catch (err) {
+    ctx.log.error('Failed to scan workflows on startup', err)
+  }
+}
+

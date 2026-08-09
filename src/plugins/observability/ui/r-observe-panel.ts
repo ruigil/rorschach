@@ -18,11 +18,12 @@ import './r-actor-tree.js';
 import './r-actor-detail.js';
 import './r-tools-list.js';
 import './r-agents-list.js';
+import './r-scramblers-list.js';
 import './r-topic-list.js';
 import './r-trace-waterfall.js';
 import type { Actor } from '../types.js';
 
-export const OBSERVE_TABS = ['metrics', 'topics', 'logs', 'traces', 'tools', 'agents', 'memory', 'costs'] as const;
+export const OBSERVE_TABS = ['metrics', 'topics', 'logs', 'traces', 'tools', 'agents', 'scramblers', 'memory', 'costs'] as const;
 export type ObserveTab = typeof OBSERVE_TABS[number];
 export const DEFAULT_OBSERVE_TAB: ObserveTab = 'metrics';
 
@@ -33,6 +34,7 @@ const TAB_LABELS: Record<ObserveTab, string> = {
   traces:  'Traces',
   tools:   'Tools',
   agents:  'Agents',
+  scramblers: 'Scramblers',
   memory:  'Memory Graph',
   costs:   'Usage Costs',
 };
@@ -45,6 +47,7 @@ const CONTROL_BY_TAB: Record<ObserveTab, string> = {
   topics:  '',
   tools:   '',
   agents:  '',
+  scramblers: '',
   costs:   '',
 };
 
@@ -61,6 +64,7 @@ export class RObservePanel extends RorschachBase {
   private _traces = new StoreController(this, ['observe', 'traces']);
   private _tools = new StoreController(this, ['observe', 'tools']);
   private _agents = new StoreController(this, ['observe', 'agents']);
+  private _scramblers = new StoreController(this, ['observe', 'scramblers']);
   private _kgDataController = new StoreController(this, ['observe', 'kgraph']);
 
   static override styles = [
@@ -295,6 +299,8 @@ export class RObservePanel extends RorschachBase {
     const topics = this._topics.value ?? [];
     const toolsObj = this._tools.value ?? {};
     const toolsCount = Object.keys(toolsObj).length;
+    const scramblersObj = this._scramblers.value ?? {};
+    const scramblersCount = Object.keys(scramblersObj).length;
     const agents = this._agents.value ?? [];
     const graph = this._kgDataController.value;
 
@@ -317,6 +323,7 @@ export class RObservePanel extends RorschachBase {
           { id: 'topics', label: 'Topics', icon: 'git-branch', badge: topics.length || undefined },
           { id: 'tools', label: 'Tools', icon: 'wrench', badge: toolsCount || undefined },
           { id: 'agents', label: 'Agents', icon: 'user', badge: agents.length || undefined },
+          { id: 'scramblers', label: 'Scramblers', icon: 'code', badge: scramblersCount || undefined },
         ],
       },
       {
@@ -462,6 +469,10 @@ export class RObservePanel extends RorschachBase {
 
             <div class="obs-subpanel ${activeTab === 'agents' ? 'active' : ''}" data-observe-tab="agents">
               <r-agents-list></r-agents-list>
+            </div>
+
+            <div class="obs-subpanel ${activeTab === 'scramblers' ? 'active' : ''}" data-observe-tab="scramblers">
+              <r-scramblers-list></r-scramblers-list>
             </div>
 
             <r-costs-table class="obs-subpanel ${activeTab === 'costs' ? 'active' : ''}" data-observe-tab="costs">

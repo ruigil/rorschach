@@ -4,8 +4,9 @@ import { onLifecycle, onMessage } from './actor/match.ts';
 import { publishConfigSurface, deleteConfigSurface } from './actor/config.ts';
 import { RouteRegistrationTopic, type RouteRegistration } from '../types/routes.ts';
 import { type UiSurfaceRegistration } from '../types/ui-surface.ts';
-import { AgentRegistrationTopic, type AgentDescriptor } from '../types/agents.ts';
-import { ToolRegistrationTopic, type ToolSchema } from '../types/tools.ts';
+import { SCRRegistrationTopic, type SCRDescriptor } from '../types/scr.ts';
+import type { AgentDescriptor } from '../types/agents.ts';
+import type { ToolSchema } from '../types/tools.ts';
 import { OutboundBroadcastTopic } from '../types/events.ts';
 import type { ActorHealth, HealthStatus } from '../types/health.ts';
 
@@ -200,6 +201,22 @@ export const computeSpawnOrder = (slots: Record<string, { dependsOn?: string[] }
   return result;
 };
 
+const buildUrn = (kind: string, namespace: string, name: string): string => {
+  if (name.startsWith('scr:')) return name;
+  let normNamespace = namespace;
+  let normName = name;
+  if (name.includes('_')) {
+    const idx = name.indexOf('_');
+    normNamespace = name.slice(0, idx);
+    normName = name.slice(idx + 1);
+  } else if (name.includes('.')) {
+    const idx = name.indexOf('.');
+    normNamespace = name.slice(0, idx);
+    normName = name.slice(idx + 1);
+  }
+  return `scr:${kind}:${normNamespace}.${normName}`;
+};
+
 export const createPluginFactory = <
   C = unknown,
   S extends Record<string, SlotDeclaration<C, any>> = Record<string, SlotDeclaration<C, any>>,
@@ -287,13 +304,23 @@ export const createPluginFactory = <
           for (const toolDecl of Object.values(blueprint.tools)) {
             const ref = activeRefs[toolDecl.slot as string];
             if (ref) {
-              ctx.publishRetained(ToolRegistrationTopic, toolDecl.schema.function.name, {
-                name: toolDecl.schema.function.name,
-                schema: toolDecl.schema,
-                ref: ref as ActorRef<any>,
-                ...(toolDecl.mayBeLongRunning ? { mayBeLongRunning: true } : {}),
+              const urn = buildUrn('leaf', blueprint.id, toolDecl.schema.function.name);
+              const descriptor: SCRDescriptor = {
+                urn,
+                kind: 'leaf',
+                description: toolDecl.schema.function.description || '',
+                schema: {
+                  inputSchema: toolDecl.schema.function.parameters as Record<string, any>,
+                },
+                yieldsPending: toolDecl.mayBeLongRunning || false,
+                target: ref as ActorRef<any>,
+                meta: { schema: toolDecl.schema, mayBeLongRunning: toolDecl.mayBeLongRunning },
+              };
+              ctx.publishRetained(SCRRegistrationTopic, urn, {
+                type: 'register',
+                descriptor,
               });
-              activeTools.push(toolDecl.schema.function.name);
+              activeTools.push(urn);
             }
           }
         }
@@ -301,6 +328,15 @@ export const createPluginFactory = <
         // 5. Publish agents
         const activeAgents: string[] = [];
         if (blueprint.agents) {
+          // ⚠️ DEPRECATED compatibility bridge: heuristic slot resolution for agents.
+          // TODO: Replace with explicit `slot` property in AgentDeclaration and remove this in Phase 5.
+          const spawnerRef = Object.entries(activeRefs).find(([k]) =>
+            k.toLowerCase().includes('spawner') ||
+            k.toLowerCase().includes('registry') ||
+            k.toLowerCase().includes('runner') ||
+            k.toLowerCase().includes('manager')
+          )?.[1];
+
           for (const agentDecl of Object.values(blueprint.agents)) {
             const resolvedDeps: Record<string, ActorRef<any>> = {};
             for (const depKey of agentDecl.dependsOn ?? []) {
@@ -312,11 +348,35 @@ export const createPluginFactory = <
             const agentOpts = agentDecl.options(initialConfig, resolvedDeps as any);
             const descriptor = agentDecl.factory(agentOpts);
 
-            ctx.publishRetained(AgentRegistrationTopic, descriptor.mode, {
+            const urn = buildUrn('reasoner', blueprint.id, descriptor.mode);
+            const scrDescriptor: SCRDescriptor = {
+              urn,
+              kind: 'reasoner',
+              description: descriptor.shortDesc || descriptor.displayName || '',
+              schema: {
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    prompt: { type: 'string' },
+                  },
+                  required: ['prompt'],
+                },
+                outputSchema: {
+                  type: 'object',
+                  properties: {
+                    text: { type: 'string' },
+                  },
+                },
+              },
+              target: spawnerRef || (activeRefs['agentRegistry'] ?? activeRefs['sessionManager'] ?? ctx.self),
+              meta: { agentDescriptor: descriptor },
+            };
+
+            ctx.publishRetained(SCRRegistrationTopic, urn, {
               type: 'register',
-              descriptor,
+              descriptor: scrDescriptor,
             });
-            activeAgents.push(descriptor.mode);
+            activeAgents.push(urn);
           }
         }
 
@@ -406,18 +466,18 @@ export const createPluginFactory = <
         }
 
         // 3. Unregister agents (delete retained entry so late joiners do not revive the mode)
-        for (const mode of state.activeAgents) {
-          ctx.deleteRetained(AgentRegistrationTopic, mode, {
-            type: 'unregister',
-            mode,
+        for (const urn of state.activeAgents) {
+          ctx.deleteRetained(SCRRegistrationTopic, urn, {
+            type: 'deregister',
+            urn,
           });
         }
 
         // 4. Tombstone tools
-        for (const toolName of state.activeTools) {
-          ctx.deleteRetained(ToolRegistrationTopic, toolName, {
-            name: toolName,
-            ref: null,
+        for (const urn of state.activeTools) {
+          ctx.deleteRetained(SCRRegistrationTopic, urn, {
+            type: 'deregister',
+            urn,
           });
         }
 
@@ -510,17 +570,17 @@ export const createPluginFactory = <
           });
         }
 
-        for (const toolName of state.activeTools) {
-          ctx.deleteRetained(ToolRegistrationTopic, toolName, {
-            name: toolName,
-            ref: null,
+        for (const urn of state.activeTools) {
+          ctx.deleteRetained(SCRRegistrationTopic, urn, {
+            type: 'deregister',
+            urn,
           });
         }
 
-        for (const mode of state.activeAgents) {
-          ctx.deleteRetained(AgentRegistrationTopic, mode, {
-            type: 'unregister',
-            mode,
+        for (const urn of state.activeAgents) {
+          ctx.deleteRetained(SCRRegistrationTopic, urn, {
+            type: 'deregister',
+            urn,
           });
         }
 
@@ -601,13 +661,23 @@ export const createPluginFactory = <
           for (const toolDecl of Object.values(blueprint.tools)) {
             const ref = activeRefs[toolDecl.slot as string];
             if (ref) {
-              ctx.publishRetained(ToolRegistrationTopic, toolDecl.schema.function.name, {
-                name: toolDecl.schema.function.name,
-                schema: toolDecl.schema,
-                ref: ref as ActorRef<any>,
-                ...(toolDecl.mayBeLongRunning ? { mayBeLongRunning: true } : {}),
+              const urn = buildUrn('leaf', blueprint.id, toolDecl.schema.function.name);
+              const descriptor: SCRDescriptor = {
+                urn,
+                kind: 'leaf',
+                description: toolDecl.schema.function.description || '',
+                schema: {
+                  inputSchema: toolDecl.schema.function.parameters as Record<string, any>,
+                },
+                yieldsPending: toolDecl.mayBeLongRunning || false,
+                target: ref as ActorRef<any>,
+                meta: { schema: toolDecl.schema, mayBeLongRunning: toolDecl.mayBeLongRunning },
+              };
+              ctx.publishRetained(SCRRegistrationTopic, urn, {
+                type: 'register',
+                descriptor,
               });
-              activeTools.push(toolDecl.schema.function.name);
+              activeTools.push(urn);
             }
           }
         }
@@ -615,6 +685,15 @@ export const createPluginFactory = <
         // Agents
         const activeAgents: string[] = [];
         if (blueprint.agents) {
+          // ⚠️ DEPRECATED compatibility bridge: heuristic slot resolution for agents.
+          // TODO: Replace with explicit `slot` property in AgentDeclaration and remove this in Phase 5.
+          const spawnerRef = Object.entries(activeRefs).find(([k]) =>
+            k.toLowerCase().includes('spawner') ||
+            k.toLowerCase().includes('registry') ||
+            k.toLowerCase().includes('runner') ||
+            k.toLowerCase().includes('manager')
+          )?.[1];
+
           for (const agentDecl of Object.values(blueprint.agents)) {
             const resolvedDeps: Record<string, ActorRef<any>> = {};
             for (const depKey of agentDecl.dependsOn ?? []) {
@@ -626,11 +705,35 @@ export const createPluginFactory = <
             const agentOpts = agentDecl.options(newConfig, resolvedDeps as any);
             const descriptor = agentDecl.factory(agentOpts);
 
-            ctx.publishRetained(AgentRegistrationTopic, descriptor.mode, {
+            const urn = buildUrn('reasoner', blueprint.id, descriptor.mode);
+            const scrDescriptor: SCRDescriptor = {
+              urn,
+              kind: 'reasoner',
+              description: descriptor.shortDesc || descriptor.displayName || '',
+              schema: {
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    prompt: { type: 'string' },
+                  },
+                  required: ['prompt'],
+                },
+                outputSchema: {
+                  type: 'object',
+                  properties: {
+                    text: { type: 'string' },
+                  },
+                },
+              },
+              target: spawnerRef || (activeRefs['agentRegistry'] ?? activeRefs['sessionManager'] ?? ctx.self),
+              meta: { agentDescriptor: descriptor },
+            };
+
+            ctx.publishRetained(SCRRegistrationTopic, urn, {
               type: 'register',
-              descriptor,
+              descriptor: scrDescriptor,
             });
-            activeAgents.push(descriptor.mode);
+            activeAgents.push(urn);
           }
         }
 

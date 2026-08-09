@@ -4,6 +4,8 @@ import { Kgraph } from './kgraph.ts'
 import { MemoryConsolidation } from './memory-consolidation.ts'
 import { MemorySupervisor } from './memory-supervisor.ts'
 import { MemoryRecords } from './memory-records.ts'
+import { memoryRecallTool } from './memory-recall.ts'
+import { memoryStoreTool } from './memory-store.ts'
 import { config, type MemoryConfig } from './memory.config.ts'
 
 export default createPluginFactory<MemoryConfig>({
@@ -51,5 +53,9 @@ export default createPluginFactory<MemoryConfig>({
       },
       dependsOn: ['kgraph'],
     },
+  },
+  tools: {
+    recall: { schema: memoryRecallTool.schema, slot: 'memory' },
+    store: { schema: memoryStoreTool.schema, slot: 'memory' },
   },
 })

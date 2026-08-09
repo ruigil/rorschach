@@ -27,6 +27,11 @@ export type SCRDescriptor = {
   tags?: string[]
   yieldsPending?: boolean
   target: ActorRef<any>
+  /**
+   * Temporary metadata carrying legacy Tool/AgentDescriptor schemas.
+   * Required for the backwards-compatibility bridge; decommission in Phase 5.
+   */
+  meta?: any
 }
 
 export type StreamLifecycleType = 'start' | 'chunk' | 'end' | 'error'

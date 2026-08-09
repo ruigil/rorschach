@@ -13,23 +13,23 @@
 ---
 
 ## Phase 1: Central Registry & Dynamic Discovery
-- [ ] **Task 1.1**: Create Registry Configuration & Types (`src/plugins/registry/registry.config.ts`, `src/plugins/registry/types.ts`)
-- [ ] **Task 1.2**: Implement `SCRRegistry` Actor (`src/plugins/registry/registry-actor.ts`)
-- [ ] **Task 1.3**: Implement Node-Local `ResolutionCache` (`src/system/scr/cache.ts`)
-- [ ] **Task 1.4**: Implement Stateless `invokeSCR` Engine (`src/system/scr/invoker.ts`)
-- [ ] **Task 1.5**: Implement Discovery Meta-Tools (`src/plugins/registry/meta-tools.ts`)
-- [ ] **Task 1.6**: Build Registry Plugin Bootstrapper (`src/plugins/registry/registry.plugin.ts`)
-- [ ] **Task 1.7**: Refactor `createPluginFactory` for SCR registrations (`src/system/factory.ts`)
-- [ ] **Task 1.8**: Workflows Startup Scanning Hook (`src/plugins/workflows/workflows.plugin.ts`, `src/plugins/workflows/workflow-store.ts`)
-- [ ] **Task 1.9**: Implement `UserBudgetActor` (`src/plugins/observability/user-budget.ts`)
-- [ ] **Task 1.10**: Implement `UserBudgetSupervisor` (`src/plugins/observability/user-budget.ts`, `src/plugins/observability/observability.plugin.ts`)
-- [ ] **Task 1.11**: Implement `SCRGCSweeper` GC Task (`src/system/scr/gc-sweeper.ts`)
+- [x] **Task 1.1**: Create Registry Configuration & Types (`src/plugins/registry/registry.config.ts`, `src/plugins/registry/types.ts`)
+- [x] **Task 1.2**: Implement `SCRRegistry` Actor (`src/plugins/registry/registry-actor.ts`)
+- [x] **Task 1.3**: Implement Node-Local `ResolutionCache` (`src/system/scr/cache.ts`)
+- [x] **Task 1.4**: Implement Stateless `invokeSCR` Engine (`src/system/scr/invoker.ts`)
+- [x] **Task 1.5**: Implement Discovery Meta-Tools (`src/plugins/registry/meta-tools.ts`)
+- [x] **Task 1.6**: Build Registry Plugin Bootstrapper (`src/plugins/registry/registry.plugin.ts`)
+- [x] **Task 1.7**: Refactor `createPluginFactory` for SCR registrations (`src/system/factory.ts`)
+- [x] **Task 1.8**: Workflows Startup Scanning Hook (`src/plugins/workflows/workflows.plugin.ts`, `src/plugins/workflows/workflow-store.ts`)
+- [x] **Task 1.9**: Implement `UserBudgetActor` (`src/plugins/observability/user-budget.ts`)
+- [x] **Task 1.10**: Implement `UserBudgetSupervisor` (`src/plugins/observability/user-budget.ts`, `src/plugins/observability/observability.plugin.ts`)
+- [x] **Task 1.11**: Implement `SCRGCSweeper` GC Task (`src/system/scr/gc-sweeper.ts`)
 
 ### Checkpoint: Registry & Discovery
-- [ ] Code builds without errors.
-- [ ] Registered tools/agents/workflows publish to `SCRRegistrationTopic` on start.
-- [ ] Local cache matches published registrations dynamically.
-- [ ] UserBudgetSupervisor and GC Sweeper initialize successfully.
+- [x] Code builds without errors.
+- [x] Registered tools/agents/workflows publish to `SCRRegistrationTopic` on start.
+- [x] Local cache matches published registrations dynamically.
+- [x] UserBudgetSupervisor and GC Sweeper initialize successfully.
 
 ---
 
