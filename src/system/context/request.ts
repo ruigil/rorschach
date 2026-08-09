@@ -24,6 +24,14 @@ export type MessageRequest = {
 
   /** Key-value baggage for tracing extensions */
   readonly baggage?: Record<string, string>
+
+  /** SCR execution tracking extensions */
+  readonly depth?: number
+  readonly maxDepth?: number
+  readonly maxTokens?: number
+  readonly maxCostUsd?: number
+  readonly supportsPending?: boolean
+  readonly streamTo?: string
 }
 
 // ─── Standard Proxy-Friendly Header Keys ───
@@ -35,6 +43,14 @@ export const HEADER_CLIENT_ID = 'x-client-id'
 export const HEADER_TIMEZONE = 'x-timezone'
 export const HEADER_SOURCE = 'x-client-source'
 export const HEADER_MESSAGE_REQUEST = 'x-message-request'
+
+// SCR execution header keys
+export const HEADER_SCR_DEPTH = 'x-scr-depth'
+export const HEADER_SCR_MAX_DEPTH = 'x-scr-max-depth'
+export const HEADER_SCR_MAX_TOKENS = 'x-scr-max-tokens'
+export const HEADER_SCR_MAX_COST_USD = 'x-scr-max-cost-usd'
+export const HEADER_SCR_SUPPORTS_PENDING = 'x-scr-supports-pending'
+export const HEADER_SCR_STREAM_TO = 'x-scr-stream-to'
 
 /**
  * Helper to determine if an object is a MessageRequest vs raw MessageHeaders string record.
@@ -68,6 +84,12 @@ export const createMessageRequest = (partial?: Partial<MessageRequest>): Message
     timezone: partial?.timezone,
     source: partial?.source || 'system',
     baggage: partial?.baggage,
+    depth: partial?.depth !== undefined ? partial.depth : 0,
+    maxDepth: partial?.maxDepth !== undefined ? partial.maxDepth : 10,
+    maxTokens: partial?.maxTokens,
+    maxCostUsd: partial?.maxCostUsd,
+    supportsPending: partial?.supportsPending,
+    streamTo: partial?.streamTo,
   }
 }
 
@@ -90,6 +112,13 @@ export const encodeMessageRequest = (
   if (req.timezone) headers[HEADER_TIMEZONE] = req.timezone
   if (req.source) headers[HEADER_SOURCE] = req.source
 
+  if (req.depth !== undefined) headers[HEADER_SCR_DEPTH] = String(req.depth)
+  if (req.maxDepth !== undefined) headers[HEADER_SCR_MAX_DEPTH] = String(req.maxDepth)
+  if (req.maxTokens !== undefined) headers[HEADER_SCR_MAX_TOKENS] = String(req.maxTokens)
+  if (req.maxCostUsd !== undefined) headers[HEADER_SCR_MAX_COST_USD] = String(req.maxCostUsd)
+  if (req.supportsPending !== undefined) headers[HEADER_SCR_SUPPORTS_PENDING] = String(req.supportsPending)
+  if (req.streamTo !== undefined) headers[HEADER_SCR_STREAM_TO] = req.streamTo
+
   if (req.permission) {
     headers[HEADER_PERMISSIONS] = JSON.stringify(req.permission)
   }
@@ -106,6 +135,12 @@ export const encodeMessageRequest = (
     timezone: req.timezone,
     source: req.source,
     baggage: req.baggage,
+    depth: req.depth,
+    maxDepth: req.maxDepth,
+    maxTokens: req.maxTokens,
+    maxCostUsd: req.maxCostUsd,
+    supportsPending: req.supportsPending,
+    streamTo: req.streamTo,
   })
 
   return headers
@@ -133,6 +168,12 @@ export const decodeMessageRequest = (headers: Record<string, string> = {}): Mess
         timezone: raw.timezone || headers[HEADER_TIMEZONE],
         source: raw.source || headers[HEADER_SOURCE] || 'system',
         baggage: raw.baggage,
+        depth: raw.depth,
+        maxDepth: raw.maxDepth,
+        maxTokens: raw.maxTokens,
+        maxCostUsd: raw.maxCostUsd,
+        supportsPending: raw.supportsPending,
+        streamTo: raw.streamTo,
       }
     } catch {
       // Fall through
@@ -148,6 +189,13 @@ export const decodeMessageRequest = (headers: Record<string, string> = {}): Mess
   const timezone = headers[HEADER_TIMEZONE]
   const source = headers[HEADER_SOURCE] || 'system'
 
+  const depth = headers[HEADER_SCR_DEPTH] ? parseInt(headers[HEADER_SCR_DEPTH], 10) : 0
+  const maxDepth = headers[HEADER_SCR_MAX_DEPTH] ? parseInt(headers[HEADER_SCR_MAX_DEPTH], 10) : 10
+  const maxTokens = headers[HEADER_SCR_MAX_TOKENS] ? parseInt(headers[HEADER_SCR_MAX_TOKENS], 10) : undefined
+  const maxCostUsd = headers[HEADER_SCR_MAX_COST_USD] ? parseFloat(headers[HEADER_SCR_MAX_COST_USD]) : undefined
+  const supportsPending = headers[HEADER_SCR_SUPPORTS_PENDING] === 'true'
+  const streamTo = headers[HEADER_SCR_STREAM_TO]
+
   return {
     traceId,
     spanId,
@@ -157,6 +205,12 @@ export const decodeMessageRequest = (headers: Record<string, string> = {}): Mess
     clientId,
     timezone,
     source,
+    depth,
+    maxDepth,
+    maxTokens,
+    maxCostUsd,
+    supportsPending,
+    streamTo,
   }
 }
 

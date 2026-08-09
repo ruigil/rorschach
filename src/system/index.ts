@@ -2,6 +2,7 @@
 export { AgentSystem } from './actor/system.ts'
 export { ask } from './actor/ask.ts'
 export { invokeTool, defineTool, parseToolArgs, applyToolFilter } from './agent/tool-utils.ts'
+export { validateSchema } from './schema-validator.ts'
 export { onLifecycle, onMessage } from './actor/match.ts'
 export { watchTopic } from './actor/services.ts'
 export { createPluginFactory } from './factory.ts'
