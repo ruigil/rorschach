@@ -207,9 +207,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 2.1: Implement Direct Leaf Tool Routing
 * **Description:** Update the `invokeSCR` function to direct leaf kind requests to the tool's registered direct `ActorRef`.
 * **Acceptance criteria:**
-  - [ ] Leaf tool execution is correctly triggered via `invokeSCR`.
+  - [x] Leaf tool execution is correctly triggered via `invokeSCR`.
 * **Verification:**
-  - [ ] Integration tests verify invoking tool URNs returns terminal results.
+  - [x] Integration tests verify invoking tool URNs returns terminal results.
 * **Dependencies:** Task 1.7
 * **Files likely touched:**
   - `src/system/scr/invoker.ts`
@@ -218,9 +218,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 2.2: Add Input Schema Validation Membrane
 * **Description:** Add input validation to the tool delegate wrapper using the `validateSchema` utility.
 * **Acceptance criteria:**
-  - [ ] Invoking a tool with incorrect types returns an immediate `SCRReply.error`.
+  - [x] Invoking a tool with incorrect types returns an immediate `SCRReply.error`.
 * **Verification:**
-  - [ ] Unit tests verify validation rejection.
+  - [x] Unit tests verify validation rejection.
 * **Dependencies:** Task 0.3, Task 2.1
 * **Files likely touched:**
   - `src/system/scr/invoker.ts`
@@ -230,9 +230,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 2.3: Add Output Schema Validation Membrane
 * **Description:** Add output validation to ensure tool execution returns expected data formats.
 * **Acceptance criteria:**
-  - [ ] Incorrect return structures from tool execution trigger an immediate `SCRReply.error`.
+  - [x] Incorrect return structures from tool execution trigger an immediate `SCRReply.error`.
 * **Verification:**
-  - [ ] Verify validation errors are generated if output data doesn't match schema.
+  - [x] Verify validation errors are generated if output data doesn't match schema.
 * **Dependencies:** Task 2.2
 * **Files likely touched:**
   - `src/system/scr/invoker.ts`
@@ -242,8 +242,8 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 ---
 
 ### Checkpoint: Leaf Integration
-- [ ] Invoking leaf URNs works successfully.
-- [ ] Incorrect input/output payloads are rejected at the membrane boundary.
+- [x] Invoking leaf URNs works successfully.
+- [x] Incorrect input/output payloads are rejected at the membrane boundary.
 
 ---
 

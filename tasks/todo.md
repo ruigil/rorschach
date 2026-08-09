@@ -34,13 +34,13 @@
 ---
 
 ## Phase 2: Leaf (Tool) Integration
-- [ ] **Task 2.1**: Implement Direct Leaf Tool Routing (`src/system/scr/invoker.ts`)
-- [ ] **Task 2.2**: Add Input Schema Validation Membrane (`src/system/scr/invoker.ts`, `src/system/agent/tool-utils.ts`)
-- [ ] **Task 2.3**: Add Output Schema Validation Membrane (`src/system/scr/invoker.ts`, `src/system/agent/tool-utils.ts`)
+- [x] **Task 2.1**: Implement Direct Leaf Tool Routing (`src/system/scr/invoker.ts`)
+- [x] **Task 2.2**: Add Input Schema Validation Membrane (`src/system/scr/invoker.ts`, `src/system/agent/tool-utils.ts`)
+- [x] **Task 2.3**: Add Output Schema Validation Membrane (`src/system/scr/invoker.ts`, `src/system/agent/tool-utils.ts`)
 
 ### Checkpoint: Leaf Integration
-- [ ] Invoking leaf URNs works successfully.
-- [ ] Incorrect input/output payloads are rejected at the membrane boundary.
+- [x] Invoking leaf URNs works successfully.
+- [x] Incorrect input/output payloads are rejected at the membrane boundary.
 
 ---
 

@@ -25,7 +25,7 @@ describe('SCR Phase 1: Registry, Cache, and invokeSCR Gating', () => {
 
     const descriptor: SCRDescriptor = {
       urn: 'scr:leaf:test.hello',
-      kind: 'leaf',
+      kind: 'reasoner',
       description: 'Test capability',
       schema: {},
       target: mockRef,
@@ -79,7 +79,7 @@ describe('SCR Phase 1: Registry, Cache, and invokeSCR Gating', () => {
 
     const descriptor: SCRDescriptor = {
       urn: 'scr:leaf:test.hello',
-      kind: 'leaf',
+      kind: 'reasoner',
       description: 'Test hello',
       schema: {},
       target: mockRef,
@@ -118,7 +118,7 @@ describe('SCR Phase 1: Registry, Cache, and invokeSCR Gating', () => {
 
     const descriptor: SCRDescriptor = {
       urn: 'scr:leaf:test.hello',
-      kind: 'leaf',
+      kind: 'reasoner',
       description: 'Test hello',
       schema: {},
       target: mockRef,
@@ -168,7 +168,7 @@ describe('SCR Phase 1: Registry, Cache, and invokeSCR Gating', () => {
 
     const descriptor: SCRDescriptor = {
       urn: 'scr:leaf:test.hello',
-      kind: 'leaf',
+      kind: 'reasoner',
       description: 'Test hello',
       schema: {},
       target: mockRef,
@@ -235,7 +235,7 @@ describe('SCR Phase 1: Registry, Cache, and invokeSCR Gating', () => {
 
     const descriptor: SCRDescriptor = {
       urn: 'scr:leaf:test.hello',
-      kind: 'leaf',
+      kind: 'reasoner',
       description: 'Test hello',
       schema: {},
       target: mockRef,
