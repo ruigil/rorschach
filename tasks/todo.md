@@ -80,14 +80,79 @@
 ---
 
 ## Phase 5: Zero Backward Compatibility (End State)
-- [ ] **Task 5.1**: WebSocket Frame Ingress Routing in `WorkflowManager` (`src/plugins/workflows/workflow-manager.ts`, `src/plugins/workflows/workflows.plugin.ts`)
-- [ ] **Task 5.2**: HTTP Ingress Routing in `WorkflowManager` (`src/plugins/workflows/workflows.routes.ts`)
-- [ ] **Task 5.3**: Align Frontend WebSocket Dispatcher (`src/frontend/`)
-- [ ] **Task 5.4**: Align Frontend UI Panels (`src/plugins/workflows/ui/`, `src/frontend/`)
-- [ ] **Task 5.5**: Deprecate Legacy Topics and Messages (`src/types/tools.ts`, `src/types/agents.ts`)
-- [ ] **Task 5.6**: Delete Legacy Actors and Verification (`src/system/agent/dynamic-agent.ts`, `src/plugins/cognitive/agent-registry.ts`, `src/system/factory.ts`)
+
+> Audit note (2026-08-13): gaps found beyond the original list — (a) the agent loop/`invokeTool`
+> engine is still legacy (Task 5.11); (b) notebook/googleapis/coding/workflows tools have NO
+> `scr:leaf:*` descriptors (part of Task 5.1); (c) `SessionManager` still runs per-user session
+> actors (Task 5.12); (d) `_toolRegistered`/`_toolUnregistered` + registry meta-tools shim +
+> dangling `cognitive.agents.*` protocol remain (Task 5.13); (e) `dynamic-agent.ts` and
+> `agent-registry.ts` are already deleted, so Task 5.10 is re-scoped.
+
+> Execution order (see plan "Phase 5 Execution Order & Dependency Lanes"): do **5.1+5.2 together**,
+> then **5.11 → 5.13 → 5.8 → 5.10**; run 5.3 (after 5.1+5.2; loop tests after 5.11), 5.12 (after
+> 5.11), and 5.9 (anywhere before 5.10) in parallel. Never delete a legacy type the agent loop still
+> imports; never convert a tool actor without removing the adapter in the same pass.
+
+- [ ] **Task 5.1**: Migrate Tool Actors to Unified SCR Protocol (`src/plugins/tools/`, `src/plugins/notebook/tools/`, `src/plugins/googleapis/tools/`, `src/plugins/coding/`, `src/plugins/config/`, `src/plugins/memory/`, `src/plugins/workflows/workflow-tools.ts`)
+  - [ ] Convert `tools` plugin actors (web-search, vision, audio, video, cron, pdf, fetch-file, tool-status) to `SCRInvokeMsg`/`SCRReply` (`msg.input`, urn branching, `result`/`error`/`pending`).
+  - [ ] Convert `notebook/tools/*` (journal, search, todos, tracker) to SCR protocol.
+  - [ ] Convert `googleapis/tools/*` (calendar, drive, gmail, youtube) to SCR protocol (keep auth ask).
+  - [ ] Convert `coding` page-tools.ts + project-shell.ts (keep HTTP `http.request` path).
+  - [ ] Convert `config/manager.ts` and `memory/*` message unions off `ToolInvokeMsg`.
+  - [ ] Convert `workflows/workflow-tools.ts` handler to `msg.input` + SCR replies.
+  - [ ] **Add SCR leaf descriptor registration** (`blueprint.tools` or manual `SCRRegistrationTopic` publish, direct actor-ref target) for notebook/googleapis/coding/workflows tools — currently only agent `ToolCollection`s exist and no `scr:leaf:*` URNs resolve.
+- [ ] **Task 5.2**: Remove `SCRToolAdapterActor` Bridge (`src/system/factory.ts`)
+  - [ ] Delete `SCRToolAdapterActor` (factory.ts:13–57).
+  - [ ] Remove adapter spawn at factory.ts:357 and :712; set `descriptor.target` to the direct tool ref.
+- [ ] **Task 5.3**: Update Tool Unit and Integration Tests (`src/tests/`)
+  - [ ] Convert audio-actor, fetch-file, vision-actor, tools-plugin, tool-status, cron-jobs, googleapis-drive, memory-store-concurrent, project-shell tests to `ask<SCRInvokeMsg, SCRReply>`.
+  - [ ] Convert config-unified-integration, node-secrets-audit, plugins tests (legacy `{ type:'invoke' }` probes).
+  - [ ] Convert workflow-io-artifacts, workflows-store, workflow-run-executor, workflow-task-executor mocks to SCR (URN descriptors instead of `ToolCollection`).
+  - [ ] Fix `scr-phase3.test.ts` mock leaf actors: `ActorDef<ToolMsg>` → `ActorDef<SCRInvokeMsg>` replying `result`/`pending`; drop legacy `Tool` injection into `internalTools`.
+  - [ ] Rewrite `agent-loop.test.ts` for URN-based loop (see Task 5.11).
+  - [ ] Delete `src/tests/invoke-tool.test.ts` (tests the retired `invokeTool` primitive).
+- [x] **Task 5.4**: WebSocket Frame Ingress Routing in `WorkflowManager` (`src/plugins/workflows/workflow-manager.ts`, `src/plugins/workflows/workflows.plugin.ts`)
+- [x] **Task 5.5**: HTTP Ingress Routing in `WorkflowManager` (`src/plugins/workflows/workflows.routes.ts`)
+- [x] **Task 5.6**: Align Frontend WebSocket Dispatcher (`src/frontend/`)
+- [x] **Task 5.7**: Align Frontend UI Panels (`src/plugins/workflows/ui/`, `src/frontend/`)
+- [ ] **Task 5.8**: Deprecate Legacy Topics and Messages (`src/types/tools.ts`, `src/types/agents.ts`)
+  - [ ] Remove protocol types `ToolInvokeMsg`, `ToolMsg`, `ToolReply`, `ToolFinalReply`, `ToolCollection`, `Tool` (keep `ToolSchema`, `ToolFilter`, `ToolResultPayload`, `ToolSource`, `JobRegistryTopic`).
+  - [ ] `src/types/agents.ts`: remove `AgentDescriptor.internalTools?: Tool[]` (→ `agentSCRs` URN preload) and `AgentCatalogEvent`.
+  - [ ] Remove dead import `ToolMsg`/`ToolReply` in `src/system/scr/invoker.ts:9`.
+  - [ ] Remove `_toolRegistered`/`_toolUnregistered` from cognitive/notebook/coding/googleapis/workflows type unions.
+  - [ ] Remove `SwitchAgentTopic`/`SwitchAgentEvent` (`agent.switch`) from `cognitive/types.ts`.
+  - [ ] Fix stale `_toolReg` union in `src/plugins/observability/types.ts:73–74` (actor uses `_scrReg`).
+  - [ ] Purge followed by `rg` zero-match check + `bun run typecheck`.
+- [ ] **Task 5.9**: Clean Leftover Switch Mode Compatibility (`src/plugins/notebook/coach-agent.ts`, `src/system/permissions/system-tools.ts`, `src/tests/permissions-evaluator.test.ts`, `src/frontend/shell/actions.ts`, `src/frontend/webkit/runtime/connection-service.ts`)
+  - [ ] Remove `'cognitive_switch_mode'` from `INFRASTRUCTURE_CALLBACKS` (keep `workflows_task_complete`/`workflows_task_block`).
+  - [ ] Remove `permissions-evaluator.test.ts:9` assertion.
+  - [ ] Remove `switch_mode` prompt line in coach-agent.ts:30 (→ recursive `scr:agent:*` invocation guidance).
+  - [ ] Remove `cognitive.switchMode` send in shell/actions.ts `switchMode`, connection-service.ts:75, dispatcher `modeChanged`; decide tab behavior (see plan "Open decision for implementer").
+  - [ ] Rebuild bundles: `bun run build` (static/js are artifacts — never hand-edit).
+- [ ] **Task 5.10**: Delete Legacy Actors and Verification (`src/system/agent/tool-utils.ts`, `src/system/index.ts`, `src/system/agent/agent-runner.ts`) — NOTE: `dynamic-agent.ts`/`agent-registry.ts` already deleted
+  - [ ] Remove `invokeTool` primitive (+ `src/tests/invoke-tool.test.ts`); update `system/index.ts` exports.
+  - [ ] Drop or SCR-ify `scrCompleteHelperActor` (agent-runner.ts:43–63).
+  - [ ] Final: `bun run typecheck`, `bun test`, `bun run build` all green.
+- [ ] **Task 5.11**: Convert `agentLoop` & Tool Invocation to SCR-native `invokeSCR` (`src/system/agent/agent-loop.ts`)
+  - [ ] `agent-loop.ts`: replace `ToolCollection`/`invokeTool`/`ToolReply` with `invokeSCR(urn, input)`; `LoopToolResultMsg.reply` → `SCRReply`; drop legacy dynamic-binding block (:515–549) and `_toolRegistered` behavior.
+  - [ ] `agent-runner.ts`: build tools from registered SCR descriptors + `agentSCRs` (not `internalTools`); `scr_complete` becomes SCR-native; `_toolResult` branches on `SCRReply`.
+  - [ ] `spawner.ts` `_jobResumed`: reply `result`/`error` (SCRReply) instead of `toolResult`/`toolError`.
+  - [ ] Update workflow sub-agent tool injection (`workflow-task-executor.ts`, `workflow-run-executor.ts`).
+- [ ] **Task 5.12**: Purge `SessionManager` Legacy Session Model (`src/plugins/cognitive/session-manager.ts`)
+  - [ ] Drop per-user `ContextStore` spawning + `Session` struct + `JobRegistryTopic` teardown subscription; keep WS ingress → request-scoped `invokeSCR('scr:reasoner:cognitive.chatbot')`.
+  - [ ] Delete `context-store.ts` if unneeded; clean `cognitive/types.ts` (`defaultMode`, `SwitchAgentEvent`) and plugin description.
+- [ ] **Task 5.13**: Remove Runtime `_toolRegistered`/`_toolUnregistered`, Registry Meta-Tools Shim & Dangling Catalog Protocol
+  - [ ] Purge `_toolRegistered`/`_toolUnregistered` from all plugin type unions + `agent-loop` + `agent-loop.test.ts`.
+  - [ ] `registry/meta-tools.ts`: delete legacy `toolName`/`arguments` → `toolResult` shim (SCR-only replies).
+  - [ ] Remove `cognitive.agents.request` (r-agents-list.ts:122) / `cognitive.agents.updated` (dispatcher.ts:67) and `CognitiveFrameType` entries in `src/types/events.ts`.
 
 ### Checkpoint: Complete Transition
-- [ ] No legacy agent/tool registration elements exist.
+- [ ] All tool actors and tests migrated to new SCR protocol (5.1, 5.3).
+- [ ] Agent loop invokes every capability via `invokeSCR`; `ToolCollection`/`ToolReply`/`invokeTool` gone (5.11).
+- [ ] Notebook/googleapis/coding/workflows tools are first-class `scr:leaf:*` capabilities (5.1).
+- [ ] Compatibility adapters and `SCRToolAdapterActor` bridge completely removed (5.2).
+- [ ] `SessionManager` is request-scoped only — no per-user session actors (5.12).
+- [ ] Leftover `cognitive_switch_mode` references and tests cleaned (5.9).
+- [ ] No legacy agent/tool registration elements exist (5.8, 5.13).
 - [ ] Zero backward compatibility end-state achieved.
-- [ ] System builds, tests pass, and app functions end-to-end.
+- [ ] System builds (`bun run build`), tests pass (`bun test`), typechecks pass (`bun run typecheck`), and app functions end-to-end.
