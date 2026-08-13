@@ -3,7 +3,7 @@ import type { ToolInvokeMsg, ToolMsg, ToolSchema, Tool, JobLifecycleEvent } from
 import type { LlmProviderMsg, ApiMessage } from '../../types/llm.ts'
 import type { LoopMsg } from '../../system/index.ts'
 import type { MessageAttachment, HttpWsFrameEvent } from '../../types/events.ts'
-import type { ContextSnapshotEvent, AgentRegistrationEvent } from '../../types/agents.ts'
+import type { ContextSnapshotEvent } from '../../types/agents.ts'
 import type { SCRReply } from '../../types/scr.ts'
 
 export type WorkflowTask = {
@@ -200,35 +200,7 @@ export type AgentModeSummary = {
   shortDesc: string
 }
 
-export type WorkflowRunnerReply =
-  | { ok: true; run: WorkflowRunState }
-  | { ok: true; runs: WorkflowRunState[] }
-  | { ok: true; executionTools: ExecutionToolSummary[] }
-  | { ok: true; agentModes: AgentModeSummary[] }
-  | { ok: true; stream: ReadableStream<Uint8Array>; mimeType?: string }
-  | { ok: false; error: string; status?: number }
 
-import type { HttpRequestMsg } from '../../types/routes.ts'
-import type { PermissionContext } from '../../system/permissions/types.ts'
-
-export type WorkflowRunnerMsg =
-  | HttpRequestMsg
-  | { type: 'start'; run: WorkflowRunState; workflow: Workflow; replyTo: ActorRef<WorkflowRunnerReply>; permission?: PermissionContext }
-  | { type: 'list'; userId: string; replyTo: ActorRef<WorkflowRunnerReply> }
-  | { type: 'listExecutionTools'; replyTo: ActorRef<WorkflowRunnerReply> }
-  | { type: 'listAgentModes'; replyTo: ActorRef<WorkflowRunnerReply> }
-  | { type: 'get'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
-  | { type: 'getArtifact'; userId: string; key: string; replyTo: ActorRef<WorkflowRunnerReply> }
-  | { type: 'resume'; userId: string; runId: string; replyTo: ActorRef<WorkflowRunnerReply> }
-  | { type: '_reply'; replyTo: ActorRef<WorkflowRunnerReply>; reply: WorkflowRunnerReply; runId?: string; spawnedRef?: ActorRef<WorkflowRunExecutorMsg> }
-  | { type: '_toolRegistered'; tool: Tool }
-  | { type: '_toolUnregistered'; name: string }
-  | { type: '_agentRegistration'; event: AgentRegistrationEvent }
-  | { type: '_runUpdated'; event: WorkflowEvent }
-  | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
-  | { type: '_wsFrame'; event: HttpWsFrameEvent }
-  | { type: '_persistenceRef'; ref: ActorRef<any> | null }
-  | { type: '_done' }
 
 export type WorkflowRunExecutorReply =
   | { ok: true; run: WorkflowRunState }
@@ -263,9 +235,6 @@ export type WorkflowTaskExecutorMsg =
     } | {
       type: '_persistenceRef'
       ref: ActorRef<any> | null
-    } | {
-      type: '_agentRegistration'
-      event: AgentRegistrationEvent
     }>
   | ToolInvokeMsg
   | { type: '_scrReply'; taskId: string; reply: SCRReply }

@@ -3,13 +3,11 @@ import type { ActorRef } from '../../system/index.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { type UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import type { ToolMsg, ToolCollection } from '../../types/tools.ts'
-import { WorkflowRunner } from './workflow-runner.ts'
 import { WorkflowManager } from './workflow-manager.ts'
 import { WorkflowsAgentDescriptor } from './workflows-agent.ts'
 import { WorkflowToolsActor, workflowControlTools } from './workflow-tools.ts'
 import { buildWorkflowsRoutes } from './workflows.routes.ts'
 import { config, defaultConfig, type WorkflowsConfig } from './workflows.config.ts'
-import type { WorkflowRunnerMsg } from './types.ts'
 import { OperatorSpawner } from './operator-spawner.ts'
 
 const buildWorkflowsTools = (toolsRef: ActorRef<ToolMsg>): ToolCollection => {
@@ -39,15 +37,6 @@ export default createPluginFactory<WorkflowsConfig>({
   description: 'Workflows plugin: design and execute saved workflow DAGs',
   configDescriptor: config,
   slots: {
-    runner: {
-      factory: (cfg) => {
-        return WorkflowRunner({
-          llmRef: null,
-          model: cfg.agent.model,
-          maxToolLoops: cfg.agent.maxToolLoops ?? 10,
-        })
-      },
-    },
     manager: {
       factory: (cfg) => {
         return WorkflowManager({
@@ -58,9 +47,9 @@ export default createPluginFactory<WorkflowsConfig>({
     },
     tools: {
       factory: (_cfg, deps) => WorkflowToolsActor({
-        workflowRunnerRef: deps.runner as ActorRef<WorkflowRunnerMsg>,
+        workflowRunnerRef: deps.manager as ActorRef<any>,
       }),
-      dependsOn: ['runner'],
+      dependsOn: ['manager'],
     },
     operatorSpawner: {
       factory: () => OperatorSpawner(),
@@ -69,6 +58,7 @@ export default createPluginFactory<WorkflowsConfig>({
 
   agents: {
     workflows: {
+      slot: 'manager',
       factory: WorkflowsAgentDescriptor,
       options: (cfg, deps) => ({
         model: cfg.agent.model,
@@ -80,7 +70,7 @@ export default createPluginFactory<WorkflowsConfig>({
     },
   },
   routes: (cfg, deps) => {
-    return buildWorkflowsRoutes(deps.runner as ActorRef<WorkflowRunnerMsg> | null)
+    return buildWorkflowsRoutes(deps.manager as ActorRef<any>)
   },
   uiSurface: workflowsSurfaceRegistration,
 })

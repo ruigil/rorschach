@@ -28,8 +28,7 @@ export type SCRDescriptor = {
   yieldsPending?: boolean
   target: ActorRef<any>
   /**
-   * Temporary metadata carrying legacy Tool/AgentDescriptor schemas.
-   * Required for the backwards-compatibility bridge; decommission in Phase 5.
+   * Optional metadata carrying extension properties for capabilities (e.g. schemas, model configs).
    */
   meta?: any
 }

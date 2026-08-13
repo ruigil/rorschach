@@ -11,7 +11,6 @@ import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import { ContextStore, type ContextStoreMsg } from './context-store.ts'
 import { SessionLifecycleTopic } from '../../types/session.ts'
 import { JobRegistryTopic, type JobLifecycleEvent } from '../../types/tools.ts'
-import type { AgentRegistryMsg } from './agent-registry.ts'
 import type { StreamChunk, SCRReply } from '../../types/scr.ts'
 import { invokeSCR } from '../../system/scr/invoker.ts'
 import { requestStorage } from '../../system/context/request.ts'
@@ -39,7 +38,6 @@ type SessionManagerState = {
   sessions:         Record<string, Session>         // userId → Session
   activeInterfaces: Record<string, Set<'http' | 'signal' | 'cli'>> // userId → Set of active interfaces
   activeJobs:       Record<string, { userId: string }> // jobId → info (to track when it is safe to tear down session)
-  agentRegistryRef: ActorRef<AgentRegistryMsg> | null
   llmRef:           ActorRef<LlmProviderMsg> | null
 }
 
@@ -47,7 +45,6 @@ const initialSessionManagerState = (): SessionManagerState => ({
   sessions:         {},
   activeInterfaces: {},
   activeJobs:       {},
-  agentRegistryRef: null,
   llmRef:           null,
 })
 
@@ -55,7 +52,6 @@ const initialSessionManagerState = (): SessionManagerState => ({
 
 export type SessionManagerOptions = {
   llmRef:              ActorRef<LlmProviderMsg>
-  agentRegistryRef:    ActorRef<AgentRegistryMsg>
   defaultMode:         string
   contextWindowHours?: number
   persistContext?:     boolean
@@ -109,7 +105,7 @@ const tryDestroySession = (
 export const SessionManager = (
   options: SessionManagerOptions,
 ): ActorDef<SessionManagerMsg, SessionManagerState> => {
-  const { llmRef, agentRegistryRef, defaultMode, contextWindowHours, persistContext = false } = options
+  const { llmRef, defaultMode, contextWindowHours, persistContext = false } = options
 
   return {
     initialState: initialSessionManagerState,
@@ -119,7 +115,7 @@ export const SessionManager = (
         ctx.subscribe(InboundMessageTopic,   e => ({ type: '_message'      as const, text: e.text, attachments: e.attachments }))
         ctx.subscribe(JobRegistryTopic,      e => ({ type: '_jobRegistry'  as const, event: e }))
         ctx.subscribe(LlmProviderTopic,      event => ({ type: '_llmProvider' as const, ref: event.ref }))
-        return { state: { ...state, agentRegistryRef: state.agentRegistryRef ?? agentRegistryRef, llmRef: state.llmRef ?? llmRef } }
+        return { state: { ...state, llmRef: state.llmRef ?? llmRef } }
       },
 
       watchStatus: (state, event, ctx) => {
@@ -275,84 +271,25 @@ export const SessionManager = (
               reply: { type: 'error', error: String(error) },
             })
           )
-        } else if (state.agentRegistryRef) {
-          // ⚠️ TEMPORARY COMPATIBILITY FALLBACK: Legacy AgentRegistry Message Routing
-          // Falls back to routing to legacy mode-based session agents if URN is not registered.
-          // Decommission and remove in Phase 5 when legacy agent registry is fully deleted (Task 5.5).
-          ctx.send(state.agentRegistryRef, {
-            type: 'routeMessage',
-            text: msg.text,
-            attachments: msg.attachments,
-          })
+        } else {
+          ctx.log.error('Root chatbot agent URN scr:reasoner:cognitive.chatbot is not registered!')
         }
         return { state }
       },
 
-      // ⚠️ TEMPORARY COMPATIBILITY BRIDGE: StreamChunk to OutboundUserMessageTopic Translator
-      // Maps structured StreamChunk event payloads from SCR runs into legacy JSON frames 
-      // expected by client WebSocket/HTTP connections.
-      // Decommission and remove in Phase 5 when the frontend parses StreamChunks directly (Task 5.3).
       _streamChunk: (state, msg, ctx) => {
         const { userId, event } = msg
-        if (event.type === 'start') {
-          ctx.publish(OutboundUserMessageTopic, {
-            userId,
-            text: JSON.stringify({ type: 'start' }),
-          })
-        } else if (event.type === 'chunk') {
-          const chunk = (event as any).chunk
-          if (chunk.kind === 'text') {
-            ctx.publish(OutboundUserMessageTopic, {
-              userId,
-              text: JSON.stringify({ type: 'chunk', text: chunk.text }),
-            })
-          } else if (chunk.kind === 'reasoning') {
-            ctx.publish(OutboundUserMessageTopic, {
-              userId,
-              text: JSON.stringify({ type: 'reasoningChunk', text: chunk.text }),
-            })
-          }
-        } else if (event.type === 'end') {
-          ctx.publish(OutboundUserMessageTopic, {
-            userId,
-            text: JSON.stringify({ type: 'done' }),
-          })
-        } else if (event.type === 'error') {
-          ctx.publish(OutboundUserMessageTopic, {
-            userId,
-            text: JSON.stringify({ type: 'error', text: event.error }),
-          })
-        }
+        ctx.publish(OutboundUserMessageTopic, {
+          userId,
+          text: JSON.stringify(event),
+        })
         return { state }
       },
 
-      // ⚠️ TEMPORARY COMPATIBILITY BRIDGE: Cleanup for invokeSCR runner replies
-      // Cleans up local stream topics and translates end-of-turn metadata.
-      // Decommission and remove in Phase 5 when local session stream translation is deprecated.
       _scrReply: (state, msg, ctx) => {
-        const { userId, streamToTopic, reply } = msg
-
+        const { streamToTopic } = msg
         ctx.unsubscribe(createTopic<StreamChunk>(streamToTopic), streamToTopic)
         ctx.deleteTopic(createTopic<StreamChunk>(streamToTopic))
-
-        if (reply.type === 'error') {
-          ctx.publish(OutboundUserMessageTopic, {
-            userId,
-            text: JSON.stringify({ type: 'error', text: reply.error }),
-          })
-        } else if (reply.type === 'pending') {
-          ctx.publish(OutboundUserMessageTopic, {
-            userId,
-            text: JSON.stringify({
-              type: 'chunk',
-              text: reply.placeholderText ?? `Background job started (jobId=${reply.jobId}).`
-            }),
-          })
-          ctx.publish(OutboundUserMessageTopic, {
-            userId,
-            text: JSON.stringify({ type: 'done' }),
-          })
-        }
         return { state }
       },
 

@@ -52,7 +52,6 @@ export {
   type ContextView,
 } from './agent/context-assembly.ts'
 
-export { DynamicAgentActor } from './agent/dynamic-agent.ts'
 export { AgentSpawner } from './agent/spawner.ts'
 export { SCRAgentRunner } from './agent/agent-runner.ts'
 

@@ -613,8 +613,8 @@ describe('SCR Phase 3: Reasoner (Agent) SCR Conversion', () => {
     console.log("RECEIVED FRAMES:", JSON.stringify(receivedFrames, null, 2))
     expect(receivedFrames.length).toBeGreaterThanOrEqual(3)
     expect(receivedFrames[0].type).toBe('start')
-    expect(receivedFrames.some(f => f.type === 'chunk' && f.text === 'Thinking...')).toBe(true)
-    expect(receivedFrames[receivedFrames.length - 1].type).toBe('done')
+    expect(receivedFrames.some(f => f.type === 'chunk' && f.chunk?.text === 'Thinking...')).toBe(true)
+    expect(receivedFrames[receivedFrames.length - 1].type).toBe('end')
 
     await system.shutdown()
   })

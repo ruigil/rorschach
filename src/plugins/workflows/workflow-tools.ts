@@ -4,11 +4,10 @@ import type { ToolInvokeMsg, ToolReply, ToolMsg } from '../../types/tools.ts'
 import { WorkflowEventTopic } from './types.ts'
 import type {
   Workflow,
-  WorkflowRunnerMsg,
-  WorkflowRunnerReply,
   WorkflowTask,
   WorkflowValueSpec,
 } from './types.ts'
+import type { WorkflowManagerMsg } from './workflow-manager.ts'
 import { getWorkflow, listWorkflows, saveWorkflow, updateWorkflow, deleteWorkflow, createWorkflowRun } from './workflow-store.ts'
 import { validateWorkflow } from './validation.ts'
 import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
@@ -236,7 +235,7 @@ const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch:
 const toolError = (error: string): ToolReply => ({ type: 'toolError', error })
 
 export type WorkflowToolDeps = {
-  workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
+  workflowRunnerRef: ActorRef<WorkflowManagerMsg>
   ctx: ActorContext<ToolMsg>
   persistenceRef: ActorRef<PersistenceMsg>
 }
@@ -249,14 +248,14 @@ export const handleWorkflowTool = async (
   const userId = ctx.request.userId
 
   if (msg.toolName === listAgentModesTool.name) {
-    const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'listAgentModes', replyTo }), { timeoutMs: 5_000 })
+    const reply = await ask<WorkflowManagerMsg, any>(workflowRunnerRef, replyTo => ({ type: 'listAgentModes', replyTo }), { timeoutMs: 5_000 })
     return reply.ok && 'agentModes' in reply
       ? { type: 'toolResult', result: { text: JSON.stringify(reply.agentModes, null, 2) } }
       : toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
   }
 
   if (msg.toolName === listExecutionToolsTool.name) {
-    const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'listExecutionTools', replyTo }), { timeoutMs: 5_000 })
+    const reply = await ask<WorkflowManagerMsg, any>(workflowRunnerRef, replyTo => ({ type: 'listExecutionTools', replyTo }), { timeoutMs: 5_000 })
     return reply.ok && 'executionTools' in reply
       ? { type: 'toolResult', result: { text: JSON.stringify(reply.executionTools, null, 2) } }
       : toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
@@ -313,7 +312,7 @@ export const handleWorkflowTool = async (
     if (!result.ok) return toolError(result.error)
     const { run, workflow } = result.data
 
-    const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+    const reply = await ask<WorkflowManagerMsg, any>(
       workflowRunnerRef,
       replyTo => ({
         type: 'start',
@@ -334,7 +333,7 @@ export const handleWorkflowTool = async (
   }
 
   if (msg.toolName === listWorkflowRunsTool.name) {
-    const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(workflowRunnerRef, replyTo => ({ type: 'list', userId: userId, replyTo }), { timeoutMs: 5_000 })
+    const reply = await ask<WorkflowManagerMsg, any>(workflowRunnerRef, replyTo => ({ type: 'list', userId: userId, replyTo }), { timeoutMs: 5_000 })
     return reply.ok && 'runs' in reply
       ? { type: 'toolResult', result: { text: formatRunList(reply.runs) } }
       : toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
@@ -344,7 +343,7 @@ export const handleWorkflowTool = async (
     const arg = runIdArg(msg.arguments)
     if (!arg.ok) return toolError(arg.error)
     const type = msg.toolName === getWorkflowRunTool.name ? 'get' : 'resume'
-    const reply = await ask<WorkflowRunnerMsg, WorkflowRunnerReply>(
+    const reply = await ask<WorkflowManagerMsg, any>(
       workflowRunnerRef,
       replyTo => type === 'get'
         ? { type: 'get', userId: userId, runId: arg.runId, replyTo }
@@ -371,7 +370,7 @@ type ToolsMsg =
 
 
 export const WorkflowToolsActor = (options: {
-  workflowRunnerRef: ActorRef<WorkflowRunnerMsg>
+  workflowRunnerRef: ActorRef<WorkflowManagerMsg>
 }): ActorDef<ToolsMsg, ToolsState> => ({
   initialState: () => ({ persistenceRef: null }),
   lifecycle: onLifecycle({

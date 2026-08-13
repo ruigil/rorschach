@@ -52,12 +52,6 @@ export type Tool = {
 }
 export type ToolCollection = Record<string, Tool>
 
-export type ToolRegistrationEvent =
-  | Tool
-  | { name: string; ref: null }
-
-export const ToolRegistrationTopic = createTopic<ToolRegistrationEvent>('tools.registration')
-
 // ─── Job registry (for long-running jobs) ───
 
 export type JobLifecycleEvent =

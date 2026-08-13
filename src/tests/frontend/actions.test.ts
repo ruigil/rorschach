@@ -345,3 +345,53 @@ describe('openViewWhenReady (cold-load deep link)', () => {
     expect(store.namespace<ShellState>('shell').get('activeWorkspaceTab')).toBe('none')
   })
 })
+
+describe('StreamChunk dispatchFrame', () => {
+  test('dispatchFrame processes StreamChunk frames (Task 5.3)', async () => {
+    const { dispatchFrame } = await import('../../frontend/shell/dispatcher.ts')
+
+    // 1. Dispatch 'start' StreamChunk
+    dispatchFrame({
+      runId: 'r1',
+      spanId: 's1',
+      type: 'start'
+    })
+
+    let active = store.namespace<ShellState>('shell').get('activeStream')
+    expect(active.isActive).toBe(true)
+    expect(active.text).toBe('')
+    expect(active.reasoning).toBe('')
+
+    // 2. Dispatch text chunk StreamChunk
+    dispatchFrame({
+      runId: 'r1',
+      spanId: 's1',
+      type: 'chunk',
+      chunk: { kind: 'text', text: 'Hello' }
+    })
+
+    active = store.namespace<ShellState>('shell').get('activeStream')
+    expect(active.text).toBe('Hello')
+
+    // 3. Dispatch reasoning chunk StreamChunk
+    dispatchFrame({
+      runId: 'r1',
+      spanId: 's1',
+      type: 'chunk',
+      chunk: { kind: 'reasoning', text: 'Thinking' }
+    })
+
+    active = store.namespace<ShellState>('shell').get('activeStream')
+    expect(active.reasoning).toBe('Thinking')
+
+    // 4. Dispatch 'end' StreamChunk
+    dispatchFrame({
+      runId: 'r1',
+      spanId: 's1',
+      type: 'end'
+    })
+
+    active = store.namespace<ShellState>('shell').get('activeStream')
+    expect(active.isActive).toBe(false)
+  })
+})

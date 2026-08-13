@@ -4,11 +4,57 @@ import { onLifecycle, onMessage } from './actor/match.ts';
 import { publishConfigSurface, deleteConfigSurface } from './actor/config.ts';
 import { RouteRegistrationTopic, type RouteRegistration } from '../types/routes.ts';
 import { type UiSurfaceRegistration } from '../types/ui-surface.ts';
-import { SCRRegistrationTopic, type SCRDescriptor } from '../types/scr.ts';
+import { SCRRegistrationTopic, type SCRDescriptor, type SCRInvokeMsg } from '../types/scr.ts';
 import type { AgentDescriptor } from '../types/agents.ts';
 import type { ToolSchema } from '../types/tools.ts';
 import { OutboundBroadcastTopic } from '../types/events.ts';
 import type { ActorHealth, HealthStatus } from '../types/health.ts';
+
+const SCRToolAdapterActor = (options: {
+  target: ActorRef<any>;
+  toolName: string;
+}): ActorDef<any, null> => ({
+  initialState: null,
+  handler: (state, msg, ctx) => {
+    if (msg.type === 'invoke') {
+      if ('toolName' in msg || 'arguments' in msg) {
+        ctx.send(options.target, msg);
+      } else {
+        const inputStr = typeof msg.input === 'string' ? msg.input : JSON.stringify(msg.input);
+        ctx.ask<any, any>(
+          options.target,
+          (replyTo) => ({
+            type: 'invoke',
+            toolName: options.toolName,
+            arguments: inputStr,
+            replyTo,
+          }),
+          { timeoutMs: 60_000 }
+        ).then(
+          (reply) => {
+            if (reply.type === 'toolResult') {
+              msg.replyTo.send({ type: 'result', output: reply.result });
+            } else if (reply.type === 'toolError') {
+              msg.replyTo.send({ type: 'error', error: reply.error });
+            } else if (reply.type === 'toolPending') {
+              msg.replyTo.send({
+                type: 'pending',
+                jobId: reply.jobId,
+                placeholderText: reply.placeholderText,
+              });
+            } else {
+              msg.replyTo.send({ type: 'error', error: `Unexpected tool response: ${reply.type}` });
+            }
+          },
+          (err) => {
+            msg.replyTo.send({ type: 'error', error: String(err) });
+          }
+        );
+      }
+    }
+    return { state };
+  },
+});
 
 /**
  * Declaration for a sub-actor slot managed by the factory.
@@ -27,6 +73,7 @@ export type AgentDeclaration<C = unknown, S = Record<string, any>, Options = unk
   factory: (options: Options) => AgentDescriptor;
   options: (config: C, dependencies: Record<keyof S, ActorRef<unknown>>) => Options;
   dependsOn?: (keyof S)[];
+  slot?: keyof S;
 };
 
 /**
@@ -305,6 +352,12 @@ export const createPluginFactory = <
             const ref = activeRefs[toolDecl.slot as string];
             if (ref) {
               const urn = buildUrn('leaf', blueprint.id, toolDecl.schema.function.name);
+              const slotGen = activeSlots[toolDecl.slot as string]?.gen ?? 0;
+              const adapterName = `${blueprint.id}-tool-adapter-${toolDecl.schema.function.name}-${slotGen}`;
+              const adapterRef = ctx.spawn(adapterName, SCRToolAdapterActor({
+                target: ref,
+                toolName: toolDecl.schema.function.name,
+              }));
               const descriptor: SCRDescriptor = {
                 urn,
                 kind: 'leaf',
@@ -313,7 +366,7 @@ export const createPluginFactory = <
                   inputSchema: toolDecl.schema.function.parameters as Record<string, any>,
                 },
                 yieldsPending: toolDecl.mayBeLongRunning || false,
-                target: ref as ActorRef<any>,
+                target: adapterRef,
                 meta: { schema: toolDecl.schema, mayBeLongRunning: toolDecl.mayBeLongRunning },
               };
               ctx.publishRetained(SCRRegistrationTopic, urn, {
@@ -328,15 +381,6 @@ export const createPluginFactory = <
         // 5. Publish agents
         const activeAgents: string[] = [];
         if (blueprint.agents) {
-          // ⚠️ DEPRECATED compatibility bridge: heuristic slot resolution for agents.
-          // TODO: Replace with explicit `slot` property in AgentDeclaration and remove this in Phase 5.
-          const spawnerRef = Object.entries(activeRefs).find(([k]) =>
-            k.toLowerCase().includes('spawner') ||
-            k.toLowerCase().includes('registry') ||
-            k.toLowerCase().includes('runner') ||
-            k.toLowerCase().includes('manager')
-          )?.[1];
-
           for (const agentDecl of Object.values(blueprint.agents)) {
             const resolvedDeps: Record<string, ActorRef<any>> = {};
             for (const depKey of agentDecl.dependsOn ?? []) {
@@ -348,6 +392,7 @@ export const createPluginFactory = <
             const agentOpts = agentDecl.options(initialConfig, resolvedDeps as any);
             const descriptor = agentDecl.factory(agentOpts);
 
+            const spawnerRef = agentDecl.slot ? activeRefs[agentDecl.slot as string] : undefined;
             const urn = buildUrn('reasoner', blueprint.id, descriptor.mode);
             const scrDescriptor: SCRDescriptor = {
               urn,
@@ -368,7 +413,7 @@ export const createPluginFactory = <
                   },
                 },
               },
-              target: spawnerRef || (activeRefs['agentRegistry'] ?? activeRefs['sessionManager'] ?? ctx.self),
+              target: spawnerRef || activeRefs['sessionManager'] || ctx.self,
               meta: { agentDescriptor: descriptor },
             };
 
@@ -662,6 +707,12 @@ export const createPluginFactory = <
             const ref = activeRefs[toolDecl.slot as string];
             if (ref) {
               const urn = buildUrn('leaf', blueprint.id, toolDecl.schema.function.name);
+              const slotGen = activeSlots[toolDecl.slot as string]?.gen ?? 0;
+              const adapterName = `${blueprint.id}-tool-adapter-${toolDecl.schema.function.name}-${slotGen}`;
+              const adapterRef = ctx.spawn(adapterName, SCRToolAdapterActor({
+                target: ref,
+                toolName: toolDecl.schema.function.name,
+              }));
               const descriptor: SCRDescriptor = {
                 urn,
                 kind: 'leaf',
@@ -670,7 +721,7 @@ export const createPluginFactory = <
                   inputSchema: toolDecl.schema.function.parameters as Record<string, any>,
                 },
                 yieldsPending: toolDecl.mayBeLongRunning || false,
-                target: ref as ActorRef<any>,
+                target: adapterRef,
                 meta: { schema: toolDecl.schema, mayBeLongRunning: toolDecl.mayBeLongRunning },
               };
               ctx.publishRetained(SCRRegistrationTopic, urn, {
@@ -685,15 +736,6 @@ export const createPluginFactory = <
         // Agents
         const activeAgents: string[] = [];
         if (blueprint.agents) {
-          // ⚠️ DEPRECATED compatibility bridge: heuristic slot resolution for agents.
-          // TODO: Replace with explicit `slot` property in AgentDeclaration and remove this in Phase 5.
-          const spawnerRef = Object.entries(activeRefs).find(([k]) =>
-            k.toLowerCase().includes('spawner') ||
-            k.toLowerCase().includes('registry') ||
-            k.toLowerCase().includes('runner') ||
-            k.toLowerCase().includes('manager')
-          )?.[1];
-
           for (const agentDecl of Object.values(blueprint.agents)) {
             const resolvedDeps: Record<string, ActorRef<any>> = {};
             for (const depKey of agentDecl.dependsOn ?? []) {
@@ -705,6 +747,7 @@ export const createPluginFactory = <
             const agentOpts = agentDecl.options(newConfig, resolvedDeps as any);
             const descriptor = agentDecl.factory(agentOpts);
 
+            const spawnerRef = agentDecl.slot ? activeRefs[agentDecl.slot as string] : undefined;
             const urn = buildUrn('reasoner', blueprint.id, descriptor.mode);
             const scrDescriptor: SCRDescriptor = {
               urn,
@@ -725,7 +768,7 @@ export const createPluginFactory = <
                   },
                 },
               },
-              target: spawnerRef || (activeRefs['agentRegistry'] ?? activeRefs['sessionManager'] ?? ctx.self),
+              target: spawnerRef || activeRefs['sessionManager'] || ctx.self,
               meta: { agentDescriptor: descriptor },
             };
 

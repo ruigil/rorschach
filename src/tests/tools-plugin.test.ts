@@ -5,8 +5,8 @@ import {
   WebSearch,
 } from '../plugins/tools/web-search.ts'
 import type { WebSearchMsg, BraveLlmContextResponse } from '../plugins/tools/types.ts'
-import { ToolRegistrationTopic } from '../types/tools.ts'
-import type { ToolInvokeMsg, ToolReply, ToolRegistrationEvent } from '../types/tools.ts'
+import { SCRRegistrationTopic, type SCRRegistrationEvent } from '../types/scr.ts'
+import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 
@@ -184,20 +184,20 @@ describe('tools plugin', () => {
       .plugins.find((p) => p.id === 'tools')
     expect(status?.status).toBe('active')
 
-    // Probe actor: subscribe to ToolRegistrationTopic, fire an invoke, collect the reply
-    type ProbeMsg = ToolReply | { type: 'registered'; event: ToolRegistrationEvent }
+    // Probe actor: subscribe to SCRRegistrationTopic, fire an invoke, collect the reply
+    type ProbeMsg = ToolReply | { type: 'registered'; event: SCRRegistrationEvent }
     const replies: ToolReply[] = []
 
     const probeDef: ActorDef<ProbeMsg, null> = {
       lifecycle: (state, event, ctx) => {
         if (event.type === 'start') {
-          ctx.subscribe(ToolRegistrationTopic, (ev): ProbeMsg => ({ type: 'registered', event: ev }))
+          ctx.subscribe(SCRRegistrationTopic, (ev): ProbeMsg => ({ type: 'registered', event: ev }))
         }
         return { state }
       },
       handler: (state, msg, ctx) => {
-        if (msg.type === 'registered' && msg.event.ref !== null && msg.event.name === 'tools_web_search') {
-          msg.event.ref.send({
+        if (msg.type === 'registered' && msg.event.type === 'register' && msg.event.descriptor.urn === 'scr:leaf:tools.web_search') {
+          msg.event.descriptor.target.send({
             type: 'invoke',
             toolName: 'tools_web_search',
             arguments: JSON.stringify({ query: 'probe' }),
@@ -269,9 +269,9 @@ describe('tools plugin', () => {
 
     // Track tools_web_search registrations to verify config change spawns a new actor
     let webSearchRegistrationCount = 0
-    system.subscribe(ToolRegistrationTopic, (event) => {
-      const e = event as ToolRegistrationEvent
-      if (e.name === 'tools_web_search' && e.ref !== null) webSearchRegistrationCount++
+    system.subscribe(SCRRegistrationTopic, (event) => {
+      const e = event as SCRRegistrationEvent
+      if (e.type === 'register' && e.descriptor.urn === 'scr:leaf:tools.web_search') webSearchRegistrationCount++
     })
     // The retained event replays immediately on subscribe (gen-0 actor)
     expect(webSearchRegistrationCount).toBe(1)

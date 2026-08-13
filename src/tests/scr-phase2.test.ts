@@ -3,7 +3,6 @@ import { AgentSystem, invokeSCR, onMessage } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { SCRRegistrationTopic } from '../types/scr.ts'
 import type { SCRDescriptor } from '../types/scr.ts'
-import type { ToolMsg } from '../types/tools.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -12,14 +11,14 @@ describe('SCR Phase 2: Leaf (Tool) Integration and Membrane Validation', () => {
     const system = await AgentSystem()
     await tick()
 
-    const mockToolActor: ActorDef<ToolMsg, null> = {
+    const mockToolActor: ActorDef<any, null> = {
       initialState: null,
       handler: onMessage({
         invoke: (state, msg) => {
-          const args = JSON.parse(msg.arguments)
+          const args = msg.input as any
           msg.replyTo.send({
-            type: 'toolResult',
-            result: {
+            type: 'result',
+            output: {
               text: `Hello ${args.name}, you are ${args.age} years old.`
             }
           })
@@ -92,13 +91,13 @@ describe('SCR Phase 2: Leaf (Tool) Integration and Membrane Validation', () => {
     const system = await AgentSystem()
     await tick()
 
-    const mockToolActor: ActorDef<ToolMsg, null> = {
+    const mockToolActor: ActorDef<any, null> = {
       initialState: null,
       handler: onMessage({
         invoke: (state, msg) => {
           msg.replyTo.send({
-            type: 'toolResult',
-            result: { text: 'ok' }
+            type: 'result',
+            output: { text: 'ok' }
           })
           return { state }
         }
@@ -153,14 +152,14 @@ describe('SCR Phase 2: Leaf (Tool) Integration and Membrane Validation', () => {
     const system = await AgentSystem()
     await tick()
 
-    const mockToolActor: ActorDef<ToolMsg, null> = {
+    const mockToolActor: ActorDef<any, null> = {
       initialState: null,
       handler: onMessage({
         invoke: (state, msg) => {
-          // Returns text instead of structured object
+          // Returns text instead of resultValue
           msg.replyTo.send({
-            type: 'toolResult',
-            result: { text: 'Not expected structure' }
+            type: 'result',
+            output: { text: 'Not expected structure' }
           })
           return { state }
         }
@@ -205,12 +204,12 @@ describe('SCR Phase 2: Leaf (Tool) Integration and Membrane Validation', () => {
     const system = await AgentSystem()
     await tick()
 
-    const mockToolActor: ActorDef<ToolMsg, null> = {
+    const mockToolActor: ActorDef<any, null> = {
       initialState: null,
       handler: onMessage({
         invoke: (state, msg) => {
           msg.replyTo.send({
-            type: 'toolPending',
+            type: 'pending',
             jobId: 'job-xyz',
             placeholderText: 'Please wait...'
           })

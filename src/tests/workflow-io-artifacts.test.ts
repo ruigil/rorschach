@@ -9,10 +9,9 @@ import { parseTaskCompletionArgs } from '../plugins/workflows/workflow-task-exec
 import { validateInputValues, validateWorkflow } from '../plugins/workflows/validation.ts'
 import type {
   Workflow,
-  WorkflowRunnerMsg,
-  WorkflowRunnerReply,
   WorkflowRunState,
 } from '../plugins/workflows/types.ts'
+import type { WorkflowManagerMsg } from '../plugins/workflows/workflow-manager.ts'
 import type { ToolReply } from '../types/tools.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 import { PersistenceProviderTopic } from '../types/persistence.ts'
@@ -210,14 +209,14 @@ describe('workflow IO and artifacts', () => {
   test('artifact route serves only referenced completed artifacts', async () => {
     const system = await AgentSystem()
     const runner = system.spawn('artifact-runner', StaticRunRunner(runState()))
-    const routes = buildWorkflowsRoutes(runner as ActorRef<WorkflowRunnerMsg>)
+    const routes = buildWorkflowsRoutes(runner as ActorRef<any>)
     const route = routes.find(item => item.id === 'workflow-runs.artifact')
     expect(route).toBeDefined()
     expect(route?.target).toBe(runner as ActorRef<any>)
 
     // test a safe matched artifact path
-    const resMsg = await ask<WorkflowRunnerMsg, HttpResponseMsg>(
-      runner as ActorRef<WorkflowRunnerMsg>,
+    const resMsg = await ask<any, HttpResponseMsg>(
+      runner as ActorRef<any>,
       replyTo => ({
         type: 'http.request',
         request: {
@@ -236,8 +235,8 @@ describe('workflow IO and artifacts', () => {
     expect(text).toBe('<h1>Report</h1>')
 
     // test missing key
-    const missingMsg = await ask<WorkflowRunnerMsg, HttpResponseMsg>(
-      runner as ActorRef<WorkflowRunnerMsg>,
+    const missingMsg = await ask<any, HttpResponseMsg>(
+      runner as ActorRef<any>,
       replyTo => ({
         type: 'http.request',
         request: {
@@ -256,30 +255,28 @@ describe('workflow IO and artifacts', () => {
   })
 })
 
-const CapturingRunner = (capture: (inputs: Record<string, unknown> | undefined) => void): ActorDef<WorkflowRunnerMsg, null> => ({
+const CapturingRunner = (capture: (inputs: Record<string, unknown> | undefined) => void): ActorDef<any, null> => ({
   initialState: null,
   handler: (state, msg) => {
     if (msg.type === 'start') {
       capture(msg.run.inputs)
-      const reply: WorkflowRunnerReply = { ok: true, run: msg.run }
-      msg.replyTo.send(reply as any)
-    } else if ('replyTo' in msg) {
-      msg.replyTo.send({ ok: false, error: 'not implemented' } as any)
+      msg.replyTo.send({ ok: true, run: msg.run })
     }
-    return { state }
-  }
-})
-
-const StaticStartRunner = (run: WorkflowRunState): ActorDef<WorkflowRunnerMsg, null> => ({
-  initialState: null,
-  handler: (state, msg) => {
-    if (msg.type === 'start') msg.replyTo.send({ ok: true, run } as any)
-    else if ('replyTo' in msg) msg.replyTo.send({ ok: false, error: 'not implemented' } as any)
     return { state }
   },
 })
 
-const StaticRunRunner = (run: WorkflowRunState): ActorDef<WorkflowRunnerMsg, null> => ({
+const StaticStartRunner = (run: WorkflowRunState): ActorDef<any, null> => ({
+  initialState: null,
+  handler: (state, msg) => {
+    if (msg.type === 'start') {
+      msg.replyTo.send({ ok: true, run })
+    }
+    return { state }
+  },
+})
+
+const StaticRunRunner = (run: WorkflowRunState): ActorDef<any, null> => ({
   initialState: null,
   handler: (state, msg) => {
     if (msg.type === 'http.request') {

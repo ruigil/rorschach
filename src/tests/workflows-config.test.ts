@@ -1,21 +1,22 @@
 import { describe, expect, test } from 'bun:test'
 import { AgentSystem, staticSource } from '../system/index.ts'
 import workflowsPlugin from '../plugins/workflows/workflows.plugin.ts'
-import { AgentRegistrationTopic, type AgentDescriptor } from '../types/agents.ts'
+import { SCRRegistrationTopic } from '../types/scr.ts'
+import type { SCRDescriptor } from '../types/scr.ts'
 import type { WorkflowsConfig } from '../plugins/workflows/types.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
-const loadWorkflows = async (workflows: WorkflowsConfig): Promise<AgentDescriptor[]> => {
-  const registrations: AgentDescriptor[] = []
+const loadWorkflows = async (workflows: WorkflowsConfig): Promise<SCRDescriptor[]> => {
+  const registrations: SCRDescriptor[] = []
   const system = await AgentSystem({
     source: staticSource({
       plugins: [MockPersistenceActor(), workflowsPlugin],
       config: { workflows },
     }),
   })
-  system.subscribe(AgentRegistrationTopic, (event) => {
+  system.subscribe(SCRRegistrationTopic, (event: any) => {
     if (event.type === 'register') registrations.push(event.descriptor)
   })
   await tick()
@@ -25,7 +26,7 @@ const loadWorkflows = async (workflows: WorkflowsConfig): Promise<AgentDescripto
 
 describe('workflows config', () => {
   test('uses default workflow config when agent is configured', async () => {
-    const registrations: AgentDescriptor[] = []
+    const registrations: SCRDescriptor[] = []
     const system = await AgentSystem({
       source: staticSource({
         plugins: [MockPersistenceActor(), workflowsPlugin],
@@ -35,17 +36,17 @@ describe('workflows config', () => {
       }),
     })
 
-    system.subscribe(AgentRegistrationTopic, (event) => {
+    system.subscribe(SCRRegistrationTopic, (event: any) => {
       if (event.type === 'register') registrations.push(event.descriptor)
     })
     await tick()
 
-    expect(registrations.map((d) => d.mode)).toEqual(['workflows'])
+    expect(registrations.map((d) => d.urn)).toContain('scr:reasoner:workflows.workflows')
 
-    const desc = registrations.find((d) => d.mode === 'workflows')
+    const desc = registrations.find((d) => d.urn === 'scr:reasoner:workflows.workflows')
     expect(desc).toBeDefined()
-    expect(desc?.model).toBe('z-ai/glm-5.1')
-    expect(desc?.maxToolLoops).toBe(10)
+    expect(desc?.meta?.agentDescriptor?.model).toBe('z-ai/glm-5.1')
+    expect(desc?.meta?.agentDescriptor?.maxToolLoops).toBe(10)
 
     await system.shutdown()
   })
@@ -58,6 +59,6 @@ describe('workflows config', () => {
       },
     })
 
-    expect(registrations.map((d) => d.mode)).toEqual(['workflows'])
+    expect(registrations.map((d) => d.urn)).toContain('scr:reasoner:workflows.workflows')
   })
 })

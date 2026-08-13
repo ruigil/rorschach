@@ -4,7 +4,7 @@ import type { ToolCollection, ToolMsg, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic, type ApiMessage, type LlmProviderMsg } from '../../types/llm.ts'
 import type { PermissionContext } from '../../system/permissions/types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetPayload } from '../../types/persistence.ts'
-import { AgentRegistrationTopic, type AgentDescriptor } from '../../types/agents.ts'
+import type { AgentDescriptor } from '../../types/agents.ts'
 import type {
   WorkflowRunExecutorMsg,
   WorkflowTaskExecutorMsg,
@@ -555,16 +555,7 @@ ${JSON.stringify(msg.dependencyOutputs, null, 2)}
     if (msg.type === '_persistenceRef') {
       return { state: { ...state, persistenceRef: msg.ref } }
     }
-    if (msg.type === '_agentRegistration') {
-      const event = msg.event
-      if (event.type === 'register') {
-        return { state: { ...state, descriptors: { ...state.descriptors, [event.descriptor.mode]: event.descriptor } } }
-      } else if (event.type === 'unregister') {
-        const descriptors = { ...state.descriptors }
-        delete descriptors[event.mode]
-        return { state: { ...state, descriptors } }
-      }
-    }
+
     return next(state, msg)
   }
 
@@ -574,7 +565,6 @@ ${JSON.stringify(msg.dependencyOutputs, null, 2)}
       start: (state, ctx) => {
         ctx.subscribe(LlmProviderTopic, event => ({ type: '_llmProvider' as const, ref: event.ref }))
         ctx.subscribe(PersistenceProviderTopic, event => ({ type: '_persistenceRef' as const, ref: event.ref }))
-        ctx.subscribe(AgentRegistrationTopic, event => ({ type: '_agentRegistration' as const, event }))
         return { state }
       },
     }),

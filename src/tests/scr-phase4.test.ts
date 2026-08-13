@@ -15,14 +15,11 @@ const FakeTaskTool = (): ActorDef<any, null> => ({
   initialState: null,
   handler: (state, msg) => {
     if (msg.type === 'invoke') {
-      let arg1 = 'none'
-      try {
-        const args = JSON.parse(msg.arguments)
-        arg1 = args.arg1 || 'none'
-      } catch (e) {}
+      const args = msg.input as any
+      const arg1 = args?.arg1 || 'none'
       msg.replyTo.send({
-        type: 'toolResult',
-        result: { resultVal: `processed ${arg1}` }
+        type: 'result',
+        output: { resultVal: `processed ${arg1}` }
       })
     }
     return { state }
@@ -34,7 +31,7 @@ const LongRunningTaskTool = (): ActorDef<any, { jobId: string }> => ({
   handler: (state, msg) => {
     if (msg.type === 'invoke') {
       msg.replyTo.send({
-        type: 'toolPending',
+        type: 'pending',
         jobId: state.jobId,
         placeholderText: 'Waiting for async processing'
       })
@@ -318,14 +315,11 @@ describe('SCR Phase 4: Graph (Workflow) & Operator Integration', () => {
       initialState: null,
       handler: (state, msg) => {
         if (msg.type === 'invoke') {
-          let value = 0
-          try {
-            const args = JSON.parse(msg.arguments)
-            value = args.value || 0
-          } catch (e) {}
+          const args = msg.input as any
+          const value = args?.value || 0
           msg.replyTo.send({
-            type: 'toolResult',
-            result: { value: value * 2 }
+            type: 'result',
+            output: { value: value * 2 }
           })
         }
         return { state }
@@ -404,14 +398,11 @@ describe('SCR Phase 4: Graph (Workflow) & Operator Integration', () => {
       initialState: null,
       handler: (state, msg) => {
         if (msg.type === 'invoke') {
-          let value = 0
-          try {
-            const args = JSON.parse(msg.arguments)
-            value = args.value || 0
-          } catch (e) {}
+          const args = msg.input as any
+          const value = args?.value || 0
           msg.replyTo.send({
-            type: 'toolResult',
-            result: { value: value * 2 }
+            type: 'result',
+            output: { value: value * 2 }
           })
         }
         return { state }
@@ -422,14 +413,11 @@ describe('SCR Phase 4: Graph (Workflow) & Operator Integration', () => {
       initialState: null,
       handler: (state, msg) => {
         if (msg.type === 'invoke') {
-          let check = 'none'
-          try {
-            const args = JSON.parse(msg.arguments)
-            check = args.check || 'none'
-          } catch (e) {}
+          const args = msg.input as any
+          const check = args?.check || 'none'
           msg.replyTo.send({
-            type: 'toolResult',
-            result: { branch: check === 'go' ? 'branchA' : 'branchB' }
+            type: 'result',
+            output: { branch: check === 'go' ? 'branchA' : 'branchB' }
           })
         }
         return { state }
@@ -558,13 +546,13 @@ describe('SCR Phase 4: Graph (Workflow) & Operator Integration', () => {
           failingAttempts++
           if (failingAttempts < 3) {
             msg.replyTo.send({
-              type: 'toolError',
+              type: 'error',
               error: `Failed attempt ${failingAttempts}`
             })
           } else {
             msg.replyTo.send({
-              type: 'toolResult',
-              result: { val: 'success after failures' }
+              type: 'result',
+              output: { val: 'success after failures' }
             })
           }
         }
@@ -577,8 +565,8 @@ describe('SCR Phase 4: Graph (Workflow) & Operator Integration', () => {
       handler: (state, msg) => {
         if (msg.type === 'invoke') {
           msg.replyTo.send({
-            type: 'toolResult',
-            result: { val: 'fallback success' }
+            type: 'result',
+            output: { val: 'fallback success' }
           })
         }
         return { state }
@@ -737,6 +725,165 @@ describe('SCR Phase 4: Graph (Workflow) & Operator Integration', () => {
       const activeRuns = listKeys.keys.filter((k: string) => k.startsWith('scr.run.'))
       expect(activeRuns.length).toBe(0) // should be cleaned up!
     }
+
+    await system.shutdown()
+  })
+
+  test('WorkflowManager WebSocket Frame Ingress Routing handles workflow requests (Task 5.1)', async () => {
+    const { HttpWsFrameTopic, OutboundUserMessageTopic } = await import('../types/events.ts')
+    const { WorkflowManager } = await import('../plugins/workflows/workflow-manager.ts')
+
+    const system = await AgentSystem({
+      source: staticSource({
+        plugins: [
+          MockPersistenceActor(),
+        ],
+        config: {}
+      })
+    })
+
+    const events: any[] = []
+    system.subscribe(OutboundUserMessageTopic, (e: any) => {
+      events.push(e)
+    })
+
+    await tick()
+
+    let persistenceRef: ActorRef<any> | null = null
+    system.subscribe(PersistenceProviderTopic, (e: any) => {
+      if (e?.ref) persistenceRef = e.ref
+    })
+
+    await tick()
+    expect(persistenceRef).toBeDefined()
+
+    // Spawn WorkflowManager directly
+    const manager = system.spawn('workflow-manager-test', WorkflowManager({ model: 'test-model', maxToolLoops: 1 }))
+    system.publish(PersistenceProviderTopic, { ref: persistenceRef })
+
+    await tick(100)
+
+    const workflowDoc = {
+      id: 'workflow-ws-test',
+      userId: 'u1',
+      title: 'Workflow WS Test',
+      goal: 'Test WS ingress',
+      context: 'Test context',
+      createdAt: '2026-08-13T12:00:00Z',
+      inputs: {},
+      outputs: {},
+      tasks: []
+    }
+
+    // Seed workflow
+    await ask(persistenceRef!, (replyTo) => ({
+      type: 'doc.put',
+      collection: 'workflows',
+      docId: 'workflow-ws-test.json',
+      content: JSON.stringify(workflowDoc),
+      replyTo,
+    }))
+
+    await tick(100)
+
+    // 1. Send workflow.list.request
+    system.publish(HttpWsFrameTopic, {
+      clientId: 'c1',
+      userId: 'u1',
+      roles: [],
+      frame: { type: 'workflow.list.request' }
+    })
+
+    await tick(200)
+
+    expect(events.length).toBeGreaterThanOrEqual(1)
+    const listRes = JSON.parse(events[events.length - 1].text)
+    expect(listRes.type).toBe('workflows.list')
+    expect(listRes.workflows[0]).toMatchObject({ id: 'workflow-ws-test', taskCount: 0 })
+
+    // 2. Send workflow.graph.request
+    system.publish(HttpWsFrameTopic, {
+      clientId: 'c1',
+      userId: 'u1',
+      roles: [],
+      frame: { type: 'workflow.graph.request', workflowId: 'workflow-ws-test' }
+    })
+
+    await tick(200)
+
+    const graphRes = JSON.parse(events[events.length - 1].text)
+    expect(graphRes.type).toBe('workflow.graph')
+    expect(graphRes.workflowId).toBe('workflow-ws-test')
+
+    await system.shutdown()
+  })
+
+  test('WorkflowManager HTTP Ingress Routing serves workflow artifacts (Task 5.2)', async () => {
+    const { WorkflowManager } = await import('../plugins/workflows/workflow-manager.ts')
+
+    const system = await AgentSystem({
+      source: staticSource({
+        plugins: [
+          MockPersistenceActor(),
+        ],
+        config: {}
+      })
+    })
+
+    await tick()
+
+    let persistenceRef: ActorRef<any> | null = null
+    system.subscribe(PersistenceProviderTopic, (e: any) => {
+      if (e?.ref) persistenceRef = e.ref
+    })
+
+    await tick()
+    expect(persistenceRef).toBeDefined()
+
+    // Spawn WorkflowManager directly
+    const manager = system.spawn('workflow-manager-http-test', WorkflowManager({ model: 'test-model', maxToolLoops: 1 }))
+    system.publish(PersistenceProviderTopic, { ref: persistenceRef })
+
+    await tick(100)
+
+    // Put a mock artifact into persistence object store
+    const contentStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('<h1>Report</h1>'))
+        controller.close()
+      }
+    })
+
+    await ask(persistenceRef!, (replyTo) => ({
+      type: 'obj.putStream',
+      bucket: 'workflow-runs',
+      key: 'run-1/report.html',
+      stream: contentStream,
+      meta: { contentType: 'text/html' },
+      replyTo,
+    }))
+
+    // Send HTTP Request to WorkflowManager
+    const resMsg = await ask<any, any>(
+      manager,
+      replyTo => ({
+        type: 'http.request',
+        request: {
+          method: 'GET',
+          url: '/artifact?key=workflow-runs/run-1/report.html',
+          headers: {},
+          body: null,
+        },
+        replyTo,
+      }),
+      undefined,
+      { userId: 'anonymous', roles: [] }
+    )
+
+    expect(resMsg.response.status).toBe(200)
+    expect(resMsg.response.headers['Content-Type']).toBe('text/html')
+    const text = await new Response(resMsg.response.body as ReadableStream).text()
+    expect(text).toBe('<h1>Report</h1>')
 
     await system.shutdown()
   })

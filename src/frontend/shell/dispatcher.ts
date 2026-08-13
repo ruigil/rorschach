@@ -10,6 +10,34 @@ import { pluginHost } from './plugin-host.js'
 
 const shell = () => store.namespace<ShellState>('shell')
 
+const handleStreamChunk = (msg: Record<string, any>) => {
+  const type = msg.type // 'start' | 'chunk' | 'end' | 'error'
+  if (type === 'start') {
+    updateActiveStream({
+      isActive: true,
+      text: '',
+      reasoning: '',
+      toolCalls: [],
+    })
+  } else if (type === 'chunk' && msg.chunk) {
+    if (msg.chunk.kind === 'text') {
+      updateActiveStream({
+        isActive: true,
+        text: shell().get('activeStream').text + msg.chunk.text,
+      })
+    } else if (msg.chunk.kind === 'reasoning') {
+      updateActiveStream({
+        isActive: true,
+        reasoning: shell().get('activeStream').reasoning + msg.chunk.text,
+      })
+    }
+  } else if (type === 'end') {
+    commitActiveStream()
+  } else if (type === 'error') {
+    commitActiveStream('error', msg.error || 'Unknown streaming error')
+  }
+}
+
 const frameHandlers: Record<string, (msg: Record<string, any>) => void> = {
   chunk: (msg) => {
     updateActiveStream({
@@ -46,6 +74,14 @@ export const dispatchFrame = (msg: Record<string, any>) => {
     return
   }
   if (pluginHost().routeFrame(msg)) return
+
+  // Task 5.3: Intercept and parse out-of-band StreamChunk frames directly.
+  // A StreamChunk has runId and spanId fields.
+  if (msg.runId && msg.spanId) {
+    handleStreamChunk(msg)
+    return
+  }
+
   const handler = frameHandlers[msg.type]
   if (handler) handler(msg)
 }

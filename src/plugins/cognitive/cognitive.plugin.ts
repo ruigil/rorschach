@@ -7,7 +7,6 @@ import { VeniceAdapter } from './adapters/venice.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { SessionConfig, UserContextMsg } from './types.ts'
 import { UserContext } from './user-context.ts'
-import { AgentRegistry } from './agent-registry.ts'
 import { ChatbotAgentDescriptor } from './chatbot-agent.ts'
 import { buildCognitiveRoutes } from './cognitive.routes.ts'
 import { config, defaultConfig, type CognitiveConfig } from './cognitive.config.ts'
@@ -47,22 +46,18 @@ export default createPluginFactory<CognitiveConfig>({
       },
       dependsOn: ['llmProvider'],
     },
-    agentRegistry: {
-      factory: () => AgentRegistry(),
-    },
     sessionManager: {
       factory: (cfg, deps) => {
-        if (!deps.llmProvider || !deps.agentRegistry) return null
+        if (!deps.llmProvider) return null
         const sessionConfig = cfg.session ?? defaultConfig.session!
         return SessionManager({
           llmRef:             deps.llmProvider as ActorRef<LlmProviderMsg>,
-          agentRegistryRef:   deps.agentRegistry as ActorRef<any>,
           defaultMode:        sessionConfig.defaultMode,
           contextWindowHours: sessionConfig.contextWindowHours,
           persistContext:     sessionConfig.persistContext ?? false,
         })
       },
-      dependsOn: ['llmProvider', 'agentRegistry'],
+      dependsOn: ['llmProvider'],
     },
     userContext: {
       factory: (cfg) => {
@@ -76,6 +71,7 @@ export default createPluginFactory<CognitiveConfig>({
   },
   agents: {
     chatbot: {
+      slot: 'agentSpawner',
       factory: ChatbotAgentDescriptor,
       options: (cfg) => ({
         model:        cfg.chatbot?.model ?? 'deepseek/deepseek-v4-flash',

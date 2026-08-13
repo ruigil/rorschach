@@ -10,8 +10,7 @@ import {
 import { onMessage } from '../system/index.ts';
 import { RouteRegistrationTopic } from '../types/routes.ts';
 import { OutboundBroadcastTopic } from '../types/events.ts';
-import { AgentRegistrationTopic } from '../types/agents.ts';
-import { ToolRegistrationTopic } from '../types/tools.ts';
+import { SCRRegistrationTopic } from '../types/scr.ts';
 
 const tick = (ms = 50) => Bun.sleep(ms);
 
@@ -145,8 +144,28 @@ describe('Plugin Factory (createPluginFactory)', () => {
     });
     const system = await AgentSystem({ source });
     system.subscribe(MetricsTopic, (e) => events.push(e));
-    system.subscribe(AgentRegistrationTopic, (e) => registeredAgents.push(e));
-    system.subscribe(ToolRegistrationTopic, (e) => registeredTools.push(e));
+    system.subscribe(SCRRegistrationTopic, (e: any) => {
+      if (e.type === 'register') {
+        if (e.descriptor.kind === 'reasoner') {
+          const mode = e.descriptor.urn.split(':').pop()?.replace(/^mock-plugin\./, '') || '';
+          registeredAgents.push({ type: 'register', descriptor: { mode } });
+        } else if (e.descriptor.kind === 'leaf') {
+          const name = e.descriptor.urn.replace('scr:leaf:', '').replace(/\./g, '_');
+          registeredTools.push({ name, ref: e.descriptor.target });
+        }
+      } else if (e.type === 'deregister') {
+        const parts = e.urn.split(':');
+        const kind = parts[1];
+        const rest = parts[2];
+        if (kind === 'reasoner') {
+          const mode = rest.replace(/^mock-plugin\./, '');
+          registeredAgents.push({ type: 'unregister', mode });
+        } else if (kind === 'leaf') {
+          const name = rest.replace(/\./g, '_');
+          registeredTools.push({ name, ref: null });
+        }
+      }
+    });
     system.subscribe(RouteRegistrationTopic, (e) => registeredRoutes.push(e));
     system.subscribe(OutboundBroadcastTopic, (e) => {
       if (e.type === 'ui.surface') {

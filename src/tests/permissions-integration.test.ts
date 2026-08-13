@@ -3,10 +3,8 @@ import { AgentSystem, staticSource} from '../system/index.ts'
 import type { ActorDef } from '../system/index.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../types/llm.ts'
 import { UserPresenceTopic } from '../types/events.ts'
-import { AgentRegistrationTopic } from '../types/agents.ts'
 import { SessionLifecycleTopic } from '../plugins/cognitive/types.ts'
 import { SessionManager } from '../plugins/cognitive/session-manager.ts'
-import { AgentRegistry } from '../plugins/cognitive/agent-registry.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
@@ -28,10 +26,8 @@ describe('Permissions Integration', () => {
     const llmRef = system.spawn('null-llm', NullLlm())
     system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
     
-    const registryRef = system.spawn('agent-registry', AgentRegistry())
     system.spawn('session-manager', SessionManager({
       llmRef,
-      agentRegistryRef: registryRef,
       defaultMode:        'chatbot',
       contextWindowHours: 4,
     }))
@@ -41,18 +37,6 @@ describe('Permissions Integration', () => {
       lifecycleEvents.push(event)
     })
 
-    const dummyDescriptor = {
-      mode: 'chatbot',
-      displayName: 'Chatbot',
-      shortDesc: 'A friendly chatbot',
-      systemPrompt: 'You are a chatbot',
-      internalTools: [],
-      capabilities: { userVisible: true },
-      model: 'test-model',
-    }
-    
-    await tick()
-    system.publishRetained(AgentRegistrationTopic, 'chatbot', { type: 'register', descriptor: dummyDescriptor })
     await tick()
 
     const permission = { grants: ['tools_web_search', '!coding_*'] }
@@ -62,10 +46,12 @@ describe('Permissions Integration', () => {
       source: 'http',
       permission,
     })
-    await tick()
+    await tick(100)
 
     const startedEvent = lifecycleEvents.find(e => e.type === 'sessionStarted' && e.userId === 'user-1')
     expect(startedEvent).toBeDefined()
     expect(startedEvent.permissionContext).toEqual(permission)
+
+    await system.shutdown()
   })
 })

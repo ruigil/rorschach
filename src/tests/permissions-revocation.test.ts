@@ -8,9 +8,7 @@ import type { AuthenticatorMsg, User, UserStoreMsg } from '../plugins/auth/types
 import { SessionLifecycleTopic, type SessionLifecycleEvent } from '../types/session.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../types/llm.ts'
 import { UserPresenceTopic } from '../types/events.ts'
-import { AgentRegistrationTopic } from '../types/agents.ts'
-import { SessionManager } from '../plugins/cognitive/session-manager.ts'
-import { AgentRegistry } from '../plugins/cognitive/agent-registry.ts'
+
 import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
@@ -138,63 +136,7 @@ describe('Permissions Revocation', () => {
     await system.shutdown()
   })
 
-  test('AgentRegistry stops agents and rebinds permissionContexts on sessionInvalidated', async () => {
-    const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
-    const llmRef = system.spawn('null-llm', NullLlm())
-    system.publishRetained(LlmProviderTopic, 'llm-provider', { ref: llmRef })
 
-    const registryRef = system.spawn('agent-registry', AgentRegistry())
-    system.spawn('session-manager', SessionManager({
-      llmRef,
-      agentRegistryRef: registryRef,
-      defaultMode: 'chatbot',
-      contextWindowHours: 4,
-    }))
-
-    await tick()
-    system.publishRetained(AgentRegistrationTopic, 'chatbot', {
-      type: 'register',
-      descriptor: {
-        mode: 'chatbot',
-        displayName: 'Chatbot',
-        shortDesc: 'test',
-        systemPrompt: 'You are a chatbot',
-        internalTools: [],
-        capabilities: { userVisible: true },
-        model: 'test-model',
-      },
-    })
-    await tick()
-
-    const userId = 'user-revoked'
-    system.publishRetained(UserPresenceTopic, `${userId}-http`, {
-      status: 'present',
-      userId,
-      source: 'http',
-      permission: { grants: ['*'] },
-    })
-    await tick(100)
-
-    // Spawned agents use hierarchical names: `${registryName}/${mode}-${userId}`
-    const agentName = `${registryRef.name}/chatbot-${userId}`
-    let agentTerminated = false
-    system.subscribe(watchTopic(agentName), (event: LifecycleEvent) => {
-      if (event.type === 'watchStatus' && event.status === 'terminated') agentTerminated = true
-    })
-
-    const newPermission = { grants: ['tools_web_search', '!coding_*'] }
-    system.publish(SessionLifecycleTopic, {
-      type: 'sessionInvalidated',
-      userId,
-      permissionContext: newPermission,
-      timestamp: Date.now(),
-    })
-    await tick(100)
-
-    expect(agentTerminated).toBe(true)
-
-    await system.shutdown()
-  })
 
   test('Authenticator returns error when user is missing', async () => {
     const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })

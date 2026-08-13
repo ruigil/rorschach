@@ -6,9 +6,9 @@ import { AgentSystem, ask, type ActorDef, type ActorRef, staticSource} from '../
 import { listWorkflows, getWorkflowGraph, saveWorkflow } from '../plugins/workflows/workflow-store.ts'
 import { handleWorkflowTool, listExecutionToolsTool, listWorkflowsTool, saveWorkflowTool, showWorkflowGraphTool, startWorkflowRunTool, updateWorkflowTool } from '../plugins/workflows/workflow-tools.ts'
 import { WorkflowEventTopic } from '../plugins/workflows/types.ts'
-import type { Workflow, WorkflowRunnerMsg, WorkflowRunnerReply, WorkflowRunState } from '../plugins/workflows/types.ts'
+import type { Workflow, WorkflowRunState } from '../plugins/workflows/types.ts'
 import { OutboundUserMessageTopic, HttpWsFrameTopic } from '../types/events.ts'
-import { WorkflowRunner } from '../plugins/workflows/workflow-runner.ts'
+import { WorkflowManager, type WorkflowManagerMsg } from '../plugins/workflows/workflow-manager.ts'
 import type { ToolReply } from '../types/tools.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 import { PersistenceProviderTopic } from '../types/persistence.ts'
@@ -77,11 +77,11 @@ const sampleRun = (): WorkflowRunState => ({
   workflow: sampleWorkflow(),
 })
 
-const FakeRunner = (): ActorDef<WorkflowRunnerMsg, { executionTools: Record<string, any> }> => ({
+const FakeRunner = (): ActorDef<WorkflowManagerMsg, { executionTools: Record<string, any> }> => ({
   initialState: () => ({ executionTools: { coding_file_read: { name: 'coding_file_read', schema: { function: { description: 'Read a file.' } } } } }),
   handler: (state, msg) => {
     if ('replyTo' in msg) {
-      const reply: WorkflowRunnerReply = msg.type === 'listExecutionTools'
+      const reply: any = msg.type === 'listExecutionTools'
         ? { ok: true, executionTools: [{ name: 'coding_file_read', description: 'Read a file.' }] }
         : { ok: false, error: 'not implemented' }
       msg.replyTo.send(reply as any)
@@ -181,8 +181,7 @@ describe('workflow store', () => {
     })
 
     const dir = await makeDir()
-    const runner = system.spawn('workflow-runner', WorkflowRunner({
-      llmRef: null,
+    const runner = system.spawn('workflow-manager', WorkflowManager({
       model: 'deepseek/deepseek-v4-flash',
       maxToolLoops: 10,
     }))
@@ -194,7 +193,7 @@ describe('workflow store', () => {
       }
     }
 
-    // Give some time for WorkflowRunner to resolve persistence ref
+    // Give some time for WorkflowManager to resolve persistence ref
     await new Promise(r => setTimeout(r, 100))
 
     // 1. Request workflow list

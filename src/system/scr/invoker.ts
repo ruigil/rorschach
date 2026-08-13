@@ -92,77 +92,33 @@ export const invokeSCR = async (
   }
 
   try {
-    if (descriptor.kind === 'leaf') {
-      // ⚠️ TEMPORARY COMPATIBILITY SHIM: Direct Leaf Tool Routing (Task 2.1)
-      // This bridges the unified SCR invoker to legacy tool actors by translating
-      // SCRInvokeMsg inputs into legacy ToolMsg formats, and mapping ToolReply back to SCRReply.
-      // Decommission and remove in Phase 5 when legacy tools are deprecated.
-      const toolName = descriptor.meta?.schema?.function?.name || urn.split('.').pop() || ''
-      const toolArgs = typeof input === 'string' ? input : JSON.stringify(input)
+    const reply = await requestStorage.run(nextRequest, () => {
+      return ask<SCRInvokeMsg, SCRReply>(
+        descriptor.target,
+        (replyTo) => ({
+          type: 'invoke',
+          urn,
+          input,
+          replyTo,
+        }),
+        { timeoutMs: 60_000 },
+        nextRequest
+      )
+    })
 
-      const reply = await requestStorage.run(nextRequest, () => {
-        return ask<ToolMsg, ToolReply>(
-          descriptor.target,
-          (replyTo) => ({
-            type: 'invoke',
-            toolName,
-            arguments: toolArgs,
-            replyTo,
-          }),
-          { timeoutMs: 60_000 },
-          nextRequest
-        )
-      })
-
-      if (reply.type === 'toolResult') {
-        const output = reply.result
-        // Output Schema Validation Membrane (Task 2.3)
-        if (descriptor.schema?.outputSchema) {
-          const errors = validateSchema(descriptor.schema.outputSchema, output)
-          if (errors.length > 0) {
-            return {
-              type: 'error',
-              error: `Output validation failed: ${errors.join(', ')}`,
-            }
+    if (descriptor.kind === 'leaf' && reply.type === 'result') {
+      if (descriptor.schema?.outputSchema) {
+        const errors = validateSchema(descriptor.schema.outputSchema, reply.output)
+        if (errors.length > 0) {
+          return {
+            type: 'error',
+            error: `Output validation failed: ${errors.join(', ')}`,
           }
         }
-        return {
-          type: 'result',
-          output,
-        }
-      } else if (reply.type === 'toolError') {
-        return {
-          type: 'error',
-          error: reply.error,
-        }
-      } else if (reply.type === 'toolPending') {
-        return {
-          type: 'pending',
-          jobId: reply.jobId,
-          placeholderText: reply.placeholderText,
-        }
-      } else {
-        return {
-          type: 'error',
-          error: `Unexpected tool reply type: ${(reply as any)?.type}`,
-        }
       }
-    } else {
-      // Non-leaf / default routing (Task 1.4)
-      return await requestStorage.run(nextRequest, () => {
-        return ask<SCRInvokeMsg, SCRReply>(
-          descriptor.target,
-          (replyTo) => ({
-            type: 'invoke',
-            urn,
-            input,
-            replyTo,
-          }),
-          { timeoutMs: 60_000 },
-          nextRequest
-        )
-      })
     }
+
+    return reply
   } catch (err: any) {
     return {
       type: 'error',

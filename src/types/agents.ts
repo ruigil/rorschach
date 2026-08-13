@@ -79,15 +79,6 @@ export type AgentDescriptor = {
   maxToolLoops?: number
 }
 
-// Retained by mode (key = descriptor.mode / mode).
-// Register with publishRetained; unregister with deleteRetained (tombstone payload below).
-// Bare publish is not order-safe: late AgentRegistry subscribers only see retained entries.
-export type AgentRegistrationEvent =
-  | { type: 'register';   descriptor: AgentDescriptor }
-  | { type: 'unregister'; mode:       string }
-
-export const AgentRegistrationTopic = createTopic<AgentRegistrationEvent>('agent.registration')
-
 export type AgentCatalogEvent = {
   agents: Array<{ mode: string; displayName: string; shortDesc: string }>
 }
