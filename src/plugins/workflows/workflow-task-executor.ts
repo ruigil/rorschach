@@ -15,6 +15,9 @@ import type {
 } from './types.ts'
 import { validateOutputValues } from './validation.ts'
 
+import { invokeSCR } from '../../system/scr/invoker.ts'
+import type { SCRReply } from '../../types/scr.ts'
+
 export const TOOL_EXECUTOR_DESCRIPTOR: AgentDescriptor = {
   mode: 'tool-executor',
   displayName: 'Tool Executor',
@@ -254,6 +257,63 @@ export const WorkflowTaskExecutor = (
   })
 
   const startTask = (state: S, msg: Extract<M, { type: 'startTask' }>, ctx: Ctx): ActorResult<M, S> => {
+    const urn = msg.task.agentMode
+    if (urn.startsWith('scr:')) {
+      const promptText = `
+Workflow Goal: ${msg.workflow.goal}
+Workflow Context: ${msg.workflow.context}
+Current Task: ${msg.task.name}
+Task Description: ${msg.task.description}
+Validation Criteria: ${msg.task.validationCriteria}
+
+Inputs:
+${JSON.stringify(msg.inputs, null, 2)}
+
+Dependency Outputs:
+${JSON.stringify(msg.dependencyOutputs, null, 2)}
+`
+
+      const combinedInputs: Record<string, unknown> = {}
+      Object.assign(combinedInputs, msg.inputs)
+      for (const dep of Object.values(msg.dependencyOutputs)) {
+        if (dep.outputs) {
+          Object.assign(combinedInputs, dep.outputs)
+        }
+      }
+
+      const input = {
+        prompt: promptText,
+        ...combinedInputs,
+      }
+
+      ctx.pipeToSelf(
+        invokeSCR(urn, input),
+        (reply) => ({
+          type: '_scrReply' as const,
+          taskId: msg.task.id,
+          reply,
+        } as unknown as M),
+        (err) => ({
+          type: '_scrReply' as const,
+          taskId: msg.task.id,
+          reply: { type: 'error' as const, error: String(err) },
+        } as unknown as M)
+      )
+
+      return {
+        state: {
+          ...state,
+          runId: msg.runId,
+          workflow: msg.workflow,
+          task: msg.task,
+          inputs: msg.inputs,
+          dependencyOutputs: msg.dependencyOutputs,
+          userId: msg.userId,
+          terminalSignaled: false,
+        }
+      }
+    }
+
     const descriptor = state.descriptors[msg.task.agentMode]
     if (!descriptor) {
       parentRef.send({
@@ -449,6 +509,37 @@ export const WorkflowTaskExecutor = (
     if (msg.type === 'startTask') {
       if (state.loop.phase !== 'idle') return { state, stash: true }
       return startTask(state, msg, ctx)
+    }
+    if (msg.type === '_scrReply') {
+      const { taskId, reply } = msg
+      if (reply.type === 'result') {
+        const outputs = (reply.output && typeof reply.output === 'object') ? (reply.output as any) : {}
+        parentRef.send({
+          type: 'taskCompleted',
+          taskId,
+          summary: `Task completed via SCR URN: ${state.task?.agentMode}`,
+          outputs,
+        })
+        return { state: { ...state, terminalSignaled: true } }
+      } else if (reply.type === 'error') {
+        parentRef.send({
+          type: 'taskFailed',
+          taskId,
+          error: reply.error,
+        })
+        return { state: { ...state, terminalSignaled: true } }
+      } else if (reply.type === 'pending') {
+        parentRef.send({
+          type: 'taskWaiting',
+          taskId,
+          actorName: ctx.self.name,
+          jobId: reply.jobId,
+          toolName: `SCR:${state.task?.agentMode}`,
+        })
+        ctx.stop(ctx.self)
+        return { state }
+      }
+      return { state }
     }
     if (msg.type === 'invoke') {
       if (msg.toolName === completeWorkflowTaskTool.name || msg.toolName === blockWorkflowTaskTool.name) {

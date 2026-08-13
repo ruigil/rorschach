@@ -353,9 +353,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 4.1: Build `WorkflowManager` Spawner Actor Skeleton
 * **Description:** Create the long-lived spawner actor `WorkflowManager` to handle graph SCR URN invocations.
 * **Acceptance criteria:**
-  - [ ] Manager registers with registry and spawns workflow runner actors.
+  - [x] Manager registers with registry and spawns workflow runner actors.
 * **Verification:**
-  - [ ] Verify system boots and registers the workflow spawner.
+  - [x] Verify system boots and registers the workflow spawner.
 * **Dependencies:** Task 1.7
 * **Files likely touched:**
   - `src/plugins/workflows/workflow-manager.ts` (New file)
@@ -364,9 +364,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 4.2: Implement `SCRWorkflowRunner` Core Execution (DAG & Bindings)
 * **Description:** Create the ephemeral `SCRWorkflowRunner` to load the task DAG from DB and execute nodes in topological order, mapping parameter bindings.
 * **Acceptance criteria:**
-  - [ ] Runner parses bindings and runs tasks in correct topological order.
+  - [x] Runner parses bindings and runs tasks in correct topological order.
 * **Verification:**
-  - [ ] Verify execution runs simple DAG task steps.
+  - [x] Verify execution runs simple DAG task steps.
 * **Dependencies:** Task 4.1
 * **Files likely touched:**
   - `src/plugins/workflows/workflow-run-executor.ts` (New file/refactor)
@@ -375,9 +375,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 4.3: Adapt Task Execution to call URNs via `invokeSCR`
 * **Description:** Update tasks in the runner to target SCR URNs instead of old agent modes, propagating context.
 * **Acceptance criteria:**
-  - [ ] Task execution recursively triggers child SCR URNs.
+  - [x] Task execution recursively triggers child SCR URNs.
 * **Verification:**
-  - [ ] Verify child tool and agent URNs are triggered.
+  - [x] Verify child tool and agent URNs are triggered.
 * **Dependencies:** Task 4.2
 * **Files likely touched:**
   - `src/plugins/workflows/workflow-task-executor.ts` (New file/refactor)
@@ -386,10 +386,10 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 4.4: Implement Job Mapping & Resumption in `WorkflowManager`
 * **Description:** Integrate job mapping persistence and `JobRegistryTopic` listening to resume workflow execution on completion events.
 * **Acceptance criteria:**
-  - [ ] Suspended workflow runners resume correctly on completed events.
+  - [x] Suspended workflow runners resume correctly on completed events.
 * **Verification:**
-  - [ ] Send completed job event and verify runner resumes execution.
-  - [ ] Deletes persisted state from database when workflow runs complete.
+  - [x] Send completed job event and verify runner resumes execution.
+  - [x] Deletes persisted state from database when workflow runs complete.
 * **Dependencies:** Task 4.3
 * **Files likely touched:**
   - `src/plugins/workflows/workflow-manager.ts`
@@ -398,9 +398,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 4.5: Create `OperatorSpawnerActor` Skeleton
 * **Description:** Implement `OperatorSpawnerActor` to coordinate composite operations (sequence, parallel, map, retry, fallback, branch).
 * **Acceptance criteria:**
-  - [ ] Spawner actor starts up and registers with the registry.
+  - [x] Spawner actor starts up and registers with the registry.
 * **Verification:**
-  - [ ] System registers operator URNs during boot.
+  - [x] System registers operator URNs during boot.
 * **Dependencies:** Task 1.7
 * **Files likely touched:**
   - `src/plugins/workflows/operator-spawner.ts` (New file)
@@ -409,9 +409,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 4.6: Implement Sequence & Parallel Operators
 * **Description:** Implement sequential and parallel execution in the ephemeral `SCROperatorRunner`.
 * **Acceptance criteria:**
-  - [ ] Executes child operands sequentially or concurrently.
+  - [x] Executes child operands sequentially or concurrently.
 * **Verification:**
-  - [ ] Unit tests verifying execution order.
+  - [x] Unit tests verifying execution order.
 * **Dependencies:** Task 4.5
 * **Files likely touched:**
   - `src/plugins/workflows/operator-runner.ts` (New file)
@@ -420,9 +420,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 4.7: Implement Map & Branch Operators
 * **Description:** Implement collection mapping and conditional routing operators.
 * **Acceptance criteria:**
-  - [ ] Executes operations on lists or takes specific paths based on conditions.
+  - [x] Executes operations on lists or takes specific paths based on conditions.
 * **Verification:**
-  - [ ] Verify map and branch execution pathways.
+  - [x] Verify map and branch execution pathways.
 * **Dependencies:** Task 4.6
 * **Files likely touched:**
   - `src/plugins/workflows/operator-runner.ts`
@@ -431,9 +431,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 4.8: Implement Retry & Fallback Operators
 * **Description:** Implement error recovery and alternative path execution.
 * **Acceptance criteria:**
-  - [ ] Retries failing operations and falls back to alternate URNs if failures persist.
+  - [x] Retries failing operations and falls back to alternate URNs if failures persist.
 * **Verification:**
-  - [ ] Verify error retries and fallback results.
+  - [x] Verify error retries and fallback results.
 * **Dependencies:** Task 4.7
 * **Files likely touched:**
   - `src/plugins/workflows/operator-runner.ts`
@@ -442,9 +442,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 4.9: Update Workflows Agent Prompt & Planning Schema
 * **Description:** Update `workflows-agent.ts` to query registries and output steps targeting SCR URNs instead of legacy modes.
 * **Acceptance criteria:**
-  - [ ] Agent utilizes discovery tools and plans workflows with correct URN mappings.
+  - [x] Agent utilizes discovery tools and plans workflows with correct URN mappings.
 * **Verification:**
-  - [ ] Generate workflow and verify output URN task structure.
+  - [x] Generate workflow and verify output URN task structure.
 * **Dependencies:** Task 1.5, Task 4.8
 * **Files likely touched:**
   - `src/plugins/workflows/workflows-agent.ts`
@@ -453,9 +453,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 ---
 
 ### Checkpoint: Recursive Composition
-- [ ] Workflows can execute child workflows.
-- [ ] Operators (map, retry, branch) function correctly.
-- [ ] Workflows agent generates plan steps mapping to URNs.
+- [x] Workflows can execute child workflows.
+- [x] Operators (map, retry, branch) function correctly.
+- [x] Workflows agent generates plan steps mapping to URNs.
 
 ---
 

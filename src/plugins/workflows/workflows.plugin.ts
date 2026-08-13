@@ -4,11 +4,13 @@ import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { type UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import type { ToolMsg, ToolCollection } from '../../types/tools.ts'
 import { WorkflowRunner } from './workflow-runner.ts'
+import { WorkflowManager } from './workflow-manager.ts'
 import { WorkflowsAgentDescriptor } from './workflows-agent.ts'
 import { WorkflowToolsActor, workflowControlTools } from './workflow-tools.ts'
 import { buildWorkflowsRoutes } from './workflows.routes.ts'
 import { config, defaultConfig, type WorkflowsConfig } from './workflows.config.ts'
 import type { WorkflowRunnerMsg } from './types.ts'
+import { OperatorSpawner } from './operator-spawner.ts'
 
 const buildWorkflowsTools = (toolsRef: ActorRef<ToolMsg>): ToolCollection => {
   const tools: ToolCollection = {}
@@ -46,11 +48,22 @@ export default createPluginFactory<WorkflowsConfig>({
         })
       },
     },
+    manager: {
+      factory: (cfg) => {
+        return WorkflowManager({
+          model: cfg.agent.model,
+          maxToolLoops: cfg.agent.maxToolLoops ?? 10,
+        })
+      },
+    },
     tools: {
       factory: (_cfg, deps) => WorkflowToolsActor({
         workflowRunnerRef: deps.runner as ActorRef<WorkflowRunnerMsg>,
       }),
       dependsOn: ['runner'],
+    },
+    operatorSpawner: {
+      factory: () => OperatorSpawner(),
     },
   },
 

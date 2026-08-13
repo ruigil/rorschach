@@ -62,20 +62,20 @@
 ---
 
 ## Phase 4: Graph (Workflow) & Operator Integration
-- [ ] **Task 4.1**: Build `WorkflowManager` Spawner Actor Skeleton (`src/plugins/workflows/workflow-manager.ts`)
-- [ ] **Task 4.2**: Implement `SCRWorkflowRunner` Core Execution (`src/plugins/workflows/workflow-run-executor.ts`)
-- [ ] **Task 4.3**: Adapt Task Execution to call URNs via `invokeSCR` (`src/plugins/workflows/workflow-task-executor.ts`)
-- [ ] **Task 4.4**: Implement Job Mapping & Resumption in `WorkflowManager` (`src/plugins/workflows/workflow-manager.ts`)
-- [ ] **Task 4.5**: Create `OperatorSpawnerActor` Skeleton (`src/plugins/workflows/operator-spawner.ts`)
-- [ ] **Task 4.6**: Implement Sequence & Parallel Operators (`src/plugins/workflows/operator-runner.ts`)
-- [ ] **Task 4.7**: Implement Map & Branch Operators (`src/plugins/workflows/operator-runner.ts`)
-- [ ] **Task 4.8**: Implement Retry & Fallback Operators (`src/plugins/workflows/operator-runner.ts`)
-- [ ] **Task 4.9**: Update Workflows Agent Prompt & Planning Schema (`src/plugins/workflows/workflows-agent.ts`)
+- [x] **Task 4.1**: Build `WorkflowManager` Spawner Actor Skeleton (`src/plugins/workflows/workflow-manager.ts`)
+- [x] **Task 4.2**: Implement `SCRWorkflowRunner` Core Execution (`src/plugins/workflows/workflow-run-executor.ts`)
+- [x] **Task 4.3**: Adapt Task Execution to call URNs via `invokeSCR` (`src/plugins/workflows/workflow-task-executor.ts`)
+- [x] **Task 4.4**: Implement Job Mapping & Resumption in `WorkflowManager` (`src/plugins/workflows/workflow-manager.ts`)
+- [x] **Task 4.5**: Create `OperatorSpawnerActor` Skeleton (`src/plugins/workflows/operator-spawner.ts`)
+- [x] **Task 4.6**: Implement Sequence & Parallel Operators (`src/plugins/workflows/operator-runner.ts`)
+- [x] **Task 4.7**: Implement Map & Branch Operators (`src/plugins/workflows/operator-runner.ts`)
+- [x] **Task 4.8**: Implement Retry & Fallback Operators (`src/plugins/workflows/operator-runner.ts`)
+- [x] **Task 4.9**: Update Workflows Agent Prompt & Planning Schema (`src/plugins/workflows/workflows-agent.ts`)
 
 ### Checkpoint: Recursive Composition
-- [ ] Workflows can execute child workflows.
-- [ ] Operators (map, retry, branch) function correctly.
-- [ ] Workflows agent generates plan steps mapping to URNs.
+- [x] Workflows can execute child workflows.
+- [x] Operators (map, retry, branch) function correctly.
+- [x] Workflows agent generates plan steps mapping to URNs.
 
 ---
 
