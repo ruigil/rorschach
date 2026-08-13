@@ -72,6 +72,7 @@ export type AgentDescriptor = {
   role?:        string
   systemPrompt: string
   internalTools: Tool[]
+  agentSCRs?:   string[]
   toolFilter?:   ToolFilter
   capabilities: { userVisible: boolean }
   model:        string

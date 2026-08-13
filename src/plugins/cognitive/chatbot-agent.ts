@@ -10,6 +10,7 @@ export type ChatbotState = {
 
 export type ChatbotAgentOptions = AgentModelOptions & {
   systemPrompt?: string
+  agentSCRs?:    string[]
 }
 
 export const ChatbotAgentDescriptor = (options: ChatbotAgentOptions): AgentDescriptor => {
@@ -20,6 +21,7 @@ export const ChatbotAgentDescriptor = (options: ChatbotAgentOptions): AgentDescr
     shortDesc:    'General conversation, chitchat, general reasoning, meta-questions, or tasks not covered by other specialized modes.',
     systemPrompt: options.systemPrompt || '',
     internalTools: [],
+    agentSCRs:    options.agentSCRs || [],
     toolFilter:   options.toolFilter,
     capabilities: { userVisible: true },
     model:        options.model,

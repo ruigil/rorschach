@@ -1,8 +1,9 @@
 import type { ActorDef, ActorRef } from '../../system/index.ts'
-import { onLifecycle, onMessage } from '../../system/index.ts'
+import { onLifecycle, onMessage, createTopic } from '../../system/index.ts'
 import {
   UserPresenceTopic,
   InboundMessageTopic,
+  OutboundUserMessageTopic,
   type MessageAttachment,
   type UserPresenceEvent,
 } from '../../types/events.ts'
@@ -11,12 +12,18 @@ import { ContextStore, type ContextStoreMsg } from './context-store.ts'
 import { SessionLifecycleTopic } from '../../types/session.ts'
 import { JobRegistryTopic, type JobLifecycleEvent } from '../../types/tools.ts'
 import type { AgentRegistryMsg } from './agent-registry.ts'
+import type { StreamChunk, SCRReply } from '../../types/scr.ts'
+import { invokeSCR } from '../../system/scr/invoker.ts'
+import { requestStorage } from '../../system/context/request.ts'
+import { ResolutionCache } from '../../system/scr/cache.ts'
 
 // ─── Message protocol ──────────────────────────────────────────────────────
 
 type SessionManagerMsg =
   | { type: '_userPresence';     event: UserPresenceEvent }
   | { type: '_message';          text: string; attachments?: MessageAttachment[] }
+  | { type: '_streamChunk';      userId: string; event: StreamChunk }
+  | { type: '_scrReply';         userId: string; streamToTopic: string; reply: SCRReply }
   | { type: '_jobRegistry';      event: JobLifecycleEvent }
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
 
@@ -24,6 +31,8 @@ type SessionManagerMsg =
 
 type Session = {
   contextStoreRef: ActorRef<ContextStoreMsg>
+  timezone?: string
+  permission?: any
 }
 
 type SessionManagerState = {
@@ -157,6 +166,10 @@ export const SessionManager = (
           if (existingSession) {
             if (event.timezone) {
               existingSession.contextStoreRef.send({ type: 'setTimezone', timezone: event.timezone })
+              existingSession.timezone = event.timezone
+            }
+            if (event.permission) {
+              existingSession.permission = event.permission
             }
             ctx.publish(SessionLifecycleTopic, {
               type:      'presencePresent',
@@ -178,6 +191,8 @@ export const SessionManager = (
           }
           const seeded: Session = {
             contextStoreRef,
+            timezone: event.timezone,
+            permission: event.permission,
           }
           const withSession = setSession(nextState, userId, seeded)
 
@@ -223,13 +238,121 @@ export const SessionManager = (
       _message: (state, msg, ctx) => {
         const userId = ctx.request.userId
         const session = state.sessions[userId]
-        if (!session || !state.agentRegistryRef) return { state }
+        if (!session) return { state }
 
-        ctx.send(state.agentRegistryRef, {
-          type: 'routeMessage',
-          text: msg.text,
-          attachments: msg.attachments,
-        })
+        const hasChatbotUrn = ResolutionCache.getDescriptor('scr:reasoner:cognitive.chatbot') !== undefined
+
+        if (hasChatbotUrn) {
+          const streamToTopic = `session.stream.${userId}`
+
+          ctx.subscribe(createTopic<StreamChunk>(streamToTopic), (event) => ({
+            type: '_streamChunk' as const,
+            userId,
+            event,
+          }), streamToTopic)
+
+          const request = {
+            ...ctx.request,
+            streamTo: streamToTopic,
+            timezone: session.timezone,
+            permission: session.permission,
+          }
+
+          ctx.pipeToSelf(
+            requestStorage.run(request, () =>
+              invokeSCR('scr:reasoner:cognitive.chatbot', { prompt: msg.text })
+            ),
+            (reply) => ({
+              type: '_scrReply' as const,
+              userId,
+              streamToTopic,
+              reply,
+            }),
+            (error) => ({
+              type: '_scrReply' as const,
+              userId,
+              streamToTopic,
+              reply: { type: 'error', error: String(error) },
+            })
+          )
+        } else if (state.agentRegistryRef) {
+          // ⚠️ TEMPORARY COMPATIBILITY FALLBACK: Legacy AgentRegistry Message Routing
+          // Falls back to routing to legacy mode-based session agents if URN is not registered.
+          // Decommission and remove in Phase 5 when legacy agent registry is fully deleted (Task 5.5).
+          ctx.send(state.agentRegistryRef, {
+            type: 'routeMessage',
+            text: msg.text,
+            attachments: msg.attachments,
+          })
+        }
+        return { state }
+      },
+
+      // ⚠️ TEMPORARY COMPATIBILITY BRIDGE: StreamChunk to OutboundUserMessageTopic Translator
+      // Maps structured StreamChunk event payloads from SCR runs into legacy JSON frames 
+      // expected by client WebSocket/HTTP connections.
+      // Decommission and remove in Phase 5 when the frontend parses StreamChunks directly (Task 5.3).
+      _streamChunk: (state, msg, ctx) => {
+        const { userId, event } = msg
+        if (event.type === 'start') {
+          ctx.publish(OutboundUserMessageTopic, {
+            userId,
+            text: JSON.stringify({ type: 'start' }),
+          })
+        } else if (event.type === 'chunk') {
+          const chunk = (event as any).chunk
+          if (chunk.kind === 'text') {
+            ctx.publish(OutboundUserMessageTopic, {
+              userId,
+              text: JSON.stringify({ type: 'chunk', text: chunk.text }),
+            })
+          } else if (chunk.kind === 'reasoning') {
+            ctx.publish(OutboundUserMessageTopic, {
+              userId,
+              text: JSON.stringify({ type: 'reasoningChunk', text: chunk.text }),
+            })
+          }
+        } else if (event.type === 'end') {
+          ctx.publish(OutboundUserMessageTopic, {
+            userId,
+            text: JSON.stringify({ type: 'done' }),
+          })
+        } else if (event.type === 'error') {
+          ctx.publish(OutboundUserMessageTopic, {
+            userId,
+            text: JSON.stringify({ type: 'error', text: event.error }),
+          })
+        }
+        return { state }
+      },
+
+      // ⚠️ TEMPORARY COMPATIBILITY BRIDGE: Cleanup for invokeSCR runner replies
+      // Cleans up local stream topics and translates end-of-turn metadata.
+      // Decommission and remove in Phase 5 when local session stream translation is deprecated.
+      _scrReply: (state, msg, ctx) => {
+        const { userId, streamToTopic, reply } = msg
+
+        ctx.unsubscribe(createTopic<StreamChunk>(streamToTopic), streamToTopic)
+        ctx.deleteTopic(createTopic<StreamChunk>(streamToTopic))
+
+        if (reply.type === 'error') {
+          ctx.publish(OutboundUserMessageTopic, {
+            userId,
+            text: JSON.stringify({ type: 'error', text: reply.error }),
+          })
+        } else if (reply.type === 'pending') {
+          ctx.publish(OutboundUserMessageTopic, {
+            userId,
+            text: JSON.stringify({
+              type: 'chunk',
+              text: reply.placeholderText ?? `Background job started (jobId=${reply.jobId}).`
+            }),
+          })
+          ctx.publish(OutboundUserMessageTopic, {
+            userId,
+            text: JSON.stringify({ type: 'done' }),
+          })
+        }
         return { state }
       },
 

@@ -3,11 +3,51 @@ import { onMessage } from '../../system/index.ts'
 import type { SCRInvokeMsg, SCRDescriptor } from '../../types/scr.ts'
 import { ResolutionCache } from '../../system/scr/cache.ts'
 
-export const RegistryMetaToolsActor = (): ActorDef<SCRInvokeMsg, null> => ({
+export const RegistryMetaToolsActor = (): ActorDef<any, null> => ({
   initialState: null,
   handler: onMessage({
     invoke: (state, msg) => {
-      const { urn, input, replyTo } = msg
+      let isTool = false
+      let urn = msg.urn
+      let input = msg.input
+      const replyTo = msg.replyTo
+
+      if (msg.toolName) {
+        isTool = true
+        urn = msg.toolName === 'registry_search' ? 'scr:leaf:registry.search' : 'scr:leaf:registry.get'
+        input = typeof msg.arguments === 'string' ? JSON.parse(msg.arguments) : msg.arguments
+      }
+
+      const sendReply = (output: any) => {
+        if (isTool) {
+          replyTo.send({
+            type: 'toolResult',
+            result: {
+              text: typeof output === 'string' ? output : JSON.stringify(output)
+            }
+          })
+        } else {
+          replyTo.send({
+            type: 'result',
+            output
+          })
+        }
+      }
+
+      const sendError = (error: string) => {
+        if (isTool) {
+          replyTo.send({
+            type: 'toolError',
+            error
+          })
+        } else {
+          replyTo.send({
+            type: 'error',
+            error
+          })
+        }
+      }
+
       if (urn === 'scr:leaf:registry.search') {
         const { query } = (input || {}) as { query?: string }
         const all = ResolutionCache.getAllDescriptors()
@@ -23,18 +63,18 @@ export const RegistryMetaToolsActor = (): ActorDef<SCRInvokeMsg, null> => ({
           )
         }
         const output = filtered.map(({ target: _, ...rest }) => rest)
-        replyTo.send({ type: 'result', output })
+        sendReply(output)
       } else if (urn === 'scr:leaf:registry.get') {
         const { urn: targetUrn } = (input || {}) as { urn: string }
         const descriptor = ResolutionCache.getDescriptor(targetUrn)
         if (!descriptor) {
-          replyTo.send({ type: 'error', error: `Capability not found: ${targetUrn}` })
+          sendError(`Capability not found: ${targetUrn}`)
         } else {
           const { target: _, ...rest } = descriptor
-          replyTo.send({ type: 'result', output: rest })
+          sendReply(rest)
         }
       } else {
-        replyTo.send({ type: 'error', error: `Unsupported meta-tool URN: ${urn}` })
+        sendError(`Unsupported meta-tool URN: ${urn}`)
       }
       return { state }
     },

@@ -252,9 +252,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 3.1: Build `AgentSpawnerActor` Skeleton
 * **Description:** Implement `AgentSpawnerActor` to handle agent URN execution requests.
 * **Acceptance criteria:**
-  - [ ] Spawner instantiates, registers with the registry, and accepts message execution requests.
+  - [x] Spawner instantiates, registers with the registry, and accepts message execution requests.
 * **Verification:**
-  - [ ] System boots and registers `AgentSpawner` to `SCRRegistrationTopic`.
+  - [x] System boots and registers `AgentSpawner` to `SCRRegistrationTopic`.
 * **Dependencies:** Task 1.7
 * **Files likely touched:**
   - `src/system/agent/spawner.ts` (New file)
@@ -263,9 +263,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 3.2: Implement Ephemeral `SCRAgentRunner` Core Execution
 * **Description:** Create the `SCRAgentRunner` actor spawned per agent request to manage inputs, run `agentLoop`, and execute turns. Injects the `scr_complete` tool.
 * **Acceptance criteria:**
-  - [ ] Runner spawns and executes a single ReAct loop successfully.
+  - [x] Runner spawns and executes a single ReAct loop successfully.
 * **Verification:**
-  - [ ] Verify basic runner test returns terminal responses.
+  - [x] Verify basic runner test returns terminal responses.
 * **Dependencies:** Task 3.1
 * **Files likely touched:**
   - `src/system/agent/agent-runner.ts` (New file)
@@ -275,9 +275,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 3.3: Implement Channel-Agnostic Ambient Streaming
 * **Description:** Update `SCRAgentRunner` to intercept internal agent tokens and publish them as `StreamChunk` envelopes out-of-band to the context's `streamTo` target.
 * **Acceptance criteria:**
-  - [ ] Intermediate tokens bypass core mailbox channels and stream to target topics.
+  - [x] Intermediate tokens bypass core mailbox channels and stream to target topics.
 * **Verification:**
-  - [ ] Subscribe to stream topic and verify tokens arrive wrapped in structured envelopes with matching span IDs.
+  - [x] Subscribe to stream topic and verify tokens arrive wrapped in structured envelopes with matching span IDs.
 * **Dependencies:** Task 3.2
 * **Files likely touched:**
   - `src/system/agent/agent-runner.ts`
@@ -286,9 +286,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 3.4: Implement Request Context Persistence & Restore
 * **Description:** Add persistent state capabilities to `SCRAgentRunner` using `persistencePluginAdapter('scr.run.' + runId)`. Store requests and restore them via `requestStorage.run` on resume. Clean up KV on completion.
 * **Acceptance criteria:**
-  - [ ] Runner serializes state, restores context when re-spawned, and deletes database key on completion.
+  - [x] Runner serializes state, restores context when re-spawned, and deletes database key on completion.
 * **Verification:**
-  - [ ] Verify database contains runner states during execution, and deletes them upon completion.
+  - [x] Verify database contains runner states during execution, and deletes them upon completion.
 * **Dependencies:** Task 3.3
 * **Files likely touched:**
   - `src/system/agent/agent-runner.ts`
@@ -297,9 +297,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 3.5: Implement Job Mapping & Resumption in `AgentSpawnerActor`
 * **Description:** Implement `RegisterJobMsg` handling in `AgentSpawnerActor` to save pending job mappings in KV and listen to `JobRegistryTopic` to resume suspended runners.
 * **Acceptance criteria:**
-  - [ ] Spawner maps job IDs, registers mappings in KV database, and resumes runner upon completion events.
+  - [x] Spawner maps job IDs, registers mappings in KV database, and resumes runner upon completion events.
 * **Verification:**
-  - [ ] Publish completion event and confirm runner executes subsequent steps.
+  - [x] Publish completion event and confirm runner executes subsequent steps.
 * **Dependencies:** Task 3.4
 * **Files likely touched:**
   - `src/system/agent/spawner.ts`
@@ -308,9 +308,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 3.6: Integrate Usage Budget Accounting in `SCRAgentRunner`
 * **Description:** Update the runner to publish LLM usage updates to `UsageUpdateTopic` to track spending budgets.
 * **Acceptance criteria:**
-  - [ ] Token and cost deltas publish after turns.
+  - [x] Token and cost deltas publish after turns.
 * **Verification:**
-  - [ ] Verify that budget coordinator updates the UserBudget record.
+  - [x] Verify that budget coordinator updates the UserBudget record.
 * **Dependencies:** Task 1.10, Task 3.2
 * **Files likely touched:**
   - `src/system/agent/agent-runner.ts`
@@ -319,9 +319,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 3.7: Implement Dynamic Pull-Based Discovery
 * **Description:** Update `agentLoop` to search capabilities dynamically via `scr:tool:registry.search` rather than using pre-loaded tools.
 * **Acceptance criteria:**
-  - [ ] Agent binds discovered tool schemas mid-flight.
+  - [x] Agent binds discovered tool schemas mid-flight.
 * **Verification:**
-  - [ ] Verify agent can successfully find, bind, and execute a notebook tool dynamically.
+  - [x] Verify agent can successfully find, bind, and execute a notebook tool dynamically.
 * **Dependencies:** Task 1.5, Task 3.2
 * **Files likely touched:**
   - `src/system/agent/agent-loop.ts`
@@ -330,9 +330,9 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 #### Task 3.8: Refactor `SessionManager` for Ingress Execution
 * **Description:** Refactor `SessionManager` to start request-scoped chatbot agent runs via `invokeSCR` directly, propagating user presence context.
 * **Acceptance criteria:**
-  - [ ] Chat ingress maps incoming WS inputs to chatbot agent SCR invocations.
+  - [x] Chat ingress maps incoming WS inputs to chatbot agent SCR invocations.
 * **Verification:**
-  - [ ] Send user message and verify it triggers chatbot execution.
+  - [x] Send user message and verify it triggers chatbot execution.
 * **Dependencies:** Task 3.7
 * **Files likely touched:**
   - `src/plugins/cognitive/session-manager.ts`
@@ -341,9 +341,10 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 ---
 
 ### Checkpoint: Reasoners Unified
-- [ ] Agents can be invoked recursively (spawning ephemeral sub-runners).
-- [ ] Agents discover, bind, and call capabilities dynamically via discovery meta-tools.
-- [ ] `SessionManager` routes user messages directly to root agent via request-scoped execution.
+- [x] Agents can be invoked recursively (spawning ephemeral sub-runners).
+- [x] Agents discover, bind, and call capabilities dynamically via discovery meta-tools.
+- [x] `SessionManager` routes user messages directly to root agent via request-scoped execution.
+
 
 ---
 

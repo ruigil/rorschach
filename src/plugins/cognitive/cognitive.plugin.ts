@@ -1,4 +1,4 @@
-import { createPluginFactory } from '../../system/index.ts'
+import { createPluginFactory, AgentSpawner } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
 import { SessionManager } from './session-manager.ts'
 import { LlmProvider } from './llm-provider.ts'
@@ -38,6 +38,15 @@ export default createPluginFactory<CognitiveConfig>({
       },
       configPath: 'llmProvider',
     },
+    agentSpawner: {
+      factory: (cfg, deps) => {
+        if (!deps.llmProvider) return null
+        return AgentSpawner({
+          llmRef: deps.llmProvider as ActorRef<LlmProviderMsg>,
+        })
+      },
+      dependsOn: ['llmProvider'],
+    },
     agentRegistry: {
       factory: () => AgentRegistry(),
     },
@@ -72,6 +81,11 @@ export default createPluginFactory<CognitiveConfig>({
         model:        cfg.chatbot?.model ?? 'deepseek/deepseek-v4-flash',
         systemPrompt: cfg.chatbot?.systemPrompt,
         toolFilter:   cfg.chatbot?.toolFilter,
+        agentSCRs: [
+          'scr:leaf:registry.search',
+          'scr:leaf:registry.get',
+          'scr:leaf:tools.web_search'
+        ],
       }),
     },
   },

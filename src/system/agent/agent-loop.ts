@@ -9,6 +9,7 @@ import type {
 } from '../actor/types.ts'
 import { onMessage } from '../actor/match.ts'
 import { invokeTool } from './tool-utils.ts'
+import { ResolutionCache } from '../scr/cache.ts'
 import type {
 	ToolCollection,
 	ToolFinalReply,
@@ -472,6 +473,28 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
           : { state }
         return materialize(r.state)
       }
+      if (m.reply.type === 'toolResult' && (m.reply as any).result === undefined) {
+        span?.done()
+        ctx.log.info(`${log}: tool result undefined (loop terminated)`, { tool: m.toolName })
+        
+        let withResultState = state
+        if (hooks.onToolResult) {
+          const r = hooks.onToolResult(state, { toolName: m.toolName, toolCallId: m.toolCallId, reply: m.reply }, ctx)
+          withResultState = r.state
+        }
+
+        const r = hooks.onComplete
+          ? hooks.onComplete(withResultState, turn.pending, { promptTokens: 0, completionTokens: 0 }, ctx)
+          : { state: withResultState }
+        
+        const finalState = {
+          ...r.state,
+          loop: idleLoopState(),
+        } as S
+        
+        emitUi({ type: 'done' }, ctx)
+        return { state: finalState, become: idle }
+      }
       if (m.reply.type === 'toolResult') {
         span?.done()
         ctx.log.info(`${log}: tool result`, { tool: m.toolName, ok: true })
@@ -487,6 +510,42 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
       if (hooks.onToolResult) {
         const r = hooks.onToolResult(state, { toolName: m.toolName, toolCallId: m.toolCallId, reply: m.reply }, ctx)
         withResultState = r.state
+      }
+
+      if (m.reply.type === 'toolResult' && m.reply.result) {
+        try {
+          const resultObj = JSON.parse(m.reply.result.text)
+          const descriptors: any[] = Array.isArray(resultObj) ? resultObj : [resultObj]
+          for (const desc of descriptors) {
+            if (desc && typeof desc === 'object' && desc.urn && desc.kind === 'leaf') {
+              const fullDesc = ResolutionCache.getDescriptor(desc.urn)
+              if (fullDesc && fullDesc.target) {
+                const cleanName = desc.meta?.schema?.function?.name || desc.urn.replace(/^scr:leaf:/, '').replace(/[\.:]/g, '_')
+                const stateAny = withResultState as any
+                if (!stateAny.tools) {
+                  stateAny.tools = {}
+                }
+                if (!(cleanName in stateAny.tools)) {
+                  stateAny.tools[cleanName] = {
+                    name: cleanName,
+                    schema: desc.meta?.schema || {
+                      type: 'function',
+                      function: {
+                        name: cleanName,
+                        description: desc.description || '',
+                        parameters: desc.schema?.inputSchema || {},
+                      }
+                    },
+                    ref: fullDesc.target,
+                  }
+                  ctx.log.info(`${log}: dynamically bound tool schema mid-flight: ${cleanName} (${desc.urn})`)
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // ignore parsing error
+        }
       }
 
       // Auto-emit sources/attachments

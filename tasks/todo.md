@@ -45,19 +45,19 @@
 ---
 
 ## Phase 3: Reasoner (Agent) SCR Conversion
-- [ ] **Task 3.1**: Build `AgentSpawnerActor` Skeleton (`src/system/agent/spawner.ts`)
-- [ ] **Task 3.2**: Implement Ephemeral `SCRAgentRunner` Core Execution (`src/system/agent/agent-runner.ts`, `src/system/agent/agent-loop.ts`)
-- [ ] **Task 3.3**: Implement Channel-Agnostic Ambient Streaming (`src/system/agent/agent-runner.ts`)
-- [ ] **Task 3.4**: Implement Request Context Persistence & Restore (`src/system/agent/agent-runner.ts`)
-- [ ] **Task 3.5**: Implement Job Mapping & Resumption in `AgentSpawnerActor` (`src/system/agent/spawner.ts`)
-- [ ] **Task 3.6**: Integrate Usage Budget Accounting in `SCRAgentRunner` (`src/system/agent/agent-runner.ts`)
-- [ ] **Task 3.7**: Implement Dynamic Pull-Based Discovery (`src/system/agent/agent-loop.ts`)
-- [ ] **Task 3.8**: Refactor `SessionManager` for Ingress Execution (`src/plugins/cognitive/session-manager.ts`)
+- [x] **Task 3.1**: Build `AgentSpawnerActor` Skeleton (`src/system/agent/spawner.ts`)
+- [x] **Task 3.2**: Implement Ephemeral `SCRAgentRunner` Core Execution (`src/system/agent/agent-runner.ts`, `src/system/agent/agent-loop.ts`)
+- [x] **Task 3.3**: Implement Channel-Agnostic Ambient Streaming (`src/system/agent/agent-runner.ts`)
+- [x] **Task 3.4**: Implement Request Context Persistence & Restore (`src/system/agent/agent-runner.ts`)
+- [x] **Task 3.5**: Implement Job Mapping & Resumption in `AgentSpawnerActor` (`src/system/agent/spawner.ts`)
+- [x] **Task 3.6**: Integrate Usage Budget Accounting in `SCRAgentRunner` (`src/system/agent/agent-runner.ts`)
+- [x] **Task 3.7**: Implement Dynamic Pull-Based Discovery (`src/system/agent/agent-loop.ts`)
+- [x] **Task 3.8**: Refactor `SessionManager` for Ingress Execution (`src/plugins/cognitive/session-manager.ts`)
 
 ### Checkpoint: Reasoners Unified
-- [ ] Agents can be invoked recursively (spawning ephemeral sub-runners).
-- [ ] Agents discover, bind, and call capabilities dynamically via discovery meta-tools.
-- [ ] `SessionManager` routes user messages directly to root agent via request-scoped execution.
+- [x] Agents can be invoked recursively (spawning ephemeral sub-runners).
+- [x] Agents discover, bind, and call capabilities dynamically via discovery meta-tools.
+- [x] `SessionManager` routes user messages directly to root agent via request-scoped execution.
 
 ---
 
