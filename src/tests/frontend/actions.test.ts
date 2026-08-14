@@ -384,7 +384,19 @@ describe('StreamChunk dispatchFrame', () => {
     active = store.namespace<ShellState>('shell').get('activeStream')
     expect(active.reasoning).toBe('Thinking')
 
-    // 4. Dispatch 'end' StreamChunk
+    // 4. Dispatch tools StreamChunk
+    dispatchFrame({
+      runId: 'r1',
+      spanId: 's1',
+      type: 'tools',
+      tools: [{ name: 'web_search', arguments: '{"q":"weather"}' }]
+    })
+
+    active = store.namespace<ShellState>('shell').get('activeStream')
+    expect(active.toolCalls).toHaveLength(1)
+    expect(active.toolCalls[0]).toEqual({ name: 'web_search', arguments: '{"q":"weather"}' })
+
+    // 5. Dispatch 'end' StreamChunk
     dispatchFrame({
       runId: 'r1',
       spanId: 's1',
@@ -393,5 +405,9 @@ describe('StreamChunk dispatchFrame', () => {
 
     active = store.namespace<ShellState>('shell').get('activeStream')
     expect(active.isActive).toBe(false)
+    const messages = store.namespace<ShellState>('shell').get('messages')
+    expect(messages.length).toBe(1)
+    expect(messages[0]!.toolCalls).toHaveLength(1)
+    expect(messages[0]!.toolCalls![0]).toEqual({ name: 'web_search', arguments: '{"q":"weather"}' })
   })
 })

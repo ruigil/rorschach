@@ -33,7 +33,7 @@ export type SCRDescriptor = {
   meta?: any
 }
 
-export type StreamLifecycleType = 'start' | 'chunk' | 'end' | 'error'
+export type StreamLifecycleType = 'start' | 'chunk' | 'tools' | 'end' | 'error'
 
 export type StreamChunk = {
   runId: string
@@ -41,6 +41,7 @@ export type StreamChunk = {
   parentSpanId?: string
   type: StreamLifecycleType
   chunk?: { kind: 'text' | 'reasoning'; text: string }
+  tools?: Array<{ name: string; arguments?: string }>
   error?: string
 }
 

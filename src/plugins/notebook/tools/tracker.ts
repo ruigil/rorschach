@@ -25,7 +25,7 @@ export const trackerStatsTool = defineTool('notebook_tracker_stats', 'Get statis
   required: ['habit'],
 })
 
-export const trackerDefineHabitTool = defineTool('tracker_define_habit', 'Create or update a tracked metric definition (habit, expense category, or any numeric series).', {
+export const trackerDefineHabitTool = defineTool('notebook_tracker_define_habit', 'Create or update a tracked metric definition (habit, expense category, or any numeric series).', {
   type: 'object',
   properties: {
     name:        { type: 'string', description: 'Habit name (used as identifier).' },
@@ -35,7 +35,7 @@ export const trackerDefineHabitTool = defineTool('tracker_define_habit', 'Create
   required: ['name', 'unit'],
 })
 
-export const trackerListHabitsTool = defineTool('tracker_list_habits', 'List all defined tracked metrics (habits, expense categories, or any numeric series).', {
+export const trackerListHabitsTool = defineTool('notebook_tracker_list_habits', 'List all defined tracked metrics (habits, expense categories, or any numeric series).', {
   type: 'object',
   properties: {},
 })

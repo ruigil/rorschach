@@ -547,6 +547,7 @@ export const Signal = (
               break
             }
 
+            case 'end':
             case 'done': {
               const buf = pending.get(phone)
               if (buf) {

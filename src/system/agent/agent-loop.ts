@@ -160,6 +160,12 @@ export type AgentLoopHooks<S extends WithLoopState, M extends { type: string }> 
 
   onStream?: (s: S, chunk: StreamChunk, ctx: ActorContext<M>) => { state: S }
 
+  onToolCalls?: (
+    s: S,
+    calls: Array<{ id: string; name: string; arguments: string }>,
+    ctx: ActorContext<M>,
+  ) => { state: S }
+
   onToolResult?: (
     s: S,
     result: { toolName: string; toolCallId: string; reply: SCRReply },
@@ -299,10 +305,12 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
 
     let requestSpan: SpanHandle | null = params.requestSpan ?? null
     if (!requestSpan) {
+      const mode = (state as any).urn ? (state as any).urn.split(':').pop() : (state as any).mode
+      const spanData = mode ? { mode } : {}
       if (ctx.request.traceId && ctx.request.spanId) {
-        requestSpan = ctx.trace.child(ctx.request.traceId, ctx.request.spanId, hooks.spanName, {})
+        requestSpan = ctx.trace.child(ctx.request.traceId, ctx.request.spanId, hooks.spanName, spanData)
       } else {
-        requestSpan = ctx.trace.span(hooks.spanName)
+        requestSpan = ctx.trace.span(hooks.spanName, spanData)
       }
     }
 
@@ -515,8 +523,14 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
         ctx.send(ctx.self, synthetic)
       }
 
+      let intermediateState = state
+      if (hooks.onToolCalls) {
+        const r = hooks.onToolCalls(state, tc.calls, ctx)
+        intermediateState = r.state
+      }
+
       const nextState = {
-        ...state,
+        ...intermediateState,
         loop: {
           phase: 'toolLoop' as const,
           turn: { ...turn, requestId: null, llmSpan: null, pendingBatch: batch, pendingUsage: accumulatedUsage },
@@ -581,6 +595,8 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
 
       if (m.reply.type === 'result' && m.reply.output === undefined) {
         span?.done()
+        turn.llmSpan?.done()
+        turn.requestSpan?.done()
         ctx.log.info(`${log}: tool result undefined (loop terminated)`, { tool: m.toolName })
         
         let withResultState = state

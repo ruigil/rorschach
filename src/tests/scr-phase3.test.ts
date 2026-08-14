@@ -150,6 +150,53 @@ describe('SCR Phase 3: Reasoner (Agent) SCR Conversion', () => {
     await system.shutdown()
   })
 
+  test('SCRAgentRunner ambient streaming publishes tool calls to streamTo topic', async () => {
+    stubFetchByUrl([
+      // First turn: tool call
+      () => makeSSEResponse(toolCallPayloads('call_stream_tool', 'scr_complete', JSON.stringify({ text: 'Done' }))),
+    ])
+
+    const system = await AgentSystem({
+      source: staticSource({
+        plugins: [MockPersistenceActor(), cognitivePlugin],
+        config: {
+          cognitive: {
+            llmProvider: {
+              provider: 'openrouter',
+              apiKey: 'test-key',
+            }
+          }
+        }
+      })
+    })
+    setupLogging(system)
+    await tick()
+
+    const streamToTopic = 'test.stream.to.tools'
+    const receivedChunks: any[] = []
+    system.subscribe(createTopic<StreamChunk>(streamToTopic), (chunk) => {
+      receivedChunks.push(chunk)
+    })
+
+    const request = createMessageRequest({
+      streamTo: streamToTopic,
+    })
+
+    const reply = await requestStorage.run(request, () =>
+      invokeSCR('scr:reasoner:cognitive.chatbot', { prompt: 'Do tool work' })
+    )
+
+    expect(reply.type).toBe('result')
+    await tick()
+
+    const toolChunk = receivedChunks.find(c => c.type === 'tools')
+    expect(toolChunk).toBeDefined()
+    expect(toolChunk.tools).toHaveLength(1)
+    expect(toolChunk.tools[0].name).toBe('scr_complete')
+
+    await system.shutdown()
+  })
+
   test('SCRAgentRunner handles toolPending, persists state, and deletes key on completion', async () => {
     stubFetchByUrl([
       // First turn calls the pending tool
@@ -418,7 +465,7 @@ describe('SCR Phase 3: Reasoner (Agent) SCR Conversion', () => {
     // Verify it replied with result since the loop completed immediately on undefined tool result
     expect(reply.type).toBe('result')
     if (reply.type === 'result') {
-      expect((reply.output as any).text).toBe('')
+      expect(reply.output).toBeUndefined()
     }
 
     await system.shutdown()

@@ -216,6 +216,8 @@ export class RTraceWaterfall extends RorschachBase {
     const actorShort = span.actor.split('/').pop() ?? span.actor;
     const opLabel = (span.operation === 'tool-invoke' && span.data?.toolName)
       ? `tool-invoke · ${span.data.toolName}`
+      : (span.operation === 'agent-runner' && (span.data?.mode || span.data?.urn))
+      ? `agent-runner · ${span.data.mode ?? span.data.urn?.split(':').pop()}`
       : span.operation;
 
     return html`
@@ -238,12 +240,17 @@ export class RTraceWaterfall extends RorschachBase {
   private _renderTrace(record: TraceRecord): TemplateResult {
     const spans = Array.from(record.spans.values());
     const now = Date.now();
-    const totalMs = record.requestDuration ?? (now - record.requestStart);
-    const isLive = !record.requestEnd;
+    const hasActiveSpans = spans.some(s => s.status === 'started');
+    const isLive = (!record.requestEnd && hasActiveSpans) || hasActiveSpans;
+    const maxSpanEnd = spans.reduce((max, s) => {
+      const end = s.endTime ?? (s.startTime + (s.durationMs ?? 0));
+      return Math.max(max, end);
+    }, record.requestStart);
+    const totalMs = record.requestDuration ?? Math.max(1, isLive ? (now - record.requestStart) : (maxSpanEnd - record.requestStart));
     const depthMap = this._computeDepths(spans);
     const sorted = [...spans].sort((a, b) => a.startTime - b.startTime);
     const rows = sorted.map(s => this._renderSpanRow(s, record.requestStart, totalMs, depthMap.get(s.spanId) ?? 0));
-    const durStr = record.requestDuration != null ? record.requestDuration + 'ms' : '…';
+    const durStr = record.requestDuration != null ? record.requestDuration + 'ms' : (!isLive ? `${Math.round(totalMs)}ms` : '…');
     const traceIdShort = record.traceId.slice(-10);
 
     return html`

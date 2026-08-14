@@ -12,6 +12,7 @@ import { createTopic } from '../actor/types.ts'
 import { ResolutionCache } from '../scr/cache.ts'
 import { authorize } from '../permissions/evaluator.ts'
 import { getUserTimeContext, assembleAgentMessages, type ContextView } from './context-assembly.ts'
+import { applyToolFilter } from './tool-utils.ts'
 import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
 import { persistencePluginAdapter } from '../persistence.ts'
 
@@ -82,6 +83,17 @@ export const SCRAgentRunner = (opts: {
     tools: (state) => state.tools || {},
 
     onComplete: (state, finalText, usage, ctx) => {
+      const turn = state.loop?.turn
+      if (turn) {
+        if (turn.pendingBatch?.spans) {
+          for (const span of turn.pendingBatch.spans.values()) {
+            span.done()
+          }
+        }
+        turn.llmSpan?.done()
+        turn.requestSpan?.done()
+      }
+
       const streamTo = state.request.streamTo
       if (streamTo) {
         ctx.publish(createTopic<StreamChunk>(streamTo), {
@@ -109,6 +121,17 @@ export const SCRAgentRunner = (opts: {
     },
 
     onError: (state, err, ctx) => {
+      const turn = state.loop?.turn
+      if (turn) {
+        if (turn.pendingBatch?.spans) {
+          for (const span of turn.pendingBatch.spans.values()) {
+            span.error(String(err))
+          }
+        }
+        turn.llmSpan?.error(String(err))
+        turn.requestSpan?.error(String(err))
+      }
+
       const streamTo = state.request.streamTo
       if (streamTo) {
         ctx.publish(createTopic<StreamChunk>(streamTo), {
@@ -148,6 +171,20 @@ export const SCRAgentRunner = (opts: {
             kind: chunk.kind,
             text: chunk.text,
           },
+        })
+      }
+      return { state }
+    },
+
+    onToolCalls: (state, calls, ctx) => {
+      const streamTo = state.request.streamTo
+      if (streamTo) {
+        ctx.publish(createTopic<StreamChunk>(streamTo), {
+          runId: state.runId,
+          spanId: state.loop.turn.llmSpan?.spanId || ctx.request.spanId || '',
+          parentSpanId: state.loop.turn.requestSpan?.spanId || ctx.request.parentSpanId,
+          type: 'tools',
+          tools: calls.map(c => ({ name: c.name, arguments: c.arguments })),
         })
       }
       return { state }
@@ -227,12 +264,22 @@ export const SCRAgentRunner = (opts: {
       }
 
       if (msg.type === '_toolResult' && msg.toolName === 'scr_complete') {
-        let text = ''
+        let finalOutput: any = undefined
         if (msg.reply && msg.reply.type === 'result') {
-          const out = msg.reply.output
-          if (typeof out === 'string') text = out
-          else if (out && typeof out === 'object' && 'text' in out) text = String((out as any).text)
-          else text = JSON.stringify(out ?? '')
+          finalOutput = msg.reply.output
+        }
+
+        const turn = state.loop?.turn
+        if (turn) {
+          const completeSpan = turn.pendingBatch?.spans?.get(msg.toolCallId)
+          completeSpan?.done()
+          if (turn.pendingBatch?.spans) {
+            for (const span of turn.pendingBatch.spans.values()) {
+              span.done()
+            }
+          }
+          turn.llmSpan?.done()
+          turn.requestSpan?.done()
         }
 
         const streamTo = state.request.streamTo
@@ -247,7 +294,7 @@ export const SCRAgentRunner = (opts: {
 
         state.replyTo.send({
           type: 'result',
-          output: { text },
+          output: finalOutput,
         })
 
         if (state.persistenceRef) {
@@ -294,21 +341,40 @@ export const SCRAgentRunner = (opts: {
         // Pre-load agent SCR capabilities dynamically on startup
         const preloadSCRs = agentDescriptor.agentSCRs || []
         for (const metaUrn of preloadSCRs) {
-          const desc = ResolutionCache.getDescriptor(metaUrn)
-          if (desc && authorize(permissionContext, metaUrn)) {
-            const cleanName = desc.meta?.schema?.function?.name || metaUrn.split(':').pop()?.replace(/\./g, '_') || ''
-            tools[cleanName] = {
-              name: cleanName,
-              urn: desc.urn,
-              schema: desc.meta?.schema || {
-                type: 'function',
-                function: {
-                  name: cleanName,
-                  description: desc.description || '',
-                  parameters: desc.schema?.inputSchema || {},
-                }
-              },
-              target: desc.target,
+          let desc = ResolutionCache.getDescriptor(metaUrn)
+          if (!desc) {
+            // Fuzzy/normalized lookup fallback (e.g. camelCase -> snake_case)
+            const snakeUrn = metaUrn.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+            desc = ResolutionCache.getDescriptor(snakeUrn)
+          }
+          if (!desc) {
+            // Suffix or name lookup
+            const targetName = metaUrn.split(':').pop() || metaUrn
+            const snakeTargetName = targetName.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+            desc = ResolutionCache.getAllDescriptors().find(d => 
+              d.urn === metaUrn || 
+              d.urn.endsWith(`.${snakeTargetName}`) ||
+              d.urn.endsWith(`:${snakeTargetName}`) ||
+              d.meta?.schema?.function?.name === targetName ||
+              d.meta?.schema?.function?.name === snakeTargetName
+            )
+          }
+          if (desc && authorize(permissionContext, desc.urn)) {
+            const cleanName = desc.meta?.schema?.function?.name || desc.urn.split(':').pop()?.replace(/\./g, '_') || ''
+            if (applyToolFilter(cleanName, agentDescriptor.toolFilter)) {
+              tools[cleanName] = {
+                name: cleanName,
+                urn: desc.urn,
+                schema: desc.meta?.schema || {
+                  type: 'function',
+                  function: {
+                    name: cleanName,
+                    description: desc.description || '',
+                    parameters: desc.schema?.inputSchema || {},
+                  }
+                },
+                target: desc.target,
+              }
             }
           }
         }

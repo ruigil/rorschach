@@ -78,9 +78,13 @@ export default createPluginFactory<CognitiveConfig>({
         systemPrompt: cfg.chatbot?.systemPrompt,
         toolFilter:   cfg.chatbot?.toolFilter,
         agentSCRs: [
+          'scr:reasoner:coding.coding',
+          'scr:reasoner:notebook.coach',
+          'scr:reasoner:googleapis.google',
+          'scr:reasoner:workflows.workflows',
           'scr:leaf:registry.search',
           'scr:leaf:registry.get',
-          'scr:leaf:tools.web_search'
+          'scr:leaf:tools.web_search',
         ],
       }),
     },

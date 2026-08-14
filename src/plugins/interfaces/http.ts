@@ -290,10 +290,10 @@ export const HTTP = ( options?: HTTPOptions ): ActorDef<HttpMessage, HttpState> 
           state.server?.publish(`client:${clientId}`, message.text)
           try {
             const parsed = JSON.parse(message.text)
-            if (parsed.type === 'done' || parsed.type === 'error') {
+            if (parsed.type === 'done' || parsed.type === 'end' || parsed.type === 'error') {
               const span = activeSpans[clientId]
               if (span) {
-                parsed.type === 'done' ? span.done() : span.error()
+                parsed.type === 'error' ? span.error(parsed.error) : span.done()
                 delete activeSpans[clientId]
                 changed = true
               }

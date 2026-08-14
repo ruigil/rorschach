@@ -9,6 +9,7 @@ import type { AgentDescriptor } from '../types/agents.ts';
 import type { ToolSchema } from '../types/tools.ts';
 import { OutboundBroadcastTopic } from '../types/events.ts';
 import type { ActorHealth, HealthStatus } from '../types/health.ts';
+import { AgentSpawner } from './agent/spawner.ts';
 /**
  * Declaration for a sub-actor slot managed by the factory.
  */
@@ -76,6 +77,8 @@ type PluginFactoryState = {
   activeTools: string[];
   /** Child alive health by full actor name; terminated children are removed. */
   childStatus: Record<string, ActorHealth>;
+  /** Auto-provisioned plugin-local agent spawner (if any agents lack an explicit slot) */
+  autoSpawnerRef: ActorRef<any> | null;
 };
 
 const severity: Record<HealthStatus, number> = {
@@ -241,6 +244,7 @@ export const createPluginFactory = <
       activeAgents: [],
       activeTools: [],
       childStatus: {},
+      autoSpawnerRef: null,
     }),
 
     maskState: (state: PluginFactoryState) => {
@@ -325,6 +329,14 @@ export const createPluginFactory = <
           }
         }
 
+        // 4.5 Auto-provision AgentSpawner if any agent does not declare an explicit slot
+        const needsAutoSpawner = Boolean(
+          blueprint.agents && Object.values(blueprint.agents).some((a) => !a.slot)
+        );
+        const autoSpawnerRef = needsAutoSpawner
+          ? ctx.spawn('spawner-0', AgentSpawner({ llmRef: null }))
+          : null;
+
         // 5. Publish agents
         const activeAgents: string[] = [];
         if (blueprint.agents) {
@@ -339,7 +351,9 @@ export const createPluginFactory = <
             const agentOpts = agentDecl.options(initialConfig, resolvedDeps as any);
             const descriptor = agentDecl.factory(agentOpts);
 
-            const spawnerRef = agentDecl.slot ? activeRefs[agentDecl.slot as string] : undefined;
+            const spawnerRef = agentDecl.slot
+              ? activeRefs[agentDecl.slot as string]
+              : autoSpawnerRef;
             const urn = buildUrn('reasoner', blueprint.id, descriptor.mode);
             const scrDescriptor: SCRDescriptor = {
               urn,
@@ -353,12 +367,7 @@ export const createPluginFactory = <
                   },
                   required: ['prompt'],
                 },
-                outputSchema: {
-                  type: 'object',
-                  properties: {
-                    text: { type: 'string' },
-                  },
-                },
+                ...(descriptor.outputSchema ? { outputSchema: descriptor.outputSchema } : {}),
               },
               target: spawnerRef || activeRefs['sessionManager'] || ctx.self,
               meta: { agentDescriptor: descriptor },
@@ -411,6 +420,7 @@ export const createPluginFactory = <
             activeAgents,
             activeTools,
             childStatus,
+            autoSpawnerRef,
           },
         };
       },
@@ -476,7 +486,12 @@ export const createPluginFactory = <
         // 5. Delete config surface
         deleteConfigSurface(ctx, blueprint.configDescriptor);
 
-        // 6. Stop child slots
+        // 6. Stop auto-provisioned spawner
+        if (state.autoSpawnerRef) {
+          ctx.stop(state.autoSpawnerRef);
+        }
+
+        // 7. Stop child slots
         for (const slot of Object.values(state.activeSlots)) {
           if (slot.ref) {
             ctx.stop(slot.ref);
@@ -490,6 +505,18 @@ export const createPluginFactory = <
     }),
 
     handler: onMessage<any, PluginFactoryState>({
+      invoke: (state, msg, ctx) => {
+        if (state.autoSpawnerRef) {
+          state.autoSpawnerRef.send(msg);
+        } else {
+          msg.replyTo?.send?.({
+            type: 'error',
+            error: `Plugin ${blueprint.id} has no agent spawner to execute ${msg.urn}`,
+          });
+        }
+        return { state };
+      },
+
       config: (state, msg, ctx) => {
         const newConfig = msg.slice;
         const gen = state.generation + 1;
@@ -674,6 +701,15 @@ export const createPluginFactory = <
           }
         }
 
+        // 4.5 Auto-provision AgentSpawner if needed
+        const needsAutoSpawner = Boolean(
+          blueprint.agents && Object.values(blueprint.agents).some((a) => !a.slot)
+        );
+        let autoSpawnerRef = state.autoSpawnerRef;
+        if (needsAutoSpawner && !autoSpawnerRef) {
+          autoSpawnerRef = ctx.spawn(`spawner-${gen}`, AgentSpawner({ llmRef: null }));
+        }
+
         // Agents
         const activeAgents: string[] = [];
         if (blueprint.agents) {
@@ -688,7 +724,9 @@ export const createPluginFactory = <
             const agentOpts = agentDecl.options(newConfig, resolvedDeps as any);
             const descriptor = agentDecl.factory(agentOpts);
 
-            const spawnerRef = agentDecl.slot ? activeRefs[agentDecl.slot as string] : undefined;
+            const spawnerRef = agentDecl.slot
+              ? activeRefs[agentDecl.slot as string]
+              : autoSpawnerRef;
             const urn = buildUrn('reasoner', blueprint.id, descriptor.mode);
             const scrDescriptor: SCRDescriptor = {
               urn,
@@ -702,12 +740,7 @@ export const createPluginFactory = <
                   },
                   required: ['prompt'],
                 },
-                outputSchema: {
-                  type: 'object',
-                  properties: {
-                    text: { type: 'string' },
-                  },
-                },
+                ...(descriptor.outputSchema ? { outputSchema: descriptor.outputSchema } : {}),
               },
               target: spawnerRef || activeRefs['sessionManager'] || ctx.self,
               meta: { agentDescriptor: descriptor },
@@ -759,6 +792,7 @@ export const createPluginFactory = <
             activeAgents,
             activeTools,
             childStatus,
+            autoSpawnerRef,
           },
         };
       },

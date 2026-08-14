@@ -62,8 +62,6 @@ export type AgentFactoryOpts = {
   permissionContext: PermissionContext
 }
 
-// ─── Agent descriptor ───
-
 export type AgentDescriptor = {
   mode:         string
   displayName:  string
@@ -75,4 +73,5 @@ export type AgentDescriptor = {
   capabilities: { userVisible: boolean }
   model:        string
   maxToolLoops?: number
+  outputSchema?: Record<string, any>
 }

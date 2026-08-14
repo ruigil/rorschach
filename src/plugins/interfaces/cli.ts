@@ -411,6 +411,7 @@ export const CLI = (): ActorDef<CliMsg, CliState> => {
           }
 
           // ─── LLM done — overwrite raw stream with markdown-rendered version ───
+          case 'end':
           case 'done': {
             const span = state.activeSpans[CLI_CLIENT_ID]
             span?.done()

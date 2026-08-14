@@ -82,4 +82,40 @@ describe('r-message-bubble', () => {
     expect(att).toBeTruthy()
     expect(att.items).toHaveLength(1)
   })
+
+  test('renders toolCalls in r-tool-history when present on message', async () => {
+    mockStore('currentMode', 'chatbot')
+    const el = await mountClass(RMessageBubble) as any
+    el.message = {
+      id: '8',
+      role: 'assistant',
+      text: 'result',
+      timestamp: Date.now(),
+      toolCalls: [{ name: 'web_search', arguments: '{"q":"test"}' }],
+    }
+    await el.updateComplete
+
+    const toolHistory = el.shadowRoot.querySelector('r-tool-history')
+    expect(toolHistory).toBeTruthy()
+    expect(toolHistory.tools).toHaveLength(1)
+  })
+
+  test('renders toolCalls in r-tool-history when streaming', async () => {
+    mockStore('currentMode', 'chatbot')
+    const el = await mountClass(RMessageBubble) as any
+    el.stream = {
+      isActive: true,
+      text: 'in progress',
+      reasoning: '',
+      sources: [],
+      attachments: [],
+      toolCalls: [{ name: 'web_search', arguments: '{"q":"test"}' }],
+    }
+    await el.updateComplete
+
+    const toolHistory = el.shadowRoot.querySelector('r-tool-history')
+    expect(toolHistory).toBeTruthy()
+    expect(toolHistory.tools).toHaveLength(1)
+    expect(toolHistory.hasAttribute('active')).toBe(true)
+  })
 })

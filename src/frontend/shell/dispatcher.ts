@@ -11,13 +11,15 @@ import { pluginHost } from './plugin-host.js'
 const shell = () => store.namespace<ShellState>('shell')
 
 const handleStreamChunk = (msg: Record<string, any>) => {
-  const type = msg.type // 'start' | 'chunk' | 'end' | 'error'
+  const type = msg.type // 'start' | 'chunk' | 'tools' | 'end' | 'error'
   if (type === 'start') {
     updateActiveStream({
       isActive: true,
       text: '',
       reasoning: '',
       toolCalls: [],
+      sources: [],
+      attachments: [],
     })
   } else if (type === 'chunk' && msg.chunk) {
     if (msg.chunk.kind === 'text') {
@@ -31,6 +33,13 @@ const handleStreamChunk = (msg: Record<string, any>) => {
         reasoning: shell().get('activeStream').reasoning + msg.chunk.text,
       })
     }
+  } else if (type === 'tools' || msg.tools) {
+    const newTools = msg.tools || []
+    const current = shell().get('activeStream').toolCalls || []
+    updateActiveStream({
+      isActive: true,
+      toolCalls: [...current, ...newTools],
+    })
   } else if (type === 'end') {
     commitActiveStream()
   } else if (type === 'error') {
