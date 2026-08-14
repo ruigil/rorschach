@@ -6,7 +6,6 @@ import type { PermissionContext } from '../system/permissions/types.ts'
 describe('Permissions Evaluator', () => {
   test('allows infrastructure callbacks unconditionally', () => {
     const ctx: PermissionContext = { grants: [] }
-    expect(authorize(ctx, 'cognitive_switch_mode')).toBe(true)
     expect(authorize(ctx, 'workflows_task_complete')).toBe(true)
     expect(authorize(ctx, 'workflows_task_block')).toBe(true)
   })

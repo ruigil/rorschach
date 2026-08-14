@@ -69,12 +69,6 @@ export const connect = async (): Promise<void> => {
     const shell = store.namespace<any>('shell')
     shell.set('isConnected', true)
 
-    // Restore saved mode on reconnect/refresh (persisted via the store)
-    const savedMode = shell.get('currentMode')
-    if (savedMode) {
-      send({ type: 'cognitive.switchMode', mode: savedMode })
-    }
-
     const chatTab = document.querySelector('[data-tab="chat"].active')
     if (chatTab) {
       ;(document.getElementById('input') as HTMLElement | null)?.focus()

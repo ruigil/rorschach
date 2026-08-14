@@ -60,7 +60,6 @@ export const switchMode = (mode: string) => {
   }
   const agent = shell().get('agents').find(agent => agent.mode === mode)
   setMode(mode, agent?.displayName ?? mode)
-  send({ type: 'cognitive.switchMode', mode })
   return true
 }
 

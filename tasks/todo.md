@@ -123,12 +123,12 @@
   - [ ] Remove `SwitchAgentTopic`/`SwitchAgentEvent` (`agent.switch`) from `cognitive/types.ts`.
   - [ ] Fix stale `_toolReg` union in `src/plugins/observability/types.ts:73–74` (actor uses `_scrReg`).
   - [ ] Purge followed by `rg` zero-match check + `bun run typecheck`.
-- [ ] **Task 5.9**: Clean Leftover Switch Mode Compatibility (`src/plugins/notebook/coach-agent.ts`, `src/system/permissions/system-tools.ts`, `src/tests/permissions-evaluator.test.ts`, `src/frontend/shell/actions.ts`, `src/frontend/webkit/runtime/connection-service.ts`)
-  - [ ] Remove `'cognitive_switch_mode'` from `INFRASTRUCTURE_CALLBACKS` (keep `workflows_task_complete`/`workflows_task_block`).
-  - [ ] Remove `permissions-evaluator.test.ts:9` assertion.
-  - [ ] Remove `switch_mode` prompt line in coach-agent.ts:30 (→ recursive `scr:agent:*` invocation guidance).
-  - [ ] Remove `cognitive.switchMode` send in shell/actions.ts `switchMode`, connection-service.ts:75, dispatcher `modeChanged`; decide tab behavior (see plan "Open decision for implementer").
-  - [ ] Rebuild bundles: `bun run build` (static/js are artifacts — never hand-edit).
+- [x] **Task 5.9**: Clean Leftover Switch Mode Compatibility (`src/plugins/notebook/coach-agent.ts`, `src/system/permissions/system-tools.ts`, `src/tests/permissions-evaluator.test.ts`, `src/frontend/shell/actions.ts`, `src/frontend/webkit/runtime/connection-service.ts`)
+  - [x] Remove `'cognitive_switch_mode'` from `INFRASTRUCTURE_CALLBACKS` (keep `workflows_task_complete`/`workflows_task_block`).
+  - [x] Remove `permissions-evaluator.test.ts:9` assertion.
+  - [x] Remove `switch_mode` prompt line in coach-agent.ts:30 (→ recursive `scr:agent:*` invocation guidance).
+  - [x] Remove `cognitive.switchMode` send in shell/actions.ts `switchMode`, connection-service.ts:75, dispatcher `modeChanged`; decide tab behavior (see plan "Open decision for implementer").
+  - [x] Rebuild bundles: `bun run build` (static/js are artifacts — never hand-edit).
 - [x] **Task 5.10**: Delete Legacy Actors and Verification (`src/system/agent/tool-utils.ts`, `src/system/index.ts`, `src/system/agent/agent-runner.ts`) — NOTE: `dynamic-agent.ts`/`agent-registry.ts` already deleted
   - [x] Remove `invokeTool` primitive (+ `src/tests/invoke-tool.test.ts`); update `system/index.ts` exports.
   - [x] Drop or SCR-ify `scrCompleteHelperActor` (agent-runner.ts:43–63).

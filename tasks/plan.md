@@ -683,13 +683,13 @@ flowchart LR
 #### Task 5.9: Clean Leftover Switch Mode Compatibility
 * **Description:** Remove the unused `cognitive_switch_mode` tool/prompt references, infrastructure callbacks, unit tests, and the frontend `cognitive.switchMode` frame sending.
 * **Acceptance criteria:**
-  - [ ] `'cognitive_switch_mode'` removed from `INFRASTRUCTURE_CALLBACKS` (`src/system/permissions/system-tools.ts:4`) — keep `workflows_task_complete`/`workflows_task_block` (still used by `workflow-task-executor.ts`).
-  - [ ] `permissions-evaluator.test.ts:9` assertion removed.
-  - [ ] `switch_mode` prompt line removed from `src/plugins/notebook/coach-agent.ts:30` (replace with a note that specialized execution happens by recursively invoking `scr:agent:coder` / `scr:agent:chatbot` inside the current turn).
-  - [ ] Frontend `switchMode` (shell/actions.ts:54–63) no longer sends `{ type:'cognitive.switchMode', mode }`; `connection-service.ts:75` no longer sends a saved-mode frame on open/reconnect; `dispatcher.ts:68` `modeChanged` handler removed (its publisher is gone).
+  - [x] `'cognitive_switch_mode'` removed from `INFRASTRUCTURE_CALLBACKS` (`src/system/permissions/system-tools.ts:4`) — keep `workflows_task_complete`/`workflows_task_block` (still used by `workflow-task-executor.ts`).
+  - [x] `permissions-evaluator.test.ts:9` assertion removed.
+  - [x] `switch_mode` prompt line removed from `src/plugins/notebook/coach-agent.ts:30` (replace with a note that specialized execution happens by recursively invoking `scr:agent:coder` / `scr:agent:chatbot` inside the current turn).
+  - [x] Frontend `switchMode` (shell/actions.ts:54–63) no longer sends `{ type:'cognitive.switchMode', mode }`; `connection-service.ts:75` no longer sends a saved-mode frame on open/reconnect; `dispatcher.ts:68` `modeChanged` handler removed (its publisher is gone).
 * **Verification:**
-  - [ ] `rg "cognitive_switch_mode|cognitive\.switchMode|switch_mode" src --glob '!src/frontend/static/**'` returns zero.
-  - [ ] `bun run typecheck` passes; rebuild bundles: `bun run build` (regenerates `src/frontend/static/js/*` — do NOT hand-edit).
+  - [x] `rg "cognitive_switch_mode|cognitive\.switchMode|switch_mode" src --glob '!src/frontend/static/**'` returns zero.
+  - [x] `bun run typecheck` passes; rebuild bundles: `bun run build` (regenerates `src/frontend/static/js/*` — do NOT hand-edit).
 * **Dependencies:** Task 5.8
 * **Files likely touched:**
   - `src/plugins/notebook/coach-agent.ts`
