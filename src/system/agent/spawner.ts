@@ -133,17 +133,17 @@ export const AgentSpawner = (opts: { llmRef: ActorRef<LlmProviderMsg> | null }):
           }))
 
           // Format tool reply
-          const reply = event.status === 'completed'
+          const reply: SCRReply = event.status === 'completed'
             ? {
-                type: 'toolResult' as const,
-                result: {
+                type: 'result',
+                output: {
                   text: event.result?.text ?? 'Success',
                   attachments: event.result?.attachments,
                   sources: event.result?.sources,
                 },
               }
             : {
-                type: 'toolError' as const,
+                type: 'error',
                 error: (event as any).error ?? 'Unknown error',
               }
 

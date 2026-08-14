@@ -4,7 +4,7 @@ import type { LlmProviderMsg, ApiMessage } from '../../types/llm.ts'
 import type { LoopMsg } from '../../system/index.ts'
 import type { MessageAttachment, HttpWsFrameEvent } from '../../types/events.ts'
 import type { ContextSnapshotEvent } from '../../types/agents.ts'
-import type { SCRReply } from '../../types/scr.ts'
+import type { SCRReply, SCRInvokeMsg } from '../../types/scr.ts'
 
 export type WorkflowTask = {
   id: string
@@ -236,7 +236,8 @@ export type WorkflowTaskExecutorMsg =
       type: '_persistenceRef'
       ref: ActorRef<any> | null
     }>
-  | ToolInvokeMsg
+  | SCRInvokeMsg
+  | (Omit<ToolInvokeMsg, 'replyTo'> & { replyTo: ActorRef<SCRReply | any> })
   | { type: '_scrReply'; taskId: string; reply: SCRReply }
 
 export type WorkflowsAgentExtra =

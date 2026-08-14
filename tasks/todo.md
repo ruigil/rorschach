@@ -129,15 +129,15 @@
   - [ ] Remove `switch_mode` prompt line in coach-agent.ts:30 (→ recursive `scr:agent:*` invocation guidance).
   - [ ] Remove `cognitive.switchMode` send in shell/actions.ts `switchMode`, connection-service.ts:75, dispatcher `modeChanged`; decide tab behavior (see plan "Open decision for implementer").
   - [ ] Rebuild bundles: `bun run build` (static/js are artifacts — never hand-edit).
-- [ ] **Task 5.10**: Delete Legacy Actors and Verification (`src/system/agent/tool-utils.ts`, `src/system/index.ts`, `src/system/agent/agent-runner.ts`) — NOTE: `dynamic-agent.ts`/`agent-registry.ts` already deleted
-  - [ ] Remove `invokeTool` primitive (+ `src/tests/invoke-tool.test.ts`); update `system/index.ts` exports.
-  - [ ] Drop or SCR-ify `scrCompleteHelperActor` (agent-runner.ts:43–63).
-  - [ ] Final: `bun run typecheck`, `bun test`, `bun run build` all green.
-- [ ] **Task 5.11**: Convert `agentLoop` & Tool Invocation to SCR-native `invokeSCR` (`src/system/agent/agent-loop.ts`)
-  - [ ] `agent-loop.ts`: replace `ToolCollection`/`invokeTool`/`ToolReply` with `invokeSCR(urn, input)`; `LoopToolResultMsg.reply` → `SCRReply`; drop legacy dynamic-binding block (:515–549) and `_toolRegistered` behavior.
-  - [ ] `agent-runner.ts`: build tools from registered SCR descriptors + `agentSCRs` (not `internalTools`); `scr_complete` becomes SCR-native; `_toolResult` branches on `SCRReply`.
-  - [ ] `spawner.ts` `_jobResumed`: reply `result`/`error` (SCRReply) instead of `toolResult`/`toolError`.
-  - [ ] Update workflow sub-agent tool injection (`workflow-task-executor.ts`, `workflow-run-executor.ts`).
+- [x] **Task 5.10**: Delete Legacy Actors and Verification (`src/system/agent/tool-utils.ts`, `src/system/index.ts`, `src/system/agent/agent-runner.ts`) — NOTE: `dynamic-agent.ts`/`agent-registry.ts` already deleted
+  - [x] Remove `invokeTool` primitive (+ `src/tests/invoke-tool.test.ts`); update `system/index.ts` exports.
+  - [x] Drop or SCR-ify `scrCompleteHelperActor` (agent-runner.ts:43–63).
+  - [x] Final: `bun run typecheck`, `bun test`, `bun run build` all green.
+- [x] **Task 5.11**: Convert `agentLoop` & Tool Invocation to SCR-native `invokeSCR` (`src/system/agent/agent-loop.ts`)
+  - [x] `agent-loop.ts`: replace `ToolCollection`/`invokeTool`/`ToolReply` with `invokeSCR(urn, input)`; `LoopToolResultMsg.reply` → `SCRReply`; drop legacy dynamic-binding block (:515–549) and `_toolRegistered` behavior.
+  - [x] `agent-runner.ts`: build tools from registered SCR descriptors + `agentSCRs` (not `internalTools`); `scr_complete` becomes SCR-native; `_toolResult` branches on `SCRReply`.
+  - [x] `spawner.ts` `_jobResumed`: reply `result`/`error` (SCRReply) instead of `toolResult`/`toolError`.
+  - [x] Update workflow sub-agent tool injection (`workflow-task-executor.ts`, `workflow-run-executor.ts`).
 - [ ] **Task 5.12**: Purge `SessionManager` Legacy Session Model (`src/plugins/cognitive/session-manager.ts`)
   - [ ] Drop per-user `ContextStore` spawning + `Session` struct + `JobRegistryTopic` teardown subscription; keep WS ingress → request-scoped `invokeSCR('scr:reasoner:cognitive.chatbot')`.
   - [ ] Delete `context-store.ts` if unneeded; clean `cognitive/types.ts` (`defaultMode`, `SwitchAgentEvent`) and plugin description.

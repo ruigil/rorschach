@@ -373,60 +373,72 @@ ${JSON.stringify(msg.dependencyOutputs, null, 2)}
     }, ctx)
   }
 
+  const getToolName = (msg: Extract<M, { type: 'invoke' }>): string => {
+    return (msg as any).toolName || (msg as any).urn?.split(':').pop()?.replace(/\./g, '_') || ''
+  }
+
+  const getToolArgs = (msg: Extract<M, { type: 'invoke' }>): string => {
+    if (typeof (msg as any).arguments === 'string') return (msg as any).arguments
+    if (typeof (msg as any).input === 'string') return (msg as any).input
+    return JSON.stringify((msg as any).input ?? {})
+  }
+
   const invokeControlTool = (state: S, msg: Extract<M, { type: 'invoke' }>): ActorResult<M, S> => {
+    const toolName = getToolName(msg)
+    const rawArgs = getToolArgs(msg)
     if (!state.task) {
-      msg.replyTo.send({ type: 'toolError', error: 'No workflow task is active.' })
+      msg.replyTo.send({ type: 'error', error: 'No workflow task is active.' })
       return { state }
     }
-    if (msg.toolName === completeWorkflowTaskTool.name) {
-      const parsed = parseTaskCompletionArgs(state.task, msg.arguments)
+    if (toolName === completeWorkflowTaskTool.name) {
+      const parsed = parseTaskCompletionArgs(state.task, rawArgs)
       if (!parsed.ok) {
-        msg.replyTo.send({ type: 'toolError', error: parsed.error })
+        msg.replyTo.send({ type: 'error', error: parsed.error })
         return { state }
       }
       parentRef.send({ type: 'taskCompleted', taskId: state.task.id, summary: parsed.summary, outputs: parsed.outputs })
-      const reply: ToolReply = { type: 'toolResult', result: { text: 'Task completed.' } }
-      msg.replyTo.send(reply)
+      msg.replyTo.send({ type: 'result', output: { text: 'Task completed.' } })
       return { state: { ...state, terminalSignaled: true } }
     }
-    if (msg.toolName === blockWorkflowTaskTool.name) {
-      const parsed = parseTaskBlockArgs(msg.arguments)
+    if (toolName === blockWorkflowTaskTool.name) {
+      const parsed = parseTaskBlockArgs(rawArgs)
       if (!parsed.ok) {
-        msg.replyTo.send({ type: 'toolError', error: parsed.error })
+        msg.replyTo.send({ type: 'error', error: parsed.error })
         return { state }
       }
       parentRef.send({ type: 'taskBlocked', taskId: state.task.id, message: parsed.reason })
-      const reply: ToolReply = { type: 'toolResult', result: { text: 'Task blocked.' } }
-      msg.replyTo.send(reply)
+      msg.replyTo.send({ type: 'result', output: { text: 'Task blocked.' } })
       return { state: { ...state, terminalSignaled: true } }
     }
-    msg.replyTo.send({ type: 'toolError', error: `Unknown workflow task control tool: ${msg.toolName}` })
+    msg.replyTo.send({ type: 'error', error: `Unknown workflow task control tool: ${toolName}` })
     return { state }
   }
 
   const invokeArtifactTool = (state: S, msg: Extract<M, { type: 'invoke' }>): ActorResult<M, S> => {
+    const toolName = getToolName(msg)
+    const rawArgs = getToolArgs(msg)
     if (!state.persistenceRef) {
-      msg.replyTo.send({ type: 'toolError', error: 'Persistence not ready' })
+      msg.replyTo.send({ type: 'error', error: 'Persistence not ready' })
       return { state }
     }
-    if (msg.toolName === readArtifactTool.name) {
+    if (toolName === readArtifactTool.name) {
       let args: { key?: string; root?: string; path?: string }
       try {
-        args = JSON.parse(msg.arguments)
+        args = JSON.parse(rawArgs)
       } catch {
-        msg.replyTo.send({ type: 'toolError', error: 'Invalid JSON arguments' })
+        msg.replyTo.send({ type: 'error', error: 'Invalid JSON arguments' })
         return { state }
       }
       const rawPath = args.key ?? (args.root ? `${args.root}/${args.path ?? ''}` : (args.path ? (args.path.startsWith('workflow-runs/') ? args.path : `workflow-runs/${state.runId}/${args.path}`) : ''))
       const canonicalKey = rawPath.replace(/^\/+/, '')
       if (!canonicalKey) {
-        msg.replyTo.send({ type: 'toolError', error: 'Missing artifact path or key' })
+        msg.replyTo.send({ type: 'error', error: 'Missing artifact path or key' })
         return { state }
       }
       const [bucket, ...rest] = canonicalKey.split('/')
       const key = rest.join('/')
       if (!bucket || !key) {
-        msg.replyTo.send({ type: 'toolError', error: 'Invalid artifact location' })
+        msg.replyTo.send({ type: 'error', error: 'Invalid artifact location' })
         return { state }
       }
       ask<PersistenceMsg, PResult<PObjGetPayload>>(state.persistenceRef, replyTo => ({
@@ -437,32 +449,32 @@ ${JSON.stringify(msg.dependencyOutputs, null, 2)}
       })).then(
         res => {
           if (!res.ok) {
-            msg.replyTo.send({ type: 'toolError', error: res.error })
+            msg.replyTo.send({ type: 'error', error: res.error })
           } else if (!res.data) {
-            msg.replyTo.send({ type: 'toolError', error: 'No data found' })
+            msg.replyTo.send({ type: 'error', error: 'No data found' })
           } else {
             const text = new TextDecoder().decode(res.data.data)
-            msg.replyTo.send({ type: 'toolResult', result: { text } })
+            msg.replyTo.send({ type: 'result', output: { text } })
           }
         },
-        err => msg.replyTo.send({ type: 'toolError', error: String(err) })
+        err => msg.replyTo.send({ type: 'error', error: String(err) })
       )
       return { state }
     }
-    if (msg.toolName === writeArtifactTool.name) {
+    if (toolName === writeArtifactTool.name) {
       let args: { root?: string; path: string; content: string; mimeType?: string }
       try {
-        args = JSON.parse(msg.arguments)
+        args = JSON.parse(rawArgs)
       } catch {
-        msg.replyTo.send({ type: 'toolError', error: 'Invalid JSON arguments' })
+        msg.replyTo.send({ type: 'error', error: 'Invalid JSON arguments' })
         return { state }
       }
       if (!args.path) {
-        msg.replyTo.send({ type: 'toolError', error: 'Missing path' })
+        msg.replyTo.send({ type: 'error', error: 'Missing path' })
         return { state }
       }
       if (args.content === undefined) {
-        msg.replyTo.send({ type: 'toolError', error: 'Missing content' })
+        msg.replyTo.send({ type: 'error', error: 'Missing content' })
         return { state }
       }
       const cleanPath = args.path.replace(/^\/+/, '')
@@ -474,7 +486,7 @@ ${JSON.stringify(msg.dependencyOutputs, null, 2)}
       const [bucket, ...rest] = canonicalKey.split('/')
       const key = rest.join('/')
       if (!bucket || !key) {
-        msg.replyTo.send({ type: 'toolError', error: 'Invalid artifact location' })
+        msg.replyTo.send({ type: 'error', error: 'Invalid artifact location' })
         return { state }
       }
 
@@ -490,15 +502,15 @@ ${JSON.stringify(msg.dependencyOutputs, null, 2)}
       })).then(
         res => {
           if (!res.ok) {
-            msg.replyTo.send({ type: 'toolError', error: res.error })
+            msg.replyTo.send({ type: 'error', error: res.error })
           } else {
             msg.replyTo.send({
-              type: 'toolResult',
-              result: { text: `Artifact saved with key "${canonicalKey}".` },
+              type: 'result',
+              output: { text: `Artifact saved with key "${canonicalKey}".` },
             })
           }
         },
-        err => msg.replyTo.send({ type: 'toolError', error: String(err) })
+        err => msg.replyTo.send({ type: 'error', error: String(err) })
       )
       return { state }
     }
@@ -542,10 +554,11 @@ ${JSON.stringify(msg.dependencyOutputs, null, 2)}
       return { state }
     }
     if (msg.type === 'invoke') {
-      if (msg.toolName === completeWorkflowTaskTool.name || msg.toolName === blockWorkflowTaskTool.name) {
+      const toolName = getToolName(msg)
+      if (toolName === completeWorkflowTaskTool.name || toolName === blockWorkflowTaskTool.name) {
         return invokeControlTool(state, msg)
       }
-      if (msg.toolName === readArtifactTool.name || msg.toolName === writeArtifactTool.name) {
+      if (toolName === readArtifactTool.name || toolName === writeArtifactTool.name) {
         return invokeArtifactTool(state, msg)
       }
     }

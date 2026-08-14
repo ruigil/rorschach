@@ -1,7 +1,7 @@
 import type { ActorDef, ActorRef, ActorContext, Interceptor, ActorResult } from '../actor/types.ts'
 import { onLifecycle, onMessage } from '../actor/match.ts'
 import { agentLoop, idleLoopState } from './agent-loop.ts'
-import type { LoopState, LoopBaseMsg } from './agent-loop.ts'
+import type { LoopState, LoopBaseMsg, AgentLoopTools } from './agent-loop.ts'
 import type { SCRReply, StreamChunk } from '../../types/scr.ts'
 import { UsageUpdateTopic } from '../../types/scr.ts'
 import type { LlmProviderMsg, ApiMessage } from '../../types/llm.ts'
@@ -14,7 +14,6 @@ import { authorize } from '../permissions/evaluator.ts'
 import { getUserTimeContext } from './context-assembly.ts'
 import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
 import { persistencePluginAdapter } from '../persistence.ts'
-import type { ToolCollection } from '../../types/tools.ts'
 
 export type SCRAgentRunnerMsg =
   | LoopBaseMsg
@@ -32,7 +31,7 @@ export type SCRAgentRunnerState = {
   request: MessageRequest
   persistenceRef?: ActorRef<PersistenceMsg> | null
   loop: LoopState
-  tools?: ToolCollection
+  tools?: AgentLoopTools
   model?: string
   maxToolLoops?: number
   systemPrompt?: string
@@ -46,15 +45,15 @@ export const scrCompleteHelperActor = (): ActorDef<any, null> => ({
     invoke: (state, msg, ctx) => {
       let text = ''
       try {
-        const args = typeof msg.arguments === 'string' ? JSON.parse(msg.arguments) : msg.arguments
-        text = args.text || ''
-      } catch (e) {
+        const args = typeof msg.arguments === 'string' ? JSON.parse(msg.arguments) : (msg.input || msg.arguments)
+        text = args?.text ?? (typeof args === 'string' ? args : '')
+      } catch {
         text = msg.arguments || ''
       }
 
       msg.replyTo.send({
-        type: 'toolResult',
-        result: { text }
+        type: 'result',
+        output: { text }
       })
 
       return { state }
@@ -229,8 +228,11 @@ export const SCRAgentRunner = (opts: {
 
       if (msg.type === '_toolResult' && msg.toolName === 'scr_complete') {
         let text = ''
-        if (msg.reply && msg.reply.type === 'toolResult') {
-          text = msg.reply.result.text
+        if (msg.reply && msg.reply.type === 'result') {
+          const out = msg.reply.output
+          if (typeof out === 'string') text = out
+          else if (out && typeof out === 'object' && 'text' in out) text = String((out as any).text)
+          else text = JSON.stringify(out ?? '')
         }
 
         const streamTo = state.request.streamTo
@@ -287,7 +289,7 @@ export const SCRAgentRunner = (opts: {
         }
 
         const permissionContext = state.request.permission ?? { grants: ['*'] }
-        const tools: ToolCollection = {}
+        const tools: AgentLoopTools = {}
 
         if (agentDescriptor.internalTools) {
           for (const t of agentDescriptor.internalTools) {
@@ -301,10 +303,11 @@ export const SCRAgentRunner = (opts: {
         const preloadSCRs = agentDescriptor.agentSCRs || []
         for (const metaUrn of preloadSCRs) {
           const desc = ResolutionCache.getDescriptor(metaUrn)
-          if (desc && desc.target && authorize(permissionContext, metaUrn)) {
+          if (desc && authorize(permissionContext, metaUrn)) {
             const cleanName = desc.meta?.schema?.function?.name || metaUrn.split(':').pop()?.replace(/\./g, '_') || ''
             tools[cleanName] = {
               name: cleanName,
+              urn: desc.urn,
               schema: desc.meta?.schema || {
                 type: 'function',
                 function: {
@@ -313,16 +316,16 @@ export const SCRAgentRunner = (opts: {
                   parameters: desc.schema?.inputSchema || {},
                 }
               },
-              ref: desc.target,
+              target: desc.target,
             }
           }
         }
 
         const outputSchema = descriptor.schema?.outputSchema
         if (outputSchema) {
-          const completeRef = ctx.spawn('scr-complete-helper', scrCompleteHelperActor())
           tools['scr_complete'] = {
             name: 'scr_complete',
+            urn: 'scr:leaf:agent.complete',
             schema: {
               type: 'function',
               function: {
@@ -331,7 +334,6 @@ export const SCRAgentRunner = (opts: {
                 parameters: outputSchema as any,
               },
             },
-            ref: completeRef,
           }
         }
 

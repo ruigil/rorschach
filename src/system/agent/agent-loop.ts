@@ -8,17 +8,11 @@ import type {
   Interceptor,
 } from '../actor/types.ts'
 import { onMessage } from '../actor/match.ts'
-import { invokeTool } from './tool-utils.ts'
+import { invokeSCR } from '../scr/invoker.ts'
 import { ResolutionCache } from '../scr/cache.ts'
-import type {
-	ToolCollection,
-	ToolFinalReply,
-	ToolMsg,
-	ToolReply,
-	ToolFilter,
-	ToolResultPayload,
-} from '../../types/tools.ts'
-import type { PermissionContext } from '../permissions/types.ts'
+import { requestStorage } from '../context/request.ts'
+import { ask } from '../actor/ask.ts'
+import type { SCRReply, SCRInvokeMsg } from '../../types/scr.ts'
 import type {
   ApiMessage,
   LlmProviderMsg,
@@ -27,6 +21,7 @@ import type {
   LlmTool,
   ToolCall,
 } from '../../types/llm.ts'
+import type { MessageAttachment } from '../../types/events.ts'
 
 // ─── Shared turn-slice shapes ───────────────────────────────────────────────
 
@@ -60,16 +55,29 @@ const initialLoopTurn = (): LoopTurn => ({
   pendingUsage: { promptTokens: 0, completionTokens: 0 },
 })
 
-const formatToolResultContent = (result: ToolResultPayload): string => {
-  if (!result.attachments?.length && !result.sources?.length) return result.text
-  return [
-    result.text,
-    'Tool result metadata:',
-    JSON.stringify({
-      ...(result.attachments?.length ? { attachments: result.attachments } : {}),
-      ...(result.sources?.length ? { sources: result.sources } : {}),
-    }, null, 2),
-  ].join('\n')
+const formatSCRResultContent = (output: unknown): string => {
+  if (output === null || output === undefined) return ''
+  if (typeof output === 'string') return output
+  if (typeof output === 'object') {
+    const obj = output as Record<string, unknown>
+    if ('text' in obj && typeof obj.text === 'string') {
+      const hasAttachments = Array.isArray(obj.attachments) && obj.attachments.length > 0
+      const hasSources = Array.isArray(obj.sources) && obj.sources.length > 0
+      if (!hasAttachments && !hasSources) {
+        return obj.text
+      }
+      return [
+        obj.text,
+        'Tool result metadata:',
+        JSON.stringify({
+          ...(hasAttachments ? { attachments: obj.attachments } : {}),
+          ...(hasSources ? { sources: obj.sources } : {}),
+        }, null, 2),
+      ].join('\n')
+    }
+    return JSON.stringify(output)
+  }
+  return String(output)
 }
 
 // ─── Explicit loop state ────────────────────────────────────────────────────
@@ -97,7 +105,7 @@ export type LoopToolResultMsg = {
   type: '_toolResult'
   toolName: string
   toolCallId: string
-  reply: ToolReply
+  reply: SCRReply
 }
 
 export type LoopBaseMsg = LlmProviderReply | LoopToolResultMsg
@@ -116,6 +124,18 @@ export type StreamChunk =
   | { kind: 'text'; text: string }
   | { kind: 'reasoning'; text: string }
 
+// ─── Tool Definitions ───────────────────────────────────────────────────────
+
+export type AgentLoopTool = {
+  name: string
+  urn?: string
+  schema: LlmTool | { type: string; function: { name: string; description?: string; parameters?: any } }
+  target?: ActorRef<any>
+  ref?: ActorRef<any>
+}
+
+export type AgentLoopTools = Record<string, AgentLoopTool | any>
+
 // ─── Hook surface ───────────────────────────────────────────────────────────
 
 export type AgentLoopHooks<S extends WithLoopState, M extends { type: string }> = {
@@ -123,7 +143,7 @@ export type AgentLoopHooks<S extends WithLoopState, M extends { type: string }> 
   spanName: string
   logPrefix?: string
 
-  tools: ToolCollection | ((s: S) => ToolCollection)
+  tools: AgentLoopTools | ((s: S) => AgentLoopTools)
   model: string | ((s: S) => string)
   maxToolLoops: number | ((s: S) => number)
 
@@ -140,18 +160,17 @@ export type AgentLoopHooks<S extends WithLoopState, M extends { type: string }> 
 
   onStream?: (s: S, chunk: StreamChunk, ctx: ActorContext<M>) => { state: S }
 
-	  onToolResult?: (
-	    s: S,
-	    result: { toolName: string; toolCallId: string; reply: ToolFinalReply },
-	    ctx: ActorContext<M>,
-	  ) => { state: S }
+  onToolResult?: (
+    s: S,
+    result: { toolName: string; toolCallId: string; reply: SCRReply },
+    ctx: ActorContext<M>,
+  ) => { state: S }
 
-	  onToolPending?: (
-	    s: S,
-	    result: { toolName: string; toolCallId: string; jobId: string; placeholderText?: string },
-	    ctx: ActorContext<M>,
-	  ) => { state: S }
-
+  onToolPending?: (
+    s: S,
+    result: { toolName: string; toolCallId: string; jobId: string; placeholderText?: string },
+    ctx: ActorContext<M>,
+  ) => { state: S }
 
   onBatchHistoryReady?: (
     s: S,
@@ -170,6 +189,35 @@ export type AgentLoopHandle<M extends { type: string }, S extends WithLoopState>
 
 // ─── Internal engine ────────────────────────────────────────────────────────
 
+const resolveToolUrn = (name: string, toolDef?: { name?: string; urn?: string; schema?: any }): string => {
+  if (toolDef?.urn) return toolDef.urn
+  if (name.startsWith('scr:')) return name
+  if (name === 'scr_complete') return 'scr:leaf:agent.complete'
+
+  // Try direct URN lookup in ResolutionCache
+  const directDesc = ResolutionCache.getDescriptor(name)
+  if (directDesc) return directDesc.urn
+
+  // Try standard leaf prefix
+  const dotName = name.replace(/_/g, '.')
+  const leafDotDesc = ResolutionCache.getDescriptor(`scr:leaf:${dotName}`)
+  if (leafDotDesc) return leafDotDesc.urn
+
+  const leafDirectDesc = ResolutionCache.getDescriptor(`scr:leaf:${name}`)
+  if (leafDirectDesc) return leafDirectDesc.urn
+
+  // Search by meta schema name or suffix
+  const all = ResolutionCache.getAllDescriptors()
+  for (const desc of all) {
+    if (desc.meta?.schema?.function?.name === name || desc.urn.endsWith(`.${name}`) || desc.urn.endsWith(`:${name}`)) {
+      return desc.urn
+    }
+  }
+
+  // Fallback to standard leaf urn format
+  return `scr:leaf:${dotName}`
+}
+
 const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(hooks: AgentLoopHooks<S, M>) => {
   const log = hooks.logPrefix ?? hooks.spanName
   const { tools: toolsCfg } = hooks
@@ -180,11 +228,18 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
   const resolveMaxToolLoops = (s: S): number =>
     typeof hooks.maxToolLoops === 'function' ? hooks.maxToolLoops(s) : hooks.maxToolLoops
 
-  const resolveTools = (s: S): ToolCollection =>
-    typeof toolsCfg === 'function' ? toolsCfg(s) : toolsCfg
+  const resolveTools = (s: S): AgentLoopTools =>
+    typeof toolsCfg === 'function' ? toolsCfg(s) : (toolsCfg || {})
 
-  const resolveSchemas = (s: S): LlmTool[] =>
-    Object.values(resolveTools(s)).map((e) => e.schema as LlmTool)
+  const resolveSchemas = (s: S): LlmTool[] => {
+    const rawTools = resolveTools(s)
+    if (!rawTools) return []
+    return Object.values(rawTools).map((e: any) => {
+      if (e.schema) return e.schema as LlmTool
+      if (e.function) return { type: 'function', function: e.function } as LlmTool
+      return e as LlmTool
+    })
+  }
 
   const addUsage = (a: TokenUsage, b: TokenUsage | null | undefined): TokenUsage =>
     b ? { 
@@ -336,7 +391,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
       const knownCalls: typeof tc.calls = []
       const skippedUnknownCalls: typeof tc.calls = []
       for (const call of tc.calls) {
-        if (tools[call.name]) {
+        if (tools[call.name] || call.name === 'scr_complete' || ResolutionCache.getDescriptor(resolveToolUrn(call.name, tools[call.name]))) {
           knownCalls.push(call)
           continue
         }
@@ -372,20 +427,69 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
       const permission = ctx.request.permission || { grants: ['*'] }
 
       for (const call of knownCalls) {
-        const entry = tools[call.name]!
-        const toolSpan = spans.get(call.id)
-        const subCtx = {
-          ...ctx,
-          request: {
-            ...ctx.request,
-            userId,
-            permission,
-            traceId: toolSpan?.traceId ?? ctx.request.traceId,
-            spanId: toolSpan?.spanId ?? ctx.request.spanId,
-          }
+        const toolDef = tools[call.name]
+        const urn = resolveToolUrn(call.name, toolDef)
+        let parsedInput: unknown
+        try {
+          parsedInput = typeof call.arguments === 'string' && call.arguments.trim().length > 0
+            ? JSON.parse(call.arguments)
+            : (call.arguments || {})
+        } catch {
+          parsedInput = call.arguments
         }
+
+        // Special handling for scr_complete pseudo tool
+        if (call.name === 'scr_complete') {
+          const synthetic: M = {
+            type: '_toolResult',
+            toolName: call.name,
+            toolCallId: call.id,
+            reply: { type: 'result', output: parsedInput },
+          } as unknown as M
+          ctx.send(ctx.self, synthetic)
+          continue
+        }
+
+        const toolSpan = spans.get(call.id)
+        const subRequest = {
+          ...ctx.request,
+          userId,
+          permission,
+          traceId: toolSpan?.traceId ?? ctx.request.traceId,
+          spanId: toolSpan?.spanId ?? ctx.request.spanId,
+        }
+
+        const targetRef = (toolDef as any)?.target || (toolDef as any)?.ref
+
+        const invocationPromise = targetRef
+          ? ask<any, any>(
+              targetRef,
+              (replyTo) => ({
+                type: 'invoke',
+                urn,
+                toolName: call.name,
+                arguments: typeof call.arguments === 'string' ? call.arguments : JSON.stringify(call.arguments),
+                input: parsedInput,
+                replyTo,
+              }),
+              undefined,
+              subRequest,
+            ).then((rep: any): SCRReply => {
+              if (rep.type === 'toolResult') {
+                return { type: 'result', output: rep.result }
+              }
+              if (rep.type === 'toolError') {
+                return { type: 'error', error: rep.error }
+              }
+              if (rep.type === 'toolPending') {
+                return { type: 'pending', jobId: rep.jobId, placeholderText: rep.placeholderText }
+              }
+              return rep as SCRReply
+            })
+          : requestStorage.run(subRequest, () => invokeSCR(urn, parsedInput))
+
         ctx.pipeToSelf(
-          invokeTool(subCtx, entry.ref, { toolName: call.name, arguments: call.arguments }),
+          invocationPromise,
           (reply) => ({
             type: '_toolResult',
             toolName: call.name,
@@ -396,7 +500,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
             type: '_toolResult',
             toolName: call.name,
             toolCallId: call.id,
-            reply: { type: 'toolError', error: String(error) },
+            reply: { type: 'error', error: String(error) },
           } as unknown as M),
         )
       }
@@ -406,7 +510,7 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
           type: '_toolResult',
           toolName: call.name,
           toolCallId: call.id,
-          reply: { type: 'toolError', error: `Tool not available: ${call.name}` },
+          reply: { type: 'error', error: `Tool not available: ${call.name}` },
         } as unknown as M
         ctx.send(ctx.self, synthetic)
       }
@@ -456,7 +560,8 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
       const turn = state.loop.turn
       const batch = turn.pendingBatch!
       const span = batch.spans.get(m.toolCallId)
-      if (m.reply.type === 'toolPending') {
+
+      if (m.reply.type === 'pending') {
         const pendingText = m.reply.placeholderText ?? `Background job started for ${m.toolName} (jobId=${m.reply.jobId}).`
         span?.done({ jobId: m.reply.jobId, pending: true })
         turn.requestSpan?.done({ pendingJobId: m.reply.jobId, toolName: m.toolName })
@@ -473,7 +578,8 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
           : { state }
         return materialize(r.state)
       }
-      if (m.reply.type === 'toolResult' && (m.reply as any).result === undefined) {
+
+      if (m.reply.type === 'result' && m.reply.output === undefined) {
         span?.done()
         ctx.log.info(`${log}: tool result undefined (loop terminated)`, { tool: m.toolName })
         
@@ -495,14 +601,19 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
         emitUi({ type: 'done' }, ctx)
         return { state: finalState, become: idle }
       }
-      if (m.reply.type === 'toolResult') {
+
+      if (m.reply.type === 'result') {
         span?.done()
         ctx.log.info(`${log}: tool result`, { tool: m.toolName, ok: true })
       } else {
         span?.error(m.reply.error)
         ctx.log.warn(`${log}: tool error`, { tool: m.toolName, error: m.reply.error })
       }
-      const content = m.reply.type === 'toolResult' ? formatToolResultContent(m.reply.result) : `Tool error: ${m.reply.error}`
+
+      const content = m.reply.type === 'result'
+        ? formatSCRResultContent(m.reply.output)
+        : `Tool error: ${m.reply.error}`
+
       batch.results.set(m.toolCallId, { toolCallId: m.toolCallId, toolName: m.toolName, content })
       batch.pending.delete(m.toolCallId)
 
@@ -512,49 +623,56 @@ const createLoopEngine = <S extends WithLoopState, M extends { type: string }>(h
         withResultState = r.state
       }
 
-      if (m.reply.type === 'toolResult' && m.reply.result) {
+      // Dynamic discovery binding: if tool returned descriptors (e.g. from registry_search)
+      if (m.reply.type === 'result' && m.reply.output) {
         try {
-          const resultObj = JSON.parse(m.reply.result.text)
-          const descriptors: any[] = Array.isArray(resultObj) ? resultObj : [resultObj]
+          let descriptors: any[] = []
+          const out = m.reply.output
+          if (Array.isArray(out)) {
+            descriptors = out
+          } else if (typeof out === 'object' && out !== null && 'descriptors' in out && Array.isArray((out as any).descriptors)) {
+            descriptors = (out as any).descriptors
+          } else if (typeof out === 'string') {
+            const parsed = JSON.parse(out)
+            descriptors = Array.isArray(parsed) ? parsed : (parsed?.descriptors || [parsed])
+          }
           for (const desc of descriptors) {
-            if (desc && typeof desc === 'object' && desc.urn && desc.kind === 'leaf') {
-              const fullDesc = ResolutionCache.getDescriptor(desc.urn)
-              if (fullDesc && fullDesc.target) {
-                const cleanName = desc.meta?.schema?.function?.name || desc.urn.replace(/^scr:leaf:/, '').replace(/[\.:]/g, '_')
-                const stateAny = withResultState as any
-                if (!stateAny.tools) {
-                  stateAny.tools = {}
+            if (desc && typeof desc === 'object' && desc.urn) {
+              const cleanName = desc.meta?.schema?.function?.name || desc.urn.split(':').pop()?.replace(/[\.:]/g, '_') || desc.urn
+              const stateAny = withResultState as any
+              if (!stateAny.tools) {
+                stateAny.tools = {}
+              }
+              if (!(cleanName in stateAny.tools)) {
+                stateAny.tools[cleanName] = {
+                  name: cleanName,
+                  urn: desc.urn,
+                  schema: desc.meta?.schema || {
+                    type: 'function',
+                    function: {
+                      name: cleanName,
+                      description: desc.description || '',
+                      parameters: desc.schema?.inputSchema || {},
+                    }
+                  },
                 }
-                if (!(cleanName in stateAny.tools)) {
-                  stateAny.tools[cleanName] = {
-                    name: cleanName,
-                    schema: desc.meta?.schema || {
-                      type: 'function',
-                      function: {
-                        name: cleanName,
-                        description: desc.description || '',
-                        parameters: desc.schema?.inputSchema || {},
-                      }
-                    },
-                    ref: fullDesc.target,
-                  }
-                  ctx.log.info(`${log}: dynamically bound tool schema mid-flight: ${cleanName} (${desc.urn})`)
-                }
+                ctx.log.info(`${log}: dynamically bound tool schema mid-flight: ${cleanName} (${desc.urn})`)
               }
             }
           }
-        } catch (e) {
+        } catch {
           // ignore parsing error
         }
       }
 
       // Auto-emit sources/attachments
-      if (m.reply.type === 'toolResult') {
-        if (m.reply.result.sources?.length) {
-          emitUi({ type: 'sources', sources: m.reply.result.sources }, ctx)
+      if (m.reply.type === 'result' && m.reply.output && typeof m.reply.output === 'object') {
+        const out = m.reply.output as Record<string, unknown>
+        if (Array.isArray(out.sources) && out.sources.length > 0) {
+          emitUi({ type: 'sources', sources: out.sources }, ctx)
         }
-        if (m.reply.result.attachments?.length) {
-          emitUi({ type: 'attachments', attachments: m.reply.result.attachments }, ctx)
+        if (Array.isArray(out.attachments) && out.attachments.length > 0) {
+          emitUi({ type: 'attachments', attachments: out.attachments }, ctx)
         }
       }
 

@@ -2,8 +2,8 @@ import { describe, test, expect } from 'bun:test'
 import { AgentSystem } from '../system/index.ts'
 import { agentLoop, type AgentLoopHandle, type LoopMsg, type LoopStartTurnParams, idleLoopState, type WithLoopState, createTopic } from '../system/index.ts'
 import type { ActorDef, ActorContext, ActorRef, Interceptor } from '../system/index.ts'
-import type { LlmProviderMsg, LlmProviderReply, ApiMessage, TokenUsage } from '../types/llm.ts'
-import type { ToolMsg, ToolFinalReply, ToolReply, ToolSchema, ToolCollection } from '../types/tools.ts'
+import type { LlmProviderMsg, LlmProviderReply, ApiMessage, TokenUsage, LlmTool } from '../types/llm.ts'
+import type { SCRReply, SCRInvokeMsg } from '../types/scr.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -16,7 +16,7 @@ type TestStartParams = LoopStartTurnParams
 type TestExtra =
   | { type: 'start'; params: TestStartParams }
   | { type: 'cancel' }
-  | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
+  | { type: '_toolRegistered'; name: string; schema: any; ref: ActorRef<any>; mayBeLongRunning?: boolean }
   | { type: '_toolUnregistered'; name: string }
 
 type TestMsg = LoopMsg<TestExtra>
@@ -26,11 +26,11 @@ type TestState = WithLoopState & {
   finalText: string
   streamEvents: Array<{ kind: 'text' | 'reasoning'; text: string }>
   toolCallsEvents: string[]
-  toolResults: Array<{ name: string; reply: ToolFinalReply }>
+  toolResults: Array<{ name: string; reply: SCRReply }>
   toolPendingEvents: Array<{ toolName: string; toolCallId: string; jobId: string; placeholderText?: string }>
   batchHistory: ApiMessage[][]
   llmRef: ActorRef<LlmProviderMsg> | null
-  tools: ToolCollection
+  tools: Record<string, any>
 }
 
 const emptyState = (): TestState => ({
@@ -46,25 +46,25 @@ const emptyState = (): TestState => ({
   tools: {},
 })
 
-const SEARCH_SCHEMA: ToolSchema = {
+const SEARCH_SCHEMA: LlmTool = {
   type: 'function',
   function: { name: 'search', description: 'search', parameters: {} },
 }
 
-const makeToolMock = (name: string, result: ToolFinalReply): ActorDef<ToolMsg, null> => ({
+const makeToolMock = (name: string, result: SCRReply): ActorDef<any, null> => ({
   initialState: null,
   handler: (state, msg) => {
-    if (msg.type === 'invoke' && msg.toolName === name) {
+    if (msg.type === 'invoke' && (msg.toolName === name || msg.urn?.endsWith(name))) {
       msg.replyTo.send(result)
     }
     return { state }
   },
 })
 
-const makeImmediateToolMock = (name: string, result: ToolReply): ActorDef<ToolMsg, null> => ({
+const makeImmediateToolMock = (name: string, result: SCRReply): ActorDef<any, null> => ({
   initialState: null,
   handler: (state, msg) => {
-    if (msg.type === 'invoke' && msg.toolName === name) {
+    if (msg.type === 'invoke' && (msg.toolName === name || msg.urn?.endsWith(name))) {
       msg.replyTo.send(result)
     }
     return { state }
@@ -368,8 +368,8 @@ describe('AgentLoop: full integration', () => {
     const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
     const toolRef = system.spawn('tool', makeToolMock('search', {
-      type: 'toolResult',
-      result: { text: 'found it' },
+      type: 'result',
+      output: { text: 'found it' },
     }))
 
     const llmDef: ActorDef<LlmProviderMsg, null> = {
@@ -449,8 +449,8 @@ describe('AgentLoop: full integration', () => {
     const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
     const toolRef = system.spawn('metadata-tool', makeToolMock('search', {
-      type: 'toolResult',
-      result: {
+      type: 'result',
+      output: {
         text: 'generated image',
         attachments: [{ kind: 'image', url: 'generated/image.png', name: 'image.png', mimeType: 'image/png' }],
         sources: [{ title: 'Source', url: 'https://example.test', snippet: 'snippet' }],
@@ -516,7 +516,7 @@ describe('AgentLoop: full integration', () => {
 	    const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
 	    const toolRef = system.spawn('tool', makeImmediateToolMock('search', {
-	      type: 'toolPending',
+	      type: 'pending',
 	      jobId: 'job-1',
 	      placeholderText: 'Search started.',
 	    }))
@@ -649,8 +649,8 @@ describe('AgentLoop: full integration', () => {
     const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
     const toolRef = system.spawn('tool', makeToolMock('search', {
-      type: 'toolResult',
-      result: { text: 'found' },
+      type: 'result',
+      output: { text: 'found' },
     }))
 
     const llmDef: ActorDef<LlmProviderMsg, null> = {
@@ -711,8 +711,8 @@ describe('AgentLoop: full integration', () => {
     const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
 
     const toolRef = system.spawn('t', makeToolMock('newTool', {
-      type: 'toolResult',
-      result: { text: 'ok' },
+      type: 'result',
+      output: { text: 'ok' },
     }))
 
     const llmDef: ActorDef<LlmProviderMsg, null> = {
@@ -747,7 +747,7 @@ describe('AgentLoop: full integration', () => {
       type: '_toolRegistered',
       name: 'newTool',
       schema: { type: 'function', function: { name: 'newTool', description: 'd', parameters: {} } },
-      ref: toolRef as ActorRef<ToolMsg>,
+      ref: toolRef,
     })
     await tick()
 
