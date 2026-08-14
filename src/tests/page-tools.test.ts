@@ -66,20 +66,18 @@ describe('Page Tools Suite', () => {
   })
 
   test('CodingAgentDescriptor registers coding tools including coding_file_grep/coding_file_glob/coding_file_write/coding_file_replace_string', () => {
-    const mockTools = {
-      coding_shell_exec: codingBashTool,
-      coding_file_read: codingReadTool,
-      coding_file_grep: codingGrepTool,
-      coding_file_glob: codingGlobTool,
-      coding_file_write: codingWriteTool,
-      coding_file_replace_string: codingStrReplaceTool,
-      coding_html_write_page: writeHTMLPageTool,
-    } as any
-
     const descriptor = CodingAgentDescriptor({
       model: 'test-model',
       projectMount: '/rorschach',
-      tools: mockTools,
+      agentSCRs: [
+        'scr:leaf:coding.shellExec',
+        'scr:leaf:coding.fileRead',
+        'scr:leaf:coding.grep',
+        'scr:leaf:coding.glob',
+        'scr:leaf:coding.write',
+        'scr:leaf:coding.strReplace',
+        'scr:leaf:coding.htmlWritePage',
+      ],
     })
 
     expect(descriptor.mode).toBe('coding')
@@ -91,13 +89,12 @@ describe('Page Tools Suite', () => {
     expect(descriptor.systemPrompt).toContain('coding_file_replace_string')
     expect(descriptor.systemPrompt).toContain('LINE|')
 
-    const toolNames = descriptor.internalTools.map(t => t.name)
-    expect(toolNames).toContain('coding_shell_exec')
-    expect(toolNames).toContain('coding_file_read')
-    expect(toolNames).toContain('coding_file_grep')
-    expect(toolNames).toContain('coding_file_glob')
-    expect(toolNames).toContain('coding_file_write')
-    expect(toolNames).toContain('coding_file_replace_string')
-    expect(toolNames).toContain('coding_html_write_page')
+    expect(descriptor.agentSCRs).toContain('scr:leaf:coding.shellExec')
+    expect(descriptor.agentSCRs).toContain('scr:leaf:coding.fileRead')
+    expect(descriptor.agentSCRs).toContain('scr:leaf:coding.grep')
+    expect(descriptor.agentSCRs).toContain('scr:leaf:coding.glob')
+    expect(descriptor.agentSCRs).toContain('scr:leaf:coding.write')
+    expect(descriptor.agentSCRs).toContain('scr:leaf:coding.strReplace')
+    expect(descriptor.agentSCRs).toContain('scr:leaf:coding.htmlWritePage')
   })
 })

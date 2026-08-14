@@ -1,7 +1,6 @@
 import type { ActorDef, ActorContext, ActorRef, ActorResult, Interceptor } from '../../system/index.ts'
 import { agentLoop, ask, idleLoopState, type LoopState } from '../../system/index.ts'
 import { defineTool, parseToolArgs } from '../../system/index.ts'
-import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import type { SCRReply } from '../../types/scr.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { MessageAttachment } from '../../types/events.ts'
@@ -274,13 +273,13 @@ const runMemoryRead = async (
   return JSON.stringify({ records: sourcePayload(records) })
 }
 
-const recallTools = (state: MemoryRecallWorkerState): ToolCollection => {
+const recallTools = (state: MemoryRecallWorkerState): Record<string, any> => {
   if (!state.selfRef) return {}
-  const ref = state.selfRef as unknown as ActorRef<ToolMsg>
+  const target = state.selfRef
   return {
-    [memorySearchTool.name]: { name: memorySearchTool.name, schema: memorySearchTool.schema, ref },
-    [memoryExpandTool.name]: { name: memoryExpandTool.name, schema: memoryExpandTool.schema, ref },
-    [memoryReadTool.name]: { name: memoryReadTool.name, schema: memoryReadTool.schema, ref },
+    [memorySearchTool.name]: { name: memorySearchTool.name, urn: 'scr:leaf:memory.search', schema: memorySearchTool.schema, target },
+    [memoryExpandTool.name]: { name: memoryExpandTool.name, urn: 'scr:leaf:memory.expand', schema: memoryExpandTool.schema, target },
+    [memoryReadTool.name]: { name: memoryReadTool.name, urn: 'scr:leaf:memory.read', schema: memoryReadTool.schema, target },
   }
 }
 

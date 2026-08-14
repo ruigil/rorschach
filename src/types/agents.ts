@@ -1,7 +1,6 @@
-import type { ActorDef, ActorRef } from '../system/index.ts'
-import { createTopic } from '../system/index.ts'
-import type { ApiMessage, LlmProviderMsg } from './llm.ts'
-import type { ToolFilter, Tool } from './tools.ts'
+import { createTopic, type ActorRef } from '../system/index.ts'
+import type { ApiMessage } from './llm.ts'
+import type { ToolFilter } from './tools.ts'
 
 export type AgentModelOptions = {
   model:         string
@@ -71,14 +70,9 @@ export type AgentDescriptor = {
   shortDesc:    string
   role?:        string
   systemPrompt: string
-  internalTools: Tool[]
   agentSCRs?:   string[]
   toolFilter?:   ToolFilter
   capabilities: { userVisible: boolean }
   model:        string
   maxToolLoops?: number
-}
-
-export type AgentCatalogEvent = {
-  agents: Array<{ mode: string; displayName: string; shortDesc: string }>
 }

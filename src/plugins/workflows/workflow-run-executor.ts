@@ -1,7 +1,7 @@
 
 import type { ActorContext, ActorDef, ActorRef, PersistenceAdapter } from '../../system/index.ts'
 import { onLifecycle, onMessage, persistencePluginAdapter } from '../../system/index.ts'
-import { JobRegistryTopic, type ToolCollection, type ToolReply } from '../../types/tools.ts'
+import { JobRegistryTopic } from '../../types/tools.ts'
 import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import { WorkflowEventTopic } from './types.ts'
 import type {
@@ -28,7 +28,7 @@ import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persi
 type RunExecutorState = {
   run: WorkflowRunState
   workflow: Workflow
-  tools: ToolCollection
+  tools: Record<string, any>
   llmRef: ActorRef<LlmProviderMsg> | null
   permissionContext: PermissionContext
 }
@@ -122,7 +122,7 @@ export const WorkflowRunExecutor = (
   llmRef: ActorRef<LlmProviderMsg> | null,
   model: string,
   maxToolLoops: number,
-  allTools: ToolCollection,
+  allTools: Record<string, any>,
   userId: string,
   runId: string,
   permissionContext: PermissionContext = { grants: ['*'] },
@@ -457,8 +457,8 @@ export type SCRWorkflowRunnerOptions = {
   maxToolLoops: number
 }
 
-const getExecutionTools = (): ToolCollection => {
-  const tools: ToolCollection = {}
+const getExecutionTools = (): Record<string, any> => {
+  const tools: Record<string, any> = {}
   const descriptors = ResolutionCache.getAllDescriptors()
   for (const desc of descriptors) {
     if (desc.kind === 'leaf') {

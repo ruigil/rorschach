@@ -1,8 +1,7 @@
-import type { ToolCollection } from '../../types/tools.ts'
 import type { AgentDescriptor, AgentModelOptions } from '../../types/agents.ts'
 
 export type WorkflowsAgentOptions = AgentModelOptions & {
-  tools: ToolCollection
+  agentSCRs?: string[]
 }
 
 export const WorkflowsAgentDescriptor = (options: WorkflowsAgentOptions): AgentDescriptor => {
@@ -29,7 +28,7 @@ After workflows_save or workflows_update, briefly acknowledge the save and stop.
     displayName: 'Workflow Graphs',
     shortDesc: 'Design plans, save, inspect, and execute structured workflow DAGs (directed acyclic graphs of tasks).',
     systemPrompt,
-    internalTools: Object.values(options.tools || {}),
+    agentSCRs: options.agentSCRs || [],
     toolFilter: options.toolFilter,
     capabilities: { userVisible: true },
     model: options.model,

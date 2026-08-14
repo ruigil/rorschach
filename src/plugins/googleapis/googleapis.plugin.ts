@@ -1,7 +1,6 @@
 import { createPluginFactory } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
-import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 
 import type { GoogleApisConfig, TokenStoreMsg, OAuthStateMsg } from './types.ts'
 import { TokenStore } from './token-store.ts'
@@ -27,39 +26,6 @@ import {
   Youtube,
   youtubeSearchVideosTool, youtubeVideoDetailsTool,
 } from './tools/youtube.ts'
-
-const buildGoogleTools = (
-  gmailRef:    ActorRef<ToolMsg> | null,
-  calendarRef: ActorRef<ToolMsg> | null,
-  driveRef:    ActorRef<ToolMsg> | null,
-  youtubeRef:  ActorRef<ToolMsg> | null,
-): ToolCollection => {
-  const tools: ToolCollection = {}
-  if (gmailRef) {
-    tools[gmailListMessagesTool.name] = { ...gmailListMessagesTool, ref: gmailRef }
-    tools[gmailGetMessageTool.name]   = { ...gmailGetMessageTool, ref: gmailRef }
-    tools[gmailSendMessageTool.name]  = { ...gmailSendMessageTool, ref: gmailRef }
-    tools[gmailSearchTool.name]       = { ...gmailSearchTool, ref: gmailRef }
-  }
-  if (calendarRef) {
-    tools[calendarListEventsTool.name]  = { ...calendarListEventsTool, ref: calendarRef }
-    tools[calendarCreateEventTool.name] = { ...calendarCreateEventTool, ref: calendarRef }
-    tools[calendarUpdateEventTool.name] = { ...calendarUpdateEventTool, ref: calendarRef }
-    tools[calendarDeleteEventTool.name] = { ...calendarDeleteEventTool, ref: calendarRef }
-  }
-  if (driveRef) {
-    tools[driveListFilesTool.name]    = { ...driveListFilesTool, ref: driveRef }
-    tools[driveSearchFilesTool.name]  = { ...driveSearchFilesTool, ref: driveRef }
-    tools[driveGetFileTool.name]      = { ...driveGetFileTool, ref: driveRef }
-    tools[driveDownloadFileTool.name] = { ...driveDownloadFileTool, ref: driveRef }
-    tools[driveUploadFileTool.name]   = { ...driveUploadFileTool, ref: driveRef }
-  }
-  if (youtubeRef) {
-    tools[youtubeSearchVideosTool.name] = { ...youtubeSearchVideosTool, ref: youtubeRef }
-    tools[youtubeVideoDetailsTool.name] = { ...youtubeVideoDetailsTool, ref: youtubeRef }
-  }
-  return tools
-}
 
 export default createPluginFactory<GoogleApisConfig>({
   id:          'googleapis',
@@ -140,17 +106,27 @@ export default createPluginFactory<GoogleApisConfig>({
   agents: {
     google: {
       factory: GoogleAgentDescriptor,
-      options: (cfg, deps) => ({
+      options: (cfg) => ({
         model: cfg.agentModel ?? 'google/gemini-2.5-flash',
         maxToolLoops: cfg.maxToolLoops ?? 10,
-        tools: buildGoogleTools(
-          (deps.gmail as ActorRef<ToolMsg>) ?? null,
-          (deps.calendar as ActorRef<ToolMsg>) ?? null,
-          (deps.drive as ActorRef<ToolMsg>) ?? null,
-          (deps.youtube as ActorRef<ToolMsg>) ?? null,
-        ),
+        agentSCRs: [
+          'scr:leaf:googleapis.gmailListMessages',
+          'scr:leaf:googleapis.gmailGetMessage',
+          'scr:leaf:googleapis.gmailSendMessage',
+          'scr:leaf:googleapis.gmailSearch',
+          'scr:leaf:googleapis.calendarListEvents',
+          'scr:leaf:googleapis.calendarCreateEvent',
+          'scr:leaf:googleapis.calendarUpdateEvent',
+          'scr:leaf:googleapis.calendarDeleteEvent',
+          'scr:leaf:googleapis.driveListFiles',
+          'scr:leaf:googleapis.driveSearchFiles',
+          'scr:leaf:googleapis.driveGetFile',
+          'scr:leaf:googleapis.driveDownloadFile',
+          'scr:leaf:googleapis.driveUploadFile',
+          'scr:leaf:googleapis.youtubeSearchVideos',
+          'scr:leaf:googleapis.youtubeVideoDetails',
+        ],
       }),
-      dependsOn: ['gmail', 'calendar', 'drive', 'youtube'],
     },
   },
   routes: (cfg, deps) => {

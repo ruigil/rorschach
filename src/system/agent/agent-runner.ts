@@ -291,14 +291,6 @@ export const SCRAgentRunner = (opts: {
         const permissionContext = state.request.permission ?? { grants: ['*'] }
         const tools: AgentLoopTools = {}
 
-        if (agentDescriptor.internalTools) {
-          for (const t of agentDescriptor.internalTools) {
-            if (authorize(permissionContext, t.name)) {
-              tools[t.name] = t
-            }
-          }
-        }
-
         // Pre-load agent SCR capabilities dynamically on startup
         const preloadSCRs = agentDescriptor.agentSCRs || []
         for (const metaUrn of preloadSCRs) {

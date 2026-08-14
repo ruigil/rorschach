@@ -22,7 +22,6 @@ import type {
 } from '../../types/llm.ts'
 import type { ContextTurn, ContextSnapshotEvent } from '../../types/agents.ts'
 import type { MessageAttachment } from '../../types/events.ts'
-import type { ToolSchema, ToolMsg } from '../../types/tools.ts'
 
 // ─── Session configuration (consumed by SessionManager) ───
 
@@ -127,14 +126,4 @@ export type ChatbotExtra =
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
 
 export type ChatbotMsg = LoopMsg<ChatbotExtra>
-
-
-export type SwitchAgentEvent = {
-  userId:   string
-  mode:     string
-  source:   'user' | 'llm' | 'programmatic'
-  reason?:  string
-}
-
-export const SwitchAgentTopic = createTopic<SwitchAgentEvent>('agent.switch')
 

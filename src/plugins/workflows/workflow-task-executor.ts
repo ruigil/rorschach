@@ -1,6 +1,5 @@
 import type { ActorContext, ActorDef, ActorRef, ActorResult, Interceptor } from '../../system/index.ts'
 import { agentLoop, defineTool, idleLoopState, parseToolArgs, onLifecycle, ask } from '../../system/index.ts'
-import type { ToolCollection, ToolMsg, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic, type ApiMessage, type LlmProviderMsg } from '../../types/llm.ts'
 import type { PermissionContext } from '../../system/permissions/types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetPayload } from '../../types/persistence.ts'
@@ -33,7 +32,6 @@ Task Execution Instructions:
 4. When tool execution settles, inspect the results and format declared task outputs.
 5. Call workflows_task_complete with a summary and structured outputs matching task output specifications.
 6. If a required tool fails or cannot satisfy validation criteria, call workflows_task_block with a clear reason.`,
-  internalTools: [], // System control tools (complete/block/read/write) are injected by TaskExecutor
   capabilities: { userVisible: false },
   model: 'default',
   maxToolLoops: 5,
@@ -46,7 +44,7 @@ type TaskExecutorState = {
   task: WorkflowTask | null
   inputs: Record<string, unknown>
   dependencyOutputs: Record<string, WorkflowDependencyOutput>
-  tools: ToolCollection
+  tools: Record<string, any>
   userId: string
   terminalSignaled: boolean
   llmRef: ActorRef<LlmProviderMsg> | null
@@ -55,7 +53,7 @@ type TaskExecutorState = {
   permissionContext: PermissionContext
 }
 
-const initialState = (tools: ToolCollection, llmRef: ActorRef<LlmProviderMsg> | null, permissionContext: PermissionContext = { grants: ['*'] }): TaskExecutorState => ({
+const initialState = (tools: Record<string, any>, llmRef: ActorRef<LlmProviderMsg> | null, permissionContext: PermissionContext = { grants: ['*'] }): TaskExecutorState => ({
   loop: idleLoopState(),
   runId: '',
   workflow: null,
@@ -195,7 +193,7 @@ export const WorkflowTaskExecutor = (
   llmRef: ActorRef<LlmProviderMsg> | null,
   model: string,
   maxToolLoops: number,
-  tools: ToolCollection,
+  tools: Record<string, any> = {},
   permissionContext: PermissionContext = { grants: ['*'] },
 ): ActorDef<WorkflowTaskExecutorMsg, TaskExecutorState> => {
   type M = WorkflowTaskExecutorMsg
@@ -335,25 +333,12 @@ ${JSON.stringify(msg.dependencyOutputs, null, 2)}
       }
     }
 
-    let externalTaskTools: ToolCollection = {}
-    for (const [toolName, tool] of Object.entries(tools)) {
-      externalTaskTools[toolName] = tool
-    }
-
-    const descriptorInternalTools: ToolCollection = {}
-    if (descriptor.internalTools) {
-      for (const tool of descriptor.internalTools) {
-        descriptorInternalTools[tool.name] = tool
-      }
-    }
-
-    const finalTools: ToolCollection = {
-      ...externalTaskTools,
-      ...descriptorInternalTools,
-      [completeWorkflowTaskTool.name]: { ...completeWorkflowTaskTool, ref: ctx.self as ActorRef<ToolMsg> },
-      [blockWorkflowTaskTool.name]: { ...blockWorkflowTaskTool, ref: ctx.self as ActorRef<ToolMsg> },
-      [readArtifactTool.name]: { ...readArtifactTool, ref: ctx.self as ActorRef<ToolMsg> },
-      [writeArtifactTool.name]: { ...writeArtifactTool, ref: ctx.self as ActorRef<ToolMsg> },
+    const finalTools: Record<string, any> = {
+      ...tools,
+      [completeWorkflowTaskTool.name]: { ...completeWorkflowTaskTool, target: ctx.self },
+      [blockWorkflowTaskTool.name]: { ...blockWorkflowTaskTool, target: ctx.self },
+      [readArtifactTool.name]: { ...readArtifactTool, target: ctx.self },
+      [writeArtifactTool.name]: { ...writeArtifactTool, target: ctx.self },
     }
 
     const next: S = {

@@ -71,7 +71,7 @@ import type { PersistenceMsg } from '../../types/persistence.ts'
 // ─── Global Tools Actor Types ───
 
 export type GlobalToolsMsg =
-  | { type: '_toolReg'; event: any }
+  | { type: '_scrReg'; event: any }
   | { type: '_wsFrame'; event: any }
 
 export type GlobalToolsState = {

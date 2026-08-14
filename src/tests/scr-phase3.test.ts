@@ -2,8 +2,7 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { AgentSystem, invokeSCR, onMessage, ask, staticSource, createTopic } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
 import { SCRRegistrationTopic, UserBudgetTopic, UsageUpdateTopic, type StreamChunk } from '../types/scr.ts'
-import type { SCRDescriptor } from '../types/scr.ts'
-import type { ToolMsg, ToolReply } from '../types/tools.ts'
+import type { SCRDescriptor, SCRInvokeMsg } from '../types/scr.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../types/persistence.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 import cognitivePlugin from '../plugins/cognitive/cognitive.plugin.ts'
@@ -181,12 +180,12 @@ describe('SCR Phase 3: Reasoner (Agent) SCR Conversion', () => {
     await tick()
 
     // Register a mock tool that yields pending
-    const mockToolActor: ActorDef<ToolMsg, null> = {
+    const mockToolActor: ActorDef<SCRInvokeMsg, null> = {
       initialState: null,
       handler: onMessage({
         invoke: (state, msg) => {
           msg.replyTo.send({
-            type: 'toolPending',
+            type: 'pending',
             jobId: 'pending-job-999',
             placeholderText: 'Hold on...',
           })
@@ -212,17 +211,11 @@ describe('SCR Phase 3: Reasoner (Agent) SCR Conversion', () => {
     })
     await tick()
 
-    // Override the agent internalTools to include this tool
+    // Override the agent agentSCRs to include this tool
     const desc = ResolutionCache.getDescriptor('scr:reasoner:cognitive.chatbot')
     if (desc && desc.meta?.agentDescriptor) {
-      desc.meta.agentDescriptor.internalTools.push({
-        name: 'test_pending_tool',
-        schema: {
-          type: 'function',
-          function: { name: 'test_pending_tool', description: 'Mock pending tool', parameters: {} }
-        },
-        ref: toolRef,
-      })
+      desc.meta.agentDescriptor.agentSCRs = desc.meta.agentDescriptor.agentSCRs || []
+      desc.meta.agentDescriptor.agentSCRs.push('scr:leaf:cognitive.test_pending_tool')
     }
 
     const reply = await invokeSCR('scr:reasoner:cognitive.chatbot', { prompt: 'Call pending tool' })
@@ -382,13 +375,13 @@ describe('SCR Phase 3: Reasoner (Agent) SCR Conversion', () => {
     await tick()
 
     // Register a mock tool that returns undefined as result
-    const mockUndefToolActor: ActorDef<ToolMsg, null> = {
+    const mockUndefToolActor: ActorDef<SCRInvokeMsg, null> = {
       initialState: null,
       handler: onMessage({
         invoke: (state, msg) => {
           msg.replyTo.send({
-            type: 'toolResult',
-            result: undefined as any, // returns undefined!
+            type: 'result',
+            output: undefined as any, // returns undefined!
           })
           return { state }
         }
@@ -413,17 +406,11 @@ describe('SCR Phase 3: Reasoner (Agent) SCR Conversion', () => {
     })
     await tick()
 
-    // Override the agent internalTools to include this tool
+    // Override the agent agentSCRs to include this tool
     const desc = ResolutionCache.getDescriptor(testUrn)
     if (desc && desc.meta?.agentDescriptor) {
-      desc.meta.agentDescriptor.internalTools.push({
-        name: 'test_undef_tool',
-        schema: {
-          type: 'function',
-          function: { name: 'test_undef_tool', description: 'Mock undefined tool', parameters: {} }
-        },
-        ref: toolRef,
-      })
+      desc.meta.agentDescriptor.agentSCRs = desc.meta.agentDescriptor.agentSCRs || []
+      desc.meta.agentDescriptor.agentSCRs.push('scr:leaf:cognitive.test_undef_tool')
     }
 
     const reply = await invokeSCR(testUrn, { prompt: 'Call undefined tool' })
@@ -511,13 +498,13 @@ describe('SCR Phase 3: Reasoner (Agent) SCR Conversion', () => {
     await tick()
 
     // Spawn a mock notebook tool
-    const mockNotebookActor: ActorDef<ToolMsg, null> = {
+    const mockNotebookActor: ActorDef<SCRInvokeMsg, null> = {
       initialState: null,
       handler: onMessage({
         invoke: (state, msg) => {
           msg.replyTo.send({
-            type: 'toolResult',
-            result: { text: 'Written successfully' }
+            type: 'result',
+            output: { text: 'Written successfully' }
           })
           return { state }
         }

@@ -1,6 +1,5 @@
-import type { LoopMsg, LoopState, ActorRef, ContextView } from '../../system/index.ts'
+import type { LoopMsg, LoopState, ContextView } from '../../system/index.ts'
 import { createTopic } from '../../system/index.ts'
-import type { ToolCollection, ToolSchema, ToolMsg } from '../../types/tools.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 
 // ─── Domain types ───
@@ -38,7 +37,6 @@ export type CoachAgentMsg = LoopMsg<CoachExtraMsg>
 export type CoachAgentState = {
   loop:        LoopState
   contextView: ContextView
-  tools:       ToolCollection
 }
 
 export type NotebookChangeEvent =

@@ -21,37 +21,6 @@ export type ToolResultPayload = {
   attachments?: MessageAttachment[]
 }
 
-export type ToolInvokeMsg = {
-  type: 'invoke'
-  toolName: string
-  arguments: string  // raw JSON string from LLM
-  replyTo: ActorRef<ToolReply>
-}
-
-export type ToolMsg = ToolInvokeMsg
-
-export type ToolReply =
-  | { type: 'toolResult'; result: ToolResultPayload }
-  | { type: 'toolError'; error: string }
-  | { type: 'toolPending'; jobId: string; placeholderText?: string }
-
-/** Terminal tool replies; `toolPending` is a lifecycle event, not a result. */
-export type ToolFinalReply =
-  | { type: 'toolResult'; result: ToolResultPayload }
-  | { type: 'toolError'; error: string }
-
-// ─── Registry types ───
-
-export type Tool = {
-  name: string
-  schema: ToolSchema
-  ref: ActorRef<ToolMsg>
-  /** Tool MAY reply with toolPending. Agents that don't support background completion
-   *  should filter these out of their LLM tool list. Default false. */
-  mayBeLongRunning?: boolean
-}
-export type ToolCollection = Record<string, Tool>
-
 // ─── Job registry (for long-running jobs) ───
 
 export type JobLifecycleEvent =

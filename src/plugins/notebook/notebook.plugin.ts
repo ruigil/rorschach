@@ -1,6 +1,4 @@
 import { createPluginFactory } from '../../system/index.ts'
-import type { ActorRef } from '../../system/index.ts'
-import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { config, type NotebookConfig } from './notebook.config.ts'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
 
@@ -31,29 +29,6 @@ import { Todos, todosCreateTool, todosCompleteTool, todosListTool, todosDeleteTo
 import { Search, notebookSearchTool } from './tools/search.ts'
 import { CoachAgentDescriptor } from './coach-agent.ts'
 import { NotebookManager } from './notebook-manager.ts'
-
-// ─── Tool collection builder ───
-
-const buildToolCollection = (
-  journalRef:  ActorRef<ToolMsg>,
-  trackerRef:  ActorRef<ToolMsg>,
-  todosRef:    ActorRef<ToolMsg>,
-  searchRef:   ActorRef<ToolMsg>,
-): ToolCollection => ({
-  [journalWriteTool.name]:        { ...journalWriteTool,        ref: journalRef },
-  [journalReadTool.name]:         { ...journalReadTool,         ref: journalRef },
-  [journalSearchTool.name]:       { ...journalSearchTool,       ref: journalRef },
-  [trackerLogTool.name]:          { ...trackerLogTool,          ref: trackerRef  },
-  [trackerStatsTool.name]:        { ...trackerStatsTool,        ref: trackerRef  },
-  [trackerDefineHabitTool.name]:  { ...trackerDefineHabitTool,  ref: trackerRef  },
-  [trackerListHabitsTool.name]:   { ...trackerListHabitsTool,   ref: trackerRef  },
-  [todosCreateTool.name]:         { ...todosCreateTool,         ref: todosRef    },
-  [todosCompleteTool.name]:       { ...todosCompleteTool,       ref: todosRef    },
-  [todosListTool.name]:           { ...todosListTool,           ref: todosRef    },
-  [todosDeleteTool.name]:         { ...todosDeleteTool,         ref: todosRef    },
-  [todosUpdateTool.name]:         { ...todosUpdateTool,         ref: todosRef    },
-  [notebookSearchTool.name]:      { ...notebookSearchTool,      ref: searchRef   },
-})
 
 export default createPluginFactory<NotebookConfig>({
   id:          'notebook',
@@ -96,18 +71,26 @@ export default createPluginFactory<NotebookConfig>({
   agents: {
     coach: {
       factory: CoachAgentDescriptor,
-      options: (cfg, deps) => ({
+      options: (cfg) => ({
         model: cfg.agent?.model ?? 'google/gemini-3.5-flash',
         maxToolLoops: cfg.agent?.maxToolLoops ?? 15,
-        tools: buildToolCollection(
-          deps.journal as ActorRef<ToolMsg>,
-          deps.tracker as ActorRef<ToolMsg>,
-          deps.todos as ActorRef<ToolMsg>,
-          deps.search as ActorRef<ToolMsg>,
-        ),
+        agentSCRs: [
+          'scr:leaf:notebook.journalWrite',
+          'scr:leaf:notebook.journalRead',
+          'scr:leaf:notebook.journalSearch',
+          'scr:leaf:notebook.trackerLog',
+          'scr:leaf:notebook.trackerStats',
+          'scr:leaf:notebook.trackerDefineHabit',
+          'scr:leaf:notebook.trackerListHabits',
+          'scr:leaf:notebook.todosCreate',
+          'scr:leaf:notebook.todosComplete',
+          'scr:leaf:notebook.todosList',
+          'scr:leaf:notebook.todosDelete',
+          'scr:leaf:notebook.todosUpdate',
+          'scr:leaf:notebook.search',
+        ],
         toolFilter: cfg.agent?.toolFilter,
       }),
-      dependsOn: ['journal', 'tracker', 'todos', 'search', 'manager'],
     },
   },
 })

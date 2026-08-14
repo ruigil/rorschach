@@ -6,7 +6,8 @@ import { AgentSystem, ask, defineTool, type ActorDef, type ActorRef, staticSourc
 import { WorkflowRunExecutor } from '../plugins/workflows/workflow-run-executor.ts'
 import { WorkflowEventTopic, type Workflow, type WorkflowRunExecutorMsg, type WorkflowRunExecutorReply, type WorkflowRunState } from '../plugins/workflows/types.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
-import { JobRegistryTopic, type ToolCollection, type ToolMsg, type ToolReply } from '../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../types/scr.ts'
+import { JobRegistryTopic } from '../types/tools.ts'
 import { saveWorkflowRun, initialRunState } from '../plugins/workflows/workflow-store.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 import { PersistenceProviderTopic } from '../types/persistence.ts'
@@ -50,10 +51,10 @@ const readTool = defineTool('coding_file_read', 'Read a file.', {
   },
 })
 
-const FakeTool = (): ActorDef<ToolMsg, null> => ({
+const FakeTool = (): ActorDef<SCRInvokeMsg, null> => ({
   initialState: null,
   handler: (state, msg) => {
-    const reply: ToolReply = { type: 'toolResult', result: { text: `called ${msg.toolName}` } }
+    const reply: SCRReply = { type: 'result', output: { text: `called ${msg.urn}` } }
     msg.replyTo.send(reply)
     return { state }
   },
@@ -84,7 +85,7 @@ describe('workflow run executor', () => {
     const updates: WorkflowRunState[] = []
     system.subscribe(WorkflowEventTopic, event => updates.push(event.run!))
     const toolRef = system.spawn('fake-coding_file_read-tool', FakeTool())
-    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+    const tools: Record<string, any> = { [readTool.name]: { ...readTool, ref: toolRef } }
 
     const run = initialRunState(workflow, 'run-1')
     const persistenceRef = await getPersistenceRef(system)
@@ -119,7 +120,7 @@ describe('workflow run executor', () => {
     const updates: WorkflowRunState[] = []
     system.subscribe(WorkflowEventTopic, event => updates.push(event.run!))
     const toolRef = system.spawn('fake-coding_file_read-tool-complete-update', FakeTool())
-    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+    const tools: Record<string, any> = { [readTool.name]: { ...readTool, ref: toolRef } }
 
     const run: WorkflowRunState = {
       ...initialRunState(workflow, 'run-complete-update'),
@@ -160,7 +161,7 @@ describe('workflow run executor', () => {
     const dir = await makeDir()
     const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-coding_file_read-tool-resume', FakeTool())
-    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+    const tools: Record<string, any> = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
       ...initialRunState(workflow, 'run-2'),
       status: 'running',
@@ -209,7 +210,7 @@ describe('workflow run executor', () => {
     const dir = await makeDir()
     const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-coding_file_read-tool-task-blocked-resume', FakeTool())
-    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+    const tools: Record<string, any> = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
       ...initialRunState(workflow, 'run-task-blocked'),
       status: 'blocked',
@@ -253,7 +254,7 @@ describe('workflow run executor', () => {
     const dir = await makeDir()
     const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-coding_file_read-tool-stale-active-resume', FakeTool())
-    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+    const tools: Record<string, any> = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
       ...initialRunState(workflow, 'run-stale-active'),
       status: 'running',
@@ -302,7 +303,7 @@ describe('workflow run executor', () => {
     const dir = await makeDir()
     const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-coding_file_read-tool-failed-resume', FakeTool())
-    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+    const tools: Record<string, any> = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
       ...initialRunState(workflow, 'run-failed'),
       status: 'failed',
@@ -342,7 +343,7 @@ describe('workflow run executor', () => {
     const dir = await makeDir()
     const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-coding_file_read-tool-noop-resume', FakeTool())
-    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+    const tools: Record<string, any> = { [readTool.name]: { ...readTool, ref: toolRef } }
     const run: WorkflowRunState = {
       ...initialRunState(workflow, 'run-noop'),
       status: 'running',
@@ -384,7 +385,7 @@ describe('workflow run executor', () => {
     const dir = await makeDir()
     const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const toolRef = system.spawn('fake-coding_file_read-tool-pending-complete', FakeTool())
-    const tools: ToolCollection = { [readTool.name]: { ...readTool, ref: toolRef } }
+    const tools: Record<string, any> = { [readTool.name]: { ...readTool, ref: toolRef } }
     const streams: Array<Extract<LlmProviderMsg, { type: 'stream' }>> = []
     const llmRef = system.spawn('capturing-llm-pending-complete', CapturingLlm(streams))
     const run: WorkflowRunState = {

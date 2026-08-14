@@ -1,6 +1,5 @@
 import { createPluginFactory } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
-import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
 import { PageTools, writeHTMLPageTool } from './page-tools.ts'
 import { CodingAgentDescriptor } from './coding-agent.ts'
 import {
@@ -21,19 +20,6 @@ const mergeConfig = (slice: CodingConfig | undefined): CodingConfig => ({
   ...defaultConfig,
   ...(slice ?? {}),
   coding: { ...defaultConfig.coding, ...(slice?.coding ?? {}) },
-})
-
-const buildCodingTools = (
-  shellRef: ActorRef<ProjectShellMsg>,
-  pageToolsRef: ActorRef<PageToolsMsg>,
-): ToolCollection => ({
-  [codingBashTool.name]: { ...codingBashTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
-  [codingReadTool.name]: { ...codingReadTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
-  [codingGrepTool.name]: { ...codingGrepTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
-  [codingGlobTool.name]: { ...codingGlobTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
-  [codingWriteTool.name]: { ...codingWriteTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
-  [codingStrReplaceTool.name]: { ...codingStrReplaceTool, ref: shellRef as unknown as ActorRef<ToolMsg> },
-  [writeHTMLPageTool.name]: { ...writeHTMLPageTool, ref: pageToolsRef as unknown as ActorRef<ToolMsg> },
 })
 
 const codeSurfaceRegistration: UiSurfaceRegistration = {
@@ -83,20 +69,24 @@ export default createPluginFactory<CodingConfig>({
   agents: {
     coding: {
       factory: CodingAgentDescriptor,
-      options: (cfg, deps) => {
+      options: (cfg) => {
         const merged = mergeConfig(cfg)
         return {
           model: merged.coding.model,
           maxToolLoops: merged.coding.maxToolLoops,
           projectMount: merged.projectMount,
-          tools: buildCodingTools(
-            deps.shell as ActorRef<ProjectShellMsg>,
-            deps.documentation as ActorRef<PageToolsMsg>,
-          ),
+          agentSCRs: [
+            'scr:leaf:coding.shellExec',
+            'scr:leaf:coding.fileRead',
+            'scr:leaf:coding.grep',
+            'scr:leaf:coding.glob',
+            'scr:leaf:coding.write',
+            'scr:leaf:coding.strReplace',
+            'scr:leaf:coding.htmlWritePage',
+          ],
           toolFilter: merged.coding.toolFilter,
         }
       },
-      dependsOn: ['shell', 'documentation'],
     },
   },
   routes: (cfg, deps) => {

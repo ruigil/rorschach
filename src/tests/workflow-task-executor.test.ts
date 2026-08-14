@@ -12,7 +12,6 @@ import type {
   WorkflowTaskExecutorMsg,
 } from '../plugins/workflows/types.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
-import type { ToolCollection } from '../types/tools.ts'
 
 const tick = (ms = 80) => Bun.sleep(ms)
 
@@ -99,7 +98,7 @@ describe('workflow task executor', () => {
         msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: null })
       }
     }))
-    const executor = system.spawn('task-complete', WorkflowTaskExecutor(parent, llm, 'test-model', 3, {} as ToolCollection))
+    const executor = system.spawn('task-complete', WorkflowTaskExecutor(parent, llm, 'test-model', 3, {}))
 
     startTask(executor)
     await tick()
@@ -154,7 +153,7 @@ describe('workflow task executor', () => {
       }
       msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: null })
     }))
-    const executor = system.spawn('task-retry', WorkflowTaskExecutor(parent, llm, 'test-model', 4, {} as ToolCollection))
+    const executor = system.spawn('task-retry', WorkflowTaskExecutor(parent, llm, 'test-model', 4, {}))
 
     startTask(executor)
     await tick(120)
@@ -172,7 +171,7 @@ describe('workflow task executor', () => {
       msg.replyTo.send({ type: 'llmChunk', requestId: msg.requestId, text: '{"summary":"not accepted"}' })
       msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: null })
     }))
-    const executor = system.spawn('task-no-terminal', WorkflowTaskExecutor(parent, llm, 'test-model', 3, {} as ToolCollection))
+    const executor = system.spawn('task-no-terminal', WorkflowTaskExecutor(parent, llm, 'test-model', 3, {}))
 
     startTask(executor)
     await tick()
@@ -206,7 +205,7 @@ describe('workflow task executor', () => {
         msg.replyTo.send({ type: 'llmDone', requestId: msg.requestId, usage: null })
       }
     }))
-    const executor = system.spawn('task-block', WorkflowTaskExecutor(parent, llm, 'test-model', 3, {} as ToolCollection))
+    const executor = system.spawn('task-block', WorkflowTaskExecutor(parent, llm, 'test-model', 3, {}))
 
     startTask(executor)
     await tick()
@@ -223,7 +222,7 @@ describe('workflow task executor', () => {
     const system = await AgentSystem()
     const events: ParentEvent[] = []
     const parent = system.spawn('parent-unregistered', ParentRecorder(events))
-    const executor = system.spawn('task-unregistered', WorkflowTaskExecutor(parent, null, 'test-model', 3, {} as ToolCollection))
+    const executor = system.spawn('task-unregistered', WorkflowTaskExecutor(parent, null, 'test-model', 3, {}))
 
     executor.send({
       type: 'startTask',

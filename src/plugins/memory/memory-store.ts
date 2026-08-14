@@ -1,7 +1,6 @@
 import type { ActorDef, ActorContext, ActorRef, ActorResult } from '../../system/index.ts'
 import { ask, onMessage, defineTool, parseToolArgs } from '../../system/index.ts'
 import type { SCRReply } from '../../types/scr.ts'
-import type { ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 import type { MessageAttachment, MessageAttachmentKind } from '../../types/events.ts'
 import {

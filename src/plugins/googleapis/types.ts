@@ -1,5 +1,4 @@
 import type { ActorRef, LoopMsg, LoopState, ContextView } from '../../system/index.ts'
-import type { ToolCollection, ToolSchema, ToolMsg } from '../../types/tools.ts'
 import type { ContextSnapshotEvent, AgentModelOptions } from '../../types/agents.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 
@@ -40,11 +39,10 @@ export type GoogleAgentMsg = LoopMsg<GoogleAgentExtraMsg>
 export type GoogleAgentState = {
   loop:        LoopState
   contextView: ContextView
-  tools:       ToolCollection
 }
 
 export type GoogleAgentOptions = AgentModelOptions & {
-  tools: ToolCollection
+  agentSCRs?: string[]
 }
 
 // ─── Route handler options (passed into route factories) ───

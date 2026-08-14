@@ -551,14 +551,14 @@ flowchart LR
 #### Task 5.1: Migrate Tool Actors to Unified SCR Protocol
 * **Description:** Convert every tool actor to receive `SCRInvokeMsg` (`{ type:'invoke'; urn; input; replyTo }`) directly and reply with `SCRReply` (`result`/`error`/`pending`). This covers the actors listed in **Task 5.1's file list below**, and additionally **registers SCR leaf descriptors** for the slot-only plugins (notebook, googleapis, coding, workflows) that currently expose tools only via agent `ToolCollection`.
 * **Acceptance criteria:**
-  - [ ] Every tool actor's `invoke` handler reads `msg.input` (structured object) instead of `JSON.parse(msg.arguments)`.
-  - [ ] Every tool actor's terminal reply is `{ type:'result', output }` / `{ type:'error', error }` / `{ type:'pending', jobId }` (`SCRReply`).
-  - [ ] Multi-tool actors (audio, cron, vision, video, tool-status, config, googleapis, notebook, coding) branch on the `urn` suffix instead of `msg.toolName`.
-  - [ ] Every tool used by any agent is addressable via `scr:leaf:<namespace>.<name>` in `ResolutionCache` (incl. notebook/googleapis/coding/workflows tools).
+  - [x] Every tool actor's `invoke` handler reads `msg.input` (structured object) instead of `JSON.parse(msg.arguments)`.
+  - [x] Every tool actor's terminal reply is `{ type:'result', output }` / `{ type:'error', error }` / `{ type:'pending', jobId }` (`SCRReply`).
+  - [x] Multi-tool actors (audio, cron, vision, video, tool-status, config, googleapis, notebook, coding) branch on the `urn` suffix instead of `msg.toolName`.
+  - [x] Every tool used by any agent is addressable via `scr:leaf:<namespace>.<name>` in `ResolutionCache` (incl. notebook/googleapis/coding/workflows tools).
 * **Verification:**
-  - [ ] `bun run typecheck` passes with tool files converted.
-  - [ ] `rg "ToolInvokeMsg|toolResult|toolError|toolPending" src/plugins/tools src/plugins/notebook/tools src/plugins/googleapis/tools src/plugins/coding src/plugins/config src/plugins/memory src/plugins/workflows --glob '!src/frontend/**'` returns zero hits.
-  - [ ] Boot log confirms `scr:leaf:*` for notebook/googleapis/coding/workflows tools.
+  - [x] `bun run typecheck` passes with tool files converted.
+  - [x] `rg "ToolInvokeMsg|toolResult|toolError|toolPending" src/plugins/tools src/plugins/notebook/tools src/plugins/googleapis/tools src/plugins/coding src/plugins/config src/plugins/memory src/plugins/workflows --glob '!src/frontend/**'` returns zero hits.
+  - [x] Boot log confirms `scr:leaf:*` for notebook/googleapis/coding/workflows tools.
 * **Dependencies:** Task 4.4, Task 5.11 (agent loop consumes the descriptors)
 * **Files likely touched:**
   - `src/plugins/tools/` (web-search.ts, vision-actor.ts, audio.ts, video-actor.ts, cron.ts, pdf.ts, fetch-file.ts, tool-status.ts, types.ts)
@@ -585,11 +585,11 @@ flowchart LR
 #### Task 5.2: Remove `SCRToolAdapterActor` Bridge
 * **Description:** Delete the compatibility bridge in `src/system/factory.ts` and register tools directly.
 * **Acceptance criteria:**
-  - [ ] `SCRToolAdapterActor` definition (factory.ts:13–57) is deleted.
-  - [ ] In `start` (factory.ts:356–360) and config-reapply (factory.ts:711–715) the adapter `ctx.spawn(...)` is removed and `descriptor.target = ref` (the tool slot's direct actor ref).
+  - [x] `SCRToolAdapterActor` definition (factory.ts:13–57) is deleted.
+  - [x] In `start` (factory.ts:356–360) and config-reapply (factory.ts:711–715) the adapter `ctx.spawn(...)` is removed and `descriptor.target = ref` (the tool slot's direct actor ref).
 * **Verification:**
-  - [ ] `rg "SCRToolAdapterActor" src/` returns zero matches.
-  - [ ] System boot registers tools to `SCRRegistrationTopic` and `invokeSCR` hits the tool actor's own `invoke` handler without an intermediate actor.
+  - [x] `rg "SCRToolAdapterActor" src/` returns zero matches.
+  - [x] System boot registers tools to `SCRRegistrationTopic` and `invokeSCR` hits the tool actor's own `invoke` handler without an intermediate actor.
 * **Dependencies:** Task 5.1
 * **Files likely touched:**
   - `src/system/factory.ts`
@@ -598,10 +598,10 @@ flowchart LR
 #### Task 5.3: Update Tool Unit and Integration Tests
 * **Description:** Convert every test that drives tools through the legacy `ToolInvokeMsg`/`ToolReply` protocol to `SCRInvokeMsg`/`SCRReply`, and delete tests that only exist for the retired primitive (see Task 5.11).
 * **Acceptance criteria:**
-  - [ ] No test file imports `ToolInvokeMsg`, `ToolReply`, `ToolMsg`, `ToolCollection`, or `Tool` (the protocol types) from `src/types/tools.ts`.
-  - [ ] Tool tests pass using `{ type:'invoke', urn, input, replyTo }` and assert `{ type:'result'|'error'|'pending' }`.
+  - [x] No test file imports `ToolInvokeMsg`, `ToolReply`, `ToolMsg`, `ToolCollection`, or `Tool` (the protocol types) from `src/types/tools.ts`.
+  - [x] Tool tests pass using `{ type:'invoke', urn, input, replyTo }` and assert `{ type:'result'|'error'|'pending' }`.
 * **Verification:**
-  - [ ] `bun test` passes for the converted files and the full suite.
+  - [x] `bun test` passes for the converted files and the full suite.
 * **Dependencies:** Task 5.2
 * **Files likely touched:** (conversions)
   - `src/tests/audio-actor.test.ts`, `src/tests/fetch-file.test.ts`, `src/tests/vision-actor.test.ts`, `src/tests/tools-plugin.test.ts`, `src/tests/tool-status.test.ts`, `src/tests/cron-jobs.test.ts`, `src/tests/googleapis-drive.test.ts`, `src/tests/memory-store-concurrent.test.ts`, `src/tests/project-shell.test.ts`
@@ -664,11 +664,11 @@ flowchart LR
 #### Task 5.8: Deprecate Legacy Topics and Messages
 * **Description:** Delete the legacy protocol/types (`ToolInvokeMsg`, `ToolMsg`, `ToolReply`, `ToolFinalReply`, `ToolCollection`, `Tool`), the legacy runtime tool-registration messages (`_toolRegistered`/`_toolUnregistered`) and the dead `agent.switch` topic, then purge every remaining importer. (Note: `ToolRegistrationTopic`/`AgentRegistrationTopic` never existed as symbols and `DynamicAgentActor` is already gone — see Audit finding 6.)
 * **Acceptance criteria:**
-  - [ ] `src/types/tools.ts` no longer exports protocol types `ToolInvokeMsg`, `ToolMsg`, `ToolReply`, `ToolFinalReply`, `ToolCollection`, `Tool`.
-  - [ ] `src/types/agents.ts` `AgentDescriptor.internalTools?: Tool[]` is removed (replaced by URN-based preloading) and `AgentCatalogEvent` is deleted.
-  - [ ] Zero references to the removed symbols remain in `src/` (verified by `rg`).
+  - [x] `src/types/tools.ts` no longer exports protocol types `ToolInvokeMsg`, `ToolMsg`, `ToolReply`, `ToolFinalReply`, `ToolCollection`, `Tool`.
+  - [x] `src/types/agents.ts` `AgentDescriptor.internalTools?: Tool[]` is removed (replaced by URN-based preloading) and `AgentCatalogEvent` is deleted.
+  - [x] Zero references to the removed symbols remain in `src/` (verified by `rg`).
 * **Verification:**
-  - [ ] `bun run typecheck` passes; `rg "ToolInvokeMsg|ToolReply|ToolMsg|ToolCollection|ToolFinalReply|\bTool\b" src --glob '!src/types/tools.ts'` returns zero.
+  - [x] `bun run typecheck` passes; `rg "ToolInvokeMsg|ToolReply|ToolMsg|ToolCollection|ToolFinalReply|\bTool\b" src --glob '!src/types/tools.ts'` returns zero.
 * **Dependencies:** Tasks 5.1, 5.3, 5.11, 5.13
 * **Files likely touched:**
   - `src/types/tools.ts` (keep schema/data types `ToolSchema`, `ToolFilter`, `ToolResultPayload`, `ToolSource`; keep `JobLifecycleEvent`/`JobRegistryTopic` unless relocated)
@@ -704,12 +704,12 @@ flowchart LR
 #### Task 5.10: Delete Legacy Actors and Verification
 * **Description:** Finish the deletions and run the final verification. **`src/system/agent/dynamic-agent.ts` and `src/plugins/cognitive/agent-registry.ts` are already deleted** (audit confirmed) — re-scope this task to the remaining removals.
 * **Acceptance criteria:**
-  - [ ] The `invokeTool` legacy primitive and `scrCompleteHelperActor` are removed (assuming Task 5.11 lands); `src/tests/invoke-tool.test.ts` deleted.
-  - [ ] `src/system/index.ts` export list updated (drop `invokeTool` if removed).
-  - [ ] `rg "invokeTool|types/tools.ts" src/system src/plugins src/types src/index.ts` returns only the allowed schema/data usage.
-  - [ ] `bun run typecheck`, `bun test`, and `bun run build` all succeed.
+  - [x] The `invokeTool` legacy primitive and `scrCompleteHelperActor` are removed (assuming Task 5.11 lands); `src/tests/invoke-tool.test.ts` deleted.
+  - [x] `src/system/index.ts` export list updated (drop `invokeTool` if removed).
+  - [x] `rg "invokeTool|types/tools.ts" src/system src/plugins src/types src/index.ts` returns only the allowed schema/data usage.
+  - [x] `bun run typecheck`, `bun test`, and `bun run build` all succeed.
 * **Verification:**
-  - [ ] `bun run build && bun test` green end-to-end.
+  - [x] `bun run build && bun test` green end-to-end.
 * **Dependencies:** Tasks 5.8, 5.9, 5.11, 5.13
 * **Files likely touched:**
   - `src/system/agent/tool-utils.ts`, `src/system/index.ts`, `src/system/scr/invoker.ts` (dead import)
@@ -720,13 +720,13 @@ flowchart LR
 #### Task 5.11: Convert `agentLoop` and Tool Invocation to SCR-native `invokeSCR`
 * **Description:** Migrate the shared ReAct engine and the reasoner runner so ALL tool calls go through `invokeSCR(urn, input)` and results are `SCRReply`. This is the deepest remaining compatibility layer — it is a prerequisite for removing `ToolCollection`/`invokeTool`/`ToolReply` in Task 5.8/5.10.
 * **Acceptance criteria:**
-  - [ ] `agent-loop.ts` no longer imports `ToolCollection`, `ToolMsg`, `ToolReply`; `LoopToolResultMsg.reply` is `SCRReply`; tool calls are issued via `invokeSCR`.
-  - [ ] Tool-call resolution maps the LLM tool `name` to a URN (e.g. `state` advertises `(urn, schema)` pairs resolved from `ResolutionCache`); unknown-tool path returns an `error` reply.
-  - [ ] `agent-runner.ts` builds its tool list from registered SCR descriptors (URNs) + `agentSCRs`, not from `internalTools: Tool[]`; the `scr_complete` pseudo-tool replies `{ type:'result' }` (or is handled in-runner without a helper actor); the `_toolResult` interceptor (`agent-runner.ts:230–266`) branches on `SCRReply` variants.
-  - [ ] `spawner.ts` `_jobResumed` emits `{ type:'result' }`/`{ type:'error' }` (SCRReply), not `toolResult`/`toolError`.
+  - [x] `agent-loop.ts` no longer imports `ToolCollection`, `ToolMsg`, `ToolReply`; `LoopToolResultMsg.reply` is `SCRReply`; tool calls are issued via `invokeSCR`.
+  - [x] Tool-call resolution maps the LLM tool `name` to a URN (e.g. `state` advertises `(urn, schema)` pairs resolved from `ResolutionCache`); unknown-tool path returns an `error` reply.
+  - [x] `agent-runner.ts` builds its tool list from registered SCR descriptors (URNs) + `agentSCRs`, not from `internalTools: Tool[]`; the `scr_complete` pseudo-tool replies `{ type:'result' }` (or is handled in-runner without a helper actor); the `_toolResult` interceptor (`agent-runner.ts:230–266`) branches on `SCRReply` variants.
+  - [x] `spawner.ts` `_jobResumed` emits `{ type:'result' }`/`{ type:'error' }` (SCRReply), not `toolResult`/`toolError`.
 * **Verification:**
-  - [ ] `rg "invokeTool|toolResult|toolError|toolPending|ToolCollection" src/system/agent src/system/scr` returns zero.
-  - [ ] `bun test src/tests/agent-loop.test.ts src/tests/scr-phase3.test.ts src/tests/scr-phase4.test.ts` passes; full `bun test` green afterwards.
+  - [x] `rg "invokeTool|toolResult|toolError|toolPending|ToolCollection" src/system/agent src/system/scr` returns zero.
+  - [x] `bun test src/tests/agent-loop.test.ts src/tests/scr-phase3.test.ts src/tests/scr-phase4.test.ts` passes; full `bun test` green afterwards.
 * **Dependencies:** Task 5.1 (descriptors exist), Task 3.7 (registry search) — this is the natural merge point of dynamic discovery and invocation.
 * **Files likely touched:**
   - `src/system/agent/agent-loop.ts`
@@ -780,15 +780,15 @@ flowchart LR
 ---
 
 ### Checkpoint: Complete Transition
-- [ ] All tool actors and tests migrated to new SCR protocol (`Task 5.1`, `Task 5.3`).
-- [ ] The agent loop invokes every capability via `invokeSCR`; `ToolCollection`/`ToolReply`/`invokeTool` are gone (`Task 5.11`).
-- [ ] Notebook/googleapis/coding/workflows tools are first-class `scr:leaf:*` capabilities (`Task 5.1`).
-- [ ] Compatibility adapters and `SCRToolAdapterActor` bridge completely removed (`Task 5.2`).
-- [ ] `SessionManager` is request-scoped only — no per-user session actors (`Task 5.12`).
-- [ ] Leftover `cognitive_switch_mode` references and tests cleaned (`Task 5.9`).
-- [ ] No legacy agent/tool registration elements exist (`Task 5.8`, `Task 5.13`).
-- [ ] Zero backward compatibility end-state achieved.
-- [ ] System builds (`bun run build`), tests pass (`bun test`), typechecks pass (`bun run typecheck`), and app functions end-to-end.
+- [x] All tool actors and tests migrated to new SCR protocol (`Task 5.1`, `Task 5.3`).
+- [x] The agent loop invokes every capability via `invokeSCR`; `ToolCollection`/`ToolReply`/`invokeTool` are gone (`Task 5.11`).
+- [x] Notebook/googleapis/coding/workflows tools are first-class `scr:leaf:*` capabilities (`Task 5.1`).
+- [x] Compatibility adapters and `SCRToolAdapterActor` bridge completely removed (`Task 5.2`).
+- [x] `SessionManager` is request-scoped only — no per-user session actors (`Task 5.12`).
+- [x] Leftover `cognitive_switch_mode` references and tests cleaned (`Task 5.9`).
+- [x] No legacy agent/tool registration elements exist (`Task 5.8`, `Task 5.13`).
+- [x] Zero backward compatibility end-state achieved.
+- [x] System builds (`bun run build`), tests pass (`bun test`), typechecks pass (`bun run typecheck`), and app functions end-to-end.
 
 ---
 

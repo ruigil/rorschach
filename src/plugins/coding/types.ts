@@ -2,7 +2,6 @@ import type { ActorRef } from '../../system/index.ts'
 import type { BashExecResult } from 'just-bash'
 import type { ContextSnapshotEvent, AgentModelOptions } from '../../types/agents.ts'
 import type { MessageAttachment, HttpWsFrameEvent } from '../../types/events.ts'
-import type { ToolCollection, ToolMsg, ToolSchema } from '../../types/tools.ts'
 import type { SCRInvokeMsg, SCRReply } from '../../types/scr.ts'
 import type { ContextView, LoopMsg, LoopState, SpanHandle } from '../../system/index.ts'
 import type { HttpRequestMsg } from '../../types/routes.ts'
@@ -19,7 +18,6 @@ export type CodingAgentMsg = LoopMsg<CodingAgentExtra>
 export type CodingAgentState = {
   loop: LoopState
   contextView: ContextView
-  tools: ToolCollection
 }
 
 export type TocNode = {
@@ -64,5 +62,5 @@ export type PageToolsMsg =
 
 export type CodingAgentOptions = AgentModelOptions & {
   projectMount: string
-  tools: ToolCollection
+  agentSCRs?: string[]
 }

@@ -4,7 +4,7 @@ import type { ActorRef } from '../system/index.ts'
 // ─── HTTP route registration ───
 //
 // Plugins contribute REST routes to the HTTP plugin without importing it.
-// Mirrors the ToolRegistrationTopic pattern: publishers send registrations,
+// Mirrors the SCRRegistrationTopic pattern: publishers send registrations,
 // the HTTP plugin maintains a dispatch table and tries registered routes
 // before falling through to its inline handlers and static-file serving.
 //

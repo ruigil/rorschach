@@ -2,7 +2,6 @@ import { createPluginFactory } from '../../system/index.ts'
 import type { ActorRef } from '../../system/index.ts'
 import { RouteRegistrationTopic } from '../../types/routes.ts'
 import { type UiSurfaceRegistration } from '../../types/ui-surface.ts'
-import type { ToolMsg, ToolCollection } from '../../types/tools.ts'
 import { WorkflowManager } from './workflow-manager.ts'
 import { WorkflowsAgentDescriptor } from './workflows-agent.ts'
 import {
@@ -23,29 +22,6 @@ import {
 import { buildWorkflowsRoutes } from './workflows.routes.ts'
 import { config, defaultConfig, type WorkflowsConfig } from './workflows.config.ts'
 import { OperatorSpawner } from './operator-spawner.ts'
-
-const workflowsControlToolsList = [
-  listAgentModesTool,
-  listExecutionToolsTool,
-  saveWorkflowTool,
-  updateWorkflowTool,
-  deleteWorkflowTool,
-  listWorkflowsTool,
-  getWorkflowTool,
-  showWorkflowGraphTool,
-  startWorkflowRunTool,
-  listWorkflowRunsTool,
-  getWorkflowRunTool,
-  resumeWorkflowRunTool,
-]
-
-const buildWorkflowsTools = (toolsRef: ActorRef<ToolMsg>): ToolCollection => {
-  const tools: ToolCollection = {}
-  for (const tool of workflowsControlToolsList) {
-    tools[tool.name] = { ...tool, ref: toolsRef }
-  }
-  return tools
-}
 
 const workflowsSurfaceRegistration: UiSurfaceRegistration = {
   id: 'workflows',
@@ -103,13 +79,25 @@ export default createPluginFactory<WorkflowsConfig>({
     workflows: {
       slot: 'manager',
       factory: WorkflowsAgentDescriptor,
-      options: (cfg, deps) => ({
+      options: (cfg) => ({
         model: cfg.agent.model,
         maxToolLoops: cfg.agent.maxToolLoops,
         toolFilter: cfg.agent.toolFilter,
-        tools: buildWorkflowsTools(deps.tools as ActorRef<ToolMsg>),
+        agentSCRs: [
+          'scr:leaf:workflows.agentModesList',
+          'scr:leaf:workflows.executionToolsList',
+          'scr:leaf:workflows.save',
+          'scr:leaf:workflows.update',
+          'scr:leaf:workflows.delete',
+          'scr:leaf:workflows.list',
+          'scr:leaf:workflows.get',
+          'scr:leaf:workflows.graphShow',
+          'scr:leaf:workflows.runStart',
+          'scr:leaf:workflows.runsList',
+          'scr:leaf:workflows.runGet',
+          'scr:leaf:workflows.runResume',
+        ],
       }),
-      dependsOn: ['tools'],
     },
   },
   routes: (cfg, deps) => {

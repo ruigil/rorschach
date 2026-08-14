@@ -1,5 +1,5 @@
 import { createTopic, type ActorRef } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolMsg, ToolSchema, Tool, JobLifecycleEvent } from '../../types/tools.ts'
+import type { JobLifecycleEvent } from '../../types/tools.ts'
 import type { LlmProviderMsg, ApiMessage } from '../../types/llm.ts'
 import type { LoopMsg } from '../../system/index.ts'
 import type { MessageAttachment, HttpWsFrameEvent } from '../../types/events.ts'
@@ -237,7 +237,6 @@ export type WorkflowTaskExecutorMsg =
       ref: ActorRef<any> | null
     }>
   | SCRInvokeMsg
-  | (Omit<ToolInvokeMsg, 'replyTo'> & { replyTo: ActorRef<SCRReply | any> })
   | { type: '_scrReply'; taskId: string; reply: SCRReply }
 
 export type WorkflowsAgentExtra =

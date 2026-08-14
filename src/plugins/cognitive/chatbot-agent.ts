@@ -1,11 +1,9 @@
 import type { AgentDescriptor, AgentModelOptions } from '../../types/agents.ts'
-import type { ToolCollection } from '../../types/tools.ts'
 import type { LoopState, ContextView } from '../../system/index.ts'
 
 export type ChatbotState = {
   loop:           LoopState
   contextView:    ContextView
-  tools:          ToolCollection
 }
 
 export type ChatbotAgentOptions = AgentModelOptions & {
@@ -20,7 +18,6 @@ export const ChatbotAgentDescriptor = (options: ChatbotAgentOptions): AgentDescr
     displayName:  'Chatbot',
     shortDesc:    'General conversation, chitchat, general reasoning, meta-questions, or tasks not covered by other specialized modes.',
     systemPrompt: options.systemPrompt || '',
-    internalTools: [],
     agentSCRs:    options.agentSCRs || [],
     toolFilter:   options.toolFilter,
     capabilities: { userVisible: true },

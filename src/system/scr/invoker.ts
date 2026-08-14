@@ -1,12 +1,10 @@
 import { ask } from '../actor/ask.ts'
 import { ResolutionCache } from './cache.ts'
 import type { SCRReply, SCRInvokeMsg } from '../../types/scr.ts'
-import { requestStorage, createMessageRequest } from '../context/request.ts'
+import { requestStorage, createMessageRequest, type MessageRequest } from '../context/request.ts'
 import { authorize } from '../permissions/evaluator.ts'
 import type { PermissionContext } from '../permissions/types.ts'
-import type { MessageRequest } from '../context/request.ts'
 import { validateSchema } from '../schema-validator.ts'
-import type { ToolMsg, ToolReply } from '../../types/tools.ts'
 
 const checkPermission = (permissionContext: PermissionContext, urn: string): boolean => {
   if (authorize(permissionContext, urn)) return true

@@ -1,8 +1,8 @@
-import type { ToolCollection, ToolFilter } from '../../types/tools.ts'
+import type { ToolFilter } from '../../types/tools.ts'
 import type { AgentDescriptor, AgentModelOptions } from '../../types/agents.ts'
 
 export type CoachAgentOptions = AgentModelOptions & {
-  tools:        ToolCollection
+  agentSCRs?: string[]
 }
 
 export const COACH_TOOL_FILTER: ToolFilter = {
@@ -41,7 +41,7 @@ Coaching guidelines:
     displayName: 'Personal Notebook',
     shortDesc: 'Personal life coach for habits, fitness/learning routines, journaling, and task/todo list management in the personal notebook.',
     systemPrompt,
-    internalTools: Object.values(options.tools || {}),
+    agentSCRs: options.agentSCRs || [],
     toolFilter: options.toolFilter ?? COACH_TOOL_FILTER,
     capabilities: { userVisible: true },
     model: options.model,
