@@ -3,49 +3,26 @@ import { onMessage } from '../../system/index.ts'
 import type { SCRInvokeMsg, SCRDescriptor } from '../../types/scr.ts'
 import { ResolutionCache } from '../../system/scr/cache.ts'
 
-export const RegistryMetaToolsActor = (): ActorDef<any, null> => ({
+export const RegistryMetaToolsActor = (): ActorDef<SCRInvokeMsg, null> => ({
   initialState: null,
   handler: onMessage({
     invoke: (state, msg) => {
-      let isTool = false
-      let urn = msg.urn
-      let input = msg.input
+      const urn = msg.urn
+      const input = msg.input
       const replyTo = msg.replyTo
 
-      if (msg.toolName) {
-        isTool = true
-        urn = msg.toolName === 'registry_search' ? 'scr:leaf:registry.search' : 'scr:leaf:registry.get'
-        input = typeof msg.arguments === 'string' ? JSON.parse(msg.arguments) : msg.arguments
-      }
-
       const sendReply = (output: any) => {
-        if (isTool) {
-          replyTo.send({
-            type: 'toolResult',
-            result: {
-              text: typeof output === 'string' ? output : JSON.stringify(output)
-            }
-          })
-        } else {
-          replyTo.send({
-            type: 'result',
-            output
-          })
-        }
+        replyTo.send({
+          type: 'result',
+          output
+        })
       }
 
       const sendError = (error: string) => {
-        if (isTool) {
-          replyTo.send({
-            type: 'toolError',
-            error
-          })
-        } else {
-          replyTo.send({
-            type: 'error',
-            error
-          })
-        }
+        replyTo.send({
+          type: 'error',
+          error
+        })
       }
 
       if (urn === 'scr:leaf:registry.search') {

@@ -18,7 +18,7 @@ const observabilitySurfaceRegistration: UiSurfaceRegistration = {
     contentTag: 'r-observe-panel',
   },
   moduleUrl: '/js/plugins/observability.js',
-  frameTypes: ['observability.log.entry', 'observability.metrics.updated', 'observability.trace.span', 'observability.usage.entry', 'tools.registered', 'tools.unregistered', 'scramblers.registered', 'scramblers.unregistered', 'memory.kgraph.updated', 'memory.kgraph.changed', 'cognitive.agents.updated'],
+  frameTypes: ['observability.log.entry', 'observability.metrics.updated', 'observability.trace.span', 'observability.usage.entry', 'tools.registered', 'tools.unregistered', 'scramblers.registered', 'scramblers.unregistered', 'memory.kgraph.updated', 'memory.kgraph.changed'],
 }
 
 export default createPluginFactory<ObservabilityConfig>({

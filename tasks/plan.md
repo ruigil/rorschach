@@ -757,11 +757,11 @@ flowchart LR
 #### Task 5.13: Remove `_toolRegistered`/`_toolUnregistered`, Registry Meta-Tools Shim & Dangling Catalog Protocol
 * **Description:** Strip the remaining two-class protocols that are not SCR: the legacy runtime *registration* messages and the dual-mode shim in `registry/meta-tools.ts`, plus the dangling UI agent-catalog frames.
 * **Acceptance criteria:**
-  - [ ] `_toolRegistered`/`_toolUnregistered` removed from all type unions and from `agent-loop`/its tests.
-  - [ ] `meta-tools.ts` is SCR-only: the `msg.toolName`/`arguments`→`toolResult` shim (meta-tools.ts:15–28, 39–42) is deleted; both discovery tools reply only `{ type:'result', output }` / `{ type:'error', error }`.
-  - [ ] Frontend `cognitive.agents.request` (`r-agents-list.ts:122`) and `cognitive.agents.updated` (`dispatcher.ts:67`) protocol removed (no backend publisher exists); `CognitiveFrameType` entries cleaned in `src/types/events.ts`.
+  - [x] `_toolRegistered`/`_toolUnregistered` removed from all type unions and from `agent-loop`/its tests.
+  - [x] `meta-tools.ts` is SCR-only: the `msg.toolName`/`arguments`→`toolResult` shim (meta-tools.ts:15–28, 39–42) is deleted; both discovery tools reply only `{ type:'result', output }` / `{ type:'error', error }`.
+  - [x] Frontend `cognitive.agents.request` (`r-agents-list.ts:122`) and `cognitive.agents.updated` (`dispatcher.ts:67`) protocol removed (no backend publisher exists); `CognitiveFrameType` entries cleaned in `src/types/events.ts`.
 * **Verification:**
-  - [ ] `rg "_toolRegistered|_toolUnregistered|cognitive\.agents\." src --glob '!src/frontend/static/**'` returns zero.
+  - [x] `rg "_toolRegistered|_toolUnregistered|cognitive\.agents\." src --glob '!src/frontend/static/**'` returns zero.
 * **Dependencies:** Task 5.11, Task 5.9
 * **Files likely touched:**
   - `src/plugins/registry/meta-tools.ts`

@@ -1,4 +1,4 @@
-import { css, customElement, html, RorschachBase, StoreController, send } from '@rorschach/webkit';
+import { css, customElement, html, RorschachBase, StoreController } from '@rorschach/webkit';
 
 export type AgentInfo = {
   mode: string;
@@ -117,10 +117,6 @@ export class RAgentsList extends RorschachBase {
     }
   `;
 
-  override connectedCallback() {
-    super.connectedCallback();
-    send({ type: 'cognitive.agents.request' });
-  }
 
   override render() {
     const agents: AgentInfo[] = (this._observeAgents.value && this._observeAgents.value.length > 0)

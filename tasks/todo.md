@@ -141,10 +141,10 @@
 - [ ] **Task 5.12**: Purge `SessionManager` Legacy Session Model (`src/plugins/cognitive/session-manager.ts`)
   - [ ] Drop per-user `ContextStore` spawning + `Session` struct + `JobRegistryTopic` teardown subscription; keep WS ingress → request-scoped `invokeSCR('scr:reasoner:cognitive.chatbot')`.
   - [ ] Delete `context-store.ts` if unneeded; clean `cognitive/types.ts` (`defaultMode`, `SwitchAgentEvent`) and plugin description.
-- [ ] **Task 5.13**: Remove Runtime `_toolRegistered`/`_toolUnregistered`, Registry Meta-Tools Shim & Dangling Catalog Protocol
-  - [ ] Purge `_toolRegistered`/`_toolUnregistered` from all plugin type unions + `agent-loop` + `agent-loop.test.ts`.
-  - [ ] `registry/meta-tools.ts`: delete legacy `toolName`/`arguments` → `toolResult` shim (SCR-only replies).
-  - [ ] Remove `cognitive.agents.request` (r-agents-list.ts:122) / `cognitive.agents.updated` (dispatcher.ts:67) and `CognitiveFrameType` entries in `src/types/events.ts`.
+- [x] **Task 5.13**: Remove Runtime `_toolRegistered`/`_toolUnregistered`, Registry Meta-Tools Shim & Dangling Catalog Protocol
+  - [x] Purge `_toolRegistered`/`_toolUnregistered` from all plugin type unions + `agent-loop` + `agent-loop.test.ts`.
+  - [x] `registry/meta-tools.ts`: delete legacy `toolName`/`arguments` → `toolResult` shim (SCR-only replies).
+  - [x] Remove `cognitive.agents.request` (r-agents-list.ts:122) / `cognitive.agents.updated` (dispatcher.ts:67) and `CognitiveFrameType` entries in `src/types/events.ts`.
 
 ### Checkpoint: Complete Transition
 - [ ] All tool actors and tests migrated to new SCR protocol (5.1, 5.3).

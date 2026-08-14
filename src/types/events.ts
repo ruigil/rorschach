@@ -4,8 +4,6 @@ import type { PermissionContext } from '../system/permissions/types.ts'
 // ─── Strongly Typed Domain Frame Names ─────────────────────────────────────
 
 export type CognitiveFrameType =
-  | 'cognitive.agents.request'
-  | 'cognitive.agents.updated'
   | 'cognitive.switchMode'
   | 'cognitive.cancel'
 

@@ -16,8 +16,6 @@ type TestStartParams = LoopStartTurnParams
 type TestExtra =
   | { type: 'start'; params: TestStartParams }
   | { type: 'cancel' }
-  | { type: '_toolRegistered'; name: string; schema: any; ref: ActorRef<any>; mayBeLongRunning?: boolean }
-  | { type: '_toolUnregistered'; name: string }
 
 type TestMsg = LoopMsg<TestExtra>
 
@@ -76,21 +74,6 @@ const makeHostInterceptor = <S extends TestState, M extends { type: string }>():
     const m = msg as any
     if (m.type === '_llmProvider') {
       return { state: { ...state, llmRef: m.ref } as S }
-    }
-    if (m.type === '_toolRegistered') {
-      return {
-        state: {
-          ...state,
-          tools: {
-            ...state.tools,
-            [m.name]: { schema: m.schema, ref: m.ref, mayBeLongRunning: m.mayBeLongRunning },
-          },
-        } as S,
-      }
-    }
-    if (m.type === '_toolUnregistered') {
-      const { [m.name]: _, ...rest } = state.tools
-      return { state: { ...state, tools: rest } as S }
     }
     return next(state, msg)
   }
@@ -706,72 +689,6 @@ describe('AgentLoop: full integration', () => {
     await system.shutdown()
   })
 
-  test('_toolRegistered and _toolUnregistered mutate tools via interceptor', async () => {
-    const system = await AgentSystem()
-    const streams: Array<{ msg: Extract<LlmProviderMsg, { type: "stream" }> }> = []
-
-    const toolRef = system.spawn('t', makeToolMock('newTool', {
-      type: 'result',
-      output: { text: 'ok' },
-    }))
-
-    const llmDef: ActorDef<LlmProviderMsg, null> = {
-      initialState: null,
-      handler: (state, msg) => {
-        if (msg.type === 'stream') streams.push({ msg })
-        return { state }
-      },
-    }
-    const llmRef = system.spawn('llm', llmDef)
-
-    const loop = agentLoop<TestState, TestMsg>({
-      role: 'test',
-      spanName: 'test',
-      model: 'test-model',
-      maxToolLoops: 3,
-      llmRef: (s) => s.llmRef,
-      tools: (s) => s.tools,
-      onComplete: (state, finalText) => ({
-        state: { ...state, finalText, log: [...state.log, 'complete'] },
-      }),
-      onError: (state, err) => ({
-        state: { ...state, log: [...state.log, err.kind === 'llm' ? `error:${String(err.error)}` : `limit:${err.finalText}`] },
-      }),
-    })
-
-    const agentRef = system.spawn('agent', makeAgentDef(loop, { ...emptyState(), llmRef }))
-    await tick()
-
-    // Register a tool
-    agentRef.send({
-      type: '_toolRegistered',
-      name: 'newTool',
-      schema: { type: 'function', function: { name: 'newTool', description: 'd', parameters: {} } },
-      ref: toolRef,
-    })
-    await tick()
-
-    // Now use it in a turn
-    agentRef.send({
-      type: 'start',
-      params: { messages: [{ role: 'user', content: 'q' }] },
-    }, { userId: 'u1' })
-    await tick()
-
-    const msg1 = streams[0]!.msg
-    msg1.replyTo.send({
-      type: 'llmToolCalls',
-      requestId: msg1.requestId,
-      calls: [{ id: 'c1', name: 'newTool', arguments: '{}' }],
-      usage: { promptTokens: 1, completionTokens: 1 },
-    }, { userId: 'u1' })
-    await tick(150)
-
-    // Tool was dispatched and replied, causing startNextTurn
-    expect(streams.length).toBe(2)
-
-    await system.shutdown()
-  })
 
   test('llmError calls onError with kind llm and resets to idle', async () => {
     const system = await AgentSystem()

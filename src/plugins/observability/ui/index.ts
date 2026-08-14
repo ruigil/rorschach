@@ -85,8 +85,6 @@ export const reduceFrame = (frame: any) => {
     const nextScramblers = { ...ns.get('scramblers') }
     delete nextScramblers[frame.urn]
     ns.set('scramblers', nextScramblers)
-  } else if (frame.type === 'cognitive.agents.updated') {
-    ns.set('agents', Array.isArray(frame.agents) ? frame.agents : [])
   } else if (frame.type === 'memory.kgraph.updated') {
     ns.set('kgraph', frame.graph)
   } else if (frame.type === 'memory.kgraph.changed') {

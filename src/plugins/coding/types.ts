@@ -13,8 +13,6 @@ export type { CodingConfig } from './coding.config.ts'
 export type CodingAgentExtra =
   | { type: 'userMessage'; text: string; attachments?: MessageAttachment[]; isInjected?: boolean }
   | ({ type: '_contextSnapshot' } & ContextSnapshotEvent)
-  | { type: '_toolRegistered'; name: string; schema: ToolSchema; ref: ActorRef<ToolMsg>; mayBeLongRunning?: boolean }
-  | { type: '_toolUnregistered'; name: string }
 
 export type CodingAgentMsg = LoopMsg<CodingAgentExtra>
 
