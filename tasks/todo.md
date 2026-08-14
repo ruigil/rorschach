@@ -138,9 +138,12 @@
   - [x] `agent-runner.ts`: build tools from registered SCR descriptors + `agentSCRs` (not `internalTools`); `scr_complete` becomes SCR-native; `_toolResult` branches on `SCRReply`.
   - [x] `spawner.ts` `_jobResumed`: reply `result`/`error` (SCRReply) instead of `toolResult`/`toolError`.
   - [x] Update workflow sub-agent tool injection (`workflow-task-executor.ts`, `workflow-run-executor.ts`).
-- [ ] **Task 5.12**: Purge `SessionManager` Legacy Session Model (`src/plugins/cognitive/session-manager.ts`)
-  - [ ] Drop per-user `ContextStore` spawning + `Session` struct + `JobRegistryTopic` teardown subscription; keep WS ingress → request-scoped `invokeSCR('scr:reasoner:cognitive.chatbot')`.
-  - [ ] Delete `context-store.ts` if unneeded; clean `cognitive/types.ts` (`defaultMode`, `SwitchAgentEvent`) and plugin description.
+- [ ] **Task 5.12**: Refactor Context Store into Persistent User History & Pass Context to Agents (`src/plugins/cognitive/session-manager.ts`, `src/plugins/cognitive/context-store.ts`, `src/system/agent/agent-runner.ts`)
+  - [ ] Decouple `ContextStore` from live WebSocket presence / socket teardown in `SessionManager` (drop `activeInterfaces` tracking and `JobRegistryTopic` teardown subscription).
+  - [ ] Maintain durable user context in KV persistence keyed by `userId`.
+  - [ ] Pass conversation history as context parameters (`input.history` / `input.messages`) to `invokeSCR('scr:reasoner:cognitive.chatbot')`.
+  - [ ] Update `SCRAgentRunner` to accept conversation history and prepend past turns into LLM context.
+  - [ ] Append completed user/assistant turns to persistent user context on turn completion.
 - [x] **Task 5.13**: Remove Runtime `_toolRegistered`/`_toolUnregistered`, Registry Meta-Tools Shim & Dangling Catalog Protocol
   - [x] Purge `_toolRegistered`/`_toolUnregistered` from all plugin type unions + `agent-loop` + `agent-loop.test.ts`.
   - [x] `registry/meta-tools.ts`: delete legacy `toolName`/`arguments` → `toolResult` shim (SCR-only replies).

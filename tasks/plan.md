@@ -475,9 +475,10 @@ This project transitions the entire Rorschach codebase to a single, unified recu
 >    `SCRRegistrationTopic`, so `invokeSCR('scr:leaf:…')` cannot resolve them. They must gain SCR
 >    descriptors (direct actor-ref targets) as part of Task 5.1, or recursive URN calls from an
 >    SCR-native agent loop will fail with `Capability not found`.
-> 3. **`SessionManager` still runs the per-user session model**: it spawns `context-store-<user>`
->    actors and subscribes to `JobRegistryTopic` despite Task 3.8 being "done" (only the WS→chatbot
->    mapping was converted). (See `Task 5.12`.)
+> 3. **`SessionManager` & Context Store Evolution**: `SessionManager` still runs the presence-bound
+>    socket lifecycle and subscribes to `JobRegistryTopic` for socket teardown. Task 5.12 refactors
+>    this to maintain durable persistent context by `userId`, passing conversation history as context
+>    parameters to agents.
 > 4. **`_toolRegistered` / `_toolUnregistered` legacy runtime tool-registration messages** still
 >    linger in cognitive/notebook/coding/googleapis/workflows type unions and in `agent-loop` +
 >    `agent-loop.test.ts`. (See `Task 5.13`.)
@@ -740,18 +741,24 @@ flowchart LR
   - Note the workflow engine already invokes child tasks through `invokeSCR` (Task 4.3); this task unifies the agent path with it.
 * **Estimated scope:** L
 
-#### Task 5.12: Purge `SessionManager` Legacy Session Model
-* **Description:** Finish the ingress migration by removing the leftover per-user session machinery from `SessionManager` (Task 3.8 was only the WS→`invokeSCR` mapping).
+#### Task 5.12: Refactor Context Store into Persistent User History & Pass Context to Agents
+* **Description:** Refactor `SessionManager` and `ContextStore` away from the presence-bound socket lifecycle into a durable, persistence-backed conversation history store keyed by `userId`. Decouple context storage from live WebSocket sockets, retrieve user conversation history on ingress and pass it as context parameters (`history` / `messages`) to reasoner agents (`invokeSCR`), update `SCRAgentRunner` to prepend conversation history into the LLM context, and save completed turns back to the user's persistent context store.
 * **Acceptance criteria:**
-  - [ ] `session-manager.ts` no longer spawns `context-store-<userId>` actors, no longer keeps a per-user `Session` struct, and no longer subscribes to `JobRegistryTopic` solely for teardown tracking.
-  - [ ] WS ingress maps directly to request-scoped `invokeSCR('scr:reasoner:cognitive.chatbot', …)` with user presence propagated via `MessageRequest`.
-  - [ ] If no other consumer exists, `context-store.ts` and `agent.switch` types are removed.
+  - [ ] `SessionManager` removes WebSocket socket-lifecycle tracking (`activeInterfaces`, presence-bound actor spawning/teardown, `JobRegistryTopic` teardown listening).
+  - [ ] Persistent user context is maintained per `userId` (via `persistencePluginAdapter` or KV store `cognitive/contexts/context-${userId}`), decoupled from socket presence.
+  - [ ] When an inbound message is received at `SessionManager`, recent conversation history for `userId` is retrieved from persistent context and passed in `msg.input` (e.g. `{ prompt: msg.text, history: recentMessages }`) to `invokeSCR('scr:reasoner:cognitive.chatbot', ...)`.
+  - [ ] `SCRAgentRunner` parses `input.history` / `input.messages` and prepends prior conversational turns before the current user turn, ensuring the LLM ReAct loop has full multi-turn conversational context.
+  - [ ] Upon turn completion (via `_scrReply` in `SessionManager` or in runner `onComplete`), the user's turn (user prompt + assistant response) is appended to the persistent context store for `userId`.
+  - [ ] Existing context store and user context unit/integration tests pass.
 * **Verification:**
-  - [ ] `bun test src/tests/scr-phase3.test.ts` (SessionManager block), `src/tests/context-store.test.ts`, `src/tests/user-context.test.ts` pass.
+  - [ ] `bun test src/tests/scr-phase3.test.ts`, `src/tests/context-store.test.ts`, `src/tests/user-context.test.ts` pass.
+  - [ ] Multi-turn conversation integration test verifies that `SCRAgentRunner` receives and reasons over prior turn history.
 * **Dependencies:** Task 5.11, Task 3.8
 * **Files likely touched:**
   - `src/plugins/cognitive/session-manager.ts`
-  - `src/plugins/cognitive/context-store.ts` (delete or repurpose), `src/plugins/cognitive/chatbot-agent.ts` (drop unused `tools`/`ChatbotState`), `src/plugins/cognitive/types.ts` (`defaultMode`, `SwitchAgentEvent`), `src/plugins/cognitive/cognitive.plugin.ts` (description :21)
+  - `src/plugins/cognitive/context-store.ts`
+  - `src/system/agent/agent-runner.ts`
+  - `src/plugins/cognitive/chatbot-agent.ts`, `src/plugins/cognitive/types.ts`
 * **Estimated scope:** M
 
 #### Task 5.13: Remove `_toolRegistered`/`_toolUnregistered`, Registry Meta-Tools Shim & Dangling Catalog Protocol
