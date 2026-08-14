@@ -744,15 +744,15 @@ flowchart LR
 #### Task 5.12: Refactor Context Store into Persistent User History & Pass Context to Agents
 * **Description:** Refactor `SessionManager` and `ContextStore` away from the presence-bound socket lifecycle into a durable, persistence-backed conversation history store keyed by `userId`. Decouple context storage from live WebSocket sockets, retrieve user conversation history on ingress and pass it as context parameters (`history` / `messages`) to reasoner agents (`invokeSCR`), update `SCRAgentRunner` to prepend conversation history into the LLM context, and save completed turns back to the user's persistent context store.
 * **Acceptance criteria:**
-  - [ ] `SessionManager` removes WebSocket socket-lifecycle tracking (`activeInterfaces`, presence-bound actor spawning/teardown, `JobRegistryTopic` teardown listening).
-  - [ ] Persistent user context is maintained per `userId` (via `persistencePluginAdapter` or KV store `cognitive/contexts/context-${userId}`), decoupled from socket presence.
-  - [ ] When an inbound message is received at `SessionManager`, recent conversation history for `userId` is retrieved from persistent context and passed in `msg.input` (e.g. `{ prompt: msg.text, history: recentMessages }`) to `invokeSCR('scr:reasoner:cognitive.chatbot', ...)`.
-  - [ ] `SCRAgentRunner` parses `input.history` / `input.messages` and prepends prior conversational turns before the current user turn, ensuring the LLM ReAct loop has full multi-turn conversational context.
-  - [ ] Upon turn completion (via `_scrReply` in `SessionManager` or in runner `onComplete`), the user's turn (user prompt + assistant response) is appended to the persistent context store for `userId`.
-  - [ ] Existing context store and user context unit/integration tests pass.
+  - [x] `SessionManager` removes WebSocket socket-lifecycle tracking (`activeInterfaces`, presence-bound actor spawning/teardown, `JobRegistryTopic` teardown listening).
+  - [x] Persistent user context is maintained per `userId` (via `persistencePluginAdapter` or KV store `cognitive/contexts/context-${userId}`), decoupled from socket presence.
+  - [x] When an inbound message is received at `SessionManager`, recent conversation history for `userId` is retrieved from persistent context and passed in `msg.input` (e.g. `{ prompt: msg.text, history: recentMessages }`) to `invokeSCR('scr:reasoner:cognitive.chatbot', ...)`.
+  - [x] `SCRAgentRunner` parses `input.history` / `input.messages` and prepends prior conversational turns before the current user turn, ensuring the LLM ReAct loop has full multi-turn conversational context.
+  - [x] Upon turn completion (via `_scrReply` in `SessionManager` or in runner `onComplete`), the user's turn (user prompt + assistant response) is appended to the persistent context store for `userId`.
+  - [x] Existing context store and user context unit/integration tests pass.
 * **Verification:**
-  - [ ] `bun test src/tests/scr-phase3.test.ts`, `src/tests/context-store.test.ts`, `src/tests/user-context.test.ts` pass.
-  - [ ] Multi-turn conversation integration test verifies that `SCRAgentRunner` receives and reasons over prior turn history.
+  - [x] `bun test src/tests/scr-phase3.test.ts`, `src/tests/context-store.test.ts`, `src/tests/user-context.test.ts` pass.
+  - [x] Multi-turn conversation integration test verifies that `SCRAgentRunner` receives and reasons over prior turn history.
 * **Dependencies:** Task 5.11, Task 3.8
 * **Files likely touched:**
   - `src/plugins/cognitive/session-manager.ts`

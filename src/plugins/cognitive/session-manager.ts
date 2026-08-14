@@ -10,7 +10,8 @@ import {
 import { LlmProviderTopic, type LlmProviderMsg } from '../../types/llm.ts'
 import { ContextStore, type ContextStoreMsg } from './context-store.ts'
 import { SessionLifecycleTopic } from '../../types/session.ts'
-import { JobRegistryTopic, type JobLifecycleEvent } from '../../types/tools.ts'
+import { ContextSnapshotTopic, type ContextSnapshotEvent } from '../../types/agents.ts'
+import type { ContextView } from '../../system/index.ts'
 import type { StreamChunk, SCRReply } from '../../types/scr.ts'
 import { invokeSCR } from '../../system/scr/invoker.ts'
 import { requestStorage } from '../../system/context/request.ts'
@@ -20,31 +21,29 @@ import { ResolutionCache } from '../../system/scr/cache.ts'
 
 type SessionManagerMsg =
   | { type: '_userPresence';     event: UserPresenceEvent }
+  | { type: '_contextSnapshot';  event: ContextSnapshotEvent }
   | { type: '_message';          text: string; attachments?: MessageAttachment[] }
   | { type: '_streamChunk';      userId: string; event: StreamChunk }
-  | { type: '_scrReply';         userId: string; streamToTopic: string; reply: SCRReply }
-  | { type: '_jobRegistry';      event: JobLifecycleEvent }
+  | { type: '_scrReply';         userId: string; userText: string; streamToTopic: string; reply: SCRReply }
   | { type: '_llmProvider';      ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── State ─────────────────────────────────────────────────────────────────
 
-type Session = {
+type UserSession = {
   contextStoreRef: ActorRef<ContextStoreMsg>
   timezone?: string
   permission?: any
 }
 
 type SessionManagerState = {
-  sessions:         Record<string, Session>         // userId → Session
-  activeInterfaces: Record<string, Set<'http' | 'signal' | 'cli'>> // userId → Set of active interfaces
-  activeJobs:       Record<string, { userId: string }> // jobId → info (to track when it is safe to tear down session)
+  userSessions:     Record<string, UserSession>         // userId → UserSession
+  snapshots:        Record<string, ContextSnapshotEvent> // userId → Latest ContextSnapshotEvent
   llmRef:           ActorRef<LlmProviderMsg> | null
 }
 
 const initialSessionManagerState = (): SessionManagerState => ({
-  sessions:         {},
-  activeInterfaces: {},
-  activeJobs:       {},
+  userSessions:     {},
+  snapshots:        {},
   llmRef:           null,
 })
 
@@ -57,49 +56,6 @@ export type SessionManagerOptions = {
   persistContext?:     boolean
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
-
-const setSession = (state: SessionManagerState, userId: string, session: Session): SessionManagerState => ({
-  ...state,
-  sessions: { ...state.sessions, [userId]: session },
-})
-
-const removeSession = (state: SessionManagerState, userId: string): SessionManagerState => {
-  const { [userId]: _, ...sessions } = state.sessions
-  const { [userId]: __, ...activeInterfaces } = state.activeInterfaces
-  return { ...state, sessions, activeInterfaces }
-}
-
-const tryDestroySession = (
-  state: SessionManagerState,
-  userId: string,
-  ctx: any,
-  ts: number,
-): SessionManagerState => {
-  const session = state.sessions[userId]
-  if (!session) return state
-
-  const hasActiveJobs = Object.values(state.activeJobs).some(job => job.userId === userId)
-  const hasActiveInterfaces = state.activeInterfaces[userId] && state.activeInterfaces[userId].size > 0
-  if (hasActiveInterfaces || hasActiveJobs) {
-    return state
-  }
-
-  ctx.stop(session.contextStoreRef)
-
-  const { [userId]: _, ...sessions } = state.sessions
-  const { [userId]: __, ...activeInterfaces } = state.activeInterfaces
-
-  ctx.publish(SessionLifecycleTopic, {
-    type:      'sessionEnded',
-    userId,
-    reason:    'lastDisconnect',
-    timestamp: ts,
-  })
-
-  return { ...state, sessions, activeInterfaces }
-}
-
 // ─── Actor ─────────────────────────────────────────────────────────────────
 
 export const SessionManager = (
@@ -107,22 +63,66 @@ export const SessionManager = (
 ): ActorDef<SessionManagerMsg, SessionManagerState> => {
   const { llmRef, defaultMode, contextWindowHours, persistContext = false } = options
 
+  const getOrCreateUserSession = (
+    state: SessionManagerState,
+    userId: string,
+    ctx: any,
+    eventInfo?: { timezone?: string; permission?: any },
+  ): { session: UserSession; nextState: SessionManagerState; isNew: boolean } => {
+    let session = state.userSessions[userId]
+    if (session) {
+      if (eventInfo?.timezone && eventInfo.timezone !== session.timezone) {
+        session.contextStoreRef.send({ type: 'setTimezone', timezone: eventInfo.timezone })
+        session.timezone = eventInfo.timezone
+      }
+      if (eventInfo?.permission) {
+        session.permission = eventInfo.permission
+      }
+      return { session, nextState: state, isNew: false }
+    }
+
+    const contextStoreRef = ctx.spawn(`context-store-${userId}`, ContextStore({
+      userId,
+      contextWindowHours,
+      persistContext,
+    })) as ActorRef<ContextStoreMsg>
+
+    if (eventInfo?.timezone) {
+      contextStoreRef.send({ type: 'setTimezone', timezone: eventInfo.timezone })
+    }
+
+    const newSession: UserSession = {
+      contextStoreRef,
+      timezone: eventInfo?.timezone,
+      permission: eventInfo?.permission,
+    }
+
+    const nextState: SessionManagerState = {
+      ...state,
+      userSessions: {
+        ...state.userSessions,
+        [userId]: newSession,
+      },
+    }
+
+    return { session: newSession, nextState, isNew: true }
+  }
+
   return {
     initialState: initialSessionManagerState,
     lifecycle: onLifecycle({
       start: (state, ctx) => {
         ctx.subscribe(UserPresenceTopic, e => ({ type: '_userPresence' as const, event: e }))
-        ctx.subscribe(InboundMessageTopic,   e => ({ type: '_message'      as const, text: e.text, attachments: e.attachments }))
-        ctx.subscribe(JobRegistryTopic,      e => ({ type: '_jobRegistry'  as const, event: e }))
-        ctx.subscribe(LlmProviderTopic,      event => ({ type: '_llmProvider' as const, ref: event.ref }))
+        ctx.subscribe(InboundMessageTopic, e => ({ type: '_message' as const, text: e.text, attachments: e.attachments }))
+        ctx.subscribe(ContextSnapshotTopic, e => ({ type: '_contextSnapshot' as const, event: e }))
+        ctx.subscribe(LlmProviderTopic, event => ({ type: '_llmProvider' as const, ref: event.ref }))
         return { state: { ...state, llmRef: state.llmRef ?? llmRef } }
       },
 
       watchStatus: (state, event, ctx) => {
         if (event.status !== 'terminated') return { state }
         const deadName = event.ref.name
-        // Context-store death cascades into a full session drop.
-        for (const [userId, session] of Object.entries(state.sessions)) {
+        for (const [userId, session] of Object.entries(state.userSessions)) {
           if (session.contextStoreRef.name === deadName) {
             ctx.publish(SessionLifecycleTopic, {
               type:      'sessionEnded',
@@ -130,7 +130,8 @@ export const SessionManager = (
               reason:    'contextStoreCrash',
               timestamp: Date.now(),
             })
-            return { state: removeSession(state, userId) }
+            const { [userId]: _, ...userSessions } = state.userSessions
+            return { state: { ...state, userSessions } }
           }
         }
         return { state }
@@ -142,84 +143,50 @@ export const SessionManager = (
         return { state: { ...state, llmRef: msg.ref } }
       },
 
+      _contextSnapshot: (state, msg) => {
+        return {
+          state: {
+            ...state,
+            snapshots: {
+              ...state.snapshots,
+              [msg.event.userId]: msg.event,
+            },
+          },
+        }
+      },
+
       _userPresence: (state, msg, ctx) => {
         const { event } = msg
         const { userId, status, source } = event
         const ts = Date.now()
 
-        const existingInterfaces = state.activeInterfaces[userId] || new Set<'http' | 'signal' | 'cli'>()
-
         if (status === 'present') {
-          if (existingInterfaces.has(source)) return { state }
-
-          const newInterfaces = new Set(existingInterfaces)
-          newInterfaces.add(source)
-          const nextInterfaces = { ...state.activeInterfaces, [userId]: newInterfaces }
-          const nextState = { ...state, activeInterfaces: nextInterfaces }
-
-          const existingSession = nextState.sessions[userId]
-
-          if (existingSession) {
-            if (event.timezone) {
-              existingSession.contextStoreRef.send({ type: 'setTimezone', timezone: event.timezone })
-              existingSession.timezone = event.timezone
-            }
-            if (event.permission) {
-              existingSession.permission = event.permission
-            }
-            ctx.publish(SessionLifecycleTopic, {
-              type:      'presencePresent',
-              userId,
-              source,
-              timestamp: ts,
-            })
-            return { state: nextState }
-          }
-
-          // First connect for this userId — spawn context store
-          const contextStoreRef = ctx.spawn(`context-store-${userId}`, ContextStore({
-            userId,
-            contextWindowHours,
-            persistContext,
-          })) as ActorRef<ContextStoreMsg>
-          if (event.timezone) {
-            contextStoreRef.send({ type: 'setTimezone', timezone: event.timezone })
-          }
-          const seeded: Session = {
-            contextStoreRef,
+          const { session, nextState, isNew } = getOrCreateUserSession(state, userId, ctx, {
             timezone: event.timezone,
             permission: event.permission,
+          })
+
+          if (isNew) {
+            ctx.publish(SessionLifecycleTopic, {
+              type:              'sessionStarted',
+              userId,
+              defaultMode,
+              contextStoreRef:   session.contextStoreRef,
+              permissionContext: event.permission ?? { grants: ['*'] },
+              timestamp:         ts,
+            })
           }
-          const withSession = setSession(nextState, userId, seeded)
 
           ctx.publish(SessionLifecycleTopic, {
-            type:          'sessionStarted',
-            userId,
-            defaultMode,
-            contextStoreRef,
-            permissionContext: event.permission ?? { grants: ['*'] },
-            timestamp:     ts,
-          })
-          ctx.publish(SessionLifecycleTopic, {
-            type:        'presencePresent',
+            type:      'presencePresent',
             userId,
             source,
-            timestamp:   ts,
+            timestamp: ts,
           })
 
-          return {
-            state: withSession,
-          }
+          return { state: nextState }
         } else {
           // status === 'absent'
-          if (!existingInterfaces.has(source)) return { state }
-
-          const newInterfaces = new Set(existingInterfaces)
-          newInterfaces.delete(source)
-
-          const nextInterfaces = { ...state.activeInterfaces, [userId]: newInterfaces }
-          const nextState = { ...state, activeInterfaces: nextInterfaces }
-
           ctx.publish(SessionLifecycleTopic, {
             type:        'presenceAbsent',
             userId,
@@ -227,14 +194,14 @@ export const SessionManager = (
             timestamp:   ts,
           })
 
-          return { state: tryDestroySession(nextState, userId, ctx, ts) }
+          // User context persists in KV / ContextStore across disconnects
+          return { state }
         }
       },
 
       _message: (state, msg, ctx) => {
-        const userId = ctx.request.userId
-        const session = state.sessions[userId]
-        if (!session) return { state }
+        const userId = ctx.request.userId || 'system'
+        const { session, nextState } = getOrCreateUserSession(state, userId, ctx)
 
         const hasChatbotUrn = ResolutionCache.getDescriptor('scr:reasoner:cognitive.chatbot') !== undefined
 
@@ -247,26 +214,42 @@ export const SessionManager = (
             event,
           }), streamToTopic)
 
+          const snapshot = nextState.snapshots[userId]
+          const contextView: ContextView | undefined = snapshot ? {
+            userId,
+            version:       snapshot.version,
+            recentMessages: snapshot.recentMessages,
+            userContext:   snapshot.userContext,
+            toolSummaries: snapshot.toolSummaries,
+            timezone:      snapshot.timezone ?? session.timezone,
+          } : undefined
+
           const request = {
             ...ctx.request,
             streamTo: streamToTopic,
-            timezone: session.timezone,
-            permission: session.permission,
+            timezone: session.timezone ?? ctx.request.timezone,
+            permission: session.permission ?? ctx.request.permission,
           }
 
           ctx.pipeToSelf(
             requestStorage.run(request, () =>
-              invokeSCR('scr:reasoner:cognitive.chatbot', { prompt: msg.text })
+              invokeSCR('scr:reasoner:cognitive.chatbot', {
+                prompt: msg.text,
+                history: snapshot?.recentMessages ?? [],
+                contextView,
+              })
             ),
             (reply) => ({
               type: '_scrReply' as const,
               userId,
+              userText: msg.text,
               streamToTopic,
               reply,
             }),
             (error) => ({
               type: '_scrReply' as const,
               userId,
+              userText: msg.text,
               streamToTopic,
               reply: { type: 'error', error: String(error) },
             })
@@ -274,7 +257,7 @@ export const SessionManager = (
         } else {
           ctx.log.error('Root chatbot agent URN scr:reasoner:cognitive.chatbot is not registered!')
         }
-        return { state }
+        return { state: nextState }
       },
 
       _streamChunk: (state, msg, ctx) => {
@@ -287,39 +270,32 @@ export const SessionManager = (
       },
 
       _scrReply: (state, msg, ctx) => {
-        const { streamToTopic } = msg
+        const { streamToTopic, userId, userText, reply } = msg
         ctx.unsubscribe(createTopic<StreamChunk>(streamToTopic), streamToTopic)
         ctx.deleteTopic(createTopic<StreamChunk>(streamToTopic))
-        return { state }
-      },
 
-      _jobRegistry: (state, msg, ctx) => {
-        const { event } = msg
-        if (event.status === 'running') {
-          if (event.userId) {
-            return {
-              state: {
-                ...state,
-                activeJobs: {
-                  ...state.activeJobs,
-                  [event.jobId]: {
-                    userId: event.userId,
-                  },
-                },
-              },
-            }
+        if (reply.type === 'result') {
+          let assistantText = ''
+          const out = reply.output
+          if (typeof out === 'string') {
+            assistantText = out
+          } else if (out && typeof out === 'object' && 'text' in out) {
+            assistantText = String((out as any).text)
+          } else if (out !== undefined && out !== null) {
+            assistantText = JSON.stringify(out)
           }
-          return { state }
-        }
 
-        if (event.status === 'completed' || event.status === 'failed' || event.status === 'cleared') {
-          const cached = state.activeJobs[event.jobId]
-          const { [event.jobId]: _, ...activeJobs } = state.activeJobs
-          let next = { ...state, activeJobs }
-          if (cached) {
-            next = tryDestroySession(next, cached.userId, ctx, Date.now())
+          const session = state.userSessions[userId]
+          if (session && assistantText) {
+            session.contextStoreRef.send({
+              type: 'append',
+              mode: 'chatbot',
+              messages: [
+                { role: 'user', content: userText },
+                { role: 'assistant', content: assistantText },
+              ],
+            })
           }
-          return { state: next }
         }
 
         return { state }

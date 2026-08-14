@@ -618,4 +618,92 @@ describe('SCR Phase 3: Reasoner (Agent) SCR Conversion', () => {
 
     await system.shutdown()
   })
+
+  test('SessionManager accumulates multi-turn history and passes context to SCRAgentRunner', async () => {
+    let capturedTurn2Payload: any = null
+
+    // Turn 1 payload
+    const turn1Payloads = [
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_turn1', function: { name: 'scr_complete', arguments: '' } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ text: 'Nice to meet you, Alice!' }) } }] } }] },
+      { usage: { prompt_tokens: 10, completion_tokens: 10 } },
+    ]
+
+    // Turn 2 payload (we spy on the request body to verify multi-turn messages passed to LLM)
+    const turn2Payloads = [
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_turn2', function: { name: 'scr_complete', arguments: '' } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ text: 'Your name is Alice.' }) } }] } }] },
+      { usage: { prompt_tokens: 20, completion_tokens: 10 } },
+    ]
+
+    let fetchCount = 0
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      fetchCount++
+      if (fetchCount === 1) {
+        return makeSSEResponse(turn1Payloads)
+      } else {
+        if (init?.body) {
+          capturedTurn2Payload = JSON.parse(init.body as string)
+        }
+        return makeSSEResponse(turn2Payloads)
+      }
+    }) as any
+
+    const system = await AgentSystem({
+      source: staticSource({
+        plugins: [MockPersistenceActor(), registryPlugin, cognitivePlugin],
+        config: {
+          cognitive: {
+            llmProvider: {
+              provider: 'openrouter',
+              apiKey: 'test-key',
+            }
+          }
+        }
+      })
+    })
+    setupLogging(system)
+    await tick()
+
+    // 1. Establish session presence
+    system.publish(UserPresenceTopic, {
+      status: 'present',
+      userId: 'user-multiturn-test',
+      source: 'http',
+      timezone: 'Europe/Paris',
+    })
+    await tick(100)
+
+    const request = createMessageRequest({
+      userId: 'user-multiturn-test',
+    })
+
+    // 2. Send Turn 1
+    await requestStorage.run(request, async () => {
+      system.publish(InboundMessageTopic, {
+        text: 'My name is Alice',
+        request,
+      })
+      await tick(1000)
+    })
+
+    // 3. Send Turn 2
+    await requestStorage.run(request, async () => {
+      system.publish(InboundMessageTopic, {
+        text: 'What is my name?',
+        request,
+      })
+      await tick(1000)
+    })
+
+    // 4. Verify that Turn 2 request to LLM included Turn 1 conversation history
+    expect(capturedTurn2Payload).not.toBeNull()
+    const messages = capturedTurn2Payload.messages
+    expect(messages.some((m: any) => m.role === 'user' && m.content === 'My name is Alice')).toBe(true)
+    expect(messages.some((m: any) => m.role === 'assistant' && m.content === 'Nice to meet you, Alice!')).toBe(true)
+    expect(messages.at(-1)?.role).toBe('user')
+    expect(messages.at(-1)?.content).toBe('What is my name?')
+
+    await system.shutdown()
+  })
 })

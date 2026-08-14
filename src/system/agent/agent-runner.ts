@@ -11,7 +11,7 @@ import { requestStorage } from '../context/request.ts'
 import { createTopic } from '../actor/types.ts'
 import { ResolutionCache } from '../scr/cache.ts'
 import { authorize } from '../permissions/evaluator.ts'
-import { getUserTimeContext } from './context-assembly.ts'
+import { getUserTimeContext, assembleAgentMessages, type ContextView } from './context-assembly.ts'
 import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
 import { persistencePluginAdapter } from '../persistence.ts'
 
@@ -343,8 +343,21 @@ export const SCRAgentRunner = (opts: {
         state.systemPrompt = agentDescriptor.systemPrompt
 
         let promptText = ''
-        if (typeof state.input === 'object' && state.input !== null && 'prompt' in state.input) {
-          promptText = String((state.input as any).prompt)
+        let history: ApiMessage[] = []
+        let contextView: ContextView | undefined = undefined
+
+        if (typeof state.input === 'object' && state.input !== null) {
+          if ('prompt' in state.input) {
+            promptText = String((state.input as any).prompt)
+          }
+          if ('history' in state.input && Array.isArray((state.input as any).history)) {
+            history = (state.input as any).history
+          } else if ('messages' in state.input && Array.isArray((state.input as any).messages)) {
+            history = (state.input as any).messages
+          }
+          if ('contextView' in state.input && (state.input as any).contextView) {
+            contextView = (state.input as any).contextView
+          }
         } else if (typeof state.input === 'string') {
           promptText = state.input
         }
@@ -367,10 +380,32 @@ export const SCRAgentRunner = (opts: {
         ].join('\n')
         const fullPrompt = [agentDescriptor.systemPrompt, identityNote].filter(Boolean).join('\n\n---\n\n')
 
-        const messages: ApiMessage[] = [
-          { role: 'system', content: fullPrompt },
-          { role: 'user', content: promptText },
-        ]
+        let messages: ApiMessage[]
+        if (contextView) {
+          messages = assembleAgentMessages(
+            contextView,
+            {
+              mode: agentDescriptor.mode,
+              systemPrompt: fullPrompt,
+            },
+            { role: 'user', content: promptText }
+          )
+        } else if (history.length > 0) {
+          const filteredHistory = history.filter(m => m.role !== 'system')
+          const withoutCurrent = (filteredHistory.at(-1)?.role === 'user' && filteredHistory.at(-1)?.content === promptText)
+            ? filteredHistory.slice(0, -1)
+            : filteredHistory
+          messages = [
+            { role: 'system', content: fullPrompt },
+            ...withoutCurrent,
+            { role: 'user', content: promptText },
+          ]
+        } else {
+          messages = [
+            { role: 'system', content: fullPrompt },
+            { role: 'user', content: promptText },
+          ]
+        }
 
         return loop.startTurn(state, { messages }, ctx)
       }
