@@ -5,8 +5,7 @@ import {
   WebSearch,
 } from '../plugins/tools/web-search.ts'
 import type { WebSearchMsg, BraveLlmContextResponse } from '../plugins/tools/types.ts'
-import { SCRRegistrationTopic, type SCRRegistrationEvent } from '../types/scr.ts'
-import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
+import { SCRRegistrationTopic, type SCRRegistrationEvent, type SCRInvokeMsg, type SCRReply } from '../types/scr.ts'
 import toolsPlugin from '../plugins/tools/tools.plugin.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 
@@ -55,65 +54,66 @@ const stubFetchThrow = (message: string) => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('web-search actor', () => {
-  test('sends toolResult to replyTo on successful Brave API response', async () => {
+  test('sends result to replyTo on successful Brave API response', async () => {
     stubFetchOk(mockBraveResponse)
 
     const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const ref = system.spawn('web-search', WebSearch({ apiKey: 'test-key' }))
     await tick()
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'tools_web_search', arguments: JSON.stringify({ query: 'bun runtime' }), replyTo, userId: 'test-user' }),
+      (replyTo) => ({ type: 'invoke', urn: 'scr:leaf:tools.web_search', input: { query: 'bun runtime' }, replyTo }),
       { timeoutMs: 500 },
     )
 
-    expect(reply.type).toBe('toolResult')
-    if (reply.type === 'toolResult') {
-      expect(reply.result.text).toContain('Example Page')
-      expect(reply.result.sources).toHaveLength(1)
-      expect(reply.result.sources?.[0]?.url).toBe('https://example.com/page')
+    expect(reply.type).toBe('result')
+    if (reply.type === 'result') {
+      const output = reply.output as { text: string; sources?: Array<{ url: string }> }
+      expect(output.text).toContain('Example Page')
+      expect(output.sources).toHaveLength(1)
+      expect(output.sources?.[0]?.url).toBe('https://example.com/page')
     }
 
     await system.shutdown()
   })
 
-  test('sends toolError to replyTo when Brave API returns non-ok status', async () => {
+  test('sends error to replyTo when Brave API returns non-ok status', async () => {
     stubFetchError(429, 'Rate limit exceeded')
 
     const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const ref = system.spawn('web-search', WebSearch({ apiKey: 'test-key' }))
     await tick()
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'tools_web_search', arguments: JSON.stringify({ query: 'anything' }), replyTo, userId: 'test-user' }),
+      (replyTo) => ({ type: 'invoke', urn: 'scr:leaf:tools.web_search', input: { query: 'anything' }, replyTo }),
       { timeoutMs: 500 },
     )
 
-    expect(reply.type).toBe('toolError')
-    if (reply.type === 'toolError') {
+    expect(reply.type).toBe('error')
+    if (reply.type === 'error') {
       expect(reply.error).toContain('429')
     }
 
     await system.shutdown()
   })
 
-  test('sends toolError to replyTo when fetch throws a network error', async () => {
+  test('sends error to replyTo when fetch throws a network error', async () => {
     stubFetchThrow('network unreachable')
 
     const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
     const ref = system.spawn('web-search', WebSearch({ apiKey: 'test-key' }))
     await tick()
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'tools_web_search', arguments: JSON.stringify({ query: 'anything' }), replyTo, userId: 'test-user' }),
+      (replyTo) => ({ type: 'invoke', urn: 'scr:leaf:tools.web_search', input: { query: 'anything' }, replyTo }),
       { timeoutMs: 500 },
     )
 
-    expect(reply.type).toBe('toolError')
-    if (reply.type === 'toolError') {
+    expect(reply.type).toBe('error')
+    if (reply.type === 'error') {
       expect(reply.error).toContain('network unreachable')
     }
 
@@ -132,9 +132,9 @@ describe('web-search actor', () => {
     const ref = system.spawn('web-search', WebSearch({ apiKey: 'test-key', count: 7 }))
     await tick()
 
-    await ask<ToolInvokeMsg, ToolReply>(
+    await ask<SCRInvokeMsg, SCRReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'tools_web_search', arguments: JSON.stringify({ query: 'test' }), replyTo, userId: 'test-user' }),
+      (replyTo) => ({ type: 'invoke', urn: 'scr:leaf:tools.web_search', input: { query: 'test' }, replyTo }),
       { timeoutMs: 500 },
     )
 
@@ -156,9 +156,9 @@ describe('web-search actor', () => {
     const ref = system.spawn('web-search', WebSearch({ apiKey: 'my-secret-key' }))
     await tick()
 
-    await ask<ToolInvokeMsg, ToolReply>(
+    await ask<SCRInvokeMsg, SCRReply>(
       ref,
-      (replyTo) => ({ type: 'invoke', toolName: 'tools_web_search', arguments: JSON.stringify({ query: 'test' }), replyTo, userId: 'test-user' }),
+      (replyTo) => ({ type: 'invoke', urn: 'scr:leaf:tools.web_search', input: { query: 'test' }, replyTo }),
       { timeoutMs: 500 },
     )
 
@@ -185,8 +185,8 @@ describe('tools plugin', () => {
     expect(status?.status).toBe('active')
 
     // Probe actor: subscribe to SCRRegistrationTopic, fire an invoke, collect the reply
-    type ProbeMsg = ToolReply | { type: 'registered'; event: SCRRegistrationEvent }
-    const replies: ToolReply[] = []
+    type ProbeMsg = SCRReply | { type: 'registered'; event: SCRRegistrationEvent }
+    const replies: SCRReply[] = []
 
     const probeDef: ActorDef<ProbeMsg, null> = {
       lifecycle: (state, event, ctx) => {
@@ -199,12 +199,12 @@ describe('tools plugin', () => {
         if (msg.type === 'registered' && msg.event.type === 'register' && msg.event.descriptor.urn === 'scr:leaf:tools.web_search') {
           msg.event.descriptor.target.send({
             type: 'invoke',
-            toolName: 'tools_web_search',
-            arguments: JSON.stringify({ query: 'probe' }),
-            replyTo: ctx.self as unknown as ActorRef<ToolReply>,
+            urn: 'scr:leaf:tools.web_search',
+            input: { query: 'probe' },
+            replyTo: ctx.self as unknown as ActorRef<SCRReply>,
           }, { userId: 'test-user' })
         }
-        if (msg.type === 'toolResult' || msg.type === 'toolError') {
+        if (msg.type === 'result' || msg.type === 'error') {
           replies.push(msg)
         }
         return { state }
@@ -215,7 +215,7 @@ describe('tools plugin', () => {
     await tick(200)
 
     expect(replies).toHaveLength(1)
-    expect(replies[0]!.type).toBe('toolResult')
+    expect(replies[0]!.type).toBe('result')
 
     await system.shutdown()
   })

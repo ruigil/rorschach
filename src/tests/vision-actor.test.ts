@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { AgentSystem, ask } from '../system/index.ts'
 import { Vision } from '../plugins/tools/vision-actor.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
-import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../types/scr.ts'
 import type { PersistenceMsg, PResult } from '../types/persistence.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 
@@ -30,21 +30,21 @@ describe('vision actor', () => {
     })
     await tick()
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       visionRef,
       replyTo => ({
         type: 'invoke',
-        toolName: 'tools_image_generate',
-        arguments: JSON.stringify({ prompt: 'a small blue square' }),
+        urn: 'scr:leaf:tools.image_generate',
+        input: { prompt: 'a small blue square' },
         replyTo,
-        userId: 'test-user',
       }),
       { timeoutMs: 1_000 },
     )
 
-    expect(reply.type).toBe('toolResult')
-    if (reply.type === 'toolResult') {
-      const attachment = reply.result.attachments?.[0]
+    expect(reply.type).toBe('result')
+    if (reply.type === 'result') {
+      const output = reply.output as { attachments?: Array<{ kind: string; mimeType: string; alt: string; url: string; name?: string }> }
+      const attachment = output.attachments?.[0]
       expect(attachment).toMatchObject({
         kind: 'image',
         mimeType: 'image/png',
@@ -101,21 +101,21 @@ describe('vision actor', () => {
     })
     await tick()
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       visionRef,
       replyTo => ({
         type: 'invoke',
-        toolName: 'tools_image_analyze',
-        arguments: JSON.stringify({ image_url: 'test-folder/image.png', prompt: 'Is this an image?' }),
+        urn: 'scr:leaf:tools.image_analyze',
+        input: { image_url: 'test-folder/image.png', prompt: 'Is this an image?' },
         replyTo,
-        userId: 'test-user',
       }),
       { timeoutMs: 1_000 },
     )
 
-    expect(reply.type).toBe('toolResult')
-    if (reply.type === 'toolResult') {
-      expect(reply.result.text).toBe('This is a description.')
+    expect(reply.type).toBe('result')
+    if (reply.type === 'result') {
+      const output = reply.output as { text: string }
+      expect(output.text).toBe('This is a description.')
     }
     
     // Expect the URL received by LLM to be the base64 encoded data url of 'test-image-bytes'

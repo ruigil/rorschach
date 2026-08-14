@@ -3,7 +3,7 @@ import type { ActorDef, ActorRef } from '../../../system/index.ts'
 import { onMessage } from '../../../system/index.ts'
 import { ask } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../../../types/scr.ts'
 import type { GoogleToken, TokenStoreMsg } from '../types.ts'
 
 // ─── Tool names & schemas ───
@@ -57,9 +57,9 @@ export const calendarDeleteEventTool = defineTool('googleapis_calendar_event_del
 // ─── Internal message type ───
 
 type CalendarMsg =
-  | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; result: string }
-  | { type: '_error'; replyTo: ActorRef<ToolReply>; error: string }
+  | SCRInvokeMsg
+  | { type: '_done';  replyTo: ActorRef<SCRReply>; result: string }
+  | { type: '_error'; replyTo: ActorRef<SCRReply>; error: string }
 
 // ─── Actor ───
 
@@ -87,7 +87,7 @@ export const Calendar = (
         }
 
         const calendar = google.calendar({ version: 'v3', auth })
-        const args     = JSON.parse(msg.arguments) as Record<string, any>
+        const args     = (typeof msg.input === 'string' ? JSON.parse(msg.input) : (msg.input ?? {})) as Record<string, any>
         const calId    = args.calendarId ?? 'primary'
 
         if (cachedTimezone === null) {
@@ -99,9 +99,14 @@ export const Calendar = (
         }
         const tz = cachedTimezone
 
-        if (msg.toolName === calendarListEventsTool.name) {
+        const isList = msg.urn.endsWith('event_list') || msg.urn.endsWith('calendarListEvents') || msg.urn.endsWith(calendarListEventsTool.name)
+        const isCreate = msg.urn.endsWith('event_create') || msg.urn.endsWith('calendarCreateEvent') || msg.urn.endsWith(calendarCreateEventTool.name)
+        const isUpdate = msg.urn.endsWith('event_update') || msg.urn.endsWith('calendarUpdateEvent') || msg.urn.endsWith(calendarUpdateEventTool.name)
+        const isDelete = msg.urn.endsWith('event_delete') || msg.urn.endsWith('calendarDeleteEvent') || msg.urn.endsWith(calendarDeleteEventTool.name)
+
+        if (isList) {
           const res = await calendar.events.list({
-            calendarId: args.calendarId ?? 'primary',
+            calendarId: calId,
             timeMin: args.timeMin ?? new Date().toISOString(),
             timeMax: args.timeMax,
             maxResults: args.maxResults ?? 10,
@@ -111,45 +116,45 @@ export const Calendar = (
           return JSON.stringify(res.data.items)
         }
 
-        if (msg.toolName === calendarCreateEventTool.name) {
+        if (isCreate) {
           if (!cachedTimezone) {
-            const settings = await calendar.calendarList.get({ calendarId: args.calendarId ?? 'primary' })
+            const settings = await calendar.calendarList.get({ calendarId: calId })
             cachedTimezone = settings.data.timeZone ?? 'UTC'
           }
-          const tz = cachedTimezone
+          const eventTz = cachedTimezone
           const event = {
             summary: args.summary,
             description: args.description,
             location: args.location,
-            start: { dateTime: args.start, timeZone: tz },
-            end:   { dateTime: args.end,   timeZone: tz },
+            start: { dateTime: args.start, timeZone: eventTz },
+            end:   { dateTime: args.end,   timeZone: eventTz },
           }
-          const res = await calendar.events.insert({ calendarId: args.calendarId ?? 'primary', requestBody: event })
+          const res = await calendar.events.insert({ calendarId: calId, requestBody: event })
           return `Created event ${res.data.id}`
         }
 
-        if (msg.toolName === calendarUpdateEventTool.name) {
+        if (isUpdate) {
           if (!cachedTimezone) {
-            const settings = await calendar.calendarList.get({ calendarId: args.calendarId ?? 'primary' })
+            const settings = await calendar.calendarList.get({ calendarId: calId })
             cachedTimezone = settings.data.timeZone ?? 'UTC'
           }
-          const tz = cachedTimezone
+          const eventTz = cachedTimezone
           const patch: any = {}
           if (args.summary !== undefined) patch.summary = args.summary
           if (args.description !== undefined) patch.description = args.description
           if (args.location !== undefined) patch.location = args.location
-          if (args.start !== undefined) patch.start = { dateTime: args.start, timeZone: tz }
-          if (args.end !== undefined) patch.end = { dateTime: args.end, timeZone: tz }
-          await calendar.events.patch({ calendarId: args.calendarId ?? 'primary', eventId: args.eventId, requestBody: patch })
+          if (args.start !== undefined) patch.start = { dateTime: args.start, timeZone: eventTz }
+          if (args.end !== undefined) patch.end = { dateTime: args.end, timeZone: eventTz }
+          await calendar.events.patch({ calendarId: calId, eventId: args.eventId, requestBody: patch })
           return `Updated event ${args.eventId}`
         }
 
-        if (msg.toolName === calendarDeleteEventTool.name) {
-          await calendar.events.delete({ calendarId: args.calendarId ?? 'primary', eventId: args.eventId })
+        if (isDelete) {
+          await calendar.events.delete({ calendarId: calId, eventId: args.eventId })
           return `Deleted event ${args.eventId}`
         }
 
-        throw new Error(`Unknown Calendar tool: ${msg.toolName}`)
+        throw new Error(`Unknown Calendar tool: ${msg.urn}`)
       }
 
       ctx.pipeToSelf(
@@ -160,8 +165,8 @@ export const Calendar = (
       return { state }
     },
 
-    _done:  (state, msg) => { msg.replyTo.send({ type: 'toolResult', result: { text: msg.result } }); return { state } },
-    _error: (state, msg) => { msg.replyTo.send({ type: 'toolError',  error:  msg.error  }); return { state } },
+    _done:  (state, msg) => { msg.replyTo.send({ type: 'result', output: { text: msg.result } }); return { state } },
+    _error: (state, msg) => { msg.replyTo.send({ type: 'error',  error:  msg.error  }); return { state } },
   }),
 })
 }

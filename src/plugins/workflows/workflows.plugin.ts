@@ -5,14 +5,43 @@ import { type UiSurfaceRegistration } from '../../types/ui-surface.ts'
 import type { ToolMsg, ToolCollection } from '../../types/tools.ts'
 import { WorkflowManager } from './workflow-manager.ts'
 import { WorkflowsAgentDescriptor } from './workflows-agent.ts'
-import { WorkflowToolsActor, workflowControlTools } from './workflow-tools.ts'
+import {
+  WorkflowToolsActor,
+  listAgentModesTool,
+  listExecutionToolsTool,
+  saveWorkflowTool,
+  updateWorkflowTool,
+  deleteWorkflowTool,
+  listWorkflowsTool,
+  getWorkflowTool,
+  showWorkflowGraphTool,
+  startWorkflowRunTool,
+  listWorkflowRunsTool,
+  getWorkflowRunTool,
+  resumeWorkflowRunTool,
+} from './workflow-tools.ts'
 import { buildWorkflowsRoutes } from './workflows.routes.ts'
 import { config, defaultConfig, type WorkflowsConfig } from './workflows.config.ts'
 import { OperatorSpawner } from './operator-spawner.ts'
 
+const workflowsControlToolsList = [
+  listAgentModesTool,
+  listExecutionToolsTool,
+  saveWorkflowTool,
+  updateWorkflowTool,
+  deleteWorkflowTool,
+  listWorkflowsTool,
+  getWorkflowTool,
+  showWorkflowGraphTool,
+  startWorkflowRunTool,
+  listWorkflowRunsTool,
+  getWorkflowRunTool,
+  resumeWorkflowRunTool,
+]
+
 const buildWorkflowsTools = (toolsRef: ActorRef<ToolMsg>): ToolCollection => {
   const tools: ToolCollection = {}
-  for (const tool of workflowControlTools) {
+  for (const tool of workflowsControlToolsList) {
     tools[tool.name] = { ...tool, ref: toolsRef }
   }
   return tools
@@ -54,6 +83,20 @@ export default createPluginFactory<WorkflowsConfig>({
     operatorSpawner: {
       factory: () => OperatorSpawner(),
     },
+  },
+  tools: {
+    agentModesList: { schema: listAgentModesTool.schema, slot: 'tools' },
+    executionToolsList: { schema: listExecutionToolsTool.schema, slot: 'tools' },
+    save: { schema: saveWorkflowTool.schema, slot: 'tools' },
+    update: { schema: updateWorkflowTool.schema, slot: 'tools' },
+    delete: { schema: deleteWorkflowTool.schema, slot: 'tools' },
+    list: { schema: listWorkflowsTool.schema, slot: 'tools' },
+    get: { schema: getWorkflowTool.schema, slot: 'tools' },
+    graphShow: { schema: showWorkflowGraphTool.schema, slot: 'tools' },
+    runStart: { schema: startWorkflowRunTool.schema, slot: 'tools' },
+    runsList: { schema: listWorkflowRunsTool.schema, slot: 'tools' },
+    runGet: { schema: getWorkflowRunTool.schema, slot: 'tools' },
+    runResume: { schema: resumeWorkflowRunTool.schema, slot: 'tools' },
   },
 
   agents: {

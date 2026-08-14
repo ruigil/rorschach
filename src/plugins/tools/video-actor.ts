@@ -2,7 +2,6 @@ import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { onMessage, onLifecycle } from '../../system/index.ts'
 import { JobRegistryTopic } from '../../types/tools.ts'
 import { defineTool } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic, type LlmProviderMsg, type VideoSubmitReply, type VideoPollReply, type VideoDownloadReply } from '../../types/llm.ts'
 import { PersistenceProviderTopic } from '../../types/persistence.ts'
 import type { PersistenceMsg } from '../../types/persistence.ts'
@@ -17,8 +16,6 @@ export const generateVideoTool = defineTool('tools_video_generate', 'Generate a 
   },
   required: ['prompt'],
 })
-
-
 
 const DEFAULT_ASPECT_RATIO = '16:9'
 const DEFAULT_DURATION = 4
@@ -60,26 +57,29 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
       },
 
       invoke: (state, message, context) => {
-        const { toolName, arguments: args, replyTo } = message
-
-        if (toolName !== generateVideoTool.name) {
-          replyTo.send({ type: 'toolError', error: `Unknown tool: ${toolName}` })
-          return { state }
-        }
+        const { input, replyTo } = message
 
         let prompt = ''
-        try {
-          const parsed = JSON.parse(args) as { prompt: string }
-          prompt = parsed.prompt
-        } catch {
-          replyTo.send({ type: 'toolError', error: 'Invalid arguments: expected JSON with prompt' })
+        if (typeof input === 'string') {
+          try {
+            const parsed = JSON.parse(input) as { prompt?: string }
+            prompt = parsed.prompt || input
+          } catch {
+            prompt = input
+          }
+        } else if (input && typeof input === 'object' && 'prompt' in input) {
+          prompt = String((input as { prompt: unknown }).prompt ?? '')
+        }
+
+        if (!prompt) {
+          replyTo.send({ type: 'error', error: 'Invalid arguments: prompt is required' })
           return { state }
         }
 
         const requestId = crypto.randomUUID()
         context.log.info('video: submitting generation request', { requestId, model, prompt, aspectRatio, duration, resolution })
         if (!state.llmRef) {
-          replyTo.send({ type: 'toolError', error: 'Video model provider not ready.' })
+          replyTo.send({ type: 'error', error: 'Video model provider not ready.' })
           return { state }
         }
         const resolvedUserId = context.request.userId
@@ -109,10 +109,10 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
 
         context.log.info('video: job submitted, starting poll', { requestId, jobId, pollingUrl })
         const deadline = Date.now() + pollTimeoutMs
-        req.replyTo.send({ type: 'toolPending', jobId, placeholderText: `Video generation started (jobId=${jobId}).` })
+        req.replyTo.send({ type: 'pending', jobId, placeholderText: `Video generation started (jobId=${jobId}).` })
 
         if (!state.llmRef) {
-          req.replyTo.send({ type: 'toolError', error: 'Video model provider not ready.' })
+          req.replyTo.send({ type: 'error', error: 'Video model provider not ready.' })
           return { state }
         }
         context.send(state.llmRef, {
@@ -135,7 +135,7 @@ export const Video = (options: VideoOptions): ActorDef<VideoMsg, VideoState> => 
         const { [requestId]: req, ...rest } = state.pending
         if (!req) return { state }
         context.log.error('video: submit failed', { requestId, error })
-        req.replyTo.send({ type: 'toolError', error: `Video generation request failed: ${error}` })
+        req.replyTo.send({ type: 'error', error: `Video generation request failed: ${error}` })
         return { state: { ...state, pending: rest } }
       },
 

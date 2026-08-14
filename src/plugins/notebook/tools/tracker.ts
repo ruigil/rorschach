@@ -1,7 +1,7 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../../system/index.ts'
 import { onLifecycle, onMessage, ask } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../../../types/scr.ts'
 import type { HabitDef } from '../types.ts'
 import { NotebookChangeTopic } from '../types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../../../types/persistence.ts'
@@ -45,9 +45,9 @@ type TrackerState = {
 }
 
 type TrackerMsg =
-  | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string; span: SpanHandle | null; userId: string; habit?: string }
-  | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string; span: SpanHandle | null }
+  | SCRInvokeMsg
+  | { type: '_done';  replyTo: ActorRef<SCRReply>; urn: string; result: string; span: SpanHandle | null; userId: string; habit?: string }
+  | { type: '_error'; replyTo: ActorRef<SCRReply>; urn: string; error: string; span: SpanHandle | null }
   | { type: '_persistenceRef'; ref: ActorRef<any> | null }
   | { type: '_void' }
 
@@ -98,117 +98,159 @@ const logHabit = async (
 export type CsvRow = { date: string; habit: string; value: number; description?: string }
 
 const parseCsvLine = (line: string): string[] => {
-  const fields: string[] = []
-  let field = ''
+  const result: string[] = []
+  let cur = ''
   let inQuotes = false
   for (let i = 0; i < line.length; i++) {
-    const ch = line[i]!
-    if (inQuotes) {
-      if (ch === '"' && line[i + 1] === '"') { field += '"'; i++ }
-      else if (ch === '"') inQuotes = false
-      else field += ch
+    const ch = line[i]
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++ }
+      else { inQuotes = !inQuotes }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(cur)
+      cur = ''
     } else {
-      if (ch === '"') inQuotes = true
-      else if (ch === ',') { fields.push(field); field = '' }
-      else field += ch
+      cur += ch
     }
   }
-  fields.push(field)
-  return fields
+  result.push(cur)
+  return result
 }
 
-export const parseCsv = async (persistenceRef: ActorRef<any>, userId: string): Promise<CsvRow[]> => {
+export const parseCsv = (csv: string): CsvRow[] => {
+  const lines = csv.trim().split('\n').filter(Boolean)
+  if (lines.length <= 1) return []
+  return lines.slice(1).map((l) => {
+    const [date, habit, valStr, desc] = parseCsvLine(l)
+    return {
+      date: (date ?? '').trim(),
+      habit: (habit ?? '').trim(),
+      value: parseFloat(valStr ?? '0') || 0,
+      description: desc?.trim(),
+    }
+  })
+}
+
+const getHabitDef = async (persistenceRef: ActorRef<any>, userId: string, habitName: string): Promise<HabitDef | null> => {
   const res = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
+    type: 'doc.get',
+    collection: 'notebook',
+    docId: `${userId}/tracker/habits.json`,
+    replyTo,
+  }))
+  if (!res.ok || !res.data) return null
+  try {
+    const defs: HabitDef[] = JSON.parse(res.data)
+    return defs.find((h) => h.name.toLowerCase() === habitName.toLowerCase()) ?? null
+  } catch {
+    return null
+  }
+}
+
+const daysAgoISO = (n: number): string => {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  return d.toISOString().slice(0, 10)
+}
+
+export const readCsv = async (persistenceRef: ActorRef<any>, userId: string): Promise<CsvRow[]> => {
+  const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
     type: 'doc.get',
     collection: 'notebook',
     docId: `${userId}/tracker/data.csv`,
     replyTo,
   }))
-  const text = res.ok && res.data ? res.data : ''
-  if (!text) return []
-  const lines = text.split('\n').filter(l => l.trim())
-  if (lines.length <= 1) return []
-  const rows: CsvRow[] = []
-  for (let i = 1; i < lines.length; i++) {
-    const fields = parseCsvLine(lines[i]!)
-    if (fields.length >= 3) {
-      const val = parseFloat(fields[2]!)
-      if (!isNaN(val)) {
-        rows.push({
-          date: fields[0]!,
-          habit: fields[1]!,
-          value: val,
-          description: fields[3] || undefined,
-        })
-      }
-    }
+  if (!getRes.ok || !getRes.data) {
+    return []
   }
-  return rows
-}
-
-const shiftDays = (isoDate: string, delta: number): string => {
-  const d = new Date(isoDate)
-  d.setDate(d.getDate() + delta)
-  return d.toISOString().slice(0, 10)
-}
-
-const currentWeekStart = (): string => {
-  const d = new Date()
-  const day = d.getDay() === 0 ? 6 : d.getDay() - 1
-  d.setDate(d.getDate() - day)
-  return d.toISOString().slice(0, 10)
-}
-
-const currentMonthStart = (): string => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+  return parseCsv(getRes.data)
 }
 
 const computeStats = async (persistenceRef: ActorRef<any>, userId: string, habit: string): Promise<string> => {
-  const all = await parseCsv(persistenceRef, userId)
-  const rows = all.filter(r => r.habit === habit)
+  const rows = (await readCsv(persistenceRef, userId)).filter((r) => r.habit.toLowerCase() === habit.toLowerCase())
   if (rows.length === 0) {
-    return `No logged entries for habit "${habit}".`
+    return `No entries found for "${habit}".`
   }
 
-  const byDay = new Map<string, number>()
+  const habitDef = await getHabitDef(persistenceRef, userId, habit)
+  const unit = habitDef?.unit ?? 'units'
+  const target = habitDef?.dailyTarget
+
+  const since7  = daysAgoISO(7)
+  const since30 = daysAgoISO(30)
+
+  const rows7  = rows.filter((r) => r.date >= since7)
+  const rows30 = rows.filter((r) => r.date >= since30)
+
+  const sum7   = rows7.reduce((acc, r) => acc + r.value, 0)
+  const sum30  = rows30.reduce((acc, r) => acc + r.value, 0)
+  const allSum = rows.reduce((acc, r) => acc + r.value, 0)
+
+  const avg7  = (sum7 / 7).toFixed(1)
+  const avg30 = (sum30 / 30).toFixed(1)
+
+  const byDate = new Map<string, number>()
   for (const r of rows) {
-    byDay.set(r.date, (byDay.get(r.date) ?? 0) + r.value)
+    byDate.set(r.date, (byDate.get(r.date) ?? 0) + r.value)
   }
 
-  const dates = [...byDay.keys()].sort()
-  const values = dates.map(d => byDay.get(d)!)
-  const personalBest = Math.max(...values)
+  const qualifies = (val: number): boolean => target !== undefined ? val >= target : val > 0
 
-  const today = todayISO()
-  const yesterday = shiftDays(today, -1)
-  let start = today
-  if (!byDay.has(today) && byDay.has(yesterday)) {
-    start = yesterday
-  }
-
-  let streak = 0
-  if (byDay.has(start)) {
-    let cursor = new Date(start)
-    while (true) {
-      const key = cursor.toISOString().slice(0, 10)
-      if (!byDay.has(key)) break
-      streak++
-      cursor.setDate(cursor.getDate() - 1)
+  let currentStreak = 0
+  let checkDate = new Date()
+  while (true) {
+    const iso = checkDate.toISOString().slice(0, 10)
+    const val = byDate.get(iso) ?? 0
+    if (qualifies(val)) {
+      currentStreak++
+      checkDate.setDate(checkDate.getDate() - 1)
+    } else {
+      if (currentStreak === 0 && iso === todayISO()) {
+        checkDate.setDate(checkDate.getDate() - 1)
+        continue
+      }
+      break
     }
   }
 
-  const weekStart = currentWeekStart()
-  const weeklyTotal = dates.filter(d => d >= weekStart).reduce((s, d) => s + byDay.get(d)!, 0)
+  let bestStreak = 0
+  let tempStreak = 0
+  const sortedDates = [...byDate.keys()].sort()
+  let prevDate: Date | null = null
 
-  const monthStart = currentMonthStart()
-  const monthlyTotal = dates.filter(d => d >= monthStart).reduce((s, d) => s + byDay.get(d)!, 0)
+  for (const dStr of sortedDates) {
+    const val = byDate.get(dStr) ?? 0
+    const curDate = new Date(dStr)
+    if (qualifies(val)) {
+      if (prevDate) {
+        const diffDays = Math.round((curDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24))
+        if (diffDays === 1) {
+          tempStreak++
+        } else {
+          tempStreak = 1
+        }
+      } else {
+        tempStreak = 1
+      }
+      prevDate = curDate
+      if (tempStreak > bestStreak) bestStreak = tempStreak
+    } else {
+      tempStreak = 0
+      prevDate = null
+    }
+  }
 
-  return `Statistics for habit "${habit}":\n` +
-    `- Current streak: ${streak} days\n` +
-    `- Personal best: ${personalBest} in a single day\n` +
-    `- Weekly total (starting Monday): ${weeklyTotal}\n` +
-    `- Monthly total: ${monthlyTotal}`
+  const lines = [
+    `**Statistics for "${habit}" (${unit})**`,
+    target !== undefined ? `Daily Target: ${target} ${unit}` : null,
+    `Total (all time): ${allSum} ${unit} across ${rows.length} entries`,
+    `Last 7 days:  total ${sum7} ${unit} (avg ${avg7}/day)`,
+    `Last 30 days: total ${sum30} ${unit} (avg ${avg30}/day)`,
+    `Current streak: ${currentStreak} day(s)`,
+    `Best streak:    ${bestStreak} day(s)`,
+  ].filter(Boolean)
+
+  return lines.join('\n')
 }
 
 const defineHabit = async (
@@ -218,54 +260,63 @@ const defineHabit = async (
   unit: string,
   dailyTarget?: number,
 ): Promise<string> => {
-  let getResData = ''
   const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
     type: 'doc.get',
     collection: 'notebook',
     docId: `${userId}/tracker/habits.json`,
     replyTo,
   }))
-  if (getRes.ok && getRes.data) getResData = getRes.data
 
-  const data: { habits: HabitDef[] } = getResData
-    ? JSON.parse(getResData)
-    : { habits: [] }
-
-  const idx = data.habits.findIndex(h => h.name === name)
-  const def: HabitDef = { name, unit, ...(dailyTarget !== undefined ? { dailyTarget } : {}) }
-  if (idx >= 0) {
-    data.habits[idx] = def
-  } else {
-    data.habits.push(def)
+  let habits: HabitDef[] = []
+  if (getRes.ok && getRes.data) {
+    try { habits = JSON.parse(getRes.data) } catch { habits = [] }
   }
+
+  const existingIdx = habits.findIndex((h) => h.name.toLowerCase() === name.toLowerCase())
+  const newDef: HabitDef = { name, unit, dailyTarget }
+
+  if (existingIdx >= 0) {
+    habits[existingIdx] = newDef
+  } else {
+    habits.push(newDef)
+  }
+
   await ask<PersistenceMsg, PResult>(persistenceRef, (replyTo) => ({
     type: 'doc.put',
     collection: 'notebook',
     docId: `${userId}/tracker/habits.json`,
-    content: JSON.stringify(data, null, 2),
+    content: JSON.stringify(habits, null, 2),
     replyTo,
   }))
-  return `Habit "${name}" saved (unit: ${unit}${dailyTarget !== undefined ? `, target: ${dailyTarget}` : ''}).`
+
+  const targetStr = dailyTarget !== undefined ? ` (target: ${dailyTarget} ${unit}/day)` : ''
+  return `Habit "${name}" defined with unit "${unit}"${targetStr}.`
 }
 
 const listHabits = async (persistenceRef: ActorRef<any>, userId: string): Promise<string> => {
-  let getResData = ''
   const getRes = await ask<PersistenceMsg, PResult<string>>(persistenceRef, (replyTo) => ({
     type: 'doc.get',
     collection: 'notebook',
     docId: `${userId}/tracker/habits.json`,
     replyTo,
   }))
-  if (getRes.ok && getRes.data) getResData = getRes.data
-  if (!getResData) return 'No habits defined.'
-  const data: { habits: HabitDef[] } = JSON.parse(getResData)
-  if (data.habits.length === 0) return 'No habits defined.'
-  return data.habits.map(h =>
-    `- ${h.name} (${h.unit}${h.dailyTarget !== undefined ? `, target: ${h.dailyTarget}` : ''})`
-  ).join('\n')
+
+  if (!getRes.ok || !getRes.data) {
+    return 'No habits defined yet. Use tracker_define_habit to create one.'
+  }
+
+  try {
+    const habits: HabitDef[] = JSON.parse(getRes.data)
+    if (habits.length === 0) return 'No habits defined yet.'
+    const lines = habits.map((h) => {
+      const targetStr = h.dailyTarget !== undefined ? `, target: ${h.dailyTarget} ${h.unit}/day` : ''
+      return `- **${h.name}** (${h.unit}${targetStr})`
+    })
+    return lines.join('\n')
+  } catch {
+    return 'Failed to parse habits.json.'
+  }
 }
-
-
 
 export const Tracker = (): ActorDef<TrackerMsg, TrackerState> => ({
   initialState: () => ({ persistenceRef: null }),
@@ -287,7 +338,7 @@ export const Tracker = (): ActorDef<TrackerMsg, TrackerState> => ({
 
     invoke: (state, msg, ctx) => {
       if (!state.persistenceRef) {
-        msg.replyTo.send({ type: 'toolError', error: 'Persistence not ready' })
+        msg.replyTo.send({ type: 'error', error: 'Persistence not ready' })
         return { state }
       }
       const dl = state.persistenceRef
@@ -295,50 +346,55 @@ export const Tracker = (): ActorDef<TrackerMsg, TrackerState> => ({
       let promise: Promise<string>
       let habit: string | undefined
       try {
-        if (msg.toolName === trackerLogTool.name) {
-          const args = JSON.parse(msg.arguments) as { habit: string; value: number; date?: string; description?: string }
+        const isLog = msg.urn.endsWith('tracker_log') || msg.urn.endsWith('trackerLog') || msg.urn.endsWith(trackerLogTool.name)
+        const isStats = msg.urn.endsWith('tracker_stats') || msg.urn.endsWith('trackerStats') || msg.urn.endsWith(trackerStatsTool.name)
+        const isDefine = msg.urn.endsWith('define_habit') || msg.urn.endsWith('tracker_define_habit') || msg.urn.endsWith(trackerDefineHabitTool.name)
+        const isList = msg.urn.endsWith('list_habits') || msg.urn.endsWith('tracker_list_habits') || msg.urn.endsWith(trackerListHabitsTool.name)
+
+        const rawInput = typeof msg.input === 'string' ? JSON.parse(msg.input) : (msg.input ?? {})
+        if (isLog) {
+          const args = rawInput as { habit: string; value: number; date?: string; description?: string }
           habit = args.habit
           promise = logHabit(dl, userId, args.habit, args.value, args.date ?? todayISO(), args.description)
-        } else if (msg.toolName === trackerStatsTool.name) {
-          const args = JSON.parse(msg.arguments) as { habit: string }
+        } else if (isStats) {
+          const args = rawInput as { habit: string }
           promise = computeStats(dl, userId, args.habit)
-        } else if (msg.toolName === trackerDefineHabitTool.name) {
-          const args = JSON.parse(msg.arguments) as { name: string; unit: string; dailyTarget?: number }
+        } else if (isDefine) {
+          const args = rawInput as { name: string; unit: string; dailyTarget?: number }
           habit = args.name
           promise = defineHabit(dl, userId, args.name, args.unit, args.dailyTarget)
-        } else if (msg.toolName === trackerListHabitsTool.name) {
+        } else if (isList) {
           promise = listHabits(dl, userId)
         } else {
-          promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
+          promise = Promise.reject(new Error(`Unknown tool: ${msg.urn}`))
         }
       } catch (e) {
         promise = Promise.reject(e)
       }
-      const span = ctx.trace.span(msg.toolName, { toolName: msg.toolName })
+      const span = ctx.trace.span(msg.urn, { urn: msg.urn })
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span, userId, habit }),
-        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error), span }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, urn: msg.urn, result, span, userId, habit }),
+        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, urn: msg.urn, error: String(error), span }),
       )
       return { state }
     },
 
     _done: (state, msg, ctx) => {
       msg.span?.done()
-      msg.replyTo.send({ type: 'toolResult', result: { text: msg.result } })
-      if (
-        (msg.toolName === trackerLogTool.name || msg.toolName === trackerDefineHabitTool.name) &&
-        msg.habit
-      ) {
+      msg.replyTo.send({ type: 'result', output: { text: msg.result } })
+      const isLog = msg.urn.endsWith('tracker_log') || msg.urn.endsWith('trackerLog') || msg.urn.endsWith(trackerLogTool.name)
+      const isDefine = msg.urn.endsWith('define_habit') || msg.urn.endsWith('tracker_define_habit') || msg.urn.endsWith(trackerDefineHabitTool.name)
+      if ((isLog || isDefine) && msg.habit) {
         ctx.publish(NotebookChangeTopic, { type: 'trackerUpdated', userId: msg.userId, habit: msg.habit })
       }
       return { state }
     },
 
     _error: (state, msg, ctx) => {
-      ctx.log.error('tracker error', { tool: msg.toolName, error: msg.error })
+      ctx.log.error('tracker error', { urn: msg.urn, error: msg.error })
       msg.span?.error(msg.error)
-      msg.replyTo.send({ type: 'toolError', error: msg.error })
+      msg.replyTo.send({ type: 'error', error: msg.error })
       return { state }
     },
   }),

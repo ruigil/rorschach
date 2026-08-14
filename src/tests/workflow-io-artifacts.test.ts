@@ -12,7 +12,7 @@ import type {
   WorkflowRunState,
 } from '../plugins/workflows/types.ts'
 import type { WorkflowManagerMsg } from '../plugins/workflows/workflow-manager.ts'
-import type { ToolReply } from '../types/tools.ts'
+import type { SCRReply } from '../types/scr.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 import { PersistenceProviderTopic } from '../types/persistence.ts'
 import { saveWorkflow } from '../plugins/workflows/workflow-store.ts'
@@ -166,11 +166,11 @@ describe('workflow IO and artifacts', () => {
     const runner = system.spawn('capturing-workflow-runner', CapturingRunner(inputs => { capturedInputs = inputs }))
 
     const reply = await handleWorkflowTool(
-      { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1', inputs: { city: 'Paris' } }), replyTo: null as unknown as ActorRef<ToolReply> },
+      { type: 'invoke', urn: 'scr:leaf:workflows.run_start', input: { workflowId: 'workflow-1', inputs: { city: 'Paris' } }, replyTo: null as unknown as ActorRef<SCRReply> },
       { persistenceRef, workflowRunnerRef: runner, ctx: { publish: () => {}, request: { userId: 'anonymous' } } as any },
     )
 
-    expect(reply.type).toBe('toolPending')
+    expect(reply.type).toBe('pending')
     expect(capturedInputs).toEqual({ city: 'Paris' })
     await system.shutdown()
   })
@@ -195,13 +195,13 @@ describe('workflow IO and artifacts', () => {
     }))
 
     const reply = await handleWorkflowTool(
-      { type: 'invoke', toolName: startWorkflowRunTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1', inputs: { city: 'Paris' } }), replyTo: null as unknown as ActorRef<ToolReply> },
+      { type: 'invoke', urn: 'scr:leaf:workflows.run_start', input: { workflowId: 'workflow-1', inputs: { city: 'Paris' } }, replyTo: null as unknown as ActorRef<SCRReply> },
       { persistenceRef, workflowRunnerRef: runner, ctx: { publish: () => {}, request: { userId: 'anonymous' } } as any },
     )
 
-    expect(reply.type).toBe('toolResult')
-    if (reply.type === 'toolResult') {
-      expect(JSON.parse(reply.result.text).status).toBe('blocked')
+    expect(reply.type).toBe('result')
+    if (reply.type === 'result') {
+      expect(JSON.parse((reply.output as any).text).status).toBe('blocked')
     }
     await system.shutdown()
   })

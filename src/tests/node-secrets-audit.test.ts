@@ -103,14 +103,14 @@ describe('secrets audit (phase 3)', () => {
   test('config_get tool returns raw desired, not secret', async () => {
     const res = await ask<any, any>(managerRef, (replyTo) => ({
       type: 'invoke',
-      toolName: 'config_get',
-      arguments: JSON.stringify({ pluginId: 'secrets_plugin' }),
+      urn: 'scr:leaf:config.config_get',
+      input: { pluginId: 'secrets_plugin' },
       userId: 'test',
       replyTo,
     }))
-    expect(res.type).toBe('toolResult')
-    expect(res.result.text).toContain(`\${${SECRET_ENV}}`)
-    expect(res.result.text).not.toContain(SECRET_VALUE)
+    expect(res.type).toBe('result')
+    expect((res.output as any).text).toContain(`\${${SECRET_ENV}}`)
+    expect((res.output as any).text).not.toContain(SECRET_VALUE)
   })
 
   test('observed payload never contains resolved secret', async () => {

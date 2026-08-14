@@ -59,7 +59,7 @@ export type JobLifecycleEvent =
       jobId: string
       status: 'running'
       toolName: string
-      toolRef: ActorRef<ToolMsg>
+      toolRef: ActorRef<any>
       startedAt: number
       userId?: string
       statusText?: string

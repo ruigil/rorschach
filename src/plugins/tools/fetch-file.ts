@@ -1,7 +1,6 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { onMessage, onLifecycle, ask } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { PersistenceProviderTopic } from '../../types/persistence.ts'
 import type { PersistenceMsg, PResult } from '../../types/persistence.ts'
 import type { FetchFileState, FetchFileMsg } from './types.ts'
@@ -125,15 +124,29 @@ export const FetchFile = (): ActorDef<FetchFileMsg, FetchFileState> => ({
     },
 
     invoke: (state, message, ctx) => {
-      const { arguments: rawArgs, replyTo } = message
-      let args: FetchFileArgs = { url: '' }
-      try { args = JSON.parse(rawArgs) as FetchFileArgs } catch { args = { url: rawArgs } }
+      const { input, replyTo } = message
+      let url = ''
+      if (typeof input === 'string') {
+        try {
+          url = (JSON.parse(input) as FetchFileArgs).url || input
+        } catch {
+          url = input
+        }
+      } else if (input && typeof input === 'object' && 'url' in input) {
+        url = String((input as { url: unknown }).url ?? '')
+      }
 
       if (!state.persistenceRef) {
-        replyTo.send({ type: 'toolError', error: 'Persistence provider not ready.' })
+        replyTo.send({ type: 'error', error: 'Persistence provider not ready.' })
         return { state }
       }
 
+      if (!url) {
+        replyTo.send({ type: 'error', error: 'Invalid arguments: url is required' })
+        return { state }
+      }
+
+      const args = { url }
       const span = ctx.trace.span('fetch-file', { url: args.url })
 
       ctx.pipeToSelf(
@@ -147,7 +160,7 @@ export const FetchFile = (): ActorDef<FetchFileMsg, FetchFileState> => ({
     _done: (state, message) => {
       const { key, contentType, bytes, replyTo, span } = message
       span?.done({ bytes, key })
-      replyTo.send({ type: 'toolResult', result: { text: `Downloaded and stored to persistence key: ${key} (${contentType}, ${bytes} bytes)` } })
+      replyTo.send({ type: 'result', output: { text: `Downloaded and stored to persistence key: ${key} (${contentType}, ${bytes} bytes)` } })
       return { state }
     },
 
@@ -155,7 +168,7 @@ export const FetchFile = (): ActorDef<FetchFileMsg, FetchFileState> => ({
       const { url, error, replyTo, span } = message
       ctx.log.error('fetch file failed', { url, error })
       span?.error(error)
-      replyTo.send({ type: 'toolError', error })
+      replyTo.send({ type: 'error', error })
       return { state }
     },
   }),

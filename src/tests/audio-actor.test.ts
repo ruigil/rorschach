@@ -2,7 +2,7 @@ import { afterEach, describe, test, expect } from 'bun:test'
 import { AgentSystem, ask } from '../system/index.ts'
 import { Audio } from '../plugins/tools/audio.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
-import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../types/scr.ts'
 import type { PersistenceMsg, PResult } from '../types/persistence.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 
@@ -37,22 +37,22 @@ describe('audio actor', () => {
 
     await tick()
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       audioRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'tools_audio_text_to_speech',
-        arguments: JSON.stringify({ text: 'hello world' }),
+        urn: 'scr:leaf:tools.audio_text_to_speech',
+        input: { text: 'hello world' },
         replyTo,
-        userId: 'test-user',
       }),
       { timeoutMs: 1000 }
     )
 
-    expect(reply.type).toBe('toolResult')
-    if (reply.type === 'toolResult') {
-      expect(reply.result.text).toContain('Generated speech audio')
-      const audioAttachment = reply.result.attachments?.find(a => a.kind === 'audio')
+    expect(reply.type).toBe('result')
+    if (reply.type === 'result') {
+      const output = reply.output as { text: string; attachments?: Array<{ kind: string; url: string }> }
+      expect(output.text).toContain('Generated speech audio')
+      const audioAttachment = output.attachments?.find(a => a.kind === 'audio')
       expect(audioAttachment?.url).toContain('generated/')
     }
 
@@ -104,21 +104,21 @@ describe('audio actor', () => {
 
     await tick()
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       audioRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'tools_audio_transcribe',
-        arguments: JSON.stringify({ audio: 'test-transcribe.wav', format: 'wav' }),
+        urn: 'scr:leaf:tools.audio_transcribe',
+        input: { audio: 'test-transcribe.wav', format: 'wav' },
         replyTo,
-        userId: 'test-user',
       }),
       { timeoutMs: 2000 }
     )
 
-    expect(reply.type).toBe('toolResult')
-    if (reply.type === 'toolResult') {
-      expect(reply.result.text).toBe('The User said: "hello"')
+    expect(reply.type).toBe('result')
+    if (reply.type === 'result') {
+      const output = reply.output as { text: string }
+      expect(output.text).toBe('The User said: "hello"')
     }
 
     await system.shutdown()

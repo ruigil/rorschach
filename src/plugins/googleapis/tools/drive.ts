@@ -4,7 +4,7 @@ import type { ActorDef, ActorRef } from '../../../system/index.ts'
 import { onMessage, onLifecycle } from '../../../system/index.ts'
 import { ask } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../../../types/scr.ts'
 import type { GoogleToken, TokenStoreMsg } from '../types.ts'
 import { PersistenceProviderTopic } from '../../../types/persistence.ts'
 import type { PersistenceMsg, PResult } from '../../../types/persistence.ts'
@@ -62,9 +62,9 @@ export const driveUploadFileTool = defineTool('googleapis_drive_file_upload', 'U
 // ─── Internal message type ───
 
 type DriveMsg =
-  | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; result: string }
-  | { type: '_error'; replyTo: ActorRef<ToolReply>; error: string }
+  | SCRInvokeMsg
+  | { type: '_done';  replyTo: ActorRef<SCRReply>; result: string }
+  | { type: '_error'; replyTo: ActorRef<SCRReply>; error: string }
   | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
 
 // ─── Helpers ───
@@ -163,21 +163,27 @@ export const Drive = (
         }
 
         const drive = google.drive({ version: 'v3', auth })
-        const args  = JSON.parse(msg.arguments) as Record<string, any>
+        const args  = (typeof msg.input === 'string' ? JSON.parse(msg.input) : (msg.input ?? {})) as Record<string, any>
 
-        if (msg.toolName === driveListFilesTool.name) {
+        const isList = msg.urn.endsWith('file_list') || msg.urn.endsWith('driveListFiles') || msg.urn.endsWith(driveListFilesTool.name)
+        const isSearch = msg.urn.endsWith('file_search') || msg.urn.endsWith('driveSearchFiles') || msg.urn.endsWith(driveSearchFilesTool.name)
+        const isGet = msg.urn.endsWith('file_get') || msg.urn.endsWith('driveGetFile') || msg.urn.endsWith(driveGetFileTool.name)
+        const isDownload = msg.urn.endsWith('file_download') || msg.urn.endsWith('driveDownloadFile') || msg.urn.endsWith(driveDownloadFileTool.name)
+        const isUpload = msg.urn.endsWith('file_upload') || msg.urn.endsWith('driveUploadFile') || msg.urn.endsWith(driveUploadFileTool.name)
+
+        if (isList) {
           const res = await drive.files.list({ pageSize: args.maxResults ?? 20, q: args.folderId ? `'${args.folderId}' in parents and trashed=false` : 'trashed=false', fields: `files(${FILE_FIELDS})` })
           return JSON.stringify(res.data.files)
         }
-        if (msg.toolName === driveSearchFilesTool.name) {
+        if (isSearch) {
           const res = await drive.files.list({ pageSize: args.maxResults ?? 20, q: `${args.query} and trashed=false`, fields: `files(${FILE_FIELDS})` })
           return JSON.stringify(res.data.files)
         }
-        if (msg.toolName === driveGetFileTool.name) {
+        if (isGet) {
           const res = await drive.files.get({ fileId: args.fileId, fields: FILE_FIELDS })
           return JSON.stringify(res.data)
         }
-        if (msg.toolName === driveDownloadFileTool.name) {
+        if (isDownload) {
           const meta = await drive.files.get({ fileId: args.fileId, fields: 'mimeType, name' })
           const mime = meta.data.mimeType ?? ''
           const originalName = meta.data.name ?? `drive-file-${args.fileId}`
@@ -232,7 +238,7 @@ export const Drive = (
 
           return `Downloaded and stored to persistence key: ${finalKey}`
         }
-        if (msg.toolName === driveUploadFileTool.name) {
+        if (isUpload) {
           let uploadName: string, uploadMime: string, body: NodeJS.ReadableStream
 
           if (args.filePath) {
@@ -270,7 +276,7 @@ export const Drive = (
           return `File uploaded: ${res.data.name} (id: ${res.data.id}) — ${res.data.webViewLink}`
         }
 
-        throw new Error(`Unknown Drive tool: ${msg.toolName}`)
+        throw new Error(`Unknown Drive tool: ${msg.urn}`)
       }
 
       ctx.pipeToSelf(
@@ -281,7 +287,7 @@ export const Drive = (
       return { state }
     },
 
-    _done:  (state, msg) => { msg.replyTo.send({ type: 'toolResult', result: { text: msg.result } }); return { state } },
-    _error: (state, msg) => { msg.replyTo.send({ type: 'toolError',  error:  msg.error  }); return { state } },
+    _done:  (state, msg) => { msg.replyTo.send({ type: 'result', output: { text: msg.result } }); return { state } },
+    _error: (state, msg) => { msg.replyTo.send({ type: 'error',  error:  msg.error  }); return { state } },
   }),
 })

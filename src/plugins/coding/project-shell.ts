@@ -1,8 +1,9 @@
 import { Bash, InMemoryFs, MountableFs, OverlayFs, ReadWriteFs } from 'just-bash'
 import type { BashExecResult } from 'just-bash'
-import type { ActorDef, SpanHandle } from '../../system/index.ts'
+import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { defineTool, onMessage, onLifecycle, parseToolArgs } from '../../system/index.ts'
 import type { ProjectShellMsg, ProjectShellState } from './types.ts'
+import type { SCRReply } from '../../types/scr.ts'
 import { HttpWsFrameTopic, OutboundUserMessageTopic } from '../../types/events.ts'
 import { gateWsFrame } from '../../system/permissions/edge.ts'
 import {
@@ -100,23 +101,23 @@ export const codingReadTool = defineTool(
       path: { type: 'string', description: 'Absolute path under /rorschach or /workspace.' },
       offset: {
         type: 'number',
-        description: '1-based start line (default 1).',
+        description: '1-based starting line number (default 1). Must be >= 1.',
       },
       limit: {
         type: 'number',
-        description: `Max lines to return (default ${DEFAULT_READ_LINE_LIMIT}, max ${MAX_READ_LINE_LIMIT}).`,
+        description: `Number of lines to return (default ${DEFAULT_READ_LINE_LIMIT}, max ${MAX_READ_LINE_LIMIT}).`,
       },
     },
     required: ['path'],
   },
 )
 
-const shellQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`
+const shellQuote = (str: string): string => `'${str.replace(/'/g, "'\\''")}'`
 
 const formatExecResult = (result: BashExecResult, cwd?: string): string => {
   const parts: string[] = []
   if (result.stdout) parts.push(result.stdout)
-  if (result.stderr) parts.push(`STDERR:\n${result.stderr}`)
+  if (result.stderr) parts.push(result.stderr)
   if (result.exitCode !== 0) parts.push(`Exit code: ${result.exitCode}`)
   const resolvedCwd = result.env?.PWD || cwd
   if (resolvedCwd) parts.push(`cwd: ${resolvedCwd}`)
@@ -126,31 +127,44 @@ const formatExecResult = (result: BashExecResult, cwd?: string): string => {
 type BashToolArgs = { command: string; cwd?: string; stdin?: string }
 type ReadToolArgs = { path: string; offset?: number; limit?: number }
 
-const parseBashArgs = (raw: string): BashToolArgs => {
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-      const obj = parsed as Record<string, unknown>
-      if (typeof obj.command === 'string') {
-        return {
-          command: obj.command,
-          cwd: typeof obj.cwd === 'string' ? obj.cwd : undefined,
-          stdin: typeof obj.stdin === 'string' ? obj.stdin : undefined,
-        }
+const parseBashArgs = (raw: unknown): BashToolArgs => {
+  if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>
+    if (typeof obj.command === 'string') {
+      return {
+        command: obj.command,
+        cwd: typeof obj.cwd === 'string' ? obj.cwd : undefined,
+        stdin: typeof obj.stdin === 'string' ? obj.stdin : undefined,
       }
     }
-  } catch {
-    // fall through: treat entire payload as the command string
   }
-  return { command: raw }
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        const obj = parsed as Record<string, unknown>
+        if (typeof obj.command === 'string') {
+          return {
+            command: obj.command,
+            cwd: typeof obj.cwd === 'string' ? obj.cwd : undefined,
+            stdin: typeof obj.stdin === 'string' ? obj.stdin : undefined,
+          }
+        }
+      }
+    } catch {
+      // fall through: treat entire payload as the command string
+    }
+    return { command: raw }
+  }
+  return { command: '' }
 }
 
 const replyToolError = (
-  replyTo: { send: (msg: { type: 'toolError'; error: string }) => void },
+  replyTo: ActorRef<SCRReply>,
   span: SpanHandle | null,
   error: string,
 ) => {
-  replyTo.send({ type: 'toolError', error })
+  replyTo.send({ type: 'error', error })
   span?.error(error)
 }
 
@@ -318,10 +332,17 @@ export const ProjectShell = (options: {
       },
 
       invoke: (state, msg, ctx) => {
-        const span = ctx.trace.span(msg.toolName, { toolName: msg.toolName })
+        const span = ctx.trace.span(msg.urn, { urn: msg.urn })
 
-        if (msg.toolName === codingBashTool.name) {
-          const args = parseBashArgs(msg.arguments)
+        const isBash = msg.urn.endsWith('shell_exec') || msg.urn.endsWith('shellExec') || msg.urn.endsWith(codingBashTool.name)
+        const isRead = msg.urn.endsWith('file_read') || msg.urn.endsWith('fileRead') || msg.urn.endsWith(codingReadTool.name)
+        const isGrep = msg.urn.endsWith('file_grep') || msg.urn.endsWith('coding_grep') || msg.urn.endsWith('grep') || msg.urn.endsWith(codingGrepTool.name)
+        const isGlob = msg.urn.endsWith('file_glob') || msg.urn.endsWith('coding_glob') || msg.urn.endsWith('glob') || msg.urn.endsWith(codingGlobTool.name)
+        const isWrite = msg.urn.endsWith('file_write') || msg.urn.endsWith('coding_write') || msg.urn.endsWith('write') || msg.urn.endsWith(codingWriteTool.name)
+        const isStrReplace = msg.urn.endsWith('file_replace_string') || msg.urn.endsWith('file_replace') || msg.urn.endsWith('coding_file_replace') || msg.urn.endsWith('coding_str_replace') || msg.urn.endsWith('str_replace') || msg.urn.endsWith(codingStrReplaceTool.name)
+
+        if (isBash) {
+          const args = parseBashArgs(msg.input)
           if (!args.command) {
             replyToolError(msg.replyTo, span, 'Missing required argument: command')
             return { state }
@@ -351,8 +372,8 @@ export const ProjectShell = (options: {
           return { state }
         }
 
-        if (msg.toolName === codingReadTool.name) {
-          const parsed = parseToolArgs<ReadToolArgs>(msg.arguments, obj => {
+        if (isRead) {
+          const parsed = parseToolArgs<ReadToolArgs>(msg.input, obj => {
             if (typeof obj.path !== 'string' || !obj.path.trim()) return null
             const offset = typeof obj.offset === 'number' ? obj.offset : undefined
             const limit = typeof obj.limit === 'number' ? obj.limit : undefined
@@ -395,8 +416,8 @@ export const ProjectShell = (options: {
           return { state }
         }
 
-        if (msg.toolName === codingGrepTool.name) {
-          const parsed = parseToolArgs<GrepToolArgs>(msg.arguments, obj => {
+        if (isGrep) {
+          const parsed = parseToolArgs<GrepToolArgs>(msg.input, obj => {
             if (typeof obj.pattern !== 'string' || !obj.pattern) return null
             return {
               pattern: obj.pattern,
@@ -439,8 +460,8 @@ export const ProjectShell = (options: {
           return { state }
         }
 
-        if (msg.toolName === codingGlobTool.name) {
-          const parsed = parseToolArgs<GlobToolArgs>(msg.arguments, obj => {
+        if (isGlob) {
+          const parsed = parseToolArgs<GlobToolArgs>(msg.input, obj => {
             if (typeof obj.pattern !== 'string' || !obj.pattern.trim()) return null
             return {
               pattern: obj.pattern,
@@ -475,8 +496,8 @@ export const ProjectShell = (options: {
           return { state }
         }
 
-        if (msg.toolName === codingWriteTool.name) {
-          const parsed = parseToolArgs<WriteToolArgs>(msg.arguments, obj => {
+        if (isWrite) {
+          const parsed = parseToolArgs<WriteToolArgs>(msg.input, obj => {
             if (typeof obj.path !== 'string' || !obj.path.trim()) return null
             if (typeof obj.content !== 'string') return null
             return {
@@ -516,8 +537,8 @@ export const ProjectShell = (options: {
           return { state }
         }
 
-        if (msg.toolName === codingStrReplaceTool.name) {
-          const parsed = parseToolArgs<StrReplaceToolArgs>(msg.arguments, obj => {
+        if (isStrReplace) {
+          const parsed = parseToolArgs<StrReplaceToolArgs>(msg.input, obj => {
             if (typeof obj.path !== 'string' || !obj.path.trim()) return null
             if (typeof obj.old_string !== 'string') return null
             if (typeof obj.new_string !== 'string') return null
@@ -568,7 +589,7 @@ export const ProjectShell = (options: {
           return { state }
         }
 
-        replyToolError(msg.replyTo, span, `Unknown tool: ${msg.toolName}`)
+        replyToolError(msg.replyTo, span, `Unknown tool: ${msg.urn}`)
         return { state }
       },
 
@@ -576,21 +597,21 @@ export const ProjectShell = (options: {
         const nextCwd = nextSessionCwd(msg.result, state.agentCwd || options.projectMount, msg.cwd)
         msg.span?.done({ exitCode: msg.result.exitCode, cwd: nextCwd })
         msg.replyTo.send({
-          type: 'toolResult',
-          result: { text: formatExecResult(msg.result, nextCwd) },
+          type: 'result',
+          output: { text: formatExecResult(msg.result, nextCwd) },
         })
         return { state: { ...state, agentCwd: nextCwd } }
       },
 
       _opDone: (state, msg) => {
         msg.span?.done()
-        msg.replyTo.send({ type: 'toolResult', result: { text: msg.text } })
+        msg.replyTo.send({ type: 'result', output: { text: msg.text } })
         return { state }
       },
 
       _opErr: (state, msg) => {
         msg.span?.error(msg.error)
-        msg.replyTo.send({ type: 'toolError', error: msg.error })
+        msg.replyTo.send({ type: 'error', error: msg.error })
         return { state }
       },
     }),

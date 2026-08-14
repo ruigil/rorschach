@@ -1,7 +1,7 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { AgentSystem, ask } from '../system/index.ts'
 import { FetchFile } from '../plugins/tools/fetch-file.ts'
-import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../types/scr.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
@@ -29,23 +29,23 @@ describe('fetch-file actor', () => {
     const ref = system.spawn('fetch-file', FetchFile())
     await tick()
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       ref,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'tools_file_fetch',
-        arguments: JSON.stringify({ url: 'https://example.com/test.txt' }),
+        urn: 'scr:leaf:tools.fetch_file',
+        input: { url: 'https://example.com/test.txt' },
         replyTo,
-        userId: 'test-user',
       }),
       { timeoutMs: 1000 },
     )
 
-    expect(reply.type).toBe('toolResult')
-    if (reply.type === 'toolResult') {
-      expect(reply.result.text).toContain('Downloaded and stored to persistence key:')
-      expect(reply.result.text).toContain('inbound/test.txt')
-      expect(reply.result.text).toContain('11 bytes')
+    expect(reply.type).toBe('result')
+    if (reply.type === 'result') {
+      const output = reply.output as { text: string }
+      expect(output.text).toContain('Downloaded and stored to persistence key:')
+      expect(output.text).toContain('inbound/test.txt')
+      expect(output.text).toContain('11 bytes')
     }
 
     await system.shutdown()
@@ -64,22 +64,22 @@ describe('fetch-file actor', () => {
     const ref = system.spawn('fetch-file', FetchFile())
     await tick(200)
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       ref,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'tools_file_fetch',
-        arguments: JSON.stringify({ url: 'https://example.com/' }),
+        urn: 'scr:leaf:tools.fetch_file',
+        input: { url: 'https://example.com/' },
         replyTo,
-        userId: 'test-user',
       }),
       { timeoutMs: 2000 },
     )
 
-    expect(reply.type).toBe('toolResult')
-    if (reply.type === 'toolResult') {
-      expect(reply.result.text).toContain('inbound/rorschach-')
-      expect(reply.result.text).toContain('.bin')
+    expect(reply.type).toBe('result')
+    if (reply.type === 'result') {
+      const output = reply.output as { text: string }
+      expect(output.text).toContain('inbound/rorschach-')
+      expect(output.text).toContain('.bin')
     }
 
     await system.shutdown()
@@ -95,20 +95,19 @@ describe('fetch-file actor', () => {
     const ref = system.spawn('fetch-file', FetchFile())
     await tick()
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       ref,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'tools_file_fetch',
-        arguments: JSON.stringify({ url: 'https://example.com/missing' }),
+        urn: 'scr:leaf:tools.fetch_file',
+        input: { url: 'https://example.com/missing' },
         replyTo,
-        userId: 'test-user',
       }),
       { timeoutMs: 1000 },
     )
 
-    expect(reply.type).toBe('toolError')
-    if (reply.type === 'toolError') {
+    expect(reply.type).toBe('error')
+    if (reply.type === 'error') {
       expect(reply.error).toContain('HTTP 404')
     }
 
@@ -125,20 +124,19 @@ describe('fetch-file actor', () => {
     const ref = system.spawn('fetch-file', FetchFile())
     await tick()
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       ref,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'tools_file_fetch',
-        arguments: JSON.stringify({ url: 'https://example.com/fail' }),
+        urn: 'scr:leaf:tools.fetch_file',
+        input: { url: 'https://example.com/fail' },
         replyTo,
-        userId: 'test-user',
       }),
       { timeoutMs: 1000 },
     )
 
-    expect(reply.type).toBe('toolError')
-    if (reply.type === 'toolError') {
+    expect(reply.type).toBe('error')
+    if (reply.type === 'error') {
       expect(reply.error).toContain('Network failure')
     }
 

@@ -5,7 +5,7 @@ import { gateWsFrame } from '../../system/permissions/edge.ts'
 import { NotebookChangeTopic, type NotebookChangeEvent, type Todo } from './types.ts'
 import { readTodos, completeTodo, deleteTodo } from './tools/todos.ts'
 import { readEntry } from './tools/journal.ts'
-import { parseCsv, type CsvRow } from './tools/tracker.ts'
+import { readCsv, type CsvRow } from './tools/tracker.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PList } from '../../types/persistence.ts'
 
 export const sortTodos = (todos: Todo[]): Todo[] => {
@@ -251,13 +251,13 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
             break
           }
           case 'notebook.tracker.entries.request': {
-            const all = await parseCsv(dl, userId)
+            const all = await readCsv(dl, userId)
             const rows = all.filter(r => r.habit === frame.habit)
             sendFrame({ type: 'notebook.tracker.entries', habit: frame.habit, entries: rows })
             break
           }
           case 'notebook.tracker.stats.request': {
-            const all = await parseCsv(dl, userId)
+            const all = await readCsv(dl, userId)
             const rows = all.filter(r => r.habit === frame.habit)
             const stats = calculateStats(rows)
             sendFrame({ type: 'notebook.tracker.stats', habit: frame.habit, stats })
@@ -319,7 +319,7 @@ export const NotebookManager = (): ActorDef<NotebookManagerMsg, NotebookManagerS
           const habitsData = (res.ok && res.data) ? JSON.parse(res.data) : { habits: [] }
           sendFrame({ type: 'notebook.tracker.habits', habits: habitsData.habits })
 
-          const all = await parseCsv(dl, userId)
+          const all = await readCsv(dl, userId)
           const rows = all.filter(r => r.habit === event.habit)
           sendFrame({ type: 'notebook.tracker.entries', habit: event.habit, entries: rows })
 

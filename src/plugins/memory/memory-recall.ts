@@ -1,7 +1,8 @@
 import type { ActorDef, ActorContext, ActorRef, ActorResult, Interceptor } from '../../system/index.ts'
 import { agentLoop, ask, idleLoopState, type LoopState } from '../../system/index.ts'
 import { defineTool, parseToolArgs } from '../../system/index.ts'
-import type { ToolCollection, ToolMsg, ToolReply } from '../../types/tools.ts'
+import type { ToolCollection, ToolMsg } from '../../types/tools.ts'
+import type { SCRReply } from '../../types/scr.ts'
 import type { LlmProviderMsg } from '../../types/llm.ts'
 import type { MessageAttachment } from '../../types/events.ts'
 import type {
@@ -31,18 +32,22 @@ const memorySearchTool = defineTool('memory_search', 'Search memory concepts by 
   required: ['query'],
 })
 
-const memoryExpandTool = defineTool('memory_expand', 'Expand one memory concept by nodeId one graph hop.', {
+const memoryExpandTool = defineTool('memory_expand', 'Traverse the memory graph around a focused concept node.', {
   type: 'object',
   properties: {
-    nodeId: { type: 'number', description: 'Concept nodeId to expand by one graph hop.' },
+    nodeId: { type: 'number', description: 'The nodeId returned by memory_search to expand.' },
   },
   required: ['nodeId'],
 })
 
-const memoryReadTool = defineTool('memory_read', 'Read selected verbatim memory records by recordId. Use this before answering; concept metadata is not final evidence.', {
+const memoryReadTool = defineTool('memory_read', 'Read full source records by their recordIds to verify exact facts, dates, context, or code.', {
   type: 'object',
   properties: {
-    recordIds: { type: 'array', items: { type: 'string' }, description: 'Record IDs selected from memory_search or memory_expand results.' },
+    recordIds: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Record IDs referenced by concept nodes that you want to inspect directly.',
+    },
   },
   required: ['recordIds'],
 })
@@ -62,7 +67,7 @@ export type MemoryRecallWorkerOptions = {
 
 export type MemoryRecallWorkerState = {
   loop:          LoopState
-  replyTo:       ActorRef<ToolReply> | null
+  replyTo:       ActorRef<SCRReply> | null
   selfRef:       ActorRef<MemoryRecallMsg> | null
   llmRef:        ActorRef<LlmProviderMsg> | null
   recordsRef:    ActorRef<MemoryRecordsMsg>
@@ -280,7 +285,7 @@ const recallTools = (state: MemoryRecallWorkerState): ToolCollection => {
 }
 
 export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, options: MemoryRecallWorkerOptions): ActorDef<MemoryRecallMsg, MemoryRecallWorkerState> => {
-  const resetForQuery = (state: MemoryRecallWorkerState, query: string, replyTo: ActorRef<ToolReply>, selfRef: ActorRef<MemoryRecallMsg>): MemoryRecallWorkerState => ({
+  const resetForQuery = (state: MemoryRecallWorkerState, query: string, replyTo: ActorRef<SCRReply>, selfRef: ActorRef<MemoryRecallMsg>): MemoryRecallWorkerState => ({
     ...state,
     replyTo,
     selfRef,
@@ -293,18 +298,18 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
 
   const handleInvoke = (state: MemoryRecallWorkerState, msg: Extract<MemoryRecallMsg, { type: 'invoke' }>, ctx: ActorContext<MemoryRecallMsg>): ActorResult<MemoryRecallMsg, MemoryRecallWorkerState> => {
     const userId = ctx.request.userId
-    const parsed = parseToolArgs<{ query: string }>(msg.arguments, (p) => {
+    const parsed = parseToolArgs<{ query: string }>(msg.input, (p) => {
       const query = typeof p.query === 'string' ? p.query : ''
       return query ? { query } : null
     }, 'Missing query argument')
 
     if (!parsed.ok) {
-      msg.replyTo.send({ type: 'toolError', error: parsed.error })
+      msg.replyTo.send({ type: 'error', error: parsed.error })
       return { state }
     }
 
     if (!state.llmRef) {
-      msg.replyTo.send({ type: 'toolError', error: 'Memory not ready' })
+      msg.replyTo.send({ type: 'error', error: 'Memory not ready' })
       return { state }
     }
 
@@ -322,10 +327,12 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
 
   const handleLocalTool = (state: MemoryRecallWorkerState, msg: Extract<MemoryRecallMsg, { type: 'invoke' }>, ctx: ActorContext<MemoryRecallMsg>): ActorResult<MemoryRecallMsg, MemoryRecallWorkerState> => {
     const userId = ctx.request.userId
+    const isSearch = msg.urn.endsWith('memory_search') || msg.urn.endsWith('search') || msg.urn.endsWith(memorySearchTool.name)
+    const isExpand = msg.urn.endsWith('memory_expand') || msg.urn.endsWith('expand') || msg.urn.endsWith(memoryExpandTool.name)
     const run =
-      msg.toolName === memorySearchTool.name ? runMemorySearch(state, userId, msg.arguments, ctx)
-      : msg.toolName === memoryExpandTool.name ? runMemoryExpand(state, userId, msg.arguments, ctx)
-      : runMemoryRead(state, userId, msg.arguments)
+      isSearch ? runMemorySearch(state, userId, msg.input as string, ctx)
+      : isExpand ? runMemoryExpand(state, userId, msg.input as string, ctx)
+      : runMemoryRead(state, userId, msg.input as string)
     ctx.pipeToSelf(
       run,
       (text) => ({ type: '_localToolDone' as const, replyTo: msg.replyTo, text }),
@@ -358,8 +365,8 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
       }
 
       state.replyTo?.send({
-        type: 'toolResult',
-        result: {
+        type: 'result',
+        output: {
           text: JSON.stringify({
             answer: state.sources.length > 0 ? (finalText || '(no result)') : 'No relevant memory sources were found.',
             sources: sourcePayload(state.sources),
@@ -372,7 +379,7 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
     },
 
     onError: (state, err, ctx) => {
-      state.replyTo?.send({ type: 'toolError', error: err.kind === 'llm' ? String(err.error) : 'Tool loop limit reached' })
+      state.replyTo?.send({ type: 'error', error: err.kind === 'llm' ? String(err.error) : 'Tool loop limit reached' })
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
     },
@@ -382,7 +389,12 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
     const m = msg as MemoryRecallMsg
 
     if (m.type === 'invoke') {
-      if (m.toolName === memorySearchTool.name || m.toolName === memoryExpandTool.name || m.toolName === memoryReadTool.name) {
+      const isLocal =
+        m.urn.endsWith('memory_search') || m.urn.endsWith('search') || m.urn.endsWith(memorySearchTool.name) ||
+        m.urn.endsWith('memory_expand') || m.urn.endsWith('expand') || m.urn.endsWith(memoryExpandTool.name) ||
+        m.urn.endsWith('memory_read') || m.urn.endsWith('read') || m.urn.endsWith(memoryReadTool.name)
+
+      if (isLocal) {
         return handleLocalTool(state, m, ctx)
       }
       if (state.loop.phase !== 'idle') return { state, stash: true }
@@ -390,18 +402,18 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
     }
 
     if (m.type === '_localToolDone') {
-      m.replyTo.send({ type: 'toolResult', result: { text: m.text } })
+      m.replyTo.send({ type: 'result', output: { text: m.text } })
       return { state }
     }
 
     if (m.type === '_localToolErr') {
-      m.replyTo.send({ type: 'toolError', error: m.error })
+      m.replyTo.send({ type: 'error', error: m.error })
       return { state }
     }
 
     if (m.type === '_fallbackSources') {
       if (m.sources.length === 0) {
-        state.replyTo?.send({ type: 'toolResult', result: { text: JSON.stringify({ answer: 'No relevant memory sources were found.', sources: [] }) } })
+        state.replyTo?.send({ type: 'result', output: { text: JSON.stringify({ answer: 'No relevant memory sources were found.', sources: [] }) } })
         parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
         return { state }
       }
@@ -418,7 +430,7 @@ export const MemoryRecallWorker = (parent: ActorRef<MemorySupervisorMsg>, option
     }
 
     if (m.type === '_fallbackErr') {
-      state.replyTo?.send({ type: 'toolResult', result: { text: JSON.stringify({ answer: 'No relevant memory sources were found.', sources: [], warnings: [m.error] }) } })
+      state.replyTo?.send({ type: 'result', output: { text: JSON.stringify({ answer: 'No relevant memory sources were found.', sources: [], warnings: [m.error] }) } })
       parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
       return { state }
     }

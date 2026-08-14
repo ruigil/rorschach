@@ -120,6 +120,23 @@ export default createPluginFactory<GoogleApisConfig>({
       dependsOn: ['tokenStore'],
     },
   },
+  tools: {
+    gmailListMessages: { schema: gmailListMessagesTool.schema, slot: 'gmail' },
+    gmailGetMessage: { schema: gmailGetMessageTool.schema, slot: 'gmail' },
+    gmailSendMessage: { schema: gmailSendMessageTool.schema, slot: 'gmail' },
+    gmailSearch: { schema: gmailSearchTool.schema, slot: 'gmail' },
+    calendarListEvents: { schema: calendarListEventsTool.schema, slot: 'calendar' },
+    calendarCreateEvent: { schema: calendarCreateEventTool.schema, slot: 'calendar' },
+    calendarUpdateEvent: { schema: calendarUpdateEventTool.schema, slot: 'calendar' },
+    calendarDeleteEvent: { schema: calendarDeleteEventTool.schema, slot: 'calendar' },
+    driveListFiles: { schema: driveListFilesTool.schema, slot: 'drive' },
+    driveSearchFiles: { schema: driveSearchFilesTool.schema, slot: 'drive' },
+    driveGetFile: { schema: driveGetFileTool.schema, slot: 'drive' },
+    driveDownloadFile: { schema: driveDownloadFileTool.schema, slot: 'drive' },
+    driveUploadFile: { schema: driveUploadFileTool.schema, slot: 'drive' },
+    youtubeSearchVideos: { schema: youtubeSearchVideosTool.schema, slot: 'youtube' },
+    youtubeVideoDetails: { schema: youtubeVideoDetailsTool.schema, slot: 'youtube' },
+  },
   agents: {
     google: {
       factory: GoogleAgentDescriptor,

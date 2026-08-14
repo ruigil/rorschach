@@ -158,13 +158,13 @@ describe('Unified Config System End-to-End Integration', () => {
   test('config_set tool with empty pluginId returns toolError', async () => {
     const res = await ask<any, any>(managerRef, (replyTo) => ({
       type: 'invoke',
-      toolName: 'config_set',
-      arguments: JSON.stringify({ pluginId: '', patch: { foo: 'bar' } }),
+      urn: 'scr:leaf:config.config_set',
+      input: { pluginId: '', patch: { foo: 'bar' } },
       userId: 'test',
       replyTo,
     }))
 
-    expect(res.type).toBe('toolError')
+    expect(res.type).toBe('error')
     expect(res.error).toContain('pluginId')
 
     const rawFileContents = await Bun.file(tempConfigPath).text()

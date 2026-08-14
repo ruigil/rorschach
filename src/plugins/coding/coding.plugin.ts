@@ -71,6 +71,15 @@ export default createPluginFactory<CodingConfig>({
       },
     },
   },
+  tools: {
+    shellExec: { schema: codingBashTool.schema, slot: 'shell' },
+    fileRead: { schema: codingReadTool.schema, slot: 'shell' },
+    grep: { schema: codingGrepTool.schema, slot: 'shell' },
+    glob: { schema: codingGlobTool.schema, slot: 'shell' },
+    write: { schema: codingWriteTool.schema, slot: 'shell' },
+    strReplace: { schema: codingStrReplaceTool.schema, slot: 'shell' },
+    htmlWritePage: { schema: writeHTMLPageTool.schema, slot: 'documentation' },
+  },
   agents: {
     coding: {
       factory: CodingAgentDescriptor,

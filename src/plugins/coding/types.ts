@@ -2,7 +2,8 @@ import type { ActorRef } from '../../system/index.ts'
 import type { BashExecResult } from 'just-bash'
 import type { ContextSnapshotEvent, AgentModelOptions } from '../../types/agents.ts'
 import type { MessageAttachment, HttpWsFrameEvent } from '../../types/events.ts'
-import type { ToolCollection, ToolInvokeMsg, ToolMsg, ToolReply, ToolSchema } from '../../types/tools.ts'
+import type { ToolCollection, ToolMsg, ToolSchema } from '../../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../../types/scr.ts'
 import type { ContextView, LoopMsg, LoopState, SpanHandle } from '../../system/index.ts'
 import type { HttpRequestMsg } from '../../types/routes.ts'
 import type { PersistenceMsg } from '../../types/persistence.ts'
@@ -42,24 +43,24 @@ export type ProjectShellState = {
 }
 
 export type ProjectShellMsg =
-  | ToolMsg
+  | SCRInvokeMsg
   | { type: '_wsFrame'; event: HttpWsFrameEvent }
   | { type: '_wsBashDone'; result: BashExecResult; userId: string; cmdId: string }
   | { type: '_wsBashErr'; error: string; userId: string; cmdId: string }
   | { type: '_wsAutocompleteDone'; result: BashExecResult; userId: string; cmdId: string }
   | { type: '_wsAutocompleteErr'; error: string; userId: string; cmdId: string }
-  | { type: '_bashDone'; result: BashExecResult; replyTo: ActorRef<ToolReply>; span: SpanHandle | null; cwd: string }
+  | { type: '_bashDone'; result: BashExecResult; replyTo: ActorRef<SCRReply>; span: SpanHandle | null; cwd: string }
   /** Shared success path for tool ops that only return text (read/grep/glob/write/str_replace). */
-  | { type: '_opDone'; text: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_opDone'; text: string; replyTo: ActorRef<SCRReply>; span: SpanHandle | null }
   /** Shared error path for all tool ops (including bash). */
-  | { type: '_opErr'; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_opErr'; error: string; replyTo: ActorRef<SCRReply>; span: SpanHandle | null }
 
 export type PageToolsMsg =
   | HttpRequestMsg
-  | ToolInvokeMsg
+  | SCRInvokeMsg
   | { type: '_done' }
-  | { type: '_writeDone'; replyTo: ActorRef<ToolReply>; text: string; span: SpanHandle | null }
-  | { type: '_writeErr'; replyTo: ActorRef<ToolReply>; error: string; span: SpanHandle | null }
+  | { type: '_writeDone'; replyTo: ActorRef<SCRReply>; text: string; span: SpanHandle | null }
+  | { type: '_writeErr'; replyTo: ActorRef<SCRReply>; error: string; span: SpanHandle | null }
   | { type: 'getDoc'; filename: string; replyTo: ActorRef<{ ok: true; content: string } | { ok: false; error: string }> }
   | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
 

@@ -1,7 +1,7 @@
 import { describe, test, expect, mock } from 'bun:test'
 import { AgentSystem, ask } from '../system/index.ts'
 import { Drive } from '../plugins/googleapis/tools/drive.ts'
-import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../types/scr.ts'
 import type { PersistenceMsg, PResult, PObjGetPayload } from '../types/persistence.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 
@@ -67,21 +67,21 @@ describe('Drive actor with persistence store', () => {
     )
     await tick()
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       driveRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'googleapis_drive_file_download',
-        arguments: JSON.stringify({ fileId: 'file-123' }),
+        urn: 'scr:leaf:googleapis.drive_file_download',
+        input: { fileId: 'file-123' },
         replyTo,
-        userId: 'user-123',
       }),
       { timeoutMs: 1000 }
     )
 
-    expect(reply.type).toBe('toolResult')
-    if (reply.type === 'toolResult') {
-      expect(reply.result.text).toContain('Downloaded and stored to persistence key: inbound/document.txt')
+    expect(reply.type).toBe('result')
+    if (reply.type === 'result') {
+      const output = reply.output as { text: string }
+      expect(output.text).toContain('Downloaded and stored to persistence key: inbound/document.txt')
     }
 
     // Verify it actually placed it in MockPersistenceActor
@@ -133,25 +133,25 @@ describe('Drive actor with persistence store', () => {
     )
     await tick()
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       driveRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'googleapis_drive_file_upload',
-        arguments: JSON.stringify({
+        urn: 'scr:leaf:googleapis.drive_file_upload',
+        input: {
           name: 'uploaded-via-test.txt',
           filePath: 'inbound/upload-test.txt'
-        }),
+        },
         replyTo,
-        userId: 'user-123',
       }),
       { timeoutMs: 1000 }
     )
 
-    expect(reply.type).toBe('toolResult')
-    if (reply.type === 'toolResult') {
-      expect(reply.result.text).toContain('File uploaded: uploaded-via-test.txt')
-      expect(reply.result.text).toContain('id: new-file-id')
+    expect(reply.type).toBe('result')
+    if (reply.type === 'result') {
+      const output = reply.output as { text: string }
+      expect(output.text).toContain('File uploaded: uploaded-via-test.txt')
+      expect(output.text).toContain('id: new-file-id')
     }
 
     await system.shutdown()

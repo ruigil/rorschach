@@ -1,7 +1,6 @@
 import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { onMessage, onLifecycle, ask } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic, type LlmProviderMsg, type LlmProviderReply, type VisionProviderReply } from '../../types/llm.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetPayload } from '../../types/persistence.ts'
 import type { VisionMsg, VisionState, VisionOptions } from './types.ts'
@@ -24,8 +23,6 @@ export const generateImageTool = defineTool('tools_image_generate', 'Generate an
   },
   required: ['prompt'],
 })
-
-
 
 // ─── Helpers ───
 
@@ -88,29 +85,38 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
         return { state: { ...state, persistenceRef: msg.ref } }
       },
 
-      // ── tools_image_analyze invoke ──
       invoke: (state, message, context) => {
-        const { toolName, arguments: args, replyTo } = message
+        const { urn, input, replyTo } = message
         const userId = context.request.userId
 
-        if (toolName === generateImageTool.name) {
+        const isGenerate = urn.endsWith('image_generate') || urn.endsWith('generateImage') || urn.includes('generate')
+
+        if (isGenerate) {
           let prompt = ''
-          try {
-            const parsed = JSON.parse(args) as { prompt: string }
-            prompt = parsed.prompt
-          } catch {
-            replyTo.send({ type: 'toolError', error: 'Invalid arguments: expected JSON with prompt' })
+          if (typeof input === 'string') {
+            try {
+              const parsed = JSON.parse(input) as { prompt?: string }
+              prompt = parsed.prompt || input
+            } catch {
+              prompt = input
+            }
+          } else if (input && typeof input === 'object' && 'prompt' in input) {
+            prompt = String((input as { prompt: unknown }).prompt ?? '')
+          }
+
+          if (!prompt) {
+            replyTo.send({ type: 'error', error: 'Invalid arguments: expected prompt' })
             return { state }
           }
 
           const requestId = crypto.randomUUID()
           context.log.info('vision: generating image', { requestId, prompt })
           if (!state.llmRef) {
-            replyTo.send({ type: 'toolError', error: 'Vision model provider not ready.' })
+            replyTo.send({ type: 'error', error: 'Vision model provider not ready.' })
             return { state }
           }
           if (!state.persistenceRef) {
-            replyTo.send({ type: 'toolError', error: 'Persistence provider not ready.' })
+            replyTo.send({ type: 'error', error: 'Persistence provider not ready.' })
             return { state }
           }
 
@@ -159,12 +165,22 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
         // Default: tools_image_analyze
         let imageUrl = ''
         let prompt = 'Describe this image in detail.'
-        try {
-          const parsed = JSON.parse(args) as { image_url: string; prompt?: string }
-          imageUrl = parsed.image_url
-          if (parsed.prompt) prompt = parsed.prompt
-        } catch {
-          replyTo.send({ type: 'toolError', error: 'Invalid arguments: expected JSON with image_url' })
+        if (typeof input === 'string') {
+          try {
+            const parsed = JSON.parse(input) as { image_url?: string; prompt?: string }
+            imageUrl = parsed.image_url ?? ''
+            if (parsed.prompt) prompt = parsed.prompt
+          } catch {
+            imageUrl = input
+          }
+        } else if (input && typeof input === 'object') {
+          const obj = input as { image_url?: unknown; prompt?: unknown }
+          if (obj.image_url) imageUrl = String(obj.image_url)
+          if (obj.prompt) prompt = String(obj.prompt)
+        }
+
+        if (!imageUrl) {
+          replyTo.send({ type: 'error', error: 'Invalid arguments: expected image_url' })
           return { state }
         }
 
@@ -188,7 +204,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
         const req = state.pending[requestId]
         context.log.info('vision: image URL resolved, sending to LLM', { requestId })
         if (!state.llmRef) {
-          req?.replyTo.send({ type: 'toolError', error: 'Vision model provider not ready.' })
+          req?.replyTo.send({ type: 'error', error: 'Vision model provider not ready.' })
           return { state }
         }
         context.send(state.llmRef, {
@@ -214,7 +230,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
         const { [message.requestId]: req, ...rest } = state.pending
         if (!req) return { state }
         context.log.error('vision: failed to resolve image', { error: message.error })
-        req.replyTo.send({ type: 'toolError', error: `Failed to load image: ${message.error}` })
+        req.replyTo.send({ type: 'error', error: `Failed to load image: ${message.error}` })
         return { state: { ...state, pending: rest } }
       },
 
@@ -225,8 +241,8 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
         const snippet = req.prompt.length > 300 ? `${req.prompt.slice(0, 300)}…` : req.prompt
         const text = `Generated an image from prompt: "${snippet}" and delivered it to the user as an attachment.`
         req.replyTo.send({
-          type: 'toolResult',
-          result: {
+          type: 'result',
+          output: {
             text,
             attachments: [{
               kind: 'image',
@@ -244,7 +260,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
         const { [message.requestId]: req, ...rest } = state.pending
         if (!req) return { state }
         context.log.error('vision: failed to save generated image', { error: message.error })
-        req.replyTo.send({ type: 'toolError', error: `Failed to save image: ${message.error}` })
+        req.replyTo.send({ type: 'error', error: `Failed to save image: ${message.error}` })
         return { state: { ...state, pending: rest } }
       },
 
@@ -254,7 +270,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
 
         if (req.kind === 'analysis') {
           context.log.info('vision: analysis complete', { requestId: message.requestId })
-          req.replyTo.send({ type: 'toolResult', result: { text: req.accumulated || 'No description available.' } })
+          req.replyTo.send({ type: 'result', output: { text: req.accumulated || 'No description available.' } })
           const { [message.requestId]: _, ...rest } = state.pending
           return { state: { ...state, pending: rest } }
         }
@@ -308,7 +324,7 @@ export const Vision = (options: VisionOptions): ActorDef<VisionMsg, VisionState>
           } catch {}
         }
         
-        req.replyTo.send({ type: 'toolError', error: String(message.error) })
+        req.replyTo.send({ type: 'error', error: String(message.error) })
         return { state: { ...state, pending: rest } }
       },
 

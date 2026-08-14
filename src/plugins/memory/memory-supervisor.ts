@@ -55,14 +55,17 @@ export const MemorySupervisor = (
     handler: onMessage<MemorySupervisorMsg, MemorySupervisorState>({
       invoke: (state, msg, context) => {
         if (state.llmRef === null) {
-          msg.replyTo.send({ type: 'toolError', error: 'Memory not ready' })
+          msg.replyTo.send({ type: 'error', error: 'Memory not ready' })
           return { state }
         }
 
         const nextSeq = state.workerIdSeq + 1
         const self    = context.self as ActorRef<MemorySupervisorMsg>
 
-        if (msg.toolName === memoryRecallTool.name) {
+        const isRecall = msg.urn.endsWith('memory_recall') || msg.urn.endsWith('recall') || msg.urn.endsWith(memoryRecallTool.name)
+        const isStore = msg.urn.endsWith('memory_store') || msg.urn.endsWith('store') || msg.urn.endsWith(memoryStoreTool.name)
+
+        if (isRecall) {
           const opts = { model, maxToolLoops, recordsRef: state.recordsRef, kgraphRef: state.kgraphRef, llmRef: state.llmRef }
           const worker = context.spawn(
             `memory-recall-worker-${nextSeq}`,
@@ -72,7 +75,7 @@ export const MemorySupervisor = (
           return { state: { ...state, workerIdSeq: nextSeq } }
         }
 
-        if (msg.toolName === memoryStoreTool.name) {
+        if (isStore) {
           const opts = { model, maxToolLoops, recordsRef: state.recordsRef, kgraphRef: state.kgraphRef, llmRef: state.llmRef }
           const worker = context.spawn(
             `memory-store-worker-${nextSeq}`,
@@ -82,7 +85,7 @@ export const MemorySupervisor = (
           return { state: { ...state, workerIdSeq: nextSeq } }
         }
 
-        msg.replyTo.send({ type: 'toolError', error: `Unknown memory tool: ${msg.toolName}` })
+        msg.replyTo.send({ type: 'error', error: `Unknown memory tool: ${msg.urn}` })
         return { state }
       },
 

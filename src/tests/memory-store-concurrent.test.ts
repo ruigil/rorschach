@@ -4,7 +4,7 @@ import { AgentSystem, ask, staticSource} from '../system/index.ts'
 import {
   MemorySupervisor,
 } from '../plugins/memory/memory-supervisor.ts'
-import type { ToolInvokeMsg, ToolReply } from '../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../types/scr.ts'
 import { LlmProviderTopic } from '../types/llm.ts'
 import type { LlmProviderMsg } from '../types/llm.ts'
 import type { ActorRef } from '../system/index.ts'
@@ -220,20 +220,20 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     )
     expect(linkReply.type).toBe('conceptLinksResult')
 
-    const recallReply = await ask<ToolInvokeMsg, ToolReply>(
-      storeRef as unknown as ActorRef<ToolInvokeMsg>,
+    const recallReply = await ask<SCRInvokeMsg, SCRReply>(
+      storeRef as unknown as ActorRef<SCRInvokeMsg>,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'memory_recall',
-        arguments: JSON.stringify({ query: 'notebook notes storage' }),
+        urn: 'scr:leaf:memory.recall',
+        input: { query: 'notebook notes storage' },
         replyTo,
       }),
       { timeoutMs: 5_000 },
       { userId },
     )
 
-    expect(recallReply.type).toBe('toolResult')
-    const recalled = JSON.parse((recallReply as { type: 'toolResult'; result: { text: string } }).result.text) as { answer: string; sources: Array<{ recordId: string }> }
+    expect(recallReply.type).toBe('result')
+    const recalled = JSON.parse((recallReply as { type: 'result'; output: { text: string } }).output.text) as { answer: string; sources: Array<{ recordId: string }> }
     expect(recalled.answer).toContain('memory-backed')
     expect(recalled.sources).toEqual([expect.objectContaining({ recordId: recordReply.recordId })])
 
@@ -365,20 +365,20 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
 
     await tick()
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
-      storeRef as unknown as ActorRef<ToolInvokeMsg>,
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
+      storeRef as unknown as ActorRef<SCRInvokeMsg>,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'memory_store',
-        arguments: JSON.stringify({ content: markdown, attachments: attachmentsWithData }),
+        urn: 'scr:leaf:memory.store',
+        input: { content: markdown, attachments: attachmentsWithData },
         replyTo,
       }),
       { timeoutMs: 5_000 },
       { userId: 'test-user' },
     )
 
-    expect(reply.type).toBe('toolResult')
-    const result = JSON.parse((reply as { type: 'toolResult'; result: { text: string } }).result.text) as { recordId: string; indexedConcepts: number }
+    expect(reply.type).toBe('result')
+    const result = JSON.parse((reply as { type: 'result'; output: { text: string } }).output.text) as { recordId: string; indexedConcepts: number }
     expect(result.indexedConcepts).toBe(2)
     expect(extractionUserContents).toEqual([markdown])
 
@@ -428,20 +428,20 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     )
     expect(duplicateConceptReply.type).toBe('conceptUpsertResult')
 
-    const recallReply = await ask<ToolInvokeMsg, ToolReply>(
-      storeRef as unknown as ActorRef<ToolInvokeMsg>,
+    const recallReply = await ask<SCRInvokeMsg, SCRReply>(
+      storeRef as unknown as ActorRef<SCRInvokeMsg>,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'memory_recall',
-        arguments: JSON.stringify({ query: 'Which editor does the user prefer?' }),
+        urn: 'scr:leaf:memory.recall',
+        input: { query: 'Which editor does the user prefer?' },
         replyTo,
       }),
       { timeoutMs: 5_000 },
       { userId: 'test-user' },
     )
-    expect(recallReply.type).toBe('toolResult')
-    const toolResult = recallReply as { type: 'toolResult'; result: { text: string; attachments?: MessageAttachment[] } }
-    const recalled = JSON.parse(toolResult.result.text) as { answer: string; sources: Array<{ recordId: string; content: string; attachments?: MessageAttachment[] }> }
+    expect(recallReply.type).toBe('result')
+    const toolResult = recallReply as { type: 'result'; output: { text: string; attachments?: MessageAttachment[] } }
+    const recalled = JSON.parse(toolResult.output.text) as { answer: string; sources: Array<{ recordId: string; content: string; attachments?: MessageAttachment[] }> }
     expect(recalled.answer).toContain('Neovim')
     expect(readPayloads.at(-1)?.records).toEqual(expect.arrayContaining([
       expect.objectContaining({ recordId: result.recordId, attachments: storedAttachments }),
@@ -450,7 +450,7 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
       expect.objectContaining({ recordId: result.recordId, content: markdown, attachments: storedAttachments }),
       expect.objectContaining({ recordId: duplicateRecord.recordId, attachments: storedAttachments }),
     ]))
-    expect(toolResult.result.attachments).toEqual(recalledAttachments)
+    expect(toolResult.output.attachments).toEqual(recalledAttachments)
 
     await system.shutdown()
   })
@@ -497,24 +497,24 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
     await tick(100) // Wait for subscriptions
 
     // 3. Send two concurrent requests
-    const promise1 = ask<ToolInvokeMsg, ToolReply>(
-      storeRef as unknown as ActorRef<ToolInvokeMsg>,
+    const promise1 = ask<SCRInvokeMsg, SCRReply>(
+      storeRef as unknown as ActorRef<SCRInvokeMsg>,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'memory_store',
-        arguments: JSON.stringify({ content: 'I like apples' }),
+        urn: 'scr:leaf:memory.store',
+        input: { content: 'I like apples' },
         replyTo,
       }),
       undefined,
       { userId: 'test-user' }
     )
 
-    const promise2 = ask<ToolInvokeMsg, ToolReply>(
-      storeRef as unknown as ActorRef<ToolInvokeMsg>,
+    const promise2 = ask<SCRInvokeMsg, SCRReply>(
+      storeRef as unknown as ActorRef<SCRInvokeMsg>,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'memory_store',
-        arguments: JSON.stringify({ content: 'I like oranges' }),
+        urn: 'scr:leaf:memory.store',
+        input: { content: 'I like oranges' },
         replyTo,
       }),
       undefined,
@@ -523,14 +523,14 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
 
     const [reply1, reply2] = await Promise.all([promise1, promise2])
 
-    expect(reply1.type).toBe('toolResult')
-    expect(reply2.type).toBe('toolResult')
+    expect(reply1.type).toBe('result')
+    expect(reply2.type).toBe('result')
 
-    if (reply1.type === 'toolResult') {
-      expect(reply1.result.text).toContain('stored')
+    if (reply1.type === 'result') {
+      expect((reply1 as { type: 'result'; output: { text: string } }).output.text).toContain('stored')
     }
-    if (reply2.type === 'toolResult') {
-      expect(reply2.result.text).toContain('stored')
+    if (reply2.type === 'result') {
+      expect((reply2 as { type: 'result'; output: { text: string } }).output.text).toContain('stored')
     }
 
     await system.shutdown()
@@ -551,20 +551,20 @@ describe('Memory Store Actor (Supervisor/Worker)', () => {
 
     await tick()
 
-    const reply = await ask<ToolInvokeMsg, ToolReply>(
-      storeRef as unknown as ActorRef<ToolInvokeMsg>,
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
+      storeRef as unknown as ActorRef<SCRInvokeMsg>,
       (replyTo) => ({
         type: 'invoke',
-        toolName: 'memory_store',
-        arguments: JSON.stringify({ content: 'test' }),
+        urn: 'scr:leaf:memory.store',
+        input: { content: 'test' },
         replyTo,
       }),
       undefined,
       { userId: 'test-user' }
     )
 
-    expect(reply.type).toBe('toolError')
-    if (reply.type === 'toolError') {
+    expect(reply.type).toBe('error')
+    if (reply.type === 'error') {
       expect(reply.error).toBe('Memory not ready')
     }
 

@@ -9,7 +9,7 @@ import { WorkflowEventTopic } from '../plugins/workflows/types.ts'
 import type { Workflow, WorkflowRunState } from '../plugins/workflows/types.ts'
 import { OutboundUserMessageTopic, HttpWsFrameTopic } from '../types/events.ts'
 import { WorkflowManager, type WorkflowManagerMsg } from '../plugins/workflows/workflow-manager.ts'
-import type { ToolReply } from '../types/tools.ts'
+import type { SCRReply } from '../types/scr.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 import { PersistenceProviderTopic } from '../types/persistence.ts'
 
@@ -248,17 +248,17 @@ describe('workflow store', () => {
     }
 
     const listReply = await handleWorkflowTool(
-      { type: 'invoke', toolName: listWorkflowsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply> },
+      { type: 'invoke', urn: 'scr:leaf:workflows.list', input: {}, replyTo: null as unknown as ActorRef<SCRReply> },
       { persistenceRef, workflowRunnerRef: runner, ctx },
     )
-    expect(listReply.type).toBe('toolResult')
-    if (listReply.type === 'toolResult') expect(listReply.result.text).toContain('Ship Workflow Workspace')
+    expect(listReply.type).toBe('result')
+    if (listReply.type === 'result') expect((listReply.output as any).text).toContain('Ship Workflow Workspace')
 
     const graphReply = await handleWorkflowTool(
-      { type: 'invoke', toolName: showWorkflowGraphTool.name, arguments: JSON.stringify({ workflowId: 'workflow-1' }), replyTo: null as unknown as ActorRef<ToolReply> },
+      { type: 'invoke', urn: 'scr:leaf:workflows.graph_show', input: { workflowId: 'workflow-1' }, replyTo: null as unknown as ActorRef<SCRReply> },
       { persistenceRef, workflowRunnerRef: runner, ctx },
     )
-    expect(graphReply.type).toBe('toolResult')
+    expect(graphReply.type).toBe('result')
     expect(events.map(event => JSON.parse(event.text))).toContainEqual({ type: 'workflow.graph', workflowId: 'workflow-1' })
 
     await system.shutdown()
@@ -270,7 +270,7 @@ describe('workflow store', () => {
     const runner = system.spawn('workflow-runner', FakeRunner())
 
     const reply = await handleWorkflowTool(
-      { type: 'invoke', toolName: saveWorkflowTool.name, arguments: JSON.stringify({
+      { type: 'invoke', urn: 'scr:leaf:workflows.save', input: {
         goal: 'Learn antigravity',
         summary: 'Decided to use Gemini 3.5.',
         tasks: [{
@@ -281,14 +281,14 @@ describe('workflow store', () => {
           dependencies: [],
           agentMode: 'tool-executor',
         }],
-      }), replyTo: null as unknown as ActorRef<ToolReply> },
+      }, replyTo: null as unknown as ActorRef<SCRReply> },
       { persistenceRef, workflowRunnerRef: runner, ctx: { request: { userId: 'u1' }, publish: () => {} } as any },
     )
 
-    expect(reply.type).toBe('toolResult')
-    if (reply.type === 'toolResult') {
-      expect(reply.result.text).toContain('Workflow saved')
-      expect(reply.result.text).toContain('1 tasks')
+    expect(reply.type).toBe('result')
+    if (reply.type === 'result') {
+      expect((reply.output as any).text).toContain('Workflow saved')
+      expect((reply.output as any).text).toContain('1 tasks')
     }
 
     await system.shutdown()
@@ -314,16 +314,16 @@ describe('workflow store', () => {
     }
 
     const reply = await handleWorkflowTool(
-      { type: 'invoke', toolName: updateWorkflowTool.name, arguments: JSON.stringify({
+      { type: 'invoke', urn: 'scr:leaf:workflows.update', input: {
         workflowId: initialWorkflow.id,
         goal: 'Updated Goal',
-      }), replyTo: null as unknown as ActorRef<ToolReply> },
+      }, replyTo: null as unknown as ActorRef<SCRReply> },
       { persistenceRef, workflowRunnerRef: runner, ctx },
     )
 
-    expect(reply.type).toBe('toolResult')
-    if (reply.type === 'toolResult') {
-      expect(reply.result.text).toContain('updated successfully')
+    expect(reply.type).toBe('result')
+    if (reply.type === 'result') {
+      expect((reply.output as any).text).toContain('updated successfully')
     }
     expect(events).toContainEqual({ userId: 'u1', workflowId: initialWorkflow.id })
 
@@ -336,13 +336,13 @@ describe('workflow store', () => {
     const runner = system.spawn('workflow-runner', FakeRunner())
 
     const reply = await handleWorkflowTool(
-      { type: 'invoke', toolName: listExecutionToolsTool.name, arguments: '{}', replyTo: null as unknown as ActorRef<ToolReply> },
+      { type: 'invoke', urn: 'scr:leaf:workflows.execution_tools_list', input: {}, replyTo: null as unknown as ActorRef<SCRReply> },
       { persistenceRef, workflowRunnerRef: runner, ctx: { request: { userId: 'u1' }, publish: () => {} } as any },
     )
 
-    expect(reply.type).toBe('toolResult')
-    if (reply.type === 'toolResult') {
-      const listed = JSON.parse(reply.result.text) as Array<{ name: string; description: string }>
+    expect(reply.type).toBe('result')
+    if (reply.type === 'result') {
+      const listed = JSON.parse((reply.output as any).text) as Array<{ name: string; description: string }>
       expect(listed).toEqual([{ name: 'coding_file_read', description: 'Read a file.' }])
     }
 

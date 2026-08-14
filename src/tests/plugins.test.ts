@@ -77,13 +77,13 @@ describe('Config Actor & Routes & Tools (desired plane)', () => {
 
     const reply = await ask<any, any>(managerRef, (replyTo) => ({
       type: 'invoke',
-      toolName: 'plugins_load',
-      arguments: JSON.stringify({ modulePath: './analytics.ts' }),
+      urn: 'scr:leaf:config.plugins_load',
+      input: { modulePath: './analytics.ts' },
       userId: 'test',
       replyTo,
     }))
-    expect(reply.type).toBe('toolResult')
-    expect(reply.result.text).toContain('analytics')
+    expect(reply.type).toBe('result')
+    expect((reply.output as any).text).toContain('analytics')
 
     const raw = await Bun.file(tempPath).text()
     const parsed = JSON.parse(raw)

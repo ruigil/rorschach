@@ -268,9 +268,9 @@ export const ConfigActor = (
         return { state }
       },
 
-      invoke: (state, { toolName, arguments: rawArgs, replyTo }) => {
+      invoke: (state, { urn, input, replyTo }) => {
         if (!state.source) {
-          replyTo.send({ type: 'toolError', error: 'configPath not configured' })
+          replyTo.send({ type: 'error', error: 'configPath not configured' })
           return { state }
         }
         const source = state.source
@@ -278,90 +278,93 @@ export const ConfigActor = (
 
         const handleToolInvoke = async () => {
           try {
-            const parsed = parseToolArgs(rawArgs, (obj) => obj)
+            const parsed = parseToolArgs(input, (obj) => obj)
             if (!parsed.ok) {
-              replyTo.send({ type: 'toolError', error: parsed.error })
+              replyTo.send({ type: 'error', error: parsed.error })
               return
             }
             const params = parsed.value
 
-            switch (toolName) {
-              case 'config_get': {
-                const pluginId = typeof params.pluginId === 'string' ? params.pluginId : undefined
-                const data = await getConfig(source, pluginId)
-                replyTo.send({ type: 'toolResult', result: { text: JSON.stringify(data, null, 2) } })
-                return
-              }
+            const isGet = urn.endsWith('config_get') || urn.endsWith('get')
+            const isSet = urn.endsWith('config_set') || urn.endsWith('set')
+            const isLoad = urn.endsWith('plugins_load') || urn.endsWith('load')
+            const isUnload = urn.endsWith('plugins_unload') || urn.endsWith('unload')
+            const isReload = urn.endsWith('plugins_reload') || urn.endsWith('reload')
 
-              case 'config_set': {
-                const pluginId = String(params.pluginId ?? '')
-                if (!pluginId) {
-                  replyTo.send({ type: 'toolError', error: 'pluginId is required' })
-                  return
-                }
-                const patch = (params.patch as Record<string, unknown>) ?? {}
-                const { revision } = await setConfig(source, pluginId, patch)
-                replyTo.send({
-                  type: 'toolResult',
-                  result: { text: JSON.stringify({ accepted: true, revision }) },
-                })
-                return
-              }
-
-              case 'plugins_load': {
-                const modulePath = String(params.modulePath ?? '')
-                if (!modulePath) {
-                  replyTo.send({ type: 'toolError', error: 'modulePath is required' })
-                  return
-                }
-                const { revision } = await addPlugin(source, modulePath)
-                replyTo.send({
-                  type: 'toolResult',
-                  result: { text: JSON.stringify({ accepted: true, revision, details: { modulePath } }) },
-                })
-                return
-              }
-
-              case 'plugins_unload': {
-                const pluginId = String(params.pluginId ?? '')
-                if (!pluginId) {
-                  replyTo.send({ type: 'toolError', error: 'pluginId is required' })
-                  return
-                }
-                const { revision } = await removePlugin(source, pluginId, observedPlugins)
-                replyTo.send({
-                  type: 'toolResult',
-                  result: { text: JSON.stringify({ accepted: true, revision, details: { id: pluginId } }) },
-                })
-                return
-              }
-
-              case 'plugins_reload': {
-                const pluginId = String(params.pluginId ?? '')
-                if (!pluginId) {
-                  replyTo.send({ type: 'toolError', error: 'pluginId is required' })
-                  return
-                }
-                const { revision, found } = await reloadPlugin(source, pluginId, observedPlugins)
-                if (!found) {
-                  replyTo.send({
-                    type: 'toolError',
-                    error: `Plugin '${pluginId}' not found in desired state`,
-                  })
-                  return
-                }
-                replyTo.send({
-                  type: 'toolResult',
-                  result: { text: JSON.stringify({ accepted: true, revision, details: { id: pluginId } }) },
-                })
-                return
-              }
-
-              default:
-                replyTo.send({ type: 'toolError', error: `Unknown tool: ${toolName}` })
+            if (isGet) {
+              const pluginId = typeof params.pluginId === 'string' ? params.pluginId : undefined
+              const data = await getConfig(source, pluginId)
+              replyTo.send({ type: 'result', output: { text: JSON.stringify(data, null, 2) } })
+              return
             }
+
+            if (isSet) {
+              const pluginId = String(params.pluginId ?? '')
+              if (!pluginId) {
+                replyTo.send({ type: 'error', error: 'pluginId is required' })
+                return
+              }
+              const patch = (params.patch as Record<string, unknown>) ?? {}
+              const { revision } = await setConfig(source, pluginId, patch)
+              replyTo.send({
+                type: 'result',
+                output: { text: JSON.stringify({ accepted: true, revision }) },
+              })
+              return
+            }
+
+            if (isLoad) {
+              const modulePath = String(params.modulePath ?? '')
+              if (!modulePath) {
+                replyTo.send({ type: 'error', error: 'modulePath is required' })
+                return
+              }
+              const { revision } = await addPlugin(source, modulePath)
+              replyTo.send({
+                type: 'result',
+                output: { text: JSON.stringify({ accepted: true, revision, details: { modulePath } }) },
+              })
+              return
+            }
+
+            if (isUnload) {
+              const pluginId = String(params.pluginId ?? '')
+              if (!pluginId) {
+                replyTo.send({ type: 'error', error: 'pluginId is required' })
+                return
+              }
+              const { revision } = await removePlugin(source, pluginId, observedPlugins)
+              replyTo.send({
+                type: 'result',
+                output: { text: JSON.stringify({ accepted: true, revision, details: { id: pluginId } }) },
+              })
+              return
+            }
+
+            if (isReload) {
+              const pluginId = String(params.pluginId ?? '')
+              if (!pluginId) {
+                replyTo.send({ type: 'error', error: 'pluginId is required' })
+                return
+              }
+              const { revision, found } = await reloadPlugin(source, pluginId, observedPlugins)
+              if (!found) {
+                replyTo.send({
+                  type: 'error',
+                  error: `Plugin '${pluginId}' not found in desired state`,
+                })
+                return
+              }
+              replyTo.send({
+                type: 'result',
+                output: { text: JSON.stringify({ accepted: true, revision, details: { id: pluginId } }) },
+              })
+              return
+            }
+
+            replyTo.send({ type: 'error', error: `Unknown tool: ${urn}` })
           } catch (err) {
-            replyTo.send({ type: 'toolError', error: String(err) })
+            replyTo.send({ type: 'error', error: String(err) })
           }
         }
         

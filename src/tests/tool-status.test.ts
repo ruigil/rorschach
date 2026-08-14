@@ -1,27 +1,21 @@
 import { describe, test, expect } from 'bun:test'
 import { AgentSystem, ask } from '../system/index.ts'
 import type { ActorDef, ActorRef } from '../system/index.ts'
-import { ToolStatus, toolStatusTool } from '../plugins/tools/tool-status.ts'
+import { ToolStatus } from '../plugins/tools/tool-status.ts'
 import { JobRegistryTopic } from '../types/tools.ts'
-import type { JobLifecycleEvent, ToolMsg, ToolReply } from '../types/tools.ts'
+import type { JobLifecycleEvent } from '../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../types/scr.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
-// A fake long-running tool: stores jobs and publishes completion to
-// JobRegistryTopic when `_finish` is received, simulating the topic-based
-// completion flow.
-//
-// The tool itself no longer needs a `jobStatus` handler — tools_status serves
-// status from its cached topic-derived state.
-
 type FakeToolState = { jobs: Record<string, { result: string }> }
 type FakeInternalMsg = { type: '_finish'; jobId: string } | { type: '_fail'; jobId: string; error: string }
-type FakeMsg = ToolMsg | FakeInternalMsg
+type FakeMsg = SCRInvokeMsg | FakeInternalMsg
 
 const createFakeTool = (): ActorDef<FakeMsg, FakeToolState> => ({
   handler: (state, msg, ctx) => {
     if (msg.type === 'invoke') {
-      msg.replyTo.send({ type: 'toolError', error: 'use direct registry events' })
+      msg.replyTo.send({ type: 'error', error: 'use direct registry events' })
       return { state }
     }
     if (msg.type === '_finish') {
@@ -45,12 +39,12 @@ describe('tools_status', () => {
     const system = await AgentSystem()
     const fakeTool = system.spawn('fake-tool', createFakeTool(), { state: {
       jobs: { 'job-1': { result: 'eventual' } },
-    } }) as unknown as ActorRef<ToolMsg>
+    } })
 
     const statusRef = system.spawn(
-      "tool-status",
+      'tool-status',
       ToolStatus(),
-    ) as unknown as ActorRef<ToolMsg>
+    )
     await tick()
 
     // Register a running job in the JobRegistry — tools_status picks it up via subscription
@@ -63,22 +57,21 @@ describe('tools_status', () => {
     })
     await tick()
 
-    const reply = await ask<ToolMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       statusRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: toolStatusTool.name,
-        arguments: JSON.stringify({ jobId: 'job-1' }),
+        urn: 'scr:leaf:tools.tool_status',
+        input: { jobId: 'job-1' },
         replyTo,
-        userId: 'tester',
       }),
       { timeoutMs: 2000 },
     )
 
-    expect(reply.type).toBe('toolResult')
-    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('still running')
-    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('job-1')
-    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('fake-tool')
+    expect(reply.type).toBe('result')
+    expect(((reply as { type: 'result'; output: { text: string } }).output).text).toContain('still running')
+    expect(((reply as { type: 'result'; output: { text: string } }).output).text).toContain('job-1')
+    expect(((reply as { type: 'result'; output: { text: string } }).output).text).toContain('fake-tool')
     await system.shutdown()
   })
 
@@ -86,12 +79,12 @@ describe('tools_status', () => {
     const system = await AgentSystem()
     const fakeTool = system.spawn('fake-tool-c', createFakeTool(), { state: {
       jobs: { 'job-c': { result: 'all done' } },
-    } }) as unknown as ActorRef<ToolMsg>
+    } })
 
     const statusRef = system.spawn(
       'tool-status-c',
       ToolStatus()
-    ) as unknown as ActorRef<ToolMsg>
+    )
     await tick()
 
     // Register running
@@ -108,21 +101,20 @@ describe('tools_status', () => {
     ;(fakeTool as unknown as ActorRef<FakeInternalMsg>).send({ type: '_finish', jobId: 'job-c' })
     await tick()
 
-    const reply = await ask<ToolMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       statusRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: toolStatusTool.name,
-        arguments: JSON.stringify({ jobId: 'job-c' }),
+        urn: 'scr:leaf:tools.tool_status',
+        input: { jobId: 'job-c' },
         replyTo,
-        userId: 'tester',
       }),
       { timeoutMs: 2000 },
     )
 
-    expect(reply.type).toBe('toolResult')
-    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('completed')
-    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('all done')
+    expect(reply.type).toBe('result')
+    expect(((reply as { type: 'result'; output: { text: string } }).output).text).toContain('completed')
+    expect(((reply as { type: 'result'; output: { text: string } }).output).text).toContain('all done')
     await system.shutdown()
   })
 
@@ -130,12 +122,12 @@ describe('tools_status', () => {
     const system = await AgentSystem()
     const fakeTool = system.spawn('fake-tool-f', createFakeTool(), { state: {
       jobs: { 'job-f': { result: '' } },
-    } }) as unknown as ActorRef<ToolMsg>
+    } })
 
     const statusRef = system.spawn(
       'tool-status-f',
       ToolStatus()
-    ) as unknown as ActorRef<ToolMsg>
+    )
     await tick()
 
     system.publishRetained(JobRegistryTopic, 'job-f', {
@@ -150,21 +142,20 @@ describe('tools_status', () => {
     ;(fakeTool as unknown as ActorRef<FakeInternalMsg>).send({ type: '_fail', jobId: 'job-f', error: 'network timeout' })
     await tick()
 
-    const reply = await ask<ToolMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       statusRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: toolStatusTool.name,
-        arguments: JSON.stringify({ jobId: 'job-f' }),
+        urn: 'scr:leaf:tools.tool_status',
+        input: { jobId: 'job-f' },
         replyTo,
-        userId: 'tester',
       }),
       { timeoutMs: 2000 },
     )
 
-    expect(reply.type).toBe('toolResult')
-    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('failed')
-    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('network timeout')
+    expect(reply.type).toBe('result')
+    expect(((reply as { type: 'result'; output: { text: string } }).output).text).toContain('failed')
+    expect(((reply as { type: 'result'; output: { text: string } }).output).text).toContain('network timeout')
     await system.shutdown()
   })
 
@@ -172,32 +163,31 @@ describe('tools_status', () => {
     const system = await AgentSystem()
     const fakeTool = system.spawn('fake-tool-2', createFakeTool(), { state: {
       jobs: { 'jA': { result: '' }, 'jB': { result: '' } },
-    } }) as unknown as ActorRef<ToolMsg>
+    } })
 
     const statusRef = system.spawn(
       'tool-status-2',
       ToolStatus()
-    ) as unknown as ActorRef<ToolMsg>
+    )
     await tick()
 
     system.publishRetained(JobRegistryTopic, 'jA', { jobId: 'jA', status: 'running', toolName: 't1', toolRef: fakeTool, startedAt: Date.now() })
     system.publishRetained(JobRegistryTopic, 'jB', { jobId: 'jB', status: 'running', toolName: 't2', toolRef: fakeTool, startedAt: Date.now() })
     await tick()
 
-    const reply = await ask<ToolMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       statusRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: toolStatusTool.name,
-        arguments: '{}',
+        urn: 'scr:leaf:tools.tool_status',
+        input: {},
         replyTo,
-        userId: 'tester',
       }),
       { timeoutMs: 2000 },
     )
 
-    expect(reply.type).toBe('toolResult')
-    const text = (reply as { type: 'toolResult'; result: { text: string } }).result.text
+    expect(reply.type).toBe('result')
+    const text = ((reply as { type: 'result'; output: { text: string } }).output).text
     expect(text).toContain('jA')
     expect(text).toContain('jB')
     expect(text).toContain('t1')
@@ -209,12 +199,12 @@ describe('tools_status', () => {
     const system = await AgentSystem()
     const fakeTool = system.spawn('fake-tool-3', createFakeTool(), { state: {
       jobs: {},
-    } }) as unknown as ActorRef<ToolMsg>
+    } })
 
     const statusRef = system.spawn(
       'tool-status-3',
       ToolStatus()
-    ) as unknown as ActorRef<ToolMsg>
+    )
     await tick()
 
     system.publishRetained(JobRegistryTopic, 'jX', { jobId: 'jX', status: 'running', toolName: 'fake-tool', toolRef: fakeTool, startedAt: Date.now() })
@@ -222,20 +212,19 @@ describe('tools_status', () => {
     system.publishRetained(JobRegistryTopic, 'jX', { jobId: 'jX', status: 'cleared' })
     await tick()
 
-    const reply = await ask<ToolMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       statusRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: toolStatusTool.name,
-        arguments: JSON.stringify({ jobId: 'jX' }),
+        urn: 'scr:leaf:tools.tool_status',
+        input: { jobId: 'jX' },
         replyTo,
-        userId: 'tester',
       }),
       { timeoutMs: 2000 },
     )
 
-    expect(reply.type).toBe('toolResult')
-    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toContain('No active job')
+    expect(reply.type).toBe('result')
+    expect(((reply as { type: 'result'; output: { text: string } }).output).text).toContain('No active job')
     await system.shutdown()
   })
 
@@ -244,23 +233,22 @@ describe('tools_status', () => {
     const statusRef = system.spawn(
       'tool-status-4',
       ToolStatus()
-    ) as unknown as ActorRef<ToolMsg>
+    )
     await tick()
 
-    const reply = await ask<ToolMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       statusRef,
       (replyTo) => ({
         type: 'invoke',
-        toolName: toolStatusTool.name,
-        arguments: '{}',
+        urn: 'scr:leaf:tools.tool_status',
+        input: {},
         replyTo,
-        userId: 'tester',
       }),
       { timeoutMs: 2000 },
     )
 
-    expect(reply.type).toBe('toolResult')
-    expect((reply as { type: 'toolResult'; result: { text: string } }).result.text).toBe('No active jobs.')
+    expect(reply.type).toBe('result')
+    expect(((reply as { type: 'result'; output: { text: string } }).output).text).toBe('No active jobs.')
     await system.shutdown()
   })
 })

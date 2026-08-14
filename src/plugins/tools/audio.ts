@@ -1,7 +1,6 @@
 import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { onMessage, onLifecycle, ask } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { LlmProviderTopic, type LlmProviderMsg, type SpeechProviderReply, type TranscriptionProviderReply } from '../../types/llm.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PObjGetPayload } from '../../types/persistence.ts'
 import type { AudioMsg, AudioState, AudioOptions } from './types.ts'
@@ -25,8 +24,6 @@ export const textToSpeechTool = defineTool('tools_audio_text_to_speech', 'Conver
   },
   required: ['text'],
 })
-
-
 
 const DEFAULT_TTS_FORMAT = 'pcm'
 
@@ -119,19 +116,31 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
       },
 
       invoke: (state, message, context) => {
-        const { toolName, arguments: args, replyTo } = message
+        const { urn, input, replyTo } = message
         const userId = context.request.userId
 
-        if (toolName === textToSpeechTool.name) {
+        const isTts = urn.endsWith('text_to_speech') || urn.endsWith('textToSpeech') || urn.includes('speech')
+
+        if (isTts) {
           let text = ''
           const ttsVoice = voice
           let instructions = ''
-          try {
-            const parsed = JSON.parse(args) as { text: string; instructions?: string }
-            text = parsed.text
-            if (parsed.instructions) instructions = parsed.instructions
-          } catch {
-            replyTo.send({ type: 'toolError', error: 'Invalid arguments: expected JSON with text' })
+          if (typeof input === 'string') {
+            try {
+              const parsed = JSON.parse(input) as { text?: string; instructions?: string }
+              text = parsed.text || input
+              if (parsed.instructions) instructions = parsed.instructions
+            } catch {
+              text = input
+            }
+          } else if (input && typeof input === 'object') {
+            const obj = input as { text?: unknown; instructions?: unknown }
+            if (obj.text) text = String(obj.text)
+            if (obj.instructions) instructions = String(obj.instructions)
+          }
+
+          if (!text) {
+            replyTo.send({ type: 'error', error: 'Invalid arguments: text is required' })
             return { state }
           }
 
@@ -139,11 +148,11 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
           
           context.log.info('audio: starting TTS', { requestId, voice: ttsVoice, textLength: text.length })
           if (!state.llmRef) {
-            replyTo.send({ type: 'toolError', error: 'Audio model provider not ready.' })
+            replyTo.send({ type: 'error', error: 'Audio model provider not ready.' })
             return { state }
           }
           if (!state.persistenceRef) {
-            replyTo.send({ type: 'toolError', error: 'Persistence provider not ready.' })
+            replyTo.send({ type: 'error', error: 'Persistence provider not ready.' })
             return { state }
           }
 
@@ -200,12 +209,22 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
         // Default: tools_audio_transcribe
         let audioPath = ''
         let format = 'wav'
-        try {
-          const parsed = JSON.parse(args) as { audio: string; format: string }
-          audioPath = parsed.audio
-          format = parsed.format
-        } catch {
-          replyTo.send({ type: 'toolError', error: 'Invalid arguments: expected JSON with audio and format' })
+        if (typeof input === 'string') {
+          try {
+            const parsed = JSON.parse(input) as { audio?: string; format?: string }
+            audioPath = parsed.audio ?? ''
+            if (parsed.format) format = parsed.format
+          } catch {
+            audioPath = input
+          }
+        } else if (input && typeof input === 'object') {
+          const obj = input as { audio?: unknown; format?: unknown }
+          if (obj.audio) audioPath = String(obj.audio)
+          if (obj.format) format = String(obj.format)
+        }
+
+        if (!audioPath) {
+          replyTo.send({ type: 'error', error: 'Invalid arguments: audio path is required' })
           return { state }
         }
 
@@ -231,7 +250,7 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
 
         context.log.info('audio: audio loaded, sending to LLM for transcription', { requestId })
         if (!state.llmRef) {
-          req.replyTo.send({ type: 'toolError', error: 'Audio model provider not ready.' })
+          req.replyTo.send({ type: 'error', error: 'Audio model provider not ready.' })
           return { state }
         }
         context.send(state.llmRef, {
@@ -249,7 +268,7 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
         const { requestId, error, replyTo } = message
         const { [requestId]: _, ...rest } = state.pending
         context.log.error('audio: failed to load audio file', { requestId, error })
-        replyTo.send({ type: 'toolError', error: `Failed to load audio: ${error}` })
+        replyTo.send({ type: 'error', error: `Failed to load audio: ${error}` })
         return { state: { ...state, pending: rest } }
       },
 
@@ -278,7 +297,7 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
 
         if (req.kind === 'transcription') {
           context.log.info('audio: transcription complete', { requestId: message.requestId })
-          req.replyTo.send({ type: 'toolResult', result: { text: req.accumulated || '(no transcription)' } })
+          req.replyTo.send({ type: 'result', output: { text: req.accumulated || '(no transcription)' } })
           const { [message.requestId]: _, ...rest } = state.pending
           return { state: { ...state, pending: rest } }
         }
@@ -305,7 +324,7 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
           } catch {}
         }
         
-        req.replyTo.send({ type: 'toolError', error: String(message.error) })
+        req.replyTo.send({ type: 'error', error: String(message.error) })
         return { state: { ...state, pending: rest } }
       },
 
@@ -314,14 +333,14 @@ export const Audio = (options: AudioOptions): ActorDef<AudioMsg, AudioState> => 
         const { key, voice, replyTo } = message
         context.log.info('audio: audio saved', { requestId: message.requestId, key })
         const text = `Generated speech audio (voice: ${voice}) and delivered it to the user as an attachment`
-        replyTo.send({ type: 'toolResult', result: { text, attachments: [{ kind: 'audio', url: key }] } })
+        replyTo.send({ type: 'result', output: { text, attachments: [{ kind: 'audio', url: key }] } })
         return { state: { ...state, pending: rest } }
       },
 
       _audioSaveError: (state, message, context) => {
         const { [message.requestId]: _, ...rest } = state.pending
         context.log.error('audio: failed to save TTS output', { error: message.error })
-        message.replyTo.send({ type: 'toolError', error: `Failed to save audio: ${message.error}` })
+        message.replyTo.send({ type: 'error', error: `Failed to save audio: ${message.error}` })
         return { state: { ...state, pending: rest } }
       },
     }),

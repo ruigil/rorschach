@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { AgentSystem, ask, staticSource} from '../system/index.ts'
+import { AgentSystem, ask, staticSource } from '../system/index.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult } from '../types/persistence.ts'
-import { JobRegistryTopic, type JobLifecycleEvent, type ToolMsg, type ToolReply } from '../types/tools.ts'
+import { JobRegistryTopic, type JobLifecycleEvent } from '../types/tools.ts'
 import { Cron } from '../plugins/tools/cron.ts'
 import { MockPersistenceActor } from './mock-persistence.ts'
 import type { ActorRef } from '../system/index.ts'
+import type { SCRInvokeMsg, SCRReply } from '../types/scr.ts'
 
 const tick = (ms = 50) => Bun.sleep(ms)
 
@@ -14,26 +15,27 @@ describe('cron job registry integration', () => {
     const events: JobLifecycleEvent[] = []
     system.subscribe(JobRegistryTopic, e => { events.push(e) })
 
-    const cron = system.spawn('cron', Cron()) as unknown as ActorRef<ToolMsg>
+    const cron = system.spawn('cron', Cron())
     await tick()
 
-    const reply = await ask<ToolMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       cron,
       replyTo => ({
         type: 'invoke',
-        toolName: 'tools_cron_create',
-        arguments: JSON.stringify({
+        urn: 'scr:leaf:tools.cron_create',
+        input: {
           expression: '0 9 * * *',
           prompt: 'daily check-in',
           run_once: true,
-        }),
-        userId: 'u1',
+        },
         replyTo,
       }),
+      undefined,
+      { userId: 'u1' }
     )
 
-    expect(reply.type).toBe('toolPending')
-    if (reply.type !== 'toolPending') return
+    expect(reply.type).toBe('pending')
+    if (reply.type !== 'pending') return
     expect(reply.placeholderText).toContain('Scheduled')
     expect(reply.placeholderText).toContain(reply.jobId)
 
@@ -48,17 +50,18 @@ describe('cron job registry integration', () => {
     })
     await tick()
 
-    const del = await ask<ToolMsg, ToolReply>(
+    const del = await ask<SCRInvokeMsg, SCRReply>(
       cron,
       replyTo => ({
         type: 'invoke',
-        toolName: 'tools_cron_delete',
-        arguments: JSON.stringify({ jobId: reply.jobId }),
-        userId: 'u1',
+        urn: 'scr:leaf:tools.cron_delete',
+        input: { jobId: reply.jobId },
         replyTo,
       }),
+      undefined,
+      { userId: 'u1' }
     )
-    expect(del.type).toBe('toolResult')
+    expect(del.type).toBe('result')
     await tick()
 
     expect(events.some(e => e.jobId === reply.jobId && e.status === 'cleared')).toBe(true)
@@ -172,27 +175,28 @@ describe('cron job registry integration', () => {
 
   test('tools_cron_create respects explicit timezone arguments', async () => {
     const system = await AgentSystem({ source: staticSource({ plugins: [MockPersistenceActor()] }) })
-    const cron = system.spawn('cron-tz', Cron()) as unknown as ActorRef<ToolMsg>
+    const cron = system.spawn('cron-tz', Cron())
     await tick()
 
-    const reply = await ask<ToolMsg, ToolReply>(
+    const reply = await ask<SCRInvokeMsg, SCRReply>(
       cron,
       replyTo => ({
         type: 'invoke',
-        toolName: 'tools_cron_create',
-        arguments: JSON.stringify({
+        urn: 'scr:leaf:tools.cron_create',
+        input: {
           expression: '0 9 * * *',
           prompt: 'morning alert',
           timezone: 'America/New_York',
           run_once: true,
-        }),
-        userId: 'u1',
+        },
         replyTo,
       }),
+      undefined,
+      { userId: 'u1' }
     )
 
-    expect(reply.type).toBe('toolPending')
-    if (reply.type !== 'toolPending') return
+    expect(reply.type).toBe('pending')
+    if (reply.type !== 'pending') return
     expect(reply.placeholderText).toContain('Next run')
     expect(/-0[45]:00/.test(reply.placeholderText ?? '')).toBe(true)
 

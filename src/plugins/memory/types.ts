@@ -1,6 +1,6 @@
 import type { ActorIdentity, ActorRef } from '../../system/index.ts'
 import type { LoopMsg } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../../types/scr.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 import type { ContextTurn } from '../../types/agents.ts'
 import type { MessageAttachment, HttpWsFrameEvent } from '../../types/events.ts'
@@ -145,31 +145,30 @@ export type KgraphMsg =
 
 export type MemoryRecallMsg =
   | LoopMsg
-  | ToolInvokeMsg
-  | { type: '_localToolDone'; replyTo: ActorRef<ToolReply>; text: string }
-  | { type: '_localToolErr'; replyTo: ActorRef<ToolReply>; error: string }
+  | SCRInvokeMsg
+  | { type: '_localToolDone'; replyTo: ActorRef<SCRReply>; text: string }
+  | { type: '_localToolErr'; replyTo: ActorRef<SCRReply>; error: string }
   | { type: '_fallbackSources'; sources: MemoryRecord[]; userId: string }
   | { type: '_fallbackErr'; error: string }
 
 export type MemoryStoreMsg =
   | LlmProviderReply
-  | ToolInvokeMsg
-  | { type: '_recordStored'; replyTo: ActorRef<ToolReply>; record: MemoryRecord; topic?: string; userId: string }
-  | { type: '_recordStoreErr'; replyTo: ActorRef<ToolReply>; error: string }
+  | SCRInvokeMsg
+  | { type: '_recordStored'; replyTo: ActorRef<SCRReply>; record: MemoryRecord; topic?: string; userId: string }
+  | { type: '_recordStoreErr'; replyTo: ActorRef<SCRReply>; error: string }
   | { type: '_indexed'; summary: string }
   | { type: '_indexErr'; error: string }
 
 // ─── Memory supervisor message protocol ───
 
 export type MemorySupervisorMsg =
-  | ToolInvokeMsg
+  | SCRInvokeMsg
   | { type: '_workerDone';  worker: ActorIdentity }
   | { type: '_llmProvider'; ref: ActorRef<LlmProviderMsg> | null }
 
 // ─── Memory records message protocol ───
 
 export type MemoryRecordsMsg =
-  | ToolInvokeMsg
   | { type: 'create'; content: string; title?: string; attachments?: MessageAttachment[]; userId: string; replyTo: ActorRef<MemoryRecord | { error: string }> }
   | { type: 'readMany'; recordIds: string[]; userId: string; replyTo: ActorRef<MemoryRecord[]> }
   | { type: '_created'; replyTo: ActorRef<MemoryRecord | { error: string }>; record: MemoryRecord }

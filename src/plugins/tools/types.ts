@@ -1,5 +1,5 @@
 import type { ActorRef, SpanHandle } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../../types/scr.ts'
 import type { LlmProviderMsg, LlmProviderReply, VisionProviderReply, VideoSubmitReply, VideoPollReply, VideoDownloadReply, TranscriptionProviderReply, SpeechProviderReply } from '../../types/llm.ts'
 import type { PersistenceMsg } from '../../types/persistence.ts'
 
@@ -31,9 +31,9 @@ export type BraveLlmContextResponse = {
 }
 
 export type WebSearchMsg =
-  | ToolInvokeMsg
-  | { type: '_done'; query: string; result: BraveLlmContextResponse; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_err'; query: string; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | SCRInvokeMsg
+  | { type: '_done'; query: string; result: BraveLlmContextResponse; replyTo: ActorRef<SCRReply>; span: SpanHandle | null }
+  | { type: '_err'; query: string; error: string; replyTo: ActorRef<SCRReply>; span: SpanHandle | null }
 
 export type WebSearchActorOptions = {
   apiKey: string
@@ -43,7 +43,7 @@ export type WebSearchActorOptions = {
 // ─── Vision Actor Types ───
 
 export type VisionMsg =
-  | ToolInvokeMsg
+  | SCRInvokeMsg
   | LlmProviderReply
   | VisionProviderReply
   | { type: '_resolved';     requestId: string; imageUrl: string; prompt: string }
@@ -56,7 +56,7 @@ export type VisionMsg =
 export type AnalysisPending = {
   kind: 'analysis'
   accumulated: string
-  replyTo: ActorRef<ToolReply>
+  replyTo: ActorRef<SCRReply>
   userId?: string
 }
 
@@ -64,7 +64,7 @@ export type GenerationPending = {
   kind: 'generation'
   prompt: string
   streamController: ReadableStreamDefaultController<Uint8Array> | null
-  replyTo: ActorRef<ToolReply>
+  replyTo: ActorRef<SCRReply>
   userId?: string
 }
 
@@ -90,10 +90,10 @@ export type PdfState = {
 }
 
 export type PdfMsg =
-  | ToolInvokeMsg
+  | SCRInvokeMsg
   | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
-  | { type: '_done'; key: string; text: string; pages: number; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_err'; key: string; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_done'; key: string; text: string; pages: number; replyTo: ActorRef<SCRReply>; span: SpanHandle | null }
+  | { type: '_err'; key: string; error: string; replyTo: ActorRef<SCRReply>; span: SpanHandle | null }
 
 // ─── Fetch File Actor Types ───
 
@@ -102,28 +102,28 @@ export type FetchFileState = {
 }
 
 export type FetchFileMsg =
-  | ToolInvokeMsg
+  | SCRInvokeMsg
   | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
-  | { type: '_done'; url: string; key: string; contentType: string; bytes: number; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
-  | { type: '_err'; url: string; error: string; replyTo: ActorRef<ToolReply>; span: SpanHandle | null }
+  | { type: '_done'; url: string; key: string; contentType: string; bytes: number; replyTo: ActorRef<SCRReply>; span: SpanHandle | null }
+  | { type: '_err'; url: string; error: string; replyTo: ActorRef<SCRReply>; span: SpanHandle | null }
 
 // ─── Audio Actor Types ───
 
 export type AudioMsg =
-  | ToolInvokeMsg
+  | SCRInvokeMsg
   | TranscriptionProviderReply
   | SpeechProviderReply
-  | { type: '_audioLoaded';    requestId: string; data: string; format: string; replyTo: ActorRef<ToolReply> }
-  | { type: '_audioLoadError'; requestId: string; error: string; replyTo: ActorRef<ToolReply> }
-  | { type: '_audioSaved';     requestId: string; key: string; spokenText: string; voice: string; replyTo: ActorRef<ToolReply> }
-  | { type: '_audioSaveError'; requestId: string; error: string; replyTo: ActorRef<ToolReply> }
+  | { type: '_audioLoaded';    requestId: string; data: string; format: string; replyTo: ActorRef<SCRReply> }
+  | { type: '_audioLoadError'; requestId: string; error: string; replyTo: ActorRef<SCRReply> }
+  | { type: '_audioSaved';     requestId: string; key: string; spokenText: string; voice: string; replyTo: ActorRef<SCRReply> }
+  | { type: '_audioSaveError'; requestId: string; error: string; replyTo: ActorRef<SCRReply> }
   | { type: '_llmProvider';    ref: ActorRef<LlmProviderMsg> | null }
   | { type: '_persistenceRef'; ref: ActorRef<PersistenceMsg> | null }
 
 export type TranscriptionPending = {
   kind: 'transcription'
   accumulated: string
-  replyTo: ActorRef<ToolReply>
+  replyTo: ActorRef<SCRReply>
   userId?: string
 }
 
@@ -133,7 +133,7 @@ export type TtsPending = {
   audioFormat: string
   spokenText: string
   voice: string
-  replyTo: ActorRef<ToolReply>
+  replyTo: ActorRef<SCRReply>
   userId?: string
 }
 
@@ -174,7 +174,7 @@ export type CronState = {
 // ─── Video Actor Types ───
 
 export type VideoMsg =
-  | ToolInvokeMsg
+  | SCRInvokeMsg
   | VideoSubmitReply
   | VideoPollReply
   | VideoDownloadReply
@@ -186,7 +186,7 @@ export type PendingJob = {
   requestId: string
   jobId: string
   pollingUrl: string
-  replyTo: ActorRef<ToolReply>
+  replyTo: ActorRef<SCRReply>
   userId: string
   deadline: number
 }

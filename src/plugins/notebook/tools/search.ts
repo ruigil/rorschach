@@ -1,7 +1,7 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../../system/index.ts'
 import { onLifecycle, onMessage, ask } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../../../types/scr.ts'
 import type { Todo } from '../types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PList } from '../../../types/persistence.ts'
 
@@ -18,9 +18,9 @@ type SearchState = {
 }
 
 type SearchMsg =
-  | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string; span: SpanHandle | null }
-  | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string; span: SpanHandle | null }
+  | SCRInvokeMsg
+  | { type: '_done';  replyTo: ActorRef<SCRReply>; urn: string; result: string; span: SpanHandle | null }
+  | { type: '_error'; replyTo: ActorRef<SCRReply>; urn: string; error: string; span: SpanHandle | null }
   | { type: '_persistenceRef'; ref: ActorRef<any> | null }
   | { type: '_void' }
 
@@ -82,8 +82,6 @@ const searchAll = async (persistenceRef: ActorRef<any>, userId: string, query: s
     : `No results found for "${query}".`
 }
 
-
-
 export const Search = (): ActorDef<SearchMsg, SearchState> => ({
   initialState: () => ({ persistenceRef: null }),
   lifecycle: onLifecycle({
@@ -104,40 +102,46 @@ export const Search = (): ActorDef<SearchMsg, SearchState> => ({
 
     invoke: (state, msg, ctx) => {
       if (!state.persistenceRef) {
-        msg.replyTo.send({ type: 'toolError', error: 'Persistence not ready' })
+        msg.replyTo.send({ type: 'error', error: 'Persistence not ready' })
         return { state }
       }
       const userId = ctx.request.userId
       let promise: Promise<string>
       try {
-        if (msg.toolName === notebookSearchTool.name) {
-          const args = JSON.parse(msg.arguments) as { query: string }
-          promise = searchAll(state.persistenceRef, userId, args.query)
+        let query = ''
+        if (typeof msg.input === 'string') {
+          try { query = (JSON.parse(msg.input) as { query?: string }).query || msg.input } catch { query = msg.input }
+        } else if (msg.input && typeof msg.input === 'object' && 'query' in msg.input) {
+          query = String((msg.input as { query: unknown }).query ?? '')
+        }
+
+        if (!query) {
+          promise = Promise.reject(new Error('Invalid arguments: query is required'))
         } else {
-          promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
+          promise = searchAll(state.persistenceRef, userId, query)
         }
       } catch (e) {
         promise = Promise.reject(e)
       }
-      const span = ctx.trace.span(msg.toolName, { toolName: msg.toolName })
+      const span = ctx.trace.span(msg.urn, { urn: msg.urn })
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span }),
-        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error), span }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, urn: msg.urn, result, span }),
+        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, urn: msg.urn, error: String(error), span }),
       )
       return { state }
     },
 
     _done: (state, msg) => {
       msg.span?.done()
-      msg.replyTo.send({ type: 'toolResult', result: { text: msg.result } })
+      msg.replyTo.send({ type: 'result', output: { text: msg.result } })
       return { state }
     },
 
     _error: (state, msg, ctx) => {
-      ctx.log.error('notebook-search error', { tool: msg.toolName, error: msg.error })
+      ctx.log.error('notebook-search error', { urn: msg.urn, error: msg.error })
       msg.span?.error(msg.error)
-      msg.replyTo.send({ type: 'toolError', error: msg.error })
+      msg.replyTo.send({ type: 'error', error: msg.error })
       return { state }
     },
   }),

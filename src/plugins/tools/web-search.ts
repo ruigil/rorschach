@@ -1,10 +1,8 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { onMessage } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply, ToolSource } from '../../types/tools.ts'
+import type { ToolSource } from '../../types/tools.ts'
 import type { GroundingItem, SourceInfo, BraveLlmContextResponse, WebSearchMsg, WebSearchActorOptions } from './types.ts'
-
-
 
 // ─── Tool schema ───
 
@@ -13,8 +11,6 @@ export const webSearchTool = defineTool('tools_web_search', 'Search the web for 
   properties: { query: { type: 'string', description: 'The search query' } },
   required: ['query'],
 })
-
-
 
 // ─── Brave API fetch ───
 
@@ -68,9 +64,17 @@ export const WebSearch = (options: WebSearchActorOptions): ActorDef<WebSearchMsg
     initialState: null,
     handler: onMessage<WebSearchMsg, null>({
       invoke: (state, message, ctx) => {
-        const { arguments: args, replyTo } = message
+        const { input, replyTo } = message
         let query = ''
-        try { query = (JSON.parse(args) as { query: string }).query } catch { query = args }
+        if (typeof input === 'string') {
+          try {
+            query = (JSON.parse(input) as { query: string }).query || input
+          } catch {
+            query = input
+          }
+        } else if (input && typeof input === 'object' && 'query' in input) {
+          query = String((input as { query: unknown }).query ?? '')
+        }
 
         const span = ctx.trace.span('brave-search', { query })
 
@@ -86,7 +90,7 @@ export const WebSearch = (options: WebSearchActorOptions): ActorDef<WebSearchMsg
         const { result, replyTo, span } = message
         const { text, sources } = formatResult(result)
         span?.done({ resultCount: result.grounding.generic.length })
-        replyTo.send({ type: 'toolResult', result: { text, sources } })
+        replyTo.send({ type: 'result', output: { text, sources } })
         return { state }
       },
 
@@ -94,7 +98,7 @@ export const WebSearch = (options: WebSearchActorOptions): ActorDef<WebSearchMsg
         const { query, error, replyTo, span } = message
         ctx.log.error('web search failed', { query, error })
         span?.error(error)
-        replyTo.send({ type: 'toolError', error })
+        replyTo.send({ type: 'error', error })
         return { state }
       },
     }),

@@ -3,7 +3,7 @@ import type { ActorDef, ActorRef } from '../../../system/index.ts'
 import { onMessage } from '../../../system/index.ts'
 import { ask } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../../../types/scr.ts'
 import type { GoogleToken, TokenStoreMsg } from '../types.ts'
 
 // ─── Tool names & schemas ───
@@ -28,9 +28,9 @@ export const youtubeVideoDetailsTool = defineTool('googleapis_youtube_video_deta
 // ─── Internal message type ───
 
 type YoutubeMsg =
-  | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; result: string }
-  | { type: '_error'; replyTo: ActorRef<ToolReply>; error: string }
+  | SCRInvokeMsg
+  | { type: '_done';  replyTo: ActorRef<SCRReply>; result: string }
+  | { type: '_error'; replyTo: ActorRef<SCRReply>; error: string }
 
 // ─── Actor ───
 
@@ -56,9 +56,12 @@ export const Youtube = (
           }
 
           const youtube = google.youtube({ version: 'v3', auth })
-          const args    = JSON.parse(msg.arguments) as Record<string, any>
+          const args    = (typeof msg.input === 'string' ? JSON.parse(msg.input) : (msg.input ?? {})) as Record<string, any>
 
-          if (msg.toolName === youtubeSearchVideosTool.name) {
+          const isSearch = msg.urn.endsWith('video_search') || msg.urn.endsWith('youtubeSearchVideos') || msg.urn.endsWith(youtubeSearchVideosTool.name)
+          const isDetails = msg.urn.endsWith('video_details') || msg.urn.endsWith('youtubeVideoDetails') || msg.urn.endsWith(youtubeVideoDetailsTool.name)
+
+          if (isSearch) {
             const res = await youtube.search.list({
               q: args.query,
               part: ['snippet'],
@@ -68,15 +71,7 @@ export const Youtube = (
             return JSON.stringify(res.data.items)
           }
 
-          if (msg.toolName === youtubeVideoDetailsTool.name) {
-            const res = await youtube.videos.list({
-              id: [args.videoId],
-              part: ['snippet', 'statistics', 'contentDetails'],
-            })
-            return JSON.stringify(res.data.items)
-          }
-
-          if (msg.toolName === youtubeVideoDetailsTool.name) {
+          if (isDetails) {
             const res = await youtube.videos.list({
               id:   [args.videoId],
               part: ['snippet', 'statistics'],
@@ -96,7 +91,7 @@ export const Youtube = (
             })
           }
 
-          throw new Error(`Unknown YouTube tool: ${msg.toolName}`)
+          throw new Error(`Unknown YouTube tool: ${msg.urn}`)
         }
 
         ctx.pipeToSelf(
@@ -107,8 +102,8 @@ export const Youtube = (
         return { state }
       },
 
-      _done:  (state, msg) => { msg.replyTo.send({ type: 'toolResult', result: { text: msg.result } }); return { state } },
-      _error: (state, msg) => { msg.replyTo.send({ type: 'toolError',  error:  msg.error  }); return { state } },
+      _done:  (state, msg) => { msg.replyTo.send({ type: 'result', output: { text: msg.result } }); return { state } },
+      _error: (state, msg) => { msg.replyTo.send({ type: 'error',  error:  msg.error  }); return { state } },
     }),
   })
 }

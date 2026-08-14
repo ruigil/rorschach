@@ -3,7 +3,8 @@ import type { ActorContext, ActorDef, ActorRef } from '../../system/index.ts'
 import { persistencePluginAdapter } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
-import { JobRegistryTopic, type ToolInvokeMsg, type ToolMsg } from '../../types/tools.ts'
+import { JobRegistryTopic } from '../../types/tools.ts'
+import type { SCRInvokeMsg } from '../../types/scr.ts'
 import type { CronState, CronJob } from './types.ts'
 
 // ─── Tool names & schemas ───
@@ -33,7 +34,7 @@ export const cronListTool = defineTool('tools_cron_list', 'List all scheduled cr
 })
 
 type CronMsg =
-  | ToolInvokeMsg
+  | SCRInvokeMsg
   | { type: '_tick'; jobId: string }
 
 
@@ -95,12 +96,12 @@ const scheduleTimer = (job: CronJob, ctx: { timers: { startSingleTimer: (key: st
 }
 
 /** Arm the schedule on the job bus (create / re-arm / restore). Not used at fire time. */
-const publishArmed = (job: CronJob, ctx: ActorContext<ToolMsg>) => {
+const publishArmed = (job: CronJob, ctx: ActorContext<any>) => {
   ctx.publishRetained(JobRegistryTopic, job.id, {
     jobId: job.id,
     status: 'running',
     toolName: cronCreateTool.name,
-    toolRef: ctx.self as unknown as ActorRef<ToolMsg>,
+    toolRef: ctx.self as unknown as ActorRef<any>,
     startedAt: Date.now(),
     userId: job.userId,
     statusText: `Next run: ${formatLocalDate(job.nextFireAt, job.timezone)}`,
@@ -127,18 +128,31 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
 
   handler: onMessage<CronMsg, CronState>({
     invoke: (state, msg, ctx) => {
-      const { toolName, arguments: rawArgs, replyTo } = msg
+      const { urn, input, replyTo } = msg
 
-      if (toolName === cronCreateTool.name) {
-        let args: { expression: string; prompt: string; run_once?: boolean; timezone?: string }
-        try { args = JSON.parse(rawArgs) } catch {
-          replyTo.send({ type: 'toolError', error: 'Invalid JSON arguments' })
+      const isCreate = urn.endsWith('cron_create') || urn.endsWith('cronCreate') || urn.endsWith(cronCreateTool.name)
+      const isDelete = urn.endsWith('cron_delete') || urn.endsWith('cronDelete') || urn.endsWith(cronDeleteTool.name)
+      const isList = urn.endsWith('cron_list') || urn.endsWith('cronList') || urn.endsWith(cronListTool.name)
+
+      if (isCreate) {
+        let args: { expression?: string; prompt?: string; run_once?: boolean; runOnce?: boolean; timezone?: string } = {}
+        if (typeof input === 'string') {
+          try { args = JSON.parse(input) } catch {
+            replyTo.send({ type: 'error', error: 'Invalid JSON arguments' })
+            return { state }
+          }
+        } else if (input && typeof input === 'object') {
+          args = input as any
+        }
+
+        if (!args.expression || !args.prompt) {
+          replyTo.send({ type: 'error', error: 'Invalid arguments: expression and prompt required' })
           return { state }
         }
 
         const jobTz = args.timezone ?? undefined
         try { CronExpressionParser.parse(args.expression, jobTz ? { tz: jobTz } : undefined) } catch (e) {
-          replyTo.send({ type: 'toolError', error: `Invalid cron expression: ${String(e)}` })
+          replyTo.send({ type: 'error', error: `Invalid cron expression: ${String(e)}` })
           return { state }
         }
 
@@ -149,7 +163,7 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
           id,
           expression: args.expression,
           prompt: args.prompt,
-          runOnce: args.run_once ?? false,
+          runOnce: args.run_once ?? args.runOnce ?? false,
           createdAt: Date.now(),
           lastFiredAt: null,
           nextFireAt: fireAt,
@@ -158,27 +172,35 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
         }
 
         scheduleTimer(job, ctx)
-        // running is published by invokeTool when it sees toolPending (schedule time).
         ctx.log.info('cron job created', { id, expression: args.expression, nextIn: `${Math.round((fireAt - Date.now()) / 1000)}s` })
 
         replyTo.send({
-          type: 'toolPending',
+          type: 'pending',
           jobId: id,
           placeholderText: `Scheduled. Schedule id: ${id}. Next run: ${formatLocalDate(fireAt, jobTz)}.`,
         })
         return { state: { ...state, jobs: { ...state.jobs, [id]: job } } }
       }
 
-      if (toolName === cronDeleteTool.name) {
-        let args: { jobId: string }
-        try { args = JSON.parse(rawArgs) } catch {
-          replyTo.send({ type: 'toolError', error: 'Invalid JSON arguments' })
+      if (isDelete) {
+        let args: { jobId?: string } = {}
+        if (typeof input === 'string') {
+          try { args = JSON.parse(input) } catch {
+            replyTo.send({ type: 'error', error: 'Invalid JSON arguments' })
+            return { state }
+          }
+        } else if (input && typeof input === 'object') {
+          args = input as any
+        }
+
+        if (!args.jobId) {
+          replyTo.send({ type: 'error', error: 'Invalid arguments: jobId required' })
           return { state }
         }
 
         const job = state.jobs[args.jobId]
         if (!job) {
-          replyTo.send({ type: 'toolError', error: `Job ${args.jobId} not found` })
+          replyTo.send({ type: 'error', error: `Job ${args.jobId} not found` })
           return { state }
         }
 
@@ -190,14 +212,14 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
         const { [job.id]: _removed, ...remaining } = state.jobs
         ctx.log.info('cron job deleted', { id: job.id })
 
-        replyTo.send({ type: 'toolResult', result: { text: `Deleted cron job ${job.id}` } })
+        replyTo.send({ type: 'result', output: { text: `Deleted cron job ${job.id}` } })
         return { state: { ...state, jobs: remaining } }
       }
 
-      if (toolName === cronListTool.name) {
+      if (isList) {
         const jobs = Object.values(state.jobs)
         if (jobs.length === 0) {
-          replyTo.send({ type: 'toolResult', result: { text: 'No scheduled cron jobs.' } })
+          replyTo.send({ type: 'result', output: { text: 'No scheduled cron jobs.' } })
           return { state }
         }
 
@@ -206,11 +228,11 @@ export const Cron = (): ActorDef<CronMsg, CronState> => ({
           const lastFired = j.lastFiredAt ? formatLocalDate(j.lastFiredAt, j.timezone) : 'never'
           return `- ${j.id}: "${j.expression}" → ${preview}\n  Next: ${formatLocalDate(j.nextFireAt, j.timezone)}  Last fired: ${lastFired}`
         })
-        replyTo.send({ type: 'toolResult', result: { text: lines.join('\n') } })
+        replyTo.send({ type: 'result', output: { text: lines.join('\n') } })
         return { state }
       }
 
-      replyTo.send({ type: 'toolError', error: `Unknown tool: ${toolName}` })
+      replyTo.send({ type: 'error', error: `Unknown tool: ${urn}` })
       return { state }
     },
 

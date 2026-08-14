@@ -9,53 +9,6 @@ import type { AgentDescriptor } from '../types/agents.ts';
 import type { ToolSchema } from '../types/tools.ts';
 import { OutboundBroadcastTopic } from '../types/events.ts';
 import type { ActorHealth, HealthStatus } from '../types/health.ts';
-
-const SCRToolAdapterActor = (options: {
-  target: ActorRef<any>;
-  toolName: string;
-}): ActorDef<any, null> => ({
-  initialState: null,
-  handler: (state, msg, ctx) => {
-    if (msg.type === 'invoke') {
-      if ('toolName' in msg || 'arguments' in msg) {
-        ctx.send(options.target, msg);
-      } else {
-        const inputStr = typeof msg.input === 'string' ? msg.input : JSON.stringify(msg.input);
-        ctx.ask<any, any>(
-          options.target,
-          (replyTo) => ({
-            type: 'invoke',
-            toolName: options.toolName,
-            arguments: inputStr,
-            replyTo,
-          }),
-          { timeoutMs: 60_000 }
-        ).then(
-          (reply) => {
-            if (reply.type === 'toolResult') {
-              msg.replyTo.send({ type: 'result', output: reply.result });
-            } else if (reply.type === 'toolError') {
-              msg.replyTo.send({ type: 'error', error: reply.error });
-            } else if (reply.type === 'toolPending') {
-              msg.replyTo.send({
-                type: 'pending',
-                jobId: reply.jobId,
-                placeholderText: reply.placeholderText,
-              });
-            } else {
-              msg.replyTo.send({ type: 'error', error: `Unexpected tool response: ${reply.type}` });
-            }
-          },
-          (err) => {
-            msg.replyTo.send({ type: 'error', error: String(err) });
-          }
-        );
-      }
-    }
-    return { state };
-  },
-});
-
 /**
  * Declaration for a sub-actor slot managed by the factory.
  */
@@ -352,12 +305,6 @@ export const createPluginFactory = <
             const ref = activeRefs[toolDecl.slot as string];
             if (ref) {
               const urn = buildUrn('leaf', blueprint.id, toolDecl.schema.function.name);
-              const slotGen = activeSlots[toolDecl.slot as string]?.gen ?? 0;
-              const adapterName = `${blueprint.id}-tool-adapter-${toolDecl.schema.function.name}-${slotGen}`;
-              const adapterRef = ctx.spawn(adapterName, SCRToolAdapterActor({
-                target: ref,
-                toolName: toolDecl.schema.function.name,
-              }));
               const descriptor: SCRDescriptor = {
                 urn,
                 kind: 'leaf',
@@ -366,7 +313,7 @@ export const createPluginFactory = <
                   inputSchema: toolDecl.schema.function.parameters as Record<string, any>,
                 },
                 yieldsPending: toolDecl.mayBeLongRunning || false,
-                target: adapterRef,
+                target: ref,
                 meta: { schema: toolDecl.schema, mayBeLongRunning: toolDecl.mayBeLongRunning },
               };
               ctx.publishRetained(SCRRegistrationTopic, urn, {
@@ -707,12 +654,6 @@ export const createPluginFactory = <
             const ref = activeRefs[toolDecl.slot as string];
             if (ref) {
               const urn = buildUrn('leaf', blueprint.id, toolDecl.schema.function.name);
-              const slotGen = activeSlots[toolDecl.slot as string]?.gen ?? 0;
-              const adapterName = `${blueprint.id}-tool-adapter-${toolDecl.schema.function.name}-${slotGen}`;
-              const adapterRef = ctx.spawn(adapterName, SCRToolAdapterActor({
-                target: ref,
-                toolName: toolDecl.schema.function.name,
-              }));
               const descriptor: SCRDescriptor = {
                 urn,
                 kind: 'leaf',
@@ -721,7 +662,7 @@ export const createPluginFactory = <
                   inputSchema: toolDecl.schema.function.parameters as Record<string, any>,
                 },
                 yieldsPending: toolDecl.mayBeLongRunning || false,
-                target: adapterRef,
+                target: ref,
                 meta: { schema: toolDecl.schema, mayBeLongRunning: toolDecl.mayBeLongRunning },
               };
               ctx.publishRetained(SCRRegistrationTopic, urn, {

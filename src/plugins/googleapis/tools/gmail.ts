@@ -3,7 +3,7 @@ import type { ActorDef, ActorRef } from '../../../system/index.ts'
 import { onMessage } from '../../../system/index.ts'
 import { ask } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../../../types/scr.ts'
 import type { GoogleToken, TokenStoreMsg } from '../types.ts'
 
 // ─── Tool names & schemas ───
@@ -47,9 +47,9 @@ export const gmailSearchTool = defineTool('googleapis_gmail_search', 'Search Gma
 // ─── Internal message type ───
 
 type GmailMsg =
-  | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; result: string }
-  | { type: '_error'; replyTo: ActorRef<ToolReply>; error: string }
+  | SCRInvokeMsg
+  | { type: '_done';  replyTo: ActorRef<SCRReply>; result: string }
+  | { type: '_error'; replyTo: ActorRef<SCRReply>; error: string }
 
 // ─── Helpers ───
 
@@ -107,9 +107,14 @@ export const Gmail = (
         }
 
         const gmail = google.gmail({ version: 'v1', auth })
-        const args  = JSON.parse(msg.arguments) as Record<string, any>
+        const args  = (typeof msg.input === 'string' ? JSON.parse(msg.input) : (msg.input ?? {})) as Record<string, any>
 
-        if (msg.toolName === gmailListMessagesTool.name) {
+        const isList = msg.urn.endsWith('message_list') || msg.urn.endsWith('gmailListMessages') || msg.urn.endsWith(gmailListMessagesTool.name)
+        const isGet = msg.urn.endsWith('message_get') || msg.urn.endsWith('gmailGetMessage') || msg.urn.endsWith(gmailGetMessageTool.name)
+        const isSend = msg.urn.endsWith('message_send') || msg.urn.endsWith('gmailSendMessage') || msg.urn.endsWith(gmailSendMessageTool.name)
+        const isSearch = msg.urn.endsWith('gmail_search') || msg.urn.endsWith('gmailSearch') || msg.urn.endsWith(gmailSearchTool.name)
+
+        if (isList) {
           const res = await gmail.users.messages.list({ userId: 'me', maxResults: args.maxResults ?? 10, labelIds: args.labelIds })
           const msgs = res.data.messages ?? []
           const details = await Promise.all(msgs.slice(0, 50).map(async (m) => {
@@ -119,7 +124,7 @@ export const Gmail = (
           return JSON.stringify(details)
         }
 
-        if (msg.toolName === gmailGetMessageTool.name) {
+        if (isGet) {
           const res = await gmail.users.messages.get({ userId: 'me', id: args.id, format: 'full' })
           const body = extractBody(res.data.payload)
           const subject = header(res.data, 'Subject')
@@ -128,13 +133,13 @@ export const Gmail = (
           return `From: ${from}\nDate: ${date}\nSubject: ${subject}\n\n${body}`
         }
 
-        if (msg.toolName === gmailSendMessageTool.name) {
+        if (isSend) {
           const raw = buildRawEmail(args.to, args.subject, args.body, args.cc)
           await gmail.users.messages.send({ userId: 'me', requestBody: { raw } })
           return `Sent email to ${args.to}`
         }
 
-        if (msg.toolName === gmailSearchTool.name) {
+        if (isSearch) {
           const res = await gmail.users.messages.list({ userId: 'me', q: args.query, maxResults: args.maxResults ?? 10 })
           const messages = await Promise.all(
             (res.data.messages ?? []).map(m =>
@@ -150,7 +155,7 @@ export const Gmail = (
           })))
         }
 
-        throw new Error(`Unknown Gmail tool: ${msg.toolName}`)
+        throw new Error(`Unknown Gmail tool: ${msg.urn}`)
       }
 
       ctx.pipeToSelf(
@@ -161,7 +166,7 @@ export const Gmail = (
       return { state }
     },
 
-    _done:  (state, msg) => { msg.replyTo.send({ type: 'toolResult', result: { text: msg.result } });       return { state } },
-    _error: (state, msg) => { msg.replyTo.send({ type: 'toolError',  error:  msg.error  });       return { state } },
+    _done:  (state, msg) => { msg.replyTo.send({ type: 'result', output: { text: msg.result } }); return { state } },
+    _error: (state, msg) => { msg.replyTo.send({ type: 'error',  error:  msg.error  }); return { state } },
   }),
 })

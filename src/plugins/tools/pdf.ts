@@ -1,7 +1,6 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../system/index.ts'
 import { onMessage, onLifecycle, ask } from '../../system/index.ts'
 import { defineTool } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../types/tools.ts'
 import { getDocumentProxy, extractText } from 'unpdf'
 import { PersistenceProviderTopic } from '../../types/persistence.ts'
 import type { PersistenceMsg, PResult, PObjGetPayload } from '../../types/persistence.ts'
@@ -14,8 +13,6 @@ export const pdfTool = defineTool('tools_pdf_extract_text', 'Extract text conten
   properties: { key: { type: 'string', description: 'Object store key of the PDF file' } },
   required: ['key'],
 })
-
-
 
 // ─── PDF extraction ───
 
@@ -57,12 +54,25 @@ export const PDF = (): ActorDef<PdfMsg, PdfState> => ({
     },
 
     invoke: (state, message, ctx) => {
-      const { arguments: args, replyTo } = message
+      const { input, replyTo } = message
       let key = ''
-      try { key = (JSON.parse(args) as { key: string }).key } catch { key = args }
+      if (typeof input === 'string') {
+        try {
+          key = (JSON.parse(input) as { key?: string }).key || input
+        } catch {
+          key = input
+        }
+      } else if (input && typeof input === 'object' && 'key' in input) {
+        key = String((input as { key: unknown }).key ?? '')
+      }
 
       if (!state.persistenceRef) {
-        replyTo.send({ type: 'toolError', error: 'Persistence provider not ready.' })
+        replyTo.send({ type: 'error', error: 'Persistence provider not ready.' })
+        return { state }
+      }
+
+      if (!key) {
+        replyTo.send({ type: 'error', error: 'Invalid arguments: key is required' })
         return { state }
       }
 
@@ -79,7 +89,7 @@ export const PDF = (): ActorDef<PdfMsg, PdfState> => ({
     _done: (state, message) => {
       const { text, pages, replyTo, span } = message
       span?.done({ pages })
-      replyTo.send({ type: 'toolResult', result: { text: `[${pages} page(s)]\n\n${text}` } })
+      replyTo.send({ type: 'result', output: { text: `[${pages} page(s)]\n\n${text}` } })
       return { state }
     },
 
@@ -87,7 +97,7 @@ export const PDF = (): ActorDef<PdfMsg, PdfState> => ({
       const { key, error, replyTo, span } = message
       ctx.log.error('pdf extraction failed', { key, error })
       span?.error(error)
-      replyTo.send({ type: 'toolError', error })
+      replyTo.send({ type: 'error', error })
       return { state }
     },
   }),

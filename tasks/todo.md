@@ -93,17 +93,17 @@
 > 5.11), and 5.9 (anywhere before 5.10) in parallel. Never delete a legacy type the agent loop still
 > imports; never convert a tool actor without removing the adapter in the same pass.
 
-- [ ] **Task 5.1**: Migrate Tool Actors to Unified SCR Protocol (`src/plugins/tools/`, `src/plugins/notebook/tools/`, `src/plugins/googleapis/tools/`, `src/plugins/coding/`, `src/plugins/config/`, `src/plugins/memory/`, `src/plugins/workflows/workflow-tools.ts`)
-  - [ ] Convert `tools` plugin actors (web-search, vision, audio, video, cron, pdf, fetch-file, tool-status) to `SCRInvokeMsg`/`SCRReply` (`msg.input`, urn branching, `result`/`error`/`pending`).
-  - [ ] Convert `notebook/tools/*` (journal, search, todos, tracker) to SCR protocol.
-  - [ ] Convert `googleapis/tools/*` (calendar, drive, gmail, youtube) to SCR protocol (keep auth ask).
-  - [ ] Convert `coding` page-tools.ts + project-shell.ts (keep HTTP `http.request` path).
-  - [ ] Convert `config/manager.ts` and `memory/*` message unions off `ToolInvokeMsg`.
-  - [ ] Convert `workflows/workflow-tools.ts` handler to `msg.input` + SCR replies.
-  - [ ] **Add SCR leaf descriptor registration** (`blueprint.tools` or manual `SCRRegistrationTopic` publish, direct actor-ref target) for notebook/googleapis/coding/workflows tools — currently only agent `ToolCollection`s exist and no `scr:leaf:*` URNs resolve.
-- [ ] **Task 5.2**: Remove `SCRToolAdapterActor` Bridge (`src/system/factory.ts`)
-  - [ ] Delete `SCRToolAdapterActor` (factory.ts:13–57).
-  - [ ] Remove adapter spawn at factory.ts:357 and :712; set `descriptor.target` to the direct tool ref.
+- [x] **Task 5.1**: Migrate Tool Actors to Unified SCR Protocol (`src/plugins/tools/`, `src/plugins/notebook/tools/`, `src/plugins/googleapis/tools/`, `src/plugins/coding/`, `src/plugins/config/`, `src/plugins/memory/`, `src/plugins/workflows/workflow-tools.ts`)
+  - [x] Convert `tools` plugin actors (web-search, vision, audio, video, cron, pdf, fetch-file, tool-status) to `SCRInvokeMsg`/`SCRReply` (`msg.input`, urn branching, `result`/`error`/`pending`).
+  - [x] Convert `notebook/tools/*` (journal, search, todos, tracker) to SCR protocol.
+  - [x] Convert `googleapis/tools/*` (calendar, drive, gmail, youtube) to SCR protocol (keep auth ask).
+  - [x] Convert `coding` page-tools.ts + project-shell.ts (keep HTTP `http.request` path).
+  - [x] Convert `config/manager.ts` and `memory/*` message unions off `ToolInvokeMsg`.
+  - [x] Convert `workflows/workflow-tools.ts` handler to `msg.input` + SCR replies.
+  - [x] **Add SCR leaf descriptor registration** (`blueprint.tools` or manual `SCRRegistrationTopic` publish, direct actor-ref target) for notebook/googleapis/coding/workflows tools — currently only agent `ToolCollection`s exist and no `scr:leaf:*` URNs resolve.
+- [x] **Task 5.2**: Remove `SCRToolAdapterActor` Bridge (`src/system/factory.ts`)
+  - [x] Delete `SCRToolAdapterActor` (factory.ts:13–57).
+  - [x] Remove adapter spawn at factory.ts:357 and :712; set `descriptor.target` to the direct tool ref.
 - [ ] **Task 5.3**: Update Tool Unit and Integration Tests (`src/tests/`)
   - [ ] Convert audio-actor, fetch-file, vision-actor, tools-plugin, tool-status, cron-jobs, googleapis-drive, memory-store-concurrent, project-shell tests to `ask<SCRInvokeMsg, SCRReply>`.
   - [ ] Convert config-unified-integration, node-secrets-audit, plugins tests (legacy `{ type:'invoke' }` probes).

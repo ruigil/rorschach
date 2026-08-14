@@ -78,6 +78,21 @@ export default createPluginFactory<NotebookConfig>({
       factory: () => Search(),
     },
   },
+  tools: {
+    journalWrite: { schema: journalWriteTool.schema, slot: 'journal' },
+    journalRead: { schema: journalReadTool.schema, slot: 'journal' },
+    journalSearch: { schema: journalSearchTool.schema, slot: 'journal' },
+    trackerLog: { schema: trackerLogTool.schema, slot: 'tracker' },
+    trackerStats: { schema: trackerStatsTool.schema, slot: 'tracker' },
+    trackerDefineHabit: { schema: trackerDefineHabitTool.schema, slot: 'tracker' },
+    trackerListHabits: { schema: trackerListHabitsTool.schema, slot: 'tracker' },
+    todosCreate: { schema: todosCreateTool.schema, slot: 'todos' },
+    todosComplete: { schema: todosCompleteTool.schema, slot: 'todos' },
+    todosList: { schema: todosListTool.schema, slot: 'todos' },
+    todosDelete: { schema: todosDeleteTool.schema, slot: 'todos' },
+    todosUpdate: { schema: todosUpdateTool.schema, slot: 'todos' },
+    search: { schema: notebookSearchTool.schema, slot: 'search' },
+  },
   agents: {
     coach: {
       factory: CoachAgentDescriptor,

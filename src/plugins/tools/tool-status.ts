@@ -2,7 +2,8 @@ import type { ActorDef, ActorRef } from '../../system/index.ts'
 import { onLifecycle, onMessage } from '../../system/index.ts'
 import { JobRegistryTopic } from '../../types/tools.ts'
 import { defineTool } from '../../system/index.ts'
-import type { ToolMsg, ToolReply, ToolResultPayload } from '../../types/tools.ts'
+import type { ToolResultPayload } from '../../types/tools.ts'
+import type { SCRInvokeMsg } from '../../types/scr.ts'
 import type { ToolStatusState, JobInfo } from './types.ts'
 
 // ─── Schema ───
@@ -17,9 +18,6 @@ export const toolStatusTool = defineTool('tools_status', 'Check the status of a 
   },
 })
 
-
-
-
 // ─── Internal message protocol ───
 
 type InternalMsg =
@@ -28,7 +26,7 @@ type InternalMsg =
   | { type: '_jobCompleted';  jobId: string; result: ToolResultPayload }
   | { type: '_jobFailed';     jobId: string; error: string }
 
-type ToolStatusMsg = ToolMsg | InternalMsg
+type ToolStatusMsg = SCRInvokeMsg | InternalMsg
 
 // ─── Helpers ───
 
@@ -108,42 +106,45 @@ export const ToolStatus = (): ActorDef<ToolStatusMsg, ToolStatusState> => ({
     },
 
     invoke: (state, msg) => {
-      let parsed: { jobId?: string }
-      try {
-        parsed = JSON.parse(msg.arguments) as { jobId?: string }
-      } catch {
-        parsed = {}
+      let jobId: string | undefined
+      if (typeof msg.input === 'string') {
+        try {
+          jobId = (JSON.parse(msg.input) as { jobId?: string }).jobId
+        } catch {
+          jobId = msg.input || undefined
+        }
+      } else if (msg.input && typeof msg.input === 'object' && 'jobId' in msg.input) {
+        jobId = String((msg.input as { jobId: unknown }).jobId ?? '') || undefined
       }
-      const jobId = parsed.jobId
 
       // No jobId → list all active jobs
       if (!jobId) {
         const entries = Object.entries(state.jobs)
         if (entries.length === 0) {
-          msg.replyTo.send({ type: 'toolResult', result: { text: 'No active jobs.' } })
+          msg.replyTo.send({ type: 'result', output: { text: 'No active jobs.' } })
           return { state }
         }
         const lines = entries.map(([id, j]) => {
           const age = formatAge(Date.now() - j.startedAt)
-      const detail = j.statusText ? `, ${j.statusText}` : ''
-      const status = j.result !== undefined ? 'completed' : j.error !== undefined ? 'failed' : `running ${age}${detail}`
+          const detail = j.statusText ? `, ${j.statusText}` : ''
+          const status = j.result !== undefined ? 'completed' : j.error !== undefined ? 'failed' : `running ${age}${detail}`
           return `- ${id} (${j.toolName}, ${status})`
         })
-        msg.replyTo.send({ type: 'toolResult', result: { text: lines.join('\n') } })
+        msg.replyTo.send({ type: 'result', output: { text: lines.join('\n') } })
         return { state }
       }
 
       const info = state.jobs[jobId]
       if (!info) {
         msg.replyTo.send({
-          type: 'toolResult',
-          result: { text: `No active job with id ${jobId}. It may have already completed.` },
+          type: 'result',
+          output: { text: `No active job with id ${jobId}. It may have already completed.` },
         })
         return { state }
       }
 
       // Serve from cached state — no need to poll the underlying tool
-      msg.replyTo.send({ type: 'toolResult', result: { text: formatJobStatus(jobId, info) } })
+      msg.replyTo.send({ type: 'result', output: { text: formatJobStatus(jobId, info) } })
       return { state }
     },
   }),

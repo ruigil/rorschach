@@ -634,16 +634,17 @@ export const PageTools = (): ActorDef<PageToolsMsg, PageToolsState> => {
         return { state, stash: true }
       }
       if (!state.persistenceRef) {
-        msg.replyTo.send({ type: 'toolError', error: 'Persistence not ready' })
+        msg.replyTo.send({ type: 'error', error: 'Persistence not ready' })
         return { state }
       }
 
-      const span = ctx.trace.span(msg.toolName, { toolName: msg.toolName })
-
+      const span = ctx.trace.span(msg.urn, { urn: msg.urn })
       const dl = state.persistenceRef
 
-      if (msg.toolName === writeHTMLPageTool.name) {
-        const parsed = parseToolArgs<WriteHTMLPageArgs>(msg.arguments, obj => {
+      const isWritePage = msg.urn.endsWith('html_write_page') || msg.urn.endsWith('writeHTMLPage') || msg.urn.endsWith(writeHTMLPageTool.name)
+
+      if (isWritePage) {
+        const parsed = parseToolArgs<WriteHTMLPageArgs>(msg.input, obj => {
           const collection = obj.collection
           const title = obj.title
           const filename = obj.filename
@@ -660,7 +661,7 @@ export const PageTools = (): ActorDef<PageToolsMsg, PageToolsState> => {
           }
         })
         if (!parsed.ok) {
-          msg.replyTo.send({ type: 'toolError', error: parsed.error })
+          msg.replyTo.send({ type: 'error', error: parsed.error })
           return { state }
         }
 
@@ -719,19 +720,19 @@ export const PageTools = (): ActorDef<PageToolsMsg, PageToolsState> => {
         return { state: { ...state, writing: true } }
       }
 
-      msg.replyTo.send({ type: 'toolError', error: `Unknown tool: ${msg.toolName}` })
+      msg.replyTo.send({ type: 'error', error: `Unknown tool: ${msg.urn}` })
       return { state }
     },
 
     _writeDone: (state, msg) => {
       msg.span?.done()
-      msg.replyTo.send({ type: 'toolResult', result: { text: msg.text } })
+      msg.replyTo.send({ type: 'result', output: { text: msg.text } })
       return { state: { ...state, writing: false }, become: handler, unstashAll: true }
     },
 
     _writeErr: (state, msg) => {
       msg.span?.error(msg.error)
-      msg.replyTo.send({ type: 'toolError', error: msg.error })
+      msg.replyTo.send({ type: 'error', error: msg.error })
       return { state: { ...state, writing: false }, become: handler, unstashAll: true }
     },
   })

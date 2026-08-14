@@ -1,5 +1,6 @@
 import type { ActorDef, ActorContext, ActorRef, ActorResult } from '../../system/index.ts'
 import { ask, onMessage, defineTool, parseToolArgs } from '../../system/index.ts'
+import type { SCRReply } from '../../types/scr.ts'
 import type { ToolReply } from '../../types/tools.ts'
 import type { LlmProviderMsg, LlmProviderReply } from '../../types/llm.ts'
 import type { MessageAttachment, MessageAttachmentKind } from '../../types/events.ts'
@@ -31,11 +32,11 @@ export const memoryStoreTool = defineTool('memory_store', 'Store a markdown memo
       items: {
         type: 'object',
         properties: {
-          kind:     { type: 'string', enum: ['image', 'audio', 'video', 'pdf', 'file'] },
-          url:      { type: 'string' },
-          name:     { type: 'string' },
-          alt:      { type: 'string' },
-          mimeType: { type: 'string' },
+          kind:     { type: 'string', enum: ['image', 'audio', 'video', 'pdf', 'file'], description: 'Attachment media kind.' },
+          url:      { type: 'string', description: 'Persistence-backed media URL.' },
+          name:     { type: 'string', description: 'Original filename or label.' },
+          alt:      { type: 'string', description: 'Short descriptive text for image or media context.' },
+          mimeType: { type: 'string', description: 'MIME type of the uploaded media.' },
         },
         required: ['kind', 'url'],
       },
@@ -45,8 +46,8 @@ export const memoryStoreTool = defineTool('memory_store', 'Store a markdown memo
 })
 
 type ExtractionResult = {
-  title?: string
-  concepts?: MemoryConcept[]
+  title?:   string
+  concepts: MemoryConcept[]
   links?: MemoryConceptLink[]
 }
 
@@ -59,7 +60,7 @@ export type MemoryStoreWorkerOptions = {
 }
 
 export type MemoryStoreWorkerState = {
-  replyTo:         ActorRef<ToolReply> | null
+  replyTo:         ActorRef<SCRReply> | null
   recordsRef:      ActorRef<MemoryRecordsMsg>
   kgraphRef:       ActorRef<KgraphMsg>
   record:          MemoryRecord | null
@@ -232,7 +233,7 @@ export const MemoryStoreWorker = (parent: ActorRef<MemorySupervisorMsg>, options
     handler: onMessage<MemoryStoreMsg, MemoryStoreWorkerState>({
       invoke: (state, msg, ctx) => {
         const parsed = parseToolArgs<{ content: string; topic?: string; attachments?: MessageAttachment[] }>(
-          msg.arguments,
+          msg.input,
           (p) => {
             const content = typeof p.content === 'string' ? p.content : ''
             const topic = typeof p.topic === 'string' ? p.topic : undefined
@@ -242,7 +243,7 @@ export const MemoryStoreWorker = (parent: ActorRef<MemorySupervisorMsg>, options
           'Missing content argument',
         )
         if (!parsed.ok) {
-          msg.replyTo.send({ type: 'toolError', error: parsed.error })
+          msg.replyTo.send({ type: 'error', error: parsed.error })
           parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
           return { state }
         }
@@ -286,7 +287,7 @@ export const MemoryStoreWorker = (parent: ActorRef<MemorySupervisorMsg>, options
       },
 
       _recordStoreErr: (state, msg, ctx) => {
-        msg.replyTo.send({ type: 'toolError', error: msg.error })
+        msg.replyTo.send({ type: 'error', error: msg.error })
         parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
         return { state }
       },
@@ -335,8 +336,8 @@ export const MemoryStoreWorker = (parent: ActorRef<MemorySupervisorMsg>, options
       llmError: (state, msg, ctx) => {
         if (state.record && state.replyTo) {
           state.replyTo.send({
-            type: 'toolResult',
-            result: {
+            type: 'result',
+            output: {
               text: JSON.stringify({
                 recordId: state.record.recordId,
                 stored: true,
@@ -346,14 +347,14 @@ export const MemoryStoreWorker = (parent: ActorRef<MemorySupervisorMsg>, options
             },
           })
         } else {
-          state.replyTo?.send({ type: 'toolError', error: String(msg.error) })
+          state.replyTo?.send({ type: 'error', error: String(msg.error) })
         }
         parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
         return { state }
       },
 
       _indexed: (state, msg, ctx) => {
-        state.replyTo?.send({ type: 'toolResult', result: { text: msg.summary } })
+        state.replyTo?.send({ type: 'result', output: { text: msg.summary } })
         parent.send({ type: '_workerDone', worker: { name: ctx.self.name } })
         return { state }
       },
@@ -361,8 +362,8 @@ export const MemoryStoreWorker = (parent: ActorRef<MemorySupervisorMsg>, options
       _indexErr: (state, msg, ctx) => {
         const record = state.record
         state.replyTo?.send({
-          type: 'toolResult',
-          result: {
+          type: 'result',
+          output: {
             text: JSON.stringify({
               recordId: record?.recordId,
               stored: true,

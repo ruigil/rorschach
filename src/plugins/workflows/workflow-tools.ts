@@ -1,6 +1,6 @@
 import type { ActorRef, ActorDef, ActorContext } from '../../system/index.ts'
 import { ask, defineTool, parseToolArgs, onMessage, onLifecycle } from '../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply, ToolMsg } from '../../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../../types/scr.ts'
 import { WorkflowEventTopic } from './types.ts'
 import type {
   Workflow,
@@ -102,7 +102,7 @@ export const showWorkflowGraphTool = defineTool('workflows_graph_show', 'Open th
   },
 })
 
-export const startWorkflowRunTool = defineTool('workflows_run_start', 'Start executing a saved workflow. Returns a background workflow run job when execution starts, or the run state if it blocks immediately.', {
+export const startWorkflowRunTool = defineTool('workflows_run_start', 'Start a new execution run of a saved workflow.', {
   type: 'object',
   required: ['workflowId'],
   properties: {
@@ -111,43 +111,24 @@ export const startWorkflowRunTool = defineTool('workflows_run_start', 'Start exe
   },
 })
 
-export const listWorkflowRunsTool = defineTool('workflows_run_list', 'List all workflow run states.', {
+export const listWorkflowRunsTool = defineTool('workflows_runs_list', 'List execution runs for workflows.', {
   type: 'object',
   properties: {},
 })
 
-export const getWorkflowRunTool = defineTool('workflows_run_get', 'Read workflow run state by run id.', {
+export const getWorkflowRunTool = defineTool('workflows_run_get', 'Inspect a workflow execution run by runId.', {
   type: 'object',
   required: ['runId'],
   properties: { runId: { type: 'string' } },
 })
 
-export const resumeWorkflowRunTool = defineTool('workflows_run_resume', 'Resume a missing-job-blocked workflow run by run id.', {
+export const resumeWorkflowRunTool = defineTool('workflows_run_resume', 'Resume execution of a blocked or failed workflow run.', {
   type: 'object',
   required: ['runId'],
   properties: { runId: { type: 'string' } },
 })
 
-export const workflowControlTools = [
-  listAgentModesTool,
-  listExecutionToolsTool,
-  saveWorkflowTool,
-  updateWorkflowTool,
-  deleteWorkflowTool,
-  listWorkflowsTool,
-  getWorkflowTool,
-  showWorkflowGraphTool,
-  startWorkflowRunTool,
-  listWorkflowRunsTool,
-  getWorkflowRunTool,
-  resumeWorkflowRunTool,
-]
-
-const workflowControlToolNames = new Set(workflowControlTools.map(tool => tool.name))
-
-export const isWorkflowControlTool = (name: string): boolean => workflowControlToolNames.has(name)
-
-const workflowIdArg = (raw: string): { ok: true; workflowId: string; runId?: string } | { ok: false; error: string } => {
+const workflowIdArg = (raw: unknown): { ok: true; workflowId: string; runId?: string } | { ok: false; error: string } => {
   const parsed = parseToolArgs(raw, obj => {
     const workflowId = obj.workflowId
     const runId = obj.runId
@@ -158,7 +139,7 @@ const workflowIdArg = (raw: string): { ok: true; workflowId: string; runId?: str
   return parsed.ok ? { ok: true, ...parsed.value } : parsed
 }
 
-const runIdArg = (raw: string): { ok: true; runId: string } | { ok: false; error: string } => {
+const runIdArg = (raw: unknown): { ok: true; runId: string } | { ok: false; error: string } => {
   const parsed = parseToolArgs(raw, obj => {
     const runId = obj.runId
     return typeof runId === 'string' && runId.trim() ? { runId: runId.trim() } : null
@@ -166,7 +147,7 @@ const runIdArg = (raw: string): { ok: true; runId: string } | { ok: false; error
   return parsed.ok ? { ok: true, runId: parsed.value.runId } : parsed
 }
 
-const startWorkflowArg = (raw: string): { ok: true; workflowId: string; inputs?: Record<string, unknown> } | { ok: false; error: string } => {
+const startWorkflowArg = (raw: unknown): { ok: true; workflowId: string; inputs?: Record<string, unknown> } | { ok: false; error: string } => {
   const parsed = parseToolArgs(raw, obj => {
     const workflowId = obj.workflowId
     const inputs = obj.inputs
@@ -187,9 +168,9 @@ const formatRunList = (runs: Array<{ runId: string; workflowId: string; status: 
     ? runs.map(run => `- ${run.runId} (${run.status}, workflow: ${run.workflowId})`).join('\n')
     : 'No workflow runs found.'
 
-const parseWorkflow = (raw: string, userId: string): { ok: true; workflow: Workflow } | { ok: false; error: string } => {
+const parseWorkflow = (raw: unknown, userId: string): { ok: true; workflow: Workflow } | { ok: false; error: string } => {
   try {
-    const args = JSON.parse(raw) as { title?: string; goal?: string; summary?: string; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
+    const args = (typeof raw === 'string' ? JSON.parse(raw) : (raw ?? {})) as { title?: string; goal?: string; summary?: string; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
     if (!args.goal || typeof args.goal !== 'string') throw new Error('missing goal')
     if (!args.summary || typeof args.summary !== 'string') throw new Error('missing summary')
     if (!Array.isArray(args.tasks)) throw new Error('missing tasks')
@@ -213,9 +194,9 @@ const parseWorkflow = (raw: string, userId: string): { ok: true; workflow: Workf
   }
 }
 
-const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch: { title?: string; goal?: string; context?: string; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] } } | { ok: false; error: string } => {
+const parseWorkflowPatch = (raw: unknown): { ok: true; workflowId: string; patch: { title?: string; goal?: string; context?: string; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] } } | { ok: false; error: string } => {
   try {
-    const args = JSON.parse(raw) as { workflowId?: string; title?: string; goal?: string; summary?: string; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
+    const args = (typeof raw === 'string' ? JSON.parse(raw) : (raw ?? {})) as { workflowId?: string; title?: string; goal?: string; summary?: string; inputs?: Record<string, WorkflowValueSpec>; outputs?: Record<string, WorkflowValueSpec>; tasks?: WorkflowTask[] }
     if (!args.workflowId || typeof args.workflowId !== 'string') throw new Error('missing workflowId')
     const patch = {
       ...(args.title !== undefined ? { title: args.title } : {}),
@@ -232,80 +213,93 @@ const parseWorkflowPatch = (raw: string): { ok: true; workflowId: string; patch:
   }
 }
 
-const toolError = (error: string): ToolReply => ({ type: 'toolError', error })
+const toolError = (error: string): SCRReply => ({ type: 'error', error })
 
 export type WorkflowToolDeps = {
   workflowRunnerRef: ActorRef<WorkflowManagerMsg>
-  ctx: ActorContext<ToolMsg>
+  ctx: ActorContext<any>
   persistenceRef: ActorRef<PersistenceMsg>
 }
 
 export const handleWorkflowTool = async (
-  msg: ToolInvokeMsg,
+  msg: SCRInvokeMsg,
   deps: WorkflowToolDeps
-): Promise<ToolReply> => {
+): Promise<SCRReply> => {
   const { workflowRunnerRef, ctx, persistenceRef } = deps
   const userId = ctx.request.userId
 
-  if (msg.toolName === listAgentModesTool.name) {
+  const isListAgentModes = msg.urn.endsWith('agent_modes_list') || msg.urn.endsWith(listAgentModesTool.name)
+  const isListExecutionTools = msg.urn.endsWith('execution_tools_list') || msg.urn.endsWith(listExecutionToolsTool.name)
+  const isListWorkflows = msg.urn.endsWith('.list') || msg.urn.endsWith('workflows_list') || msg.urn.endsWith('listWorkflows') || msg.urn.endsWith(listWorkflowsTool.name)
+  const isSaveWorkflow = msg.urn.endsWith('.save') || msg.urn.endsWith('workflows_save') || msg.urn.endsWith('saveWorkflow') || msg.urn.endsWith(saveWorkflowTool.name)
+  const isGetWorkflow = msg.urn.endsWith('.get') || msg.urn.endsWith('workflows_get') || msg.urn.endsWith('getWorkflow') || msg.urn.endsWith(getWorkflowTool.name)
+  const isShowWorkflowGraph = msg.urn.endsWith('graph_show') || msg.urn.endsWith('showWorkflowGraph') || msg.urn.endsWith(showWorkflowGraphTool.name)
+  const isUpdateWorkflow = msg.urn.endsWith('.update') || msg.urn.endsWith('workflows_update') || msg.urn.endsWith('updateWorkflow') || msg.urn.endsWith(updateWorkflowTool.name)
+  const isDeleteWorkflow = msg.urn.endsWith('.delete') || msg.urn.endsWith('workflows_delete') || msg.urn.endsWith('deleteWorkflow') || msg.urn.endsWith(deleteWorkflowTool.name)
+  const isStartRun = msg.urn.endsWith('run_start') || msg.urn.endsWith('startWorkflowRun') || msg.urn.endsWith(startWorkflowRunTool.name)
+  const isListRuns = msg.urn.endsWith('runs_list') || msg.urn.endsWith('listWorkflowRuns') || msg.urn.endsWith(listWorkflowRunsTool.name)
+  const isGetRun = msg.urn.endsWith('run_get') || msg.urn.endsWith('getWorkflowRun') || msg.urn.endsWith(getWorkflowRunTool.name)
+  const isResumeRun = msg.urn.endsWith('run_resume') || msg.urn.endsWith('resumeWorkflowRun') || msg.urn.endsWith(resumeWorkflowRunTool.name)
+
+  if (isListAgentModes) {
     const reply = await ask<WorkflowManagerMsg, any>(workflowRunnerRef, replyTo => ({ type: 'listAgentModes', replyTo }), { timeoutMs: 5_000 })
     return reply.ok && 'agentModes' in reply
-      ? { type: 'toolResult', result: { text: JSON.stringify(reply.agentModes, null, 2) } }
+      ? { type: 'result', output: { text: JSON.stringify(reply.agentModes, null, 2) } }
       : toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
   }
 
-  if (msg.toolName === listExecutionToolsTool.name) {
+  if (isListExecutionTools) {
     const reply = await ask<WorkflowManagerMsg, any>(workflowRunnerRef, replyTo => ({ type: 'listExecutionTools', replyTo }), { timeoutMs: 5_000 })
     return reply.ok && 'executionTools' in reply
-      ? { type: 'toolResult', result: { text: JSON.stringify(reply.executionTools, null, 2) } }
+      ? { type: 'result', output: { text: JSON.stringify(reply.executionTools, null, 2) } }
       : toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
   }
 
-  if (msg.toolName === listWorkflowsTool.name) {
+  if (isListWorkflows) {
     const workflows = await listWorkflows(persistenceRef, userId)
-    return { type: 'toolResult', result: { text: formatWorkflowList(workflows) } }
+    return { type: 'result', output: { text: formatWorkflowList(workflows) } }
   }
 
-  if (msg.toolName === saveWorkflowTool.name) {
-    const parsed = parseWorkflow(msg.arguments, userId)
+  if (isSaveWorkflow) {
+    const parsed = parseWorkflow(msg.input, userId)
     if (!parsed.ok) return toolError(parsed.error)
     const result = await saveWorkflow(persistenceRef, parsed.workflow)
     if (!result.ok) return toolError(result.error)
     ctx.publish(WorkflowEventTopic, { userId, workflowId: result.data.workflow.id })
-    return { type: 'toolResult', result: { text: `Workflow saved - ${result.data.workflow.tasks.length} tasks.` } }
+    return { type: 'result', output: { text: `Workflow saved - ${result.data.workflow.tasks.length} tasks.` } }
   }
 
-  if (msg.toolName === getWorkflowTool.name || msg.toolName === showWorkflowGraphTool.name) {
-    const arg = workflowIdArg(msg.arguments)
+  if (isGetWorkflow || isShowWorkflowGraph) {
+    const arg = workflowIdArg(msg.input)
     if (!arg.ok) return toolError(arg.error)
-    if (msg.toolName === getWorkflowTool.name) {
+    if (isGetWorkflow) {
       const result = await getWorkflow(persistenceRef, userId, arg.workflowId)
       if (!result.ok) return toolError(result.error)
-      return { type: 'toolResult', result: { text: JSON.stringify(result.data.workflow, null, 2) } }
+      return { type: 'result', output: { text: JSON.stringify(result.data.workflow, null, 2) } }
     }
     ctx.publish(WorkflowEventTopic, { userId, workflowId: arg.workflowId, runId: arg.runId })
-    return { type: 'toolResult', result: { text: `Opened workflow graph for ${arg.workflowId}.` } }
+    return { type: 'result', output: { text: `Opened workflow graph for ${arg.workflowId}.` } }
   }
 
-  if (msg.toolName === updateWorkflowTool.name) {
-    const parsed = parseWorkflowPatch(msg.arguments)
+  if (isUpdateWorkflow) {
+    const parsed = parseWorkflowPatch(msg.input)
     if (!parsed.ok) return toolError(parsed.error)
     const result = await updateWorkflow(persistenceRef, userId, parsed.workflowId, parsed.patch)
     if (!result.ok) return toolError(result.error)
     ctx.publish(WorkflowEventTopic, { userId, workflowId: parsed.workflowId })
-    return { type: 'toolResult', result: { text: `Workflow ${parsed.workflowId} updated successfully.` } }
+    return { type: 'result', output: { text: `Workflow ${parsed.workflowId} updated successfully.` } }
   }
 
-  if (msg.toolName === deleteWorkflowTool.name) {
-    const arg = workflowIdArg(msg.arguments)
+  if (isDeleteWorkflow) {
+    const arg = workflowIdArg(msg.input)
     if (!arg.ok) return toolError(arg.error)
     const result = await deleteWorkflow(persistenceRef, userId, arg.workflowId)
     if (!result.ok) return toolError(result.error)
-    return { type: 'toolResult', result: { text: `Workflow ${arg.workflowId} deleted.` } }
+    return { type: 'result', output: { text: `Workflow ${arg.workflowId} deleted.` } }
   }
 
-  if (msg.toolName === startWorkflowRunTool.name) {
-    const arg = startWorkflowArg(msg.arguments)
+  if (isStartRun) {
+    const arg = startWorkflowArg(msg.input)
     if (!arg.ok) return toolError(arg.error)
 
     const result = await createWorkflowRun(persistenceRef, userId, arg.workflowId, arg.inputs)
@@ -327,22 +321,22 @@ export const handleWorkflowTool = async (
     if (!reply.ok || !('run' in reply)) return toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
     ctx.publish(WorkflowEventTopic, { userId, workflowId: reply.run.workflowId, runId: reply.run.runId })
     if (reply.run.status !== 'running') {
-      return { type: 'toolResult', result: { text: JSON.stringify(reply.run, null, 2) } }
+      return { type: 'result', output: { text: JSON.stringify(reply.run, null, 2) } }
     }
-    return { type: 'toolPending', jobId: reply.run.runId, placeholderText: `Workflow run started (runId=${reply.run.runId}).` }
+    return { type: 'pending', jobId: reply.run.runId, placeholderText: `Workflow run started (runId=${reply.run.runId}).` }
   }
 
-  if (msg.toolName === listWorkflowRunsTool.name) {
+  if (isListRuns) {
     const reply = await ask<WorkflowManagerMsg, any>(workflowRunnerRef, replyTo => ({ type: 'list', userId: userId, replyTo }), { timeoutMs: 5_000 })
     return reply.ok && 'runs' in reply
-      ? { type: 'toolResult', result: { text: formatRunList(reply.runs) } }
+      ? { type: 'result', output: { text: formatRunList(reply.runs) } }
       : toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
   }
 
-  if ([getWorkflowRunTool.name, resumeWorkflowRunTool.name].includes(msg.toolName)) {
-    const arg = runIdArg(msg.arguments)
+  if (isGetRun || isResumeRun) {
+    const arg = runIdArg(msg.input)
     if (!arg.ok) return toolError(arg.error)
-    const type = msg.toolName === getWorkflowRunTool.name ? 'get' : 'resume'
+    const type = isGetRun ? 'get' : 'resume'
     const reply = await ask<WorkflowManagerMsg, any>(
       workflowRunnerRef,
       replyTo => type === 'get'
@@ -351,11 +345,11 @@ export const handleWorkflowTool = async (
       { timeoutMs: 10_000 },
     )
     return reply.ok && 'run' in reply
-      ? { type: 'toolResult', result: { text: JSON.stringify(reply.run, null, 2) } }
+      ? { type: 'result', output: { text: JSON.stringify(reply.run, null, 2) } }
       : toolError(reply.ok ? 'Unexpected workflow runner response.' : reply.error)
   }
 
-  return toolError(`Unknown tool: ${msg.toolName}`)
+  return toolError(`Unknown tool: ${msg.urn}`)
 }
 
 type ToolsState = {
@@ -363,7 +357,7 @@ type ToolsState = {
 }
 
 type ToolsMsg =
-  | ToolMsg
+  | SCRInvokeMsg
   | { type: '_persistenceRef'; ref: ActorRef<any> | null }
   | { type: '_done' }
 
@@ -389,7 +383,7 @@ export const WorkflowToolsActor = (options: {
 
     invoke: (state, msg, ctx) => {
       if (!state.persistenceRef) {
-        msg.replyTo.send({ type: 'toolError', error: 'Persistence not ready' })
+        msg.replyTo.send({ type: 'error', error: 'Persistence not ready' })
         return { state }
       }
       handleWorkflowTool(msg, {
@@ -398,7 +392,7 @@ export const WorkflowToolsActor = (options: {
         persistenceRef: state.persistenceRef
       }).then(
         reply => msg.replyTo.send(reply),
-        error => msg.replyTo.send({ type: 'toolError', error: String(error) }),
+        error => msg.replyTo.send({ type: 'error', error: String(error) }),
       )
       return { state }
     },

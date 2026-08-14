@@ -6,6 +6,9 @@ import { authorize } from '../permissions/evaluator.ts'
 import { USER_NOT_AUTHORIZED, type PermissionContext } from '../permissions/types.ts'
 import { encodeMessageRequest } from '../context/request.ts'
 
+import type { SCRInvokeMsg, SCRReply } from '../../types/scr.ts'
+import type { MessageAttachment } from '../../types/events.ts'
+
 export type InvokeToolArgs = {
   toolName:  string
   arguments: string
@@ -21,7 +24,7 @@ export type InvokeToolArgs = {
  */
 export const invokeTool = async <M = any>(
   ctx: ActorContext<M>,
-  toolRef: ActorRef<ToolMsg>,
+  toolRef: ActorRef<any>,
   args: InvokeToolArgs,
 ): Promise<ToolReply> => {
   const perm = ctx.request.permission
@@ -36,34 +39,63 @@ export const invokeTool = async <M = any>(
     return { type: 'toolError', error: USER_NOT_AUTHORIZED }
   }
 
-  const firstReply = await ask<ToolMsg, ToolReply>(
+  const urn = args.toolName.startsWith('scr:') ? args.toolName : `scr:leaf:${args.toolName.replace(/_/g, '.')}`
+
+  const firstReply = await ask<any, any>(
     toolRef,
     (replyTo) => ({
       type: 'invoke',
+      urn,
       toolName: args.toolName,
       arguments: args.arguments,
+      input: args.arguments,
       replyTo,
     }),
     undefined,
     ctx.request,
   )
 
-  if (firstReply.type === 'toolResult' || firstReply.type === 'toolError') {
-    return firstReply
+  const rep = firstReply as any
+  if (rep.type === 'result' || rep.type === 'toolResult') {
+    if (rep.type === 'toolResult') {
+      return rep as ToolReply
+    }
+    let result: { text: string; attachments?: MessageAttachment[] }
+    const output = rep.output
+    if (typeof output === 'string') {
+      result = { text: output }
+    } else if (output && typeof output === 'object' && 'text' in output) {
+      result = {
+        text: String((output as any).text),
+        attachments: (output as any).attachments,
+      }
+    } else {
+      result = { text: JSON.stringify(output) }
+    }
+    return { type: 'toolResult', result }
   }
 
-  const { jobId } = firstReply
+  if (rep.type === 'error' || rep.type === 'toolError') {
+    return { type: 'toolError', error: rep.error }
+  }
 
-  ctx.publishRetained(JobRegistryTopic, jobId, {
-    jobId,
-    status: 'running',
-    toolName: args.toolName,
-    toolRef,
-    startedAt: Date.now(),
-    userId: ctx.request.userId,
-  })
+  if (rep.type === 'pending' || rep.type === 'toolPending') {
+    const jobId = rep.jobId
+    const placeholderText = rep.placeholderText
 
-  return firstReply
+    ctx.publishRetained(JobRegistryTopic, jobId, {
+      jobId,
+      status: 'running',
+      toolName: args.toolName,
+      toolRef,
+      startedAt: Date.now(),
+      userId: ctx.request.userId,
+    })
+
+    return { type: 'toolPending', jobId, placeholderText }
+  }
+
+  return firstReply as unknown as ToolReply
 }
 
 // ─── Schema (what the LLM sees) ───
@@ -87,15 +119,17 @@ type ToolParseResult<T> =
   | { ok: false; error: string }
 
 export const parseToolArgs = <T>(
-  rawArgs: string,
+  rawArgs: unknown,
   extract: (parsed: Record<string, unknown>) => T | null,
   missingMsg = 'Missing required arguments',
 ): ToolParseResult<T> => {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(rawArgs)
-  } catch {
-    return { ok: false, error: 'Invalid arguments: expected JSON object' }
+  let parsed: unknown = rawArgs
+  if (typeof rawArgs === 'string') {
+    try {
+      parsed = JSON.parse(rawArgs)
+    } catch {
+      return { ok: false, error: 'Invalid arguments: expected JSON object' }
+    }
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     return { ok: false, error: 'Invalid arguments: expected JSON object' }

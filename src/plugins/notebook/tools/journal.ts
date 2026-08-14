@@ -1,7 +1,7 @@
 import type { ActorDef, ActorRef, SpanHandle } from '../../../system/index.ts'
 import { onLifecycle, onMessage, ask } from '../../../system/index.ts'
 import { defineTool } from '../../../system/index.ts'
-import type { ToolInvokeMsg, ToolReply } from '../../../types/tools.ts'
+import type { SCRInvokeMsg, SCRReply } from '../../../types/scr.ts'
 import { NotebookChangeTopic } from '../types.ts'
 import { PersistenceProviderTopic, type PersistenceMsg, type PResult, type PList } from '../../../types/persistence.ts'
 
@@ -35,9 +35,9 @@ type JournalState = {
 }
 
 type JournalMsg =
-  | ToolInvokeMsg
-  | { type: '_done';  replyTo: ActorRef<ToolReply>; toolName: string; result: string; span: SpanHandle | null; userId: string; date?: string }
-  | { type: '_error'; replyTo: ActorRef<ToolReply>; toolName: string; error: string; span: SpanHandle | null }
+  | SCRInvokeMsg
+  | { type: '_done';  replyTo: ActorRef<SCRReply>; urn: string; result: string; span: SpanHandle | null; userId: string; date?: string }
+  | { type: '_error'; replyTo: ActorRef<SCRReply>; urn: string; error: string; span: SpanHandle | null }
   | { type: '_persistenceRef'; ref: ActorRef<any> | null }
   | { type: '_void' }
 
@@ -103,8 +103,6 @@ const searchJournal = async (persistenceRef: ActorRef<any>, userId: string, quer
     : `No results found for "${query}".`
 }
 
-
-
 export const Journal = (): ActorDef<JournalMsg, JournalState> => ({
   initialState: () => ({ persistenceRef: null }),
   lifecycle: onLifecycle({
@@ -125,7 +123,7 @@ export const Journal = (): ActorDef<JournalMsg, JournalState> => ({
 
     invoke: (state, msg, ctx) => {
       if (!state.persistenceRef) {
-        msg.replyTo.send({ type: 'toolError', error: 'Persistence not ready' })
+        msg.replyTo.send({ type: 'error', error: 'Persistence not ready' })
         return { state }
       }
       const dl = state.persistenceRef
@@ -133,44 +131,50 @@ export const Journal = (): ActorDef<JournalMsg, JournalState> => ({
       let promise: Promise<string>
       let date: string | undefined
       try {
-        if (msg.toolName === journalWriteTool.name) {
-          const args = JSON.parse(msg.arguments) as { entry: string; date?: string }
+        const isWrite = msg.urn.endsWith('journal_write') || msg.urn.endsWith('journalWrite') || msg.urn.endsWith(journalWriteTool.name)
+        const isRead = msg.urn.endsWith('journal_read') || msg.urn.endsWith('journalRead') || msg.urn.endsWith(journalReadTool.name)
+        const isSearch = msg.urn.endsWith('journal_search') || msg.urn.endsWith('journalSearch') || msg.urn.endsWith(journalSearchTool.name)
+
+        const rawInput = typeof msg.input === 'string' ? JSON.parse(msg.input) : (msg.input ?? {})
+        if (isWrite) {
+          const args = rawInput as { entry: string; date?: string }
           date = args.date ?? todayISO()
           promise = writeEntry(dl, userId, args.entry, date)
-        } else if (msg.toolName === journalReadTool.name) {
-          const args = JSON.parse(msg.arguments) as { date: string }
+        } else if (isRead) {
+          const args = rawInput as { date: string }
           promise = readEntry(dl, userId, args.date)
-        } else if (msg.toolName === journalSearchTool.name) {
-          const args = JSON.parse(msg.arguments) as { query: string }
+        } else if (isSearch) {
+          const args = rawInput as { query: string }
           promise = searchJournal(dl, userId, args.query)
         } else {
-          promise = Promise.reject(new Error(`Unknown tool: ${msg.toolName}`))
+          promise = Promise.reject(new Error(`Unknown tool: ${msg.urn}`))
         }
       } catch (e) {
         promise = Promise.reject(e)
       }
-      const span = ctx.trace.span(msg.toolName, { toolName: msg.toolName })
+      const span = ctx.trace.span(msg.urn, { urn: msg.urn })
       ctx.pipeToSelf(
         promise,
-        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, toolName: msg.toolName, result, span, userId, date }),
-        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, toolName: msg.toolName, error: String(error), span }),
+        (result) => ({ type: '_done'  as const, replyTo: msg.replyTo, urn: msg.urn, result, span, userId, date }),
+        (error)  => ({ type: '_error' as const, replyTo: msg.replyTo, urn: msg.urn, error: String(error), span }),
       )
       return { state }
     },
 
     _done: (state, msg, ctx) => {
       msg.span?.done()
-      msg.replyTo.send({ type: 'toolResult', result: { text: msg.result } })
-      if (msg.toolName === journalWriteTool.name && msg.date) {
+      msg.replyTo.send({ type: 'result', output: { text: msg.result } })
+      const isWrite = msg.urn.endsWith('journal_write') || msg.urn.endsWith('journalWrite') || msg.urn.endsWith(journalWriteTool.name)
+      if (isWrite && msg.date) {
         ctx.publish(NotebookChangeTopic, { type: 'journalUpdated', userId: msg.userId, date: msg.date })
       }
       return { state }
     },
 
     _error: (state, msg, ctx) => {
-      ctx.log.error('journal error', { tool: msg.toolName, error: msg.error })
+      ctx.log.error('journal error', { urn: msg.urn, error: msg.error })
       msg.span?.error(msg.error)
-      msg.replyTo.send({ type: 'toolError', error: msg.error })
+      msg.replyTo.send({ type: 'error', error: msg.error })
       return { state }
     },
   }),
