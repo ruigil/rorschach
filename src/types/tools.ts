@@ -9,8 +9,6 @@ export type ToolSchema = {
   function: { name: string; description: string; parameters: object }
 }
 
-export type ToolFilter = { allow: string[] } | { deny: string[] }
-
 // ─── Generic tool protocol ───
 
 export type ToolSource = { title: string; url: string; snippet: string }

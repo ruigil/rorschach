@@ -1,11 +1,8 @@
 import { createTopic, type ActorRef } from '../system/index.ts'
 import type { ApiMessage } from './llm.ts'
-import type { ToolFilter } from './tools.ts'
-
 export type AgentModelOptions = {
   model:         string
   maxToolLoops?: number
-  toolFilter?:   ToolFilter
 }
 
 
@@ -69,7 +66,6 @@ export type AgentDescriptor = {
   role?:        string
   systemPrompt: string
   agentSCRs?:   string[]
-  toolFilter?:   ToolFilter
   capabilities: { userVisible: boolean }
   model:        string
   maxToolLoops?: number

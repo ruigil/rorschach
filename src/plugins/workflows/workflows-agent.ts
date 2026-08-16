@@ -29,7 +29,6 @@ After workflows_save or workflows_update, briefly acknowledge the save and stop.
     shortDesc: 'Design plans, save, inspect, and execute structured workflow DAGs (directed acyclic graphs of tasks).',
     systemPrompt,
     agentSCRs: options.agentSCRs || [],
-    toolFilter: options.toolFilter,
     capabilities: { userVisible: true },
     model: options.model,
     maxToolLoops: options.maxToolLoops ?? 25,

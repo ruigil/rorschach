@@ -8,7 +8,6 @@ import {
 } from '@rorschach/webkit';
 
 import './r-config-voice-select.js';
-import './r-config-tool-filter.js';
 import './r-config-google-account.js';
 
 export type ConfigFieldSchema = {
@@ -36,9 +35,6 @@ export type ConfigFieldChangeEvent = CustomEvent<{
 }>;
 
 const inferWidget = (schema: ConfigFieldSchema): string => {
-  if (schema.oneOf && schema.oneOf.some(s => s.properties && ('allow' in s.properties || 'deny' in s.properties))) {
-    return 'tool-filter';
-  }
   if (schema.type === 'object') return 'object';
   if (schema.type === 'boolean') return 'toggle';
   if (schema.type === 'number') return 'number';
@@ -125,17 +121,6 @@ export class RConfigField extends RorschachBase {
           })}
           @change=${(e: CustomEvent<{ value: string }>) => this._emit(e.detail.value)}
         ></r-search-select>`;
-    } else if (widget === 'tool-filter') {
-      fieldContent = html`
-        <r-config-tool-filter
-          .sectionId=${this.sectionId}
-          .configKey=${this.configKey}
-          .key=${this.key}
-          .label=${label}
-          .hint=${hint}
-          .value=${resolvedValue}
-          @config-field-change=${(e: ConfigFieldChangeEvent) => this._emit(e.detail.value)}
-        ></r-config-tool-filter>`;
     } else if (widget === 'textarea') {
       fieldContent = html`
         <r-input

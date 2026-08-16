@@ -76,7 +76,6 @@ export default createPluginFactory<CognitiveConfig>({
       options: (cfg) => ({
         model:        cfg.chatbot?.model ?? 'deepseek/deepseek-v4-flash',
         systemPrompt: cfg.chatbot?.systemPrompt,
-        toolFilter:   cfg.chatbot?.toolFilter,
         agentSCRs: [
           'scr:reasoner:coding.coding',
           'scr:reasoner:notebook.coach',

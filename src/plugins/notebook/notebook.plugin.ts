@@ -93,7 +93,6 @@ export default createPluginFactory<NotebookConfig>({
           'scr:leaf:tools.cron_delete',
           'scr:leaf:tools.cron_list',
         ],
-        toolFilter: cfg.agent?.toolFilter,
       }),
     },
   },

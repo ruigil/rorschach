@@ -1,7 +1,7 @@
 // ─── Public API ───
 export { AgentSystem } from './actor/system.ts'
 export { ask } from './actor/ask.ts'
-export { defineTool, parseToolArgs, applyToolFilter } from './agent/tool-utils.ts'
+export { defineTool, parseToolArgs } from './agent/tool-utils.ts'
 export { validateSchema } from './schema-validator.ts'
 export { invokeSCR } from './scr/invoker.ts'
 export { ResolutionCache } from './scr/cache.ts'

@@ -82,7 +82,6 @@ export default createPluginFactory<WorkflowsConfig>({
       options: (cfg) => ({
         model: cfg.agent.model,
         maxToolLoops: cfg.agent.maxToolLoops,
-        toolFilter: cfg.agent.toolFilter,
         agentSCRs: [
           'scr:leaf:workflows.agent_modes_list',
           'scr:leaf:workflows.execution_tools_list',

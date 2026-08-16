@@ -1,4 +1,4 @@
-import type { ToolSchema, ToolFilter } from '../../types/tools.ts'
+import type { ToolSchema } from '../../types/tools.ts'
 
 // ─── Schema (what the LLM sees) ───
 
@@ -14,7 +14,7 @@ export const defineTool = (
   },
 })
 
-// ─── Tool filtering and parsing ───
+// ─── Tool argument parsing ───
 
 type ToolParseResult<T> =
   | { ok: true; value: T }
@@ -41,8 +41,3 @@ export const parseToolArgs = <T>(
   return { ok: true, value }
 }
 
-export const applyToolFilter = (name: string, filter?: ToolFilter): boolean => {
-  if (!filter) return true
-  if ('allow' in filter) return filter.allow.includes(name)
-  return !filter.deny.includes(name)
-}

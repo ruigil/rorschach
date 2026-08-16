@@ -84,7 +84,6 @@ export default createPluginFactory<CodingConfig>({
             'scr:leaf:coding.file_replace_string',
             'scr:leaf:coding.html_write_page',
           ],
-          toolFilter: merged.coding.toolFilter,
         }
       },
     },

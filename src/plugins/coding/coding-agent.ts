@@ -33,7 +33,6 @@ Behavior:
     shortDesc: 'Inspect codebase files coding_file_write code and documentation pages.',
     systemPrompt,
     agentSCRs: options.agentSCRs || [],
-    toolFilter: options.toolFilter,
     capabilities: { userVisible: true },
     model: options.model,
     maxToolLoops: options.maxToolLoops ?? 25,

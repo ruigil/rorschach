@@ -28,7 +28,6 @@ export const ChatbotAgentDescriptor = (options: ChatbotAgentOptions): AgentDescr
     shortDesc:    'General conversation, chitchat, general reasoning, meta-questions, or tasks not covered by other specialized modes.',
     systemPrompt: options.systemPrompt ?? defaultSystemPrompt,
     agentSCRs:    options.agentSCRs || [],
-    toolFilter:   options.toolFilter,
     capabilities: { userVisible: true },
     model:        options.model,
     maxToolLoops: options.maxToolLoops ?? 25,

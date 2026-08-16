@@ -39,7 +39,6 @@ Be professional, polite, helpful, and directly address the user.`
     shortDesc: 'Access and manage Gmail messages, Google Calendar events, Google Drive files (uploads/downloads), and YouTube searches.',
     systemPrompt,
     agentSCRs: options.agentSCRs || [],
-    toolFilter: options.toolFilter,
     capabilities: { userVisible: true },
     model: options.model,
     maxToolLoops: options.maxToolLoops ?? 25,

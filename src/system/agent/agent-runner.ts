@@ -12,7 +12,6 @@ import { createTopic } from '../actor/types.ts'
 import { ResolutionCache } from '../scr/cache.ts'
 import { authorize } from '../permissions/evaluator.ts'
 import { getUserTimeContext, assembleAgentMessages, type ContextView } from './context-assembly.ts'
-import { applyToolFilter } from './tool-utils.ts'
 import { PersistenceProviderTopic, type PersistenceMsg } from '../../types/persistence.ts'
 import { persistencePluginAdapter } from '../persistence.ts'
 
@@ -361,20 +360,18 @@ export const SCRAgentRunner = (opts: {
           }
           if (desc && authorize(permissionContext, desc.urn)) {
             const cleanName = desc.meta?.schema?.function?.name || desc.urn.split(':').pop()?.replace(/\./g, '_') || ''
-            if (applyToolFilter(cleanName, agentDescriptor.toolFilter)) {
-              tools[cleanName] = {
-                name: cleanName,
-                urn: desc.urn,
-                schema: desc.meta?.schema || {
-                  type: 'function',
-                  function: {
-                    name: cleanName,
-                    description: desc.description || '',
-                    parameters: desc.schema?.inputSchema || {},
-                  }
-                },
-                target: desc.target,
-              }
+            tools[cleanName] = {
+              name: cleanName,
+              urn: desc.urn,
+              schema: desc.meta?.schema || {
+                type: 'function',
+                function: {
+                  name: cleanName,
+                  description: desc.description || '',
+                  parameters: desc.schema?.inputSchema || {},
+                }
+              },
+              target: desc.target,
             }
           }
         }

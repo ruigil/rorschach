@@ -1,30 +1,7 @@
-import type { ToolFilter } from '../../types/tools.ts'
 import type { AgentDescriptor, AgentModelOptions } from '../../types/agents.ts'
 
 export type CoachAgentOptions = AgentModelOptions & {
   agentSCRs?: string[]
-}
-
-export const COACH_TOOL_FILTER: ToolFilter = {
-  allow: [
-    'notebook_journal_write',
-    'notebook_journal_read',
-    'notebook_journal_search',
-    'notebook_tracker_log',
-    'notebook_tracker_stats',
-    'notebook_tracker_define_habit',
-    'notebook_tracker_list_habits',
-    'notebook_todos_create',
-    'notebook_todos_complete',
-    'notebook_todos_list',
-    'notebook_todos_delete',
-    'notebook_todos_update',
-    'notebook_search',
-    'tools_web_search',    // For research on workouts, health guidelines, and study topics
-    'tools_cron_create',   // For scheduling daily coaching check-ins and habit reminders
-    'tools_cron_delete',   // For cancelling habits/schedules
-    'tools_cron_list',     // For viewing active reminders
-  ]
 }
 
 export const CoachAgentDescriptor = (options: CoachAgentOptions): AgentDescriptor => {
@@ -55,9 +32,9 @@ Coaching guidelines:
     shortDesc: 'Personal life coach for habits, fitness/learning routines, journaling, and task/todo list management in the personal notebook.',
     systemPrompt,
     agentSCRs: options.agentSCRs || [],
-    toolFilter: options.toolFilter ?? COACH_TOOL_FILTER,
     capabilities: { userVisible: true },
     model: options.model,
     maxToolLoops: options.maxToolLoops ?? 25,
   }
 }
+
