@@ -43,10 +43,8 @@ export class RWorkflowWorkspace extends RorschachBase {
   @state() private _lastUpdatedAt: string | null = null
   @state() private _inspectorTab: 'task' | 'workflow' | 'run' | 'events' = 'task'
 
-  private _lastMode = ''
   private _lastGraphValue: any = null
 
-  private _currentMode = new StoreController(this, ['shell', 'currentMode'])
   private _storeGraph = new StoreController(this, ['workflows', 'currentGraph'])
   private _storeWidth = new StoreController(this, ['workflows', 'inspectorWidthPercent'])
   private _storeWorkflows = new StoreController(this, ['workflows', 'workflows'])
@@ -92,26 +90,15 @@ export class RWorkflowWorkspace extends RorschachBase {
     super.connectedCallback();
     send({ type: 'workflow.list.request' });
     send({ type: 'workflow.runs.request' });
+
+    const ns = store.namespace<WorkflowsState>('workflows')
+    const savedWorkflowId = ns.get('workspaceWorkflowId')
+    const savedRunId = ns.get('workspaceRunId')
+    if (savedWorkflowId) this.openGraph(savedWorkflowId, savedRunId || undefined)
+    else this.openList()
   }
 
   override updated() {
-    const mode = this._currentMode.value as string
-    if (mode !== this._lastMode) {
-      const isInitialLoad = this._lastMode === ''
-      this._lastMode = mode
-      if (mode === 'workflows') {
-        if (isInitialLoad) {
-          const ns = store.namespace<WorkflowsState>('workflows')
-          const savedWorkflowId = ns.get('workspaceWorkflowId')
-          const savedRunId = ns.get('workspaceRunId')
-          if (savedWorkflowId) this.openGraph(savedWorkflowId, savedRunId || undefined)
-          else this.openList()
-        } else {
-          this.openList()
-        }
-      }
-    }
-
     const graphValue = this._storeGraph.value as any
     if (graphValue !== this._lastGraphValue) {
       this._lastGraphValue = graphValue

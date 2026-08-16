@@ -4,7 +4,6 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 import { store } from '../../frontend/webkit/runtime/store.js'
 import { resetStore } from '../helpers/frontend.js'
 import {
-  setMode,
   setActiveWorkspaceTab,
   updateViewState,
   closeView,
@@ -25,29 +24,6 @@ import { reduceFrame, type ObservabilityState } from '../../plugins/observabilit
 beforeEach(() => {
   localStorage.clear()
   resetStore()
-})
-
-describe('setMode', () => {
-  test('sets currentMode in store', () => {
-    setMode('planner', 'Planner')
-    expect(store.namespace<ShellState>('shell').get('currentMode')).toBe('planner')
-  })
-
-  test('sets displayName from argument', () => {
-    setMode('planner', 'Planner Mode')
-    expect(store.namespace<ShellState>('shell').get('currentModeDisplayName')).toBe('Planner Mode')
-  })
-
-  test('clears isWaiting', () => {
-    store.namespace<ShellState>('shell').set('isWaiting', true)
-    setMode('chatbot', 'Chatbot')
-    expect(store.namespace<ShellState>('shell').get('isWaiting')).toBe(false)
-  })
-
-  test('persists mode to localStorage', () => {
-    setMode('planner', 'Planner')
-    expect(localStorage.getItem('rorschach.store.shell.currentMode')).toBe(JSON.stringify('planner'))
-  })
 })
 
 describe('observability reduceFrame logs', () => {

@@ -19,9 +19,6 @@ store.namespace<ShellState>('shell').init({
   isWaiting: false,
   currentUserId: null,
   currentUserRoles: [],
-  agents: [],
-  currentMode: '',
-  currentModeDisplayName: '',
   messages: [],
   lastMessages: [],
   activeStream: {
@@ -37,7 +34,7 @@ store.namespace<ShellState>('shell').init({
   workspaceTabOrder: [],
   sidebarWidth: 360,
 }, {
-  persist: ['theme', 'currentMode', 'activeWorkspaceTab', 'workspaceTabOrder', 'lastMessages', 'sidebarWidth'],
+  persist: ['theme', 'activeWorkspaceTab', 'workspaceTabOrder', 'lastMessages', 'sidebarWidth'],
 })
 
 // Markdown renderer config (kit utility wrapping global marked/katex/hljs)
@@ -48,7 +45,6 @@ import './shell/r-shell.js'
 import './shell/r-view.js'
 import './shell/r-chat-panel.js'
 import './shell/r-chat-input.js'
-import './shell/r-agent-select.js'
 import './shell/r-surface-error.js'
 import './shell/r-welcome-dashboard.js'
 import './shell/r-theme-select.js'
@@ -67,8 +63,7 @@ if (shellNs.get('messages').length === 0 && shellNs.get('lastMessages').length >
   shellNs.set('messages', shellNs.get('lastMessages'))
 }
 
-// Start the plugin-host (seeds config/observe views, starts mode
-// watcher, dynamic-imports plugin UI modules).
+// Start the plugin-host (seeds config/observe views, dynamic-imports plugin UI modules).
 pluginHost().init()
 console.log('Plugin host initialized, shell is ready.')
 

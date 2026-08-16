@@ -1,18 +1,12 @@
-import { customElement, html, RorschachBase, StoreController } from '@rorschach/webkit';
-
+import { customElement, html, RorschachBase } from '@rorschach/webkit';
 
 @customElement('r-welcome-dashboard')
 export class RWelcomeDashboard extends RorschachBase {
-  private _currentModeDisplayName = new StoreController(this, ['shell', 'currentModeDisplayName']);
-  private _currentMode = new StoreController(this, ['shell', 'currentMode']);
-
   override createRenderRoot() {
     return this; // Light DOM for global styles
   }
 
   override render() {
-    const modeName = this._currentModeDisplayName.value || this._currentMode.value || 'None';
-
     return html`
       <div class="welcome-dashboard">
         <div class="welcome-hero">
@@ -23,17 +17,6 @@ export class RWelcomeDashboard extends RorschachBase {
           </svg>
           <h1>RORSCHACH</h1>
           <p class="welcome-subtitle">Awaiting transmission · Void active</p>
-        </div>
-
-        <div class="welcome-cards">
-          <div class="welcome-card mode-card">
-            <div class="welcome-card-icon"><r-icon name="message-square"></r-icon></div>
-            <div class="welcome-card-body">
-              <h3>Active Mode</h3>
-              <p class="welcome-mode-name">${modeName}</p>
-              <p>Use the header mode selector to switch active agents.</p>
-            </div>
-          </div>
         </div>
       </div>
     `;

@@ -10,7 +10,6 @@
 export type PluginHostActions = {
   openView(id: string): void
   closeView(id: string): void
-  setMode(mode: string): void
 };
 
 

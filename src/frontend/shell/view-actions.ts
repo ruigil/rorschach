@@ -2,9 +2,6 @@ import { store } from '@rorschach/webkit';
 import type { ViewConfig, ViewRuntimeState } from './types.js';
 
 type ShellViewSlice = {
-  currentMode: string
-  currentModeDisplayName: string
-  isWaiting: boolean
   views: Record<string, ViewRuntimeState>
   activeWorkspaceTab: string
   workspaceTabOrder: string[]
@@ -72,12 +69,6 @@ export const ensureView = (id: string, cfg: ViewConfig): void => {
       shell().set('workspaceTabOrder', [...order, id])
     }
   }
-}
-
-export const setMode = (mode: string, displayName?: string) => {
-  shell().set('currentMode', mode)
-  shell().set('currentModeDisplayName', displayName ?? mode)
-  shell().set('isWaiting', false)
 }
 
 export const setActiveWorkspaceTab = (id: string) => {

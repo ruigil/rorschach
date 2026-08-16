@@ -13,9 +13,6 @@ beforeEach(() => {
     isWaiting: false,
     currentUserId: null,
     currentUserRoles: [],
-    agents: [],
-    currentMode: '',
-    currentModeDisplayName: '',
     messages: [],
     lastMessages: [],
     activeStream: { isActive: false, reasoning: '', text: '', sources: [], attachments: [], toolCalls: [] },
@@ -53,54 +50,6 @@ describe('pluginHost.dispatch (register)', () => {
 
     expect(p.getViewConfig('test-surface')).toBeDefined()
     expect(p.getViewConfig('test-surface')!.title).toBe('Test')
-  })
-
-  test('opens view when modes includes currentMode (late-registration guard)', async () => {
-    store.namespace<ShellState>('shell').set('currentMode', 'testmode')
-
-    const reg: UiSurfaceRegistration = {
-      id: 'mode-surface',
-      version: '1.0.0',
-      view: {
-        title: 'Mode Test',
-        icon: 'file',
-        contentTag: 'r-empty-state',
-        modes: ['testmode'],
-      },
-      moduleUrl: '/js/plugins/test.js',
-    }
-    const ph = pluginHost()
-    ph.dispatch(reg)
-    await new Promise(r => setTimeout(r, 50))
-
-    const view = store.namespace<ShellState>('shell').get('views')['mode-surface']
-    expect(view).toBeDefined()
-    expect(view!.isOpen).toBe(true)
-  })
-
-  test('does not open view when modes does not include currentMode', async () => {
-    store.namespace<ShellState>('shell').set('currentMode', 'othermode')
-
-    const reg: UiSurfaceRegistration = {
-      id: 'no-open-surface',
-      version: '1.0.0',
-      view: {
-        title: 'No Open',
-        icon: 'file',
-        contentTag: 'r-empty-state',
-        modes: ['testmode'],
-      },
-      moduleUrl: '/js/plugins/test.js',
-    }
-
-    const ph = pluginHost()
-    ph.dispatch(reg)
-    await new Promise(r => setTimeout(r, 50))
-
-    const view = store.namespace<ShellState>('shell').get('views')['no-open-surface']
-    expect(view).toBeDefined()
-    // The view is seeded by ensureView but should NOT be open (isOpen defaults to false)
-    expect(view!.isOpen).toBe(false)
   })
 })
 

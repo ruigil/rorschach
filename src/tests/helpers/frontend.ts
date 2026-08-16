@@ -7,9 +7,6 @@ const defaultState: Partial<ShellState> = {
   isWaiting: false,
   currentUserId: null,
   currentUserRoles: [],
-  agents: [],
-  currentMode: '',
-  currentModeDisplayName: '',
   messages: [],
   lastMessages: [],
   activeStream: {
@@ -29,7 +26,7 @@ export const resetStore = () => {
   __resetStoreForTests()
   __resetPluginHostForTests()
   store.namespace<ShellState>('shell').init(defaultState, {
-    persist: ['currentMode', 'activeWorkspaceTab', 'lastMessages'],
+    persist: ['activeWorkspaceTab', 'lastMessages'],
   })
   store.namespace('observe').init({
     actors: [],

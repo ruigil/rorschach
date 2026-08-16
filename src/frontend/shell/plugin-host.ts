@@ -1,7 +1,7 @@
 import type { UiSurfaceRegistration } from '../../types/ui-surface.js'
 import { store, type PluginHostActions } from '@rorschach/webkit';
-import { openView, closeView, setMode, ensureView } from './view-actions.js'
-import type { ViewConfig, ShellState } from './types.js'
+import { openView, closeView, ensureView } from './view-actions.js'
+import type { ViewConfig } from './types.js'
 
 // ─── Plugin-host — runtime surface registry ───
 //
@@ -30,9 +30,7 @@ const createPluginHost = (): PluginHostInstance => {
   const frameOwners = new Map<string, string>()
   const surfaceReducers = new Map<string, (frame: Record<string, any>, host: PluginHostActions) => void>()
 
-  const init = () => {
-    startModeWatcher()
-  };
+  const init = () => {};
 
   const dispatch = (reg: UiSurfaceRegistration) => {
     if (reg.moduleUrl === null) {
@@ -61,14 +59,6 @@ const createPluginHost = (): PluginHostInstance => {
         }
       }
     }
-    // Late-registration guard: if the surface's modes include the currently
-    // active mode, open the view now. Handles WS reconnect (retained
-    // surfaces replayed) and runtime plugin load — both arrive after
-    // currentMode is already set. Idempotent.
-    if (reg.view?.modes) {
-      const currentMode = store.namespace<ShellState>('shell').get('currentMode')
-      if (currentMode && reg.view.modes.includes(currentMode)) openView(reg.id)
-    }
   }
 
   const unregister = (id: string) => {
@@ -86,19 +76,8 @@ const createPluginHost = (): PluginHostInstance => {
     //console.log('pluginHost.routeFrame called with frame:', frame)
     const owner = frameOwners.get(frame.type)
     if (!owner) return false
-    surfaceReducers.get(owner)?.(frame, { openView, closeView, setMode })
+    surfaceReducers.get(owner)?.(frame, { openView, closeView })
     return true
-  }
-
-  /** Open views whose surface declares `modes` containing the new mode. */
-  const startModeWatcher = () => {
-    store.namespace<ShellState>('shell').subscribe('currentMode', (mode) => {
-      for (const [id, reg] of surfaces) {
-        if (reg.view?.modes?.includes(mode)) {
-          openView(id)
-        }
-      }
-    })
   }
 
   const getViewConfig = (id: string): ViewConfig | undefined => {

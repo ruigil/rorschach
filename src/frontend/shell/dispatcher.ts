@@ -5,7 +5,6 @@
 import { store } from '@rorschach/webkit';
 import type { ShellState } from './types.js'
 import { updateActiveStream, commitActiveStream } from './actions.js'
-import { setMode } from './view-actions.js'
 import { pluginHost } from './plugin-host.js'
 
 const shell = () => store.namespace<ShellState>('shell')
@@ -72,7 +71,6 @@ const frameHandlers: Record<string, (msg: Record<string, any>) => void> = {
   attachments: (msg) => updateActiveStream({ attachments: msg.attachments }),
   done: () => commitActiveStream(),
   error: (msg) => commitActiveStream('error', msg.text),
-  agents: (msg) => shell().set('agents', Array.isArray(msg.agents) ? msg.agents : []),
 }
 
 export const dispatchFrame = (msg: Record<string, any>) => {

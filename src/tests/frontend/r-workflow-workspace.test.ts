@@ -65,7 +65,6 @@ beforeEach(() => {
   cleanup()
   localStorage.clear()
   resetStore()
-  mockStore('currentMode', 'workflows')
 })
 
 afterEach(() => {

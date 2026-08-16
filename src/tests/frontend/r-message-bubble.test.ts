@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 
-import { mountClass, cleanup, mockStore } from '../helpers/frontend.js'
+import { mountClass, cleanup } from '../helpers/frontend.js'
 import { RMessageBubble } from '../../frontend/shell/r-message-bubble.js'
 
 beforeEach(cleanup)
@@ -8,7 +8,6 @@ afterEach(cleanup)
 
 describe('r-message-bubble', () => {
   test('renders user message', async () => {
-    mockStore('currentMode', 'chatbot')
     const el = await mountClass(RMessageBubble) as any
     el.message = { id: '1', role: 'user', text: 'hello', timestamp: Date.now() }
     await el.updateComplete
@@ -19,7 +18,6 @@ describe('r-message-bubble', () => {
   })
 
   test('renders assistant message', async () => {
-    mockStore('currentMode', 'chatbot')
     const el = await mountClass(RMessageBubble) as any
     el.message = { id: '2', role: 'assistant', text: 'hi there', timestamp: Date.now() }
     await el.updateComplete
@@ -30,7 +28,6 @@ describe('r-message-bubble', () => {
   })
 
   test('renders error message', async () => {
-    mockStore('currentMode', 'chatbot')
     const el = await mountClass(RMessageBubble) as any
     el.type = 'error'
     el.message = { id: '3', role: 'error', text: 'something went wrong', timestamp: Date.now() }
@@ -42,7 +39,6 @@ describe('r-message-bubble', () => {
   })
 
   test('renders reasoning in details element', async () => {
-    mockStore('currentMode', 'chatbot')
     const el = await mountClass(RMessageBubble) as any
     el.message = {
       id: '5', role: 'assistant', text: 'answer', timestamp: Date.now(),
@@ -56,7 +52,6 @@ describe('r-message-bubble', () => {
   })
 
   test('renders sources when present', async () => {
-    mockStore('currentMode', 'chatbot')
     const el = await mountClass(RMessageBubble) as any
     el.message = {
       id: '6', role: 'assistant', text: 'answer', timestamp: Date.now(),
@@ -70,7 +65,6 @@ describe('r-message-bubble', () => {
   })
 
   test('renders attachments when present', async () => {
-    mockStore('currentMode', 'chatbot')
     const el = await mountClass(RMessageBubble) as any
     el.message = {
       id: '7', role: 'assistant', text: 'look', timestamp: Date.now(),
@@ -84,7 +78,6 @@ describe('r-message-bubble', () => {
   })
 
   test('renders toolCalls in r-tool-history when present on message', async () => {
-    mockStore('currentMode', 'chatbot')
     const el = await mountClass(RMessageBubble) as any
     el.message = {
       id: '8',
@@ -101,7 +94,6 @@ describe('r-message-bubble', () => {
   })
 
   test('renders toolCalls in r-tool-history when streaming', async () => {
-    mockStore('currentMode', 'chatbot')
     const el = await mountClass(RMessageBubble) as any
     el.stream = {
       isActive: true,

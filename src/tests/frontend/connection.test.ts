@@ -3,7 +3,6 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 
 import { store } from '../../frontend/webkit/runtime/store.js'
 import { resetStore } from '../helpers/frontend.js'
-import { setMode } from '../../frontend/shell/view-actions.js'
 import { updateActiveStream, commitActiveStream } from '../../frontend/shell/actions.js'
 import { reduceFrame, type ObservabilityState } from '../../plugins/observability/ui/index.js'
 
@@ -44,11 +43,6 @@ describe('connection frame handlers (via actions)', () => {
     expect(msgs[0]!.text).toBe('connection lost')
   })
 
-  test('modeChanged updates currentMode', () => {
-    setMode('planner', 'Planner')
-    expect(store.namespace<ShellState>('shell').get('currentMode')).toBe('planner')
-    expect(store.namespace<ShellState>('shell').get('currentModeDisplayName')).toBe('Planner')
-  })
 
   test('log prepends to logs array', () => {
     reduceFrame({ type: 'observability.log.entry', message: 'a' })

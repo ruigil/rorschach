@@ -1,6 +1,5 @@
 import { store, isConnected, send } from '@rorschach/webkit';
 import type { ShellState, Message, Attachment } from './types.js'
-import { setMode } from './view-actions.js'
 
 const shell = () => store.namespace<ShellState>('shell')
 
@@ -51,17 +50,6 @@ export const commitActiveStream = (role: 'assistant' | 'error' = 'assistant', te
   shell().set('isWaiting', false)
 }
 
-export const switchMode = (mode: string) => {
-  if (!mode || mode === shell().get('currentMode')) {
-    return false
-  }
-  if (!isConnected()) {
-    return false
-  }
-  const agent = shell().get('agents').find(agent => agent.mode === mode)
-  setMode(mode, agent?.displayName ?? mode)
-  return true
-}
 
 export const submitChatMessage = (text: string, attachments: Attachment[]) => {
   const isWaiting = shell().get('isWaiting')

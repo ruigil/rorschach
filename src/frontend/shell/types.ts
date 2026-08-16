@@ -5,7 +5,6 @@ export type ViewConfig = {
   title: string
   icon: string
   contentTag: string
-  modes?: string[]
 };
 
 export type ViewRuntimeState = {
@@ -49,15 +48,6 @@ export type ActiveStream = {
   attachments: Attachment[]
 };
 
-
-
-// Agent is shell/agent-registry specific — stays here, not in the kit.
-export type Agent = {
-  mode: string
-  displayName: string
-  shortDesc: string
-};
-
 // Shape of `store.namespace('shell')`. The shell is just another namespace
 // owner, symmetric with `store.namespace('<pluginId>')` for plugins.
 // All plugin-leak keys have been removed — the docs and workflows plugins
@@ -68,9 +58,6 @@ export type ShellState = {
   isWaiting: boolean
   currentUserId: string | null
   currentUserRoles: string[]
-  agents: Agent[]
-  currentMode: string
-  currentModeDisplayName: string
   messages: Message[]
   /** Persisted subset of recent messages (stripped of attachment payloads)
    *  used to restore the chat history across refreshes. */

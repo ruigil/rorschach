@@ -12,7 +12,7 @@ beforeEach(() => {
 describe('store: get and set', () => {
   test('get returns the current value', () => {
     expect(store.namespace<ShellState>('shell').get('isConnected')).toBe(false)
-    expect(store.namespace<ShellState>('shell').get('currentMode')).toBe('')
+    expect(store.namespace<ShellState>('shell').get('activeWorkspaceTab')).toBe('none')
   })
 
   test('set updates the value', () => {
@@ -38,10 +38,10 @@ describe('store: get and set', () => {
 
 describe('store: subscribe', () => {
   test('subscriber is called immediately with current value', () => {
-    store.namespace<ShellState>('shell').set('currentMode', 'chatbot')
+    store.namespace<ShellState>('shell').set('activeWorkspaceTab', 'config')
     const calls: string[] = []
-    store.namespace<ShellState>('shell').subscribe('currentMode', (v) => calls.push(v))
-    expect(calls).toEqual(['chatbot'])
+    store.namespace<ShellState>('shell').subscribe('activeWorkspaceTab', (v) => calls.push(v))
+    expect(calls).toEqual(['config'])
   })
 
   test('unsubscribe stops future notifications', () => {
@@ -56,11 +56,11 @@ describe('store: subscribe', () => {
   test('multiple subscribers for the same key', () => {
     const a: string[] = []
     const b: string[] = []
-    store.namespace<ShellState>('shell').subscribe('currentMode', (v) => a.push(v))
-    store.namespace<ShellState>('shell').subscribe('currentMode', (v) => b.push(v))
-    store.namespace<ShellState>('shell').set('currentMode', 'planner')
-    expect(a).toEqual(['', 'planner'])
-    expect(b).toEqual(['', 'planner'])
+    store.namespace<ShellState>('shell').subscribe('activeWorkspaceTab', (v) => a.push(v))
+    store.namespace<ShellState>('shell').subscribe('activeWorkspaceTab', (v) => b.push(v))
+    store.namespace<ShellState>('shell').set('activeWorkspaceTab', 'observe')
+    expect(a).toEqual(['none', 'observe'])
+    expect(b).toEqual(['none', 'observe'])
   })
 })
 

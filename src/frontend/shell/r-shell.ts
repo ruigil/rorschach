@@ -10,7 +10,7 @@ import {
 } from '@rorschach/webkit';
 
 import { dispatchFrame } from './dispatcher.js';
-import { logout, switchMode } from './actions.js';
+import { logout } from './actions.js';
 import {
   openView,
   openViewWhenReady,
@@ -33,8 +33,6 @@ export class RShell extends RorschachBase {
   private _views = new StoreController(this, ['shell', 'views']);
   private _activeWorkspaceTab = new StoreController(this, ['shell', 'activeWorkspaceTab']);
   private _workspaceTabOrder = new StoreController(this, ['shell', 'workspaceTabOrder']);
-  private _currentMode = new StoreController(this, ['shell', 'currentMode']);
-  private _currentModeDisplayName = new StoreController(this, ['shell', 'currentModeDisplayName']);
 
   @state() private _noticing = false;
   private _prevWaiting = false;
@@ -89,7 +87,6 @@ export class RShell extends RorschachBase {
       } else if (tab === 'none' && normalizedHash !== '') {
         history.replaceState(null, '', window.location.pathname + window.location.search);
       }
-      this._switchModeForTab(tab);
     });
 
     // 4. Listen for dynamic plugin shell actions (custom event bubbles)
@@ -105,18 +102,6 @@ export class RShell extends RorschachBase {
     window.removeEventListener('resize', this._resizeListener);
     this._cancelPendingHashOpen?.();
     this._cancelPendingHashOpen = null;
-  }
-
-  private _switchModeForTab(tabId: string | undefined) {
-    if (!tabId) return;
-    if (tabId === 'none' || tabId === 'config' || tabId === 'observe') {
-      switchMode('chatbot');
-      return;
-    }
-    const cfg = pluginHost().getViewConfig(tabId);
-    if (cfg && cfg.modes && cfg.modes.length > 0) {
-      switchMode(cfg.modes[0]!);
-    }  
   }
 
   private async _bootstrap() {
@@ -355,7 +340,6 @@ export class RShell extends RorschachBase {
           </div>
         </div>
         <div class="header-end">
-          <r-agent-select></r-agent-select>
           <r-theme-select></r-theme-select>
           ${userId && userId !== 'anonymous' ? html`
             <button class="logout-btn" title="Sign out" @click=${this._handleLogout}>
@@ -370,7 +354,7 @@ export class RShell extends RorschachBase {
         <aside class="sidebar-panel ${this._isSidebarCollapsed ? 'collapsed' : ''}" style="width: ${this._isSidebarCollapsed ? '0px' : `${this._sidebarWidth.value}px`};">
           <div class="sidebar-content-wrapper">
             <div class="sidebar-title-bar">
-              <span class="sidebar-title">${this._currentModeDisplayName.value || this._currentMode.value || 'Chat'}</span>
+              <span class="sidebar-title">Chat</span>
             </div>
             
             <r-chat-panel class="flex-grow-1 min-height-0"></r-chat-panel>
