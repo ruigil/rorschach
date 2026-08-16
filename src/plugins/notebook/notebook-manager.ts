@@ -24,6 +24,16 @@ export const sortTodos = (todos: Todo[]): Todo[] => {
       return a.done ? 1 : -1
     }
 
+    // If both are done, sort by doneAt (most recently completed first), fallback to createdAt
+    if (a.done && b.done) {
+      const doneAtA = a.doneAt ?? a.createdAt
+      const doneAtB = b.doneAt ?? b.createdAt
+      if (doneAtA !== doneAtB) {
+        return doneAtB - doneAtA
+      }
+      return b.createdAt - a.createdAt
+    }
+
     // 2. Sort by due date (earliest first, tasks with due dates before tasks without)
     if (a.dueDate && b.dueDate) {
       const cmp = a.dueDate.localeCompare(b.dueDate)

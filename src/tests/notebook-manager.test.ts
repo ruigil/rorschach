@@ -269,4 +269,18 @@ describe('NotebookManager WebSocket integration', () => {
     const sorted = sortTodos(list)
     expect(sorted.map(t => t.id)).toEqual(['6', '3', '2', '1', '5', '4'])
   })
+
+  test('sortTodos correctly sorts completed (done: true) todos by doneAt descending', () => {
+    const list = [
+      { id: '1', text: 'pending task', done: false, createdAt: 100 },
+      { id: '2', text: 'done earlier', done: true, doneAt: 200, createdAt: 100 },
+      { id: '3', text: 'done later', done: true, doneAt: 500, createdAt: 100 },
+      { id: '4', text: 'done latest', done: true, doneAt: 800, createdAt: 100 },
+      { id: '5', text: 'done without doneAt fallback createdAt', done: true, createdAt: 300 },
+    ]
+
+    const sorted = sortTodos(list)
+    expect(sorted.map(t => t.id)).toEqual(['1', '4', '3', '5', '2'])
+  })
 })
+

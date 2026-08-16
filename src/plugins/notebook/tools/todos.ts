@@ -105,9 +105,24 @@ const formatTodo = (t: Todo): string => {
   return `${status} ${t.id}: ${t.text}${due}${rec}${pri}`
 }
 
-const computeNextDueDate = (cronExpr: string, fromDateISO?: string): string => {
-  const base = fromDateISO ? new Date(`${fromDateISO}T00:00:00Z`) : new Date()
+export const computeNextDueDate = (cronExpr: string, fromDateISO?: string): string => {
+  const today = todayISO()
+  const safeFrom = fromDateISO?.trim()
+  const isValidISO = safeFrom && /^\d{4}-\d{2}-\d{2}$/.test(safeFrom)
+  const baseISO = (isValidISO && safeFrom > today) ? safeFrom : today
+  const base = new Date(`${baseISO}T23:59:59.999Z`)
   const interval = CronExpressionParser.parse(cronExpr, { currentDate: base, tz: 'UTC' })
+  return interval.next().toDate().toISOString().slice(0, 10)
+}
+
+export const computeInitialDueDate = (cronExpr: string, fromDateISO?: string): string => {
+  const today = todayISO()
+  const safeFrom = fromDateISO?.trim()
+  const isValidISO = safeFrom && /^\d{4}-\d{2}-\d{2}$/.test(safeFrom)
+  const baseISO = isValidISO ? safeFrom : today
+  const startOfDay = new Date(`${baseISO}T00:00:00.000Z`)
+  const justBefore = new Date(startOfDay.getTime() - 1)
+  const interval = CronExpressionParser.parse(cronExpr, { currentDate: justBefore, tz: 'UTC' })
   return interval.next().toDate().toISOString().slice(0, 10)
 }
 
@@ -129,7 +144,7 @@ const createTodo = async (
 
   const data = await readTodos(persistenceRef, userId)
   const id = crypto.randomUUID()
-  const calculatedDue = (!dueDate && recurrence) ? computeNextDueDate(recurrence) : dueDate
+  const calculatedDue = (!dueDate && recurrence) ? computeInitialDueDate(recurrence) : dueDate
   const todo: Todo = {
     id,
     text: text.trim(),
