@@ -37,8 +37,7 @@ export const resetStore = () => {
     logs: [],
     traces: [],
     usage: [],
-    tools: {},
-    agents: [],
+    scramblers: {},
   })
 }
 

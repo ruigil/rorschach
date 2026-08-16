@@ -11,11 +11,6 @@ export type MemoryFrameType =
   | 'memory.kgraph.updated'
   | 'memory.kgraph.changed'
 
-export type ToolsFrameType =
-  | 'tools.list.request'
-  | 'tools.registered'
-  | 'tools.unregistered'
-
 export type ScramblersFrameType =
   | 'scramblers.list.request'
   | 'scramblers.registered'
@@ -53,7 +48,6 @@ export type NotebookFrameType =
 export type SystemFrameType =
   | CognitiveFrameType
   | MemoryFrameType
-  | ToolsFrameType
   | ScramblersFrameType
   | WorkflowsFrameType
   | ObservabilityFrameType

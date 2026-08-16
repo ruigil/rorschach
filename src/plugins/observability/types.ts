@@ -68,15 +68,6 @@ export type UsageEntry = {
 
 import type { PersistenceMsg } from '../../types/persistence.ts'
 
-// ─── Global Tools Actor Types ───
-
-export type GlobalToolsMsg =
-  | { type: '_scrReg'; event: any }
-  | { type: '_wsFrame'; event: any }
-
-export type GlobalToolsState = {
-  tools: Record<string, any>
-}
 
 // ─── JSONL Logger Actor Types ───
 

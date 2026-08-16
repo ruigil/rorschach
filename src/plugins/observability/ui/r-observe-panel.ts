@@ -16,14 +16,12 @@ import type { ObservabilityState } from './index.js';
 import './r-costs-table.js';
 import './r-actor-tree.js';
 import './r-actor-detail.js';
-import './r-tools-list.js';
-import './r-agents-list.js';
 import './r-scramblers-list.js';
 import './r-topic-list.js';
 import './r-trace-waterfall.js';
 import type { Actor } from '../types.js';
 
-export const OBSERVE_TABS = ['metrics', 'topics', 'logs', 'traces', 'tools', 'agents', 'scramblers', 'memory', 'costs'] as const;
+export const OBSERVE_TABS = ['metrics', 'topics', 'logs', 'traces', 'scramblers', 'memory', 'costs'] as const;
 export type ObserveTab = typeof OBSERVE_TABS[number];
 export const DEFAULT_OBSERVE_TAB: ObserveTab = 'metrics';
 
@@ -32,8 +30,6 @@ const TAB_LABELS: Record<ObserveTab, string> = {
   topics:  'Topics',
   logs:    'Logs',
   traces:  'Traces',
-  tools:   'Tools',
-  agents:  'Agents',
   scramblers: 'Scramblers',
   memory:  'Memory Graph',
   costs:   'Usage Costs',
@@ -45,8 +41,6 @@ const CONTROL_BY_TAB: Record<ObserveTab, string> = {
   traces:  'obs-traces-controls',
   memory:  'obs-memory-controls',
   topics:  '',
-  tools:   '',
-  agents:  '',
   scramblers: '',
   costs:   '',
 };
@@ -62,8 +56,6 @@ export class RObservePanel extends RorschachBase {
   private _topics = new StoreController(this, ['observe', 'topics']);
   private _logs = new StoreController(this, ['observe', 'logs']);
   private _traces = new StoreController(this, ['observe', 'traces']);
-  private _tools = new StoreController(this, ['observe', 'tools']);
-  private _agents = new StoreController(this, ['observe', 'agents']);
   private _scramblers = new StoreController(this, ['observe', 'scramblers']);
   private _kgDataController = new StoreController(this, ['observe', 'kgraph']);
 
@@ -262,17 +254,6 @@ export class RObservePanel extends RorschachBase {
     r-topic-list::-webkit-scrollbar-track { background: transparent; }
     r-topic-list::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
 
-    /* ─── Tools panel ─── */
-    r-tools-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 0.75rem;
-    }
-
-    r-tools-list::-webkit-scrollbar { width: 3px; }
-    r-tools-list::-webkit-scrollbar-track { background: transparent; }
-    r-tools-list::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
-
     /* ─── Traces container ─── */
     [data-observe-tab="traces"] {
       overflow-y: auto;
@@ -297,11 +278,8 @@ export class RObservePanel extends RorschachBase {
     const logs = this._logs.value ?? [];
     const traces = this._traces.value ?? [];
     const topics = this._topics.value ?? [];
-    const toolsObj = this._tools.value ?? {};
-    const toolsCount = Object.keys(toolsObj).length;
     const scramblersObj = this._scramblers.value ?? {};
     const scramblersCount = Object.keys(scramblersObj).length;
-    const agents = this._agents.value ?? [];
     const graph = this._kgDataController.value;
 
     return [
@@ -321,8 +299,6 @@ export class RObservePanel extends RorschachBase {
         icon: 'folder',
         children: [
           { id: 'topics', label: 'Topics', icon: 'git-branch', badge: topics.length || undefined },
-          { id: 'tools', label: 'Tools', icon: 'wrench', badge: toolsCount || undefined },
-          { id: 'agents', label: 'Agents', icon: 'user', badge: agents.length || undefined },
           { id: 'scramblers', label: 'Scramblers', icon: 'code', badge: scramblersCount || undefined },
         ],
       },
@@ -461,14 +437,6 @@ export class RObservePanel extends RorschachBase {
 
             <div class="obs-subpanel ${activeTab === 'logs' ? 'active' : ''}" data-observe-tab="logs">
               <r-log-stream></r-log-stream>
-            </div>
-
-            <div class="obs-subpanel ${activeTab === 'tools' ? 'active' : ''}" data-observe-tab="tools">
-              <r-tools-list></r-tools-list>
-            </div>
-
-            <div class="obs-subpanel ${activeTab === 'agents' ? 'active' : ''}" data-observe-tab="agents">
-              <r-agents-list></r-agents-list>
             </div>
 
             <div class="obs-subpanel ${activeTab === 'scramblers' ? 'active' : ''}" data-observe-tab="scramblers">

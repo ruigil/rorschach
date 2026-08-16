@@ -2,10 +2,9 @@ import { store, send } from '@rorschach/webkit';
 import type { LogEvent } from '@rorschach/webkit/types.js';
 import type { Actor, Topic, TraceSpan, UsageEntry } from '../types.js';
 import { RObservePanel } from './r-observe-panel.js';
-import { RAgentsList, type AgentInfo } from './r-agents-list.js';
 import { RScramblersList } from './r-scramblers-list.js';
 
-export { RObservePanel, RAgentsList, RScramblersList };
+export { RObservePanel, RScramblersList };
 
 export type ObservabilityState = {
   actors: Actor[]
@@ -13,7 +12,6 @@ export type ObservabilityState = {
   logs: LogEvent[]
   traces: TraceSpan[]
   usage: UsageEntry[]
-  tools: Record<string, { type: 'function'; function: { name: string; description: string; parameters: object } }>
   scramblers: Record<string, {
     urn: string
     kind: string
@@ -26,7 +24,6 @@ export type ObservabilityState = {
     yieldsPending?: boolean
     meta?: any
   }>
-  agents: AgentInfo[]
   activeTab: string
   kgraph: any | null
 }
@@ -45,9 +42,7 @@ storeNamespace.init({
   logs: [],
   traces: [],
   usage: [],
-  tools: {},
   scramblers: {},
-  agents: [],
   activeTab: 'metrics',
   kgraph: null,
 })
@@ -73,12 +68,6 @@ export const reduceFrame = (frame: any) => {
     ns.set('traces', [...(ns.get('traces') ?? []), frame as TraceSpan])
   } else if (frame.type === 'observability.usage.entry') {
     ns.set('usage', [...(ns.get('usage') ?? []), frame as UsageEntry])
-  } else if (frame.type === 'tools.registered') {
-    ns.set('tools', { ...ns.get('tools'), [frame.name]: frame.schema })
-  } else if (frame.type === 'tools.unregistered') {
-    const nextTools = { ...ns.get('tools') }
-    delete nextTools[frame.name]
-    ns.set('tools', nextTools)
   } else if (frame.type === 'scramblers.registered') {
     ns.set('scramblers', { ...ns.get('scramblers'), [frame.descriptor.urn]: frame.descriptor })
   } else if (frame.type === 'scramblers.unregistered') {

@@ -5,7 +5,6 @@ import { TraceRecorder } from './trace-recorder.ts'
 import { CostTracker } from './cost-tracker.ts'
 import { config, type ObservabilityConfig } from './observability.config.ts'
 import type { UiSurfaceRegistration } from '../../types/ui-surface.ts'
-import { GlobalTools } from './global-tools.ts'
 import { UserBudgetSupervisor } from './user-budget.ts'
 import { Scramblers } from './scramblers.ts'
 
@@ -18,7 +17,7 @@ const observabilitySurfaceRegistration: UiSurfaceRegistration = {
     contentTag: 'r-observe-panel',
   },
   moduleUrl: '/js/plugins/observability.js',
-  frameTypes: ['observability.log.entry', 'observability.metrics.updated', 'observability.trace.span', 'observability.usage.entry', 'tools.registered', 'tools.unregistered', 'scramblers.registered', 'scramblers.unregistered', 'memory.kgraph.updated', 'memory.kgraph.changed'],
+  frameTypes: ['observability.log.entry', 'observability.metrics.updated', 'observability.trace.span', 'observability.usage.entry', 'scramblers.registered', 'scramblers.unregistered', 'memory.kgraph.updated', 'memory.kgraph.changed'],
 }
 
 export default createPluginFactory<ObservabilityConfig>({
@@ -43,9 +42,6 @@ export default createPluginFactory<ObservabilityConfig>({
     costTracker: {
       factory: (cfg) => cfg ? CostTracker(cfg) : null,
       configPath: 'costTracker',
-    },
-    globalTools: {
-      factory: () => GlobalTools(),
     },
     scramblers: {
       factory: () => Scramblers(),

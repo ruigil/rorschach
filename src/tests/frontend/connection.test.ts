@@ -64,20 +64,20 @@ describe('connection frame handlers (via actions)', () => {
     expect(store.namespace<ObservabilityState>('observe').get('topics')).toHaveLength(1)
   })
 
-  test('tool_registered adds to tools map', () => {
-    const schema = { type: 'function' as const, function: { name: 'tools_web_search', description: 'Search the web', parameters: {} } }
-    reduceFrame({ type: 'tools.registered', name: 'tools_web_search', schema })
-    expect(store.namespace<ObservabilityState>('observe').get('tools')).toHaveProperty('tools_web_search')
+  test('scrambler_registered adds to scramblers map', () => {
+    const descriptor = { urn: 'scr:leaf:tools.web_search', kind: 'leaf', description: 'Search the web', schema: {} }
+    reduceFrame({ type: 'scramblers.registered', descriptor })
+    expect(store.namespace<ObservabilityState>('observe').get('scramblers')['scr:leaf:tools.web_search']).toBeDefined()
   })
 
-  test('tool_unregistered removes from tools map', () => {
-    const schema1 = { type: 'function' as const, function: { name: 'tools_web_search', description: '', parameters: {} } }
-    const schema2 = { type: 'function' as const, function: { name: 'fetch_page', description: '', parameters: {} } }
-    reduceFrame({ type: 'tools.registered', name: 'tools_web_search', schema: schema1 })
-    reduceFrame({ type: 'tools.registered', name: 'fetch_page', schema: schema2 })
-    reduceFrame({ type: 'tools.unregistered', name: 'tools_web_search' })
-    expect(store.namespace<ObservabilityState>('observe').get('tools')).not.toHaveProperty('tools_web_search')
-    expect(store.namespace<ObservabilityState>('observe').get('tools')).toHaveProperty('fetch_page')
+  test('scrambler_unregistered removes from scramblers map', () => {
+    const desc1 = { urn: 'scr:leaf:tools.web_search', kind: 'leaf', description: '', schema: {} }
+    const desc2 = { urn: 'scr:leaf:tools.fetch_page', kind: 'leaf', description: '', schema: {} }
+    reduceFrame({ type: 'scramblers.registered', descriptor: desc1 })
+    reduceFrame({ type: 'scramblers.registered', descriptor: desc2 })
+    reduceFrame({ type: 'scramblers.unregistered', urn: 'scr:leaf:tools.web_search' })
+    expect(store.namespace<ObservabilityState>('observe').get('scramblers')['scr:leaf:tools.web_search']).toBeUndefined()
+    expect(store.namespace<ObservabilityState>('observe').get('scramblers')['scr:leaf:tools.fetch_page']).toBeDefined()
   })
 
   test('sources are added to active stream', () => {
